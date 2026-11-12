@@ -55,8 +55,8 @@ why; a skip is never a pass.
 
 `[e2e] DEFECT <stage> ...` records a product defect on one specific, expected
 signature where the stages after it can still run (today only one: a requested
-`cgo_anchor` with no process of that name while the step runs on a pod that has
-bash). Anything else that goes wrong is a `FAIL`. Any DEFECT makes the script
+`cgo_anchor` with no process of that name while the step runs on the debian
+pod, whose `sh` is dash and can be renamed). Anything else that goes wrong is a `FAIL`. Any DEFECT makes the script
 exit 2 after the last stage; a clean run ends `[e2e] RESULT PASS` with exit 0.
 Re-applying the manifest over a running agent must succeed; a rejection is a
 `FAIL`. Tokens are redacted from everything the script prints.
@@ -65,17 +65,18 @@ Re-applying the manifest over a running agent must succeed; a rejection is a
 |---|---|
 | `preconditions` | tools present, SimCore `/api/health` answers |
 | `cluster` | cluster created, context is `kind-cortexsim-e2e`, node architecture read, SimCore reachable **from inside the node** |
-| `deploy` | token minted, namespace + Secret created, baseline manifest applied straight from the manifest URL for the node's architecture |
+| `deploy` | token minted, namespace + Secret created, baseline manifest applied straight from the manifest URL for the node's architecture; every `kubectl apply` output line is one object `created`/`configured`/`unchanged` (the header's `# REMOVAL:` comment lines change nothing), and the `# REMOVAL:` lines are observed |
 | `rollout` | `deploy/cortexsim-agent` Ready within 300 s (the readiness probe passes only once the beacon has stored its agent id); no Job named `cortexsim-reaper-agent` exists and `deploy/cortexsim-reaper-agent` is Available |
 | `enroll` | an `online` agent with `runtime_facts.container == true` whose `pod_name` is the real pod (then observes PID 1, the process list, `id -u` of an unknown user, `prepare.status`, the copied `kubectl`, the subreaper log line) |
 | `launch` | every `POSTURE_SCENARIOS` entry (default `SIM-CDR-001 SIM-CDR-015`) is refused `409 AGENT_POSTURE_INSUFFICIENT` on the baseline agent, except that a `PAYLOAD_NOT_STAGED` refusal (SimCore's shelf, checked before the agent gate) is printed as `SKIP` for that scenario; at least one must reach the agent gate. Then the first CDR scenario with no `kubectl` step and no external tools that the launch gate accepts reaches `complete` with output for every step (matched as `· <step-id> ·`); zombies left in the pod afterwards are observed |
-| `abort` | a Composer draft (`sleep 300`, `cgo_anchor: apache2`) runs; while `sleep 300` is a live process a process whose cmdline starts with `apache2` must exist (the bash anchor rename; its absence is the one DEFECT signature); after the abort the run reads `aborted` and within 30 s neither `sleep 300` nor `apache2` is left in the pod |
+| `abort` | a Composer draft (`sleep 300`, `cgo_anchor: apache2`) runs; while `sleep 300` is a live process a process whose cmdline starts with `apache2` must exist (the anchor rename: on debian `sh` is dash and is the renamed process, its `/proc/<pid>/exe` is observed; its absence is the one DEFECT signature); after the abort the run reads `aborted` and within 30 s neither `sleep 300` nor `apache2` is left in the pod |
 | `cluster-privilege` | re-applied with `profile=cluster-privilege` + consent, the new agent reports that profile and every scenario refused in `launch` whose refusal named `cluster-privilege` as the satisfying profile is accepted (its run is observed for 120 s, then aborted if still going) |
 | `downgrade` | the `baseline` manifest re-applied over the cluster-privilege agent leaves `clusterrole/cortexsim-agent` with no rules, the new pod's own ServiceAccount answers `no` to `kubectl auth can-i list secrets --all-namespaces`, and the new agent reports `posture_profile=baseline` |
 | `digest-mismatch` | a manifest copy with one hex digit of the beacon digest flipped makes the `fetch` init container of the **new** pod exit `78` with message `BEACON_DIGEST_MISMATCH` |
-| `alpine` | `image=alpine:3.20` with `prepare=packages` enrolls, `prepare.status` is `PREPARE_OK` and `id -u www-data` succeeds; with `prepare=none` (no `bash`) the pod enrolls and a `cgo_anchor` scenario completes with `ANCHOR NOT HONOURED` in both its step output and its completion summary. `prepare=none` is used because with `packages` the image has `bash` and the anchor is, correctly, honoured |
+| `alpine` | `image=alpine:3.20` with `prepare=packages` enrolls, `prepare.status` is `PREPARE_OK` and `id -u www-data` succeeds, and a `cgo_anchor: apache2` draft shows a renamed `apache2` process mid-step (its `/proc/<pid>/exe` is observed: bash, since alpine's `sh` is busybox) and completes **without** `ANCHOR NOT HONOURED`; with `prepare=none` (no `bash`) the pod enrolls and a `cgo_anchor` scenario completes with `ANCHOR NOT HONOURED` in both its step output and its completion summary. `prepare=none` is used because with `packages` the image has `bash` and the anchor is, correctly, honoured |
 | `enroll-denied` | with a garbage token in the Secret, a fresh pod's last termination message carries `ENROLL_DENIED` and `kubectl describe pod` shows `FATAL ENROLL_DENIED`; the real token is restored and a fresh pod enrolls |
 | `offline` | the agent of the pod running at that moment is `online` immediately before the namespace is deleted, then reads `offline` within `OFFLINE_TIMEOUT` ; then observes (does not assert) whether the cluster-scoped `cortexsim-agent` and `cortexsim-reaper-agent` ClusterRole/Bindings outlive the namespace. Teardown deletes every ClusterRole/Binding labelled `cortexsim.io/agent=true` before deleting the cluster |
+| `expiry` | observed only: a fresh namespace + Secret and a `ttl_seconds=60` manifest; after up to 150 s it records whether the reaper deleted the namespace and each cluster-scoped `cortexsim-agent` / `cortexsim-reaper-agent` object |
 
 The scenario for `launch` is chosen at run time, not hard-coded. Step commands
 and `external_tools` are read from the scenario **detail** (the list API projects

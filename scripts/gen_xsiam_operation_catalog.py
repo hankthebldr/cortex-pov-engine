@@ -31,7 +31,7 @@ DOC = os.path.join(REPO, "docs", "reference", "xsiam-platform-apis", "14-operati
 BADGE = {"read": "✅ read", "write": "⚠ write", "destructive": "🚫 destructive"}
 HEADLINE_RE = re.compile(r"^> \*\*\d+ operations\*\* across \*\*\d+ categories\*\*.*$", re.M)
 # Provenance tags shown in the Doc column when an op has no doc_link.
-PROVENANCE_TAGS = ("confirm-tail", "cortex-bot-observed")
+PROVENANCE_TAGS = ("confirm-tail", "cortex-bot-observed", "povkit-observed", "path-unverified")
 
 
 def _doc_cell(op) -> str:
@@ -39,6 +39,12 @@ def _doc_cell(op) -> str:
         return f"[↗]({op.doc_link})"
     shown = [t for t in PROVENANCE_TAGS if t in op.tags]
     return " ".join(f"`{t}`" for t in shown)
+
+
+def _allow_cell(op) -> str:
+    """A path param restricted to a closed set says so next to the path."""
+    return "".join(f" ({p} ∈ {', '.join(f'`{v}`' for v in vals)})"
+                   for p, vals in sorted(op.path_param_allowlist.items()))
 
 
 def render(current: str, cat: OperationCatalog) -> str:
@@ -67,7 +73,7 @@ def render(current: str, cat: OperationCatalog) -> str:
         out.append("| Op ID | Method | Path | Access | Doc |\n")
         out.append("|---|---|---|---|---|\n")
         for op in sorted(cat.list_for_category(category), key=lambda o: o.op_id):
-            out.append(f"| `{op.op_id}` | {op.method} | `{op.path}` | "
+            out.append(f"| `{op.op_id}` | {op.method} | `{op.path}`{_allow_cell(op)} | "
                        f"{BADGE[op.access_class]} | {_doc_cell(op)} |\n")
     return "".join(out)
 

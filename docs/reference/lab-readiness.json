@@ -1737,6 +1737,35 @@
       "delivery": "agent",
       "detection_steps_without_signal": 0,
       "detection_types": [
+        "Prevention",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "KOI \u2014 Axios npm Supply Chain: plain-crypto-js Postinstall Dropper to a Python RAT on a Linux Dev Endpoint (string decode \u2192 /tmp/ld.py \u2192 rundir / runscript \u2192 peinject WildFire test ELF \u2192 kill)",
+      "needs_target_egress": false,
+      "plane": "KOI",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-KOI-012",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
         "Analytics",
         "BIOC",
         "ABIOC",
@@ -5896,7 +5925,7 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 166,
+      "GREEN": 167,
       "RED": 5,
       "YELLOW": 27
     },
@@ -5904,7 +5933,7 @@
     "eal_delivered": 70,
     "scenarios_consent_gated": 4,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 198,
+    "scenarios_total": 199,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5912,6 +5941,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 816
+    "total_steps": 823
   }
 }

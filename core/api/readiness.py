@@ -9,7 +9,7 @@ in-process quota ledger. It never returns credential config — only
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
@@ -56,6 +56,42 @@ def _ledger_for(kind: str, config: dict[str, Any]) -> Optional[dict[str, Any]]:
     return snap
 
 
+_RL_STALE_AFTER = timedelta(hours=24)
+
+
+def _stage_verdict(stored: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The stored stage ``{status, code, detail}``, or None when not stored/unreadable."""
+    stage = stored.get("stage")
+    if not isinstance(stage, dict) or not isinstance(stage.get("status"), str):
+        return None
+    return {"status": stage["status"], "code": stage.get("code"), "detail": stage.get("detail")}
+
+
+def _response_layer_block(row: Any) -> Optional[dict[str, Any]]:
+    """The stored SOC Framework probe, or None. Reads the row only.
+
+    ``stage`` is the preflight stage's own verdict, stored with the layer. A
+    PRESENT layer behind a degraded stage (an XQL read failed) is not healthy;
+    ``stage`` None (not stored) must be read as unknown, never as ok.
+    """
+    stored = getattr(row, "response_layer", None)
+    if not isinstance(stored, dict):
+        return None
+    layer = {k: v for k, v in stored.items() if k != "stage"}
+    read_at = coerce_utc(getattr(row, "response_layer_read_at", None))
+    # An unreadable/absent timestamp cannot vouch for freshness: stale.
+    stale = read_at is None or (datetime.utcnow() - read_at) > _RL_STALE_AFTER
+    return {
+        "layer": layer,
+        "state": layer.get("state"),
+        "stage": _stage_verdict(stored),
+        "read_at": _iso(read_at),
+        "stale": stale,
+        "proves": "the SOC Framework is configured on this tenant",
+        "does_not_prove": "that the framework handled any CortexSim case",
+    }
+
+
 @router.get("")
 async def get_readiness(session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     tv = await tenant_verified(session)
@@ -75,6 +111,7 @@ async def get_readiness(session: AsyncSession = Depends(get_db)) -> dict[str, An
             "last_verified_at": _iso(row.last_verified_at),
             "last_verified_error": row.last_verified_error,
             "ledger": _ledger_for(row.kind, config),
+            "response_layer": _response_layer_block(row),
             "rungs": {
                 "authored": authored,
                 "configured": True,

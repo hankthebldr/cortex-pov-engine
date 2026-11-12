@@ -391,6 +391,12 @@ class CredentialStore:
             existing.last_verified_at = None
             existing.last_verified_ok = None
             existing.last_verified_error = None
+            # A new key or URL may be a different tenant: the stored SOC
+            # Framework probe described the old one, so it is dropped too
+            # (otherwise it stays "fresh" for up to 24 h on Readiness and in
+            # the launch advisory).
+            existing.response_layer = None
+            existing.response_layer_read_at = None
             row = existing
             logger.info("integration updated name=%s kind=%s", name, kind)
 

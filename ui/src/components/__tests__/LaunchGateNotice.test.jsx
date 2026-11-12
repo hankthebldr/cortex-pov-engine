@@ -94,6 +94,70 @@ describe('launch gate notice', () => {
     expect(onRunComplete).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'r-1' }))
   })
 
+  it('info-level advisories do not hold the launch: it navigates as before', async () => {
+    // With an xsiam_tenant registered, about half the corpus gets an info
+    // SOCFW advisory on every launch; holding on it would stop each launch.
+    const onRunComplete = vi.fn()
+    routes(() => ({
+      run_id: 'r-5', mode: 'pull',
+      warnings: [{
+        code: 'SOCFW_TRIAGE_MAY_SEAL', level: 'info', tenant: 'deathstar',
+        detail: 'Auto Triage is live on this tenant', remediation: 'star the POV cases',
+      }],
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={target} onRunComplete={onRunComplete} />)
+    await fire()
+    await waitFor(() => expect(onRunComplete).toHaveBeenCalledTimes(1))
+    expect(onRunComplete).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'r-5' }))
+  })
+
+  it('a warn-level advisory holds and renders its level, tenant and remediation', async () => {
+    const onRunComplete = vi.fn()
+    routes(() => ({
+      run_id: 'r-6', mode: 'pull',
+      warnings: [
+        { code: 'SOCFW_RESPONSE_LAYER_UNKNOWN', level: 'info', tenant: 'other', detail: 'no probe stored' },
+        {
+          code: 'SOCFW_TRIAGE_MAY_SEAL', level: 'warn', tenant: 'deathstar',
+          detail: 'Auto Triage is live on this tenant and this is a paired run',
+          remediation: 'Tenant-side options, any one is enough: (1) star the POV cases',
+        },
+      ],
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={target} onRunComplete={onRunComplete} />)
+    await fire()
+    const notice = await screen.findByTestId('launch-gate-warnings')
+    expect(onRunComplete).not.toHaveBeenCalled()
+    const items = within(notice).getAllByRole('listitem')
+    const warn = items.find((li) => li.textContent.includes('SOCFW_TRIAGE_MAY_SEAL'))
+    expect(within(warn).getByTestId('launch-warning-level')).toHaveTextContent('warn')
+    expect(warn).toHaveTextContent('tenant deathstar')
+    expect(warn).toHaveTextContent('this is a paired run')
+    expect(within(warn).getByTestId('launch-warning-remediation'))
+      .toHaveTextContent('Tenant-side options, any one is enough: (1) star the POV cases')
+    // The info advisory beside it is still shown, with its level.
+    const info = items.find((li) => li.textContent.includes('SOCFW_RESPONSE_LAYER_UNKNOWN'))
+    expect(within(info).getByTestId('launch-warning-level')).toHaveTextContent('info')
+    await userEvent.click(within(notice).getByRole('button', { name: /View run/ }))
+    expect(onRunComplete).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'r-6' }))
+  })
+
+  it('a gate warning with no level still holds, beside an info advisory', async () => {
+    const onRunComplete = vi.fn()
+    routes(() => ({
+      run_id: 'r-7', mode: 'pull',
+      warnings: [
+        { code: 'SOCFW_TRIAGE_MAY_SEAL', level: 'info', tenant: 'deathstar', detail: 'd' },
+        { code: 'AGENT_NO_RBAC_FOR_KUBECTL', steps: ['step-03'], agent_id: 'pod-1' },
+      ],
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={target} onRunComplete={onRunComplete} />)
+    await fire()
+    const notice = await screen.findByTestId('launch-gate-warnings')
+    expect(notice).toHaveTextContent('AGENT_NO_RBAC_FOR_KUBECTL')
+    expect(onRunComplete).not.toHaveBeenCalled()
+  })
+
   it('a launch without warnings navigates exactly as before', async () => {
     const onRunComplete = vi.fn()
     routes(() => ({ run_id: 'r-2', mode: 'pull' }))

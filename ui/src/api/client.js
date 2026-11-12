@@ -1559,6 +1559,15 @@ export async function getConnectors() {
 }
 
 /**
+ * GET /api/readiness — the connector ladder as the server states it, including
+ * each integration's stored `response_layer` (SOC Framework probe). Zero
+ * outbound calls server-side. Returns the RAW body.
+ */
+export async function getReadiness() {
+  return request('/api/readiness')
+}
+
+/**
  * POST /api/xsiam/tenants/:name/preflight — the staged, read-only connection
  * check (config → dns → tls → auth → scope → datasets → quota → clock).
  *

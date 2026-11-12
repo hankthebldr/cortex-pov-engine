@@ -53,6 +53,7 @@ from engine.outcome import (
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
+from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, NO_CASE_YET_HINT, pair_merge
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, RunOutputFrame, RunTaskCompletion, Scenario, StepOutcome
@@ -289,6 +290,133 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
                 "upstream": "—",
             })
     return rows
+
+
+_XDR_HOST_SUFFIX = ".paloaltonetworks.com"
+_XDR_BAD_CHARS = set('\\()<>`|[]"\'')
+
+
+def _safe_xdr_url(url) -> Optional[str]:
+    """``xdr_url`` comes from the tenant: link it only when it is plain https on
+    a ``paloaltonetworks.com`` host. Whitespace, control characters, backslash,
+    markdown/HTML metacharacters, userinfo and an explicit port all reject; the
+    emitted string is re-serialised from the validated parts."""
+    from urllib.parse import urlsplit, urlunsplit
+    if not isinstance(url, str) or not url:
+        return None
+    if any(ord(ch) <= 32 or ord(ch) == 127 or ch in _XDR_BAD_CHARS for ch in url):
+        return None
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme != "https" or port is not None or "@" in parts.netloc:
+        return None
+    if host != _XDR_HOST_SUFFIX[1:] and not host.endswith(_XDR_HOST_SUFFIX):
+        return None
+    if parts.netloc.lower() != host:
+        return None
+    return urlunsplit(parts)
+
+
+_MD_ESCAPE = set("\\|[]()<>*_#!~&")
+
+
+def _md_cell(value, *, code: bool = False) -> str:
+    """Neutralise a tenant-derived value for the markdown report.
+
+    Control characters and newlines are flattened to spaces and backticks become
+    apostrophes (so nothing can break out of a code span or open one). Outside a
+    code span (``code=False``) every markdown/HTML metacharacter
+    ``\\ | [ ] ( ) < > * _ # ! ~ &`` is backslash-escaped, so no link, tag,
+    heading or emphasis is interpreted. Inside a code span (``code=True``)
+    backslashes would show literally, so nothing more is added; that includes
+    ``|``, which is safe only because ``code=True`` is used in inline lines and
+    never inside a table cell (a ``|`` there would split the cell).
+    """
+    text = "" if value is None else str(value)
+    text = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in text)
+    text = text.replace("`", "'")
+    if code:
+        return text
+    return "".join("\\" + ch if ch in _MD_ESCAPE else ch for ch in text)
+
+
+def ledger_unreadable_reason(led) -> Optional[str]:
+    """A stored ledger missing a required key (or with the wrong type) is
+    degraded, never rendered as a healthy-looking section."""
+    if not isinstance(led, dict):
+        return "stored ledger is not an object"
+    if not isinstance(led.get("merge_class"), str) or not led["merge_class"]:
+        return "merge_class missing or not a string"
+    if not isinstance(led.get("cases"), list):
+        return "cases missing or not a list"
+    if not all(isinstance(c, dict) for c in led["cases"]):
+        return "cases contains a non-object entry"
+    if not isinstance(led.get("code"), str) or not led["code"]:
+        return "code missing or not a string"
+    return None
+
+
+def _case_section(run: Run) -> list[str]:
+    """Markdown ``## Case`` block from the stored case ledger.
+
+    Disposition is context, never detection evidence: nothing here is a
+    detected/missed claim, and the fixed disclaimer is always rendered.
+    Every tenant-derived string is escaped before it reaches the document.
+    """
+    out = ["## Case", ""]
+    led = run.case_ledger
+    if led is None:
+        out += ["Not read yet — reconcile the run.", "", f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    bad = ledger_unreadable_reason(led)
+    if bad:
+        out += [f"> Ledger unreadable: {bad}. Reconcile the run to rebuild it.", "",
+                f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    out.append(f"**Case merge:** `{_md_cell(led['merge_class'], code=True)}` — {_md_cell(led.get('merge_reason') or '—')}")
+    out.append("")
+    # Stored timestamps are naive UTC ISO strings: say so where they are shown.
+    read_at = f"{_md_cell(led['read_at'])} UTC" if led.get("read_at") else "—"
+    out.append(f"Read at {read_at} from `{_md_cell(led.get('integration') or '—', code=True)}` "
+               f"(basis: {_md_cell(led.get('basis') or '—')}).")
+    out.append("")
+    if led["merge_class"] == "NO_CASE_YET":
+        out += [NO_CASE_YET_HINT, ""]
+    if led["code"] != "CASE_LEDGER_OK":
+        out += [f"> Ledger status: `{_md_cell(led['code'], code=True)}`", ""]
+    ir = led.get("issue_read")
+    if isinstance(ir, dict) and not ir.get("ok", True):
+        out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—', code=True)}` — "
+                f"{_md_cell(ir.get('remediation') or 'no remediation recorded')}", ""]
+    cases = led["cases"]            # every entry is a dict: ledger_unreadable_reason
+    if cases:
+        out.append("| Case | Status | Closed by | Sealed | Issues (this run / other) | Link |")
+        out.append("|------|--------|-----------|--------|---------------------------|------|")
+        for c in cases:
+            url = c.get("xdr_url")
+            safe = _safe_xdr_url(url)
+            if safe:
+                link = f"[open]({safe})"
+            elif url:
+                link = "(invalid link withheld)"
+            else:
+                link = "—"
+            out.append(
+                f"| {_md_cell(c.get('case_id'))} | {_md_cell(c.get('status') or '—')} | "
+                f"{_md_cell(c.get('closed_by') or '—')} | "
+                f"{'yes' if c.get('sealed') else 'no'} | "
+                f"{_md_cell(c.get('issues_from_run', 0))} / {_md_cell(c.get('issues_other', 0))} | {link} |"
+            )
+        out.append("")
+    if led.get("shared_with_other_runs"):
+        other = sum(c.get("issues_other") or 0 for c in cases if isinstance(c.get("issues_other") or 0, int))
+        out += [f"Shared with other runs: {other} issues from other runs sit in these cases.", ""]
+    out += [f"*{CASE_DISCLAIMER}*", ""]
+    return out
 
 
 def _verdict_section(run: Run) -> list[str]:
@@ -1204,8 +1332,15 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
         )
 
     a, b = run.to_dict(), partner.to_dict()
+    try:
+        merge = pair_merge(run.case_ledger, partner.case_ledger)
+    except LEDGER_READ_ERRORS as e:
+        # A corrupt stored ledger is degraded with a code, never read as a merge.
+        merge = {"merge_class": "PENDING", "basis": None, "code": "CASE_LEDGER_UNREADABLE",
+                 "merge_reason": str(e)}
     return {
         "runs": [a, b],
+        "merge": merge,
         "delta": build_pair_delta(a, await _run_result_dicts(db, run.run_id), b,
                                   await _run_result_dicts(db, partner.run_id)),
     }
@@ -1295,6 +1430,7 @@ async def get_report(
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
             "tools_used": tools_used,
+            "case_ledger": run.case_ledger,
         }
 
     # --- Generate Markdown report ---
@@ -1414,6 +1550,7 @@ async def get_report(
     # to prevent. Rendered only when a verdict exists: an unscored historical
     # run must not grow a fake section.
     lines.extend(_verdict_section(run))
+    lines.extend(_case_section(run))
 
     # MTTD
     if mttd_values:
@@ -2159,6 +2296,40 @@ async def verify_run_endpoint(
                 run_id, outcome.tc_verdict, outcome.tenant,
                 outcome.queries_issued, outcome.reason)
     return outcome.to_dict()
+
+
+@router.post("/{run_id}/case-ledger/refresh")
+async def refresh_case_ledger_endpoint(
+    run_id: str,
+    force: bool = Query(False, description="Read even inside CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-read the cases named in this run's stored case ledger (read-only).
+
+    Explicit operator action, its own consent like ``POST .../reconcile``.
+    Disposition drifts after a run (Auto Triage seals cases after a window that
+    is the shipped default and tenant-configurable); this refreshes it. Cases
+    only: the stored alerts are kept. Disposition is context, never detection
+    evidence. 409 ``NO_CASE_LEDGER`` when the run has none. A ledger read
+    inside ``CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`` is not re-read
+    (200, ``refreshed: false``, ``reason_code: CASE_LEDGER_READ_RECENTLY``)
+    unless ``force=true``.
+    """
+    from api.connectors import _RECONCILE_ERROR_STATUS  # noqa: PLC0415
+    from connectors.service import ReconcileError, refresh_case_ledger  # noqa: PLC0415
+
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    if run is None:
+        raise _run_not_found(run_id)
+    try:
+        out = await refresh_case_ledger(db, run, force=force)
+    except ReconcileError as e:
+        status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
+                  "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409,
+                  "CASE_LEDGER_TENANT_MISMATCH": 409}.get(e.code, 500)
+        raise HTTPException(status_code=status, detail={
+            "error": str(e), "code": e.code, "detail": e.detail})
+    return out
 
 
 @router.get("/{run_id}/control")

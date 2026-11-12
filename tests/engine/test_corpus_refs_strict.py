@@ -65,7 +65,8 @@ def test_the_corpus_is_the_expected_size(parsed):
     193 -> 195 on 2026-11-11: SIM-EDR-023/024 (Linux cron and systemd-timer persistence built to group into one case; bind TC-IR-02, TC-EDR-03, TC-EDR-05).
     """
     # 195 -> 198 on 2026-11-11: Unit42 deep-real trio SIM-EDR-025 (Akira Linux host), SIM-KOI-010 (npm supply-chain), SIM-KOI-011 (OpenClaw malicious skill).
-    assert len(parsed) == 198
+    # 198 -> 199 on 2026-11-11: Unit 42 backlog build SIM-KOI-012 (Axios supply-chain Linux second-stage RAT).
+    assert len(parsed) == 199
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

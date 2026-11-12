@@ -79,7 +79,7 @@ core/                  ← SimCore FastAPI app — 137 routes
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
   connectors/            optional read-back measurement loop
-  integrations/xsiam/    148-op gated operation catalog (writes preview) + Tier-2 XQL
+  integrations/xsiam/    151-op gated operation catalog (writes preview) + Tier-2 XQL
   eal_simulator/         EAL traffic simulator + 27 plugins
   planes/                declarative PlaneDescriptor registry (16 planes)
 agent/                 ← Go pull-model beacon (5-target build matrix)

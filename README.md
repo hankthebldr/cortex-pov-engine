@@ -469,10 +469,10 @@ erDiagram
 |---|---:|---|
 | `agents` | 15 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix |
 | `eal` | 15 | campaigns, collectors, preflight, offline bundle |
-| `runs` | 15 | launch, output, complete, abort, control, pair, canary, verify, report export |
+| `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
 | `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
-| `xsiam` | 8 | 148-op gated operation catalog (writes preview) + Tier-2 XQL |
+| `xsiam` | 8 | 151-op gated operation catalog (writes preview) + Tier-2 XQL |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
 | `payloads` | 7 | the shelf, mounted at `/shelf` and `/k8s` |
@@ -491,7 +491,7 @@ regenerated into the ground truth.
 > [!TIP]
 > `GET /api/health` is the one diagnostic surface and it obeys one rule: **it
 > never reports green for something it didn't check.** It makes zero outbound
-> calls, publishes `not_checked[]` naming the five reachability-shaped claims it
+> calls, publishes `not_checked[]` naming the six reachability-shaped claims it
 > deliberately does *not* make, and treats a zero as `degraded` — booting
 > without `tools/` used to report `{status: ok, count: 0}` while every
 > `adapter_ref` in the corpus was unresolvable.
@@ -1067,7 +1067,7 @@ cortex-pov-engine/
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop
-│   ├── integrations/xsiam/     148-op gated operation catalog (writes preview) + Tier-2 XQL
+│   ├── integrations/xsiam/     151-op gated operation catalog (writes preview) + Tier-2 XQL
 │   ├── eal_simulator/          27 plugins, two families
 │   ├── planes/                 declarative PlaneDescriptor registry (16)
 │   └── models.py               16 ORM models

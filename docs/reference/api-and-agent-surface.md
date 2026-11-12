@@ -297,8 +297,9 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
-| GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
-| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used}`; 404 |
+| GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
+| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
+| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger}` (markdown gains a `## Case` section); 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
@@ -551,6 +552,64 @@ terminal (`complete` or `failed`, with `completed_at`), or the first run is alre
 pointing at it) and returns the two runs plus a delta joined per
 `(step_id, detection_id)`; a detection present on one side only appears with the other side
 `null`. 409 `RUN_NOT_PAIRED` when no partner exists.
+
+**The run case ledger (`Run.case_ledger`).** Every reconcile, a zero-match one included,
+builds it from the stored ledger's alerts plus the alerts it newly matched (each taken
+from this pull when the pull returned it), so a late match into a new case is seen
+against the earlier ones. When no alert carries a case id the ledger is stored with no
+tenant read (`NO_CASE_YET` for Medium+ alerts); it advances on the next reconcile, not on
+a refresh. Otherwise reconcile reads the cases by id, then the issue statuses by id, and,
+on a `SPLIT_NATIVE` that mixes an IP-only and a host-keyed alert, one endpoint record (the
+bridge diagnosis): at most three reads per reconcile, one page per 100 ids each. A failed
+case read keeps the stored ledger and scores the run with `merge_class: PENDING` (summary
+`case_ledger.stored_ledger_kept: true`). The ledger is stored with the `integration` that
+read it and its `tenant` (the per-tenant XQL ledger's key, `tenant_ledger_key` of the
+normalised base URL): a reconcile carries stored alerts only from the same tenant, a
+refresh refuses a ledger whose integration now points elsewhere, and a pair read from two
+tenants merges to `PENDING`; a legacy ledger without `tenant` behaves as before. Shape:
+`{merge_class, merge_reason, basis, read_at, integration, tenant, code, cases[], alerts[],
+issue_read, shared_with_other_runs}`; `read_at`, `resolved_at` and
+`observed_at` are naive UTC ISO strings. `merge_class` is `ONE_CASE | SPLIT_SEALED |
+SPLIT_NATIVE | LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`. Severity decides only Low-only,
+no case yet, fewer than two Medium+ alerts and Medium+ alerts not yet in a case; the
+missing-case check and the split rules read every alert that carries a case id. A case
+id the tenant does not return is `PENDING`, never `ONE_CASE`. A split is classified per
+boundary between consecutive cases (ordered by first alert): a **seal** (the earlier case
+was sealed before the later one's first alert), **native** (the earlier case was open or
+auto-resolved, or sealed after) or **unknown** (sealed, no resolve time). Any native
+boundary is `SPLIT_NATIVE`; otherwise any unknown one is `PENDING`; only all-seal is
+`SPLIT_SEALED`. A case `closed_by` is `open | socfw_auto_triage | auto_resolved |
+other_resolved`; an issue adds `socfw_ai_close | unread`. An unrecognised case status,
+or a reply row for a case the read did not request, raises and the ledger reports
+`CASE_STATUS_UNRECOGNIZED` with merge `PENDING` (that case is never rendered).
+`GET /api/runs/{id}/pair` returns the pair-level `merge`; a corrupt stored ledger reads
+`PENDING` / `CASE_LEDGER_UNREADABLE`.
+
+*What bounds these reads.* Every page is counted in the reconcile's (or refresh's)
+`queries_issued`. They do **not** charge the per-tenant XQL ledger
+(`integrations/xsiam/ledger.py`), and neither do reconcile's own alert and incident pulls;
+metering connector reads there is a separate change. What does bound them:
+`POST /api/runs/{id}/case-ledger/refresh` re-reads cases only (one page per 100 ids) and
+refuses to read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES` (60) of the ledger's
+`read_at` unless `force=true`. With `CORTEXSIM_AUTO_RECONCILE` on, the auto-reconcile loop
+refreshes ledgers of runs started within `CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` (24), at most
+`CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP` (20) per sweep, skipping any read newer than the
+same minimum interval and terminal ledgers, and stops the sweep on the first HTTP 429; a
+429 in the reconcile sweep skips the refresh phase for that cycle. A ledger is terminal
+when every case in it is sealed (resolved and not auto-resolved), its merge is not
+`PENDING` and every case an alert names is in it; an open or auto-resolved case, a
+`PENDING` merge or a missing case can still change, so its ledger keeps being refreshed.
+
+**Disposition is context, not detection evidence** (`Tenant disposition is shown for context. It is not detection evidence.`): it never feeds `detected`/`missed`, MTTD or a
+detection verdict. The single exception: `SPLIT_SEALED` withholds a Cross-Source
+Correlation Rate FAIL as `pending` (reason: `fail withheld: a case was sealed by the response layer before the chain finished — the split is not the detection engine's`), and only
+when the ledger classified every cased alert the KPI counted, in the same case; otherwise
+the FAIL stands and the measurement carries `sealed_split_not_applied`. A PASS is never
+touched. The bridge diagnosis reads `BRIDGE_UNREAD` (never `BRIDGED`) when the endpoint
+read fails, returns no record or more than one record for the host, or a record whose IPs
+are all unparseable. The endpoint reply fields used by the bridge diagnosis come from
+`docs/reference/xsiam-platform-apis/05-endpoints-api.md` and are unverified against a live
+tenant. `tenant-verified` is 0.
 
 **The canary — `POST /api/runs/canary`.** Launches the benign built-in trigger named by
 `CORTEXSIM_CANARY_SCENARIO_LINUX` as a pull run with `agent_profile_mode: "block"`. Empty
@@ -1276,6 +1335,75 @@ naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
 reported explicitly as `SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage
 would read as "fine". Only an unreachable host short-circuits.
 
+**`response_layer` (2026-11-11)** — the last stage of the `xsiam_tenant` ladder
+(after `clock`), enabled by the query parameter `response_layer` (bool, default
+`true`; pass `false` to omit it). It answers "is the Palo-Cortex SOC Framework
+(`soc-optimization-unified`, pinned to 3.31.4) running on this tenant, and what
+would its Auto Triage do to a CortexSim case?" with **read-only** calls, every
+one counted in `queries_issued`: installed packs
+(`GET /xsoar/contentpacks/metadata/installed`), list names
+(`GET /xsoar/lists/names`), the two config lists `SOCFWTenantConfig` and
+`SOCFWConfigModes` (`GET /xsoar/lists/download/{name}`, only when the core pack
+and both lists are present) and one XQL over the framework's execution dataset
+(`timeframe` argument `{"relativeTime": 86400000}`, never XQL time arithmetic).
+The stage carries the parsed layer under `extra.response_layer`:
+`state` ∈ `ABSENT | PRESENT_UNREAD | PRESENT | UNKNOWN` (`PRESENT_UNREAD` = core pack installed but list content or evidence not readable; `UNKNOWN` = installed packs not read or unrecognised), `framework_version`, `leftover_lists`
+(a framework uninstalled with its lists left behind reads `ABSENT`, never
+`PRESENT`), `auto_triage`, per-source `sources_used` and `read_at`. All
+framework strings and shapes live in `core/connectors/socfw.py`.
+
+`auto_triage` is `{live, window_hours, score_threshold, score_off, live_source,
+window_source, threshold_source}`, with provenance **per value**, because most of
+these values are not read from the tenant:
+
+| field | values | meaning |
+|---|---|---|
+| `live_source` | `xql_evidence` · `mode_inferred` · `unknown` | `xql_evidence`: production `auto_triage_closed` rows in the last 24 h. `mode_inferred`: the inferred mode's **shipped** jobs map in `SOCFWConfigModes`; the tenant's actual JOB schedule (which the framework's own `matching_mode` reads) is **not** read |
+| `window_source` / `threshold_source` | `tenant_config` · `shipped_default` · `unknown` | `tenant_config`: `SOCFWTenantConfig.triage` (`threshold_source` also covers `score_off`). `shipped_default`: CortexSim's copy of the framework default (6 h / 40); the framework reads the live value from `SOCOptimizationConfig_V3`, which is **not** read |
+
+A layer whose lists were not read claims no window or threshold (`null`, source
+`unknown`), not even a default. The OK stage detail, the Readiness row and the
+launch advisory print "(inferred from mode, not read)" / "(shipped default, not
+read)" / "not read" accordingly. Reading `SOCOptimizationConfig_V3` and the JOB
+schedule is deferred to Phase 2.
+
+| code | status | meaning |
+|---|---|---|
+| `PF_RESPONSE_LAYER_ABSENT` | degraded | core pack not installed (`state: ABSENT`; list names alone never make it `PRESENT`). Every POV tenant is expected to run the framework, so absence degrades preflight |
+| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`; neither present nor absent is claimed), or the framework is installed but part of its state (list content, XQL) could not be read (`state: PRESENT_UNREAD`). A refused list read names its HTTP status in `detail` (401/403: the key's role; 404/405: the unverified path); both read `PRESENT_UNREAD`, never `ABSENT`. An XQL failure with the lists read degrades the stage while the layer stays `PRESENT` |
+| `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED` | degraded | a reply arrived in a shape `socfw.py` does not recognise. It raises internally and surfaces here with `state: UNKNOWN`; it is never read as defaults, `open` or `ABSENT` |
+
+A stage skipped because an earlier stage blocked the ladder is reported
+`SKIPPED` and **does not** overwrite the last stored read. A stage that read
+something is persisted on the integration row (`IntegrationCredential.
+response_layer` and `response_layer_read_at`) **together with the stage's own
+verdict** under `response_layer.stage` = `{status, code, detail}`, so a degraded
+stage behind a `PRESENT` layer is never stored as healthy. The stage then carries
+`stored: true`; if the store fails, preflight still returns 200 with the report,
+`stored: false` and a `stored_note` (the previous stored read, if any, stays in
+place). Re-registering the integration (`PUT /api/credentials/integrations`, new
+key or URL) clears the stored read. It is surfaced by `GET /api/readiness`
+(§1.16) and the launch advisories on `POST /api/runs` (`warnings[]`, each
+`{code, level, tenant, detail, remediation}`; never a refusal, no tenant call).
+`SOCFW_TRIAGE_MAY_SEAL` fires when `auto_triage.live` is true in `PRESENT` **or**
+`PRESENT_UNREAD` (execution evidence proves triage live even when the lists are
+unreadable), at `warn` on a paired run and `info` for an ABIOC/Analytics
+scenario; `SOCFW_RESPONSE_LAYER_UNKNOWN` takes the same level. A tenant with no
+stored probe reads "no SOC Framework probe is stored for this tenant — run
+preflight". The console holds the launcher only on a warning that is not
+`level: "info"`. Runbook: `docs/lab/2026-11-11-run-alongside-soc-framework.md`.
+**Open:** the list-content path `GET /xsoar/lists/download/{name}` is
+**unverified against a live tenant** (no documented source; povkit's tenant
+client has `ListNames` and `DeleteList` only). The three reads are catalogued as
+`OP-SOCFW-PACKS-INSTALLED`, `OP-SOCFW-LIST-NAMES` (both `povkit-observed`) and
+`OP-SOCFW-LIST-GET` (`path-unverified`, and its `{name}` is restricted by
+`path_param_allowlist` to `SOCFWTenantConfig` and `SOCFWConfigModes`: the executor
+refuses any other list with 400 `XSIAM_CONFIG_ERROR` before a tenant call, because
+XSOAR lists can hold integration config and secrets)
+(`core/integrations/xsiam/operations/packs/socfw.yml`, 151 operations; the
+operation schema now accepts the `/xsoar/` gateway prefix). Tenant disposition
+is context, not detection evidence, and `tenant-verified` stays 0.
+
 **`alert_shape` (2026-09-20)** answers "will matching work on *this* tenant's
 alert objects?" — the question a POV used to answer with zero matches. It
 reuses the scope probe's alert or issues one more 1-row call over a 7-day
@@ -1613,8 +1741,15 @@ is read from the local DB, the vault's metadata or the in-process quota ledger.
 It never returns credential config. Per integration it carries `name`, `kind`,
 `capabilities` (`null` when the credential declares none), `xql_capability_granted`,
 `last_verified_ok` / `last_verified_at` / `last_verified_error`, a `ledger`
-snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`) and the
-four `rungs` booleans. `tenant_verified` is counted in Python by
+snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`), a
+`response_layer` block (`null` until a preflight has stored one; otherwise
+`{layer, state, stage, read_at, stale, proves, does_not_prove}`, where `stage` is
+the stored stage verdict `{status, code, detail}` (`null` when none was stored,
+which the console reads as unknown, never healthy), `stale` is true past 24 h or
+when the timestamp is unreadable, and `does_not_prove` says the framework handled
+no CortexSim case) and the four `rungs` booleans.
+`GET /api/health` lists `socfw_response_layer` in `not_checked[]`, naming the
+preflight stage that does check it. `tenant_verified` is counted in Python by
 `core/connectors/provenance.py::tenant_verified` — runs and assertion runs whose
 verdict detail carries tenant provenance; `pending` and `not_applicable` do not
 count. **Authored is not proven:** today that count is 0 because nothing has run

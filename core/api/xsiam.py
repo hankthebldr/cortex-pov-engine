@@ -190,6 +190,10 @@ def _resolve_path(op, path_params: dict[str, Any]) -> str:
     destructive gate; ``?``/``#`` could smuggle a query. A value that is a
     dot-segment or contains a path separator is refused (an ID never is one);
     everything else is percent-encoded so it cannot leave its segment.
+
+    A param the catalog declares in ``path_param_allowlist`` must be one of the
+    listed values exactly. This runs before the tenant client is built, for a
+    dry run too, so a refused value never reaches the tenant.
     """
     path = op.path
     for p in op.path_params:
@@ -201,6 +205,11 @@ def _resolve_path(op, path_params: dict[str, Any]) -> str:
             raise XsiamConfigError(
                 f"operation {op.op_id} path param '{p}' must be a single path "
                 f"segment (no '/', '\\', '.' or '..'); got {raw!r}")
+        allowed = op.path_param_allowlist.get(p)
+        if allowed is not None and raw not in allowed:
+            raise XsiamConfigError(
+                f"operation {op.op_id} path param '{p}' must be one of "
+                f"{', '.join(allowed)}; got {raw!r}")
         path = path.replace("{" + p + "}", quote(raw, safe=""))
     return path
 

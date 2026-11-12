@@ -233,7 +233,7 @@ def test_a_401_blocks_and_skips_the_rest():
     r = asyncio.run(pf.preflight_tenant(_client(_tenant(health=401)),
                                         integration_name="acme"))
     assert _stage(r, "auth").code == pf.PF_AUTH_REJECTED
-    assert [s.status for s in r.stages[1:]] == [pf.SKIPPED] * 3
+    assert [s.status for s in r.stages[1:]] == [pf.SKIPPED] * 4
     assert r.overall == pf.BLOCKED
 
 

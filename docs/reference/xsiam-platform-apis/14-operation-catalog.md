@@ -5,7 +5,7 @@
 > `POST /api/xsiam/tenants/{name}/operations/{op_id}`). This table is generated
 > from the loaded catalog — if the packs change, regenerate it.
 >
-> **148 operations** across **30 categories** — 79 read · 51 write · 18 destructive.
+> **151 operations** across **31 categories** — 82 read · 51 write · 18 destructive.
 ## Access classes & gating
 | Class | Badge | Executor behavior |
 |---|---|---|
@@ -14,6 +14,7 @@
 | `destructive` | 🚫 | **Dry-run by default.** Live call needs `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE=1` **and** `consent.destructive_authorized=true`. |
 > Ops tagged `confirm-tail` were not in the source CSV (truncated at row 96); they come from the already-documented read surface and should be confirmed against the live tenant portal.
 > Ops tagged `cortex-bot-observed` were harvested on 2026-11-02 from a field-built MCP server whose author ran them against a live tenant; paths are kept exactly as that tool sends them. That is the author's observation, **not** a CortexSim tenant verification (tenant-verified is 0). Provenance and per-family quirks: `docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md`. Regenerate this file with `python3 scripts/gen_xsiam_operation_catalog.py --write`.
+> Ops tagged `povkit-observed` take their path from povkit's tenant client (`internal/tenant/api.go`): its author's observation, **not** a CortexSim tenant verification. `path-unverified` means no documented or observed source; confirm it on a tenant before trusting it. A path followed by `(param ∈ …)` takes only those values: the executor refuses any other before a tenant call (`path_param_allowlist`).
 
 ## API Keys
 | Op ID | Method | Path | Access | Doc |
@@ -238,6 +239,13 @@
 | `OP-HASH-EXCEPTIONS-ALLOWLIST` | POST | `/public_api/v1/hash_exceptions/allowlist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/md2df8eqgx7fr-allow-list-files) |
 | `OP-HASH-EXCEPTIONS-BLOCKLIST` | POST | `/public_api/v1/hash_exceptions/blocklist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/bugt5tvao9rls-block-list-files) |
 | `OP-QUARANTINE-STATUS` | POST | `/public_api/v1/quarantine/status` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ay663dcgsvgv6-get-quarantine-status) |
+
+## SOC Framework
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-SOCFW-LIST-GET` | GET | `/xsoar/lists/download/{name}` (name ∈ `SOCFWTenantConfig`, `SOCFWConfigModes`) | ✅ read | `path-unverified` |
+| `OP-SOCFW-LIST-NAMES` | GET | `/xsoar/lists/names` | ✅ read | `povkit-observed` |
+| `OP-SOCFW-PACKS-INSTALLED` | GET | `/xsoar/contentpacks/metadata/installed` | ✅ read | `povkit-observed` |
 
 ## Scripts
 | Op ID | Method | Path | Access | Doc |

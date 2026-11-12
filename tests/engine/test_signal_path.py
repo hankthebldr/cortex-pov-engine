@@ -138,7 +138,9 @@ def test_corpus_signal_paths():
 
     ENDPOINT was 533 on dev; the beta-readiness merge (24bbe240) carries the
     beta's 25c3ba8b, which drops 7 Windows endpoint steps a lab run cannot
-    fire from SIM-EDR-013 (2), SIM-EDR-017 (1) and SIM-EDR-021 (4)."""
+    fire from SIM-EDR-013 (2), SIM-EDR-017 (1) and SIM-EDR-021 (4). Dev then
+    added SIM-KOI-012's 7 endpoint steps (533 -> 540 there); the merge of dev
+    abf0d808 into the beta carries both, measured 533 on the merged tree."""
     counts: dict[str, int] = {}
     unplaced = []
     for sid, step in _corpus_steps():
@@ -147,4 +149,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 526, "COLLECTOR": 89, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 533, "COLLECTOR": 89, "WIRE": 49, "CLOUD": 41, "NONE": 111}

@@ -5,6 +5,7 @@ import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
 import CausalityGraph from '../CausalityGraph.jsx'
 import RunTechniquesView from './RunTechniquesView.jsx'
 import RunTopologyView from './RunTopologyView.jsx'
+import RunCasePanel from './RunCasePanel.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf, idMatches } from '../../api/ids.js'
@@ -426,6 +427,8 @@ export default function RunDetailView({
           </ul>
         </section>
       )}
+
+      <RunCasePanel ledger={run?.case_ledger ?? null} />
 
       <div
         className="lab__segmented run-detail__subtabs"

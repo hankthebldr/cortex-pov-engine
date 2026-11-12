@@ -1083,3 +1083,38 @@
 }
 .theme-console .run-detail .run-topo__engine-row-meta { font-size: 10px; color: var(--tx3); }
 .theme-console .run-detail .run-topo__crossings { font-size: 11px; color: var(--tx2); }
+
+/* case panel — tenant disposition is context, so neutral tokens only: no
+   pass/fail/detected colour for merge_class or closed_by. */
+.theme-console .run-detail .run-case {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.theme-console .run-detail .run-case__h {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+.theme-console .run-detail .run-case__merge { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.theme-console .run-detail .run-case__chip {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  color: var(--tx);
+}
+.theme-console .run-detail .run-case__reason { font-size: 13px; color: var(--tx); }
+.theme-console .run-detail .run-case__meta { margin: 4px 0 8px; font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-case__warn { margin: 0 0 8px; font-size: 12px; color: var(--warn-str); }
+.theme-console .run-detail .run-case__empty { margin: 0 0 6px; font-size: 13px; color: var(--tx2); }
+.theme-console .run-detail .run-case__table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--tx); }
+.theme-console .run-detail .run-case__table th,
+.theme-console .run-detail .run-case__table td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--bd); }
+.theme-console .run-detail .run-case__table th { color: var(--tx2); font-weight: 600; }
+.theme-console .run-detail .run-case__shared { margin: 8px 0 0; font-size: 12px; color: var(--tx2); }
+.theme-console .run-detail .run-case__disclaimer { margin: 8px 0 0; font-size: 11px; color: var(--tx3); }

@@ -619,6 +619,8 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "OpenClaw ClawHub marketplace malicious skill — padded-README scanner evasion + base64 curl|bash prerequisite dropper + developer-credential theft on a Linux dev endpoint."),
     "SIM-KOI-010": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "npm preinstall-hook credential stealer reached via a phantom-squatted / AI-hallucinated package name, detonating and harvesting developer credentials for real on a Linux endpoint. TC-SCA-01 scores known-CVE dependencies, not a malicious package's lifecycle hook."),
+    "SIM-KOI-012": (["TC-SCA-01", "TC-EDR-03", "TC-EDR-05"], NETNEW,
+        "Axios maintainer-account compromise: transitive plain-crypto-js postinstall dropper to a Python RAT on a Linux developer endpoint, with the RAT's peinject verb executing the WildFire test ELF for real. TC-SCA-01 scores known-CVE dependencies, not a malicious lifecycle hook; the malware verdict (TC-EDR-03) and the process chain (TC-EDR-05) are already evidenced. Depth, not new index breadth."),
 
     # ── DLP ────────────────────────────────────────────────────────────────
     # First DLP-plane scenarios. Refs below match each scenario's own authored
