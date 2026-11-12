@@ -1,6 +1,6 @@
 # CortexSim alongside the SOC Framework — design
 
-**Status:** draft for approval · 2026-11-11 · branch `docs/docs-socfw-coexistence` (from dev `ef3576b`)
+**Status:** approved by Henry 2026-11-11 · branch `docs/docs-socfw-coexistence` (from dev `ef3576b`)
 **Related:**
 - `docs/superpowers/specs/2026-11-10-pov-content-pack-design.md`. The prerequisite registry
   (`spec/dataset_requirements.yml`) is already on dev.
