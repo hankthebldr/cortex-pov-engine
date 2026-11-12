@@ -30,12 +30,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.agents import _own_server
 from database import get_db
 from engine import k8s_manifest as km
 from engine.push_generator import (
@@ -752,7 +753,9 @@ class BundleRequest(BaseModel):
     reason: Optional[str] = None
     #: embedded (default, self-contained) | served (cluster→SimCore required)
     delivery: Optional[str] = None
-    #: Cluster-reachable SimCore base URL, used only by served delivery.
+    #: Cluster-reachable SimCore base URL, used only by served delivery. It must
+    #: be this SimCore: the origin the request arrived on or one of
+    #: CORTEXSIM_PUBLIC_URLS (400 BAD_SERVER / SERVER_NOT_THIS_SIMCORE otherwise).
     server: Optional[str] = None
 
 
@@ -904,6 +907,7 @@ async def download_bundle(
 @router.post("/{scenario_id}/bundle")
 async def generate_bundle(
     scenario_id: str,
+    request: Request,
     body: BundleRequest = Body(default_factory=BundleRequest),
     db: AsyncSession = Depends(get_db),
 ):
@@ -927,7 +931,9 @@ async def generate_bundle(
     **403 CLUSTER_PRIVILEGE_DISABLED** (the deployment owner must set
     ``CORTEXSIM_ALLOW_PRIVILEGED_K8S``), **422 CLUSTER_CAPABILITY_FORBIDDEN** /
     **CLUSTER_NAMESPACE_FORBIDDEN** (nothing unlocks these),
-    **409 PUSH_NOT_SUPPORTED** (the scenario declares ``push_supported: false``).
+    **409 PUSH_NOT_SUPPORTED** (the scenario declares ``push_supported: false``),
+    **400 BAD_SERVER** / **SERVER_NOT_THIS_SIMCORE** (``server`` is not a
+    well-formed URL of this SimCore — see ``CORTEXSIM_PUBLIC_URLS``).
 
     ``bash`` and ``powershell`` are accepted for surface symmetry and are
     ungated — they are self-contained scripts a DC runs on a host they already
@@ -993,11 +999,15 @@ async def generate_bundle(
                 },
             )
 
+        # The URL lands in the header, a preflight command line, an annotation
+        # and the init container's env, and the pod fetches its payload from
+        # it: it must be this SimCore, by the installer's one rule.
+        simcore_url = _own_server(request, body.server) if body.server else ""
         try:
             content = generate_k8s(
                 scenario_dict,
                 delivery=body.delivery,
-                simcore_url=body.server or "",
+                simcore_url=simcore_url,
                 consent=consent,
                 allow_privileged_k8s=allow_priv,
             )
