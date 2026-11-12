@@ -757,6 +757,18 @@ def _ledger_terminal(ledger: dict) -> bool:
                for a in alerts)
 
 
+def _ledger_names_no_case(ledger: dict) -> bool:
+    """The ledger names no case at all: ``cases`` is an empty list and no alert
+    carries a ``case_id`` -- the test :func:`refresh_case_ledger` applies before
+    answering ``CASE_LEDGER_NAMES_NO_CASE`` with no read. Only a readable shape
+    qualifies; anything else stays eligible so the refresh reports it."""
+    cases = ledger.get("cases")
+    alerts = ledger.get("alerts")
+    if not isinstance(alerts, list) or not isinstance(cases, list) or cases:
+        return False
+    return all(isinstance(a, dict) and not a.get("case_id") for a in alerts)
+
+
 def _read_at_of(ledger: dict) -> Optional[datetime]:
     try:
         return coerce_utc(ledger.get("read_at"))
@@ -780,8 +792,12 @@ async def refresh_case_ledgers_once(
     Candidates are runs with a stored ``case_ledger`` whose ``Run.started_at``
     (the run's own timestamp, naive UTC) is within ``window_hours``. A run is
     skipped (no tenant call) when its ledger's ``read_at`` is younger than
-    ``min_interval_minutes`` or when every case in it is sealed (terminal).
-    Eligible runs are ordered least-recently-read first, so a window larger than
+    ``min_interval_minutes``, when every case in it is sealed (terminal), or
+    when it names no case at all (``NO_CASE_YET`` and the like): the refresh
+    would answer ``CASE_LEDGER_NAMES_NO_CASE`` without a read, so its
+    ``read_at`` never advances and it would sort first on every sweep, taking
+    a slot from a ledger that can be read; only a reconcile advances it. A
+    malformed ledger stays eligible so the refresh reports it. Eligible runs are ordered least-recently-read first, so a window larger than
     ``max_runs`` rotates instead of starving older runs. At most ``max_runs``
     are attempted per sweep; every tenant page is counted in ``queries_issued``;
     a quota error (HTTP 429) stops the whole sweep. Returns
@@ -800,7 +816,8 @@ async def refresh_case_ledgers_once(
     for run_id, ledger in rows:
         if not ledger or not isinstance(ledger, dict):
             continue
-        if _ledger_terminal(ledger) or not _read_age_ok(ledger, now, min_interval):
+        if (_ledger_terminal(ledger) or _ledger_names_no_case(ledger)
+                or not _read_age_ok(ledger, now, min_interval)):
             continue
         eligible.append((_read_at_of(ledger) or datetime.min,
                          run_id))

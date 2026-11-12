@@ -427,3 +427,21 @@ def test_all_sealed_ledger_with_a_missing_referenced_case_is_still_refreshed(ses
     fetcher, calls = tenant({"900": "resolved_other"})
     out = sweep(session_factory, fetcher)
     assert calls["cases"] == 1 and out["refreshed"] == 1
+
+
+def test_ledgers_naming_no_case_do_not_starve_the_sweep(session_factory):
+    # A NO_CASE_YET ledger never advances its read_at (refresh has no case to
+    # re-read and answers CASE_LEDGER_NAMES_NO_CASE), so if it stayed eligible
+    # it would sort first on every sweep and take a slot from a real ledger.
+    now = datetime.utcnow()
+    nocase = build_case_ledger([LedgerAlert("x", now, "high", None, None, None, None),
+                                LedgerAlert("y", now, "high", None, None, None, None)], {},
+                               basis="alert_incident_ids", read_at=now - timedelta(hours=5))
+    assert nocase["merge_class"] == "NO_CASE_YET"
+    real = stored_ledger(read_age=timedelta(hours=2))
+    seed(session_factory, [("n1", now, nocase), ("n2", now, dict(nocase)), ("r1", now, real)])
+    fetcher, calls = tenant({"900": "resolved_other"})
+    out = sweep(session_factory, fetcher, max_runs=2)
+    assert calls["cases"] == 1
+    assert out["refreshed"] == 1
+    assert ledger_of(session_factory, "r1")["read_at"] != real["read_at"]
