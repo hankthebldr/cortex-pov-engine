@@ -155,7 +155,7 @@ installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
 CortexSim ships as tagged GitHub Releases — **v1.1.1** is the latest, cut
-2026-11-11 — and the release pipeline pushes a multi-arch image
+2026-11-12 — and the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
 image is **not publicly pullable today** (an anonymous pull-token request is
 denied), so don't `docker pull` it — see
@@ -971,7 +971,7 @@ make test-agent-cross   # beacon cross-compile gate
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
   — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0** and **v1.1.1** are published;
-  **v1.1.1** (a security hotfix) is the latest, cut 2026-11-11 (tagged by `tag-on-main.yml` from the first
+  **v1.1.1** (a security hotfix) is the latest, cut 2026-11-12 (tagged by `tag-on-main.yml` from the first
   `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges). Each release attaches `install.sh`,
   `stage2-linux.tar.gz`, `stage2-windows.zip`, `SHA256SUMS` and
   `manifest.json`. Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.

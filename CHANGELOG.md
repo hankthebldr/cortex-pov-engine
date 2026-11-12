@@ -8,7 +8,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-## [1.1.1] - 2026-11-11
+## [1.1.1] - 2026-11-12
 
 **Security hotfix for v1.1.0: unauthenticated routes let the caller choose a
 program SimCore runs, text that becomes code on the target or in a Terraform
