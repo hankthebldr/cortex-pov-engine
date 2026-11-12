@@ -8,6 +8,14 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+This section carries two lines of work, merged with `git merge` (no rebase):
+the **beta-readiness pass** summarised next, and the **features merged to
+`dev` after 1.1.0** (PRs #169–#192), among them ingestion doors, collector
+targets, the read-only NGFW connection, the MCP server, the Kubernetes
+container agent, ingestion routes and the dataset requirement registry. The
+sections below are grouped by kind of change, not by line of work, and the
+upgrade notes cover both.
+
 **Beta-readiness pass, weighted to Windows.** The pass hardens SimCore for a
 beta where Domain Consultants deploy it into customer labs and enroll beacons on
 real endpoints. It closes one verified unauthenticated root
@@ -21,10 +29,11 @@ handler, dispatch keyed to the target's OS, Job Object tree-kill and an ASCII
 installer with an uninstaller. It also adds a `windows-2022` CI job. A second
 round hardens the run record, the installers, the push bundles, the console
 and the deployment files, and fixes the two 5.1 defects that job found. Counted on
-this tree: 193 scenarios · 191 TTP cards · 27 EAL plugins · **1369**
-step-detections (was 1377: the Windows content now declares only detections a
-lab run can fire; round 2 changed none) · 137 route decorators · 28 assertion
-artifacts.
+the beta branch before `dev` was merged in (`c121c8f`): 193 scenarios · 191
+TTP cards · 27 EAL plugins · **1369** step-detections (was 1377: the Windows
+content now declares only detections a lab run can fire; round 2 changed none)
+· 137 route decorators · 28 assertion artifacts. The merged tree's counts are
+in `docs/reference/ground-truth.md`, regenerated after the merge.
 
 > **What has run on Windows: one CI job, on a hosted runner.** The `windows`
 > job ran green at `d7f4f29` (run 42933820773, 2026-11-10) and on the round-2
@@ -89,8 +98,9 @@ artifacts.
   5 × 20 MB. SimCore runs exactly one worker (`--workers 1`); before, a
   `WEB_CONCURRENCY` in the environment could start several SimCores sharing
   one database. *Authored; no container ran.*
-- **Settings under compose.** `.env.example` now documents all 29 settings,
-  split at a marked heading. The container never reads `.env`: compose passes
+- **Settings under compose.** `.env.example` now documents all 29 settings the
+  beta pass covered, split at a marked heading; the merge with `dev` appends
+  six more after them (two NGFW, four MCP). The container never reads `.env`: compose passes
   only `CORTEXSIM_ENV`, `_SECRET`, `_BIND`, `_ALLOWED_HOSTS`, `_CORS_ORIGINS`
   and `_TRUSTED_PROXIES`, so any other setting keeps its default in a compose
   deployment.
@@ -104,6 +114,13 @@ artifacts.
   installed in a cluster.*
 - **`install.sh`** prints the by-name URL only when `CORTEXSIM_ALLOWED_HOSTS`
   admits it; otherwise it leads with localhost and names the refused host.
+- **XSIAM credentials need `"capabilities": ["xql"]` to keep running XQL**
+  (from `dev`). A credential without the field stops running XQL after
+  upgrade: the XQL routes refuse it, and `/verify`, the auto-verify sweep and
+  assertion runs resolve `pending` with `reason: xql_not_authorised`. Add
+  `"xql"` to each tenant credential's `config.capabilities`. The two
+  "behaviour change you may veto" items under *Changed* below say exactly
+  which routes.
 
 ### Security
 
@@ -233,6 +250,13 @@ artifacts.
   against `dev`. In round 2 every third-party action was pinned to a full commit
   SHA with a `# vN` comment (60 `uses:` lines, 13 actions; no version changed).
   No runner has fetched a pinned action yet.
+- **Writes through MCP preview by construction** (from `dev`): a write or
+  destructive operation with `dry_run: false` returns
+  `MCP_WRITE_NOT_EXECUTABLE` with the preview attached and the tenant is never
+  called. There is no write path to Cortex through this surface;
+  `CORTEXSIM_XSIAM_ALLOW_WRITE` and `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay
+  default-off. The `/mcp` mount is off by default and, like the rest of
+  SimCore, has no authentication of its own.
 
 ### Fixed — Windows push bundles (`format=powershell`)
 
@@ -701,6 +725,408 @@ artifacts.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
+
+- **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
+  `/api/scenarios/{id}/doors`): for each scenario, which of its detections can
+  fire given which data doors are open. Read-only, zero outbound calls.
+- **Library chip** on every scenario card: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
+  or `NOT CHECKED`, plus an opt-in **Runnable here** filter that is off by
+  default, so nothing is hidden.
+- **Data path** as a sixth launch preflight check. Advisory only: it warns, it
+  never blocks, and a missing or unreadable answer reads `unknown`, not `pass`.
+- Nothing is excluded from scoring yet, and no door can read `open` or `closed`
+  until phase 2 writes door events, so a fresh SimCore reads `NOT CHECKED` on
+  every chip. `tenant-verified` is still 0.
+- Until door checks land in phase 2, the Data path check reads "doors not checked yet":
+  a door nobody has checked is unknown, not closed. Only a door with a recorded
+  `closed` state produces a "will not be scored" warning; collector-route detections
+  read as on a route this console has not resolved.
+- The XDR agent doors read `configured` only when the beacon is online and an XQL
+  tenant credential exists: an online CortexSim beacon is not the Cortex XDR agent.
+
+### Added — two Linux persistence chains built to group into one case
+
+- **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
+  is a cron foothold that re-runs the WildFire test ELF. SIM-EDR-024 plants a
+  sudo backdoor account and an SSH key, then a systemd timer. Both footholds
+  re-run every 5 minutes, survive a reboot and remove themselves after 45
+  minutes. Both target the standalone Linux XDR agent.
+- **Grounded in the lab tenant's read-back.** The low built-in alerts the lab
+  raised never formed a case: Low issues neither create nor join one. Each
+  chain's Medium+ alerts are the agent's Local Analysis verdict plus BIOCs and
+  a correlation rule the operator installs at Medium from
+  `docs/lab/2026-11-11-persistence-grouping-lab-run.md`. Steps are 40 s apart
+  because back-to-back steps lost telemetry in the lab. Every BIOC, XQL and
+  correlation body parsed in the tenant (read-only); the ones that could match
+  past lab activity matched it.
+- **The corpus's first Prevention expectation** (`prevention-local-analysis-malware`).
+  The scenario lint hook now accepts the Prevention type, as the loader
+  already did.
+- **Counts:** 195 scenarios, 193 cards, 1392 step-detections, Correlation
+  share 10.1% (141). `tenant-verified` is still 0; nothing here has run
+  against the tenant.
+
+### Added — collector targets: the tenant's ingestion doors, entered once per POV
+
+- **A DC enters the tenant-side collectors once and every in-process consumer
+  uses them.** Before this, a collector destination reached an emitter by four
+  unconnected paths: typed into each campaign step (with the key stored in
+  plaintext in the campaign spec), read from an unset `$COLLECTOR_URL` on the
+  beacon, baked into an offline bundle, or authored on a Composer step. Targets
+  now live at `/api/collector-targets` and on the **Tenant** page, persist across
+  a SimCore restart, and keep each key in the encrypted vault, never in a
+  response. Campaign create, the collector view, campaign preflight, launch, the
+  offline bundle and the Composer EAL dispatch all resolve through one function,
+  `eal_simulator/targets.py`.
+- **Preflight per target, with the write opt-in.** Configured → reachable (TCP
+  and TLS, no HTTP request) → accepted (one discard-safe record, only with
+  `write_canary: true`). Verdicts: not configured, unreachable, reachable,
+  refused, accepted. `accepted` is a 2xx, not proof of ingestion;
+  `tenant_verified` stays 0.
+- **A live launch refuses a missing or failing door.** 422
+  `COLLECTOR_TARGET_NOT_CONFIGURED` / `COLLECTOR_TARGET_UNKNOWN`, 409
+  `COLLECTOR_TARGET_FAILING`; an unproven or inline destination runs and says so
+  in `degraded[]` and on the run (`collector_resolution`). Schema:
+  `eal_campaign_runs.collector_resolution` (added by a `database.py` migration
+  helper) and a new `collector_targets` table.
+- **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
+  Broker VM targets, which wait on confirmation of the applets in use.
+
+### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
+
+- **The tab drew its board before the scenario request came back.** The
+  results and the run record usually land first, and the scenario id is read
+  from the run record, so for a moment the page said "scenario … not loaded",
+  placed no step and listed every step as unplaced, about a request still in
+  flight. Since lanes became signal paths (read from each step's command),
+  that moment has no cells at all, and `ci.yml`'s `ui (build + vitest)` job
+  went red on `dev` whenever the FAILED-run test read the board inside it
+  (about 1 run in 8). The board now waits until the scenario request
+  succeeds or fails; a failed request still places no step and says why.
+  Guard: the "holds the board while the scenario request is in flight" case
+  in `RunTopologyView.test.jsx`, which failed on every run before the change.
+
+### Fixed — alert read-back reads the Issues API field names
+
+- **An Analytics BIOC issue could never satisfy an ABIOC expectation.** The
+  matcher maps an alert's source onto an engine family by substring, and the
+  Issues API's `detection.method` code `ANALYTICS_BIOC` has an underscore
+  where the "analytics bioc" rule expects a space, so it read as `analytics`
+  and the known-but-different families refused the pair. `TRAPS` and
+  `MAGNIFIER` named no family at all, so an agent prevention issue could
+  credit a BIOC expectation on technique alone. The six codes a family exists
+  for now map exactly. TRAPS = XDR Agent and MAGNIFIER = XDR Analytics are
+  inferred from the order of the docs' two value lists, and the code says so.
+- **The connector reads `detection.rule_id`, `detection.method`, `case_ids`
+  and `_insert_time`,** the names the public Issues API documents. Each is
+  read after the existing keys of its role. `case_ids` gives an incident id
+  only when it lists exactly one case. `_insert_time` dates a record only when
+  no other timestamp is present; the order MTTD uses is unchanged.
+- **Preflight `alert_shape` no longer reports `PF_ALERT_SHAPE_PARTIAL` for an
+  issue that carries `detection.rule_id`.** It reads values through the
+  connector's own `alert_key`, and a new test fails if preflight credits a
+  key the connector does not read. Guard:
+  `tests/connectors/test_issues_api_fields.py` (15 failures before the change).
+  Nothing here ran against a tenant: tenant-verified is still 0.
+
+### Fixed — EAL collector emitters send the XSIAM API key bare
+
+- **The 14 collector emitters defaulted `auth_scheme` to `"Bearer"`,** so a
+  campaign that supplied only a token sent `Authorization: Bearer <key>`. The
+  XSIAM HTTP log collector expects `Authorization: <api_key>` with no scheme
+  (XSIAM 3.x, "Set up an HTTP log collector to receive logs") and refuses the
+  prefixed form with a 401, which delivery accounting reported as
+  `not_delivered`. The default is now empty; `Bearer` or `Splunk` remain
+  settable for a forwarder that wants one. Campaigns that already set
+  `auth_scheme: ""` are unchanged. Guard:
+  `tests/eal_simulator/test_collector_auth_default.py`, which discovers every
+  emitter from the plugin registry and failed on all 14 before the change.
+- Remediation and help text no longer send a DC to a "Broker VM HTTP applet".
+  The Broker VM applet list has no HTTP receiver; the HTTP log collector is a
+  tenant endpoint at `/logs/v1/event`, and a 500 from it means the body does
+  not match the collector's Log Format.
+- Not changed: `email_emitter` has no auth parameters at all, so it cannot
+  authenticate to an XSIAM collector. Tracked separately.
+
+### Changed — detector readiness judges the delivery route and soakless mode
+
+- **A detector no longer reads armed on a route analytics never reads.**
+  `POST /api/eal/campaigns/{id}/detector-readiness` derives each step's route
+  from its `collector_url` and judges it before training time. The vendor says
+  Analytics runs only on normalised logs, a custom HTTP collector dataset is
+  normalised only once an XDM rule maps it, and the Cribl generic UUID gets no
+  out-of-the-box analytics. Every streamer here delivers through a custom HTTP
+  collector, so a campaign that used to read `armed` now reads `unknown`
+  (`DETECTOR_ROUTE_REQUIRES_XDM`) until the DC attests the rule in
+  `xdm_modeled_sources`. A generic-UUID route reads `not_armable`.
+- **Soakless mode reaches the readiness gate.** `soakless_attested: true` (with
+  `attested_by`) arms a detector whose route feeds analytics, with
+  `armed_basis: "attested:soakless"`. Run outcomes already honoured the flag;
+  the gate did not, so a soakless tenant was told its detectors were not armed.
+  Soakless never overrides a route that cannot feed analytics.
+
+### Added — ingestion routes in the Data Streams catalogue (LogSimv2 port, phase 1)
+
+- `core/eal_simulator/ingestion_routes.py`: for every catalogue source, each
+  documented route into the tenant, with pipe, tenant dataset, Cribl source UUID,
+  vendor/product and whether out-of-the-box analytics run on it. Dataset and
+  analytics claims carry separate evidence. Facts come from
+  [LogSimv2](https://github.com/phreezone/LogSimv2), re-checked against the
+  vendor's Cribl UUID and NGFW ingest pages and content packs. No LogSimv2 code
+  is copied, since it ships no licence. A fact only LogSimv2 states is marked
+  `reported`.
+- `GET /api/eal/data-streams` rows gain `routes[]` and `dataset_check[]`, plus
+  top-level `generic_routes[]` and `ingestion_only[]` (Proofpoint TAP, Infoblox,
+  Apache, ESXi: real data, no published analytics, outside the coverage figure).
+  Counted: 21 of 31 addressable sources have a documented route, and 12
+  emitter-to-source pairs name a dataset the tenant never creates
+  (`counts.emitter_dataset_mismatch`). Measured, not renamed.
+- Design for the remaining four phases (transports, wire-format generators,
+  threat catalog, kill chains and correlation exports):
+  `docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
+
+### Changed — Composer and Runs: a step's lane is its signal path, not its plane
+
+- **The door badge, the Lanes lens and the Runs topology place a step by what
+  it does.** They used to derive the door from the step's plane (NDR read
+  "Broker VM relay", CDR read "Cloud"), which names the product that observes
+  the signal, not how the step produces it. Measured on the corpus, that put
+  427 of 796 steps behind a door they are not launched through. The lane is now
+  the step's **signal path**, read from its command and channel: ENDPOINT
+  RUNTIME (the beacon runs it, 506 steps), LOG INJECTION (an EAL collector
+  plugin posts records to a Broker VM or HTTP collector, 89), LIVE TRAFFIC (an
+  EAL traffic generator, 49), CLOUD CONTROL PLANE (the command calls `aws`,
+  `gcloud`, `gsutil`, `az`, `bq` or `kubectl`, 41) and NO ACTION (it only
+  echoes, prints, sleeps or comments, 111). The Engine band holds tenant
+  content, never a step.
+- **The badge says where the step runs and its path:** `AGT`, `AGT → WIRE`,
+  `SIM → COLLECTOR`, `AGT · no action`. A step whose path cannot be read reads
+  `AGT → EAL ?` in the error tone with the reason in its title, and is never
+  drawn behind a door it does not use.
+- **Lanes are read-only.** A card dropped in another lane snaps back with the
+  reason; change the command, or the channel in the Inspector. Lane overrides
+  are gone (the drafts API never stored them).
+- **Runs topology without its scenario places no step.** A path is read from the
+  command and no Result row carries one, so each step is listed as unplaced
+  with that reason; the results are still counted.
+- **Loader lint S-28** (structural, not gated by `CORTEXSIM_STRICT_REFS`): a
+  command that runs the EAL simulator must name registered plugins, all of one
+  class. No corpus scenario trips it. `GET /api/eal/plugins` gains `delivery:
+  collector | wire`, and `core/engine/signal_path.py` is now the one definition
+  of the EAL plugin classes, pinned to the live registry.
+
+### Added
+
+- **Dataset requirement registry and scenario prerequisites.**
+  `spec/dataset_requirements.yml` records, for each of the 32 datasets the 191
+  detection cards read, what must exist on the Cortex side, what the source
+  product must emit, and which EAL plugin can stand in for it. A card reads a
+  dataset through `xql_queries[].dataset` or through a `dataset =` / `preset =`
+  anchor in its BIOC, ABIOC or correlation logic; one walker reads both, and
+  every dataset row says which kinds did (`read_by`). Three read-only routes
+  serve it: `GET /api/prerequisites/datasets`,
+  `GET /api/scenarios/{id}/prerequisites` (derived through the cards a scenario
+  cites, with note codes instead of silent gaps, including `DETECTION_UNBOUND`
+  for an expected detection with no `ttp_ref`) and
+  `GET /api/scenarios/{id}/query-library` (the cards' queries as text for XQL
+  Search, every other line a `//` comment whose syntax is not yet confirmed in
+  a tenant; `?purpose=` selects hunt, investigation, validation or metric). An
+  absent registry is reported as degraded in `/api/health`, never as "no
+  requirements"; a malformed one answers a structured 500;
+  `CORTEXSIM_STRICT_DATASETS=true` (default off) refuses boot on either, or on
+  a card dataset with no entry. Every row is `from documentation`: **no row is
+  confirmed in a tenant, `tenant-verified` is still 0**, and every Cortex-side
+  object name is `null` until read in a tenant. These routes return the error
+  object at the top level, unlike the older scenario routes. See
+  `docs/reference/dataset-requirements.md`.
+
+### Added — Kubernetes container agent (phase 1; authored, not tenant-verified)
+
+- **The Linux beacon can run inside a pod and enroll with SimCore**, so cluster
+  scenarios are dispatched from the console with the normal pull lifecycle (abort,
+  run record, MTTD). Output: chained execution delivers a step's output when the
+  step ends, not live mid-step (observed in the kind run; pre-existing, not
+  container-specific). `GET /api/agents/manifest` serves the manifest
+  (`profile` `baseline` | `cluster-privilege` | `lab-privileged`, `image`,
+  `prepare`, `arch`, `ttl_seconds` 60..43200, consent keys, `authorized_by`); the
+  pod reads a `cortexsim-enroll` Secret holding `server` and `token`, and an
+  optional `artifact-token` that `start.sh` exports as `CORTEXSIM_ARTIFACT_TOKEN`
+  for the payload shelf (environment only, never argv). Gated
+  profiles are served on the GET with consent in the query string; the push path's
+  `GATED_FORMAT_REQUIRES_POST` on `download?format=k8s` is unchanged. A Kubernetes
+  tab in the deploy-agent dialog builds both commands. Operator reference:
+  `docs/reference/k8s-container-agent.md`.
+- **Launch gate for container agents.** `409 AGENT_POSTURE_INSUFFICIENT` and `409
+  AGENT_TOOL_ABSENT` (`allow_missing_tools` overrides tools only) before dispatch,
+  and warnings `AGENT_NO_RBAC_FOR_KUBECTL` / `AGENT_TOOL_ROSTER_UNKNOWN`, so a step
+  the pod could never run is not scored as a detection Cortex missed. **It applies
+  only to an agent the manifest deployed** (a non-empty `posture_profile`): a
+  beacon in Docker, Podman or a foreign pod reports `container: true` with no
+  profile, and for it (`""`, whitespace, `null`, no key) the gate is a strict
+  no-op, byte-identical to a host agent. Every agent target of a composed run is
+  gated on its own facts; refusals and warnings carry `agent_id`. The console's
+  Launch view lists launch warnings, offers "Launch anyway" (re-sends with
+  `allow_missing_tools: true`) on `AGENT_TOOL_ABSENT`, and shows a posture
+  refusal's missing findings, rules and satisfying profile.
+- **Honest degradations.** `ANCHOR NOT HONOURED` when the image's `sh` is
+  busybox/toybox and there is no `bash` to carry a renamed `cgo_anchor`; `IDENTITY NOT HONOURED` (existing text) now also
+  covers an absent account.
+- New beacon flags: `--enroll-token-file`, `--state-dir`, `--posture-profile`,
+  `--prepare-status-file`, `--expires-at`, `--subreaper`. `--expires-at` is
+  checked before enrollment: a beacon started after it logs `LIFETIME_EXPIRED` and
+  exits 0 without redeeming the token or registering.
+- **Removal.** Deleting the namespace alone leaves the agent and reaper
+  ClusterRole/Binding behind. Remove with `kubectl delete clusterrole,clusterrolebinding
+  -l cortexsim.io/agent=true` and then `kubectl delete namespace cortexsim-agent`.
+  Apply the manifest before creating the Secret. The manifest header states this
+  order, plus the image and prepare mode.
+- **Proof so far.** A first kind run (2026-11-10) found three product defects
+  (re-apply rejected, pod with no interpreter could not enroll, `alpine` could not
+  create `www-data`) and review found a profile-downgrade hole; all fixed. A final
+  run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
+  re-apply, downgrade, digest mismatch, the anchor rename (then via bash) and
+  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below,
+  so the debian rename via `sh` needs re-confirmation in a pod. `lab-privileged`
+  has never been run; no amd64 node, no CI run on GitHub, console tab not
+  browser-checked, no Cortex detection observed. `tenant-verified` is still 0.
+- **Delivery.** PR #171 merged Tasks 1-11 at ef71c30; the fixes for re-apply,
+  interpreter-less enrollment, alpine accounts and downgrade neutralisation are in
+  the follow-up.
+
+### Changed — behaviour that reaches beyond containers
+
+- **Absent-account degradation now applies on every POSIX beacon** (VM and macOS
+  too), not only inside a failing `runuser`. A step whose declared service account
+  does not exist runs as the beacon's own account with a visible `IDENTITY NOT
+  HONOURED` note and a count in the run summary, instead of failing inside the
+  wrapper. An account is absent only when `user.Lookup` fails **and** `id -u --
+  <name>` exits 1; an inconclusive probe, or a name outside the portable account
+  shape (uppercase, `user@domain`, `DOMAIN\user`), is read as present so a
+  directory-joined host behaves as before.
+- **The chained anchor shell on host beacons is UNCHANGED: `sh`** with argv[0]
+  renamed, as before. Only when `sh` resolves to busybox/toybox does the anchor
+  become `bash` renamed (if bash is on `PATH`), else `sh` un-renamed with `ANCHOR
+  NOT HONOURED`. A hard-linked busybox `sh` is detected by comparing it with `busybox`/`toybox` on `PATH`. An intermediate build of this branch had switched every beacon
+  with bash on `PATH` to a bash anchor; that is reverted.
+- **Every beacon sends `runtime_facts` on register and enroll**, including legacy
+  VM beacons (`container: false`). Stored on a new nullable `agents.runtime_facts`
+  JSON column, returned in the agent row.
+- **The server accepts `null` for `capabilities` and `interpreters`** on register
+  and enroll and reads it as `[]`; the beacon no longer sends null. A shipped
+  beacon on a host with no detectable interpreter would otherwise 422.
+- **Migration.** `agents.runtime_facts` is added automatically at boot. By hand:
+  `ALTER TABLE agents ADD COLUMN runtime_facts JSON`.
+
+### Added — Composer: the correlation rules a chain needs are part of its story
+
+- **A step's chips read as its proof contract, not as tags on the TTP.**
+  `SIM-AIACC-003` step-02 showed `XQL XQL XQL`. It now reads
+  `expects  run · 3 queries`. Chips are grouped by who owns the work: `run` (XQL
+  the DC runs to confirm telemetry landed), `deploy` (BIOC, IOC and correlation
+  rules that must exist in the tenant) and `built-in` (ABIOC, Analytics,
+  Prevention, which ship with Cortex). A type outside the seven renders as an
+  error chip instead of taking a default class.
+- **Correlation rules are on the canvas.** Each rule on a card the chain cites is
+  a node on a *Cortex Engine · tenant content* rail below the chain, joined to
+  the steps whose detections it composes. Its status is printed as words on two
+  axes: what the card holds (`INTENT ONLY · nothing to import`) and what the
+  scenario asks for (`scored by this run` or `not declared by this scenario ·
+  not scored`). Selecting a rule opens a read-only Inspector view that shows the
+  card's logic line as an authoring note, not XQL, and where each input
+  resolved. Rule nodes are derived and never persisted, and the Run lens draws
+  none.
+- **Read-only export.** `GET /api/scenarios/{id}/tenant-content` and
+  `POST /api/scenarios/drafts/tenant-content` (an unsaved draft; persists
+  nothing) return the rules, the BIOCs and IOCs to deploy, the queries to run and
+  the built-in detectors a scenario leans on. The Composer's *Tenant content*
+  control shows the rule count and the worst status, toggles the rail and
+  downloads the manifest. Neither route contacts a tenant: `write_path` is
+  `false` and `tenant_verified` is `0` in every response.
+- **What this does not do.** ***No correlation rule in the library is
+  deployable.*** All of them are a name, an id and a logic line such as
+  `XQL(a) OR XQL(b)`; the card schema has no place for a rule body, and a test
+  pins the deployable count at zero. A rule a scenario declares is a scored
+  expectation that nothing CortexSim ships can raise. This release makes that
+  visible. It does not author rule content, check whether a rule exists in a
+  tenant, or change door badges; those are phases 2 to 4 of
+  `docs/superpowers/specs/2026-11-10-composer-correlation-story-design.md`.
+
+### Added — read-only NGFW (PAN-OS) connection
+
+- **Read-only NGFW (PAN-OS) connection and a Firewall wizard under Manage.** A
+  firewall is registered as integration kind `panos_ngfw`, by pasting an API key
+  (`PUT /api/credentials/integrations`) or with `POST /api/ngfw/keygen`, which
+  exchanges an admin login for a key. `POST /api/connectors/panos_ngfw/preflight`
+  then answers, before the POV, whether this firewall will write and forward the
+  records the NGFW-dataset detections need: 11 firewall-wide stages (management
+  reachability and TLS, API key, system, clock skew, Logging Service and/or syslog
+  forwarding, Enhanced Application Logging, log-forwarding profiles, decryption,
+  registered tags) and 7 stages per enrolled agent (observed source, current
+  sessions, security-policy match per probe destination, the matched rule's profiles
+  and log settings, NAT, User-ID, registered tags). NAT between an agent and the
+  firewall, and two agents behind one observed address, are **blocked**, because
+  the 5-tuple stitch cannot form; an unknown agent-side address is degraded, and no
+  agents is degraded `PN_NO_AGENTS`, never an empty list. Every stage reports, a
+  shape the parser does not know blocks its own stage (`PN_SHAPE_UNRECOGNISED`)
+  rather than reading as empty, and `queries_issued` counts the calls actually sent.
+  `PUT /api/ngfw/{name}/sources/{agent_id}` sets the per-agent addresses, and
+  `GET /api/ngfw` lists firewalls. The console destination is **Firewall**
+  (`#/firewall`): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
+  fixtures only. A green firewall preflight proves firewall configuration, not
+  ingestion or stitching: **`tenant-verified` is still 0**. Every `PN_` code is in
+  `docs/reference/api-and-agent-surface.md` §1.17. New settings:
+  `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` (default 120) and
+  `CORTEXSIM_PANOS_ALLOW_WRITE` (default false, consumed by nothing). New dependency:
+  `tzdata==2026.6`, because `python:3.11-slim` ships no zone database and a
+  firewall's configured zone (e.g. `US/Eastern`) would otherwise resolve unknown,
+  leaving the clock and log-age stages at `PN_CLOCK_TZ_UNKNOWN` on every deployed
+  SimCore. Security: the
+  client cannot write to a firewall. It sends only allowlisted `show`/`test`
+  commands, re-serialised in its own canonical form, and `config action=show` reads
+  whose xpath fully matches an anchored allowlist; a refused request raises before
+  anything is sent. The API key travels in the `X-PAN-KEY` header and is scrubbed
+  from every report string. The keygen body is parsed in the handler because
+  FastAPI's default 422 echoed the password even with `hide_input_in_errors`; the
+  password is never logged, stored or returned. Known exposure: keygen and preflight
+  are unauthenticated, like the rest of `/api/credentials`, so anyone who reaches
+  SimCore can use keygen to probe which internal hosts and ports answer (four
+  distinct 502 codes). No stored secret leaks through it.
+
+### Fixed
+
+- **The correlation export no longer invents a severity.**
+  `detection_scanner/exports/correlation/*.json` stamped `severity: "high"` and
+  `description: null` on every rule. No card authored either. The files now
+  carry what the card holds plus `content_status`, `deploy: null` and
+  `importable_rules: 0`, and say that nothing in them can be imported as-is.
+  The exporter raises on a rule shape it does not know instead of guessing. 190
+  files regenerated.
+
+- **Catalog › TTP cards can be navigated by use case, test case and FY27
+  subdomain.** The page listed 191 cards in authoring-id order with status,
+  raw `TA00xx` tactic id and platform as the only handles, so a DC planning a
+  POV in index terms had no way in. It now has **Group by** (subdomain / use
+  case / test case — a collapsible outline with counts, each use-case and
+  test-case row opening the UC / TC index) and **Sort by** (card id, name,
+  subdomain, use case, test case, detections); every card face names the use
+  case, subdomain and test case it is bound to; search matches `TC-…` / `UC-…`
+  ids, use-case names, subdomains and scenario ids; the card detail lists every
+  binding. `#/ttps?group=&sort=&include=` deep-links the choice and survives a
+  trip into the index and back. A card has no UC/TC ref of its own, so the
+  binding is joined through the scenarios that cite it
+  (`ui/src/components/console/catalogBindings.js`) and is labelled what it is:
+  **authored, not proof a detection fired**. By default a card sits under every
+  test case its scenario evidences (163 of 191 repeat by test case, 93 by
+  subdomain) and the bar prints how many repeat; "Primary test case only" is the
+  near-partition. When the join cannot run — index snapshot absent, or a SimCore
+  whose scenario list carries no card references — grouping is **disabled with
+  the reason**; it never renders as "0 use cases" or as 191 uncited cards.
+- **`GET /api/scenarios` keeps `expected_detections[].ttp_ref` in the summary
+  projection** (+35.8 KB on 193 scenarios, +6.3 %). It was the only bulk source
+  of the card → scenario link and the list dropped it, so the join above had
+  nothing to read. A detection authored without the field still gains no key.
+
 ### Fixed — connectors
 
 - **An `xsiam_tenant` credential now serves alert read-back everywhere the
@@ -833,6 +1259,31 @@ artifacts.
   kept as aliases. The Composer opens every library scenario (it had been cut
   to 24). The Library prints no count before its list arrives. Page titles
   now repeat the tab name.
+- **MCP server** (`core/mcp_server/`, `mcp==1.30.0`): 41 tools — 25
+  `cortexsim.*` and 16 `xsiam.*` (37 backed, 4 registered-but-unbacked that
+  answer `TOOL_NOT_BACKED`; count from `python -m mcp_server --list-tools`).
+  Two transports over one implementation: stdio (`python -m mcp_server`) and an
+  opt-in Streamable HTTP mount at `/mcp` behind `CORTEXSIM_MCP_HTTP=1`
+  (default off), plus the P-2 manifest (`--manifest`). Every result carries an
+  evidence envelope; `queries_issued` and `tenant_verified` may be `null`,
+  meaning *not known*, never zero, and `tenant_answered` says whether the
+  tenant's reply came back, apart from the metered count (a results poll
+  answers at a cost of 0). **Authored is not proven:** no MCP tool has
+  run against a live tenant; `tenant-verified` is still 0. Reference:
+  `docs/reference/api-and-agent-surface.md` §9.
+- `GET /api/readiness`: the connector ladder and `tenant_verified`, counted in
+  Python, with zero outbound calls (§1.16).
+- `GET /api/runs` accepts `status` and `scenario_id` equality filters, and
+  `total` counts the rows matching them. `dev` capped `limit` at 500; merged
+  with the paging above it is 1..5000, default 500, because the console's
+  Runs poll sends `limit=5000`.
+- `queries_issued` (and a `ledger` snapshot) on the XSIAM executor, XQL and
+  metrics routes, on `POST /api/runs/{id}/reconcile`, and on
+  `POST /api/assertions/{id}/run`.
+- `/api/health` reports an `mcp` component.
+- `make check-mcp-boot`: runs `python -m mcp_server --list-tools` inside the
+  built image and requires at least 41 tools; part of `make validate` and the
+  backend CI job.
 
 ### Changed
 
@@ -858,12 +1309,41 @@ artifacts.
   and push refusals gain reason `CMD_PERCENT_CONTEXT`. `GET /api/tools/adapters`
   rows gain `shelf_backed` and `artifact_exempt`. New beacon flag `--proxy`
   (env `CORTEXSIM_AGENT_PROXY`). The full contract is in
-  `docs/reference/api-and-agent-surface.md` §10.
+  `docs/reference/api-and-agent-surface.md` §11 (§9 there is the MCP server
+  from `dev`; the beta's failure-code index is §10).
 - **MTTD is measured launch-to-alert.** No `run.step` start frames are
   published and `Result.executed_at` is not re-stamped at step start, so MTTD
   includes queue wait and the runtime of earlier steps. The operator runbooks
   that said otherwise are corrected. Changing when the clock starts is an open
   decision (OPS-07).
+- **Behaviour change you may veto: XQL needs `"xql"` in `capabilities`.** The
+  XSIAM executor and XQL routes (`POST …/operations/{op_id}`, `POST …/xql`,
+  `GET …/xql/{query_id}`, `GET …/metrics`) now refuse with 403
+  `XSIAM_CAPABILITY_MISSING` for a credential whose `config.capabilities` does
+  not list `"xql"`, and charge the per-tenant daily ledger (429
+  `XSIAM_QUOTA_ERROR` when spent). **An existing credential without the field
+  stops running XQL after upgrade**; add `"capabilities": ["xql"]` to its config.
+- **The same gate now covers assertion runs.** `POST /api/assertions/{id}/run`
+  with `dry_run: false` on a credential without `"xql"` resolves `pending` with
+  `reason: xql_not_authorised` and `queries_issued: 0` (each check carries the
+  new pending code `XQL_NOT_AUTHORISED`); it builds no client and runs no XQL.
+  It used to run metered XQL for such a credential.
+- **Behaviour change you may veto: an absent `capabilities` field means not
+  granted, on preflight and on the verify runner.** Preflight used to authorise
+  XQL when the field was absent, and so did the Tier-2 verify runner
+  (`resolve_tenant_runner`). Both now share one rule
+  (`integrations/xsiam/guards.py`). **After upgrade, `POST /api/runs/{id}/verify`
+  and the `CORTEXSIM_AUTO_VERIFY` sweep resolve `pending` with
+  `reason: xql_not_authorised` for every legacy credential without the field**,
+  until `"xql"` is added to its `config.capabilities`.
+- XQL start refuses a malformed body (`XQL_REQUEST_SHAPE_INVALID`, 400) and a
+  write-stage query (`XQL_WRITE_STAGE_REFUSED`, 400) before any tenant call;
+  `OP-XQL-GET-QUOTA` and the results stream are gated like the other XQL ops.
+- The global `XsiamError` body gains an additive `upstream_status`;
+  `{error, code, detail}` is unchanged.
+- Reconcile counts the page a failed read died on as a query.
+- Pins: `uvicorn[standard]` 0.29.0 to 0.31.1 and `httpx` 0.27.0 to 0.27.2
+  (forced by the MCP SDK).
 
 ## [1.1.0] - 2026-11-02
 

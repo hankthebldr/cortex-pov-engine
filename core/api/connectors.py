@@ -31,6 +31,7 @@ from connectors.matcher import DEFAULT_WINDOW_SECONDS
 from connectors.service import credential_kinds_for, resolve_connector_integrations
 from database import get_db
 from models import Result, Run
+from integrations.panos import PANOS_KIND
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
 from security.credentials import CredentialStore
 
@@ -297,6 +298,11 @@ async def preflight_connector(
         description=("comma-separated datasets to probe (xsiam_tenant only). "
                      "OPT-IN: each one costs the customer a live XQL query."),
     ),
+    agents: Optional[str] = Query(
+        None,
+        description=("comma-separated agent ids to check the policy path for "
+                     "(panos_ngfw only; default: every enrolled agent)"),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Staged, read-only reachability/scope check for a registered credential.
@@ -309,6 +315,11 @@ async def preflight_connector(
     the tenant refuses — the check itself succeeded, and the DC needs the whole
     stage list, not an exception that hides the six stages after the failure.
     """
+    if kind == PANOS_KIND:
+        # First: the resolution below emits PF_ codes; the firewall owns its own (PN_).
+        from api.ngfw import preflight_panos  # noqa: PLC0415
+        return await preflight_panos(db, integration, agents)
+
     from connectors import preflight as pf
 
     store = CredentialStore(db)
@@ -368,16 +379,15 @@ async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str])
     """Build the tenant client and run the XQL/dataset/clock stages."""
     from connectors import preflight as pf
     from integrations.xsiam.exceptions import XsiamConfigError
+    from integrations.xsiam.guards import xql_capability_granted
     from integrations.xsiam.loader import load_xsiam_client
 
     names = [d.strip() for d in (datasets or "").split(",") if d.strip()]
     config = row.config or {}
-    caps = config.get("capabilities")
     # Absent capabilities == the legacy default, read-only. Never infer XQL from
     # the mere existence of a registration: that would silently grant a metered
     # authorisation to every credential already in the field.
-    xql_authorised = (not isinstance(caps, list)
-                      or "xql" in {str(c).lower() for c in caps})
+    xql_authorised = xql_capability_granted(config)
     host = str(config.get("base_url", "")).split("://")[-1] or None
 
     try:

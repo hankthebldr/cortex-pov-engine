@@ -59,6 +59,13 @@ from eal_simulator.collector import (
     resolve_step_collector,
 )
 from eal_simulator.delivery import summarise_step_results
+from eal_simulator.targets import (
+    apply_targets,
+    blocking as blocking_resolutions,
+    degradations as target_degradations,
+    failing as failing_resolutions,
+)
+from engine import collector_targets as target_store
 from models import EalCampaign, EalCampaignRun
 
 
@@ -88,6 +95,51 @@ def _reset_executor() -> None:
     _registry = None
 
 
+async def _resolve_targets(
+    db: AsyncSession, spec: dict[str, Any], *, with_keys: bool,
+) -> tuple[dict[str, Any], list[Any]]:
+    """Resolve every collector step of ``spec`` against this instance's
+    collector targets (``eal_simulator.targets``). Keys are decrypted only when
+    ``with_keys`` — i.e. on the path that is about to send — and live only in
+    the returned in-memory spec, never in a stored one."""
+    registry = _get_executor().registry
+    specs = await target_store.load_specs(db)
+    resolved, resolutions = apply_targets(spec, registry, specs)
+    if with_keys:
+        names = {r.target for r in resolutions if r.target}
+        if names:
+            tokens = await target_store.load_tokens(db, names)
+            resolved, resolutions = apply_targets(spec, registry, specs, tokens=tokens)
+    return resolved, resolutions
+
+
+def _target_refusal(resolutions: list[Any]) -> Optional[HTTPException]:
+    """The refusal a LIVE send owes, or None. Nothing to send to, or a name
+    that does not resolve, is 422; a target whose last check failed is 409."""
+    blocked = blocking_resolutions(resolutions)
+    if blocked:
+        codes = {r.code for r in blocked}
+        code = ("COLLECTOR_TARGET_NOT_CONFIGURED" if "COLLECTOR_TARGET_NOT_CONFIGURED" in codes
+                else sorted(codes)[0])
+        return HTTPException(status_code=422, detail={
+            "error": "No collector target for a live step",
+            "code": code,
+            "detail": "; ".join(f"{r.step_id} ({r.plugin}): {r.detail}" for r in blocked),
+            "steps": [r.to_dict() for r in blocked],
+        })
+    bad = failing_resolutions(resolutions)
+    if bad:
+        return HTTPException(status_code=409, detail={
+            "error": "Collector target failing",
+            "code": "COLLECTOR_TARGET_FAILING",
+            "detail": "; ".join(
+                f"{r.step_id} -> target '{r.target}' last checked {r.check}" for r in bad
+            ) + ". Fix the target and re-run its preflight (POST /api/collector-targets/{name}/preflight).",
+            "steps": [r.to_dict() for r in bad],
+        })
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -109,6 +161,10 @@ class LaunchResponse(BaseModel):
     campaign_id: str
     status: str
     dry_run: bool
+    # What the live run carries without being refused (an unproven or inline
+    # collector destination). Empty means every collector step resolved to a
+    # target whose last check accepted a test record.
+    degraded: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PreflightRequest(BaseModel):
@@ -125,6 +181,15 @@ class DetectorReadinessRequest(BaseModel):
     # tenant, and this endpoint deliberately makes no outbound call. An omitted
     # source yields `unknown`, never `armed`.
     source_onboarded_at: dict[str, str] = Field(default_factory=dict)
+    # Operator attests the tenant runs soakless (no activation, training or
+    # dedup period). Same meaning as the run launch field of the same name;
+    # recorded, never checked.
+    soakless_attested: Optional[bool] = None
+    attested_by: Optional[str] = None
+    # Data-source keys whose custom-collector dataset the operator attests an
+    # XDM modeling rule maps. Without it, an HTTP-collector route is `unknown`:
+    # built-in analytics read a custom dataset only once XDM maps it.
+    xdm_modeled_sources: list[str] = Field(default_factory=list)
 
 
 class AbortResponse(BaseModel):
@@ -191,6 +256,10 @@ async def list_plugins() -> dict[str, Any]:
     plugins = reg.manifest()
     for m in plugins:
         m["family"] = _plugin_family(m)
+        # The signal-path class the Composer lanes read (engine.signal_path):
+        # a log streamer POSTs records to a collector; every other plugin
+        # generates traffic. tests/engine/test_signal_path.py pins the split.
+        m["delivery"] = "collector" if m["family"] == "analytics_log_streamer" else "wire"
     return {"plugins": plugins, "total": len(plugins)}
 
 
@@ -256,6 +325,8 @@ async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         "catalogue_version": coverage["catalogue_version"],
         "counts": coverage["counts"],
         "sources": coverage["sources"],
+        "generic_routes": coverage["generic_routes"],
+        "ingestion_only": coverage["ingestion_only"],
         "emitters": emitters,
         "detectors": detectors,
         "detector_counts": {
@@ -301,6 +372,11 @@ async def create_campaign(
     that its params validate against that plugin's params model.
     """
     reg = _get_executor().registry
+    # Validate against the RESOLVED params, so a step may leave collector_url
+    # to the instance's collector targets. The spec stored below is the one the
+    # operator sent: no target URL is baked in and no key is added.
+    resolved, _ = await _resolve_targets(db, campaign.to_dict(), with_keys=False)
+    resolved_params = {s["step_id"]: s.get("params") or {} for s in resolved["steps"]}
     for step in campaign.steps:
         if not reg.has(step.plugin):
             raise HTTPException(
@@ -312,7 +388,7 @@ async def create_campaign(
                 },
             )
         try:
-            reg.get(step.plugin).validate_params(step.params)
+            reg.get(step.plugin).validate_params(resolved_params.get(step.step_id, step.params))
         except Exception as exc:
             raise HTTPException(
                 status_code=422,
@@ -405,6 +481,20 @@ async def launch_campaign(
     if body.c2_authorized is not None:
         spec["c2_authorized"] = bool(body.c2_authorized)
 
+    live = not bool(spec.get("dry_run", True))
+    # Resolve collector destinations; keys only for a live send, and only into
+    # this in-memory spec.
+    spec, resolutions = await _resolve_targets(db, spec, with_keys=live)
+    if live:
+        refusal = _target_refusal(resolutions)
+        if refusal is not None:
+            raise refusal
+    degraded = target_degradations(resolutions) if live else []
+    collector_resolution = {
+        "steps": [r.to_dict() for r in resolutions],
+        "degraded": degraded,
+    } if resolutions else None
+
     try:
         campaign = Campaign.model_validate(spec)
     except Exception as exc:
@@ -451,6 +541,7 @@ async def launch_campaign(
         dry_run=campaign.dry_run,
         operator=body.operator,
         step_results=[],
+        collector_resolution=collector_resolution,
     )
     db.add(run_row)
     await db.commit()
@@ -469,6 +560,7 @@ async def launch_campaign(
         campaign_id=campaign.campaign_id,
         status="pending",
         dry_run=campaign.dry_run,
+        degraded=degraded,
     )
 
 
@@ -477,8 +569,11 @@ async def launch_campaign(
 # ---------------------------------------------------------------------------
 
 
-async def _load_campaign(campaign_id: str, db: AsyncSession) -> Campaign:
-    """Load + revalidate a persisted campaign spec, or 404/422."""
+async def _load_campaign(
+    campaign_id: str, db: AsyncSession, *, with_keys: bool = False,
+) -> tuple[Campaign, list[Any]]:
+    """Load a persisted campaign, resolve its collector targets, revalidate.
+    Returns ``(campaign, resolutions)`` or raises 404/422."""
     result = await db.execute(
         select(EalCampaign).where(EalCampaign.campaign_id == campaign_id)
     )
@@ -489,8 +584,9 @@ async def _load_campaign(campaign_id: str, db: AsyncSession) -> Campaign:
             detail={"error": "Campaign not found", "code": "CAMPAIGN_NOT_FOUND",
                     "detail": campaign_id},
         )
+    spec, resolutions = await _resolve_targets(db, dict(row.spec or {}), with_keys=with_keys)
     try:
-        return Campaign.model_validate(dict(row.spec or {}))
+        return Campaign.model_validate(spec), resolutions
     except Exception as exc:
         raise HTTPException(
             status_code=422,
@@ -510,8 +606,21 @@ async def get_campaign_collectors(
     ``target_allowlist``, a pathless URL, plaintext http. Auth tokens are
     reported as present/absent only; the secret never crosses this boundary.
     """
-    campaign = await _load_campaign(campaign_id, db)
-    return resolve_campaign_collectors(campaign, _get_executor().registry)
+    campaign, resolutions = await _load_campaign(campaign_id, db)
+    view = resolve_campaign_collectors(campaign, _get_executor().registry)
+    by_step = {r.step_id: r for r in resolutions}
+    for target in view["collectors"]:
+        res = by_step.get(target["step_id"])
+        target["collector_target"] = res.target if res else None
+        target["resolution_source"] = res.source if res else None
+        if res is not None and res.target:
+            # Keys are not loaded on this read path; say what the target holds.
+            target["has_auth_token"] = res.has_key
+    view["resolutions"] = [r.to_dict() for r in resolutions]
+    view["blocking"] = [r.to_dict() for r in blocking_resolutions(resolutions)]
+    view["failing"] = [r.to_dict() for r in failing_resolutions(resolutions)]
+    view["degraded"] = target_degradations(resolutions)
+    return view
 
 
 @router.post("/campaigns/{campaign_id}/collectors/preflight")
@@ -528,7 +637,7 @@ async def preflight_campaign_collectors(
     """
     from eal_simulator.safety import SafetyPolicy  # noqa: PLC0415
 
-    campaign = await _load_campaign(campaign_id, db)
+    campaign, _resolutions = await _load_campaign(campaign_id, db, with_keys=True)
     registry = _get_executor().registry
 
     policy = SafetyPolicy(
@@ -574,10 +683,13 @@ async def preflight_campaign_collectors(
                 ),
             })
             continue
+        step_token = getattr(params, "auth_token", None)
         probes.append(await preflight_collector(
             target,
             campaign_id=campaign.campaign_id,
-            auth_token=body.auth_token,
+            # A per-call token wins; otherwise the key the step resolved to.
+            auth_token=body.auth_token or (
+                step_token.get_secret_value() if step_token is not None else None),
             verify_tls=body.verify_tls,
         ))
 
@@ -629,7 +741,7 @@ async def campaign_detector_readiness(
         get_source,
     )
 
-    campaign = await _load_campaign(campaign_id, db)
+    campaign, _ = await _load_campaign(campaign_id, db)
 
     declared: dict[str, datetime] = {}
     for key, raw in body.source_onboarded_at.items():
@@ -661,9 +773,22 @@ async def campaign_detector_readiness(
             })
         declared[key] = parsed
 
+    for key in body.xdm_modeled_sources:
+        try:
+            get_source(key)
+        except UnknownDataSourceError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "Unknown data source",
+                "code": "UNKNOWN_DATA_SOURCE",
+                "detail": str(exc),
+            }) from exc
+
     plugins = {step.plugin for step in campaign.steps}
+    pipes = _campaign_pipes(campaign.steps)
     report = readiness_report(
         _get_executor().registry, plugins=plugins, onboarded_at=declared,
+        soakless_attested=body.soakless_attested, pipes=pipes,
+        xdm_modeled=set(body.xdm_modeled_sources),
     )
 
     if report["counts"]["total"] == 0:
@@ -681,7 +806,39 @@ async def campaign_detector_readiness(
         "campaign_id": campaign.campaign_id,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
         "sources_declared": sorted(declared),
+        "routes": pipes,
+        "attested_by": body.attested_by,
+        "xdm_modeled_sources": sorted(set(body.xdm_modeled_sources)),
         **report,
+    }
+
+
+def _campaign_pipes(steps: list[Any]) -> dict[str, str]:
+    """Each plugin's delivery route, read from its steps' ``collector_url``.
+
+    Derived, never asked for: the URL a step POSTs to is the route its records
+    take. ``steps`` are the target-resolved steps from ``_load_campaign``, so a
+    collector target's URL is what is judged. A step no target resolved carries
+    the ``.invalid`` stand-in URL, whose ``/logs/v1/event`` path must not read
+    as a real HTTP collector: it is ``undeclared``. One plugin used by several
+    steps with different doors is ``mixed``, which judges as unresolved: an
+    aggregate verdict would hide which door cannot feed analytics.
+    """
+    from eal_simulator.ingestion_routes import (  # noqa: PLC0415
+        COLLECTOR_UNDECLARED,
+        pipe_for_collector_url,
+    )
+    from eal_simulator.targets import UNRESOLVED_COLLECTOR_URL  # noqa: PLC0415
+
+    seen: dict[str, set[str]] = {}
+    for step in steps:
+        url = (step.params or {}).get("collector_url")
+        pipe = (COLLECTOR_UNDECLARED if url == UNRESOLVED_COLLECTOR_URL
+                else pipe_for_collector_url(url))
+        seen.setdefault(step.plugin, set()).add(pipe)
+    return {
+        plugin: next(iter(found)) if len(found) == 1 else "mixed"
+        for plugin, found in seen.items()
     }
 
 
@@ -704,7 +861,12 @@ async def build_campaign_bundle(
     no SimCore, no pip install, no callback — so a DC can carry it to a jumpbox
     inside the customer network where the Broker VM / HTTP collector lives.
     """
-    campaign = await _load_campaign(campaign_id, db)
+    # Never with keys: a bundle names the env var the jumpbox supplies the key
+    # in, and carries no credential.
+    campaign, resolutions = await _load_campaign(campaign_id, db)
+    blocked = blocking_resolutions(resolutions)
+    if blocked:
+        raise _target_refusal(resolutions)
     try:
         result = generate_bundle(campaign, _get_executor().registry, _bundles_dir())
     except BundleError as exc:
@@ -727,6 +889,7 @@ async def build_campaign_bundle(
         "skipped_steps": manifest["skipped_steps"],
         "total_records": manifest["total_records"],
         "destinations": sorted({s["collector_url"] for s in manifest["steps"]}),
+        "collector_resolution": [r.to_dict() for r in resolutions],
     }
 
 

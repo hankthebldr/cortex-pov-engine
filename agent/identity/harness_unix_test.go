@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,4 +91,47 @@ func TestExecuteCtxStream_SudoSurfacesChildSignal(t *testing.T) {
 
 func TestExecuteCtxStream_SuSurfacesChildSignal(t *testing.T) {
 	wrapperSurfacesChildSignal(t, "su", "su", "kill -9 $$")
+}
+
+// The account check lets non-portable names through as inconclusive, which is
+// safe only if the wrapper can never turn a username into shell. Proven by
+// executing each wrapper under a real sh with stub runuser/su/sudo that print
+// their argv: the username must arrive as exactly one argv element and nothing
+// it contains may run.
+func TestWrappedUsernameIsOneArgvElement(t *testing.T) {
+	bin := t.TempDir()
+	for _, tool := range []string{"runuser", "su", "sudo"} {
+		stub := "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]\\n' \"$a\"; done\n"
+		if err := os.WriteFile(filepath.Join(bin, tool), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pwned := filepath.Join(t.TempDir(), "PWNED")
+	hostile := []string{
+		"x'; touch " + pwned + "; echo '",
+		"$(touch " + pwned + ")",
+		"`touch " + pwned + "`",
+		"a b\nc;touch " + pwned,
+		`CORP\jdoe`, "jdoe@corp.example",
+	}
+	for _, mode := range []string{"runuser", "su", "sudo_u", "sudo_sh"} {
+		for _, name := range hostile {
+			wrapped, err := buildWrappedCommand(ExecutionIdentity{Mode: mode, Username: name, Command: "true"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("/bin/sh", "-c", wrapped)
+			cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin"}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("%s %q: %v", mode, name, err)
+			}
+			if !strings.Contains(string(out), "["+name+"]\n") {
+				t.Errorf("%s: username %q not one argv element:\n%s", mode, name, out)
+			}
+			if _, err := os.Stat(pwned); err == nil {
+				t.Fatalf("%s: username %q executed shell", mode, name)
+			}
+		}
+	}
 }

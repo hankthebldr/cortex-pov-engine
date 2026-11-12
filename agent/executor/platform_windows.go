@@ -108,8 +108,11 @@ func newShellCmdFor(shell, cmdStr string) (*exec.Cmd, func(), error) {
 // newAnchorCmd builds the persistent anchor for a ChainSession: PowerShell in
 // `-Command -` mode, which executes statements read from stdin. Each step is
 // then dispatched from that anchor as a nested child (script.go), so the
-// causality chain is a genuine parent→child process tree.
-func newAnchorCmd(cgoImage string) *exec.Cmd {
+// causality chain is a genuine parent→child process tree. The bool reports
+// whether the anchor carries cgoImage (always, when one is given: the Args[0]
+// rewrite works on every Windows host — see BEACON-08 below for what it does
+// NOT change).
+func newAnchorCmd(cgoImage string) (*exec.Cmd, bool) {
 	args := append(append([]string{}, powerShellArgs...), "-Command", "-")
 	cmd := exec.Command(powerShellExePath(), args...)
 	cmd.Env = anchorEnv()
@@ -123,8 +126,17 @@ func newAnchorCmd(cgoImage string) *exec.Cmd {
 		cmd.Args[0] = cgoImage
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
-	return cmd
+	return cmd, cgoImage != ""
 }
+
+// AnchorRenameSupportedWith reports whether the anchor can carry a cgo_anchor
+// name. On Windows the Args[0] rewrite always works, so the seams are unused.
+func AnchorRenameSupportedWith(lookPath, evalSymlinks func(string) (string, error), sameFile func(a, b string) bool) bool {
+	return true
+}
+
+// AnchorRenameSupported is AnchorRenameSupportedWith over the real PATH.
+func AnchorRenameSupported() bool { return true }
 
 // anchorExitScript is what Close() writes to end the anchor cleanly. PowerShell
 // in -Command - mode terminates on `exit` just as sh does.

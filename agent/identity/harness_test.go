@@ -92,6 +92,9 @@ func TestShellQuoteEscapesEmbeddedSingleQuotes(t *testing.T) {
 	}
 }
 
+// TestWrappedUsernameIsOneArgvElement runs the wrappers under a real /bin/sh,
+// so it lives with the other POSIX-dialect tests in harness_unix_test.go (CI-04).
+
 func TestResolveIdentity(t *testing.T) {
 	cases := []struct {
 		username    string

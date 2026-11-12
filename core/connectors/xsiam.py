@@ -176,7 +176,8 @@ class XsiamConnector(Connector):
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
                 logger.warning("xsiam %s pull transport error: %s", kind, e)
                 return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
+                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
+                                  detail={"page": pages + 1, "path": path})
 
             if status != 200:
                 # The tenant's response body is attacker-influenceable and
@@ -375,7 +376,13 @@ class XsiamConnector(Connector):
         "however long ago the run executed" and failed the customer's 300 s
         threshold on the strength of a timestamp format CortexSim could not read.
         """
-        ts = a.get("detection_timestamp") or a.get("creation_time") or a.get("local_insert_ts")
+        # `_insert_time` (Issues API: "Issue creation timestamp in epoch
+        # milliseconds") is LAST, so it only dates a record that carries none
+        # of the other three — such a record used to be dropped. Which of these
+        # is the time MTTD should use is open (PM-ALR-02); the order of the
+        # first three is unchanged on purpose.
+        ts = (a.get("detection_timestamp") or a.get("creation_time")
+              or a.get("local_insert_ts") or a.get("_insert_time"))
         observed_at = coerce_utc(ts)
         if observed_at is None:
             logger.warning("xsiam alert %s has an unreadable timestamp %r — dropped, "
@@ -397,11 +404,17 @@ class XsiamConnector(Connector):
             host=_s(host),
             # `matching_service_rule_id` is the field Cortex documents on the
             # alert object; the other three were guesses that never matched.
+            # `detection.rule_id` / `detection.method` / `case_ids` are the
+            # Issues API's names, read after the alerts-API keys so an alert
+            # carrying both keeps the value it had.
             detection_id=_s(a.get("matching_service_rule_id") or a.get("detector_id")
-                            or a.get("bioc_id") or a.get("rule_id")),
-            alert_source=_s(a.get("source") or a.get("alert_source")),
+                            or a.get("bioc_id") or a.get("rule_id")
+                            or alert_key(a, "detection.rule_id")),
+            alert_source=_s(a.get("source") or a.get("alert_source")
+                            or alert_key(a, "detection.method")),
             category=_s(a.get("category")),
-            incident_id=_s(a.get("incident_id") or a.get("case_id")),
+            incident_id=_s(a.get("incident_id") or a.get("case_id")
+                           or alert_key(a, "case_ids")),
             action=_s(a.get("action")),
             action_pretty=_s(a.get("action_pretty")),
             raw=a,
@@ -480,6 +493,34 @@ def _s(v: Any) -> Optional[str]:
         return None
     s = str(v).strip()
     return s or None
+
+
+def alert_key(a: dict[str, Any], key: str) -> Any:
+    """The value the connector reads for ``key`` on one alert/issue record.
+
+    The one reader both :meth:`XsiamConnector._normalize_alert` and the
+    preflight ``alert_shape`` rung use, so preflight cannot credit a key the
+    connector reads differently.
+
+    * A dotted key is read as the FLAT property first — the Issues API schema
+      names them ``"detection.rule_id"`` / ``"detection.method"`` — then as a
+      path into a nested object (``{"detection": {"rule_id": ...}}``).
+    * ``case_ids`` (Issues API: "List of case IDs this issue is associated
+      with") reads as its element only when it lists exactly one. Several cases
+      return None: picking the first would credit the alert to an arbitrary
+      case and feed that into the correlation-rate basis.
+    """
+    if key in a:
+        value = a[key]
+    elif "." in key:
+        head, _, rest = key.partition(".")
+        sub = a.get(head)
+        return alert_key(sub, rest) if isinstance(sub, dict) else None
+    else:
+        return None
+    if key == "case_ids":
+        return value[0] if isinstance(value, list) and len(value) == 1 else None
+    return value
 
 
 # `_ms_to_dt` lived here and disagreed with connectors.base._coerce_dt by up to

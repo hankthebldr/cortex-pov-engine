@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1562",
     "T1578",
@@ -7,11 +9,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "( XQL(CSPM-002 S3 Public Access Block Removed Drift) OR XQL(CSPM-002 CloudTrail Logging Disabled Drift) ) AND XQL(CSPM-002 Runtime Control Plane Action Causing Drift) \u2014 fuses each posture-drift finding on a CortexSimDriftTarget resource with the CloudTrail control-plane action that caused it (and, when present, the post-drift external bucket access) into a single posture-drift incident that names the drifted resource, the responsible principal, and the exploitation window.",
       "name": "Posture Drift Correlated to Runtime Cause and Exploitation",
-      "rule_id": "CR-CSPM-0003",
-      "severity": "high"
+      "rule_id": "CR-CSPM-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0105"

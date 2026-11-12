@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { render, screen, within, act, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
+import { BANDS } from '../console/composerLanes.js'
+import { deriveTenantContent } from '../console/composerContent.js'
 
 // jsdom has no layout engine — every element reports 0x0 for offsetWidth /
 // offsetHeight, and React Flow (Composer Design lens, Task 8) measures its
@@ -174,16 +176,20 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
   // means the same thing as where the Runs topology will band it. The Design
   // lens draws none of this; the Lanes lens draws all of it, and every card
   // wears the door it launches through.
-  it('draws the seven lane bands and badges each step with its door', () => {
+  it('draws the eight lane bands and badges each step with its signal path', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
     const bands = screen.getByTestId('composer-lane-bands')
-    expect(bands.querySelectorAll('.composer-lane')).toHaveLength(7)
-    expect(bands.querySelectorAll('.composer-lane--terminal')).toHaveLength(2)
-    expect(bands).toHaveTextContent('ENDPOINT')
-    expect(bands).toHaveTextContent('DATA STREAMS')
-    // Both fixture steps are EDR → ENDPOINT (AGT) by derivation.
-    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
-    expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent('AGT')
+    expect(bands.querySelectorAll('.composer-lane')).toHaveLength(8)
+    // LAUNCH, the Engine (tenant content) and PROOF hold no step.
+    expect(bands.querySelectorAll('.composer-lane--terminal')).toHaveLength(3)
+    expect(bands).toHaveTextContent('ENDPOINT RUNTIME')
+    expect(bands).toHaveTextContent('LOG INJECTION')
+    expect(bands).toHaveTextContent('LIVE TRAFFIC')
+    expect(bands).toHaveTextContent('CLOUD CONTROL PLANE')
+    expect(bands).toHaveTextContent('NO ACTION')
+    // Both fixture steps run a command on the host.
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
+    expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent(/^AGT$/)
     // The LAUNCH / PROOF bands replace the Design lens's START / END anchors
     // — two statements of where the chain begins would be one too many.
     expect(screen.queryByTestId('chain-start')).toBeNull()
@@ -192,16 +198,65 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
     expect(screen.getByTestId('composer-add-step')).toBeInTheDocument()
   })
 
-  it('a draft lane override moves the badge, and the Design lens draws no bands', () => {
-    render(<ComposerCanvas {...baseProps({ lens: 'lanes', laneOverrides: { 'step-02': 'BVM' } })} />)
-    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
-    expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent('BVM')
-    cleanup()
+  it('reads the badge from what the step does, never from its plane, on every lens', () => {
+    const campaign = (plugin) => "cat > /tmp/c.yml <<'YML'\nsteps:\n  - plugin: " + plugin
+      + "\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+    const base = STEPS[0]
+    const steps = [
+      { ...base, id: 'step-01', command: 'curl -s http://c2.lab.test/beacon', detections: [{ plane: 'NDR', type: 'XQL' }] },
+      { ...base, id: 'step-02', command: campaign('ngfw_eal_emitter'), causalityParent: 'step-01', detections: [{ plane: 'NDR', type: 'XQL' }] },
+      { ...base, id: 'step-03', command: campaign('llm_provider_egress'), causalityParent: 'step-02' },
+      { ...base, id: 'step-04', command: 'aws s3 ls', causalityParent: 'step-03' },
+      { ...base, id: 'step-05', command: 'echo waiting; sleep 30', causalityParent: 'step-04', detections: [{ plane: 'ANALYTICS', type: 'Correlation' }] },
+      { ...base, id: 'step-06', command: campaign('made_up_emitter'), causalityParent: 'step-05' },
+    ]
+    for (const lens of ['design', 'lanes']) {
+      render(<ComposerCanvas {...baseProps({ lens, draft: { ...DRAFT, steps } })} />)
+      const badge = (id) => screen.getByTestId(`chain-door-${id}`)
+      // An NDR-plane curl beacon used to read "BVM"; it runs on the host.
+      expect(badge('step-01')).toHaveTextContent(/^AGT$/)
+      expect(badge('step-02')).toHaveTextContent('AGT → COLLECTOR')
+      expect(badge('step-02').getAttribute('title')).toMatch(/LOG INJECTION.*ngfw_eal_emitter/)
+      expect(badge('step-03')).toHaveTextContent('AGT → WIRE')
+      expect(badge('step-04')).toHaveTextContent('AGT → CLOUD')
+      expect(badge('step-05')).toHaveTextContent('AGT · no action')
+      // An unreadable step says so instead of naming a door.
+      expect(badge('step-06')).toHaveTextContent('AGT → EAL ?')
+      expect(badge('step-06').className).toContain('chain-node__doorbadge--unplaced')
+      expect(badge('step-06').getAttribute('title')).toMatch(/made_up_emitter/)
+      cleanup()
+    }
+  })
+
+  it('a card dropped in another lane snaps back and says why', () => {
+    const onNodeMoved = vi.fn()
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes', onNodeMoved })} />)
+    const onNodesChange = window.__rfOnNodesChange
+    expect(typeof onNodesChange).toBe('function')
+    // step-01 sits in ENDPOINT RUNTIME; drop it in LIVE TRAFFIC.
+    act(() => {
+      onNodesChange([{ id: 'step-01', type: 'position', dragging: false, position: { x: 40, y: BANDS.WIRE.nodeY } }])
+    })
+    const refusal = screen.getByTestId('canvas-refusal')
+    expect(refusal).toHaveTextContent(/^Lane not changed/)
+    expect(refusal).toHaveTextContent(/lane follows what its command does/i)
+    expect(refusal).toHaveTextContent(/Inspector/)
+    expect(onNodeMoved).not.toHaveBeenCalled()
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
+  })
+
+  it('a card dropped back in its own lane is not refused', () => {
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
+    act(() => {
+      window.__rfOnNodesChange([{ id: 'step-01', type: 'position', dragging: false, position: { x: 40, y: BANDS.ENDPOINT.nodeY } }])
+    })
+    expect(screen.queryByTestId('canvas-refusal')).toBeNull()
+  })
+
+  it('the Design lens draws no bands, and takes no lane props', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
     expect(screen.queryByTestId('composer-lane-bands')).toBeNull()
-    // Composer mode shows the door on every lens (it is a real property of the
-    // step, not a lanes-only decoration) — the Design lens simply draws no bands.
-    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
   })
 })
 
@@ -662,13 +717,22 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
     const { container } = render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
     // Two steps in the default fixture, each with a target (left, `in`) and a
     // source (right, `out`) port — the flow now runs left-to-right.
-    const stepHandles = container.querySelectorAll('.react-flow__node-step .react-flow__handle')
+    const stepHandles = container.querySelectorAll(
+      '.react-flow__node-step .react-flow__handle:not(.chain-node__contentport)',
+    )
     expect(stepHandles.length).toBe(4)
     expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-left').length).toBe(2)
     expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-right').length).toBe(2)
+    // Each step also carries ONE inert bottom port, which a tenant-content edge
+    // (step → rule) attaches to. It is mounted from the first render, because
+    // the card that produces the rule loads after React Flow measures the node.
+    const contentPorts = container.querySelectorAll('.react-flow__node-step .chain-node__contentport')
+    expect(contentPorts.length).toBe(2)
+    // Inert: nothing can be connected to or from it.
+    for (const port of contentPorts) expect(port.className).not.toMatch(/connectable/)
     // Plus one inert port each on the CGO (out) and Proof (in) anchors, which
-    // the derived edges attach to: 6 in total.
-    expect(container.querySelectorAll('.react-flow__handle').length).toBe(6)
+    // the derived edges attach to: 8 in total.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(8)
   })
 })
 
@@ -778,5 +842,149 @@ describe('ComposerCanvas — the Delete key is scoped to the graph', () => {
     await userEvent.setup().click(screen.getByLabelText('Remove s2'))
     expect(onRemoveStep).toHaveBeenCalledWith(1)
     expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Tenant content: correlation rules in the chain story ────────────────────
+// The chips on a step are its PROOF CONTRACT (what the DC runs, what must be
+// deployed, what ships built in), not tags on the TTP. A correlation rule is
+// drawn as its own node, with its status in words.
+
+describe('ComposerCanvas — tenant content', () => {
+  const det = (type, ttpRef, detectionId) => ({ plane: 'AI_ACCESS', type, description: 'x', ttpRef, detectionId })
+  const CHAIN = [
+    {
+      id: 'step-01', name: 'Burst', authored: false, command: 'x', identity: 'root', technique: 'T1567',
+      platforms: [], causalityParent: null, causalityPivot: null,
+      detections: [
+        det('XQL', 'TTP-T-0001', 'xql-q-one'), det('XQL', 'TTP-T-0001', 'xql-q-two'),
+        det('XQL', 'TTP-T-0001', 'xql-q-three'),
+      ],
+    },
+    {
+      id: 'step-02', name: 'Fuse', authored: false, command: 'y', identity: 'root', technique: 'T1567',
+      platforms: [], causalityParent: 'step-01', causalityPivot: 'shared_entity',
+      detections: [
+        det('Correlation', 'TTP-T-0001', 'CR-T-0002'), det('Correlation', 'TTP-T-0001', 'CR-NOPE'),
+        det('BIOC', 'TTP-T-0001', 'bioc-b-one'), det('ABIOC', null, null),
+      ],
+    },
+  ]
+  const CARDS = {
+    'TTP-T-0001': {
+      id: 'TTP-T-0001',
+      detections: {
+        xql_queries: [{ name: 'Q One' }, { name: 'Q Two' }, { name: 'Q Three' }],
+        biocs: [{ name: 'B One' }],
+        correlation_rules: [
+          { name: 'Anomalous Usage Volume', rule_id: 'CR-T-0001', logic: 'XQL(Q One) OR XQL(Q Two) OR XQL(Q Three)' },
+          { name: 'Declared Stub', rule_id: 'CR-T-0002', logic: 'BIOC(B One)' },
+          { name: 'Odd Shape', rule_id: 'CR-T-0003', logic: 'XQL(Q One)', severity: 'high' },
+        ],
+      },
+    },
+  }
+  const props = (over = {}) => baseProps({
+    draft: { ...DRAFT, steps: CHAIN },
+    content: deriveTenantContent(CHAIN, CARDS),
+    showContent: true,
+    ...over,
+  })
+  const card = (id) => screen.getByTestId(`chain-step-${id}`).closest('.chain-node')
+
+  it('reads three XQL expectations as one "run" chip under an "expects" label', () => {
+    render(<ComposerCanvas {...props()} />)
+    const c = within(card('step-01'))
+    expect(c.getByText('expects')).toBeInTheDocument()
+    expect(c.getByText('run · 3 queries')).toBeInTheDocument()
+    expect(c.queryByText('XQL')).toBeNull()
+  })
+
+  it('separates what must be deployed from what ships built in', () => {
+    render(<ComposerCanvas {...props()} />)
+    const c = within(card('step-02'))
+    expect(c.getByText('deploy · 1 BIOC')).toBeInTheDocument()
+    expect(c.getByText('deploy · 2 rules')).toBeInTheDocument()
+    expect(c.getByText('built-in · 1 ABIOC')).toBeInTheDocument()
+  })
+
+  it('says on the step when a Correlation expectation has no rule behind it', () => {
+    render(<ComposerCanvas {...props()} />)
+    expect(within(card('step-02')).getByTestId('chain-unbound-step-02').textContent)
+      .toMatch(/no rule on any card/i)
+    expect(within(card('step-01')).queryByTestId('chain-unbound-step-01')).toBeNull()
+  })
+
+  it('draws a card-only stub as a rule node that says so in words', () => {
+    render(<ComposerCanvas {...props()} />)
+    const rule = screen.getByTestId('chain-rule-CR-T-0001')
+    expect(rule.textContent).toContain('CR-T-0001')
+    expect(rule.textContent).toContain('Anomalous Usage Volume')
+    expect(rule.textContent).toContain('INTENT ONLY · nothing to import')
+    expect(rule.textContent).toContain('not declared by this scenario · not scored')
+    expect(rule.textContent).toContain('3 of 3 inputs on steps')
+  })
+
+  it('says a declared stub is scored although nothing can raise it', () => {
+    render(<ComposerCanvas {...props()} />)
+    expect(screen.getByTestId('chain-rule-CR-T-0002').textContent)
+      .toContain('scored by this run · nothing here can raise it')
+  })
+
+  it('draws an unreadable rule as unreadable, with the reason, never as a stub', () => {
+    render(<ComposerCanvas {...props()} />)
+    const rule = screen.getByTestId('chain-rule-CR-T-0003')
+    expect(rule.textContent).toContain('card shape not recognised')
+    expect(rule.textContent).toMatch(/severity/)
+    expect(rule.textContent).not.toContain('INTENT ONLY')
+    expect(rule.closest('.chain-node').className).toContain('chain-node--rule-unreadable')
+  })
+
+  it('selects a rule through onSelectRule, never through the step selection', async () => {
+    const onSelectRule = vi.fn()
+    const onSelect = vi.fn()
+    render(<ComposerCanvas {...props({ onSelectRule, onSelect })} />)
+    await userEvent.click(screen.getByTestId('chain-rule-CR-T-0001'))
+    expect(onSelectRule).toHaveBeenCalledWith('rule:TTP-T-0001:CR-T-0001')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('names the count and the worst status on the chrome control', () => {
+    render(<ComposerCanvas {...props()} />)
+    const toggle = screen.getByTestId('composer-content-toggle')
+    expect(toggle.textContent).toContain('3 rules · 1 unreadable')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('hides the rail when the control is off, and keeps the chips', async () => {
+    const onToggleContent = vi.fn()
+    render(<ComposerCanvas {...props({ showContent: false, onToggleContent })} />)
+    expect(screen.queryByTestId('chain-rule-CR-T-0001')).toBeNull()
+    expect(within(card('step-01')).getByText('run · 3 queries')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('composer-content-toggle'))
+    expect(onToggleContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('says cards are loading instead of reporting zero rules', () => {
+    render(<ComposerCanvas {...props({ content: deriveTenantContent(CHAIN, {}), contentLoading: true })} />)
+    expect(screen.getByTestId('composer-content-toggle').textContent).toContain('loading cards')
+  })
+
+  it('exports through onExportContent', async () => {
+    const onExportContent = vi.fn()
+    render(<ComposerCanvas {...props({ onExportContent })} />)
+    await userEvent.click(screen.getByTestId('composer-content-export'))
+    expect(onExportContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws no rule node in the Run lens', () => {
+    render(<ComposerCanvas {...props({ lens: 'run' })} />)
+    expect(screen.queryByTestId('chain-rule-CR-T-0001')).toBeNull()
+  })
+
+  it('still draws the chips when no content has been derived yet', () => {
+    render(<ComposerCanvas {...props({ content: null })} />)
+    expect(within(card('step-01')).getByText('run · 3 queries')).toBeInTheDocument()
+    expect(screen.queryByTestId('chain-rule-CR-T-0001')).toBeNull()
   })
 })

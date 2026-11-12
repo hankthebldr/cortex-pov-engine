@@ -1168,14 +1168,18 @@
   color: var(--tx3);
 }
 
-/* The door badge on a step card in the Lanes lens — the retargeting readout.
-   It is the same chip the execution timeline uses, docked top-right so the
-   card's title row stays where the Design lens put it. */
-.theme-console .chain-node__doorbadge {
-  position: absolute;
-  top: 6px;
-  /* Clear of the step index the card's header row keeps at its far right. */
-  right: 30px;
+/* The door badge: where the step runs and its signal path ("AGT → WIRE"),
+   read from the command, never the plane. It has its own line under the
+   card's header row: docked in the row, the longest badge ("AGT → COLLECTOR")
+   needed 208px of a 192px row and covered the step id (measured in Chrome,
+   tests/e2e/13-composer-doors.spec.ts). */
+.theme-console .chain-node__doorline { display: flex; margin-top: 5px; }
+.theme-console .chain-node__doorbadge { white-space: nowrap; }
+/* A step whose path could not be read says so in the error tone; its title
+   carries the reason. It is never drawn as a door it does not use. */
+.theme-console .chain-node__doorbadge--unplaced {
+  color: var(--crit);
+  border-color: var(--crit);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1710,6 +1714,171 @@
 .theme-console .composer-edge-label--on .composer-edge-pivot { border-color: var(--ac-str); color: var(--tx); }
 .theme-console .composer-edge-del { width: 22px; padding: 0; font-family: var(--font-ui); font-size: 13px; }
 .theme-console .composer-edge-del:hover { border-color: var(--crit); color: var(--crit); }
+
+/* ── Tenant content (2026-11-10) ────────────────────────────────────────────
+   Correlation rules the TENANT must hold, drawn on a rail below the chain.
+   They are not steps: steel and dashed by default, and every status is printed
+   as words on the card. Colour here only backs the words up; it never carries
+   a status by itself. Spec: 2026-11-10-composer-correlation-story-design.md. */
+
+/* A step's proof contract. The `expects` label and the ownership chips read as
+   a sentence ("expects  run · 3 queries"), not as tags on the TTP, so the chips
+   drop the base chip's uppercase mono treatment. */
+.theme-console .chain-node__expects {
+  font: 600 9px/20px var(--font-display);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .chain-node__chips .chip--own {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+}
+/* run = a query the DC runs · deploy = must exist in the tenant · built-in =
+   ships with Cortex. Distinguished by border style AND by the leading word. */
+.theme-console .chain-node__chips .chip--own-run { border-style: solid; }
+.theme-console .chain-node__chips .chip--own-deploy { border-style: dashed; color: var(--tx); border-color: var(--tx3); }
+.theme-console .chain-node__chips .chip--own-built-in { border-style: dotted; color: var(--tx3); }
+
+/* The rule card. Same width as a step so the rail aligns under the chain. */
+.theme-console .composer--mode .chain-node--rule {
+  width: 220px;
+  padding: 0 12px 9px;
+  background: var(--s1);
+  border: 1px dashed var(--cortex-steel, #6B7E8E);
+}
+.theme-console .composer--mode .chain-node--rule:hover { border-color: var(--tx3); }
+.theme-console .composer--mode .chain-node--rule .chain-node__body { padding-top: 9px; }
+.theme-console .composer--mode .chain-node--rule .chain-node__kind { color: var(--tx3); }
+.theme-console .chain-rule__id {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--tx2);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+/* A deployable rule is solid: there is content on the card. It still says
+   "not imported into any tenant" in words. */
+.theme-console .composer--mode .chain-node--rule-deployable { border-style: solid; border-color: var(--bd2); }
+/* An unreadable rule is an error, never a quiet stub. */
+.theme-console .composer--mode .chain-node--rule-unreadable { border-style: solid; border-color: var(--crit); }
+.theme-console .composer--mode .chain-node--rule.chain-node--selected {
+  border-style: solid;
+  border-color: var(--ac-str);
+}
+.theme-console .chain-rule__line {
+  display: block;
+  margin-top: 5px;
+  font: 500 10px/1.3 var(--font-ui);
+  color: var(--tx2);
+  text-align: left;
+}
+.theme-console .chain-rule__line--content {
+  margin-top: 7px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--tx);
+}
+.theme-console .chain-node--rule-unreadable .chain-rule__line--content { color: var(--crit); }
+
+/* The ports a content edge attaches to exist for React Flow, not for the DC:
+   nothing can be connected to or from them. */
+.theme-console .composer--mode .react-flow__handle.chain-node__contentport {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* The rail: a labelled line between the chain and what the tenant must hold. */
+.theme-console .composer-rail {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--bd2);
+  white-space: nowrap;
+}
+.theme-console .composer-rail__label {
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+.theme-console .composer-rail__sub { font: 400 10px/1.2 var(--font-ui); color: var(--tx3); }
+
+/* A content edge's label: plain text on the stage colour, no chip. */
+.theme-console .composer-content-label {
+  position: absolute;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--s0);
+  font: 500 10px/1.3 var(--font-ui);
+  color: var(--tx2);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.theme-console .composer-content-label--faint { color: var(--tx3); }
+
+/* The Inspector's read-only view of a rule. No inputs: every line is a status
+   in words or the card's own text. */
+.theme-console .rule-insp__id { margin: 2px 0 8px; font-size: 11px; color: var(--tx2); }
+.theme-console .rule-insp__name { font-weight: 600; color: var(--tx); }
+.theme-console .rule-insp__status {
+  margin: 4px 0;
+  font: 700 12px/1.35 var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .rule-insp__status--unreadable { color: var(--crit); }
+.theme-console .rule-insp__warn {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--warn-str);
+  color: var(--tx);
+}
+.theme-console .rule-insp__reason { color: var(--crit); }
+.theme-console .rule-insp__logic { white-space: pre-wrap; overflow-wrap: anywhere; }
+.theme-console .rule-insp__inputs { list-style: none; margin: 6px 0 0; padding: 0; }
+.theme-console .rule-insp__inputs li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--bd);
+  font: 400 11px/1.35 var(--font-ui);
+}
+.theme-console .rule-insp__state {
+  grid-row: span 2;
+  align-self: start;
+  padding: 1px 5px;
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  font: 600 9px/1.5 var(--font-mono);
+  color: var(--tx2);
+}
+/* An input that is not on the card is the one a DC must chase. */
+.theme-console .rule-insp__state--unknown { border-color: var(--crit); color: var(--crit); }
+.theme-console .rule-insp__state--card-only { border-style: dashed; }
+.theme-console .rule-insp__input-name { color: var(--tx); overflow-wrap: anywhere; }
+.theme-console .rule-insp__input-where { color: var(--tx3); }
+.theme-console .rule-insp__foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--bd); }
+
+/* Chrome control: the rule count and the worst status, plus the export. */
+.theme-console .composer-canvas__content { display: flex; gap: 3px; flex: none; }
+.theme-console .composer-canvas__content .canvas-view:disabled { opacity: .5; cursor: default; }
+@media (max-width: 1280px) {
+  .theme-console .composer-canvas__content-kicker { display: none; }
+}
 
 /* Lanes lens in mode: bands still ride the pane transform; nothing else changes. */
 .theme-console .composer--mode .composer-lane { position: absolute; left: 0; }

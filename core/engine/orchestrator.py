@@ -163,12 +163,19 @@ class LaunchResult:
     # the two routes disagree about the same exception. None = let the API
     # decide from `error_code`, which is the historical behaviour.
     http_status: Optional[int] = None
-    # Things the operator must know about a launch that was NOT refused: the
-    # target beacon is offline (the task waits), its OS is unknown (posix was
-    # assumed), or a step runs a platform variant whose expectations were
-    # authored against the primary command. Empty for an unremarkable launch,
-    # so the API response for one is byte-identical to before.
-    warnings: list[str] = field(default_factory=list)
+    # Things the operator must know about a launch that was NOT refused. Empty
+    # for an unremarkable launch, so the API response for one is byte-identical
+    # to before. Two element shapes share the list, each as its producer and
+    # its tests define it:
+    #   * ``str`` -- a reservation SimCore also writes onto Run.output: the
+    #     target beacon is offline (the task waits), its OS is unknown (posix
+    #     was assumed), or a step runs a platform variant whose expectations
+    #     were authored against the primary command;
+    #   * ``dict`` -- an advisory, non-refusing notice from the container-agent
+    #     launch gate (engine/agent_launch_gate.py), e.g.
+    #     ``{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": [...], "agent_id": ...}``.
+    # The API surfaces both under ``warnings``.
+    warnings: list[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -568,9 +575,14 @@ class Orchestrator:
         attested_by: Optional[str] = None,
         paired_with_run_id: Optional[str] = None,
         canary_run_id: Optional[str] = None,
+        allow_missing_tools: bool = False,
+        module_modes: Optional[dict[str, str]] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
+
+        ``allow_missing_tools`` turns off ONLY the container-agent tool refusal
+        (``AGENT_TOOL_ABSENT``); a posture gap is never overridable.
 
         ``consent`` carries launch-time authorizations. Honoured keys:
 
@@ -602,7 +614,8 @@ class Orchestrator:
 
         Prevention-efficacy launch context (``agent_profile_mode`` and the
         attestation fields) is operator-declared and persisted verbatim on the
-        Run. ``paired_with_run_id`` links a block-mode launch to its completed
+        Run, including ``module_modes`` (per-module Action Mode, validated at
+        the API edge). ``paired_with_run_id`` links a block-mode launch to its completed
         report-mode run and is validated by ``pairing.validate_pair`` after the
         consent gate and before the Run row exists, so a refused pair
         (``PAIR_INVALID``) seeds nothing.
@@ -777,6 +790,7 @@ class Orchestrator:
             or bas_mode_attested is not None
             or soakless_attested is not None
             or attested_by is not None
+            or module_modes is not None
         )
 
         run = Run(
@@ -797,6 +811,7 @@ class Orchestrator:
             paired_with_run_id=paired_with_run_id,
             canary_run_id=canary_run_id,
             block_mode_status=block_mode_status,
+            module_modes=module_modes,
         )
         db.add(run)
         try:
@@ -831,9 +846,11 @@ class Orchestrator:
                 runtime_install_authorized=runtime_install_authorized,
                 pull_plan=pull_plan,
                 launch_warnings=launch_warnings,
+                allow_missing_tools=allow_missing_tools,
             )
             # Launch-time warnings first (offline target), then whatever the
-            # dispatch itself had to say (variants, unknown OS).
+            # dispatch itself had to say (variants, unknown OS, the
+            # container-agent gate's advisory notices).
             launched.warnings = launch_warnings + launched.warnings
             return launched
         elif mode == "push":
@@ -1030,8 +1047,21 @@ class Orchestrator:
                     "status": "error", "code": "EAL_STEP_INVALID", "detail": str(exc),
                 }
 
+        resolutions: dict[str, Any] = {}
         if campaign_steps:
             try:
+                # Collector steps take their destination from the instance's
+                # collector targets, like every other in-process consumer.
+                # Never with keys: this path is dry-run only.
+                from eal_simulator.targets import apply_targets  # noqa: PLC0415
+                from engine.collector_targets import load_specs  # noqa: PLC0415
+
+                resolved, res = apply_targets(
+                    {"steps": [cs.model_dump() for cs in campaign_steps], "target_allowlist": []},
+                    registry, await load_specs(db),
+                )
+                campaign_steps = [CampaignStep(**rs) for rs in resolved["steps"]]
+                resolutions = {r.step_id: r for r in res}
                 campaign = Campaign(
                     # Ephemeral, not persisted; run_id (passed to execute) is the
                     # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
@@ -1072,6 +1102,10 @@ class Orchestrator:
                     outcomes[cs.step_id] = {
                         "status": status, "code": None, "detail": detail,
                     }
+            for step_id, r in resolutions.items():
+                if step_id in outcomes:
+                    outcomes[step_id]["collector_target"] = r.target
+                    outcomes[step_id]["collector_source"] = r.source
 
         # Seed a Result row per expected detection for the eal steps, with a REAL
         # executed_at (the seeding 3a deferred): the step actually ran here.
@@ -1168,10 +1202,14 @@ class Orchestrator:
         runtime_install_authorized: bool = False,
         pull_plan: Optional[_PullPlan] = None,
         launch_warnings: Optional[list[str]] = None,
+        allow_missing_tools: bool = False,
     ) -> LaunchResult:
         """``launch_warnings`` are launch()'s own reservations (an offline
         target). They are written onto Run.output with the dispatch markers; the
-        caller still returns them in ``warnings``, so they are not added here."""
+        caller still returns them in ``warnings``, so they are not added here.
+
+        ``allow_missing_tools`` turns off ONLY the container-agent gate's tool
+        refusal (``AGENT_TOOL_ABSENT``); a posture gap is never overridable."""
         from models import Agent, Run  # noqa: PLC0415
 
         if not target_agent_id:
@@ -1282,6 +1320,18 @@ class Orchestrator:
             req = required_binaries.get(s_.get("id"))
             if req:
                 s_["required_binaries"] = list(req)
+
+        # Container-agent launch gate (engine/agent_launch_gate.py). A pod has one
+        # fixed posture and tool roster; refuse HERE rather than let a step fail
+        # for lack of privilege/tooling and read as a Cortex miss. Every agent
+        # target of a composed run is gated on its own facts. A host / VM /
+        # legacy agent, or a container beacon the manifest did not deploy (no
+        # posture profile), is a no-op.
+        gate_warnings = await self._container_agent_gate(
+            db, run_id, scenario, steps, target_agent_id, allow_missing_tools
+        )
+        if isinstance(gate_warnings, LaunchResult):
+            return gate_warnings
 
         # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
         # A run is "multichannel" the moment ANY step carries a non-agent
@@ -1491,8 +1541,55 @@ class Orchestrator:
             run_id=run_id,
             mode="pull",
             message=queued_message,
-            warnings=dispatch_warnings + output_markers,
+            # The platform/offline reservations (strings, also on Run.output),
+            # then the container-agent gate's advisory notices (dicts).
+            warnings=dispatch_warnings + output_markers + list(gate_warnings),
         )
+
+    async def _container_agent_gate(
+        self,
+        db: AsyncSession,
+        run_id: str,
+        scenario: Any,
+        steps: list[dict[str, Any]],
+        target_agent_id: str,
+        allow_missing_tools: bool,
+    ) -> "list[dict[str, Any]] | LaunchResult":
+        """Run the container-agent gate for every agent target of the run.
+
+        Thin: loads each target's ``runtime_facts`` and hands off to
+        :func:`agent_launch_gate.evaluate_launch`, which judges each target on its
+        own facts and steps and stamps ``required_binaries``. Returns the advisory
+        warnings, or a refused ``LaunchResult`` (run row already ``failed``).
+        """
+        from models import Agent  # noqa: PLC0415
+        from engine import agent_launch_gate as gate  # noqa: PLC0415
+
+        targets = gate.agent_step_targets(steps, target_agent_id)
+        facts_by_agent: dict[str, Any] = {}
+        for agent_id in targets:
+            agent = (await db.execute(
+                select(Agent).where(Agent.agent_id == agent_id)
+            )).scalar_one_or_none()
+            facts_by_agent[agent_id] = getattr(agent, "runtime_facts", None) if agent else None
+        if not any(gate.is_gated(f) for f in facts_by_agent.values()):
+            return []
+
+        posture = gate.scenario_view(scenario, [])["cluster_posture"]
+        result = gate.evaluate_launch(
+            posture, steps, target_agent_id, facts_by_agent,
+            allow_missing_tools=allow_missing_tools,
+        )
+        if result.refusal is not None:
+            r = result.refusal
+            return await self._refuse_after_seed(
+                db, run_id,
+                error=f"{r.code}: {r.error}",
+                error_code=r.code,
+                error_detail=r.detail,
+                http_status=409,
+            )
+        return result.warnings
 
     # ------------------------------------------------------------------
     # push path
@@ -2460,6 +2557,10 @@ def _build_channel_dispatch(
                     "status": outcome.get("status", "dispatched"),
                     "code": outcome.get("code"),
                     "detail": outcome.get("detail"),
+                    # Present only for collector steps, so a ledger entry for
+                    # any other eal step is unchanged.
+                    **{k: outcome[k] for k in ("collector_target", "collector_source")
+                       if k in outcome},
                 })
             else:
                 ledger.append({

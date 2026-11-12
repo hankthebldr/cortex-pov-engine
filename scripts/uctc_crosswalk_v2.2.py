@@ -106,6 +106,22 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "enumeration burst to the apache2 CGO. Adds NO new index coverage (both rows are already "
         "evidenced); it adds a SECOND, behavioural-not-name-keyed piece of evidence and the delivery "
         "path that works inside a default-deny network."),
+    "SIM-EDR-023": (["TC-IR-02", "TC-EDR-03", "TC-EDR-05"], REMAP,
+        "Cron foothold re-running the WildFire test ELF — built so its Medium+ alerts (Local "
+        "Analysis verdict, operator-installed BIOCs, CR-EDR-0023) group into ONE case across two "
+        "causality chains. Grouping is the claim (TC-IR-02); the malware verdict (TC-EDR-03) and "
+        "the chain (TC-EDR-05) are already evidenced. Depth, not breadth."),
+    "SIM-EDR-024": (["TC-IR-02", "TC-EDR-05"], REMAP,
+        "Sudo backdoor account, SSH key and a systemd timer re-executing on a schedule — the "
+        "identity-persistence counterpart, grouped through operator-installed Medium BIOCs and "
+        "CR-EDR-0024. Depth on TC-IR-02, not new index breadth."),
+    "SIM-EDR-025": (["TC-EDR-04", "TC-EDR-03", "TC-EDR-05"], REMAP,
+        "Akira (Howling Scorpius) on-host Linux encryption — REAL AES-256/RSA-wrapped encryption of "
+        "a synthetic /var/tmp tree with the .akira extension and ransom note, raising the agent's "
+        "anti-ransomware verdict (TC-EDR-04 confirmed-malware impact) and the built-in shadow-access "
+        "ABIOC (TC-EDR-03) with full causality (TC-EDR-05). The host-impact counterpart to the ESXi "
+        "path (SIM-EDR-019) and to the SAFE-MODE non-encrypting variant (SIM-EDR-008); all three rows "
+        "already evidenced — depth, not new index breadth."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,
@@ -599,6 +615,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
     "SIM-KOI-009": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "GlassWorm poisoned IDE extension executing, persisting and collecting developer credentials on a macOS endpoint."),
+    "SIM-KOI-011": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "OpenClaw ClawHub marketplace malicious skill — padded-README scanner evasion + base64 curl|bash prerequisite dropper + developer-credential theft on a Linux dev endpoint."),
+    "SIM-KOI-010": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "npm preinstall-hook credential stealer reached via a phantom-squatted / AI-hallucinated package name, detonating and harvesting developer credentials for real on a Linux endpoint. TC-SCA-01 scores known-CVE dependencies, not a malicious package's lifecycle hook."),
 
     # ── DLP ────────────────────────────────────────────────────────────────
     # First DLP-plane scenarios. Refs below match each scenario's own authored

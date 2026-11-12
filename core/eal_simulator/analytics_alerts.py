@@ -307,7 +307,7 @@ class Readiness:
     alert_slug: str
     alert_name: str
     data_source: str
-    state: str          # armed | not_armed | unknown
+    state: str          # armed | not_armed | unknown | not_armable
     armed: bool
     code: Optional[str]
     days_of_data: Optional[int]
@@ -317,9 +317,107 @@ class Readiness:
     gate_days: int
     gate_basis: str
     detail: str
+    #: Why an ``armed`` verdict is armed: ``onboarding_date`` (the source has
+    #: carried data past the gate) or ``attested:soakless`` (the operator says
+    #: the tenant waives the periods). ``None`` when not armed.
+    armed_basis: Optional[str] = None
+    #: The delivery route the verdict was judged against, or ``None`` when no
+    #: route was supplied (the pure-function back-compat path).
+    route: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
+
+
+#: Route classifications that say the route cannot be read, as opposed to
+#: pipes that name one. ``mixed`` is the campaign-level case of one emitter
+#: delivering through more than one door.
+_UNRESOLVED_ROUTES = {
+    "cribl_receiver": (
+        "The Cribl receiver URL does not say which source UUID the records carry; "
+        "a dedicated UUID feeds analytics and the generic one does not."
+    ),
+    "unknown_forwarder": (
+        "The collector URL is not a tenant door, so the route onward from the "
+        "forwarder is unknown."
+    ),
+    "undeclared": "No collector URL was declared, so the delivery route is unknown.",
+    "mixed": (
+        "This emitter delivers through more than one door in this campaign; each "
+        "door has its own answer."
+    ),
+}
+
+
+def _route_gate(
+    profile: AlertProfile,
+    data_source: str,
+    pipe: str,
+    xdm_modeled_attested: bool,
+    common: dict[str, Any],
+) -> tuple[Optional["Readiness"], dict[str, Any]]:
+    """Judge the delivery route before anything else.
+
+    Returns ``(verdict, route_info)``. A non-``None`` verdict ends evaluation:
+    a route analytics never reads stays unfireable whatever the training state.
+    """
+    # Imported here: ingestion_routes imports analytics_catalogue, which this
+    # module also imports; a module-level import would order them needlessly.
+    from .ingestion_routes import PIPES, resolve_route  # noqa: PLC0415
+
+    def _halt(state: str, code: str, detail: str, info: dict[str, Any]) -> "Readiness":
+        return Readiness(
+            state=state, armed=False, code=code, days_of_data=None,
+            days_remaining=None, detail=detail, route=info, **common,
+        )
+
+    if pipe in _UNRESOLVED_ROUTES:
+        info = {"pipe": pipe, "resolved": False}
+        return _halt(
+            "unknown", "DETECTOR_ROUTE_UNRESOLVED",
+            f"{_UNRESOLVED_ROUTES[pipe]} Whether '{profile.name}' can see these "
+            f"records is unknown, so its silence is not evidence of a miss.",
+            info,
+        ), info
+    if pipe not in PIPES:
+        raise ValueError(
+            f"unknown pipe {pipe!r}; expected one of {sorted(PIPES)} or "
+            f"{sorted(_UNRESOLVED_ROUTES)}"
+        )
+
+    route = resolve_route(data_source, pipe)
+    if route is None:
+        info = {"pipe": pipe, "resolved": False}
+        return _halt(
+            "unknown", "DETECTOR_ROUTE_UNRESOLVED",
+            f"No documented route takes '{pipe}' into '{data_source}', so whether "
+            f"'{profile.name}' can see these records is unknown.",
+            info,
+        ), info
+
+    info = {"pipe": pipe, "resolved": True, **route.to_dict()}
+    if route.ootb_analytics == "no":
+        return _halt(
+            "not_armable", "DETECTOR_ROUTE_NO_ANALYTICS",
+            f"Records reaching '{data_source}' by {route.pipe} land in "
+            f"{route.tenant_dataset}, where built-in analytics do not run "
+            f"({route.analytics_evidence}). '{profile.name}' can never fire on "
+            f"them; a soakless tenant does not change that. Use a route that "
+            f"feeds analytics.",
+            info,
+        ), info
+    if route.ootb_analytics == "requires_xdm" and not xdm_modeled_attested:
+        return _halt(
+            "unknown", "DETECTOR_ROUTE_REQUIRES_XDM",
+            f"Records reaching '{data_source}' by {route.pipe} land in a custom "
+            f"dataset that built-in analytics read only after an XDM modeling "
+            f"rule maps it. No such rule is attested, so whether '{profile.name}' "
+            f"can fire is unknown.",
+            info,
+        ), info
+    if route.ootb_analytics == "requires_xdm":
+        info["xdm_modeled_attested"] = True
+    return None, info
 
 
 def readiness_for(
@@ -328,6 +426,9 @@ def readiness_for(
     onboarded_at: Optional[datetime],
     *,
     now: Optional[datetime] = None,
+    soakless_attested: Optional[bool] = None,
+    pipe: Optional[str] = None,
+    xdm_modeled_attested: bool = False,
 ) -> Readiness:
     """Can ``profile`` fire for ``data_source``, given when the tenant started
     carrying it?
@@ -336,8 +437,21 @@ def readiness_for(
     began landing in the tenant — NOT when this campaign ran. ``None`` means the
     operator has not declared it, which yields ``unknown``, never ``armed``.
 
+    Three gates, in this order, the first that fails decides:
+
+    1. ``pipe`` — the delivery route (see ``ingestion_routes``). A route analytics
+       never reads is ``not_armable``; one that needs an XDM rule is ``unknown``
+       unless ``xdm_modeled_attested``. ``None`` skips the gate (back-compat for
+       callers that never had a route); the campaign endpoint always supplies one.
+    2. ``soakless_attested`` — the operator says the tenant waives activation,
+       training and dedup periods. ``True`` arms the detector with
+       ``armed_basis="attested:soakless"``; the documented periods stay in the
+       verdict so the vendor's numbers remain quotable.
+    3. ``onboarded_at`` against the documented gate.
+
     Raises ``ValueError`` when ``data_source`` is outside the alert's Required
-    Data OR-set (an unsatisfiable binding), or when ``onboarded_at`` is naive.
+    Data OR-set (an unsatisfiable binding), when ``onboarded_at`` is naive, or
+    when ``pipe`` is not a known route classification.
     """
     get_source(data_source)  # raises on a typo'd source key
     if data_source not in profile.required_data:
@@ -359,6 +473,45 @@ def readiness_for(
         "gate_basis": GATE_BASIS,
     }
 
+    # Reject a naive declaration before any gate can short-circuit, so the same
+    # bad input fails the same way whatever the route or attestation.
+    if onboarded_at is not None and onboarded_at.tzinfo is None:
+        raise ValueError(
+            f"onboarded_at for '{data_source}' is a naive datetime; supply an "
+            f"explicit timezone. Assuming UTC would shift the readiness gate by "
+            f"the operator's own UTC offset and answer wrongly with no error."
+        )
+
+    if pipe is not None:
+        halted, route_info = _route_gate(
+            profile, data_source, pipe, xdm_modeled_attested, common,
+        )
+        if halted is not None:
+            return halted
+        common["route"] = route_info
+
+    now = now or datetime.now(timezone.utc)
+
+    if soakless_attested is True:
+        days_of_data = (now - onboarded_at).days if onboarded_at else None
+        return Readiness(
+            state="armed",
+            armed=True,
+            code="DETECTOR_ARMED_SOAKLESS",
+            days_of_data=days_of_data,
+            days_remaining=0,
+            detail=(
+                f"The operator attested this tenant is soakless, which waives the "
+                f"{profile.activation_days}-day activation and "
+                f"{profile.training_days}-day training periods (and dedup). "
+                f"'{profile.name}' can fire on the first matching record. This is "
+                f"an attestation, not something CortexSim checked, and ARMED says "
+                f"nothing about whether the detector has been observed firing."
+            ),
+            armed_basis="attested:soakless",
+            **common,
+        )
+
     if onboarded_at is None:
         return Readiness(
             state="unknown",
@@ -376,14 +529,6 @@ def readiness_for(
             **common,
         )
 
-    if onboarded_at.tzinfo is None:
-        raise ValueError(
-            f"onboarded_at for '{data_source}' is a naive datetime; supply an "
-            f"explicit timezone. Assuming UTC would shift the readiness gate by "
-            f"the operator's own UTC offset and answer wrongly with no error."
-        )
-
-    now = now or datetime.now(timezone.utc)
     days_of_data = (now - onboarded_at).days
     remaining = max(0, gate - days_of_data)
 
@@ -400,6 +545,7 @@ def readiness_for(
                 f"the detector is ARMED — not that it has ever been observed "
                 f"firing."
             ),
+            armed_basis="onboarding_date",
             **common,
         )
 
@@ -523,6 +669,9 @@ def readiness_report(
     plugins: Optional[set[str]] = None,
     onboarded_at: Optional[dict[str, datetime]] = None,
     now: Optional[datetime] = None,
+    soakless_attested: Optional[bool] = None,
+    pipes: Optional[dict[str, str]] = None,
+    xdm_modeled: Optional[set[str]] = None,
 ) -> dict[str, Any]:
     """Every detector's readiness, optionally scoped to one campaign's plugins.
 
@@ -536,13 +685,23 @@ def readiness_report(
     claim can never be armed, so a campaign carrying one is never ready: that
     detector's silence would have no documented explanation, which is precisely
     the reading this gate exists to prevent.
+
+    ``pipes`` maps an emitter name to its delivery route (see
+    ``readiness_for``); an emitter absent from it is judged without a route.
+    ``xdm_modeled`` is the set of data-source keys whose custom dataset the
+    operator attests an XDM modeling rule maps.
     """
     rows = detector_bindings(registry)
     if plugins is not None:
         rows = [r for r in rows if r["emitter"] in plugins]
     declared = onboarded_at or {}
+    routes = pipes or {}
+    modeled = xdm_modeled or set()
 
-    counts = {"total": 0, "armed": 0, "not_armed": 0, "unknown": 0, "undocumented": 0}
+    counts = {
+        "total": 0, "armed": 0, "not_armed": 0, "unknown": 0,
+        "not_armable": 0, "undocumented": 0,
+    }
     out: list[dict[str, Any]] = []
 
     for row in rows:
@@ -566,25 +725,35 @@ def readiness_report(
         else:
             profile = get_alert(row["alert_ref"])
             verdict = readiness_for(
-                profile, row["data_source"], declared.get(row["data_source"]), now=now,
+                profile, row["data_source"], declared.get(row["data_source"]),
+                now=now, soakless_attested=soakless_attested,
+                pipe=routes.get(row["emitter"]),
+                xdm_modeled_attested=row["data_source"] in modeled,
             )
             readiness = verdict.to_dict()
             counts[verdict.state] += 1
         out.append({**row, "readiness": readiness})
 
     ready = counts["total"] > 0 and counts["armed"] == counts["total"]
+    soakless_note = (
+        " The tenant is attested soakless (operator statement, not checked)."
+        if soakless_attested is True else ""
+    )
     return {
         "gate_basis": GATE_BASIS,
         "tenant_verified": 0,
         "alerts_transcribed": len(ALERT_PROFILES),
+        "soakless_attested": soakless_attested,
         "detectors": out,
         "counts": counts,
         "ready": ready,
         "banner": (
             f"{counts['armed']} of {counts['total']} detectors armed "
             f"({counts['not_armed']} not armed, {counts['unknown']} unknown, "
+            f"{counts['not_armable']} not armable on their route, "
             f"{counts['undocumented']} undocumented); tenant-verified is 0. "
             f"ARMED means the alert's documented preconditions are met -- it is "
             f"NOT evidence that the detector has ever been observed firing."
+            f"{soakless_note}"
         ),
     }

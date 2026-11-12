@@ -34,9 +34,10 @@ import os
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from config import settings
+from engine.dataset_requirements import load as dataset_requirements_load
 
 logger = logging.getLogger("cortexsim.api.health")
 
@@ -300,6 +301,58 @@ def probe_identity_spec() -> dict[str, Any]:
             **source,
         )
     return _ok(**source)
+
+
+def probe_dataset_requirements() -> dict[str, Any]:
+    """spec/dataset_requirements.yml — what each dataset needs on the Cortex and source side.
+
+    ``ok`` only when the registry loaded AND every dataset a card queries has an entry.
+    An absent registry is degraded, never "no requirements": every card dataset is then
+    unregistered. Reads local files only; no outbound call.
+    """
+    from engine import dataset_requirements as dr  # noqa: PLC0415
+    from engine.ttp_catalog import catalog  # noqa: PLC0415
+
+    path = dr.registry_path()
+    try:
+        registry = dataset_requirements_load()
+    except dr.DatasetRequirementsError as exc:
+        return _degraded(
+            "DATASET_REGISTRY_MALFORMED",
+            f"{exc} Until it parses, /api/prerequisites/* return a structured 500. "
+            f"Fix: restore spec/dataset_requirements.yml from this build's source "
+            f"tree. A malformed registry is not cached: it is re-read on every call, "
+            f"so the fix takes effect without a restart.",
+            path=path,
+        )
+    if registry is None:
+        return _degraded(
+            "DATASET_REGISTRY_ABSENT",
+            f"no dataset requirement registry at {path} — scenario prerequisites "
+            f"cannot be derived, and every card dataset reads as unregistered. "
+            f"Fix: confirm core/Dockerfile COPYs spec/, or set CORTEXSIM_BASE_DIR to "
+            f"the checkout root, then restart SimCore.",
+            path=path,
+        )
+    try:
+        unregistered = sorted(set(dr.card_datasets(catalog.all_raw())) - set(registry))
+    except dr.DatasetRequirementsError as exc:
+        return _degraded(
+            "CARD_SHAPE_UNRECOGNISED",
+            f"{exc} Until the card is fixed, its datasets cannot be checked against the "
+            f"registry and /api/prerequisites/* return a structured 500. "
+            f"Fix: correct the detections block on that card in detection_scanner/ttps/ "
+            f"and restart SimCore.",
+            path=path,
+        )
+    if unregistered:
+        return _degraded(
+            "DATASETS_UNREGISTERED",
+            f"{len(unregistered)} dataset(s) read by detection cards have no registry "
+            f"entry: {', '.join(unregistered)}. Fix: add them to {path}.",
+            path=path, count=len(registry), unregistered=unregistered,
+        )
+    return _ok(path=path, count=len(registry), unregistered=[])
 
 
 def probe_eal() -> dict[str, Any]:
@@ -879,6 +932,81 @@ async def probe_eal_collectors(session_factory) -> dict[str, Any]:
     return _ok(**common)
 
 
+def probe_mcp(app: Any = None) -> dict[str, Any]:
+    """The opt-in streamable-HTTP MCP mount at ``/mcp``.
+
+    Checked here, without leaving the process: whether the flag is on, whether
+    the MCP SDK and ``mcp_server.server`` import, whether ``app`` actually
+    carries a mounted server (``app.state.mcp``, set only by
+    ``mcp_server.server.mount``), and how many tools that server registered —
+    read back from it, never inferred from the flag. Checked here, NOT here:
+    whether a client can actually reach ``/mcp`` — that needs an inbound
+    request, which this endpoint never makes. A flag that is OFF is ``ok`` with
+    ``MCP_DISABLED``: an opt-in feature that was never asked for is not a
+    fault. Zero outbound calls.
+    """
+    import importlib.metadata  # noqa: PLC0415
+
+    try:
+        sdk = f"mcp=={importlib.metadata.version('mcp')}"
+    except Exception:  # noqa: BLE001 — the SDK version is reported, never fatal
+        sdk = "unavailable"
+    common = {"path": "/mcp", "transport": "streamable-http", "sdk": sdk}
+
+    if not settings.CORTEXSIM_MCP_HTTP:
+        return _ok(
+            code="MCP_DISABLED",
+            mounted=False,
+            tools=0,
+            detail="opt-in; set CORTEXSIM_MCP_HTTP=1 to mount",
+            **common,
+        )
+
+    try:
+        from mcp_server.server import registered_ids  # noqa: PLC0415
+    except ImportError as exc:
+        return _degraded(
+            "MCP_SDK_IMPORT_FAILED",
+            f"CORTEXSIM_MCP_HTTP is set but the MCP server did not import "
+            f"({type(exc).__name__}: {exc}), so /mcp is not mounted. Fix: pip install -r "
+            f"core/requirements.txt (mcp==1.30.0) and confirm core/mcp_server/ is in the image.",
+            mounted=False,
+            tools=0,
+            **common,
+        )
+
+    mcp = getattr(getattr(app, "state", None), "mcp", None)
+    if mcp is None:
+        return _degraded(
+            "MCP_NOT_MOUNTED",
+            "CORTEXSIM_MCP_HTTP is set but this SimCore has no server mounted at /mcp, so a "
+            "client configured for it gets the console instead. Fix: read the boot log for the "
+            "'/mcp is NOT mounted' line and restart SimCore once its cause is resolved.",
+            mounted=False,
+            tools=0,
+            **common,
+        )
+
+    tools = len(registered_ids(mcp))
+    if tools == 0:
+        return _degraded(
+            "MCP_NO_TOOLS",
+            "/mcp is mounted but its server registered zero tools, so a connected client "
+            "sees an empty surface. Fix: mcp_server.server.build must register "
+            "cortexsim.specs() + xsiam.specs() through registry.register.",
+            mounted=True,
+            tools=0,
+            **common,
+        )
+
+    return _ok(
+        mounted=True,
+        tools=tools,
+        detail=f"mounted at /mcp with {tools} tools",
+        **common,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
@@ -894,6 +1022,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "adapter_catalog",
     "uctc_registry",
     "identity_spec",
+    "dataset_requirements",
     "eal",
     "xsiam_operation_catalog",
     "payload_shelf",
@@ -903,6 +1032,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "master_key",
     "integrations",
     "eal_collectors",
+    "mcp",
     # Exposure, not readiness: last so the list still reads top-down from "can
     # this process store anything" to "is anything configured to leave it".
     "api_auth",
@@ -926,7 +1056,7 @@ async def _scenario_tool_rows(session_factory) -> list[dict[str, Any]]:
     return [{"scenario_id": sid, "external_tools": tools or []} for sid, tools in rows]
 
 
-async def component_health() -> dict[str, dict[str, Any]]:
+async def component_health(app: Any = None) -> dict[str, dict[str, Any]]:
     """Every component probe, each independently guarded.
 
     Ordered by ``COMPONENT_KEYS`` so the response reads top-down from "can this
@@ -963,6 +1093,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["adapter_catalog"] = _guard("adapter_catalog", probe_adapter_catalog)
     components["uctc_registry"] = _guard("uctc_registry", probe_uctc_registry)
     components["identity_spec"] = _guard("identity_spec", probe_identity_spec)
+    components["dataset_requirements"] = _guard("dataset_requirements", probe_dataset_requirements)
     components["eal"] = _guard("eal", probe_eal)
     components["xsiam_operation_catalog"] = _guard(
         "xsiam_operation_catalog", probe_xsiam_operation_catalog
@@ -985,12 +1116,13 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["master_key"] = await _aguard("master_key", probe_master_key)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
+    components["mcp"] = _guard("mcp", lambda: probe_mcp(app))
     components["api_auth"] = _guard("api_auth", probe_api_auth)
     return components
 
 
-async def health_payload() -> dict[str, Any]:
-    components = await component_health()
+async def health_payload(app: Any = None) -> dict[str, Any]:
+    components = await component_health(app)
     degraded = sorted(
         name for name, comp in components.items() if comp.get("status") != OK
     )
@@ -1007,7 +1139,7 @@ async def health_payload() -> dict[str, Any]:
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Liveness + readiness (GAP-API-007).
 
     Always HTTP 200 — a probe has to be able to READ the detail, and a 503 that
@@ -1016,4 +1148,4 @@ async def health_check():
     not, and ``not_checked`` names what this endpoint deliberately did not
     verify so a green result is never over-read.
     """
-    return await health_payload()
+    return await health_payload(app=request.app)

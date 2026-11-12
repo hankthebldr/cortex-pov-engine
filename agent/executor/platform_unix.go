@@ -12,6 +12,7 @@ package executor
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
@@ -45,16 +46,81 @@ func newShellCmdFor(shell, cmdStr string) (*exec.Cmd, func(), error) {
 // newAnchorCmd builds the persistent anchor shell for a ChainSession.
 //
 // cgoImage, when non-empty, is used as the anchor's argv[0] so the process's
-// command line reflects the intended CGO image (e.g. "nginx"); the executed
-// binary is still /bin/sh.
-func newAnchorCmd(cgoImage string) *exec.Cmd {
-	cmd := exec.Command("sh")
+// command line reflects the intended CGO image (e.g. "nginx"). The anchor is
+// `sh` renamed — the behaviour every host beacon has always had (dash on
+// Debian/Ubuntu) — UNLESS `sh` resolves to a multi-call binary (busybox,
+// toybox), where argv[0] selects the APPLET and an unknown name dies with
+// "applet not found". Only then: bash renamed if bash is on PATH, else plain sh
+// un-renamed (renamed = false), which the caller records as ANCHOR NOT HONOURED.
+func newAnchorCmd(cgoImage string) (cmd *exec.Cmd, renamed bool) {
+	shell := "sh"
 	if cgoImage != "" {
-		// Rewrite argv[0] only (Args[0]); the binary remains sh.
+		shell, renamed = anchorShellWith(exec.LookPath, filepath.EvalSymlinks, SameFile)
+	}
+	cmd = exec.Command(shell)
+	if renamed {
 		cmd.Args[0] = cgoImage
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	return cmd
+	return cmd, renamed
+}
+
+// multiCallShells are the binaries whose behaviour is chosen by argv[0].
+var multiCallShells = map[string]bool{"busybox": true, "toybox": true}
+
+// anchorShellWith picks the anchor binary and whether it can carry a renamed
+// argv[0]. `sh` that is a single-purpose shell is renamed. `sh` that is a
+// multi-call binary, or that is not on PATH, falls back to bash renamed, else
+// to `sh` un-renamed. `sh` is multi-call when its symlink-resolved base name is
+// busybox/toybox, OR when it is the very same file as a `busybox`/`toybox` on
+// PATH (a hard-linked applet has no symlink to follow, so its resolved name is
+// just `sh`). A stat failure in sameFile means "not the same file".
+func anchorShellWith(
+	lookPath func(string) (string, error),
+	evalSymlinks func(string) (string, error),
+	sameFile func(a, b string) bool,
+) (shell string, renamed bool) {
+	resolve := func(p string) string {
+		if r, err := evalSymlinks(p); err == nil {
+			return r
+		}
+		return p
+	}
+	if p, err := lookPath("sh"); err == nil {
+		resolved := resolve(p)
+		multiCall := multiCallShells[filepath.Base(resolved)]
+		for name := range multiCallShells {
+			if multiCall {
+				break
+			}
+			if bp, berr := lookPath(name); berr == nil && sameFile(resolved, resolve(bp)) {
+				multiCall = true
+			}
+		}
+		if !multiCall {
+			return "sh", true
+		}
+	}
+	if _, err := lookPath("bash"); err == nil {
+		return "bash", true
+	}
+	return "sh", false
+}
+
+// AnchorRenameSupportedWith reports whether the anchor can carry a scenario's
+// cgo_anchor name on this host: sh is a single-purpose shell, or bash exists.
+func AnchorRenameSupportedWith(
+	lookPath func(string) (string, error),
+	evalSymlinks func(string) (string, error),
+	sameFile func(a, b string) bool,
+) bool {
+	_, renamed := anchorShellWith(lookPath, evalSymlinks, sameFile)
+	return renamed
+}
+
+// AnchorRenameSupported is AnchorRenameSupportedWith over the real PATH.
+func AnchorRenameSupported() bool {
+	return AnchorRenameSupportedWith(exec.LookPath, filepath.EvalSymlinks, SameFile)
 }
 
 // anchorExitScript is what Close() writes to end the anchor cleanly.

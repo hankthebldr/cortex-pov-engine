@@ -1246,6 +1246,24 @@ What narrows the exposure (2026-11):
 - **The installer checksum** guards against corruption, not tampering:
   SimCore serves plain HTTP.
 
+## Agent access (MCP)
+
+An agent can drive SimCore through its MCP server (`core/mcp_server/`): scenarios,
+runs, readiness and the read-only XSIAM catalog. Writes always preview; nothing
+here has run against a live tenant (`tenant-verified: 0`). Opt-in HTTP mount
+(`CORTEXSIM_MCP_HTTP=1`), then:
+
+```bash
+claude mcp add --transport http cortexsim http://localhost:8888/mcp
+claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -e PYTHONPATH=<checkout>/core -- python -m mcp_server
+```
+
+`<checkout>` is the absolute path to your clone. `claude mcp add` sets no working
+directory, so without `PYTHONPATH` the server exits with `No module named mcp_server`;
+`python` must be the venv's interpreter (give its absolute path if the venv is not active).
+
+Tools, envelope and error codes: `docs/reference/api-and-agent-surface.md` §9.
+
 ## Cortex connection (opt-in, read-only)
 
 SimCore's job is generating signal **into** the customer's environment; it

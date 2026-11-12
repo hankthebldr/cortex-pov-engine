@@ -1,0 +1,2905 @@
+# Product-mechanics ledger — the source of truth for HOW Cortex turns signal into a
+# detection, and for the questions we still owe about it.
+#
+# Read docs/product-mechanics/README.md first. Short version:
+#   * `known`     — facts with a crossable source (public doc, public KB, our own lab
+#                   observation, an operator report). NEVER internal-only material:
+#                   this repo is public and the vault forbids it (vault SOP, Hosts table).
+#   * `assumes`   — what CortexSim does TODAY, with a code/doc ref. An assumption is
+#                   not a fact; most questions below exist to confirm or kill one.
+#   * `contrasts` — "how this works vs how that works", stated as our working model.
+#   * `questions` — each one names the generator lever its answer moves.
+#
+# Edit this file, then:  .venv/bin/python scripts/product_mechanics.py render --apply
+# Answers never live here — they are immutable records under answers/ and the
+# effective status of a question is derived from them at render time.
+
+schema_version: 1
+updated: "2026-11-11"
+
+mechanisms:
+
+  - id: ING
+    name: Ingestion, parsing and XDM modeling
+    summary: >-
+      Everything between "the emitter POSTed a record" and "a detector can read it":
+      the HTTP log collector (cloud /logs/v1/event or the Broker VM HTTP applet),
+      dataset routing, the parsing rule, the `_time` the record is filed under, and
+      the XDM modeling rule that maps raw fields onto the common schema. A record
+      that is accepted but never lands, or lands under the wrong time or dataset, is
+      a silent false negative at every layer above it.
+    known:
+      - fact: >-
+          An HTTP log collector names its dataset `<Vendor>_<Product>_raw` from the
+          Vendor and Product set on the collector instance. The request carries the
+          raw key as `Authorization: {api_key}` (no scheme). Documented responses:
+          200 success; 401 wrong token or collector deleted/disabled; 404 wrong URL;
+          413 body over 10 MB; 429 over 400 requests/s per customer per endpoint;
+          500 body does not match the collector's log format. Records may be up to
+          5 MB each, and the collector ingests up to 80,000 events/s.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/vendor-specific-data-sources-and-connectors/http-log-collector/set-up-an-http-log-collector-to-receive-logs.md
+          date: "2026-11-10"
+      - fact: >-
+          "Analytics, IOC, and BIOC issues are only generated on normalized logs."
+          Raw firewall data is queryable as `panw_ngfw_*_raw`; stitched data through
+          `xdr_data` or a stitched preset such as `network_story`.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          A 2xx from the collector means the record was delivered; delivery is
+          accounted per record and nothing above 2xx counts.
+        ref: core/eal_simulator/delivery.py:45
+      - assumption: >-
+          Analytics-family emitters put a top-level `dataset` hint in the body, as if
+          the body can steer dataset routing.
+        ref: core/eal_simulator/analytics_emitter.py:354
+      - assumption: >-
+          The analytics emitter's `auth_scheme` defaults to empty, so a campaign sends
+          the raw key as `Authorization: <key>`, the documented form. Until PR 178
+          (2026-11-10) the default was "Bearer", which that form does not allow.
+        ref: core/eal_simulator/analytics_emitter.py:119
+      - assumption: >-
+          XDM modeling rules are a normalization substrate, surfaced and exported but
+          counted informationally, not as a detection type.
+        ref: detection_scanner/ttps (detections.modeling_rules[], 5 cards)
+    contrasts:
+      - vs: STI
+        point: >-
+          Ingestion decides whether a record exists and what it is called; stitching
+          decides whether two existing records are about the same activity. A
+          stitching failure can be an ingestion failure in disguise (wrong field
+          name, wrong `_time`).
+
+  - id: STI
+    name: Stitching (data fusion across sources)
+    summary: >-
+      The engine that links records from different sensors (agent network events,
+      NGFW sessions, identity logs, cloud audit) into one story. Our working model:
+      a join on shared entities, chiefly the network 5-tuple for network-endpoint,
+      inside a time tolerance. Henry confirmed in practice that the source half has
+      to match what the agent recorded and the destination half has to match the
+      firewall transaction. Which fields, which side of NAT and what tolerance are
+      still unconfirmed.
+    known:
+      - fact: >-
+          Network-endpoint stitching did not occur until src IP, src port, dst IP,
+          dst port and protocol were made consistent: source as the endpoint (agent)
+          records it, destination as the firewall transaction records it.
+        source:
+          kind: operator_report
+          ref: Henry, design conversation 2026-11-05 (lab evidence not attached)
+          date: "2026-11-05"
+      - fact: >-
+          Once the native NGFW integration is set up, "the console begins stitching
+          logs with other Palo Alto Networks-generated logs to form stories". Stitched
+          data is read from `xdr_data` or a preset designated for stitched data, such
+          as `network_story`, and "IOC and BIOC issues are applicable to stitched
+          data only, and are not available on raw data."
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+          date: "2026-11-10"
+      - fact: >-
+          The `network_story` and `authentication_story` presets over `xdr_data`
+          "contain information stitched together from Cortex XSIAM agent events and log
+          files to form a common schema". Stitched rows carry story fields (`story_id`,
+          `story_version`, `story_publish_timestamp`, `is_disintegrated`) and firewall
+          fields (`fw_time_generated`, "equivalent to the event_timestamp"). The agent
+          network event carries `action_local_ip` / `action_local_port` ("Source IP
+          address", "Source port"), `action_remote_ip` / `action_remote_port`,
+          `action_network_protocol`, `action_network_connection_id`,
+          `action_network_creation_time` ("The start time of the network session") and
+          the NAT fields `action_local_nat_ip` / `action_local_nat_port`,
+          `action_remote_nat_ip` / `action_remote_nat_port` and `action_nat`. No public
+          page names the fields stitching matches on, a time tolerance or a NAT rule.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets ; https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields ; https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor
+          date: "2026-11-10"
+      - fact: >-
+          Third-party firewalls are stitched too. "Cortex XSIAM can stitch data from
+          Check Point firewalls with other logs to make up network stories"; Check Point
+          logs with `sessionid = 0` are dropped, and the destination port is available
+          only in the raw logs. Cisco ASA connection logs are stitched into network
+          stories for message IDs 302013, 302014, 302015 and 302016 only. Both arrive
+          through the Broker VM syslog applet.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          A cross-source join on the shared 5-tuple (or container_id, or src_host)
+          within a tight temporal window is how Cortex stitches network and endpoint.
+        ref: docs/reference/causality-graph-methodology.md#12-network--cross-plane-log-stitching-and-the-5-tuple
+      - assumption: >-
+          One deterministic 5-tuple per run is resolved and projected into every
+          channel's vocabulary (nine entity keys).
+        ref: core/engine/stitch_context.py:75
+      - assumption: >-
+          An in-process EAL emitter cannot share a 5-tuple with the agent because it
+          POSTs from SimCore; only the identity principal (canary_token) is injected.
+          NOTE: ngfw_eal_emitter has since gained src_ip/src_host/dst_ip/dst_port
+          overrides that the stitch adapter does not yet use.
+        ref: core/eal_simulator/stitch_params.py:7 ; core/eal_simulator/plugins/ngfw_eal_emitter.py:282
+      - assumption: >-
+          SIM-MP-006 stitches NGFW and container endpoint on 5-tuple + container_id
+          inside 10 s, but its endpoint query groups by action_local_ip,
+          action_remote_ip, action_remote_port and omits the local port.
+        ref: scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131
+      - assumption: >-
+          `stitching_key` is one of src_host | session_id | user_principal |
+          container_id; in the corpus it is src_host 28x, user_principal 13x and a
+          long tail, and `correlation_window_seconds` ranges 10 s to 86400 s against
+          "XSIAM's default correlation window".
+        ref: scenarios/_schema.yml:380
+      - assumption: >-
+          62 of the 87 EAL `plugin:` references in the multi-plane and NDR scenarios
+          (15 files) name `ngfw_eal_emitter` (32) or `ngfw_threat_emitter` (30). Both
+          POST firewall-shaped records to a custom HTTP collector, not through the
+          native NGFW integration, yet those scenarios declare stitched expectations.
+        ref: core/eal_simulator/plugins/ngfw_eal_emitter.py ; scenarios/multi_plane/ ; scenarios/ndr/
+    contrasts:
+      - vs: INC
+        point: >-
+          Stitching links RECORDS (raw telemetry) into one activity; incident
+          grouping links ALERTS into one incident. Our scenarios blend the two:
+          `stitching_key` and `required_planes_in_incident` sit side by side. They
+          may key on different things.
+      - vs: COR
+        point: >-
+          Stitching happens without anyone writing a rule; a correlation rule is an
+          authored scheduled query that can join datasets itself. A correlation rule
+          can reproduce a join the fusion engine never made.
+
+  - id: CAU
+    name: Causality and the Causality Group Owner (CGO)
+    summary: >-
+      The agent-side engine that assembles a process tree per chain, names one CGO
+      as the owner, and gives every event in the chain one causality_id. Alerts
+      inherit the causality_id of the node they fire on. Which process becomes the
+      CGO decides what the chain is "about" and what rare-parent logic sees.
+    known:
+      - fact: >-
+          With the agent fully up, SIM-EDR-003 steps 1–2 were recorded in xdr_data and
+          steps 3–5 never appeared, even 8+ minutes later. Each step was a fresh `sh`
+          (argv[0] `apache2`) spawned by the beacon; the 3rd to 5th identical shells
+          started within about 100 ms, and neither they nor their children were
+          recorded. The same commands (useradd, chpasswd, ssh-keygen, userdel) run in
+          one shell 2 s apart were all recorded within seconds. The cause is not
+          established.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04 (kernel 6.8), SIM-EDR-003 run 2 and a spaced diagnostic draft run, 2026-11-10
+          date: "2026-11-10"
+      - fact: >-
+          On a systemd 255 host every chain that starts in a systemd service has a
+          degenerate CGO: causality_actor_process_image_name `9`, image path
+          `/proc/self/fd/9`, the SHA-256 of empty input (e3b0c442…) and command line
+          `systemd-executor --deserialize N --log-target journal-or-kmsg`, with a null
+          causality_actor_effective_username. This held for the beacon's own steps,
+          for a renamed binary run directly as a transient unit's ExecStart (`systemd-run
+          /opt/cxprobe/apache2 -c …`), for `systemd-run /bin/sh -c …`, and for a unit
+          run with `--uid=www-data`. Each transient unit was its own chain (its own
+          causality_actor_causality_id); all the beacon's steps shared one.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, XDR agent 9.4.0.470, Ubuntu 24.04 (kernel 6.8, systemd 255), probe run 19c7a04d (token pmqfba025), xdr_data PROCESS_START, 2026-11-11
+          date: "2026-11-11"
+      - fact: >-
+          An argv[0] rewrite (`bash -c "exec -a apache2 /bin/sh -c …"`) left
+          action_process_image_name `sh`; only action_process_image_command_line began
+          with `apache2`. A renamed copy of the binary (`cp /usr/bin/dash
+          /opt/cxprobe/apache2`) was recorded as action_process_image_name `apache2`, and
+          its children as actor_process_image_name `apache2`. Neither changed the CGO.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, probe run 19c7a04d (token pmqfba025), cases c2a, c2b, c2c, 2026-11-11
+          date: "2026-11-11"
+      - fact: >-
+          A chain launched by cron (`* * * * * root bash -c /opt/cxprobe/c1c.sh`) had
+          CGO `cron` (`/usr/sbin/cron -f -P`), not the scheduled payload. The shebang
+          script's own process was recorded with the script's file name, `c1c.sh`, as
+          its image name.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, probe run 19c7a04d (token pmqfba025), case c1c, 2026-11-11
+          date: "2026-11-11"
+      - fact: >-
+          `causality_id` is not an xdr_data field: a query that names it in `fields`
+          fails, and the same query with `actor_causality_id` and
+          `causality_actor_causality_id` succeeds.
+        source:
+          kind: lab_observation
+          ref: Lab tenant XQL via SimCore /api/xsiam/tenants/deathstar/xql, 2026-11-11 (also observed by the persistence-grouping session the same day)
+          date: "2026-11-11"
+    assumes:
+      - assumption: >-
+          `causality_id` on xdr_data is the join key for a chain; three actor scopes
+          (causality_actor_*, actor_process_*, action_process_*) map to CGO, parent,
+          child.
+        ref: docs/reference/causality-graph-methodology.md#11-endpoint-the-causality-instance-ci-graph-and-the-cgo
+      - assumption: >-
+          An argv[0] rewrite does NOT change comm or /proc/pid/exe, so
+          causality_actor_process_image_name stays `sh` even when cgo_anchor names
+          apache2.
+        ref: docs/reference/mechanics-review-2026-07.md (H3)
+      - assumption: >-
+          Every Linux step runs through an identity wrapper (runuser / sudo / su),
+          which is itself an unnatural parent for service-account activity.
+        ref: agent/identity/harness.go:53 ; docs/reference/mechanics-review-2026-07.md (M5)
+      - assumption: >-
+          The beacon honours cgo_anchor by setting the anchor shell's argv[0] to
+          cgo_anchor.image_name and records the anchor as honoured when that rename
+          succeeds; `ANCHOR NOT HONOURED` is written only when no renamable shell exists.
+        ref: agent/executor/platform_unix.go:37
+      - assumption: >-
+          cgo_anchor.primary_username labels the CGO node in the causality graph
+          (default `root`); nothing on the host makes the CGO run as that user.
+        ref: core/engine/causality_graph.py:421
+    contrasts:
+      - vs: STI
+        point: >-
+          Causality is built on the endpoint from OS process lineage; stitching is
+          built in the cloud across sensors. A chain can be perfectly causal and
+          still never stitch to its firewall session.
+
+  - id: BIO
+    name: BIOC matching
+    summary: >-
+      Behavioral IOC rules: a predicate over agent event fields (process image,
+      command line, file path, registry key, network fields, actor scopes). Our
+      working model is deterministic matching on the event, no baseline. 365 BIOCs
+      across the card corpus, 40 of which carry a suppression window.
+    known:
+      - fact: >-
+          BIOC (and IOC) issues are generated on stitched, normalized data only: "IOC
+          and BIOC issues are applicable to stitched data only, and are not available
+          on raw data."
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+          date: "2026-11-10"
+      - fact: >-
+          A BIOC rule is XQL on `xdr_data` or `cloud_audit_log` only, using the `filter`
+          and `alter` stages and functions without aggregation, and it filters on
+          `event_type`: FILE, INJECTION, LOAD_IMAGE, NETWORK, PROCESS, REGISTRY,
+          EVENT_LOG or STORY ("Events relating to a combination of firewall and endpoint
+          logs over the network"). Field values are evaluated case-insensitively. A rule
+          with 5000 or more hits in 24 hours is disabled, and one that hits more than
+          100 endpoints over 72 hours gets an automatic exception on PROCESS SHA256.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule
+          date: "2026-11-10"
+      - fact: >-
+          "As soon as you create or enable a BIOC rule, the tenant begins to monitor
+          input feeds for matches." It "also analyzes historical data collected in the
+          tenant"; how far back is not stated.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc
+          date: "2026-11-10"
+      - fact: >-
+          Default issue deduplication applies only to issues whose name contains
+          WildFire or Local Analysis, over a 1-hour window; "All other issue types are
+          processed individually and will not be deduped." A BIOC that matches 20 times
+          raises 20 issues.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/investigate-issues/issue-deduplication
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          Windows steps run as `powershell.exe -EncodedCommand <base64>` wrapped in
+          an exit-code shim, so the visible command line is the base64 blob.
+        ref: agent/executor/platform_windows.go:40 ; agent/executor/script.go:134
+      - assumption: >-
+          Linux command lines carry the identity wrapper prefix, e.g.
+          `runuser -l www-data -c '<ttp>'`.
+        ref: agent/identity/harness.go:53
+      - assumption: >-
+          A BIOC card entry is `{name, description, logic, severity,
+          mitre_technique_ids, suppression_window_seconds?}`.
+        ref: detection_scanner/ttps/*.json (detections.biocs[])
+      - assumption: >-
+          Nine NDR card BIOCs (eight cards) put their predicate on a raw firewall
+          dataset: `panw_ngfw_traffic_raw` eight times, `cisco_asa_raw` once.
+        ref: detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json ; detection_scanner/ttps/TTP-2026-0106-sim-ndr-010.json
+    contrasts:
+      - vs: ABI
+        point: >-
+          A BIOC is a rule someone wrote; it fires the first time its predicate
+          matches. An ABIOC is PANW-authored behavioral logic that judges rarity in
+          context, so the same event can fire one and not the other.
+      - vs: IOC
+        point: >-
+          An IOC matches a value (hash, IP, domain); a BIOC matches a behavior. A
+          renamed tool defeats a filename-keyed BIOC and does not defeat a hash IOC;
+          a recompiled tool does the reverse.
+
+  - id: ABI
+    name: ABIOC (analytics BIOC)
+    summary: >-
+      PANW-authored, auto-tuned behavioral detections evaluated over causality
+      chains. Our working model: they weigh rarity of a behavior in its causal
+      context, which makes lab size, tenant history and repetition matter in ways a
+      BIOC does not. 164 ABIOCs across the card corpus.
+    known:
+      - fact: >-
+          The first built-in alerts CortexSim activity raised in the lab were "XDR
+          Analytics BIOC" alerts at Low severity: "Uncommon Linux shell command
+          execution" on the beacon spawning `sh` (raised by beacon activity itself,
+          so any run can raise it), and "Suspicious access to shadow file", mapped to
+          T1003, on `useradd` and `chpasswd`. The scenario declared T1136.001 for that
+          step. All three came from diagnostic runs, so none is tenant verification of
+          a scenario.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04, diagnostic draft runs, 2026-11-10
+          date: "2026-11-10"
+      - fact: >-
+          An ABIOC indicates "a single event of suspicious behavior with an identified
+          chain of causality", judged against user, endpoint and network profiles; an
+          analytics issue is multi-event activity that deviates from a baseline built
+          over time. "Cortex XSIAM tailors each ABIOC to your specific environment after
+          analyzing your logs and data sources." No ABIOC learning period is published.
+          Detectors with 5000 or more matches in 24 hours are disabled.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/analytics/analytics-issues-and-analytics-biocs
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          An ABIOC card entry adds `behavioral_profile` and `causality_anchor` to the
+          BIOC shape.
+        ref: detection_scanner/ttps/*.json (detections.abiocs[])
+      - assumption: >-
+          The matcher's single 3600 s default window is too tight for
+          Analytics/ABIOC.
+        ref: core/connectors/matcher.py:32 ; docs/reference/mechanics-review-2026-07.md (M12)
+    contrasts:
+      - vs: ANA
+        point: >-
+          Analytics alerts publish activation/training periods and judge an entity
+          against its own profile over time; whether ABIOCs need a training period
+          at all is unknown (PM-ABI-01).
+
+  - id: ANA
+    name: Analytics engine (profiles, baselines, thresholds)
+    summary: >-
+      Detectors that judge activity against a learned profile: port scans, failed
+      connections, impossible travel, new country, brute force. The vendor alert
+      pages publish severity, activation, training, test and dedup periods and the
+      data sources that feed each alert, and they publish no threshold and no
+      predicate. "Five occurrences of the same src/dst" is exactly the class of
+      fact we do not have.
+    known:
+      - fact: >-
+          Each bound analytics alert publishes Activation Period, Training Period,
+          Test Period, Deduplication Period and a Required Data OR-set of data
+          sources. All eight transcribed alerts state activation 14 days and training
+          30 days.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ (per-alert pages, transcribed in core/eal_simulator/analytics_alerts.py)
+          date: "2026-09-20"
+      - fact: >-
+          No analytics alert page publishes a numeric threshold, a dataset field
+          name or the detection predicate itself.
+        source:
+          kind: public_doc
+          ref: core/eal_simulator/analytics_alerts.py (module docstring)
+          date: "2026-09-20"
+      - fact: >-
+          The four periods are defined: Activation is "the shortest amount of log
+          file time before the app can generate an issue"; Training is the logging
+          time a detector needs "to establish a baseline"; Test is the logging time
+          it uses to decide whether activity is unusual; Deduplication is the time in
+          which further issues "for the same activity or behavior are suppressed".
+          "Most but not all detectors start running after the activation period
+          ends." The page does not say whether an issue can fire before training
+          completes.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/analytics/analytics-detection-time-intervals.md
+          date: "2026-11-10"
+      - fact: >-
+          The analytics engine "accesses your logs as they are streamed to the Cortex
+          XSIAM tenant" and runs "on all mapped network and authentication data": a
+          source that is not mapped is not analysed.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/analytics/analytics-engine.md
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          The arming gate is max(activation, training) — OUR inference, labelled
+          `inferred:` in every verdict.
+        ref: core/eal_simulator/analytics_alerts.py:78
+      - assumption: >-
+          Readiness depends on an operator-typed onboarding date per data source;
+          unknown is never armed.
+        ref: core/eal_simulator/analytics_alerts.py:325
+    contrasts:
+      - vs: BIO
+        point: >-
+          A BIOC can fire on a fresh tenant on the first event; an analytics alert
+          can be "not armed" for weeks and read as a miss.
+      - vs: COR
+        point: >-
+          A correlation rule's threshold is in its XQL and we can read it; an
+          analytics threshold is not published, so volume and spread are guesses
+          until answered.
+
+  - id: COR
+    name: Correlation rules
+    summary: >-
+      Authored, scheduled XQL that produces alerts, can join datasets, and is the
+      mechanism behind most of our cross-plane `Correlation` detections (209 across
+      the card corpus; the coverage gate holds the corpus at a 10 % Correlation
+      share). Schedule, lookback and time basis decide whether a run is ever inside
+      an evaluated window.
+    known:
+      - fact: >-
+          A correlation rule runs Real Time ("scan the data as it's ingested"; limited
+          XQL stages, must include a `filter`) or Scheduled: every 10, 20 or 30
+          minutes, hourly, daily or custom, "minimum query frequency is every 10
+          minutes", over a query time frame "up to 7 days". Docs recommend
+          `time_frame_end()` over `current_time()`. Suppression is off by default; when
+          enabled its default duration is 1 hour and the maximum is 1 day. Rules with
+          5000 or more hits in 24 hours are disabled automatically, and at most 1200
+          user-created scheduled correlations can be active.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-correlation-rule/create-a-correlation-rule.md
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          `correlation_window_seconds` is "the ±N second window inside which signals
+          must fire to qualify as stitched", enforced "against XSIAM's default
+          correlation window" — values from 10 s to 86400 s in the corpus.
+        ref: scenarios/_schema.yml:380
+      - assumption: >-
+          A correlation card entry is `{name, rule_id, logic}` with no schedule,
+          time frame or suppression fields.
+        ref: detection_scanner/ttps/*.json (detections.correlation_rules[])
+    contrasts:
+      - vs: STI
+        point: >-
+          See STI. A correlation rule can fire on a join the fusion engine never
+          made, so a green correlation does not prove stitching.
+
+  - id: IOC
+    name: IOC matching and threat intel
+    summary: >-
+      Indicator-value matching (hash, IP, domain, URL) against agent and network
+      data, fed by manually added indicators or TIM feeds. 410 IOCs across the card
+      corpus, 353 of which declare `reputation_required`.
+    known:
+      - fact: >-
+          IOC issues, like BIOC issues, are generated only on stitched, normalized
+          data, not on raw datasets.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+          date: "2026-11-10"
+      - fact: >-
+          IOC types are full path, file name, domain, destination IP address, MD5 hash
+          and SHA256 hash. "Cortex XSIAM looks for IOC matches in all data collected in
+          the past" and keeps evaluating new data. Which event fields each type matches
+          is not stated.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-an-ioc
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          IOC matches attach at the file/image (sha256) level of the causality graph.
+        ref: docs/reference/causality-graph-methodology.md#11-endpoint-the-causality-instance-ci-graph-and-the-cgo
+      - assumption: >-
+          A TAXII feed (mocktaxii) plus matching outbound traffic produces a stitched
+          IOC + NDR + EDR detection.
+        ref: infra/modules/aws/tim ; scenarios/tim/
+    contrasts:
+      - vs: BIO
+        point: See BIO.
+
+  - id: PRV
+    name: Prevention (agent modules, report vs block)
+    summary: >-
+      Agent-side modules that block in block mode and alert in report mode. Our
+      outcome axis credits `prevented` only with two witnesses: a tenant alert
+      saying Prevented AND a host-recorded kill of the step.
+    known: []
+    assumes:
+      - assumption: >-
+          `prevented` requires a tenant alert whose action reads prevented AND a
+          host-recorded kill; a lost beacon can only read `pending`.
+        ref: core/engine/outcome.py:28
+      - assumption: >-
+          A POV runs report mode then block mode on the same endpoint as a paired
+          run, with an optional canary proving the block profile is real.
+        ref: docs/reference/api-and-agent-surface.md (§1.3.1)
+    contrasts:
+      - vs: BIO
+        point: >-
+          Prevention acts inline on the endpoint before the event completes;
+          detection evaluates the event after the fact. A prevented step may never
+          produce the downstream events later steps expect.
+
+  - id: INC
+    name: Alert-to-incident grouping
+    summary: >-
+      The logic that groups alerts into incidents. Our correlation-rate KPI asserts
+      ">= N distinct planes under one incident_id", so the grouping key, not the
+      stitch, decides whether a multi-plane scenario scores. The XSIAM docs now say
+      "issue" for alert and "case" for incident.
+    known:
+      - fact: >-
+          Case creation for correlation-rule issues: "Medium or High severity issues:
+          Automatically creates a new case." "Low severity: Do not create cases and
+          are not grouped into existing cases." Issues with shared artifacts and
+          attributes group into one case only when their domain is Security or
+          Posture AND their severity is Medium or higher.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-correlation-rule/create-a-correlation-rule.md
+          date: "2026-11-10"
+      - fact: >-
+          Grouping starts at Medium severity, in the operator's words: "things like
+          stitching/grouping started with medium severity". Which sources this
+          covers and whether "stitching" here means data stitching or alert grouping
+          is open (PM-INC-05, PM-STI-13).
+        source:
+          kind: operator_report
+          ref: Henry, design conversation 2026-11-10 (lab evidence not attached)
+          date: "2026-11-10"
+      - fact: >-
+          Case grouping methods are artifact association (shared core artifacts such as
+          SHA256, HostName and UserName), exact match detection, and related entities
+          "within a close timeframe". An issue is eligible when it is in the Security or
+          Posture domain "with Medium severity or higher". "Grouping by Username may be
+          subject to temporal constraints", with no window stated, and the logic is
+          proprietary and "continuously tuned". Issues on the same causality chain ID
+          (CID) are also grouped.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/what-is-causality
+          date: "2026-11-10"
+      - fact: >-
+          A case stops accepting issues 30 days after creation, 14 days after its last
+          issue, or at 1,000 issues. An auto-resolved case reopens if a matching issue
+          arrives within six hours of its last issue.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/overview-of-cases/case-thresholds
+          date: "2026-11-10"
+      - fact: >-
+          Correlation issues group only through mapped artifact fields: Initiator
+          SHA256, CGO SHA256, Target process SHA256, File SHA256, Remote IP and IPv6,
+          DNS Query Name, the Initiator CMD / Initiator Path / Initiated By triplet (a
+          command line of at least 5 characters, not counting spaces and the image
+          name), Host Name, Agent ID, User name, Url, and an external artifact name and
+          id. An all-zero hash is invalid, and User name excludes common system accounts
+          and known service accounts. "Field mapping does not guarantee grouping."
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/customize-cases-and-issues/optimize-case-grouping-in-correlations
+          date: "2026-11-10"
+      - fact: >-
+          A May 2024 PANW blog contradicts the current docs for some areas: "in some
+          cases like in identity/cloud/SaaS areas, we allow grouping of low severity
+          alerts." The current case-grouping page states the Medium floor with no such
+          exception.
+        source:
+          kind: public_blog
+          ref: https://www.paloaltonetworks.com/blog/security-operations/smartgrouping-precision-ai-driven-investigation/
+          date: "2026-11-10"
+      - fact: >-
+          "INFO issues are not included" in the XQL `issues` dataset.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          `required_planes_in_incident` planes must all be represented under one
+          incident_id; the verifier asserts each in dataset=xdr_data. 55 scenarios
+          declare it.
+        ref: scenarios/_schema.yml:385
+      - assumption: >-
+          Card severities are authored without a grouping floor: 15 BIOCs are
+          Informational and 1 ABIOC is Low (16 cards, including SIM-MP-013, which
+          declares required_planes_in_incident), and the 209 card correlation rules
+          carry no severity at all, so the severity a DC picks at import decides
+          whether the issue can ever join a case.
+        ref: detection_scanner/ttps/TTP-2026-0123-sim-mp-013.json ; scenarios/multi_plane/mp-013-muddled-libra-rogue-vm-alert-storm.yml
+    contrasts:
+      - vs: STI
+        point: See STI.
+
+  - id: TEN
+    name: Tenant readiness (content, entitlements, data collection)
+    summary: >-
+      The state of the tenant that decides whether a detector can fire at all:
+      which content is enabled, which licence or add-on gates an engine, what the
+      agent profile collects. A detector that is off reads exactly like a miss.
+    known:
+      - fact: >-
+          A run that started 15 s after the endpoint first showed CONNECTED left no
+          events at all: the agent's collectors were still stopped, and the first
+          process events arrived about a minute after connect. A second run 16
+          minutes later was recorded (see the CAU observation for what it lost).
+        source:
+          kind: lab_observation
+          ref: Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04, SIM-EDR-003 runs 1 and 2, 2026-11-10
+          date: "2026-11-10"
+      - fact: >-
+          A Linux agent runs in Kernel mode (a supported kernel module) or User Space
+          mode (agent 7.7 or later and kernel 5.0 or later); both collect EDR data. When
+          neither requirement is met it runs in asynchronous mode, where "there is no
+          event collection, no BTP, no EDR, and no anti-lpe": an unsupported kernel in
+          Kernel mode, an install with `--no-km`, or User Space on a kernel older than
+          5.0.0.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/protect-your-endpoints/endpoint-security/install-and-manage-endpoints/set-up-endpoint-protection/set-up-endpoint-profiles-and-exception-rules/set-up-agent-settings-profiles
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          /api/health makes zero outbound calls and lists reachability-shaped claims
+          it does not make in `not_checked[]`.
+        ref: core/api/health.py
+      - assumption: >-
+          POV scoping maps tenant entitlements to the corpus and emits upsell lists
+          with PAN-* part numbers.
+        ref: core/api/pov.py
+    contrasts: []
+
+  - id: ALR
+    name: Alert records and read-back
+    summary: >-
+      What an alert ("issue") looks like when SimCore pulls it back: which field
+      names the rule that fired, which timestamp is the detection time, which MITRE
+      technique and source string it carries, and which case it joined. The matcher
+      credits a seeded Result from these fields alone, so a misread field turns a
+      real detection into a miss, or a noise alert into a pass.
+    known:
+      - fact: >-
+          Alerts pulled from the lab tenant carried none of the four rule-identifier
+          keys the connector reads (`matching_service_rule_id`, `detector_id`,
+          `bioc_id`, `rule_id`); the connector preflight reported
+          PF_ALERT_SHAPE_PARTIAL and matching fell back to technique plus name.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, xsiam connector preflight and reconcile, 2026-11-04
+          date: "2026-11-04"
+      - fact: >-
+          The Issues API issue object carries `detection.method` ("Detection source or
+          method that created the issue"; filter values such as XDR Agent, XDR
+          Analytics, XDR BIOC, XDR IOC, XDR Analytics BIOC, Correlation, PAN NGFW;
+          response codes such as TRAPS, MAGNIFIER, ANALYTICS_BIOC, BIOC, IOC,
+          CORRELATION, FW), `detection.rule_id` (a string, undescribed),
+          `mitre_techniques`, `_insert_time` ("Issue creation timestamp in epoch
+          milliseconds"), `observation_time` (undescribed) and `case_ids`, a list,
+          rather than `case_id` or `incident_id`. The connector reads all three as
+          fallbacks since PR 179.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues
+          date: "2026-11-10"
+    assumes:
+      - assumption: >-
+          The alert's time is the first present of `detection_timestamp`,
+          `creation_time`, `local_insert_ts`, `_insert_time`, and MTTD is that time
+          minus the step's `executed_at`.
+        ref: core/connectors/xsiam.py:383
+      - assumption: >-
+          The rule identifier is the first present of `matching_service_rule_id`,
+          `detector_id`, `bioc_id`, `rule_id`, then the Issues API's
+          `detection.rule_id`; the source is `source`, `alert_source`, then
+          `detection.method`; the case is `incident_id`, `case_id`, then `case_ids`
+          (PR 179, 2026-11-10).
+        ref: core/connectors/xsiam.py:409 ; core/connectors/xsiam.py:415
+      - assumption: >-
+          The alert's `source` string ("XDR BIOC", "XDR Analytics BIOC",
+          "Correlation", ...) maps onto one signal family, and a pair whose families
+          differ never matches; the default match window is 3600 s.
+        ref: core/connectors/matcher.py:32
+      - assumption: >-
+          `signal_family` maps both human-readable source strings and the Issues
+          API's `detection.method` codes: ANALYTICS_BIOC to `abioc`, TRAPS to
+          `prevention`, MAGNIFIER to `analytics`; FW maps to no family. Before PR 179
+          ANALYTICS_BIOC read as `analytics` and TRAPS as nothing. TRAPS = XDR Agent
+          and MAGNIFIER = XDR Analytics rest on the order of two lists on the docs
+          page, which is an inference.
+        ref: core/connectors/matcher.py:70
+    contrasts:
+      - vs: INC
+        point: >-
+          ALR is the shape of one alert as the API returns it; INC decides which
+          alerts share a case. A correct case can still be scored wrong if the alert
+          fields it carries are misread.
+
+  - id: IDN
+    name: Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory)
+    summary: >-
+      How Cortex decides who an event, a chain or an alert belongs to: the user
+      fields on each process scope of a causality chain, the directory identity the
+      Cloud Identity Engine (CIE) syncs into `pan_dss_raw`, and the Kerberos and
+      logon events a domain controller produces. CortexSim plants identity three
+      ways: the identity harness runs Linux steps as service accounts, the AD and
+      IdP emitters POST shape-true logon records, and the identity-lab design builds
+      a real domain joined to CIE. Whether any of these reaches an identity
+      detector is unproven.
+    known:
+      - fact: >-
+          `pan_dss_raw` is the dataset for Active Directory via the Cloud Identity
+          Engine, and a tenant without CIE set up has no such dataset.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets.md
+          date: "2026-11-11"
+      - fact: >-
+          CIE supports on-premises Microsoft Active Directory and OpenLDAP; its agent
+          runs on Windows Server 2016–2025 and needs SSL decryption off for its
+          traffic. Linking CIE to the tenant is required to activate the Identity
+          Analytics detection rules.
+        source:
+          kind: public_doc
+          ref: https://docs.paloaltonetworks.com/identity/release-notes/cloud-identity-engine/cloud-identity-engine-release-notes-welcome/cloud-identity-engine-release-notes-system-requirements ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/onboard-cortex-xsiam/deployment-steps/set-up-cloud-identity-engine
+          date: "2026-11-11"
+      - fact: >-
+          "Possible Kerberoasting attack" requires both the XDR agent and the XDR
+          agent with eXtended Threat Hunting (XTH), with a 14-day activation and a
+          30-day training period.
+        source:
+          kind: public_doc
+          ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-kerberoasting-attack
+          date: "2026-11-11"
+      - fact: >-
+          A Linux local user appears in xdr_data as `<hostname>\<user>`
+          (`pov-target-01\www-data`). Both `runuser -u www-data -- …` and `systemd-run
+          --uid=www-data …` made the child's action_process_username
+          `pov-target-01\www-data` while runuser itself stayed root; the CGO's
+          causality_actor_effective_username was null in every case.
+        source:
+          kind: lab_observation
+          ref: Lab tenant, XDR agent 9.4.0.470, Ubuntu 24.04, probe run 19c7a04d (token pmqfba025), cases id1–id3, 2026-11-11
+          date: "2026-11-11"
+    assumes:
+      - assumption: >-
+          Linux identity steps run through `runuser -l <user> -c`, `sudo -u` or `su -s
+          /bin/bash`; `runuser -l` needs the account to have a login shell, which
+          www-data on a stock Ubuntu does not.
+        ref: agent/identity/harness.go:7
+      - assumption: >-
+          On Windows every non-direct identity collapses to `direct` and is recorded
+          as IDENTITY NOT HONOURED, so a pulled Windows step runs as the beacon's
+          service account.
+        ref: agent/identity/platform.go:212
+      - assumption: >-
+          The AD emitter POSTs Windows Security events (4769, 4624, …) to a collector
+          under the dataset name `msft_windows_security`; nine cards read that
+          name, and none reads `pan_dss_raw`.
+        ref: core/eal_simulator/plugins/ad_windows_emitter.py:66
+      - assumption: >-
+          The IdP emitter names its dataset in the record body (`okta_sso`) and plants
+          the shared principal as the canary token.
+        ref: core/eal_simulator/plugins/idp_signin_emulator.py:146 ; core/eal_simulator/stitch_params.py
+      - assumption: >-
+          The only domain CortexSim can build is the AWS `itdr` module; 14 scenarios
+          need a domain.
+        ref: infra/modules/aws/itdr
+    contrasts:
+      - vs: STI
+        point: >-
+          Stitching links records from different sensors into one story; identity
+          resolution decides which directory identity a user string on any record
+          is. A record can stitch on its 5-tuple with no identity resolved, and two
+          records about one person can resolve without ever stitching.
+      - vs: INC
+        point: >-
+          Case grouping uses UserName as one artifact among several; identity
+          resolution decides whether `CORP\alice`, `alice@corp.local` and an Okta
+          login are one UserName. A miss here splits a case that should be one.
+      - vs: CAU
+        point: >-
+          Causality names the CGO process; identity says who owns each process in the
+          chain. On the lab host the CGO had no user at all while its descendants did.
+
+questions:
+
+  # ── ING — ingestion, parsing, XDM ────────────────────────────────────────────
+  - id: PM-ING-01
+    mechanism: ING
+    priority: P0
+    status: open
+    question: >-
+      When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet)
+      returns 2xx, is the record guaranteed to be parsed into its dataset, or can it
+      be accepted and then dropped by the parsing rule (bad JSON, missing or
+      unparseable timestamp, oversize field)? Where does a dropped record become
+      visible (an error dataset, a collector health metric, nowhere)?
+    context: >-
+      delivery.py counts 2xx as delivered. If accepted is not the same as parsed,
+      every "delivered" campaign verdict can hide an empty dataset.
+    lever: >-
+      Add a post-delivery canary row-count probe before a step may claim
+      `delivered`; add a parse-failure code to the delivery taxonomy.
+    decides:
+      - if: 2xx guarantees parse
+        then: Keep the delivery verdict; document it as proven.
+      - if: accepted can still be dropped
+        then: Split `accepted` from `landed` in the verdict; landed requires an XQL hit on the canary.
+    experiment: >-
+      POST one well-formed and one malformed record carrying distinct canaries to a
+      lab collector; query both canaries after 10 minutes.
+    affects: ["core/eal_simulator/delivery.py", "all collector-POST emitters"]
+
+  - id: PM-ING-02
+    mechanism: ING
+    priority: P0
+    status: open
+    question: >-
+      How is the destination dataset chosen for an HTTP-collector record: by the
+      collector instance's configured vendor/product, by a field in the body, or by
+      the parsing rule? Does a top-level `dataset` field in the body have any effect?
+    context: >-
+      Analytics-family emitters send a top-level `dataset` hint
+      (analytics_emitter.py:354). If routing is decided by the collector's
+      vendor/product, the hint does nothing and a misconfigured collector sends every
+      record to the wrong dataset while still returning 2xx.
+    lever: >-
+      Collector preflight checks vendor/product pairing per data source; drop or keep
+      the body hint.
+    experiment: >-
+      Send identical records with different `dataset` hints through one collector;
+      see which dataset each lands in.
+    affects: ["core/eal_simulator/analytics_emitter.py", "GET /api/eal/campaigns/{id}/collectors"]
+
+  - id: PM-ING-03
+    mechanism: ING
+    priority: P0
+    status: open
+    question: >-
+      Which field becomes `_time` for each data source we emit, which formats are
+      accepted, and what happens to a record whose timestamp is in the future or days
+      in the past: rejected, clamped, or filed at ingestion time?
+    context: >-
+      Detectors window on time. A record filed under the wrong `_time` falls outside
+      every correlation window and every analytics test period while looking
+      perfectly ingested.
+    lever: >-
+      Emitter timestamp generation per data source; telemetry-replay of historical
+      datasets; MTTD baselines.
+    experiment: >-
+      Emit three canary records stamped now, now-3d, now+1h; compare `_time` and
+      `_insert_time` for each.
+    affects: ["all collector-POST emitters", "infra/modules/aws/telemetry-replay"]
+
+  - id: PM-ING-04
+    mechanism: ING
+    priority: P1
+    status: open
+    question: >-
+      What is the typical and worst-case latency from collector acceptance to (a)
+      queryable in XQL, (b) visible to BIOC evaluation, (c) visible to correlation
+      rules, (d) visible to analytics engines?
+    context: >-
+      The matcher uses one 3600 s default window with per-type overrides
+      (matcher.py:32). MTTD and "missed" both depend on these latencies.
+    lever: Per-detection-type matcher windows; MTTD interpretation in the report.
+    affects: ["core/connectors/matcher.py", "core/connectors/service.py"]
+
+  - id: PM-ING-05
+    mechanism: ING
+    priority: P1
+    status: open
+    question: >-
+      For third-party data sources, do analytics engines and correlation rules read
+      the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be
+      populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type,
+      xdm.source.user.username)?
+    context: >-
+      Our emitters are shape-true to the raw vendor format. If the engine reads XDM,
+      a raw field the modeling rule does not map is invisible.
+    lever: Which fields each emitter must populate; SIM-CDR-015 modeling-rule substrate proof.
+    affects: ["core/eal_simulator/plugins/*", "scenarios/cdr/ (SIM-CDR-015)"]
+
+  - id: PM-ING-06
+    mechanism: ING
+    priority: P1
+    status: open
+    question: >-
+      When a modeling rule exists for a vendor/product and the record's field names
+      drift (case, nesting, missing optional fields), does the rule silently produce
+      nulls? Is there any tenant-visible signal for low XDM field coverage?
+    context: "Tolerance hides bugs: a null-filled XDM row reads as ingested."
+    lever: Emitter shape tests against the published modeling rule; an XDM-coverage probe.
+    affects: ["detection_scanner/ttps (modeling_rules[])"]
+
+  - id: PM-ING-07
+    mechanism: ING
+    priority: P2
+    status: open
+    question: >-
+      What rate and size limits apply to the HTTP collector (records per request,
+      bytes per request, requests per second, per-tenant daily volume), and which
+      status code signals throttling?
+    context: High-volume analytics shapes (sweeps, brute force) can exceed a limit mid-campaign.
+    lever: Emitter batching; a throttling code in the 12-code delivery taxonomy.
+    affects: ["core/eal_simulator/delivery.py"]
+
+  - id: PM-ING-08
+    mechanism: ING
+    priority: P2
+    status: open
+    question: >-
+      Does the Broker VM HTTP applet behave identically to the cloud HTTP collector
+      (same parsing, dataset routing, latency, limits)?
+    context: >-
+      The offline bundle and collector preflight treat the two doors as equivalent.
+      Neither public Broker VM applet overview read on 2026-11-10 names an HTTP
+      applet, so first confirm that the second door exists at all. PR 178 already
+      removed the "Broker VM HTTP applet" wording from the delivery REMEDIATION
+      text.
+    lever: Per-door preflight expectations.
+    affects: ["core/eal_simulator/bundle.py"]
+
+  - id: PM-ING-09
+    mechanism: ING
+    priority: P1
+    status: open
+    question: >-
+      Does the HTTP log collector accept `Content-Type: application/x-ndjson`, and
+      a gzip body when the collector is set to uncompressed (or the reverse)? The
+      documented types are `application/json` and `text/plain`. What does a
+      mismatch return: 500, 2xx with the records dropped, or something else?
+    context: >-
+      Batch mode sends application/x-ndjson (analytics_emitter.py:608). A
+      mismatch that returns 2xx and drops the records is exactly the accepted-but-
+      not-landed case PM-ING-01 asks about.
+    lever: Batch-mode content type and compression defaults; a one-record canary in the collector preflight.
+    experiment: >-
+      POST one canary record per combination (json, ndjson, text; gzip on and off)
+      to one collector; record the status code and whether each canary lands.
+    affects: ["core/eal_simulator/analytics_emitter.py", "GET /api/eal/campaigns/{id}/collectors"]
+
+  # ── STI — stitching / data fusion ────────────────────────────────────────────
+  - id: PM-STI-01
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      Which exact fields does the data fusion engine match to link an NGFW
+      traffic/threat log to an XDR agent network event: the full 5-tuple (src IP,
+      src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host
+      identity? Is matching done on raw fields or XDM fields?
+    context: >-
+      Henry's finding says the full tuple must agree. SIM-MP-006's endpoint query
+      omits the local port (mp-006:131), so either the query is wrong or the port
+      is not part of the key.
+    lever: Which fields every network-shaped emitter and agent step must carry and agree on.
+    decides:
+      - if: full 5-tuple
+        then: Make src_port deterministic and shared; fix the SIM-MP-006 query to include action_local_port.
+      - if: subset (no src port)
+        then: Drop src_port from the stitch contract; stop pinning ephemeral ports.
+    experiment: >-
+      Run the same agent connection twice: once with the NGFW record's src port
+      matching, once off by one; see which stitches.
+    affects: ["core/engine/stitch_context.py", "scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml", "ngfw_eal_emitter"]
+
+  - id: PM-STI-02
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      What time tolerance does stitching allow between the agent network event and
+      the firewall record, and which firewall record does it use: session start,
+      session end, or threat log? Are long-lived sessions only stitched once they
+      end?
+    context: >-
+      Scenarios declare windows from 10 s (mp-006) to 86400 s. PAN-OS traffic logs
+      are often written at session end, which can be minutes after the agent saw
+      the connect.
+    lever: Timing between the agent step and its firewall leg; scenario window values.
+    affects: ["scenarios (correlation_window_seconds)", "ngfw_eal_emitter"]
+
+  - id: PM-STI-03
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      When NAT is in play, which side of the translation does stitching use: the
+      firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT
+      source? Does the engine read the NGFW's NAT fields (nat source IP/port) to
+      bridge the two?
+    context: >-
+      Henry's correction put the source in the endpoint's view. If the engine
+      bridges with NAT fields, emitters must populate both pre- and post-NAT fields
+      consistently, or the bridge breaks.
+    lever: Which NGFW fields carry the endpoint's address; whether emitters must also fill NAT fields.
+    affects: ["ngfw_eal_emitter", "third_party_firewall_emitter", "core/engine/stitch_context.py"]
+
+  - id: PM-STI-04
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      For a container or Kubernetes pod egressing through node SNAT, can stitching
+      link the pod's process network event (pod IP) to the firewall session (node IP
+      after SNAT)? If so, by what: container_id, conntrack, an agent-reported
+      translation?
+    context: >-
+      SIM-MP-006 asserts NGFW and container endpoint stitch on 5-tuple +
+      container_id within 10 s. The firewall cannot see container_id, so the bridge
+      has to come from somewhere else.
+    lever: Whether SIM-MP-006 is satisfiable as authored; CDR egress scenario design.
+    affects: ["scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml", "scenarios/cdr/"]
+
+  - id: PM-STI-05
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      Does network-endpoint stitching require a PAN-OS NGFW logging through Strata
+      Logging Service, or are third-party firewall logs (HTTP collector or syslog)
+      stitched to agent data too? If third-party works, which vendors and which
+      fields?
+    context: >-
+      third_party_firewall_emitter and the NDR plane's `moat_tier: MOAT` claims both
+      lean on the answer.
+    lever: Which stitch claims third-party firewall scenarios may make; MOAT labelling.
+    affects: ["third_party_firewall_emitter", "scenarios/ndr/", "scenarios/multi_plane/"]
+
+  - id: PM-STI-06
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      Does stitching require the agent to have recorded its own network event for
+      the connection, or can a firewall record be linked to a process from other
+      evidence (a DNS query event, the host's IP at that time, an RPC/ETW event)?
+    context: >-
+      stitch_params.py concludes an in-process EAL emitter can never share a tuple
+      with the agent. If other evidence suffices, there are more honest stitch
+      paths than we model.
+    lever: Whether EAL-only network legs can ever stitch; the canary_token-only adapter.
+    affects: ["core/eal_simulator/stitch_params.py"]
+
+  - id: PM-STI-07
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      What is the observable output of a successful stitch: fields added to the
+      firewall row (e.g. actor process or causality fields), a link in the network
+      story, a joined row in a specific dataset? What XQL proves "this firewall
+      session was stitched to process X"?
+    context: >-
+      Tier-2 verification and the causality graph's CONFIRMED stitch edges need a
+      query that can come back false.
+    lever: A stitch-proof XQL probe for Tier-2 verify and the graph's edge-state machine.
+    affects: ["core/engine/causality_graph.py", "POST /api/runs/{id}/verify"]
+
+  - id: PM-STI-08
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      How do identity sources stitch to endpoints: on UPN, sAMAccountName, email,
+      SID, or a normalized user? What normalization does the engine apply (case,
+      domain prefix, @suffix)? When the Cloud Identity Engine is linked, does it do
+      the resolving, so that `CORP\alice` on an agent event, `alice@corp.local` in a
+      4769 and `alice@corp.com` in an Okta sign-in become one identity, and which
+      field on an event or issue carries that resolved identity?
+    context: >-
+      13 scenarios use `stitching_key: user_principal`. canary_token accepts only
+      lowercase alphanumerics and hyphens (stitch_params.py:36), which may not
+      survive the engine's normalization. The lab shows Linux local users as
+      `<hostname>\<user>` (IDN known), a form no IdP record carries.
+    lever: Account formats planted by canary_token and identity emitters; whether cross-source identity scenarios need CIE linked to be satisfiable.
+    affects: ["core/eal_simulator/stitch_params.py", "idp_signin_emulator", "ad_windows_emitter"]
+
+  - id: PM-STI-09
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      Is stitching (data fusion) the same mechanism that groups alerts into an
+      incident, or separate? If separate, what does each key on?
+    context: Our scenario schema treats `stitching_key` and `required_planes_in_incident` as one contract.
+    lever: What our stitch fields mean; how the correlation-rate KPI is scored.
+    affects: ["scenarios/_schema.yml", "core/connectors/measures.py"]
+
+  - id: PM-STI-10
+    mechanism: STI
+    priority: P2
+    status: open
+    question: >-
+      How are protocols without ports keyed for stitching (ICMP), and is DNS over
+      UDP/53 stitched per query or per session?
+    context: dns_tunnel_exfil and ICMP-shaped recon depend on it.
+    lever: DNS-tunnel and ICMP step design.
+    affects: ["dns_tunnel_exfil"]
+
+  - id: PM-STI-11
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      Does App-ID or session state gate stitching, e.g. only sessions with an
+      identified application, only allowed sessions, or only sessions that have
+      ended?
+    context: Short curl loops and denied sessions are common in our egress steps.
+    lever: Egress step design (allowed vs denied, session length).
+    affects: ["ngfw_eal_emitter", "scenarios/ndr/"]
+
+  - id: PM-STI-12
+    mechanism: STI
+    priority: P0
+    status: open
+    question: >-
+      Do firewall-shaped records that arrive through a custom HTTP log collector
+      ever enter stitching, or does only the native NGFW integration produce
+      stitched stories? If a custom-collector dataset can be stitched, what does it
+      take: a specific Vendor/Product pair, a modeling rule onto XDM network fields,
+      or something else?
+    context: >-
+      The docs tie stitching to the native NGFW integration and say IOC and BIOC
+      issues exist only on stitched data (STI known). 62 of 87 EAL plugin references
+      in the multi-plane and NDR scenarios use ngfw_eal_emitter or
+      ngfw_threat_emitter, which POST to a custom collector. If those records are
+      never stitched, every stitched expectation on them is unsatisfiable.
+    lever: >-
+      Which detection types NGFW-emitter scenarios may declare (XQL and correlation
+      only, or also stitched BIOC/IOC); whether the emitters need a modeling rule;
+      MOAT claims on those scenarios.
+    decides:
+      - if: only the native integration stitches
+        then: Cap NGFW-emitter scenarios at XQL and correlation detections; add a loader warning for stitched expectations on emitter-only network legs.
+      - if: a modeled custom dataset can stitch
+        then: Ship the modeling rule with the emitter and add a stitch-proof probe to the collector preflight.
+    experiment: >-
+      Make one real agent connection, then POST a firewall record carrying the same
+      5-tuple through a custom collector; query `network_story` for a stitched row.
+    affects: ["core/eal_simulator/plugins/ngfw_eal_emitter.py", "core/eal_simulator/plugins/ngfw_threat_emitter.py", "scenarios/multi_plane/", "scenarios/ndr/"]
+
+  - id: PM-STI-13
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      Does any part of data stitching (records into stories, the network story,
+      the causality view's network legs) depend on alert severity, or is the Medium
+      floor purely a rule for grouping issues into cases?
+    context: >-
+      Henry's report says "stitching/grouping started with medium severity" (INC
+      known), and the docs state the floor for case grouping. Stitching operates on
+      records, which carry no severity, so we read the floor as grouping-only, but
+      that reading is ours.
+    lever: >-
+      Whether a Low-severity step can still yield a stitched story we can prove
+      with XQL; how the FAQ separates the two engines.
+    affects: ["docs/product-mechanics/ledger.yml (faq)", "core/engine/causality_graph.py"]
+
+  - id: PM-STI-14
+    mechanism: STI
+    priority: P1
+    status: open
+    question: >-
+      Stitched rows carry `story_publish_timestamp`, `story_version` and
+      `is_disintegrated`. How long after both records are ingested is a story
+      published? Is it re-published as a new version when a later record (a
+      session-end traffic log, an agent disconnect) arrives? What makes a story
+      "disintegrated", and does that undo a stitch?
+    context: >-
+      A stitch-proof query run too early reads "not stitched" for a story that is
+      published later, and a query that reads the first version can miss the
+      firewall leg added afterwards.
+    lever: >-
+      The stitch-proof probe waits for publish and reads the latest story version;
+      the matcher window for stitched evidence.
+    affects: ["core/engine/causality_graph.py", "POST /api/runs/{id}/verify"]
+
+  # ── CAU — causality / CGO ────────────────────────────────────────────────────
+  - id: PM-CAU-01
+    mechanism: CAU
+    priority: P0
+    status: open
+    question: >-
+      How does the causality engine choose the CGO? Which processes count as
+      causality boundaries (services, shells spawned by services, remote sessions,
+      the agent's own children)? When our beacon, running as a systemd service,
+      spawns `sh -c`, which process becomes the CGO of the chain?
+    context: >-
+      cgo_anchor names a realistic owner (apache2, winword.exe), but the on-wire CGO
+      is decided by the engine, and mechanics-review H3 says it reads `sh`.
+    lever: Whether cgo_anchor needs a real exec-as-service path or an honest relabel.
+    affects: ["core/engine/causality_graph.py", "agent/beacon", "scenarios (cgo_anchor)"]
+
+  - id: PM-CAU-02
+    mechanism: CAU
+    priority: P0
+    status: open
+    question: >-
+      Does the agent record process image name from the executable (/proc/pid/exe,
+      comm) or from argv[0]? Confirm whether an argv[0] rewrite changes
+      causality_actor_process_image_name or action_process_image_name.
+    context: H3 asserts it does not; that claim is unverified against the product.
+    lever: "H3's fix: real exec vs relabel."
+    experiment: >-
+      Run `exec -a apache2 sh -c 'id'` under the beacon; read actor and causality
+      image fields for the event.
+    affects: ["docs/reference/mechanics-review-2026-07.md (H3)"]
+
+  - id: PM-CAU-03
+    mechanism: CAU
+    priority: P1
+    status: open
+    question: >-
+      Do privilege-transition wrappers (runuser, sudo, su, setpriv) continue a
+      causality chain or start a new one? Do they appear as nodes, and does the
+      user change alter the causality actor's primary username?
+    context: Every Linux identity-harness step is wrapped (harness.go:53).
+    lever: Identity harness wrapper choice (M5's clean-descent alternative).
+    affects: ["agent/identity/harness.go"]
+
+  - id: PM-CAU-04
+    mechanism: CAU
+    priority: P0
+    status: open
+    question: >-
+      Does the agent drop, sample, throttle or collapse process-start events: very
+      short-lived processes, known system binaries, or several identical starts
+      (same parent, image and command line) inside a short window? If so, what are
+      the window and the count, and are the children of a dropped process dropped
+      with it?
+    context: >-
+      Raised from P1 on lab evidence (CAU known, 2026-11-10): three identical `sh`
+      starts from the beacon within about 100 ms vanished with all their children,
+      taking steps 3–5 of SIM-EDR-003 with them, while the same commands spaced 2 s
+      apart in one shell were all recorded. Each step is a fresh `sh` with the same
+      argv[0] (`apache2`, the CGO masquerade), so every multi-step scenario looks
+      like a burst of identical starts.
+    lever: >-
+      Inter-step pacing in the beacon (a minimum gap between step launches), or
+      giving each step a distinct parent or command line; whether a missing step is
+      scored `missed` or `not_recorded`.
+    decides:
+      - if: identical rapid starts are throttled or deduplicated
+        then: Add a minimum inter-step gap above the window to the beacon, and stop scoring steps the agent never recorded as missed.
+      - if: nothing is dropped by design
+        then: Treat the lab loss as a collection fault; check agent mode and resource limits before relaunching.
+    experiment: >-
+      Launch 5 identical `sh -c 'id'` from one parent at 0, 50, 200, 500 and 1000
+      ms spacing; count the process events per spacing in xdr_data.
+    affects: ["agent/beacon", "agent/executor/script.go", "scenarios (step commands)", "core/engine/outcome.py"]
+
+  - id: PM-CAU-05
+    mechanism: CAU
+    priority: P1
+    status: open
+    question: >-
+      For a process launched by cron, a systemd timer or a scheduled task, what
+      becomes the CGO: the scheduler, or the launched process?
+    context: Persistence scenarios (SIM-CDR-006, SIM-EDR-003) expect the persisted payload to own its chain.
+    lever: Persistence scenario detection expectations.
+    affects: ["scenarios/cdr/", "scenarios/edr/"]
+
+  - id: PM-CAU-06
+    mechanism: CAU
+    priority: P2
+    status: open
+    question: >-
+      In containers, is the runtime (containerd-shim, runc) a causality boundary,
+      and is container identity populated on every event type (process, file,
+      network)?
+    context: CDR scenarios key on container_id.
+    lever: CDR detection keys.
+    affects: ["scenarios/cdr/"]
+
+  - id: PM-CAU-07
+    mechanism: CAU
+    priority: P0
+    status: open
+    question: >-
+      On Linux hosts running systemd 255 or later, where services start through
+      `systemd-executor` executed from a file descriptor, the agent records the CGO
+      of every service-started chain as image name `9`, path `/proc/self/fd/9`, the
+      SHA-256 of empty input and a null user (CAU known, 2026-11-11). Is that the
+      intended CGO for these hosts? Do ABIOCs, the causality view and the Causality
+      grouping artifact then treat every service-started chain on the host as owned
+      by the same unnamed process, and does an agent version or setting resolve the
+      executor to the service binary it becomes?
+    context: >-
+      Every pulled step, every beacon-started transient unit, and 124 of 150
+      `causality_actor_process_image_name` predicates in the cards assume a named
+      CGO (cortexsim-agent, apache2, nginx, …). On Ubuntu 24.04 none of those
+      names can appear, so each such predicate is unsatisfiable however the step is
+      launched. Ubuntu 24.04 is the default lab image.
+    lever: >-
+      A Linux target preflight that reads the host's systemd version; whether cards
+      may key on causality_actor_process_image_name for systemd-started chains;
+      whether CGO-anchored scenarios must launch from a non-systemd spawner such as
+      cron (whose chains had CGO `cron`).
+    decides:
+      - if: Expected behaviour, no setting changes it
+        then: Cards key on actor_process_* and action_process_* only for Linux service chains; preflight warns on systemd >= 255; cgo_anchor reads as a label, never a claim.
+      - if: An agent version or setting names the real binary
+        then: Preflight gates CGO-dependent scenarios on that version or setting and records it per run.
+    experiment: >-
+      Repeat probe pmqfba025 (beacon step, systemd-run with a renamed ExecStart,
+      cron) on Ubuntu 22.04 (systemd 249) and Ubuntu 24.04 (systemd 255) with the
+      same agent version; compare causality_actor_process_image_name, path and
+      sha256 per case.
+    affects: ["agent/executor/platform_unix.go", "detection_scanner/ttps", "core/engine/causality_graph.py", "scenarios (cgo_anchor)"]
+
+  - id: PM-CAU-08
+    mechanism: CAU
+    priority: P1
+    status: open
+    question: >-
+      Is a CGO's identity frozen at the process start the agent observed (so a
+      process that later execs into another binary keeps its first image name), and
+      is a process that was already running when the agent started recorded under
+      its current image instead? Concretely: a beacon started before the XDR agent
+      was installed was recorded as CGO `cortexsim-agent`; the same beacon
+      re-enrolled after the agent was running was recorded as CGO `9`.
+    context: >-
+      The two readings come from two lab sessions on pov-target-01 (2026-11-10, beacon
+      installed before the agent; 2026-11-11, re-enrolled after). If start order
+      decides the CGO, the same scenario scores differently depending on when the
+      DC installed the beacon relative to the XDR agent.
+    lever: >-
+      The install order the onboarding runbook prescribes (beacon before or after
+      the XDR agent, or a beacon restart after agent install), and a run-record
+      field naming the CGO actually observed.
+    experiment: >-
+      With the agent running, start the beacon from systemd, then restart the XDR
+      agent and run one step; then restart the beacon and run one step. Compare
+      causality_actor_process_image_name across the three steps.
+    affects: ["agent/beacon", "core/api/agents.py", "docs/reference/api-and-agent-surface.md"]
+
+  # ── BIO — BIOC matching ──────────────────────────────────────────────────────
+  - id: PM-BIO-01
+    mechanism: BIO
+    priority: P0
+    status: open
+    question: >-
+      When a BIOC matches on a command line, which process's command line is
+      evaluated (actor, action/child, causality actor), and does it see the full
+      argv including our identity wrapper (`runuser -l www-data -c '<ttp>'`)?
+    context: >-
+      A starts-with or exact-match predicate on the TTP command fails if the
+      evaluated string is the wrapper's command line.
+    lever: Identity wrapper form; how card BIOC logic is written (contains vs starts-with).
+    affects: ["agent/identity/harness.go", "detection_scanner/ttps (biocs[])"]
+
+  - id: PM-BIO-02
+    mechanism: BIO
+    priority: P0
+    status: open
+    question: >-
+      For Windows steps executed as `powershell.exe -EncodedCommand <base64>`, do
+      BIOC/ABIOC command-line conditions see the decoded script anywhere (script
+      block logging, AMSI events, a decoded field), or only the base64 argument?
+    context: >-
+      Every Windows pull step uses -EncodedCommand (platform_windows.go:40). If
+      detectors see only base64, every command-line-keyed Windows detection is a
+      manufactured miss.
+    lever: >-
+      Windows execution form: keep -EncodedCommand, switch to -File with a staged
+      .ps1, or -Command.
+    decides:
+      - if: decoded script is visible to detectors
+        then: Keep the wrapper; document which event carries the decoded text.
+      - if: only base64 is visible
+        then: Change the executor to stage a .ps1 and run -File; re-verify Windows cards.
+    experiment: >-
+      Run one Windows step both ways (-EncodedCommand vs -File) with a BIOC keyed on
+      a distinctive string.
+    affects: ["agent/executor/platform_windows.go", "agent/executor/script.go", "71 Windows-declaring scenarios"]
+
+  - id: PM-BIO-03
+    mechanism: BIO
+    priority: P1
+    status: open
+    question: >-
+      Are BIOC string comparisons case-sensitive? Which operators are supported
+      (contains, wildcard, regex)? How are quoting, escaping and whitespace
+      normalized in action_process_image_command_line?
+    context: Bash quoting in our steps produces several equivalent command-line forms.
+    lever: Command forms emitted by steps; card BIOC logic.
+    affects: ["detection_scanner/ttps (biocs[])"]
+
+  - id: PM-BIO-04
+    mechanism: BIO
+    priority: P1
+    status: open
+    question: >-
+      Where and when is a BIOC evaluated: in the agent, in the cloud on ingest, or
+      both, and what is the typical event-to-alert latency?
+    context: Drives MTTD expectations and matcher windows.
+    lever: Matcher window for BIOC; MTTD interpretation.
+    affects: ["core/connectors/matcher.py"]
+
+  - id: PM-BIO-05
+    mechanism: BIO
+    priority: P1
+    status: open
+    question: >-
+      Do BIOCs deduplicate or suppress repeats (same rule, same host or causality,
+      within N minutes)? If a scenario loops a step 20 times, do we get one alert or
+      twenty?
+    context: 40 card BIOCs declare a `suppression_window_seconds`; we do not know what the product does by default.
+    lever: Loop counts in steps; how many Result rows to expect.
+    affects: ["detection_scanner/ttps (biocs[].suppression_window_seconds)"]
+
+  - id: PM-BIO-06
+    mechanism: BIO
+    priority: P1
+    status: open
+    question: >-
+      Do custom BIOCs apply retroactively to already-ingested data, or only to
+      events after the rule is saved and enabled? How long after saving does
+      evaluation start?
+    context: The POV runbook order (import rules, then run) depends on it.
+    lever: Operator runbook sequencing; a rule-enabled preflight.
+    affects: ["docs/operator-runbook.md"]
+
+  - id: PM-BIO-07
+    mechanism: BIO
+    priority: P0
+    status: open
+    question: >-
+      Since BIOC issues exist only on stitched data, which datasets and event types
+      can a custom BIOC predicate address? Can a BIOC be written against firewall
+      fields at all (a raw `panw_ngfw_traffic_raw` field, or the NGFW half of a
+      stitched network story), or only against agent event types (process, file,
+      network, registry and so on)?
+    context: >-
+      Nine NDR card BIOCs put their predicate on a raw firewall dataset (BIO
+      assumes). If a BIOC cannot address raw data, those nine are manufactured
+      misses, and the right artifact is a correlation rule on the raw dataset or a
+      BIOC on the agent's own network event.
+    lever: >-
+      Rewrite the nine NDR card BIOCs as correlation rules, or retarget them to
+      stitched network-event fields; a lint rule that refuses a BIOC whose logic
+      names a `*_raw` dataset.
+    decides:
+      - if: BIOCs address agent event types only
+        then: Move the nine to `correlation_rules[]` and add the lint rule.
+      - if: stitched NGFW fields are BIOC-addressable
+        then: Retarget the nine to those fields and document which.
+    affects: ["detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json", "detection_scanner/ttps/TTP-2026-0106-sim-ndr-010.json", "detection_scanner/scripts/validate.py"]
+
+  # ── ABI — ABIOC ──────────────────────────────────────────────────────────────
+  - id: PM-ABI-01
+    mechanism: ABI
+    priority: P0
+    status: open
+    question: >-
+      Does an ABIOC need a learning or baseline period like an analytics alert, or
+      can it fire on the first occurrence of a rare causality pattern on a fresh
+      tenant?
+    context: SIM-CDR-009 and SIM-CDR-014 declare ABIOC detections in short lab lifetimes.
+    lever: ABIOC scenario readiness gating (same gate as analytics, or none).
+    affects: ["scenarios/cdr/ (SIM-CDR-009, SIM-CDR-014)", "detection_scanner/ttps (abiocs[])"]
+
+  - id: PM-ABI-02
+    mechanism: ABI
+    priority: P0
+    status: open
+    question: >-
+      What population is "rare" judged against: the host, the tenant, or PANW's
+      global telemetry? Can a lab tenant with two endpoints ever see a behavior as
+      unusual?
+    context: Our labs are small; customer POV tenants vary widely.
+    lever: Lab sizing guidance; whether a lab can prove an ABIOC at all.
+    affects: ["docs/reference/lab-runbook.md"]
+
+  - id: PM-ABI-03
+    mechanism: ABI
+    priority: P1
+    status: open
+    question: >-
+      Are causality context features (e.g. CGO class such as web server or Office
+      app, parent image, user type) inputs to ABIOCs, such that a `sh`-owned chain
+      cannot reproduce a web-shell ABIOC?
+    context: Ties to PM-CAU-01/02 and H3.
+    lever: Whether hero ABIOC scenarios need a real service CGO.
+    affects: ["scenarios (cgo_anchor)"]
+
+  - id: PM-ABI-04
+    mechanism: ABI
+    priority: P1
+    status: open
+    question: >-
+      Do ABIOCs auto-tune per tenant so that repeating a scenario teaches the
+      engine it is normal? How long does that take, and can it be reset?
+    context: DCs rerun scenarios during a POV.
+    lever: Rerun guidance; scoring a later silence as learned-normal, not a miss.
+    affects: ["core/engine/verifier.py"]
+
+  - id: PM-ABI-05
+    mechanism: ABI
+    priority: P2
+    status: retired
+    question: >-
+      Do ABIOC alerts carry a stable rule identifier in the alert record we can
+      match on, rather than only a name and technique?
+    context: >-
+      The matcher prefers detection_id over technique (mechanics-review M12).
+      Retired 2026-11-10: superseded by PM-ALR-01, which asks the same thing for
+      every alert source after the lab tenant's alerts carried no rule-id key at all.
+    lever: Matcher key strength for ABIOC.
+    affects: ["core/connectors/matcher.py"]
+
+  - id: PM-ABI-06
+    mechanism: ABI
+    priority: P1
+    status: open
+    question: >-
+      The built-in "Uncommon Linux shell command execution" Analytics BIOC fires on
+      the beacon spawning `sh` (ABI known). Does it deduplicate per host or per
+      parent, so a POV sees it once, and can a tenant exclusion scoped to the
+      beacon's parent image suppress it without also suppressing detections on
+      that parent's children?
+    context: >-
+      Every pull run can raise this alert. Arriving inside a step's window, it can
+      be credited to the wrong Result by technique and name; excluded too broadly,
+      it silences the scenario itself.
+    lever: >-
+      A beacon-footprint denylist in the matcher so noise never credits a Result;
+      runbook guidance for a narrowly scoped exclusion.
+    affects: ["core/connectors/matcher.py", "agent/beacon", "docs/operator-runbook.md"]
+
+  # ── ANA — analytics engine ───────────────────────────────────────────────────
+  - id: PM-ANA-01
+    mechanism: ANA
+    priority: P0
+    status: open
+    question: >-
+      For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections,
+      Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to
+      a VPN from a new country, A user connected from a new country, Abnormal
+      increase in network-related alerts on the same host): what is the trigger in
+      generatable terms: minimum event count, minimum distinct values (distinct dst
+      ports, hosts, countries), inside what window?
+    context: >-
+      The vendor pages publish periods and data sources and no threshold. Our
+      emitters guess at volume and spread. This is the "N occurrences of the same
+      src/dst" class.
+    lever: Emitter volume and spread parameters per alert; the detector readiness gate.
+    decides:
+      - if: thresholds are known per alert
+        then: Encode them as emitter defaults with provenance; add a below-threshold negative control.
+      - if: thresholds are adaptive per tenant
+        then: Emit a sweep (graduated volumes) and record which volume fired.
+    experiment: >-
+      Graduated sweep: emit 3, 5, 10, 25, 50 distinct ports from one source to one
+      host, one hour apart, on an armed tenant; record which tier fires Port Scan.
+    affects: ["core/eal_simulator/analytics_alerts.py", "third_party_firewall_emitter", "globalprotect_emitter", "third_party_vpn_emitter", "duo_auth_emitter"]
+
+  - id: PM-ANA-02
+    mechanism: ANA
+    priority: P0
+    status: open
+    question: >-
+      How do Activation Period and Training Period compose: does an alert need 14
+      days of data, 30 days, or 14 days to activate and a rolling 30-day baseline
+      after? Can it fire before training completes?
+    context: The gate is max(activation, training), which is our inference (analytics_alerts.py:78).
+    lever: GATE_BASIS and the readiness verdict.
+    affects: ["core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-ANA-03
+    mechanism: ANA
+    priority: P0
+    status: open
+    question: >-
+      Is the activation and training clock per tenant, per data source, or per
+      entity (user, host)? Does a brand-new user in a tenant that has carried VPN
+      data for 60 days count as baselined?
+    context: Our emitters invent synthetic principals and hosts (canary_token).
+    lever: Whether synthetic entities can fire profile-based alerts or must reuse real ones.
+    affects: ["core/eal_simulator/stitch_params.py", "identity emitters"]
+
+  - id: PM-ANA-04
+    mechanism: ANA
+    priority: P0
+    status: open
+    question: >-
+      Does attack-shaped synthetic traffic sent during the training period become
+      part of the baseline, so a later identical test reads as normal?
+    context: Campaigns can run before a source is armed.
+    lever: Campaign scheduling; refuse attack-shaped emission into an unarmed source.
+    affects: ["core/eal_simulator/executor.py", "core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-ANA-05
+    mechanism: ANA
+    priority: P1
+    status: open
+    question: >-
+      What exactly does the Deduplication Period suppress (same alert, same entity
+      pair, same source)? If a scenario is rerun inside it (7 days for impossible
+      traveler, 30 days for new country), will the rerun produce no alert?
+    context: A dedup'd rerun currently scores as a miss.
+    lever: Rerun guidance; a `deduplicated` reading distinct from `missed`.
+    affects: ["core/engine/outcome.py", "core/engine/verifier.py"]
+
+  - id: PM-ANA-06
+    mechanism: ANA
+    priority: P1
+    status: open
+    question: >-
+      What does Test Period mean: the aggregation window evaluated, how often the
+      detector evaluates, or both?
+    context: We emit bursts; the alert may evaluate over an hour or a day.
+    lever: Spreading emission over time vs bursting.
+    affects: ["analytics emitters"]
+
+  - id: PM-ANA-07
+    mechanism: ANA
+    priority: P1
+    status: open
+    question: >-
+      For new-country and impossible-travel alerts, what geolocation source is
+      used, at what point (ingestion or evaluation), and do private, reserved or
+      documentation IP ranges geolocate at all?
+    context: Emitters choose source IPs; a non-routable IP may never geolocate.
+    lever: Source IP selection for identity and VPN emitters.
+    affects: ["idp_signin_emulator", "globalprotect_emitter", "third_party_vpn_emitter", "duo_auth_emitter"]
+
+  - id: PM-ANA-08
+    mechanism: ANA
+    priority: P1
+    status: open
+    question: >-
+      Which analytics alerts require a separate module or licence (e.g. the
+      Identity Analytics module named on impossible-traveler-vpn), and how can the
+      API tell us whether that module is enabled on a tenant?
+    context: An unlicensed module reads as a miss.
+    lever: Readiness preflight; POV entitlement scoping.
+    affects: ["core/api/pov.py", "core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-ANA-09
+    mechanism: ANA
+    priority: P1
+    status: open
+    question: >-
+      Is the Required Data line a true OR (any one source suffices), or do some
+      alerts need agent context in addition to the listed log source?
+    context: Port Sweep lists firewall traffic, xdr_agent and third-party firewalls.
+    lever: The "detector bound to an alert it cannot feed raises" rule.
+    affects: ["core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-ANA-10
+    mechanism: ANA
+    priority: P2
+    status: open
+    question: >-
+      Are analytics detectors evaluated by streaming or by scheduled batch jobs, and
+      what is the expected delay from the last qualifying record to the alert?
+    context: The matcher needs a per-type window for Analytics (mechanics-review M12).
+    lever: Matcher window_seconds_by_type for Analytics.
+    affects: ["core/connectors/matcher.py"]
+
+  - id: PM-ANA-11
+    mechanism: ANA
+    priority: P2
+    status: open
+    question: >-
+      Can the arming/training state of an analytics detector be read from the API or
+      a dataset, so the readiness gate reads the tenant instead of an operator-typed
+      onboarding date?
+    context: readiness_for() depends on a typed date (analytics_alerts.py:325).
+    lever: Replace the typed onboarding date with a tenant read.
+    affects: ["core/eal_simulator/analytics_alerts.py"]
+
+  # ── COR — correlation rules ──────────────────────────────────────────────────
+  - id: PM-COR-01
+    mechanism: COR
+    priority: P0
+    status: open
+    question: >-
+      How are correlation rules scheduled: fixed cadence with a query time-frame
+      lookback, or streaming? What schedule and time-frame values are allowed, and
+      what is the minimum interval?
+    context: >-
+      Our `correlation_window_seconds` goes down to 10 s and claims to be enforced
+      against "XSIAM's default correlation window" (_schema.yml:380). If rules run
+      on a minutes-scale schedule, the field means something else.
+    lever: Map correlation_window_seconds onto the real schedule and time frame; card correlation_rules[] gain those fields.
+    affects: ["scenarios/_schema.yml", "detection_scanner/ttps (correlation_rules[])"]
+
+  - id: PM-COR-02
+    mechanism: COR
+    priority: P0
+    status: open
+    question: >-
+      Does a correlation rule window on event `_time` or ingestion time? Can a
+      record that arrives late fall outside every evaluated window and never match?
+    context: Late arrival is normal for session-end firewall logs and batched cloud audit.
+    lever: Emitter timing; card correlation logic.
+    affects: ["detection_scanner/ttps (correlation_rules[])"]
+
+  - id: PM-COR-03
+    mechanism: COR
+    priority: P1
+    status: open
+    question: >-
+      Can one correlation rule join across datasets (xdr_data with an NGFW dataset),
+      and what limits apply (join size, row limits, query time, cost)?
+    context: Many card correlation rules are cross-dataset joins.
+    lever: Card correlation logic validity.
+    affects: ["detection_scanner/ttps (correlation_rules[])"]
+
+  - id: PM-COR-04
+    mechanism: COR
+    priority: P1
+    status: open
+    question: >-
+      How does a correlation rule's alert get its fields (name, severity, host,
+      user, IPs), and which mapped fields make it join the same incident as the
+      endpoint alerts?
+    context: required_planes_in_incident is only satisfied if the correlation alert joins the incident.
+    lever: Correlation alert field mapping in cards; correlation-rate KPI.
+    affects: ["detection_scanner/ttps (correlation_rules[])", "core/connectors/measures.py"]
+
+  - id: PM-COR-05
+    mechanism: COR
+    priority: P1
+    status: open
+    question: >-
+      What suppression or dedup options does a correlation rule have, and what are
+      the defaults?
+    context: Reruns inside a suppression window score as misses today.
+    lever: Rerun guidance; card fields.
+    affects: ["detection_scanner/ttps (correlation_rules[])"]
+
+  - id: PM-COR-06
+    mechanism: COR
+    priority: P1
+    status: open
+    question: >-
+      Is there a per-tenant cap on enabled correlation rules or on their total query
+      compute?
+    context: The corpus carries 209 correlation rules.
+    lever: How many card rules a DC can enable at once; a rule-pack subset per POV.
+    affects: ["core/api/pov.py"]
+
+  - id: PM-COR-07
+    mechanism: COR
+    priority: P2
+    status: open
+    question: >-
+      Can correlation rules be created and validated through the API (dry-run or
+      test against history) without enabling them?
+    context: "Read-only stance: SimCore never writes to Cortex, so any import is a DC action."
+    lever: Operator runbook for rule import.
+    affects: ["docs/operator-runbook.md"]
+
+  - id: PM-COR-08
+    mechanism: COR
+    priority: P0
+    status: open
+    question: >-
+      Can any correlation rule relate two sources within 60 seconds? A Real Time
+      rule may use only dataset, datamodel, filter, alter, fields and config
+      stages (no join), and a Scheduled rule runs at most every 10 minutes. Can a
+      Real Time rule read two sources through one datamodel query without a join,
+      and does its alert then group with the other source's alert?
+    context: >-
+      Nine scenarios declare `correlation_window_seconds` of 60 or less with a
+      Correlation expectation (SIM-MP-001 to SIM-MP-006, SIM-EMAIL-003/004,
+      SIM-TIM-001); SIM-MP-006 declares 10 s. No card correlation rule carries a
+      mode, cadence or time frame, and 158 of 214 are written as `BIOC(x) AND BIOC(y)`.
+    lever: >-
+      Whether `correlation_window_seconds` <= 60 is a valid declaration at all; the
+      card schema for correlation rules (mode, cadence, query time frame, severity).
+    decides:
+      - if: No single rule can relate two sources inside 60 s
+        then: The loader rejects windows under 600 s for Correlation expectations and those nine scenarios move to a 10-minute cadence.
+      - if: A Real Time datamodel query can
+        then: "The card schema gains `mode: real_time` with a stage allowlist the validator enforces."
+    affects: ["scenarios/multi_plane/", "detection_scanner/ttps", "detection_scanner/scripts/validate.py"]
+
+  # ── IOC ──────────────────────────────────────────────────────────────────────
+  - id: PM-IOC-01
+    mechanism: IOC
+    priority: P0
+    status: open
+    question: >-
+      Which fields does each IOC type match: is a domain IOC matched against DNS
+      query events, HTTP host, TLS SNI, NGFW URL logs or all of them? Is an IP IOC
+      matched on remote address only, or both directions?
+    context: >-
+      410 card IOCs. If a domain IOC is only matched on DNS events, an HTTPS step
+      to a pre-resolved IP never fires it.
+    lever: What each step must generate for its IOC to be seen.
+    affects: ["detection_scanner/ttps (iocs[])", "scenarios/tim/"]
+
+  - id: PM-IOC-02
+    mechanism: IOC
+    priority: P0
+    status: open
+    question: >-
+      Do IOCs apply retroactively to already-ingested data, or only to events after
+      the indicator is added? How long after adding an indicator does matching
+      start?
+    context: Runbook order and MTTD.
+    lever: Runbook sequencing; an indicator-present preflight.
+    affects: ["docs/operator-runbook.md"]
+
+  - id: PM-IOC-03
+    mechanism: IOC
+    priority: P1
+    status: open
+    question: >-
+      How do TIM feed indicators become detection IOCs: automatically, by
+      reputation or verdict, by expiration? Does an indicator need a bad or
+      suspicious verdict to match?
+    context: 353 card IOCs declare `reputation_required`.
+    lever: TIM scenario setup (SIM-TIM-001 TAXII feed).
+    affects: ["scenarios/tim/", "sources/mocktaxii"]
+
+  - id: PM-IOC-04
+    mechanism: IOC
+    priority: P1
+    status: open
+    question: >-
+      Which hash types are matched (sha256 only, or md5/sha1 too), and at which
+      event is a file's hash computed (write, execute, both)?
+    context: Payload shelf artifacts are sha256-pinned.
+    lever: Hash IOC authoring; staged artifact handling.
+    affects: ["core/engine/payload_shelf.py", "detection_scanner/ttps (iocs[])"]
+
+  - id: PM-IOC-05
+    mechanism: IOC
+    priority: P2
+    status: open
+    question: >-
+      Do IOC alerts dedupe per host or per indicator, and what is the default
+      indicator expiration?
+    context: Reruns and long POVs.
+    lever: Rerun guidance.
+    affects: ["detection_scanner/ttps (iocs[])"]
+
+  - id: PM-IOC-06
+    mechanism: IOC
+    priority: P1
+    status: open
+    question: >-
+      IOC rules accept Full Path, File Name, Domain, Destination IP, MD5 and SHA256.
+      Can a URL, user-agent, email sender, cloud account id or SHA-1 indicator ever
+      raise an issue against agent or NGFW data, for example as a TIM indicator, or
+      do those types only enrich?
+    context: >-
+      73 of 439 card IOCs use types outside the IOC-rule list (url 32, user-agent 26,
+      email-sender 9, cloud-account-id 4, sha1 1, registry-key 1), and 99 are IPv4,
+      which match only as a destination.
+    lever: Whether those card IOCs move to XQL hunts or TIM-backed expectations, and which IOC types the validator accepts.
+    affects: ["detection_scanner/ttps (iocs[])", "detection_scanner/scripts/validate.py"]
+
+  # ── PRV — prevention ─────────────────────────────────────────────────────────
+  - id: PM-PRV-01
+    mechanism: PRV
+    priority: P0
+    status: open
+    question: >-
+      When an agent prevention module blocks, which alert fields and values say so
+      (action, action status), and does report mode raise an alert for the same
+      behavior?
+    context: The two-witness rule reads the tenant's prevented action (outcome.py:28).
+    lever: The tenant witness in the outcome axis; paired report/block runs.
+    affects: ["core/engine/outcome.py", "core/connectors/xsiam.py"]
+
+  - id: PM-PRV-02
+    mechanism: PRV
+    priority: P1
+    status: open
+    question: >-
+      Which Linux and macOS prevention modules exist, and which are on in a default
+      profile (e.g. behavioral threat protection, local analysis, reverse shell
+      protection, exploit protection)?
+    context: The block-mode canary must exercise a module that is actually on.
+    lever: Canary choice for POST /api/runs/canary.
+    affects: ["core/api/runs.py"]
+
+  - id: PM-PRV-03
+    mechanism: PRV
+    priority: P1
+    status: open
+    question: >-
+      When a step is blocked, does downstream telemetry still occur for later steps,
+      and should their expected detections read `not_reached`?
+    context: The outcome axis has not_reached for exactly this.
+    lever: not_reached derivation in block mode.
+    affects: ["core/engine/outcome.py"]
+
+  - id: PM-PRV-04
+    mechanism: PRV
+    priority: P2
+    status: open
+    question: >-
+      Do agent profile exceptions suppress both prevention and detection alerts, or
+      prevention only?
+    context: Customer tenants often carry broad exceptions.
+    lever: Preflight guidance for exception review.
+    affects: ["docs/operator-runbook.md"]
+
+  # ── INC — incident grouping ──────────────────────────────────────────────────
+  - id: PM-INC-01
+    mechanism: INC
+    priority: P0
+    status: open
+    question: >-
+      What decides whether two alerts land in the same incident: shared
+      causality_id, host, user, time proximity, or a grouping key per alert source?
+      Is there a maximum grouping window?
+    context: >-
+      The correlation-rate KPI asserts >= N planes under one incident_id; 21
+      scenarios score that way.
+    lever: Which shared entity each multi-plane scenario must plant across planes.
+    affects: ["core/connectors/measures.py", "scenarios/multi_plane/"]
+
+  - id: PM-INC-02
+    mechanism: INC
+    priority: P1
+    status: open
+    question: >-
+      Do informational and low severity alerts (Port Scan is Informational) open
+      incidents, or only attach to existing ones?
+    context: Some scenarios expect an informational analytics alert to stand alone.
+    lever: Expectations for low-severity detections.
+    affects: ["core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-INC-03
+    mechanism: INC
+    priority: P1
+    status: open
+    question: >-
+      Do alerts ingested from third-party sources join incidents with agent alerts,
+      and on what keys?
+    context: third_party_alert_emitter feeds the abnormal-increase alert.
+    lever: Third-party alert emitter fields.
+    affects: ["third_party_alert_emitter"]
+
+  - id: PM-INC-04
+    mechanism: INC
+    priority: P2
+    status: open
+    question: >-
+      How is incident scoring (SmartScore, starring) computed, and is it exposed in
+      the incident record?
+    context: A candidate POV metric we do not collect today.
+    lever: Report content.
+    affects: ["core/connectors/xsiam.py"]
+
+  - id: PM-INC-05
+    mechanism: INC
+    priority: P0
+    status: open
+    question: >-
+      Does the Medium-severity floor for case creation and grouping apply to issues
+      from every source (custom BIOC, Analytics BIOC, Analytics, IOC, XDR agent
+      prevention, third-party ingested alerts), or only to correlation-rule issues,
+      where the docs state it? Is Informational treated like Low?
+    context: >-
+      The docs state the floor on the correlation-rule page; Henry reports it more
+      broadly (INC known). 55 scenarios declare required_planes_in_incident, and
+      the built-in alerts the lab raised were Low (ABI known). If the floor is
+      universal, any plane whose alert is below Medium can never be under the
+      case, and the correlation-rate KPI scores that as a miss.
+    lever: >-
+      A severity floor on every detection a scenario counts toward
+      required_planes_in_incident (a loader lint); a `not_groupable` reading in the
+      correlation-rate KPI for below-floor alerts instead of a miss; card severities
+      raised to Medium where a scenario needs grouping.
+    decides:
+      - if: the floor applies to every source
+        then: Add the lint and the not_groupable reading; raise the 16 below-Medium card detections or drop them from required planes.
+      - if: it applies to correlation issues only
+        then: Record the per-source rule and enforce it only for Correlation detections.
+    experiment: >-
+      On one host, raise a custom BIOC at Low, the same BIOC cloned at Medium, and
+      a Medium correlation issue sharing the host; see which issues the case holds.
+    affects: ["core/connectors/measures.py", "core/engine/scenario_loader.py", "scenarios/multi_plane/", "detection_scanner/ttps (biocs[].severity)"]
+
+  - id: PM-INC-06
+    mechanism: INC
+    priority: P1
+    status: open
+    question: >-
+      Which severity does case creation read: the rule's configured severity, or
+      the issue's severity after scoring or automation changes it? If an issue is
+      raised from Low to Medium after it fired, does it then create or join a case?
+    context: >-
+      The 209 card correlation rules carry no severity (INC assumes), so the DC
+      chooses one at import. If severity can be fixed after the fact, a wrong
+      import choice is recoverable; if not, it silently decides the KPI.
+    lever: Import runbook (set severity before enabling); whether card correlation rules must carry a severity.
+    affects: ["detection_scanner/ttps (correlation_rules[])", "docs/operator-runbook.md"]
+
+  - id: PM-INC-07
+    mechanism: INC
+    priority: P1
+    status: open
+    question: >-
+      Grouping also needs the issue's domain to be Security or Posture. Which
+      domain do custom BIOCs, imported correlation rules and third-party ingested
+      alerts get by default, and can the domain be set when a rule is created or
+      imported?
+    context: >-
+      An issue outside those domains never groups, whatever its severity, and our
+      cards record no domain.
+    lever: Card correlation_rules[] and biocs[] gain `domain` (with `severity`); import runbook.
+    affects: ["detection_scanner/ttps (correlation_rules[])", "docs/operator-runbook.md"]
+
+  - id: PM-INC-08
+    mechanism: INC
+    priority: P1
+    status: open
+    question: >-
+      The User name grouping artifact excludes "common system accounts" and "known
+      service accounts". Which accounts are those? Would `www-data`, `postgres`,
+      `nobody`, `node` or `svc-backup` be excluded, and does the same exclusion
+      apply to grouping issues from other sources?
+    context: >-
+      The identity harness runs Linux steps as service accounts on purpose (to give
+      realistic causality), and 13 scenarios key on `user_principal`. If those
+      accounts are excluded, grouping by user can never happen for them, and the
+      case depends on host or causality artifacts alone.
+    lever: >-
+      Which account a grouping-dependent scenario runs as; whether
+      `stitching_key: user_principal` is satisfiable for service-account steps.
+    affects: ["agent/identity/harness.go", "scenarios/_schema.yml", "core/connectors/measures.py"]
+
+  # ── TEN — tenant readiness ───────────────────────────────────────────────────
+  - id: PM-TEN-01
+    mechanism: TEN
+    priority: P0
+    status: open
+    question: >-
+      Which detection content is on by default in a fresh XSIAM tenant (PANW BIOCs,
+      ABIOCs, analytics, correlation rules from content packs), and how can the API
+      list what is enabled, so a preflight can tell "not enabled" from "missed"?
+    context: A disabled detector reads exactly like a miss.
+    lever: A content-enabled rung on the Readiness ladder.
+    affects: ["core/api/health.py", "ui Readiness view"]
+
+  - id: PM-TEN-02
+    mechanism: TEN
+    priority: P0
+    status: open
+    question: >-
+      Which agent profile settings change what telemetry is collected (network
+      event collection, file monitoring scope, command-line capture), and is there
+      a maximum captured command-line length?
+    context: Several steps are long one-liners; a truncated command line breaks a contains-match.
+    lever: Step command length; profile preflight.
+    affects: ["scenarios (step commands)"]
+
+  - id: PM-TEN-03
+    mechanism: TEN
+    priority: P1
+    status: open
+    question: >-
+      Can the detection-content version and agent version be read through the API,
+      so each run records the content it was scored against?
+    context: Run provenance; content updates change outcomes between runs.
+    lever: Run record fields.
+    affects: ["core/models.py (Run)"]
+
+  - id: PM-TEN-04
+    mechanism: TEN
+    priority: P1
+    status: open
+    question: >-
+      Which licences or add-ons gate which detection engines (identity analytics,
+      cloud detection, third-party ingestion volume)?
+    context: POV entitlement scoping maps the corpus to PAN-* parts.
+    lever: Entitlement profiles in core/api/pov.py.
+    affects: ["core/api/pov.py"]
+
+  - id: PM-TEN-05
+    mechanism: TEN
+    priority: P0
+    status: open
+    question: >-
+      After an XDR agent is installed, restarted or upgraded, how long until it
+      collects events, and which tenant-readable field says collection is running
+      (endpoint status, operational status, a per-module state)? Is CONNECTED
+      reported before collection starts?
+    context: >-
+      In the lab a run 15 s after CONNECTED left no events at all because the
+      collectors had not started (TEN known). A run against a just-connected agent
+      scores every expectation as missed.
+    lever: >-
+      An agent-ready gate before launch: refuse or delay a run until the endpoint
+      reports collection running, and read it from the endpoint record rather than
+      guessing a delay.
+    experiment: >-
+      Restart the agent, then every 5 s record the endpoint's status fields from the
+      API while a 1 Hz canary process runs; note when the first canary event lands.
+    affects: ["core/api/runs.py", "core/connectors/preflight.py", "agent/beacon"]
+
+  - id: PM-TEN-06
+    mechanism: TEN
+    priority: P0
+    status: open
+    question: >-
+      Can an endpoint's Linux operation mode (Kernel, User Space, asynchronous) be
+      read from the endpoint record through the API, so a preflight can refuse a
+      host that collects nothing?
+    context: >-
+      In asynchronous mode the agent collects no events at all (TEN known), so
+      every BIOC, ABIOC, causality and stitch expectation on that host reads as
+      missed while the endpoint shows CONNECTED.
+    lever: An agent-mode rung in the launch preflight; refuse or label runs on an asynchronous host.
+    experiment: >-
+      Read the endpoint record of one Kernel-mode host and one installed with
+      `--no-km`; find the field that differs.
+    affects: ["core/connectors/preflight.py", "core/api/runs.py"]
+
+  # ── ALR — alert records and read-back ────────────────────────────────────────
+  - id: PM-ALR-01
+    mechanism: ALR
+    priority: P0
+    status: open
+    question: >-
+      Which field on an alert or issue record carries the identifier of the rule
+      that raised it, for each source: custom BIOC, Analytics BIOC, Analytics,
+      correlation rule, IOC, XDR agent prevention? Is it stable across content
+      updates and tenants?
+    context: >-
+      Lab alerts carried none of the four keys the connector reads (ALR known), so
+      matching fell back to technique plus name, the weakest key the matcher has.
+    lever: >-
+      The connector's rule-id field list (PR 179 added the Issues API's
+      `detection.rule_id` as a fallback); card detections record that identifier
+      so the matcher can key on it; preflight stops reporting PARTIAL.
+    affects: ["core/connectors/xsiam.py", "core/connectors/matcher.py", "core/connectors/preflight.py"]
+
+  - id: PM-ALR-02
+    mechanism: ALR
+    priority: P0
+    status: open
+    question: >-
+      Which timestamp on an alert is the time of the event that triggered it, and
+      which is the time the platform raised the alert: `detection_timestamp`,
+      `creation_time`, `local_insert_ts`, or another field? Does the answer differ
+      by alert source?
+    context: >-
+      MTTD is the alert time minus the step's executed_at, and the connector takes
+      detection_timestamp first (ALR assumes). If detection_timestamp is the
+      triggering event's own time, every MTTD we report measures nearly zero
+      instead of detection latency, and it would pass any threshold.
+    lever: The connector's timestamp order; the MTTD definition in the report.
+    decides:
+      - if: detection_timestamp is event time
+        then: Use the creation or insert time for MTTD and keep the event time as evidence of which step fired it.
+      - if: detection_timestamp is raise time
+        then: Keep the order and document it as proven.
+    experiment: >-
+      Fire a scheduled correlation rule (10-minute grid) on a canary event; compare
+      each timestamp field with the canary's `_time` and the rule's run time.
+    affects: ["core/connectors/xsiam.py", "core/connectors/service.py"]
+
+  - id: PM-ALR-03
+    mechanism: ALR
+    priority: P1
+    status: open
+    question: >-
+      Is the MITRE technique on a built-in alert fixed by the detector's content,
+      whatever the activity was, and is that detector-to-technique mapping
+      published anywhere we can read (content metadata, an API, the alert page)?
+    context: >-
+      The lab's built-in alert on useradd and chpasswd carried T1003 while the
+      scenario declared T1136.001 (ABI known); a technique-keyed match can then
+      credit or miss the wrong Result.
+    lever: Cards list the technique each built-in detector they expect actually carries; matcher technique aliases.
+    affects: ["core/connectors/matcher.py", "detection_scanner/ttps (analytics_modules[])"]
+
+  - id: PM-ALR-04
+    mechanism: ALR
+    priority: P1
+    status: open
+    question: >-
+      What is the full vocabulary of the alert `source` field (e.g. "XDR BIOC",
+      "XDR Analytics BIOC", "XDR Analytics", "Correlation", "XDR Agent", "IOC",
+      third-party names), and is it stable across platform versions?
+    context: >-
+      The matcher maps source onto a signal family, and a known-but-different
+      family never matches (matcher.py:32). An unmapped source string falls back to
+      technique and name; a renamed one can block a real match. PR 179 mapped the
+      Issues API codes; FW still maps to no family, and the TRAPS and MAGNIFIER
+      mappings rest on an inferred pairing (ALR assumes).
+    lever: The family map in the matcher; a preflight that lists unmapped source strings.
+    affects: ["core/connectors/matcher.py"]
+
+  - id: PM-ALR-05
+    mechanism: ALR
+    priority: P1
+    status: open
+    question: >-
+      With the docs now saying "issue" and "case", which API endpoints and record
+      fields changed (for example `case_id` vs `incident_id`, an issues endpoint vs
+      the alerts endpoint), from which platform version, and do the old names keep
+      working?
+    context: >-
+      The connector reads `incident_id`, `case_id`, then `case_ids` (xsiam.py:415)
+      and pages the alerts endpoint; which endpoint is current decides which names
+      it will actually see.
+    lever: Connector endpoint and field names; a version gate in preflight.
+    affects: ["core/connectors/xsiam.py", "core/connectors/preflight.py"]
+
+  # ── IDN — identity resolution: CGO ownership, CIE, AD ────────────────────────
+  - id: PM-IDN-01
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      Which user does an issue report for a Linux process chain, and which user
+      does the UserName grouping artifact use: the CGO's
+      (causality_actor_effective_username), the parent's (actor_effective_username)
+      or the process the rule matched (action_process_username)? In the lab the
+      CGO had a null user while the matched process ran as `pov-target-01\www-data`
+      (IDN known). Does an issue whose CGO has no user carry a user at all?
+    context: >-
+      The identity harness runs Linux steps as service accounts so a chain looks
+      owned by www-data or postgres (harness.go:7), and 13 scenarios key on
+      `stitching_key: user_principal`. If the issue takes its user from the CGO,
+      every systemd-started chain on a modern host reports no user and cannot group
+      by user, whatever account ran the step.
+    lever: >-
+      Whether identity steps must make the service account own the chain (for
+      example a CGO started as that user outside systemd) or only the matched
+      process; whether `user_principal` is a satisfiable stitching key for Linux
+      endpoint steps.
+    decides:
+      - if: The issue's user is the CGO's user
+        then: Identity-dependent Linux scenarios need a CGO that runs as the account; until then they declare no user-keyed grouping.
+      - if: The issue's user is the matched process's user
+        then: runuser -u is enough; switch the harness from `runuser -l` (needs a login shell) to `runuser -u … --`.
+    experiment: >-
+      Fire one Medium custom BIOC on a child of `runuser -u www-data -- /bin/sh -c
+      '<canary>'` launched by the beacon, and one on the same child launched by
+      `systemd-run --uid=www-data`; read the issue's user fields and the case it
+      joins.
+    affects: ["agent/identity/harness.go", "core/connectors/matcher.py", "scenarios/_schema.yml"]
+
+  - id: PM-IDN-02
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      Do Identity Analytics and ITDR detectors evaluate activity whose acting user
+      is NT AUTHORITY\SYSTEM or the machine account (`WS01$`), for example a
+      Kerberos service-ticket burst requested from a SYSTEM-context PowerShell? Or
+      are machine and system principals excluded, so the attack must run as a
+      domain user to be seen?
+    context: >-
+      A pulled Windows step runs as the beacon's service account because Windows
+      identities collapse to `direct` (platform.go:212). The identity-lab design
+      plans Kerberoast and AS-REP steps from native PowerShell on a workstation
+      through the beacon. If the detectors skip machine and SYSTEM principals, every
+      such step is a silent miss.
+    lever: >-
+      How a Windows identity step is launched: through the beacon as SYSTEM, or as a
+      domain user (a scheduled task or a process started with that user's stored
+      credential), and whether the beacon needs a run-as path for Windows.
+    decides:
+      - if: Machine and SYSTEM principals are excluded
+        then: Windows identity scenarios need a domain-user execution path before any identity expectation is declared.
+      - if: They are evaluated
+        then: Pulled steps as SYSTEM are valid; record the requesting principal per run.
+    experiment: >-
+      On the identity lab, request service tickets for 10 SPNs from a SYSTEM-context
+      process and, separately, from a domain user's logon session; compare 4769
+      events and any Identity Analytics issue after the training clock.
+    affects: ["agent/identity/platform.go", "agent/executor/platform_windows.go", "scenarios/itdr/"]
+
+  - id: PM-IDN-03
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      What does one `pan_dss_raw` row hold: one object per sync (a snapshot), or one
+      row per change? Which field names carry the object type (user, group,
+      computer), sAMAccountName, userPrincipalName, objectSid, memberOf, adminCount,
+      userAccountControl, servicePrincipalName, description and the sync time?
+    context: >-
+      The identity-lab design proves the CIE sync with a canary user whose
+      description carries a nonce, and its day-one detections join DC events to
+      `pan_dss_raw` on these attributes. No card reads `pan_dss_raw` today, and the
+      field names are unverified.
+    lever: >-
+      The sync-canary query, the join keys of every CIE-context card, and whether a
+      join must take the latest row per object.
+    experiment: >-
+      With CIE linked, create a canary user, change its description twice 10 minutes
+      apart, add it to a group; query `pan_dss_raw` for it after each change and
+      record row count and field names.
+    affects: ["detection_scanner/ttps", "core/connectors/preflight.py"]
+
+  - id: PM-IDN-04
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      Do the Identity Analytics detectors read CIE attributes as inputs, so that a
+      Kerberoast against an account fires only when CIE already shows that account
+      with a servicePrincipalName (or adminCount = 1), and an AS-REP request only when
+      CIE shows DONT_REQ_PREAUTH? Or do they read the DC's events alone and use CIE
+      only to enrich the issue?
+    context: >-
+      CIE must be linked to activate the Identity Analytics rules (IDN known), but
+      the docs do not say what the detectors read from it. The lab seeds bait
+      accounts (an SPN-backed `svc-sql`, a no-preauth `helpdesk-admin`) and runs the
+      attack minutes later.
+    lever: >-
+      Scenario pacing: whether each bait account must be visible in `pan_dss_raw`
+      before the attack step runs, and whether the bait's privilege must be set in
+      AD itself or is irrelevant to the detector.
+    decides:
+      - if: Detectors read CIE attributes
+        then: Each identity scenario gains a sync-wait gate between seeding and attack, proven by the canary.
+      - if: Detectors read events only
+        then: Seeding can happen at build time; CIE only matters for enrichment and custom joins.
+    affects: ["scenarios/itdr/", "core/eal_simulator/analytics_alerts.py"]
+
+  - id: PM-IDN-05
+    mechanism: IDN
+    priority: P1
+    status: open
+    question: >-
+      How long after a change in Active Directory (a new user, a group membership, a
+      description edit) does it appear in `pan_dss_raw`, and does an issue raised in
+      between carry the old or the new attributes? Docs say incremental sync runs
+      every 5 minutes: is that from the agent's last run, and are deletions synced
+      as tombstones or by absence?
+    context: >-
+      Identity scenarios often seed a change and abuse it minutes later ("add user to
+      a privileged group, then use it"). If the issue reads CIE context at alert
+      time, a change that has not synced yet makes the detection describe the user
+      wrongly or not fire.
+    lever: The minimum wait between a seeding step and the attack step; the staleness threshold of the sync canary (the design waits 10 minutes).
+    experiment: >-
+      Rewrite the canary's description at T0 and poll `pan_dss_raw` every 30 s for
+      20 minutes; repeat 5 times and record the delay distribution. Delete a test
+      user and see whether a row says so.
+    affects: ["scenarios/itdr/", "core/connectors/preflight.py"]
+
+  - id: PM-IDN-06
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      Where does a domain controller's Kerberos and logon telemetry land when it is
+      collected by the XDR agent with XTH: xdr_data `event_type = EVENT_LOG` with the
+      event id and data fields, or a separate dataset? Which fields carry the 4769
+      ticket encryption type, service name and client address, and the 4768
+      pre-authentication type? When the same events come through the Broker VM
+      Windows Event Collector, are they in `microsoft_windows_raw` under different
+      names?
+    context: >-
+      Nine cards read `msft_windows_security`, a dataset name a tenant does not
+      create, and the AD emitter writes records under that name
+      (ad_windows_emitter.py:66). Card queries and emitter fields are both built on
+      an unverified shape.
+    lever: The AD emitter's field names and dataset; the dataset and fields every AD card queries.
+    decides:
+      - if: Agent events land in xdr_data EVENT_LOG and WEC in microsoft_windows_raw
+        then: Cards carry two query variants and the emitter targets the WEC shape only.
+      - if: Both land in one dataset with one schema
+        then: One card variant; the emitter targets that schema.
+    experiment: >-
+      On a lab DC with the agent (XTH) and WEC both collecting, request one service
+      ticket with RC4 and one AS-REP for a no-preauth account; query xdr_data,
+      `microsoft_windows_raw` and the dataset list for both events.
+    affects: ["core/eal_simulator/plugins/ad_windows_emitter.py", "detection_scanner/ttps"]
+
+  - id: PM-IDN-07
+    mechanism: IDN
+    priority: P0
+    status: open
+    question: >-
+      Can Windows Security events that arrive through an HTTP log collector (what the
+      AD emitter sends) feed any Identity Analytics or ITDR detector, even with an XDM
+      modeling rule mapping them? Or do those detectors read only events collected by
+      the XDR agent with XTH or by the Broker VM Windows Event Collector, as their
+      Required Data lists suggest?
+    context: >-
+      The AD emitter backs ABIOC and Analytics expectations for Kerberoasting,
+      pass-the-hash and DC logons (ad_windows_emitter.py:27). If those detectors
+      never read collector data, each such expectation is unsatisfiable by
+      construction and would read `missed` on a healthy tenant.
+    lever: Whether AD-emitter steps may declare Analytics or ABIOC expectations, or only XQL and correlation ones; the ingestion route marked for the AD source.
+    decides:
+      - if: Agent or WEC only
+        then: Mark the AD emitter's analytics route not_armable and move its expectations to custom XQL or correlation rows.
+      - if: XDM-modeled collector data works
+        then: Document the modeling rule as a tenant prerequisite and preflight it.
+    experiment: >-
+      With a modeling rule mapping the emitter's records, POST a 4769 burst for 10
+      SPNs from one account through the collector on a tenant past the training
+      clock; compare with the same burst produced on a real DC.
+    affects: ["core/eal_simulator/plugins/ad_windows_emitter.py", "core/eal_simulator/ingestion_routes.py"]
+
+  - id: PM-IDN-08
+    mechanism: IDN
+    priority: P1
+    status: open
+    question: >-
+      When one CIE instance syncs more than one directory (on-prem AD, Entra ID,
+      Okta), does it merge accounts that belong to one person into one identity, on
+      which attribute, and which field on an issue names the merged identity?
+    context: >-
+      Cross-source identity scenarios plant one principal in AD, Entra and Okta
+      records and expect one person to resolve across them (analytics_emitter.py
+      canary bindings); nothing says the product merges them.
+    lever: Which attribute the emitters must keep identical across sources (UPN, email, objectSid, an immutable id).
+    affects: ["core/eal_simulator/analytics_emitter.py", "core/eal_simulator/plugins/idp_signin_emulator.py"]
+
+  - id: PM-IDN-09
+    mechanism: IDN
+    priority: P1
+    status: open
+    question: >-
+      Does Cortex have a native decoy or honey-identity feature (an account flagged
+      by a CIE attribute, a group or a tenant setting) that raises an issue on any
+      authentication, or is "honey account touched" only ever a custom rule?
+    context: >-
+      The identity-lab design seeds a honey account and plans a custom join for it.
+      If a native feature exists, the scenario should exercise that instead and the
+      custom rule is redundant.
+    lever: How the lab marks its honey account and which expectation type the scenario declares.
+    affects: ["scenarios/itdr/", "detection_scanner/ttps"]
+
+# ── FAQ — rendered to FAQ.md ──────────────────────────────────────────────────
+# Short answers for a DC whose signal stayed dark. `basis` is the weakest thing
+# that is true of the whole answer; items inside an answer carry their own tag.
+# `see` lists the questions whose answers would change it (FAQ.md shows their
+# live status). Bump `reviewed` after re-checking an entry against the ledger.
+faq:
+
+  - id: FAQ-STI-01
+    mechanism: STI
+    question: Is "stitching" the same thing as grouping alerts into an incident?
+    basis: documented
+    reviewed: "2026-11-10"
+    answer: |
+      No. Two engines share the word, and a third thing gets confused with both.
+
+      - **Data stitching** joins records from different sensors, such as an NGFW
+        session and the agent's network event, into one *story*. You read the result in
+        the `network_story` and `authentication_story` presets over `xdr_data`. It works
+        on records, before any rule fires, and records carry no severity.
+      - **Grouping** puts *issues* (alerts) into one *case* (incident). It applies only to
+        Security or Posture issues at Medium severity or higher, and it groups by shared
+        artifacts, by the same causality chain, and by related entities close in time.
+      - **A correlation rule** is an XQL query someone authored, and it can join datasets
+        itself. A correlation rule that fires does not prove that the engine stitched
+        anything.
+
+      In our scenarios, `stitching_key` is about the first and
+      `required_planes_in_incident` is about the second. A scenario can stitch perfectly
+      and still fail its incident check.
+    see: [PM-STI-09, PM-STI-13, PM-INC-01]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping
+
+  - id: FAQ-STI-02
+    mechanism: STI
+    question: My firewall session didn't stitch to the endpoint process. What do I check first?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      Work down this list; the cheapest checks come first. Each item says how sure we
+      are of it.
+
+      1. **Did the firewall data arrive through a source that stitches?** *(documented /
+         open)* The native NGFW integration stitches. So do Check Point and Cisco ASA
+         logs through the Broker VM syslog applet; ASA only for message IDs 302013 to
+         302016, and Check Point drops logs with `sessionid = 0`. Records that
+         `ngfw_eal_emitter` and `ngfw_threat_emitter` POST to a custom HTTP collector
+         land in `<Vendor>_<Product>_raw`; whether they can stitch at all is PM-STI-12, so
+         treat them as unstitched until that is proven.
+      2. **Is the agent collecting, and did it record this connection?** *(documented /
+         working model)* A Linux agent in asynchronous mode collects nothing
+         (FAQ-CAU-01). Look for the connect in `xdr_data` on the endpoint first. We
+         assume stitching needs the agent's own network event (PM-STI-06).
+      3. **Does the 5-tuple agree?** *(operator report)* Source IP and port as the
+         endpoint recorded them, destination IP and port as the firewall transaction
+         recorded them, same protocol (FAQ-STI-03).
+      4. **Is NAT or a container in between?** *(unknown)* Both sides record NAT fields,
+         but which pair stitching compares is PM-STI-03. A pod behind node SNAT is
+         PM-STI-04.
+      5. **Did you look too early, or in the wrong place?** *(documented / unknown)*
+         Stories are published after their events (`story_publish_timestamp`) and can be
+         re-versioned; the delay is PM-STI-14. Look in `network_story`, not the raw
+         firewall dataset. The time tolerance between the two legs is PM-STI-02.
+      6. **Is it another third-party firewall?** *(unknown)* Only the vendors in item 1
+         were checked; PM-STI-05 stays partial.
+    see: [PM-STI-12, PM-TEN-06, PM-STI-06, PM-STI-01, PM-STI-03, PM-STI-04, PM-STI-14, PM-STI-02, PM-STI-05]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect
+      - core/eal_simulator/plugins/ngfw_eal_emitter.py
+
+  - id: FAQ-STI-03
+    mechanism: STI
+    question: Which side of the connection goes into which field?
+    basis: operator
+    reviewed: "2026-11-10"
+    answer: |
+      For a connection the endpoint makes outbound:
+
+      - **Source**: the endpoint's local IP and port exactly as the agent recorded them,
+        which on its network event are `action_local_ip` and `action_local_port`.
+      - **Destination**: the remote IP and port exactly as the firewall's transaction
+        recorded them.
+      - **Protocol**: the same on both legs (`action_network_protocol` on the agent side).
+
+      This is what made Henry's NGFW-to-endpoint stitch work. Resolve the tuple once per
+      run and project it into every leg rather than letting each emitter pick its own;
+      `core/engine/stitch_context.py` does this.
+
+      Two things are still open. Whether the source port has to match is PM-STI-01:
+      SIM-MP-006's endpoint query groups by local IP, remote IP and remote port but not by
+      local port, so either that query or our model is wrong. And NAT: the agent records
+      `action_local_nat_ip`, `action_local_nat_port`, `action_remote_nat_ip`,
+      `action_remote_nat_port` and `action_nat`, and the firewall carries pre- and post-NAT
+      addresses, but which pair stitching compares is not published (PM-STI-03). An
+      agent behind source NAT sees only its local address, so keep the firewall's pre-NAT
+      source equal to the agent's `action_local_*` *(our inference)*.
+    see: [PM-STI-01, PM-STI-03]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor
+      - core/engine/stitch_context.py:75
+      - scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131
+
+  - id: FAQ-STI-04
+    mechanism: STI
+    question: Why does a BIOC on firewall data never fire?
+    basis: documented
+    reviewed: "2026-11-10"
+    answer: |
+      Because it is reading the wrong data. "IOC and BIOC issues are applicable to
+      stitched data only, and are not available on raw data". A BIOC rule may query only
+      `xdr_data` or `cloud_audit_log`, and the stitched firewall-plus-endpoint view is
+      `event_type = STORY`.
+
+      Nine NDR card BIOCs put their predicate on a raw firewall dataset instead: eight
+      on `panw_ngfw_traffic_raw`, one on `cisco_asa_raw`. As written, they are not valid
+      BIOCs. Retarget each one to `xdr_data` with `event_type = STORY`, or move it to a
+      correlation rule on the raw dataset, which can read raw data. Until then, use the
+      card's XQL query as the proof for those steps. Which STORY fields a BIOC may use is
+      still PM-BIO-07.
+    see: [PM-BIO-07, PM-STI-12]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule
+      - detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json
+
+  - id: FAQ-STI-05
+    mechanism: STI
+    question: Can records from an EAL emitter stitch to what the agent recorded?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      Not by 5-tuple, today, for three reasons:
+
+      - EAL emitters run inside SimCore and POST from there, so their records describe
+        no connection the agent made.
+      - Their records arrive through a custom HTTP collector, not a stitching source
+        (FAQ-STI-02, item 1).
+      - The only entity we plant on both sides is the identity principal
+        (`canary_token`), and its format has not been checked against the engine's user
+        normalization (PM-STI-08). Authentication stories need the user as a UPN.
+
+      `ngfw_eal_emitter` accepts `src_ip` / `dst_ip` / `dst_port` overrides that could
+      carry a real agent connection's tuple, but the stitch adapter does not use them yet.
+      Even with them, PM-STI-12 still decides whether a custom-collector record can
+      stitch.
+    see: [PM-STI-12, PM-STI-06, PM-STI-08]
+    refs:
+      - core/eal_simulator/stitch_params.py:7
+      - core/eal_simulator/plugins/ngfw_eal_emitter.py:282
+
+  - id: FAQ-STI-06
+    mechanism: STI
+    question: How do I prove a stitch happened, rather than infer it?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      Query the stitched view, not the raw one, and let the query come back false.
+
+      - **Where:** `network_story`, or `xdr_data` with `event_type = STORY`. Both are
+        documented as stitched firewall-plus-endpoint data. *(documented)*
+      - **What counts:** a row where the firewall fields (`fw_*`) and the endpoint actor
+        fields (`actor_process_*`, `causality_actor_*`) are both populated and match the
+        run's tuple. A firewall-only story has empty actor fields. *(our inference; no page
+        names the field that marks the link, PM-STI-07)*
+      - **When:** after the story is published. Read `story_publish_timestamp` and the
+        latest `story_version` (PM-STI-14).
+
+      A correlation rule or XQL join of `xdr_data` to `panw_ngfw_traffic_raw` on the tuple
+      proves only that both records exist. It does not show that the engine linked them.
+      Tier-2 verify does not carry a stitch-proof query yet.
+    see: [PM-STI-07, PM-STI-14]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets
+      - https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields
+      - core/engine/causality_graph.py
+
+  - id: FAQ-STI-07
+    mechanism: STI
+    question: Does alert severity matter for stitching?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      As far as we can tell, no. Stitching joins records, and records carry no severity.
+      Severity gates **grouping**: the case-grouping page admits only Security or
+      Posture issues at Medium or higher (FAQ-INC-01).
+
+      Henry's report, "stitching/grouping started with medium severity", fits that
+      reading. Whether any part of the story or causality view depends on severity is
+      still open (PM-STI-13).
+    see: [PM-STI-13, PM-INC-05]
+
+  - id: FAQ-CAU-01
+    mechanism: CAU
+    question: The scenario ran, every step returned 0, but some steps are missing from xdr_data. Why?
+    basis: lab
+    reviewed: "2026-11-11"
+    answer: |
+      Five causes, the first documented and the others seen in the lab:
+
+      - **The agent collects nothing in its current mode.** *(documented)* A Linux agent
+        whose kernel is unsupported, that was installed with `--no-km`, or that runs User
+        Space on a kernel older than 5.0 falls back to asynchronous mode: no event
+        collection, no BTP, no EDR. The endpoint still shows connected. PM-TEN-06 asks
+        how to read the mode from the tenant.
+      - **The agent was not collecting yet.** *(lab)* A run that started 15 s after the
+        endpoint showed CONNECTED left no events, because the collectors had not started.
+        The first events arrived about a minute after connect (PM-TEN-05).
+      - **Rapid identical steps were lost.** *(lab)* With the agent fully up, three
+        identical `sh` starts from the beacon within about 100 ms vanished, with all their
+        children; the same commands 2 s apart were all recorded. The public docs say
+        nothing about throttling process starts. The cause is not established (PM-CAU-04).
+      - **Whole windows were lost.** *(lab)* Even with distinct commands 5 to 8 s apart,
+        the agent recorded no process event at all for windows of 15 to 24 s, while
+        events either side arrived. In the beacon's cgo_anchor (chained) mode only the
+        anchor's first child was recorded. Spacing steps out does not fully prevent
+        loss (PM-CAU-04).
+      - **The command line was too long.** *(lab)* On Linux a command line of about 4100
+        characters or more reaches the tenant as argv[0] only (`/bin/sh`), so a rule
+        matching its arguments finds nothing. 3083 characters were recorded whole
+        (PM-TEN-02).
+
+      A step the agent never recorded can fire nothing, stitch to nothing and group with
+      nothing, so its expectations read as misses. Check xdr_data for the step's own
+      processes before calling a silent step a miss.
+    see: [PM-TEN-06, PM-TEN-05, PM-CAU-04, PM-TEN-02]
+
+  - id: FAQ-CAU-02
+    mechanism: CAU
+    question: My rule keys on the chain's owner (`causality_actor_process_image_name = apache2`) and never fires, though the step ran. Why?
+    basis: lab
+    reviewed: "2026-11-11"
+    answer: |
+      On the lab's Ubuntu 24.04 host (systemd 255), the owner (CGO) of every chain
+      that starts in a systemd service is recorded as image `9`, path
+      `/proc/self/fd/9`, with no user. That covers every step the beacon runs, so no
+      CGO name a scenario declares can match. *(lab)*
+
+      - The beacon's cgo_anchor only renames argv[0]. That changes the command line,
+        not the image name. *(lab)*
+      - A renamed copy of a binary does change the image name of that process and of
+        its children's parent, but not the CGO. *(lab)*
+      - A chain started by cron is owned by `cron`. *(lab)*
+
+      What to do in a POV today: key Linux rules on `actor_process_*` or
+      `action_process_*`, never on the CGO, and treat cgo_anchor as a label. Whether
+      older systemd versions or another agent version name the real binary is open
+      (PM-CAU-07), and so is whether the start order of beacon and agent changes the
+      CGO (PM-CAU-08).
+    see: [PM-CAU-01, PM-CAU-02, PM-CAU-07, PM-CAU-08]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes
+
+  - id: FAQ-BIO-01
+    mechanism: BIO
+    question: I imported the detection rule after the run. Will it still fire?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      It depends on the rule type:
+
+      - **BIOC:** yes. *(documented)* Creating or enabling a BIOC also analyzes data
+        already collected in the tenant. How far back is not stated (PM-BIO-06).
+      - **IOC:** yes. *(documented)* IOCs are matched against all data collected in the
+        past (PM-IOC-02).
+      - **Correlation rule:** only if the run falls inside the time frame of a run made
+        after the rule is enabled. *(our inference from the schedule model)* A scheduled
+        rule runs on 10-minute clock boundaries or slower and queries a time frame of up
+        to 7 days. Whether that frame is event time or insert time is PM-COR-02.
+      - **Built-in analytics:** no amount of importing helps. A detector raises nothing
+        until its activation and training periods have passed on that data source.
+
+      A match found by a backward scan carries no meaningful detection latency. Import
+      before the run whenever MTTD is part of the result.
+    see: [PM-BIO-06, PM-IOC-02, PM-COR-02, PM-ANA-02]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-an-ioc
+
+  - id: FAQ-INC-01
+    mechanism: INC
+    question: Why didn't my alerts group into one case?
+    basis: documented
+    reviewed: "2026-11-10"
+    answer: |
+      Check these, in order:
+
+      1. **Severity and domain.** Only Security or Posture issues at Medium severity or
+         higher are grouped. Low correlation issues create no case and join none. A May
+         2024 PANW blog says Low alerts may be grouped in identity, cloud and SaaS areas;
+         the current docs do not say so, which makes PM-INC-05 `conflicting`. Henry
+         reports the Medium floor in practice.
+      2. **Something shared.** Issues group through shared artifacts (hash, host name,
+         user name and so on), through the same causality chain ID, or as related
+         entities "within a close timeframe". No numeric window is published, and
+         grouping by user name "may be subject to temporal constraints". For correlation
+         issues, only mapped artifact fields count (FAQ-INC-02).
+      3. **A case still taking issues.** A case stops accepting issues 30 days after it
+         was created, 14 days after its last issue, or at 1,000 issues.
+
+      The built-in alerts the lab raised on CortexSim activity were all Low, so none of
+      them would open a case. The grouping logic is proprietary and continuously tuned,
+      so treat any rule above as true today, not forever.
+    see: [PM-INC-05, PM-INC-01, PM-INC-07, PM-INC-06]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/overview-of-cases/case-thresholds
+      - https://www.paloaltonetworks.com/blog/security-operations/smartgrouping-precision-ai-driven-investigation/
+
+  - id: FAQ-INC-02
+    mechanism: INC
+    question: What must each plane's alert carry for required_planes_in_incident to pass?
+    basis: working_model
+    reviewed: "2026-11-10"
+    answer: |
+      Four things:
+
+      - severity **Medium or higher**;
+      - domain **Security or Posture**;
+      - an artifact it shares with the other planes' alerts, which should be the
+        scenario's `stitching_key`: the host, the user, the container or the session;
+      - for a correlation rule, that artifact **mapped** in the rule's issue fields. Only
+        mapped fields group a correlation issue: Host Name, User name, Agent ID, Remote IP,
+        the hashes, DNS Query Name, Url, or the Initiator CMD / Path / Initiated By
+        triplet. An issue with nothing mapped always opens a new case, and "field mapping
+        does not guarantee grouping".
+
+      Two traps. User name grouping excludes "known service accounts", and our identity
+      harness runs Linux steps as service accounts; whether `www-data` or `svc-backup`
+      count is PM-INC-08. And nothing in the corpus enforces the floor: 15 card BIOCs are
+      Informational and 1 ABIOC is Low (including SIM-MP-013, which requires its planes
+      under one incident), and the 209 card correlation rules carry no severity at all.
+      When you import a scenario's correlation rule for a POV, set it to Medium or higher
+      and map its host and user fields.
+    see: [PM-INC-05, PM-INC-08, PM-INC-06, PM-INC-07, PM-COR-04]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/customize-cases-and-issues/optimize-case-grouping-in-correlations
+      - detection_scanner/ttps/TTP-2026-0123-sim-mp-013.json
+      - scenarios/_schema.yml:385
+
+  - id: FAQ-INC-03
+    mechanism: INC
+    question: Does an alert below Medium still count as a detection?
+    basis: lab
+    reviewed: "2026-11-10"
+    answer: |
+      Yes, as a detection. Low alerts are returned when the connector pulls alerts (the
+      lab's built-in Low alerts were), and the matcher reads alerts, not cases, so a Low
+      alert can still mark a Result observed and give it an MTTD. The XQL `issues` dataset
+      leaves out INFO issues, so query an Informational alert through the API, not
+      through that dataset.
+
+      It fails only the checks that need a case: the correlation-rate KPI and
+      `required_planes_in_incident`, because it never sits under one. A miss on those
+      checks can therefore mean "below the grouping floor", not "not detected".
+      PM-INC-05 decides whether that reading becomes its own `not_groupable` outcome.
+    see: [PM-INC-05, PM-INC-02]
+    refs:
+      - core/connectors/matcher.py
+      - core/connectors/measures.py:124
+
+  - id: FAQ-INC-04
+    mechanism: INC
+    question: What happens when I rerun a scenario?
+    basis: documented
+    reviewed: "2026-11-10"
+    answer: |
+      - **BIOC, IOC and correlation issues are raised again.** Default deduplication
+        covers only WildFire and Local Analysis issues, over 1 hour. Correlation
+        suppression is off by default; when it is enabled, it defaults to 1 hour and can
+        be set up to 1 day.
+      - **Built-in analytics may stay silent.** Each analytics alert has a Deduplication
+        Period, the time "in which additional issues for the same activity or behavior
+        are suppressed"; its value is on the alert's page (PM-ANA-05).
+      - **The rerun joins the old case only while that case takes issues:** within 14
+        days of its last issue, 30 days of its creation, and under 1,000 issues.
+      - **Volume can switch a rule off.** BIOC rules, correlation rules and analytics
+        detectors are disabled at 5000 or more hits in 24 hours. A BIOC that hits more than
+        100 endpoints over 72 hours gets an automatic exception on PROCESS SHA256.
+
+      Whether ABIOCs learn a repeated scenario as normal is unknown (PM-ABI-04).
+    see: [PM-ANA-05, PM-ABI-04, PM-COR-05, PM-BIO-05]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/investigate-issues/issue-deduplication
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/overview-of-cases/case-thresholds
+      - https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule
+
+  - id: FAQ-ALR-01
+    mechanism: ALR
+    question: The alert is in the console, but reconcile matched nothing. Why?
+    basis: lab
+    reviewed: "2026-11-10"
+    answer: |
+      The matcher credits a Result only from fields it can read. Check these four:
+
+      1. **Rule id.** *(lab, documented)* Alerts pulled from the lab tenant carried no
+         rule-id key at all, so matching fell back to technique plus name. The Issues API
+         documents the identifier as `detection.rule_id`, which the connector reads as a
+         fallback since PR 179; whether real alerts carry it is still PM-ALR-01.
+      2. **Technique.** *(lab)* Built-in detectors carry their own technique: the lab's
+         alert on `useradd` carried T1003 where the scenario declared T1136.001
+         (PM-ALR-03).
+      3. **Source family.** *(checked in code)* The matcher refuses a pair whose families
+         differ. Since PR 179 it maps the Issues API's `detection.method` codes
+         (ANALYTICS_BIOC, TRAPS, MAGNIFIER); FW still maps to no family, and the TRAPS
+         and MAGNIFIER pairing is our inference from the docs (PM-ALR-04).
+      4. **Time.** *(our code, unknown latency)* The default match window is 3600 s.
+         Scheduled correlation rules run on 10-minute boundaries or slower, and which
+         alert timestamp is the detection time is PM-ALR-02.
+    see: [PM-ALR-01, PM-ALR-03, PM-ALR-04, PM-ALR-02, PM-ALR-05]
+    refs:
+      - https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues
+      - core/connectors/xsiam.py:409
+      - core/connectors/matcher.py:70

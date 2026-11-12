@@ -6,7 +6,8 @@ import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
-import { getScenarios, getScenario } from '../../api/client.js'
+import { getScenarios, getScenario, getDoorReadiness, getDoors } from '../../api/client.js'
+import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
@@ -92,6 +93,24 @@ export default function OperationsView({
   // Sits on top of the unified filter — lets DCs target gaps without re-keying every
   // filter criterion through the palette.
   const [historyMode, setHistoryMode] = useState('all')
+
+  // ── Door readiness (advisory chip + opt-in "Runnable here") ─────────────
+  // One fetch for the whole library, keyed on the selected target agent. A
+  // failure leaves the map null and the error visible in each chip's tooltip:
+  // an unreachable endpoint must not read as "nothing to check".
+  const doorAgentId = agentIdOf(env.agent)
+  const [doorState, setDoorState] = useState({ map: null, rows: null, error: null })
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([getDoorReadiness(doorAgentId), getDoors()])
+      .then(([ready, doors]) => {
+        if (!cancelled) setDoorState({ map: ready.scenarios, rows: doors.doors, error: null })
+      })
+      .catch((err) => {
+        if (!cancelled) setDoorState({ map: null, rows: null, error: err.message || 'door readiness failed' })
+      })
+    return () => { cancelled = true }
+  }, [doorAgentId, reloadKey])
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
@@ -240,14 +259,14 @@ export default function OperationsView({
 
   // ── Apply unified filter, then layer history mode on top ────────────
   const visibleScenarios = useMemo(() => {
-    const filtered = scenarioFilter.applyTo(scenarios)
+    const filtered = scenarioFilter.applyTo(scenarios, doorState.map)
     if (historyMode === 'all') return filtered
     return filtered.filter((s) => {
       const id = s.scenario_id || s.id
       const hasHistory = historyByScenario.has(id) && historyByScenario.get(id).count > 0
       return historyMode === 'never' ? !hasHistory : hasHistory
     })
-  }, [scenarios, scenarioFilter.filter, historyMode, historyByScenario]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scenarios, scenarioFilter.filter, historyMode, historyByScenario, doorState.map]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── ⌘F / Ctrl+F → open filter palette ────────────────────────────────
   useEffect(() => {
@@ -340,6 +359,16 @@ export default function OperationsView({
             )}
             <span className="kbd">⌘F</span>
           </button>
+          <button
+            type="button"
+            className={'btn' + (scenarioFilter.filter.runnable ? ' btn--primary' : '')}
+            aria-pressed={scenarioFilter.filter.runnable}
+            onClick={() => scenarioFilter.setRunnable(!scenarioFilter.filter.runnable)}
+            title="Show only scenarios with at least one detection whose ingestion door is open. Off by default: nothing is hidden."
+            data-testid="filter-runnable"
+          >
+            <span>Runnable here</span>
+          </button>
           <button className="btn" disabled title="New scenario authoring — backlog">
             <span>New scenario</span>
             <span className="kbd">N</span>
@@ -374,6 +403,10 @@ export default function OperationsView({
           isPinned={isPinned}
           onTogglePin={togglePin}
           historyByScenario={historyByScenario}
+          doorReadiness={doorState.map}
+          doorRows={doorState.rows}
+          doorAgentId={doorAgentId}
+          doorError={doorState.error}
         />
       )}
 

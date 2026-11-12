@@ -20,7 +20,7 @@ func has(caps []string, want string) bool {
 // and the lie is harder to notice here than in the per-step notice because it is
 // made once, at registration, before any run exists.
 func TestAgentCapabilities_WindowsDoesNotClaimIdentityHarness(t *testing.T) {
-	caps := agentCapabilities("windows")
+	caps := agentCapabilities("windows", false)
 	if has(caps, "identity-harness") {
 		t.Fatalf("windows beacon advertises identity-harness it cannot provide: %v", caps)
 	}
@@ -42,9 +42,9 @@ func TestAgentCapabilities_WindowsDoesNotClaimIdentityHarness(t *testing.T) {
 // say so — on every platform it compiles for.
 func TestAgentCapabilities_ArtifactFetchAdvertisedOnEveryPlatform(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin", "windows"} {
-		if !has(agentCapabilities(goos), "artifact-fetch") {
+		if !has(agentCapabilities(goos, false), "artifact-fetch") {
 			t.Errorf("agentCapabilities(%s) does not advertise artifact-fetch: %v",
-				goos, agentCapabilities(goos))
+				goos, agentCapabilities(goos, false))
 		}
 	}
 }
@@ -61,18 +61,18 @@ func withBeaconElevated(t *testing.T, elevated bool) {
 // them an elevated token — before the run, not from a degraded step afterwards.
 func TestAgentCapabilities_WindowsAdvertisesElevationOnlyWhenTrue(t *testing.T) {
 	withBeaconElevated(t, true)
-	if !has(agentCapabilities("windows"), "elevated") {
-		t.Fatalf("elevated windows beacon does not advertise elevated: %v", agentCapabilities("windows"))
+	if !has(agentCapabilities("windows", false), "elevated") {
+		t.Fatalf("elevated windows beacon does not advertise elevated: %v", agentCapabilities("windows", false))
 	}
 	withBeaconElevated(t, false)
-	if has(agentCapabilities("windows"), "elevated") {
-		t.Fatalf("NON-elevated windows beacon claims elevated: %v", agentCapabilities("windows"))
+	if has(agentCapabilities("windows", false), "elevated") {
+		t.Fatalf("NON-elevated windows beacon claims elevated: %v", agentCapabilities("windows", false))
 	}
 	// Linux/macOS lists are pinned elsewhere and must not grow from this.
 	withBeaconElevated(t, true)
 	for _, goos := range []string{"linux", "darwin"} {
-		if has(agentCapabilities(goos), "elevated") {
-			t.Errorf("agentCapabilities(%s) gained elevated: %v", goos, agentCapabilities(goos))
+		if has(agentCapabilities(goos, false), "elevated") {
+			t.Errorf("agentCapabilities(%s) gained elevated: %v", goos, agentCapabilities(goos, false))
 		}
 	}
 }
@@ -85,9 +85,30 @@ func TestAgentCapabilities_POSIXUnchanged(t *testing.T) {
 	// POSIX still claims identity-harness and the exact set is still pinned, so
 	// a future capability cannot be added by accident.
 	for _, goos := range []string{"linux", "darwin"} {
-		caps := agentCapabilities(goos)
+		caps := agentCapabilities(goos, false)
 		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch" {
 			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch]", goos, caps)
 		}
+	}
+}
+
+// "container" is how SimCore knows a beacon runs in a pod; it must appear only
+// when the beacon is in one, and must not change what the host family claims.
+func TestAgentCapabilities_ContainerFlag(t *testing.T) {
+	if !has(agentCapabilities("linux", true), "container") {
+		t.Error("linux in-container beacon must advertise container")
+	}
+	if has(agentCapabilities("linux", false), "container") {
+		t.Error("beacon outside a container must not advertise container")
+	}
+	if !has(agentCapabilities("linux", true), "identity-harness") {
+		t.Error("container flag must keep the default linux capabilities")
+	}
+	w := agentCapabilities("windows", true)
+	if has(w, "identity-harness") {
+		t.Errorf("windows must still omit identity-harness: %v", w)
+	}
+	if !has(w, "container") {
+		t.Errorf("windows in-container should advertise container: %v", w)
 	}
 }

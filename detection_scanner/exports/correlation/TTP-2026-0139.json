@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1199",
     "T1552.005",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(AISPM-007 Reasoning-Engine Agent Container Recursive IMDS P4SA Token Harvest) AND (ABIOC(AISPM-007 P4SA Service Agent Cross-Project Cloud Storage Read Deviation) OR XQL(AISPM-007 P4SA Artifact Registry Private Reasoning-Engine Image Pull)) \u2014 join the in-cluster recursive-IMDS harvest and the cloud-plane P4SA activity on the shared P4SA principal and the reasoning-engine causality_actor_process into ONE Vertex AI double-agent incident, so the cross-project GCS read and the private image pull are attributed to the deployed agent that owns the chain rather than surfacing as isolated cloud audit lines.",
       "name": "Vertex AI Double Agent \u2014 P4SA Token Theft Stitched To Cross-Project GCS And Image Exfil",
-      "rule_id": "CR-AISPM-0007",
-      "severity": "high"
+      "rule_id": "CR-AISPM-0007"
     }
   ],
   "ttp_ref": "TTP-2026-0139"

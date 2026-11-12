@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1656",
     "T1534"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity (causality_actor_effective_username) for the same recipient GROUPED BY user_principal WITHIN 4h \u2014 a shared_entity stitch on the recipient user_principal that fuses the email impostor signal and the identity/endpoint follow-on into ONE BEC incident.",
       "name": "BEC Executive Impersonation \u2014 Email to Identity Stitch",
-      "rule_id": "CR-EMAIL-0003",
-      "severity": "high"
+      "rule_id": "CR-EMAIL-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0092"

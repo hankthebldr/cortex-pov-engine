@@ -1232,8 +1232,8 @@ echo "[CORTEXSIM] payload verified sha256=$ACT (served from $CORTEXSIM_SERVER)"
 mkdir -p /cortexsim/tools
 i=0
 while [ "$i" -lt "${{PAYLOAD_COUNT:-0}}" ]; do
-  eval "PN=\$PAYLOAD_${{i}}_NAME"
-  eval "PS=\$PAYLOAD_${{i}}_SHA256"
+  eval "PN=\\$PAYLOAD_${{i}}_NAME"
+  eval "PS=\\$PAYLOAD_${{i}}_SHA256"
   [ -n "$PS" ] || die "PAYLOAD_INTEGRITY_MISSING no digest for '$PN' — refusing to stage an unverifiable tool"
   wget -q -T 120 -O "/cortexsim/tools/.$PN.part" "$CORTEXSIM_SERVER/api/k8s/payload/$PN" \\
     || die "PAYLOAD_FETCH_FAILED could not fetch '$PN' from $CORTEXSIM_SERVER. NOTHING RAN."
@@ -1620,12 +1620,10 @@ def _anchor_name(scenario: dict[str, Any]) -> str:
     return "cortexsim-runner"
 
 
-def _pod_spec(
-    *, scenario_id: str, app: str, ns: str, posture: ClusterPosture, image: str,
-    delivery: str, simcore_url: str, fetch_image: str, kind: str,
-) -> dict[str, Any]:
-    sc = posture.security_context
-    security_context: dict[str, Any] = {
+def _container_security_context(sc: SecurityContextSpec) -> dict[str, Any]:
+    """The container ``securityContext`` for a posture. Shared by the push
+    manifests and the container agent so the two cannot translate it differently."""
+    out: dict[str, Any] = {
         "privileged": sc.privileged,
         "runAsUser": sc.run_as_user,
         "allowPrivilegeEscalation": sc.allow_privilege_escalation,
@@ -1635,8 +1633,81 @@ def _pod_spec(
             **({"drop": list(sc.capabilities_drop)} if sc.capabilities_drop else {}),
         },
     }
-    if not security_context["capabilities"]:
-        security_context.pop("capabilities")
+    if not out["capabilities"]:
+        out.pop("capabilities")
+    return out
+
+
+def _host_path_volumes(
+    posture: ClusterPosture,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``(volumes, volumeMounts)`` for the posture's hostPath entries."""
+    volumes: list[dict[str, Any]] = []
+    mounts: list[dict[str, Any]] = []
+    for hp in posture.host_access.host_paths:
+        volumes.append({
+            "name": hp.name,
+            "hostPath": {"path": hp.host_path, **({"type": hp.type} if hp.type else {})},
+        })
+        mounts.append({
+            "name": hp.name, "mountPath": hp.mount_path, "readOnly": hp.read_only,
+        })
+    return volumes, mounts
+
+
+def _resources_block(posture: ClusterPosture) -> dict[str, Any]:
+    if not posture.resources:
+        return {}
+    return {
+        "limits": {
+            "cpu": posture.resources.cpu_limit,
+            "memory": posture.resources.memory_limit,
+        },
+        "requests": {
+            "cpu": posture.resources.cpu_request,
+            "memory": posture.resources.memory_request,
+        },
+    }
+
+
+def _host_namespace_flags(posture: ClusterPosture) -> dict[str, Any]:
+    """``hostPID`` / ``hostNetwork`` / ``hostIPC`` pod-spec fields, in that order."""
+    out: dict[str, Any] = {}
+    if posture.host_access.host_pid:
+        out["hostPID"] = True
+    if posture.host_access.host_network:
+        out["hostNetwork"] = True
+    if posture.host_access.host_ipc:
+        out["hostIPC"] = True
+    return out
+
+
+def _node_access_affinity(posture: ClusterPosture) -> Optional[dict[str, Any]]:
+    """Positive control-plane anti-affinity, only for node-access postures."""
+    if TIER_NODE not in posture.tiers():
+        return None
+    return {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [{
+                    "matchExpressions": [
+                        {"key": "node-role.kubernetes.io/control-plane",
+                         "operator": "DoesNotExist"},
+                        {"key": "node-role.kubernetes.io/master",
+                         "operator": "DoesNotExist"},
+                    ],
+                }],
+            },
+        },
+    }
+
+
+def _pod_spec(
+    *, scenario_id: str, app: str, ns: str, posture: ClusterPosture, image: str,
+    delivery: str, simcore_url: str, fetch_image: str, kind: str,
+) -> dict[str, Any]:
+    sc = posture.security_context
+    security_context = _container_security_context(sc)
 
     volumes: list[dict[str, Any]] = [
         {"name": "cortexsim-payload", "emptyDir": {}},
@@ -1659,14 +1730,9 @@ def _pod_spec(
         volumes.append({"name": "cortexsim-bin", "emptyDir": {}})
         mounts.append({"name": "cortexsim-bin", "mountPath": "/usr/local/bin"})
 
-    for hp in posture.host_access.host_paths:
-        volumes.append({
-            "name": hp.name,
-            "hostPath": {"path": hp.host_path, **({"type": hp.type} if hp.type else {})},
-        })
-        mounts.append({
-            "name": hp.name, "mountPath": hp.mount_path, "readOnly": hp.read_only,
-        })
+    hp_volumes, hp_mounts = _host_path_volumes(posture)
+    volumes.extend(hp_volumes)
+    mounts.extend(hp_mounts)
 
     env = [
         {"name": "CORTEXSIM_SCENARIO", "value": scenario_id},
@@ -1680,19 +1746,7 @@ def _pod_spec(
         {"name": "CORTEXSIM_HOLD", "value": "0" if kind == "job" else "1"},
     ]
 
-    resources = (
-        {
-            "limits": {
-                "cpu": posture.resources.cpu_limit,
-                "memory": posture.resources.memory_limit,
-            },
-            "requests": {
-                "cpu": posture.resources.cpu_request,
-                "memory": posture.resources.memory_request,
-            },
-        }
-        if posture.resources else {}
-    )
+    resources = _resources_block(posture)
 
     spec: dict[str, Any] = {
         "serviceAccountName": app,
@@ -1702,12 +1756,7 @@ def _pod_spec(
         "enableServiceLinks": False,
         "volumes": volumes,
     }
-    if posture.host_access.host_pid:
-        spec["hostPID"] = True
-    if posture.host_access.host_network:
-        spec["hostNetwork"] = True
-    if posture.host_access.host_ipc:
-        spec["hostIPC"] = True
+    spec.update(_host_namespace_flags(posture))
 
     # Verified on a real 3-node k3s cluster: the control-plane node carries NO
     # taints and `default` carries NO PSA labels, so a privileged pod with no
@@ -1716,21 +1765,9 @@ def _pod_spec(
     # access needs a POSITIVE anti-affinity. A privileged pod on a control-plane
     # node owns etcd, the cluster CA and every secret in the cluster; the escape
     # scenario is exactly as valid on a worker.
-    if TIER_NODE in posture.tiers():
-        spec["affinity"] = {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {
-                    "nodeSelectorTerms": [{
-                        "matchExpressions": [
-                            {"key": "node-role.kubernetes.io/control-plane",
-                             "operator": "DoesNotExist"},
-                            {"key": "node-role.kubernetes.io/master",
-                             "operator": "DoesNotExist"},
-                        ],
-                    }],
-                },
-            },
-        }
+    affinity = _node_access_affinity(posture)
+    if affinity:
+        spec["affinity"] = affinity
 
     container: dict[str, Any] = {
         "name": app,
@@ -1837,9 +1874,14 @@ def _workload(
 #
 # So: the scenario's cluster-scoped objects, then the namespace (this is what
 # actually kills the workload), and only then the reaper's own grant — the
-# ClusterRole first, which makes the binding inert the moment it lands, then the
-# binding as tidy-up. If that last delete fails because the reaper just revoked
-# itself, what survives is an unbound ClusterRole that grants nothing to nobody.
+# ClusterRoleBinding FIRST, the ClusterRole LAST. Either own delete revokes the
+# permission the other needs, so at most one of them can be expected to land.
+# Binding-first means what survives is an unbound ClusterRole: it grants nothing
+# to nobody and stays inert until someone deliberately binds it. Role-first (the
+# old order, observed on kind 2026-11-10) left a binding that points at a missing
+# role, which re-arms for the reaper's ServiceAccount the moment anyone creates a
+# ClusterRole of that name. ``set -u`` without ``-e`` keeps the script going past
+# the expected Forbidden on the last line.
 _REAPER_SCRIPT = """\
 set -u
 echo "[cortexsim-reaper] sleeping ${{TTL}}s before reaping ${{NS}}"
@@ -1871,7 +1913,8 @@ def _reaper(
     cluster-wide RBAC deletion primitive.
     """
     name = f"cortexsim-reaper-{sid_lower}"
-    own = [("clusterroles", name), ("clusterrolebindings", name)]
+    # Binding first, role last: see the ORDER note on _REAPER_SCRIPT.
+    own = [("clusterrolebindings", name), ("clusterroles", name)]
     targets = cluster_scoped + own
 
     rules: list[dict[str, Any]] = []
@@ -1909,13 +1952,14 @@ def _reaper(
             "rules": rules,
         },
         {
-            # NOTE: the reaper cannot delete both its own ClusterRole and its own
-            # binding — deleting the role revokes the permission needed for the
-            # next call, so whichever goes second survives. Verified live on
-            # kind: the role went, the binding stayed. That residue is INERT (a
-            # binding referencing a nonexistent role grants nothing), so the
-            # safety goal is met; the header's ownerReferences patch is the
-            # optional way to leave nothing at all.
+            # NOTE: the reaper cannot be relied on to delete both its own
+            # binding and its own ClusterRole — the first delete revokes the
+            # permission the second needs. It deletes this binding first, so the
+            # expected residue is the unbound ClusterRole above (grants nothing).
+            # The old role-first order left this binding instead (observed on
+            # kind 2026-11-10); the new order is not yet observed in a cluster.
+            # The header's ownerReferences patch is the optional way to leave
+            # nothing at all.
             "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
             "metadata": {"name": name, "labels": dict(base)},
             "roleRef": {"apiGroup": "rbac.authorization.k8s.io",

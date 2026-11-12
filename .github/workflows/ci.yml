@@ -13,7 +13,8 @@ name: CI
 #               to reproduce the ~1551-test green run faithfully. Then the
 #               same suite AGAIN under TZ=America/Los_Angeles, because the
 #               runner and the image are UTC and a naive-UTC-read-as-local bug
-#               is invisible there.
+#               is invisible there. Then the image-parity gates on that same
+#               image: the console, every beacon target, every MCP tool.
 #   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent,
 #               PLUS a cross-compile + vet gate for every target the beacon
 #               shelf ships (linux/amd64 natively; linux/arm64, darwin/amd64,
@@ -47,7 +48,8 @@ name: CI
 #               required check; the always-on half lives in `adapters`.
 #   e2e-isolated — Tier-C observed-signal assertion suite (no docker) as a hard
 #               gate; the docker detonation e2e is opt-in behind a `tier-c-e2e`
-#               PR label.
+#               PR label, and the container-agent kind e2e behind an
+#               `agent-k8s-e2e` PR label.
 #   windows   — the ONLY job that executes anything on Windows: windows-2022,
 #               Windows PowerShell 5.1, native go test, 5.1 parse +
 #               PSScriptAnalyzer, a real SimCore boot, the console's install
@@ -174,6 +176,14 @@ jobs:
       - name: Beacon image-parity gate (image serves every beacon target)
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make IMAGE=cortexsim:ci check-agent-shelf
+
+      # The MCP server ships in the image (Gate B parity): the built image must
+      # import core/mcp_server/ and the pinned SDK and register every tool. The
+      # host suite cannot see this; it runs from the checkout. Fails closed — a
+      # --list-tools error leaves the count empty and `test` exits non-zero.
+      - name: MCP boot gate (image registers every MCP tool)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make check-mcp-boot IMAGE=cortexsim:ci
 
   # ---------------------------------------------------------------------------
   # agent — Go beacon: build + vet + race-tested.
@@ -599,6 +609,34 @@ jobs:
           done
           deploy/tier-c/run-tier-c.sh --scenario SIM-EDR-001 \
             --simcore http://localhost:8888 --results "$RUNNER_TEMP/tierc-out"
+      - name: Container agent on kind (opt-in — label 'agent-k8s-e2e')
+        # Real-pod proof: a kind cluster pulls the manifest from a SimCore built
+        # from this tree. Proves the pod runs and reports, never that a Cortex
+        # detection fires (tenant-verified stays 0). deploy/kind/README.md.
+        #
+        # CORTEXSIM_ALLOWED_HOSTS: SimCore's Host guard (core/security/
+        # host_guard.py) refuses a Host it cannot explain with 400
+        # HOST_NOT_ALLOWED. The pod calls SIMCORE_URL; run-agent-e2e.sh swaps
+        # host.docker.internal for the node's gateway IP (always admitted) only
+        # when the name does not resolve inside the node. Where it does resolve,
+        # the pod's Host is host.docker.internal, so it is named here.
+        if: contains(toJson(github.event.pull_request.labels.*.name), 'agent-k8s-e2e')
+        run: |
+          docker build -f core/Dockerfile -t cortexsim:agentk8s .
+          docker run -d --name simcore-k8s -p 8888:8888 \
+            -e CORTEXSIM_ENV=development \
+            -e CORTEXSIM_SECRET="$(openssl rand -hex 32)" \
+            -e CORTEXSIM_ALLOWED_HOSTS=host.docker.internal \
+            cortexsim:agentk8s
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8888/api/health && break || sleep 2
+          done
+          # Uses the runner image's own kind; nothing is downloaded unpinned.
+          command -v kind >/dev/null 2>&1 || { echo "kind is not on this runner image"; exit 1; }
+          kind version
+          SIMCORE_URL=http://host.docker.internal:8888 \
+            SIMCORE_API=http://localhost:8888 \
+            deploy/kind/run-agent-e2e.sh
 
   # ---------------------------------------------------------------------------
   # windows — the only job that EXECUTES anything on Windows.

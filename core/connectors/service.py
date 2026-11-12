@@ -48,6 +48,7 @@ from engine.outcome import (
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
     evaluate_prevent,
+    resolve_module_mode,
     silent_detect_verdict,
     is_hit,
     soak_pending_reason,
@@ -59,6 +60,14 @@ from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
+
+
+def _row_module_mode(run: Any, result: Any) -> Optional[str]:
+    """The Action Mode one prevent row is graded against (review F1)."""
+    return resolve_module_mode(
+        agent_profile_mode=run.agent_profile_mode,
+        module_modes=getattr(run, "module_modes", None),
+        prevention_module=getattr(result, "prevention_module", None))
 
 
 class ReconcileError(Exception):
@@ -184,8 +193,12 @@ async def reconcile_run(
     if never_delivered and not candidates:
         # Nothing on this run can be credited, so spending a metered tenant
         # query on it would only buy the chance to credit the wrong alert.
+        # ``queries_issued: 0`` because no tenant page was read: every
+        # reconcile summary carries the ledger count (the MCP reconcile tool
+        # requires the key and reads its absence as an unknown shape).
         summary = efficacy_summary(results, 0, f"{connector_kind}:{integ.name}")
-        summary.update({"pulled": 0, "never_delivered": True, "verdicts": [],
+        summary.update({"pulled": 0, "queries_issued": 0,
+                        "never_delivered": True, "verdicts": [],
                         "warnings": [NEVER_DELIVERED_WARNING],
                         "warning": NEVER_DELIVERED_WARNING})
         return ReconcileOutcome(summary=summary, newly_matched=0)
@@ -236,6 +249,7 @@ async def reconcile_run(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
     family = kpi_family(getattr(scenario, "primary_kpi", None),
                         getattr(scenario, "threshold", None))
+    incidents_queries = 0
     if (family == CORRELATION and host_scope["host"] is not None
             and not any(ctx["alert_incidents"].values())
             and hasattr(conn, "pull_incidents")):
@@ -243,6 +257,7 @@ async def reconcile_run(
         # incident list for the same window, scoped to the run's host. Only
         # for correlation-shaped scenarios — accuracy never needs it.
         ipull = conn.pull_incidents(cfg, since=since, until=until)
+        incidents_queries = _pages_issued(ipull.detail)
         if ipull.ok:
             want = host_scope["host"]
             ctx["incidents"] = [i for i in ipull.incidents
@@ -257,6 +272,9 @@ async def reconcile_run(
                                           pull_context=ctx, observations=eligible,
                                           window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
+    # Ledger units: every tenant page read is one query; the incidents read
+    # counts its own pages when it was attempted (ok or not).
+    summary["queries_issued"] = _pages_issued(pull.detail) + incidents_queries
     summary["host_scope"] = host_scope
     summary["host_source"] = host_source(host, host_scope)
     if "incidents" in ctx:
@@ -415,6 +433,16 @@ def host_source(override: Optional[str], host_scope: dict[str, Any]) -> Optional
     if host_scope.get("host") is None:
         return None
     return "operator" if override else "run_target"
+
+
+def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
+    """Ledger units a harvest spent: ``pages`` on success, the ``page`` a failed read died on."""
+    d = detail or {}
+    # ``is not None``, not ``or``: a reported 0 is a real count, not a missing one.
+    for key in ("pages", "page"):
+        if d.get(key) is not None:
+            return int(d[key])
+    return 1
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -587,7 +615,8 @@ async def apply_verdicts(
                     alert_outcome=v.alert_outcome,
                     termination=terminations.get(result.step_id),
                     window_closed=False,
-                    block_mode_status=run.block_mode_status)
+                    block_mode_status=run.block_mode_status,
+                    module_mode=_row_module_mode(run, result))
                 if pv.outcome == OUTCOME_PREVENTED and unscoped:
                     # Any endpoint's alert could have been credited.
                     pv = PreventVerdict(OUTCOME_PENDING, "pending", PASS_WITHHELD_UNSCOPED)
@@ -750,7 +779,8 @@ async def _judge_silent_results(
             pv = evaluate_prevent(
                 agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
                 termination=terminations.get(r.step_id), window_closed=True,
-                block_mode_status=run.block_mode_status)
+                block_mode_status=run.block_mode_status,
+                module_mode=_row_module_mode(run, r))
             if pv.outcome == OUTCOME_MISSED and not evidence_complete:
                 # Only a would-be fail softens to pending; a report-mode None
                 # stays None (and so is not written).
@@ -1136,6 +1166,7 @@ async def resolve_tenant_runner(
     """
     from engine.verifier import xsiam_query_runner  # noqa: PLC0415
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+    from integrations.xsiam.guards import xql_capability_granted  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
     from security.crypto import CryptoError  # noqa: PLC0415
 
@@ -1154,8 +1185,7 @@ async def resolve_tenant_runner(
     # SEPARATE authorisation because it spends a metered resource the customer's
     # own analysts share. An absent list means the legacy default — read only —
     # so migrating an existing record can never silently grant XQL.
-    caps = (integ.config or {}).get("capabilities")
-    if isinstance(caps, list) and "xql" not in {str(c).lower() for c in caps}:
+    if not xql_capability_granted(integ.config or {}):
         return TenantRunner(tenant=integ.name, reason="xql_not_authorised",
                             remediation=TENANT_REMEDIATION["xql_not_authorised"])
 
@@ -1391,7 +1421,8 @@ async def verify_run_now(
     before = budget["issued"]
     counts = await verifier.verify_results(
         results, _budgeted(runner, budget),
-        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
+        module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
 
     book = _bookkeeping(run)

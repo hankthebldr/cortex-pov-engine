@@ -52,6 +52,20 @@
 .theme-console .library-layout .view-head {
   align-items: flex-end;
   margin-bottom: 16px;
+  /* The toolbar keeps its single-line width; when that and the title block's
+     narrowest width do not fit side by side, the toolbar drops below the title
+     instead of running past the viewport. See the title-block rule below. */
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+/* The title block (everything in the head that is not the toolbar). Basis 0
+   with grow 1 means it takes whatever the toolbar leaves, and its line-break
+   size is its own min-content (normally the h1), the width it could already
+   shrink to beside the toolbar. So wherever the head fitted on one line it
+   still does; where the toolbar used to run past the head, it wraps to the
+   next line instead. */
+.theme-console .library-layout .view-head > :not(.ops-toolbar) {
+  flex: 1 1 0;
 }
 
 .theme-console .library-layout .ops-accent-bar {
@@ -103,10 +117,23 @@
 
 .theme-console .library-layout .ops-toolbar {
   gap: 8px;
+  /* Its flex basis is its single-line (max-content) width, so it is laid out
+     on one line whenever the head has room for it. It wraps internally only
+     once it sits on its own line in a head narrower than that single line
+     (a viewport below about 740px); max-width keeps it inside the head. */
+  flex-wrap: wrap;
+  max-width: 100%;
 }
+.theme-console .library-layout .ops-toolbar .btn { flex-shrink: 0; white-space: nowrap; }
 
+/* A fixed 260px, the width it has always rendered at. The global
+   `input { width: 100% }` (cortex-theme.css) used to be squeezed back to the
+   260px floor by the unwrapped row; in a row that may wrap, 100% claims the
+   whole line and pushes every button below it. A flexible basis on the input
+   was tried and still wrapped the last button at 1440px. */
 .theme-console .library-layout .ops-search {
   height: 32px;
+  width: 260px;
   min-width: 260px;
   padding: 0 11px;
   background: var(--s2);
@@ -779,3 +806,7 @@
   font-size: 10px;
   letter-spacing: normal;
 }
+
+/* Door readiness chip — NOT CHECKED stays quiet; the error tone reuses chip--missed. */
+.theme-console .door-chip { white-space: nowrap; font-family: var(--font-mono, 'JetBrains Mono', monospace); }
+.theme-console .door-chip--unknown { opacity: 0.75; }

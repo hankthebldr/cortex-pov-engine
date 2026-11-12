@@ -2,6 +2,7 @@ import React from 'react'
 import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { isRunComplete } from './runStatus.js'
+import DoorChip from './doors/DoorChip.jsx'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -22,7 +23,7 @@ const DIFFICULTY_LABEL = {
 /**
  * ScenarioCard — single scenario card for the operations grid.
  */
-function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, history = null }) {
+function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, history = null, readiness, doorRows = null, doorAgentId = null, doorError = null }) {
   const id      = scenario.scenario_id || scenario.id
   const planes  = collectPlanes(scenario)
   const tids    = collectTechniques(scenario).slice(0, 6)
@@ -68,6 +69,7 @@ function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTog
         {difficulty && (
           <span className="chip">{DIFFICULTY_LABEL[difficulty] || difficulty}</span>
         )}
+        <DoorChip scenarioId={id} readiness={readiness} doorRows={doorRows} agentId={doorAgentId} error={doorError} />
       </div>
 
       {tids.length > 0 && (
@@ -134,6 +136,10 @@ export default function ScenarioGrid({
   isPinned = () => false,
   onTogglePin = () => {},
   historyByScenario = null, // Map<scenario_id, { count, lastRunAt, lastStatus }>
+  doorReadiness = null,     // {scenario_id: readiness} from GET /api/doors/readiness
+  doorRows = null,          // GET /api/doors rows (real per-door state)
+  doorAgentId = null,
+  doorError = null,         // fetch failure text, shown in the chip tooltip
 }) {
   if (scenarios.length === 0) {
     return (
@@ -166,6 +172,10 @@ export default function ScenarioGrid({
             onSelect={onSelectScenario}
             onTogglePin={onTogglePin}
             history={history}
+            readiness={doorReadiness ? doorReadiness[id] : undefined}
+            doorRows={doorRows}
+            doorAgentId={doorAgentId}
+            doorError={doorError}
           />
         )
       })}

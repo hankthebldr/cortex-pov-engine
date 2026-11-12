@@ -1,0 +1,282 @@
+scenario_id: SIM-EDR-024
+name: "Linux Identity Persistence — Sudo Backdoor Account, SSH Key and a Systemd Timer Re-Executing on a Schedule, Grouped Into One Case"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - BIOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-IR-01
+tc_ref: TC-IR-02
+tc_refs:
+  - TC-IR-02
+  - TC-EDR-05
+pov_scenario_id: POV-SC-006
+uc_name: "Incident Response"
+tc_name: "Demonstrate issue grouping consolidates related alerts into unified incidents"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1053.006"
+mitre_technique_name: "Scheduled Task/Job: Systemd Timers"
+additional_techniques:
+  - technique: "T1136.001"
+    name: "Create Account: Local Account"
+  - technique: "T1098.004"
+    name: "Account Manipulation: SSH Authorized Keys"
+  - technique: "T1543.002"
+    name: "Create or Modify System Process: Systemd Service"
+  - technique: "T1222.002"
+    name: "File and Directory Permissions Modification: Linux and Mac File and Directory Permissions Modification"
+
+threat_report: "Unit42 - TeamTNT Targets Exposed Docker APIs"
+threat_report_url: "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# A root operator shell (stolen SSH session) layers identity persistence: a
+# sudo account, an SSH key for it, then a systemd timer that re-runs a payload
+# every five minutes and survives a reboot. cgo_anchor labels SimCore's graph
+# and sets the root shell's argv[0]; the tenant's CGO for steps 1-4 is the
+# beacon process. The timer's runs are a second chain. On this Ubuntu 24.04
+# endpoint (systemd 255) a service's ExecStart child records
+# actor_process_image_name = "9" with path /proc/self/fd/9 (systemd-executor
+# is fexecve'd from a descriptor), NOT "systemd". The re-execution BIOC is
+# keyed on that, verified against the sysstat service's sa1 starts on
+# 2026-11-11.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+# Pull only. A push bundle runs the scenario cleanup on exit (`trap cleanup
+# EXIT`), which would remove the timer before its first run.
+push_supported: false
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Incident Grouping"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  Only Medium-or-higher issues create a case or join one
+  (docs/product-mechanics/ledger.yml, row INC). The Medium+ alerts here are
+  five custom BIOCs and one correlation rule that the operator installs at
+  Medium before the run (install list on TTP-2026-0199 and in
+  docs/lab/2026-11-11-persistence-grouping-lab-run.md).
+  PASS: at least 80% of the seven declared step-detections are observed, AND
+  every Medium+ issue the run raises on the endpoint carries ONE case_id. The
+  case is the account, key, unit and immutable-attribute BIOCs from the
+  beacon chain, the timer-run re-executions from the systemd chain, and
+  CR-EDR-0024.
+  The shadow-file ABIOC is a built-in Low "XDR Analytics BIOC". It is scored
+  for detection and never expected inside the case. It judges rarity, and it
+  already fired on this host's useradd/chpasswd on 2026-11-11, so it may read
+  missed while the tenant is healthy. The 80% bar allows that one miss (6 of
+  7).
+  The backdoor account is created already expired (-e 1970-01-02) with a
+  random, never-printed password. It produces the account-creation telemetry
+  without leaving a usable login on the lab endpoint.
+  tenant-verified: 0 — no run of this scenario has executed against a live
+  Cortex tenant; authored is not proven.
+moat_tier: "MOAT"
+
+infra_modules_needed:
+  - base
+  - edr
+
+steps:
+  - id: step-01
+    name: "Create an expired sudo-group backdoor account and set its password"
+    # What the sensor records (2026-11-11 lab, spaced probe on this host):
+    # PROCESS_START of useradd with -G sudo, and FILE_OPEN of /etc/shadow by
+    # useradd and chpasswd. The shadow opens raised two built-in "Suspicious
+    # access to shadow file" ABIOCs (Low, no case; issues 1500417/1500418).
+    command: |
+      set -eu
+      U=cortexsim-svc
+      # Pull mode never runs cleanup.commands, so a re-run can meet the
+      # previous run's immutable key: clear it before removing the account.
+      chattr -i "/home/$U/.ssh/authorized_keys" 2>/dev/null || true
+      if id "$U" >/dev/null 2>&1; then userdel -r "$U" >/dev/null 2>&1 || true; fi
+      useradd -m -s /bin/bash -G sudo -e 1970-01-02 "$U"
+      P=$(head -c 18 /dev/urandom | base64)
+      echo "$U:$P" | chpasswd
+      unset P
+      id "$U"
+      chage -l "$U" | sed -n '1,4p'
+    identity: root
+    mitre_technique: "T1136.001"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Built-in XDR Analytics BIOC (Low, no case): an unpopular process (useradd / chpasswd) opens /etc/shadow — observed on this endpoint 2026-11-11"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: abioc-suspicious-access-to-shadow-file
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): a shell runs useradd/usermod putting an account in the sudo/wheel/admin group"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: bioc-edr-024-local-account-created-in-sudo-group-by-root-shell
+
+  - id: step-02
+    name: "Plant an SSH authorized key for the backdoor account"
+    # What the sensor records: ssh-keygen's PROCESS_START, then a
+    # FILE_CREATE_NEW/WRITE on /home/cortexsim-svc/.ssh/authorized_keys by the
+    # step shell. The private key never leaves /var/tmp/.cortexsim-sshd and
+    # the cleanup deletes it.
+    command: |
+      set -eu
+      sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
+      U=cortexsim-svc
+      H=/home/$U
+      K=/var/tmp/.cortexsim-sshd
+      mkdir -p "$K" "$H/.ssh"
+      chmod 700 "$K" "$H/.ssh"
+      rm -f "$K/id_ed25519" "$K/id_ed25519.pub"
+      ssh-keygen -q -t ed25519 -N '' -C cortexsim-edr-024 -f "$K/id_ed25519"
+      cat "$K/id_ed25519.pub" >> "$H/.ssh/authorized_keys"
+      chmod 600 "$H/.ssh/authorized_keys"
+      chown -R "$U:$U" "$H/.ssh"
+      ls -la "$H/.ssh"
+    identity: root
+    mitre_technique: "T1098.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): a shell writes a .ssh/authorized_keys file"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: bioc-edr-024-ssh-authorized-keys-written-for-local-account
+
+  - id: step-03
+    name: "Install a self-expiring systemd timer that re-runs a hidden payload every five minutes"
+    # What the sensor records: FILE_CREATE_NEW/WRITE of the .service and
+    # .timer under /etc/systemd/system by the step shell. Then, starting one
+    # minute later and every five minutes after that, a PROCESS_START of
+    # `/bin/sh /var/tmp/.cortexsim-sshd/sync.sh` whose parent is the systemd
+    # executor (actor "9" in this tenant). The timer is enabled under
+    # timers.target with OnBootSec, so it re-arms after a reboot. The payload
+    # disables its own timer 45 minutes after install.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      K=/var/tmp/.cortexsim-sshd
+      expr "$(date +%s)" + 2700 > "$K/expires-at"
+      cat > "$K/sync.sh" <<'EOF'
+      #!/bin/sh
+      K=/var/tmp/.cortexsim-sshd
+      now=$(date +%s)
+      exp=$(cat "$K/expires-at" 2>/dev/null || echo 0)
+      if [ "$now" -ge "$exp" ]; then
+        echo "expired $now" >> "$K/runs.log"
+        systemctl disable --now cortexsim-sync.timer >/dev/null 2>&1 || true
+        exit 0
+      fi
+      echo "run $now" >> "$K/runs.log"
+      getent passwd cortexsim-svc >> "$K/runs.log" || true
+      EOF
+      chmod 700 "$K/sync.sh"
+      cat > /etc/systemd/system/cortexsim-sync.service <<'EOF'
+      [Unit]
+      Description=CortexSim SIM-EDR-024 foothold (self-expiring lab artefact)
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh /var/tmp/.cortexsim-sshd/sync.sh
+      EOF
+      cat > /etc/systemd/system/cortexsim-sync.timer <<'EOF'
+      [Unit]
+      Description=CortexSim SIM-EDR-024 foothold timer (self-expiring lab artefact)
+      [Timer]
+      OnBootSec=2min
+      OnActiveSec=1min
+      OnUnitActiveSec=5min
+      [Install]
+      WantedBy=timers.target
+      EOF
+      systemctl daemon-reload
+      systemctl enable --now cortexsim-sync.timer
+      systemctl list-timers cortexsim-sync.timer --no-pager
+    identity: root
+    mitre_technique: "T1053.006"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): a shell writes a .service or .timer unit under the systemd unit directories"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: bioc-edr-024-systemd-unit-written-under-etc-systemd-system-by-shell
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): a systemd service runs a payload from a hidden /var/tmp directory — fires on each timer run, a second causality chain rooted at the systemd executor"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: bioc-edr-024-systemd-service-runs-payload-from-hidden-var-tmp-directory
+
+  - id: step-04
+    name: "Make the planted SSH key immutable"
+    # What the sensor records: PROCESS_START of chattr +i naming the
+    # authorized_keys file. The cleanup runs chattr -i before it removes the
+    # account.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      chattr +i /home/cortexsim-svc/.ssh/authorized_keys
+      lsattr /home/cortexsim-svc/.ssh/authorized_keys
+    identity: root
+    mitre_technique: "T1222.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): chattr +i sets the immutable attribute on an SSH key, systemd unit, cron file or hidden /var/tmp artefact"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: bioc-edr-024-immutable-attribute-set-on-persistence-artifact
+      - plane: EDR
+        type: Correlation
+        description: "Correlation CR-EDR-0024 (operator-installed, Medium, scheduled every 10 min over 1 h): on one agent, at least three of sudo-group account / authorized_keys write / shell-written systemd unit / systemd-run hidden payload, one of them the re-execution — one issue mapped to Host Name + Agent ID"
+        ttp_ref: "TTP-2026-0199"
+        detection_id: CR-EDR-0024
+
+cleanup:
+  commands:
+    - "systemctl disable --now cortexsim-sync.timer || true"
+    - "rm -f /etc/systemd/system/cortexsim-sync.service /etc/systemd/system/cortexsim-sync.timer"
+    - "systemctl daemon-reload"
+    - "chattr -i /home/cortexsim-svc/.ssh/authorized_keys || true"
+    - "userdel -r cortexsim-svc || true"
+    - "rm -rf /var/tmp/.cortexsim-sshd"
+    - "echo 'cortexsim-edr-024-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-11-11"
+last_updated: "2026-11-11"
+tags:
+  - edr
+  - linux
+  - persistence
+  - systemd-timer
+  - backdoor-account
+  - incident-grouping
+  - long-dwell

@@ -7,6 +7,10 @@ import {
   PROOF_ID,
   GRAPH_LAYOUT,
 } from '../console/composerGraph.js'
+import { deriveTenantContent } from '../console/composerContent.js'
+import {
+  draftToApi, draftSnapshot, emitDraftYaml, isDraftDirty, spineProblems, validateDraft,
+} from '../console/composerDraft.js'
 
 // Minimal step factory — only the fields buildGraph/stepDepths read.
 const step = (id, extra = {}) => ({
@@ -263,5 +267,230 @@ describe('buildGraph — off-chain flag', () => {
     const steps = [step('step-01'), step('step-02')]
     const { nodes } = buildGraph(draft(steps), steps)
     expect(nodes.filter((n) => n.type === 'step').every((n) => !n.data.offChain)).toBe(true)
+  })
+})
+
+// ─── Tenant content: correlation rules as derived nodes ──────────────────────
+// A rule is something the TENANT must hold, composed from several steps'
+// detections. It is drawn beside the chain and is never part of it.
+
+describe('buildGraph — tenant-content rule nodes', () => {
+  const det = (type, ttpRef, detectionId) => ({ plane: 'EDR', type, description: 'x', ttpRef, detectionId })
+  const chain = () => [
+    step('step-01', { detections: [det('XQL', 'TTP-T-0001', 'xql-q-one')] }),
+    step('step-02', {
+      causalityParent: 'step-01',
+      detections: [det('BIOC', 'TTP-T-0001', 'bioc-b-one'), det('XQL', 'TTP-T-0001', 'xql-q-two')],
+    }),
+    step('step-03', {
+      causalityParent: 'step-02',
+      detections: [det('Correlation', 'TTP-T-0001', 'CR-T-0001')],
+    }),
+  ]
+  const CARDS = {
+    'TTP-T-0001': {
+      id: 'TTP-T-0001',
+      detections: {
+        xql_queries: [{ name: 'Q One' }, { name: 'Q Two' }],
+        biocs: [{ name: 'B One' }],
+        correlation_rules: [
+          { name: 'Rule Declared', rule_id: 'CR-T-0001', logic: 'XQL(Q One) AND BIOC(B One)' },
+          { name: 'Rule Card Only', rule_id: 'CR-T-0002', logic: 'XQL(Q Two) OR BIOC(B One)' },
+          { name: 'Rule Prose', rule_id: 'CR-T-0003', logic: 'Fires when both share a host' },
+        ],
+      },
+    },
+  }
+  const build = (steps, opts = {}) => buildGraph(
+    draft(steps), steps, { content: deriveTenantContent(steps, CARDS), ...opts },
+  )
+  const rules = (g) => g.nodes.filter((n) => n.type === 'rule')
+  const contentEdges = (g) => g.edges.filter((e) => e.type === 'content')
+
+  it('emits no rule node, no content edge and no rail when no content is given', () => {
+    const steps = chain()
+    const g = buildGraph(draft(steps), steps)
+    expect(rules(g)).toEqual([])
+    expect(contentEdges(g)).toEqual([])
+    expect(g.rail).toBeNull()
+  })
+
+  it('emits one rule node per rule, keyed so it cannot collide with a step', () => {
+    const g = build(chain())
+    expect(rules(g).map((n) => n.id)).toEqual([
+      'rule:TTP-T-0001:CR-T-0001', 'rule:TTP-T-0001:CR-T-0002', 'rule:TTP-T-0001:CR-T-0003',
+    ])
+  })
+
+  it('carries both statuses on the node, as data the card prints in words', () => {
+    const [declared, cardOnly] = rules(build(chain()))
+    expect(declared.data.rule.contentStatus).toBe('intent-only')
+    expect(declared.data.rule.binding).toBe('declared')
+    expect(cardOnly.data.rule.binding).toBe('card-only')
+  })
+
+  it('makes a rule node selectable but never draggable or deletable', () => {
+    for (const n of rules(build(chain()))) {
+      expect(n.selectable).toBe(true)
+      expect(n.draggable).toBe(false)
+      expect(n.deletable).toBe(false)
+    }
+  })
+
+  it('draws a feeds edge from every step whose detection the rule names', () => {
+    const g = build(chain())
+    const into = contentEdges(g).filter((e) => e.target === 'rule:TTP-T-0001:CR-T-0001')
+    expect(into.map((e) => [e.source, e.data.kind, e.data.inputs, e.data.declares])).toEqual([
+      ['step-01', 'feeds', 1, false],
+      ['step-02', 'feeds', 1, false],
+      ['step-03', 'feeds', 0, true],
+    ])
+  })
+
+  it('labels a feeds edge with its input count, and a declaring step as expecting the rule', () => {
+    const g = build(chain())
+    const label = (source, target) => contentEdges(g)
+      .find((e) => e.source === source && e.target === target).data.label
+    expect(label('step-01', 'rule:TTP-T-0001:CR-T-0001')).toBe('feeds · 1 input')
+    expect(label('step-02', 'rule:TTP-T-0001:CR-T-0002')).toBe('feeds · 2 inputs')
+    expect(label('step-03', 'rule:TTP-T-0001:CR-T-0001')).toBe('expects this rule')
+  })
+
+  it('falls back to one "same card" edge when no input resolves', () => {
+    const g = build(chain())
+    const into = contentEdges(g).filter((e) => e.target === 'rule:TTP-T-0001:CR-T-0003')
+    expect(into).toHaveLength(1)
+    expect(into[0].source).toBe('step-03')
+    expect(into[0].data).toMatchObject({ kind: 'card', label: 'same card' })
+  })
+
+  it('makes content edges inert: not selectable, deletable or reconnectable', () => {
+    for (const e of contentEdges(build(chain()))) {
+      expect(e.selectable).toBe(false)
+      expect(e.deletable).toBe(false)
+      expect(e.reconnectable).toBe(false)
+      expect(e.sourceHandle).toBe('content')
+    }
+  })
+
+  it('places every rule on a rail below the lowest step', () => {
+    const g = build(chain())
+    const lowest = Math.max(...g.nodes.filter((n) => n.type === 'step').map((n) => n.position.y))
+    expect(g.rail.y).toBeGreaterThanOrEqual(lowest + GRAPH_LAYOUT.rowH)
+    for (const n of rules(g)) expect(n.position.y).toBeGreaterThan(g.rail.y)
+  })
+
+  it('puts each rule under its right-most feeding step', () => {
+    const g = build(chain())
+    const x = (id) => g.nodes.find((n) => n.id === id).position.x
+    expect(x('rule:TTP-T-0001:CR-T-0001')).toBe(x('step-03'))
+    expect(x('rule:TTP-T-0001:CR-T-0002')).toBe(x('step-02'))
+  })
+
+  it('never overlaps two rule cards that share an anchor', () => {
+    const g = build(chain())
+    const [a, , c] = rules(g) // CR-T-0001 and CR-T-0003 both anchor on step-03
+    expect(a.position.x).toBe(c.position.x)
+    expect(Math.abs(a.position.y - c.position.y)).toBeGreaterThanOrEqual(GRAPH_LAYOUT.ruleRowH)
+  })
+
+  it('moves the rail down when a step has been dragged below the chain', () => {
+    const steps = chain()
+    const plain = build(steps)
+    const dragged = build(steps, { layout: { 'step-02': { x: 400, y: 900 } } })
+    expect(dragged.rail.y).toBeGreaterThan(plain.rail.y)
+    expect(dragged.rail.y).toBeGreaterThanOrEqual(900 + GRAPH_LAYOUT.rowH)
+  })
+
+  it('clears the real height of a tall step card, not a nominal row', () => {
+    // A card's height is only known once the browser has measured it: a long
+    // name and a second chip row make it taller than the row pitch, and a rail
+    // placed by the pitch alone was drawn THROUGH the card (seen in Chrome).
+    const steps = chain()
+    const y = build(steps).nodes.find((n) => n.id === 'step-02').position.y
+    const tall = build(steps, { stepHeights: { 'step-02': 260 } })
+    expect(tall.rail.y).toBeGreaterThanOrEqual(y + 260)
+    for (const n of rules(tall)) expect(n.position.y).toBeGreaterThan(tall.rail.y)
+  })
+
+  it('assumes a full-height card until one is measured', () => {
+    const g = build(chain())
+    const lowest = Math.max(...g.nodes.filter((n) => n.type === 'step').map((n) => n.position.y))
+    expect(g.rail.y).toBeGreaterThanOrEqual(lowest + GRAPH_LAYOUT.cardH)
+  })
+
+  it('grows the bounds to hold the rail', () => {
+    const steps = chain()
+    const without = buildGraph(draft(steps), steps)
+    expect(build(steps).bounds.height).toBeGreaterThan(without.bounds.height)
+  })
+
+  it('marks the selected rule', () => {
+    const g = build(chain(), { selectedRuleKey: 'rule:TTP-T-0001:CR-T-0002' })
+    expect(rules(g).map((n) => n.data.selected)).toEqual([false, true, false])
+  })
+
+  it('draws nothing in the Run lens: a rule is never lent a run verdict', () => {
+    const g = build(chain(), { runLens: true })
+    expect(rules(g)).toEqual([])
+    expect(contentEdges(g)).toEqual([])
+    expect(g.rail).toBeNull()
+  })
+
+  it('leaves the chain itself exactly as it was', () => {
+    const steps = chain()
+    const before = buildGraph(draft(steps), steps)
+    const after = build(steps)
+    const spine = (g) => g.edges.filter((e) => e.type !== 'content')
+    expect(spine(after)).toEqual(spine(before))
+    const pos = (g) => g.nodes.filter((n) => n.type !== 'rule').map((n) => [n.id, n.position])
+    expect(pos(after)).toEqual(pos(before))
+  })
+
+  // The rule is DERIVED. These pin that it can never reach what is saved, what
+  // is launched, or what the loader validates.
+  describe('never persisted', () => {
+    const freeze = (o) => {
+      if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+        Object.freeze(o)
+        Object.values(o).forEach(freeze)
+      }
+      return o
+    }
+
+    it('builds from a frozen draft: it writes to nothing it was given', () => {
+      const steps = freeze(chain())
+      const d = freeze(draft(steps))
+      const content = freeze(deriveTenantContent(steps, CARDS))
+      expect(() => buildGraph(d, steps, { content })).not.toThrow()
+    })
+
+    it('is absent from the save body, the launch snapshot and the YAML', () => {
+      const steps = chain()
+      const d = draft(steps)
+      build(steps)
+      for (const text of [
+        JSON.stringify(draftToApi(d)), JSON.stringify(draftSnapshot(d)), emitDraftYaml(d),
+      ]) {
+        expect(text).not.toMatch(/rule:TTP|CR-T-0002|Rule Card Only|"content"/)
+      }
+      expect(draftToApi(d).steps).toHaveLength(3)
+    })
+
+    it('cannot make a draft read as edited', () => {
+      const steps = chain()
+      const d = draft(steps)
+      const saved = draftSnapshot(d)
+      build(steps)
+      expect(isDraftDirty(draftSnapshot(d), saved)).toBe(false)
+    })
+
+    it('is invisible to the spine check the loader mirrors', () => {
+      const steps = chain()
+      const before = spineProblems(steps)
+      build(steps)
+      expect(spineProblems(steps)).toEqual(before)
+      expect(validateDraft(steps).ok).toBe(validateDraft(chain()).ok)
+    })
   })
 })

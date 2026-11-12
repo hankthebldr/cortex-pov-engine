@@ -8,6 +8,7 @@ import {
 } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
 import { parseServerTime, serverDate } from '../../api/time.js'
+import DeployAgentKubernetes from './DeployAgentKubernetes.jsx'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { agentLiveness, LIVENESS } from './setupProgress.js'
 import {
@@ -93,6 +94,15 @@ const LIVENESS_CLASS = {
  *   onGoToLab       — () => void             open the Environments/IaC generator
  */
 
+// Profile · node · failed prepare, or '' when every member is missing.
+function containerFactsLine(f) {
+  return [
+    f.posture_profile,
+    f.node_name && `node ${f.node_name}`,
+    String(f.prepare_status ?? '').startsWith('PREPARE_FAILED') && f.prepare_status,
+  ].filter(Boolean).join(' · ')
+}
+
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
   // ── Global scope from the provider (agents + active agent are ambient) ─────
   const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors, healthModel } = useEnvironment()
@@ -118,6 +128,15 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const [showLegacy, setShowLegacy] = useState(false)
   const deployCopy = useCopyFeedback()
   const cardCopy = useCopyFeedback()
+  // The Kubernetes tab (DeployAgentKubernetes) takes a plain `copyText(text)`.
+  // It goes through the deploy modal's copy feedback, so its Copy buttons get
+  // the clipboard fallback and report into the same live region
+  // (deploy-copy-live), including "could not copy" when the clipboard is blocked.
+  const deployCopyFn = deployCopy.copy
+  const copyText = useCallback((text) => {
+    if (!text) return
+    deployCopyFn('kubernetes', text, null, 'kubectl command')
+  }, [deployCopyFn])
   const oneLinerRef = useRef(null)
   const tokenRef = useRef(null)
   const runLineRef = useRef(null)
@@ -392,6 +411,11 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     {a.hostname || a.host || 'unknown host'} · {os} ·{' '}
                     <span title={ageTitle}>seen {fmtAge(live.ageSeconds)}</span>
                   </p>
+                  {a.runtime_facts?.container === true && containerFactsLine(a.runtime_facts) && (
+                    <p className="target-card__sub mono" data-testid="agent-container-facts">
+                      {containerFactsLine(a.runtime_facts)}
+                    </p>
+                  )}
                   {live.state === LIVENESS.ENROLLED && (
                     <span className="target-card__waiting">
                       {live.label}. The installer reached SimCore; no beacon has polled yet, so do not
@@ -641,7 +665,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 {/* macOS is a real target: /api/agents/install accepts it and
                     the darwin beacons ship in the dist matrix. One POSIX script
                     covers Linux and macOS — it branches on `uname -s`. */}
-                {[['linux', '🐧 Linux'], ['macos', '🍎 macOS'], ['windows', '🪟 Windows']].map(([o, label]) => (
+                {[['linux', '🐧 Linux'], ['macos', '🍎 macOS'], ['windows', '🪟 Windows'], ['kubernetes', '☸ Kubernetes']].map(([o, label]) => (
                   <button
                     key={o}
                     type="button"
@@ -653,7 +677,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               </div>
             </div>
 
-            {!token ? (
+            {deployOS === 'kubernetes' ? (
+              <DeployAgentKubernetes origin={origin} copyText={copyText} />
+            ) : !token ? (
               <>
                 <div className="deploy-token-form">
                   <label className="deploy-field">
@@ -789,6 +815,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
 
             {/* Legacy path — kept because a host that cannot redeem a token
                 (no outbound POST, pre-seeded image) still needs an installer. */}
+            {deployOS !== 'kubernetes' && (
             <div className="deploy-legacy">
               <button
                 type="button"
@@ -835,6 +862,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </div>
               )}
             </div>
+            )}
 
             <InstallAttemptsList state={attemptsState} />
           </div>

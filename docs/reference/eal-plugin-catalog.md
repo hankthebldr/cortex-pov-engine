@@ -131,6 +131,53 @@ of taxonomy codes with per-code `remediation`. Taxonomy:
   `target_allowlist` gates it; a non-allowlisted host is reported as
   `target_not_authorised` and never contacted.
 
+### Collector targets (`targets.py`, `target_preflight.py`) — one set of doors per POV
+
+A SimCore instance serves one POV against one tenant, so the ingestion doors the
+collector emitters POST to are **instance configuration**, entered once at
+`/api/collector-targets` (console: **Tenant › Collector targets**) and persisted in
+the instance database, with each key in the encrypted vault. Kinds:
+`xsiam_http_collector` (the tenant's `/logs/v1/event`, key required) and
+`http_forwarder`. **Broker VM targets are not modelled yet**: they wait on
+confirmation of which applets a POV uses.
+
+One resolver, `targets.apply_targets`, decides where every in-process collector
+step POSTs: an explicit `params.collector_target` name, then the one target
+bound to the step's plugin, then the default target, then the step's own inline
+`collector_url`, else nothing. A resolved target **replaces** an inline URL and
+the resolution records the URL it replaced. The target's exact `host:port` is
+pinned into the campaign's effective `target_allowlist`. Its callers: campaign
+create (a step may omit `collector_url`), `GET …/collectors` (adds
+`resolutions[]`, `blocking[]`, `failing[]`, `degraded[]`), campaign preflight,
+launch, the offline bundle (URL, header and scheme from the target; the key
+never), and the Composer in-process dispatch (dry-run, never keys). The stored
+campaign spec is never rewritten; the key is decrypted only at launch, into the
+in-memory campaign.
+
+Per-target preflight, `POST /api/collector-targets/{name}/preflight`, is a
+ladder: **configured** (URL valid, key present when the kind needs one) →
+**reachable** (DNS + TCP + TLS handshake, **no HTTP request**) → **accepted**
+(only with `write_canary: true`: the discard-safe canary POST, classified by the
+delivery taxonomy). Verdict `not_configured` · `unreachable` · `reachable` ·
+`refused` · `accepted`; `accepted` means a 2xx, not that the record was parsed or
+fired anything (`tenant_verified: 0`). The reachable rung skips certificate
+verification, matching the live run.
+
+A **live** launch refuses a collector step with nothing to send to or an unknown
+target name (422 `COLLECTOR_TARGET_NOT_CONFIGURED` / `_UNKNOWN`), and a target
+whose last check was `not_configured`, `unreachable` or `refused` (409
+`COLLECTOR_TARGET_FAILING`). A target never checked, or only `reachable`, runs
+with `COLLECTOR_TARGET_UNPROVEN` in the launch response's `degraded[]`; an inline
+URL runs with `COLLECTOR_TARGET_INLINE`. The resolution is stored on the run
+(`collector_resolution`, never the key). Dry runs are never refused. The delivery
+ledger still decides green.
+
+**Not covered yet:** the 89 scenario steps that run the EAL CLI on a beacon still
+read `$COLLECTOR_URL` from the beacon's shell. Delivering a target, key included,
+into an identity-wrapped step (`runuser -l` resets the environment) without
+putting the key on a command line is a separate beacon change (spec §10).
+Spec: `docs/superpowers/specs/2026-11-10-collector-targets-design.md`.
+
 ### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
 
 Collector preflight answers *"will this record land?"*. It cannot answer the
@@ -179,6 +226,58 @@ input class: `coerce_utc` parses *tenant-supplied* alert timestamps where
 tolerance beats a crash; this reads an *operator-typed config date*, where
 assuming UTC shifts the gate by the DC's own offset and answers wrongly with no
 error anywhere. **Do not unify them.**
+
+#### Route and soakless (2026-11-10, LogSimv2 port phase 1)
+
+The gate now asks a question before training time: **can the record reach the
+detector at all?** Three documented facts make the answer often no:
+
+- *"Analytics, IOC, and BIOC issues are only generated on normalized logs."*
+  ([Ingest data from Next-Generation Firewall](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall))
+- A custom HTTP log collector writes `<Vendor>_<Product>_raw`, which analytics
+  reads only once an XDM modeling rule maps it. Every streamer in this family
+  delivers this way.
+- On the Cribl receiver, out-of-the-box analytics run only on dedicated-UUID
+  sources, never the generic UUID
+  ([Data source UUIDs](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/vendor-specific-data-sources-and-connectors/cribl/ingest-data-from-cribl/data-souce-uuids)).
+
+`core/eal_simulator/ingestion_routes.py` records, per catalogue source, each
+documented route: pipe, the dataset the tenant creates, Cribl source UUID,
+vendor/product, and whether out-of-the-box analytics run on it (`yes` / `no` /
+`requires_xdm`). Dataset and analytics claims carry **separate** evidence
+(`documented` / `inferred` / `reported`). `reported` means only LogSimv2 states
+it, and it is never quoted as a vendor statement.
+
+The endpoint reads each step's route from the URL launch would send to: its
+resolved collector target's, else its inline `collector_url`
+(`/logs/v1/event` is the HTTP collector; `/logs/v1/integrated/cribl/data` is the
+Cribl receiver, whose UUID is in a header and so unresolved; anything else is an
+unknown forwarder; a step no target resolves is `undeclared`). Then, in order:
+
+| Gate | Result |
+|---|---|
+| Route analytics never reads (`cribl_generic`, ingestion-only sources) | `not_armable` · `DETECTOR_ROUTE_NO_ANALYTICS`. A soakless tenant does not change this |
+| Route needs XDM and `xdm_modeled_sources` does not attest it | `unknown` · `DETECTOR_ROUTE_REQUIRES_XDM` |
+| Route cannot be read from the URL, or one emitter uses two doors (`mixed`) | `unknown` · `DETECTOR_ROUTE_UNRESOLVED` |
+| `soakless_attested: true` | `armed` · `DETECTOR_ARMED_SOAKLESS`, `armed_basis: "attested:soakless"`. The documented periods stay in the verdict |
+| Otherwise | the onboarding-date gate above, `armed_basis: "onboarding_date"` when armed |
+
+**Behaviour change.** Before this pass, an HTTP-collector campaign whose source
+had been onboarded long enough read `armed` and `ready: true`. It now reads
+`unknown` until the DC attests the XDM rule, because the vendor says built-in
+analytics never see that data otherwise.
+
+`GET /api/eal/data-streams` source rows gain `routes[]` and `dataset_check[]`
+(does each emitter name a dataset the tenant creates for that source:
+`match` / `mismatch` / `no_documented_route`). Top-level `generic_routes[]` and
+`ingestion_only[]` list the two routes any source can take and the four sources
+with real data but no published analytics (Proofpoint TAP, Infoblox NIOS, Apache
+httpd, VMware ESXi). Those four sit outside the 34-source coverage figure by
+construction. Counted 2026-11-10: **21 of 31** addressable sources have a
+documented route, and **12** emitter-to-source pairs name a dataset no
+documented route creates (`counts.emitter_dataset_mismatch`). That is measured,
+not fixed; renaming is decision D-2 in
+`docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
 
 #### Counted state (2026-09-20)
 

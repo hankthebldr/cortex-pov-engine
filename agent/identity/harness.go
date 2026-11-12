@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -142,6 +143,16 @@ var serviceAccounts = map[string]bool{
 	"developer":    true,
 	"runner":       true,
 	"vertex-agent": true,
+}
+
+// ServiceAccountNames returns the harness's known service-account names, sorted.
+func ServiceAccountNames() []string {
+	names := make([]string, 0, len(serviceAccounts))
+	for n := range serviceAccounts {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ResolveIdentity maps a scenario step's identity USERNAME string to a harness

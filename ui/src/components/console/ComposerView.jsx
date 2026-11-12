@@ -12,6 +12,9 @@ import {
   getDraft,
   getRunCausality,
   getTtps,
+  getTtp,
+  getScenarioTenantContent,
+  postDraftTenantContent,
   getToolAdapters,
 } from '../../api/client.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
@@ -25,6 +28,8 @@ import { HS } from './readiness/healthModel.js'
 import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
+import ComposerRuleInspector from './ComposerRuleInspector.jsx'
+import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
 import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
@@ -51,7 +56,6 @@ import {
   removeDetection,
   setCausalityParent,
   setNodePosition,
-  setStepLane,
   setStepChannel,
   setStepEal,
   setStepTarget,
@@ -210,6 +214,13 @@ export default function ComposerView({
 
   // ── Palette sources (API-fetched, never invented) ──────────────────────────
   const [ttps, setTtps] = useState([])
+  // Raw TTP cards the chain's steps cite, by id: `{status:'ok', card}` or
+  // `{status:'error', message}`. An id with no entry is still in flight. The
+  // tenant-content rail is derived from these and from nothing else.
+  const [cards, setCards] = useState({})
+  const [showContent, setShowContent] = useState(true)
+  // A selected RULE node. View state only: a rule is never part of the draft.
+  const [selectedRuleKey, setSelectedRuleKey] = useState(null)
   const [adapters, setAdapters] = useState([])
 
   const say = useCallback((msg) => {
@@ -287,6 +298,56 @@ export default function ComposerView({
     [steps, selectedId],
   )
 
+  // ── Tenant content: the correlation rules this chain needs in the tenant ────
+  // Every card a step's expected detection cites is fetched once. The canvas
+  // derives from the raw cards in the browser so it follows each edit without a
+  // round trip; the server derives the same facts for the export, and one
+  // fixture (spec/tenant_content_cases.json) holds the two together.
+  const citedCardIds = useMemo(() => {
+    const ids = []
+    for (const s of steps) {
+      for (const d of s.detections || []) {
+        if (d.ttpRef && !ids.includes(d.ttpRef)) ids.push(d.ttpRef)
+      }
+    }
+    return ids
+  }, [steps])
+  const citedKey = citedCardIds.join('|')
+  const requestedCardsRef = React.useRef(new Set())
+  useEffect(() => {
+    let cancelled = false
+    for (const id of citedCardIds) {
+      if (requestedCardsRef.current.has(id)) continue
+      requestedCardsRef.current.add(id)
+      getTtp(id)
+        .then((card) => {
+          if (!cancelled) setCards((c) => ({ ...c, [id]: { status: 'ok', card } }))
+        })
+        .catch((err) => {
+          // A failed card is KEPT as failed. It reads "card not loaded" on the
+          // canvas; it is never dropped into "this chain needs no rule".
+          if (!cancelled) {
+            setCards((c) => ({ ...c, [id]: { status: 'error', message: err?.message || 'failed' } }))
+          }
+        })
+    }
+    return () => { cancelled = true }
+    // citedKey is the stable identity of citedCardIds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citedKey])
+  const cardsById = useMemo(() => {
+    const out = {}
+    for (const id of citedCardIds) if (cards[id]?.status === 'ok') out[id] = cards[id].card
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citedKey, cards])
+  const contentLoading = citedCardIds.some((id) => !cards[id])
+  const tenantContent = useMemo(() => deriveTenantContent(steps, cardsById), [steps, cardsById])
+  const selectedRule = useMemo(
+    () => tenantContent.rules.find((r) => r.key === selectedRuleKey) || null,
+    [tenantContent, selectedRuleKey],
+  )
+
   // A draft has diverged from what SimCore holds (the corpus origin) when its
   // step set differs — length, id order, or a hand-authored step.
   //
@@ -297,14 +358,14 @@ export default function ComposerView({
   // Launch, and run something other than what is on screen. Composer mode makes
   // those edits one click away (the edge pivot chip, Delete, reconnect), so the
   // comparison is the launch-relevant snapshot, minus pure presentation
-  // (`layout`, `laneOverrides`): dragging a card never forces a draft save.
+  // (`layout`): dragging a card never forces a draft save.
   const edited = useMemo(() => {
     if (!origin) return steps.length > 0
     if (steps.some((s) => s.authored)) return true
     const runShape = (d) => {
       const snap = draftSnapshot(d)
       if (!snap) return snap
-      const { layout: _l, laneOverrides: _lo, ...rest } = snap
+      const { layout: _l, ...rest } = snap
       return rest
     }
     return JSON.stringify(runShape(draft)) !== JSON.stringify(runShape(origin))
@@ -559,6 +620,37 @@ export default function ComposerView({
     say('Draft YAML downloaded — review it, then drop it into scenarios/ and reload SimCore')
   }, [draft, tenantName, agentName, savedScenarioId, say])
 
+  // Export what this chain needs in the tenant. READ-ONLY: the server derives
+  // the manifest from the TTP cards and contacts no tenant. The route follows
+  // what is on the canvas — an untouched scenario or a saved draft is read by
+  // id; anything edited since is sent as the draft body, so the file can never
+  // describe a chain other than the one on screen.
+  const exportTenantContent = useCallback(async () => {
+    try {
+      let manifest
+      if (fromId && !edited) manifest = await getScenarioTenantContent(fromId)
+      else if (savedScenarioId && !dirty) manifest = await getScenarioTenantContent(savedScenarioId)
+      else manifest = await postDraftTenantContent(draftToApi(draft, { author: draft.author || 'composer' }))
+      const blob = new Blob([`${JSON.stringify(manifest, null, 2)}\n`], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${manifest.scenario_id || draft.originId || 'sim-draft'}-tenant-content.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      const c = manifest.summary?.correlation || {}
+      const total = c.total ?? 0
+      say(
+        `Tenant content exported — ${total} rule${total === 1 ? '' : 's'}, ${c.deployable ?? 0} deployable. `
+        + 'Nothing was sent to a tenant.',
+      )
+    } catch (err) {
+      say(`Tenant content export failed — ${err?.message || 'unknown error'}`)
+    }
+  }, [fromId, edited, savedScenarioId, dirty, draft, say])
+
   // Declared BEFORE the palette memo that calls it: `const` bindings are in the
   // temporal dead zone until their initializer runs, and useMemo runs its
   // factory synchronously during render.
@@ -571,11 +663,9 @@ export default function ComposerView({
   // linking would itself make every other root off-chain.
   const selectedRef = React.useRef(selectedId)
   selectedRef.current = selectedId
-  // Latest-state refs for handlers React Flow can call several times in ONE
-  // tick (a multi-card lane drop calls onLaneChange once per card): reading the
-  // render-time `draft` there made the second call overwrite the first.
-  const draftRef = React.useRef(draft)
-  draftRef.current = draft
+  // Latest-state ref for handlers React Flow can call several times in ONE
+  // tick: reading the render-time `steps` there made the second call
+  // overwrite the first.
   const stepsRef = React.useRef(steps)
   stepsRef.current = steps
   // Every step id used this session, plus every id the origin had. A deleted
@@ -612,8 +702,17 @@ export default function ComposerView({
   // fires when the selection CHANGES).
   const onSelect = useCallback((id) => {
     setSelectedId(id)
+    setSelectedRuleKey(null)
     setMetaOpen(false)
     if (id) setInspectorOpen(true)
+  }, [])
+  // Selecting a rule is view state: it swaps what the Inspector shows and
+  // touches nothing the draft, the launch snapshot or the save body reads.
+  const onSelectRule = useCallback((key) => {
+    setSelectedRuleKey(key)
+    setSelectedId(null)
+    setMetaOpen(false)
+    if (key) setInspectorOpen(true)
   }, [])
   const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
   const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
@@ -688,26 +787,6 @@ export default function ComposerView({
     })
   }, [origin])
   // Re-layout (Task 11): discard every dragged position and fall back to the
-  // Lanes lens: a step dragged into another band. Persisted on the draft like
-  // a position (so it marks the draft dirty and survives reload), and written
-  // through to the step's channel where the lane is channel-backed — see
-  // `setStepLane` for exactly which lanes change the step and which only
-  // record intent.
-  const onLaneChange = useCallback((stepId, lane) => {
-    // Compute once from the MERGED draft, then write each half to the state
-    // that owns it. Calling setSteps inside a setDraftMeta updater would be a
-    // side effect inside an updater — StrictMode double-invokes those, and the
-    // second call would see steps it had already replaced. Read the LATEST
-    // draft through the ref and advance it immediately, so a second card in
-    // the same multi-card drop builds on this one instead of erasing it.
-    const cur = draftRef.current
-    const next = setStepLane(cur, stepId, lane)
-    if (next === cur) return
-    draftRef.current = next
-    stepsRef.current = next.steps
-    if (next.steps !== cur.steps) setSteps(next.steps)
-    setDraftMeta((m) => ({ ...m, laneOverrides: next.laneOverrides }))
-  }, [])
 
   // computed layout. Same overlay shape as `onNodeMoved` above — writing
   // `layout: null` into the `draftMeta` overlay is enough on its own
@@ -758,7 +837,7 @@ export default function ComposerView({
     setSelectedId((cur) => (cur === id ? null : cur))
     setDraftMeta((m) => {
       let out = m
-      for (const key of ['layout', 'laneOverrides']) {
+      for (const key of ['layout']) {
         const cur = m[key] !== undefined ? m[key] : (origin?.[key] ?? null)
         if (cur && Object.prototype.hasOwnProperty.call(cur, id)) {
           const { [id]: _gone, ...rest } = cur
@@ -1064,6 +1143,7 @@ export default function ComposerView({
       if (pendingConfirm) return
       if (inspectorOpen) { closeInspector(); return }
       if (selectedId) { setSelectedId(null); return }
+      if (selectedRuleKey) { setSelectedRuleKey(null); return }
       if (paletteOpen) { closePalette(); return }
       if (!onExit) return
       if (escArmedRef.current) {
@@ -1085,7 +1165,7 @@ export default function ComposerView({
     return () => window.removeEventListener('keydown', onKey)
     // closePalette/closeInspector are stable (useCallback below, no deps).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingConfirm, inspectorOpen, selectedId, paletteOpen, onExit, attemptExit, say])
+  }, [pendingConfirm, inspectorOpen, selectedId, selectedRuleKey, paletteOpen, onExit, attemptExit, say])
 
   // ── Drawers ─────────────────────────────────────────────────────────────────
   // Opening a drawer from its tab moves keyboard focus INTO it; closing returns
@@ -1143,8 +1223,8 @@ export default function ComposerView({
   // not explicitly closed it this selection). Closing it is a one-press Esc or
   // the drawer's own ✕; re-selecting re-opens.
   useEffect(() => {
-    if (selectedId || metaOpen) setInspectorOpen(true)
-  }, [selectedId, metaOpen])
+    if (selectedId || metaOpen || selectedRuleKey) setInspectorOpen(true)
+  }, [selectedId, metaOpen, selectedRuleKey])
 
   // ── Render ─────────────────────────────────────────────
 
@@ -1330,8 +1410,6 @@ export default function ComposerView({
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
           onNodeMoved={onNodeMoved}
-          onLaneChange={onLaneChange}
-          laneOverrides={draft.laneOverrides}
           onConnectSteps={handleConnectSteps}
           onDeleteStepId={onDeleteStepId}
           onEdgeDelete={onEdgeDelete}
@@ -1349,6 +1427,13 @@ export default function ComposerView({
           onToggleStitch={() => setShowStitch((v) => !v)}
           storedLayout={draft.layout}
           viewInsets={viewInsets}
+          content={tenantContent}
+          contentLoading={contentLoading}
+          showContent={showContent}
+          onToggleContent={() => setShowContent((v) => !v)}
+          selectedRuleKey={selectedRuleKey}
+          onSelectRule={onSelectRule}
+          onExportContent={exportTenantContent}
         />
 
         {/* Palette drawer (the node creator) — left overlay, drag items onto
@@ -1393,7 +1478,7 @@ export default function ComposerView({
           <aside className="composer-mode__drawer composer-mode__drawer--right" aria-label="Step inspector">
             <div className="composer-mode__drawer-head">
               <span className="composer-mode__drawer-title mono" tabIndex={-1}>
-                {selected ? selected.id : metaOpen ? 'Workflow' : 'Step config'}
+                {selected ? selected.id : selectedRule ? selectedRule.ruleId : metaOpen ? 'Workflow' : 'Step config'}
               </span>
               <span className="composer__spacer" />
               <button
@@ -1403,7 +1488,13 @@ export default function ComposerView({
                 ⟩
               </button>
             </div>
-            {(selected || metaOpen) ? (
+            {selectedRule && !selected && !metaOpen ? (
+              <ComposerRuleInspector
+                rule={selectedRule}
+                summary={tenantContent.summary}
+                onNavigate={onNavigate}
+              />
+            ) : (selected || metaOpen) ? (
               <ComposerInspector
                 selected={selected}
                 draft={draft}

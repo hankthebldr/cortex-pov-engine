@@ -203,7 +203,8 @@ async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOu
                     termination=TERMINATION_NOT_RUN, reason=UPSTREAM_SEVERED)
         apply_host_outcomes(
             results, [o for o in existing.values() if o.termination is not None],
-            agent_profile_mode=run.agent_profile_mode)
+            agent_profile_mode=run.agent_profile_mode,
+            module_modes=getattr(run, "module_modes", None))
         await db.commit()
         logger.warning("%s run_id=%s agent=%s severed_at=%s",
                        log_what, run_id, run.target, severed)

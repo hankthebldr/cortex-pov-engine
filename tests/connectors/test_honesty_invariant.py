@@ -191,7 +191,10 @@ def _seed(SessionLocal, run_id="run-x", *, xql="dataset = xdr_data"):
 
 @pytest.mark.parametrize("config,secret_ok,expect_reason", [
     # A registered tenant whose config is invalid is NOT "no tenant configured".
-    ({"base_url": "https://api-t.xdr.us.paloaltonetworks.com", "region": "us"},
+    # (capabilities lists "xql": with none, the credential is not authorised
+    # and that reason would win before the config is ever loaded.)
+    ({"base_url": "https://api-t.xdr.us.paloaltonetworks.com", "region": "us",
+      "capabilities": ["xql"]},
      True, "tenant_config_invalid"),
     # Registered, valid, but not authorised for XQL.
     ({"base_url": "https://api-t.xdr.us.paloaltonetworks.com", "region": "us",
@@ -338,3 +341,41 @@ def test_rows_from_a_healthy_tenant_is_pass():
     handler = _xql(200, json_body={"reply": {"status": "SUCCESS",
                                              "results": {"data": [{"a": 1}]}}})
     assert _verdict_for(handler) == "pass"
+
+
+def test_preflight_and_verify_runner_agree_that_absent_capabilities_is_not_authorised(
+        session_factory, monkeypatch):
+    """One gate: a legacy credential with no `capabilities` must resolve
+    not-authorised on BOTH the preflight and the verify/reconcile runner."""
+    import httpx
+    from api.connectors import _preflight_tenant
+    from connectors import preflight as pf
+    from connectors.service import resolve_tenant_runner
+    from integrations.xsiam import loader
+    from integrations.xsiam.client import XsiamClient
+    from integrations.xsiam.config import XsiamTenantConfig
+    from security.credentials import CredentialStore
+
+    cfg = {"base_url": "https://api-t.xdr.us.paloaltonetworks.com", "region": "us",
+           "api_key_id": "1"}  # deliberately NO "capabilities"
+
+    async def _fake_load(db, name):
+        return XsiamClient(XsiamTenantConfig(**cfg), "key",
+                           transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    monkeypatch.setattr(loader, "load_xsiam_client", _fake_load)
+
+    async def _do():
+        async with session_factory() as db:
+            store = CredentialStore(db)
+            await store.put_integration(name="acme", kind="xsiam_tenant",
+                                        plaintext_secret="k" * 40, config=cfg)
+            await db.commit()
+            row = await store.get_integration("acme")
+            report = await _preflight_tenant(db, row, None)
+            runner = await resolve_tenant_runner(db, integration="acme")
+            return report, runner
+
+    report, runner = asyncio.run(_do())
+    stage = next(s for s in report.stages if s.id == "scope_xql")
+    assert stage.code == pf.PF_XQL_NOT_AUTHORISED
+    assert runner.reason == "xql_not_authorised" and runner.runner is None

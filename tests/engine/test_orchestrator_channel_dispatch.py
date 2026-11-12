@@ -517,3 +517,40 @@ def test_eal_step_with_unknown_plugin_reports_error_not_fabrication(session_fact
             assert eal_entry["code"] == "PLUGIN_MISCONFIGURED"
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Collector targets: the in-process eal dispatch takes its destination from
+# the instance's targets, like every other in-process consumer.
+# ---------------------------------------------------------------------------
+
+
+def test_eal_step_without_a_collector_url_uses_the_instance_target(session_factory):
+    """A Composer eal step may leave collector_url to the instance's collector
+    targets. Without the resolver its params fail validation and the step is
+    reported as an error instead of dispatching."""
+    from models import CollectorTargetConfig, Run
+
+    async def _run():
+        orch = _fresh_orchestrator()
+        async with session_factory() as db:
+            db.add(CollectorTargetConfig(
+                name="ngfw-hec", kind="xsiam_http_collector",
+                url="https://api-acme.example.test/logs/v1/event",
+                auth_header="Authorization", auth_scheme="",
+                plugins=["ngfw_eal_emitter"], is_default=False,
+            ))
+            await db.commit()
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _eal_step("step-01", plugin="ngfw_eal_emitter", params={}),
+            ])
+            result = await orch.launch(scenario_id="SIM-EDR-001", mode="pull", db=db,
+                                       target_agent_id="agent-1")
+            assert result.success, result.message
+            run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
+            entry = run.channel_dispatch[0]
+            assert entry["status"] == "dry_run", entry
+            assert entry["collector_target"] == "ngfw-hec"
+
+    asyncio.run(_run())

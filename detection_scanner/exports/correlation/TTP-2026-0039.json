@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1110.004"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(ITDR-003 Credential Stuffing Many Users One Source IP) OR XQL(ITDR-003 Credential Stuffing Severity Escalates 50 Event Burst)",
       "name": "Credential Stuffing Identity Attack \u2014 Single Origin Spray",
-      "rule_id": "CR-ITDR-0003",
-      "severity": "high"
+      "rule_id": "CR-ITDR-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0039"

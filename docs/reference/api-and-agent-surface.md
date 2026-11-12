@@ -44,21 +44,33 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **133 HTTP routes total** (counted 2026-08-06 against the built image, see
-  below). Routers under `/api`, plus the app-level `GET /api/health` and a static
-  file mount at `/`. Per-prefix: `runs` 17 · `agents` 14 · `eal` 13 ·
-  `credentials` 10 · `uctc` 9 · `tools` 8 · `ttps` 8 · `xsiam` 8 · `shelf` 7 ·
-  `k8s` 6 · `assertions` 6 · `scenarios` 5 · `infra` 4 · `results` 4 · `pov` 3 ·
-  `connectors` 2 · `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 5
-  FastAPI-owned docs/openapi routes.
+- **165 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
+  below, on `feature/api-ingestion-doors`; not re-counted against a built image).
+  Routers under `/api`, plus the app-level `GET /api/health` and a static file mount
+  at `/`, plus 4 FastAPI-owned docs/openapi routes. The walker reads 162 on dev
+  `8c90739` (the 161 that stood here was 1 stale); the ingestion doors read API adds 3
+  (§1.16b). Per-prefix breakdown: run the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
-> here was two content passes stale. The command is the ground truth:
+> here was two content passes stale, and the 133 after it was 20 stale. The
+> command is the ground truth. The one-liner this section used to carry
+> (`len([r for r in app.routes if getattr(r,'methods',None)])`) returns **4** on
+> FastAPI 0.141: `include_router` now keeps each router behind a wrapper, so the
+> count has to descend into it.
 >
 > ```bash
-> docker run --rm -v "$PWD:/app" -w /app -e CORTEXSIM_BASE_DIR=/app cortexsim:dev \
->   python -c "import sys;sys.path.insert(0,'core');from main import app;\
-> print(len([r for r in app.routes if getattr(r,'methods',None)]))"
+> cd core && CORTEXSIM_ENV=development CORTEXSIM_BASE_DIR=$PWD/.. \
+>   CORTEXSIM_SECRET=count-only-not-a-real-key python - <<'PY'
+> from main import app
+> def leaves(routes):
+>     for r in routes:
+>         sub = getattr(r, "original_router", None)
+>         if sub is not None and not getattr(r, "methods", None):
+>             yield from leaves(sub.routes)
+>         else:
+>             yield r
+> print(len([r for r in leaves(app.routes) if getattr(r, "methods", None)]))
+> PY
 > ```
 
 ---
@@ -99,7 +111,7 @@ pass).
 (process environment first, then `.env`). A malformed value means requests
 that carry the header record no `last_ip` (logged once). The first ignored
 header from each unlisted peer logs one WARNING (bounded at 64 peers) and
-feeds `/api/health` (§10). uvicorn's own `--forwarded-allow-ips` (default
+feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 `127.0.0.1`) can rewrite `request.client` before this code runs.
 `400 BAD_INFRA_PARAM` (`POST /api/infra/generate`) refuses a `region`,
 `jumpbox_size`, `tags` or `dc_ssh_cidr` value outside its allow-list before
@@ -126,6 +138,7 @@ alphabet, so an IPv6 zone id is refused.
 |--------|-----------|---------|---------|----------|
 | GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
+| GET | `/api/scenarios/{scenario_id}/tenant-content` | What the scenario (or saved draft) needs to exist in the tenant. Read-only; see §1.2.1 | — | the tenant-content manifest, 404 `SCENARIO_NOT_FOUND`, 422 `TENANT_CONTENT_UNREADABLE` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
 | GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=auto\|bash\|powershell\|k8s` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition` + `X-CortexSim-Bundle-Target`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` (reason codes incl. `MIXED_DIALECT`) / `PUSH_NOT_SUPPORTED` |
 
@@ -135,7 +148,8 @@ alphabet, so an IPv6 zone id is refused.
   SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
   ~66 % of that was step `command` text and per-detection `description` prose no
   list view renders. Measured **1293.2 KB → 431.2 KB (-66.7 %)**. Each step keeps
-  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` — the
+  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` (plus
+  `ttp_ref` since 2026-11-10, next bullet) — the
   fields the console actually reads off a list row (technique/detection-type/plane
   facets in `FilterPalette`, `useScenarioFilter`, `ScenarioGrid`,
   `StackCoverageView`, and `steps.length` in `AppConsole`). Four top-level fields
@@ -144,7 +158,18 @@ alphabet, so an IPv6 zone id is refused.
   consumer can tell a summary row from a detail document without guessing at
   missing keys. **`GET /api/scenarios/{id}` is unchanged** and remains the source
   for commands, cleanup, identity, causality, `platform_variants`,
-  `detection_id`/`ttp_ref` and `verification_xql`.
+  `detection_id` and `verification_xql`.
+- **List projection keeps `ttp_ref` (2026-11-10).** Each slim detection is now
+  `{type, plane, ttp_ref}`. `expected_detections[].ttp_ref` is the only bulk
+  source of the card → scenario link, and Catalog › TTP cards joins it to
+  `tc_ref` / `tc_refs` to group cards by use case, test case and FY27 subdomain
+  (`ui/src/components/console/catalogBindings.js`). It is a projection, not a
+  default: a detection authored without `ttp_ref` gains no null key, so the
+  console can tell "this SimCore does not serve card links" (key absent
+  everywhere → grouping disabled, with the reason) from "no scenario cites this
+  card". Cost, measured on the 193-scenario corpus: **+35.8 KB**
+  (1377 detections × 26 bytes; 555.7 KB → 590.7 KB, +6.3 %), against 1770 KB
+  for the same scenarios as detail documents.
 - `download` dispatches through `push_generator.resolve_target` — see §4. `auto`
   prefers POSIX for back-compat and falls back to `windows`. **409, not 400**, is
   returned when the request is well-formed but the scenario's content cannot
@@ -185,6 +210,80 @@ alphabet, so an IPv6 zone id is refused.
   between the two contexts. The cmd semantics are taken from documentation,
   not executed.
 
+### 1.2.1 Tenant content (read-only)
+
+A scenario's expected detections are three different kinds of work, and until
+2026-11-10 the console rendered them as one row of type tags:
+
+| Ownership | Types | What it asks of a DC |
+|---|---|---|
+| `run` | XQL | a query to run after the step, to confirm the telemetry landed |
+| `deploy` | BIOC · IOC · Correlation | must exist in the tenant before the run; this is what raises the alert |
+| `built-in` | ABIOC · Analytics · Prevention | ships with Cortex; needs the module licensed and enabled, nothing to import |
+
+| Method | Full path | Input | Notes |
+|--------|-----------|-------|-------|
+| GET | `/api/scenarios/{scenario_id}/tenant-content` | a corpus scenario or a saved draft row | `core/api/scenarios.py` |
+| POST | `/api/scenarios/drafts/tenant-content` | an UNSAVED draft: the body `POST /api/scenarios/drafts` takes | `core/api/drafts.py`; validates the same way (422 `DRAFT_SCHEMA_INVALID`) and **persists nothing** |
+
+One resolver backs both: `core/engine/tenant_content.py::build_manifest`, over
+the raw cards in `engine.ttp_catalog`. The Composer derives the same facts in
+the browser (`ui/src/components/console/composerContent.js`) so its canvas
+follows each edit without a round trip; `spec/tenant_content_cases.json` is
+asserted by both test suites so the two cannot disagree.
+
+```json
+{
+  "scenario_id": "SIM-AIACC-003", "name": "...",
+  "catalog_loaded": true, "tenant_verified": 0, "write_path": false,
+  "summary": {"correlation": {"total": 1, "deployable": 0, "intent_only": 1,
+                              "unreadable": 0, "declared": 0, "card_only": 1, "unbound": 0}},
+  "rules": [{"rule_id": "CR-AIACC-0003", "ttp_ref": "TTP-2026-0009", "name": "...",
+             "content_status": "intent-only", "binding": "card-only",
+             "logic": "XQL(...) OR XQL(...) OR XQL(...)", "logic_kind": "composition",
+             "inputs": [{"kind": "xql", "name": "...", "state": "step",
+                         "resolved_kind": "xql", "steps": ["step-02"]}],
+             "declared_by": [], "deploy": null}],
+  "unbound": [], "queries": [], "biocs": [], "iocs": [], "built_in": [], "notes": []
+}
+```
+
+- **Two axes per rule.** `content_status` is what the CARD holds: `intent-only`
+  (a name, an id and a logic line), `deployable` (a complete `deploy` block) or
+  `unreadable` (a shape the resolver does not know, with `content_error`).
+  `binding` is what the SCENARIO asks for: `declared` (a step expects the rule,
+  so a run scores it) or `card-only` (on a cited card, expected by no step).
+- **No correlation rule in the corpus is deployable.** Every one is
+  `intent-only`: the card schema allows only `name`, `rule_id` and `logic`, and
+  `logic` is an authoring note such as `XQL(a) OR XQL(b)`, not XQL a tenant can
+  run. A test pins the count at zero (`tests/engine/test_tenant_content.py`).
+  The `deploy` field names the classifier recognises are candidates until they
+  are pinned to a rule exported from a real tenant.
+- **Nothing is invented.** A stub is `deploy: null`. There is no default
+  severity and no synthesised description.
+- **A zero is degraded.** No card corpus → 200 with `catalog_loaded: false`,
+  null counts and a single `CATALOG_NOT_LOADED` note; render it as degraded,
+  never as "nothing needed". Other `notes[].code` values: `NO_CARD_BINDING`,
+  `CARD_NOT_FOUND`, `RULE_UNREADABLE`, `RULE_LOGIC_UNPARSED`,
+  `UNBOUND_CORRELATION`, `UNKNOWN_DETECTION_TYPE`, `NO_CARD_REFERENCE`,
+  `DETECTION_NOT_ON_CARD`.
+- **No write path, no tenant contact.** `write_path` is `false` and
+  `tenant_verified` is `0` in every response. Neither route makes an outbound
+  call (a test refuses any socket connect), and nothing here reaches
+  `OP-CORRELATIONS-INSERT`. Creating a rule is the DC's own action in the XSIAM
+  console.
+
+**See also §1.16**, which reads the same cited cards for a different question:
+`GET /api/scenarios/{id}/prerequisites` (the datasets those cards read and what
+must exist for each) and `GET /api/scenarios/{id}/query-library` (the cards'
+queries as paste-ready text). The `queries[]` here are the queries a step
+*declares*, as card objects; the query library is every query on the cited
+cards, as text.
+
+The on-disk `detection_scanner/exports/correlation/*.json` files carry the same
+status (`content_status`, `deploy: null`, `importable_rules: 0`) and no longer
+stamp `severity: "high"` on every rule.
+
 ### 1.3 Runs (`core/api/runs.py`, prefix `/runs`)
 
 > Note: the router carries the `/runs` prefix (GAP-API-008), so every route lives under
@@ -196,7 +295,7 @@ alphabet, so an IPv6 zone id is refused.
 |--------|-----------|---------|--------------|----------|
 | POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
-| GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `limit` (default 500, max 5000), `offset` | `{"runs":[<row>],"total":N}`. `total` is the number of runs, not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
+| GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used}`; 404 |
@@ -533,14 +632,15 @@ get it.
 | GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
 | GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
 | GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
+| GET | `/api/agents/manifest` | Kubernetes container-agent manifest (multi-doc YAML) | query: `profile`, `image`, `prepare`, `arch`, `ttl_seconds`, `cluster_privilege_authorized?`, `node_access_authorized?`, `authorized_by?` | `text/yaml`; 400 `BAD_PROFILE`/`BAD_PREPARE`/`BAD_ARCH`/`BAD_TTL`/`BAD_IMAGE`/`BAD_AUTHORIZED_BY`/`AUTHORIZED_BY_REQUIRED`; 403 `CLUSTER_PRIVILEGE_DISABLED`; 409 `CLUSTER_CONSENT_REQUIRED`; 404 `AGENT_BINARY_UNAVAILABLE`. Full reference: `docs/reference/k8s-container-agent.md` |
 | POST | `/api/agents/install/telemetry` | Installer reports its terminal stage/code | `InstallTelemetry` (length-capped, control chars stripped) | `{"status":"recorded"}`; also an `agent.install` SSE frame |
 | GET | `/api/agents/install/attempts` | Read recent install attempts | query: `limit` (default 25) | `{"attempts":[…],"total":N}` — in-memory deque (100), lost on restart |
 | POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_seconds?, max_uses?}` (`ttl_seconds` default 3600, `ge=60`, `le=2_592_000`) | token (revealed once) |
 | GET | `/api/agents/enroll/tokens` | List token metadata (never the secret) | — | `{"tokens":[…]}` |
 | DELETE | `/api/agents/enroll/tokens/{token_id}` | Revoke a token | — | `{"status":"revoked"}` |
-| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
+| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?, runtime_facts?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
 | GET | `/api/agents` | List registered agents (newest `last_seen` first) | — | `{"agents":[<agent.to_dict()>],"total":N}` |
-| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
+| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[], runtime_facts?}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND`; **409 `AGENT_HAS_OPEN_RUNS`** with `run_ids` while a task is queued for the agent or a non-terminal run targets it, directly or via the routing ledger (round 2). Fix: `POST /api/runs/{id}/abort`; nothing is cancelled implicitly |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
 
@@ -689,6 +789,29 @@ get it.
   targets, arm64 included; an amd64-only shelf used to read ok.
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
+- **Kubernetes container agent (2026-11-10, authored, not tenant-verified).**
+  `GET /api/agents/manifest` serves gated profiles on the GET with consent in the
+  query string; the push path's `GET /api/scenarios/{id}/download?format=k8s` still
+  returns `409 GATED_FORMAT_REQUIRES_POST` unchanged. `authorized_by` is required
+  whenever either consent key is present. The pod enrolls natively with new beacon
+  flags `--enroll-token-file`, `--state-dir`, `--posture-profile`,
+  `--prepare-status-file`, `--expires-at`, `--subreaper`. The pod calls the
+  `server` its `cortexsim-enroll` Secret names, and SimCore never sees that
+  Secret, so nothing refuses a bad name up front the way
+  `SERVER_HOST_NOT_ALLOWED` does for the installer (§11.2): a DNS name the Host
+  guard does not admit gets `400 HOST_NOT_ALLOWED` (§1, cross-cutting refusals) on the `fetch` init's
+  download and the pod sits in `Init:Error`. An IP literal always passes.
+- **`runtime_facts`.** `register` and `enroll` accept an optional `runtime_facts`
+  object (`container`, `pod_name`, `pod_namespace`, `node_name`, `posture_profile`,
+  `prepare_status`, `tools[]`, `accounts[]`, `anchor_rename`; unknown keys ignored,
+  wrong types 422), stored on `agents.runtime_facts` and returned in
+  `agent.to_dict()`. Every beacon now sends it (`container: false` off a pod).
+  `capabilities` and `interpreters` accept `null` as `[]`.
+- **Launch gate for container agents** (`POST /api/runs`): `409
+  AGENT_POSTURE_INSUFFICIENT` and `409 AGENT_TOOL_ABSENT` (override with
+  `allow_missing_tools: true`, tools only), and `warnings[]` codes
+  `AGENT_NO_RBAC_FOR_KUBECTL` and `AGENT_TOOL_ROSTER_UNKNOWN`. Host and VM agents
+  are not gated.
 
 #### 1.6.1 Windows onboarding — authored 2026-11; the elevated path ran in CI
 
@@ -867,19 +990,19 @@ install removes its own items and fails `NEEDS_ROOT`.
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/eal/plugins` | List registered simulator plugins | — | `{"plugins":[...],"total":N}` |
+| GET | `/api/eal/plugins` | List registered simulator plugins | — | `{"plugins":[...],"total":N}`; each plugin carries `family` (`analytics_log_streamer` \| `network_eal`) and `delivery` (`collector` \| `wire`), the signal-path class the Composer lanes read (`core/engine/signal_path.py`) |
 | GET | `/api/eal/plugins/{name}` | Plugin metadata + JSON schema | — | `plugin.metadata()`; 404 `PLUGIN_NOT_FOUND` |
 | POST | `/api/eal/campaigns` | Persist a campaign def (validates each step's plugin+params) | `Campaign` (Pydantic) | `<EalCampaign.to_dict()>` (201); 422 `PLUGIN_NOT_FOUND`/`PARAMS_INVALID`; 409 `DUPLICATE_CAMPAIGN` |
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
-| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default) | `LaunchRequest`: `{dry_run?, operator?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION` |
-| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,token_configured}],destinations:[…],warnings:[…]}` |
+| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default); collector steps resolve against the instance's collector targets | `LaunchRequest`: `{dry_run?, operator?, c2_authorized?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run, degraded[]}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION`; **live only:** 422 `COLLECTOR_TARGET_NOT_CONFIGURED`/`COLLECTOR_TARGET_UNKNOWN`, 409 `COLLECTOR_TARGET_FAILING` |
+| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,has_auth_token,collector_target,resolution_source}],destinations:[…],warnings:[…],resolutions:[…],blocking:[…],failing:[…],degraded:[…]}` |
 | POST | `/api/eal/campaigns/{campaign_id}/collectors/preflight` | Canary-POST one discard-safe record per collector | — | per-collector verdict in the delivery taxonomy; non-allowlisted hosts are `target_not_authorised` and **never contacted** |
-| POST | `/api/eal/campaigns/{campaign_id}/detector-readiness` | Can this campaign's analytics detectors fire at all? **Zero outbound calls** | `{source_onboarded_at: {<source_key>: <ISO-8601 with tz>}}` | `{detectors[], counts{armed,not_armed,unknown,undocumented}, ready, tenant_verified: 0, gate_basis, banner}`; 422 `NO_ANALYTICS_DETECTOR` / `ONBOARDING_TIMESTAMP_NAIVE` / `UNKNOWN_DATA_SOURCE` |
+| POST | `/api/eal/campaigns/{campaign_id}/detector-readiness` | Can this campaign's analytics detectors fire at all? Judges route, then soakless, then onboarding date. **Zero outbound calls** | `{source_onboarded_at?: {<source_key>: <ISO-8601 with tz>}, soakless_attested?, attested_by?, xdm_modeled_sources?: [<source_key>]}` | `{routes{<plugin>: <pipe>}, detectors[] (readiness.armed_basis, readiness.route), counts{armed,not_armed,unknown,not_armable,undocumented}, ready, soakless_attested, attested_by, tenant_verified: 0, gate_basis, banner}`; codes `DETECTOR_ROUTE_NO_ANALYTICS` / `DETECTOR_ROUTE_REQUIRES_XDM` / `DETECTOR_ROUTE_UNRESOLVED` / `DETECTOR_ARMED_SOAKLESS`; 422 `NO_ANALYTICS_DETECTOR` / `ONBOARDING_TIMESTAMP_NAIVE` / `UNKNOWN_DATA_SOURCE` |
 | POST | `/api/eal/campaigns/{campaign_id}/bundle` | Pre-render records into a self-contained offline bundle | — | `{bundle_id, download_url, records, skipped_steps[]}` (201) |
 | GET | `/api/eal/bundles/{bundle_id}/download` | Download the bundle tar.gz | — | `FileResponse` gzip; 404 |
 | GET | `/api/eal/runs` | List EAL runs | query: `campaign_id?` | `{"runs":[...],"total":N}` |
-| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup; 404 `RUN_NOT_FOUND` |
+| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup and `collector_resolution` (where each collector step went and why, never a key; NULL before collector targets); 404 `RUN_NOT_FOUND` |
 | POST | `/api/eal/runs/{run_id}/abort` | Cooperative abort of a live campaign | — | `AbortResponse` |
 
 - **This is a parallel run/lifecycle subsystem** distinct from the `Run`/agent
@@ -914,6 +1037,28 @@ install removes its own items and fails `NEEDS_ROOT`.
   the executor) than core Runs. Abort is cooperative and cannot pre-empt an
   in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
   no retention sweep (same as `infra/blueprints`).
+
+### 1.9.1 Collector targets (`core/api/collector_targets.py`, prefix `/collector-targets`)
+
+The tenant-side ingestion doors this instance's collector emitters POST to. One
+SimCore instance serves one POV, so these are instance configuration, persisted
+in its database; each key is in the encrypted vault (`Secret`
+`collector-target:<name>`, `type_hint: collector_token`). **No response carries a
+key or a key tail** — the operator API is unauthenticated, so that absence is the
+guarantee.
+
+| Method | Path | Purpose | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/collector-targets` | List targets | — | `{targets[], count, default_target, collector_plugins[], unbound_plugins[], status, code}`; zero targets is `status: degraded`, `code: NO_COLLECTOR_TARGETS` |
+| GET | `/api/collector-targets/{name}` | One target | — | `{name, kind, url, dataset, auth_header, auth_scheme, plugins[], is_default, has_key, last_check, warnings[]}`; 404 `TARGET_NOT_FOUND` |
+| PUT | `/api/collector-targets/{name}` | Create or replace | `{kind, url, dataset?, auth_header?, auth_scheme?, plugins[], is_default?, token?, clear_token?}` — `token` write-only, omitted keeps the stored key | target + `previous_default`; 422 `TARGET_NAME_INVALID` / `TARGET_INVALID` / `TARGET_PLUGIN_NOT_COLLECTOR` / `TARGET_PLUGIN_ALREADY_BOUND`. A change to url, kind, header, scheme or key discards `last_check` |
+| DELETE | `/api/collector-targets/{name}` | Remove the target and its key | — | 204; 404 |
+| POST | `/api/collector-targets/{name}/preflight` | configured → reachable → accepted | `{write_canary: false}` | `{verdict, code, rungs[{rung,status,code,detail,proves,does_not_prove}], write_canary, post_attempted, records_written, status_code, remediation, warnings[], tenant_verified: 0}`; stored as `last_check` |
+
+`kind` ∈ `xsiam_http_collector` (key required) · `http_forwarder`. Broker VM
+targets are not modelled yet. **The reachable rung sends no HTTP request**; only
+`write_canary: true` writes, one discard-safe record. Resolution precedence and
+the launch gate: `docs/reference/eal-plugin-catalog.md` § Collector targets.
 
 ### 1.10 Credentials (`core/api/credentials.py`, prefix `/credentials`)
 
@@ -1147,6 +1292,22 @@ name — reconcile could only ever read 0 %, and that 0 % would be wrong),
 `PF_ALERT_SHAPE_UNKNOWN` (degraded: no alert in 7 days, shape unverified). A
 tenant with no alert to inspect is therefore **degraded, not ready**.
 
+**Issues API field names (2026-11-10).** The connector and this rung also read the names
+the public Issues API documents (`POST /public_api/v1/issue/search`): `detection.rule_id`
+(rule id), `detection.method` (source), `case_ids` (incident) and `_insert_time`
+(timestamp). Each comes after the alerts-API keys of its role, so a record carrying both
+keeps its old value. `detection.*` is read as the flat dotted property the schema names,
+then as a nested `detection` object. `case_ids` counts only when it lists exactly one case.
+`_insert_time` dates a record only when it carries no `detection_timestamp`,
+`creation_time` or `local_insert_ts`; which timestamp MTTD should use is still open. Both
+sides read through one function, `connectors/xsiam.py::alert_key`, and
+`tests/connectors/test_issues_api_fields.py` fails if `ALERT_SHAPE_KEYS` lists a key the
+connector does not read. The matcher maps the `detection.method` codes `ANALYTICS_BIOC`,
+`BIOC`, `IOC`, `CORRELATION`, `MAGNIFIER` and `TRAPS` onto `abioc`, `bioc`, `ioc`,
+`correlation`, `analytics` and `prevention`. TRAPS (XDR Agent) and MAGNIFIER (XDR
+Analytics) are inferred from the order of the docs' two value lists. Every other code
+names no family and stays unconstrained.
+
 **Alerts-path probe (2026-11-02).** The connector reads
 `/public_api/v1/alerts/get_alerts_multi_events` unless the credential's `alerts_path` says
 otherwise; a field-built MCP server reads the same call on **v2** against a live tenant.
@@ -1192,9 +1353,285 @@ measured value.
 > The working route for both kinds is `POST /api/connectors/{kind}/preflight`.
 > See `ui/src/components/console/ReadinessView.jsx::TenantRow.runPreflight`.
 
+### 1.16 Dataset prerequisites (`core/api/prerequisites.py`, mounted before the scenarios router)
+
+Added 2026-11-10 (POV content pack, phase 1). Read-only: local files and the
+scenario table only, no outbound call; the scenario route carries
+`tenant_verified: 0`. Full reference:
+[`dataset-requirements.md`](dataset-requirements.md).
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/prerequisites/datasets` | The dataset requirement registry joined to the cards that read each dataset | — | `{registry_loaded, path, count, datasets[], unregistered[]}`, each row with `cards[]` and `read_by[]`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/prerequisites` | What one scenario needs on the Cortex and source side, derived from the cards it cites | — | `{scenario_id, registry_loaded, tenant_verified, write_path, cards[], datasets[], summary, notes[]}`, each dataset row with `read_by[]`; 404 `SCENARIO_NOT_FOUND`, 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/query-library` | The cited cards' queries as paste-ready text | query: `purpose` (comma-separated from `hunt`, `investigation`, `validation`, `metric`; default `hunt,investigation`) | `text/plain; charset=utf-8`, non-query lines as `//` comments; 422 `PURPOSE_UNRECOGNISED` (checked first), 404 `SCENARIO_NOT_FOUND`, 500 `CARD_SHAPE_UNRECOGNISED` |
+
+- **Error shape differs from the older scenario routes.** These three return the
+  error object at the top level, `{"error", "code", "detail"}`. The scenario
+  routes in section 1.2 nest it under `"detail"`.
+- An absent registry answers 200 with `registry_loaded: false` (and a
+  `REGISTRY_ABSENT` note on the scenario route). A registry that exists but is
+  malformed answers a structured 500.
+- A card reads a dataset through `xql_queries[].dataset` or a `dataset =` /
+  `preset =` anchor in `biocs[]` / `abiocs[]` / `correlation_rules[]` logic;
+  `read_by` lists which of those four kinds did.
+- Derivation note codes: `NO_CARD_BINDING`, `DETECTION_UNBOUND`, `CARD_NOT_FOUND`,
+  `CARD_DECLARES_NO_QUERY`, `DATASET_UNDECLARED`, `UNREGISTERED_DATASET`,
+  `REGISTRY_ABSENT`. Row states are `confirmed in a tenant` and `from
+  documentation`; the response field for emulation is `can_be_emulated_by`.
+- `/api/health` gains a `dataset_requirements` component (degraded codes
+  `DATASET_REGISTRY_ABSENT`, `DATASET_REGISTRY_MALFORMED`, `DATASETS_UNREGISTERED`,
+  `CARD_SHAPE_UNRECOGNISED`). Boot refuses an absent-or-malformed registry or an
+  unregistered card dataset only when `CORTEXSIM_STRICT_DATASETS=true`
+  (default `false`).
+- Route count: this branch adds 3 routes.
+
+### 1.16b Ingestion doors (`core/api/doors.py`, mounted before the scenarios router)
+
+Added 2026-11-11. Read-only: local files and the database only, **zero outbound
+calls**; every response carries `tenant_verified: 0` and `outbound_calls: 0`.
+Errors use the top-level `{"error", "code", "detail"}` shape.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/doors` | Every ingestion door (one row per agent or target instance for scoped doors) with its state and the count of corpus detections that name it | — | `{doors[], registry_loaded, tenant_verified, outbound_calls}`; each row `{key, door_id, label, scope, state, basis, rung, last_conclusive_at, age_seconds, wizard, detections_needing}`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `DOOR_DERIVATION_FAILED` |
+| GET | `/api/doors/readiness` | Door readiness of every loaded scenario in one fetch (the library list itself is unchanged) | query: `agent_id` (keys agent-scoped doors; without it `agent_scoped_evaluated` is false) | `{scenarios{scenario_id: readiness}, agent_scoped_evaluated, registry_loaded, tenant_verified, outbound_calls}`; 500 as above |
+| GET | `/api/scenarios/{scenario_id}/doors` | One scenario's readiness plus each expected detection's requirement | query: `agent_id` | `{scenario_id, registry_loaded, readiness, detections[{step_id, detection_id, requirement}], tenant_verified, outbound_calls}`; 404 `SCENARIO_NOT_FOUND`, 500 as above |
+
+- A readiness object is `{scenario_id, state, scorable, total, underived, route_blocked,
+  unevaluated, not_open[{door_id, detections}], agent_scoped_evaluated}`. `state` is
+  `ready | partial | needs_doors | not_evaluated`. `route_blocked` counts detections whose
+  collector route cannot feed them (the library resolves no collector target, so every
+  collector-route detection counts here); `unevaluated` counts agent-scoped OR-sets with no
+  `agent_id` to key them. Both are passed through unchanged from the resolver.
+- `not_open` lists each door that is **not in the open set** and how many detections it
+  holds back, most first. It does **not** distinguish a door checked and found closed from
+  one nobody has checked; join each `door_id` against `GET /api/doors` for the door's real
+  `state`. A detection held back by two doors counts once under each, so the per-door counts
+  can sum to more than the detections held back.
+- A door row `state` is the last conclusive event (`open | closed`), else `unknown`; the
+  `rung` axis separately carries `configured` when a zero-call fact says so (else `authored`).
+  Phase 1 writes no events, so nothing reads `open` and no scenario reads `ready`.
+- `detections_needing` counts a detection once for each door in its OR-sets, so the per-door
+  counts can sum to more than the number of detections. Composer drafts (`status: draft`) are
+  excluded. Every collector-route detection counts under `http_collector`, including the
+  route-blocked ones its route cannot feed.
+- An agent-scoped door (`xdr_agent`, `xdr_agent_xth`, `ngfw_stitch`) reads rung `configured`
+  for a beacon only when the beacon is online **and** an `xsiam_tenant` credential with XQL
+  granted exists (`ngfw_stitch` also needs a registered firewall); an online beacon alone is
+  the CortexSim beacon, not the Cortex XDR agent.
+- An absent dataset requirement registry answers 200 with `registry_loaded: false`:
+  `detections_needing` is `null` and every scenario reads `not_evaluated` with
+  `reason: REGISTRY_ABSENT`; the per-scenario route returns `registry_loaded: false`,
+  `code`/`reason: REGISTRY_ABSENT`, `detections: []` and a `not_evaluated` readiness. A malformed one is a structured 500.
+
+### 1.17 NGFW (PAN-OS) connection (`core/api/ngfw.py`, prefix `/ngfw`; preflight through `/connectors`)
+
+Added 2026-11-10 (branch `feature/api-ngfw-connection`). Spec:
+[`2026-11-10-ngfw-connection-wizard-design.md`](../superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md)
+(§12 lists where the build departs from it). Console: **Firewall** under *Manage*
+(`#/firewall`, `ui/src/components/console/FirewallView.jsx` + `firewall/*`).
+
+**Opt-in and read-only toward the firewall.** Nothing here is polled; every call to a
+firewall is an operator action. `core/integrations/panos/client.py::PanosClient` builds
+three request types only: `op` (each command parsed and checked against a per-command
+argument schema in `OP_ALLOWLIST`, then sent as the client's own canonical
+serialisation, never the caller's string), `config` with `action=show` (running config,
+xpath must fully match one of the anchored regexes in `CONFIG_XPATH_ALLOWLIST`), and
+`keygen`. A refused request raises `PanosWriteRefused` before anything is sent and
+consumes no call budget. `CORTEXSIM_PANOS_ALLOW_WRITE` exists in `core/config.py`
+(default `false`) and **nothing consumes it**: v1 has no write path, and
+`GET /api/ngfw` reports `write_enabled: false` as a constant. The API key travels in the
+`X-PAN-KEY` header, never the URL, and is scrubbed from every string in a report.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/ngfw` | Registered firewalls, metadata only (never the key) | — | `{firewalls: [{name, host, verify_tls, vsys, forwarding_path, last_verified_ok, last_verified_error, last_verified_at}], write_enabled: false, tenant_verified: 0}` |
+| POST | `/api/ngfw/keygen` | Exchange a firewall admin login for an API key and register the firewall (kind `panos_ngfw`) | JSON `{name, host, username, password, verify_tls?=true, vsys?="vsys1"}`, extra keys rejected, body ≤ 16 KiB | `<integration.to_dict()>` + `overrides_cleared` + `warnings[]` (`"password sent over unverified TLS"` when `verify_tls=false`); errors below |
+| PUT | `/api/ngfw/{name}/sources/{agent_id}` | Set or clear one agent's firewall-observed source / agent-side addresses on one firewall | JSON `{observed_source?: ip \| null, agent_addresses?: [ip] \| null}`; an omitted field is unchanged, `null` / `[]` removes the override | `{firewall, agent_id, observed_source, agent_addresses}`; 404 `INTEGRATION_NOT_FOUND`, 400 `INTEGRATION_CONFIG_INVALID`, 422 `REQUEST_INVALID`, 413 `REQUEST_TOO_LARGE` |
+| PUT | `/api/credentials/integrations` | Existing route; with `kind: panos_ngfw` it registers a pasted API key | `IntegrationPut` with `config` per the table below | `<integration.to_dict()>` + `overrides_cleared`; 400 `INTEGRATION_CONFIG_INVALID`; 409 `INTEGRATION_KIND_CONFLICT` (the name belongs to another kind; nothing written) |
+| POST | `/api/connectors/panos_ngfw/preflight` | Staged read-only firewall preflight (dispatched at the top of the connectors route, before its `PF_` resolution) | query `integration?` (default: first by name), `agents?` (comma-separated agent ids; default every enrolled agent) | `FirewallPreflightReport` (below); `PN_NO_INTEGRATION` / `PN_CREDENTIAL_UNDECRYPTABLE` arrive as a 200 report with a blocked `config` stage; 404 `INTEGRATION_NOT_FOUND` for an unknown `integration` |
+
+**`panos_ngfw` config** (validated at PUT and keygen time by
+`core/integrations/panos/host.py::validate_panos_config`, so a key is never sent to a
+malformed host): `host` (IP literal or DNS name, optional `:port`, no scheme, path,
+query or userinfo; required) · `verify_tls` (bool, `true`) · `vsys` (`vsys<digits>`,
+`vsys1`) · `device_name` (`localhost.localdomain`) · `routing_instance` (`default`) ·
+`forwarding_path` (`auto` \| `sls` \| `syslog` \| `both`, `auto`) · `probe_destinations`
+(`[{ip, port, protocol: tcp|udp, application}]`, default `1.1.1.1 udp/53 dns-base`,
+`198.51.100.10 tcp/80 web-browsing`, `198.51.100.10 tcp/443 ssl`; policy lookups only,
+no packet is sent) · `inside_zone` / `outside_zone` (null) · `observed_sources`
+(`{agent_id: ip}`) · `agent_addresses` (`{agent_id: [ip]}`). The secret type hint is
+forced to `panos_api_key_credential`.
+
+**Re-registration rule.** A keygen or `PUT /api/credentials/integrations` for an
+existing `panos_ngfw` name keeps `probe_destinations`, the zones, `device_name` and
+`routing_instance` (and, on the PUT, `vsys` / `forwarding_path`), each only when the
+caller did not send it, since a sent key always wins; it keeps
+`observed_sources` / `agent_addresses` only when the normalised `host` is unchanged and
+otherwise clears them and returns `overrides_cleared: true`. Per-agent overrides describe
+the path through one firewall; carried to another they give confident, wrong verdicts.
+
+**Keygen errors.** The body is parsed in the handler, not by FastAPI binding, because
+FastAPI's default 422 echoed the password in `input` even with `hide_input_in_errors`. A
+422 here is `{error, code: "REQUEST_INVALID", detail, fields: [{loc, type}]}` and a `loc`
+part that is not a model field name reads `"(other)"`. Failures map to fixed text:
+401 `PN_KEYGEN_REJECTED`; 502 `PN_UNREACHABLE`, `PN_TLS_FAILED`, `PN_UPSTREAM_ERROR`,
+`PN_SHAPE_UNRECOGNISED`; 409 `INTEGRATION_KIND_CONFLICT` (the name belongs to another
+kind; checked before anything is sent); 400 `INTEGRATION_CONFIG_INVALID`; 413
+`REQUEST_TOO_LARGE`. The password is never logged, stored or returned. Generating a key
+does not invalidate the admin's earlier keys (PAN-OS 9.0+).
+
+**Threat note.** Keygen and preflight are unauthenticated, like the rest of
+`/api/credentials`. Anyone who reaches SimCore can use keygen as a reachability and port
+oracle toward internal hosts (the four distinct 502 codes, or a 401). No stored secret
+leaks through it: keygen holds no stored key, and preflight sends a stored key only to
+that integration's own validated host.
+
+**`FirewallPreflightReport`.** `{firewall, kind: "panos_ngfw", mgmt_host, overall,
+stages[], sources[], queries_issued, panos_version, config_source: "running", proves,
+tenant_verified: 0, credential: {name, kind}}`. Each stage is `{id, status, code,
+detail, remediation?, ms?, …extra}` with status `ok | degraded | blocked | skipped`;
+`overall` is the worst. `queries_issued` is the client's own count of requests sent, so a
+report from an injected transport says `0` and `proves` reads *"Firewall configuration
+as read by N live call(s). It does not show that the tenant ingested or stitched
+anything. A report with queries_issued=0 was not answered by a firewall."* The verdict is
+stored in the integration's `last_verified_ok` (`overall != blocked`) and
+`last_verified_error` (first blocked code).
+
+Firewall-wide stages, every id exactly once and in order: `config` · `dns_tls` · `auth` ·
+`system` · `clock` · `forwarding_sls` · `forwarding_syslog` · `eal_device` ·
+`log_forwarding_profiles` · `decryption` · `registered_ip`. Only `PN_UNREACHABLE`,
+`PN_TLS_FAILED` and `PN_AUTH_REJECTED` short-circuit the rest (to `skipped /
+PN_SKIPPED_UNREACHABLE | PN_SKIPPED_AUTH`); any other failure blocks its own stage.
+
+`sources[]` has one entry per agent: `{agent_id, hostname, fw_observed_src,
+fw_src_provenance (entered | inferred:last_ip | unknown), agent_addresses,
+agent_addr_provenance, nat_verdict (tuple_intact | nat_between | unknown),
+collision_with[], status, stages[], probes[]}`, with stages `address` · `source_seen` ·
+`policy_match` · `rule_profiles` · `nat` · `user_id` · `registered_tags`. With no agent
+selected it is a single degraded `PN_NO_AGENTS` entry, never an empty list. Each
+`?agents=` id that matches no enrolled agent is its own degraded `PN_AGENT_UNKNOWN`
+entry `{code, status, requested_agent_id, detail, remediation}` (no `agent_id`: it is
+not an agent row); the known ids are checked as usual, and when none is known these
+entries replace `PN_NO_AGENTS`, so a typo never reads as "nothing selected". A green
+firewall preflight proves firewall configuration, **not** tenant ingestion or stitching:
+***tenant-verified is 0***.
+
+Call budget: at most `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` (default 120) requests;
+past it, the remaining stages report `PN_CALL_BUDGET` and work done before the cap is
+kept. Timeout 10 s per call.
+
+**Every `PN_` code** (`core/integrations/panos/codes.py`, one vocabulary, value equals
+name). Status is what the code carries where it is emitted.
+
+| code | status | meaning |
+|---|---|---|
+| `PN_OK` | ok | the stage's check passed |
+| `PN_CONFIG_INVALID` | blocked (`config`) | the stored registration does not validate; nothing was read |
+| `PN_NO_INTEGRATION` | blocked (`config`) | no `panos_ngfw` integration is registered |
+| `PN_CREDENTIAL_UNDECRYPTABLE` | blocked (`config`) | the stored API key cannot be decrypted (rotated `CORTEXSIM_SECRET`) |
+| `PN_SKIPPED_CONFIG` | skipped | not checked because the `config` stage is blocked |
+| `PN_UNREACHABLE` | blocked (`dns_tls`); keygen 502 | no answer from the management host (DNS, routing, port, HTTPS off) |
+| `PN_TLS_FAILED` | blocked (`dns_tls`); keygen 502 | the management certificate did not verify |
+| `PN_TLS_UNVERIFIED` | degraded (`dns_tls`) | answered with `verify_tls=false`; the peer is not proven |
+| `PN_AUTH_REJECTED` | blocked (`auth`) | the firewall rejected the API key (HTTP 403 or `status="error"` code 403) |
+| `PN_KEYGEN_REJECTED` | keygen 401 | the firewall issued no key for the submitted login |
+| `PN_SKIPPED_UNREACHABLE` | skipped | not checked: the firewall stopped answering (unreachable or TLS failure) |
+| `PN_SKIPPED_AUTH` | skipped | not checked: the firewall rejected the key |
+| `PN_UPSTREAM_ERROR` | blocked (that stage only); keygen 502 | the management API answered with a non-2xx HTTP status |
+| `PN_SHAPE_UNRECOGNISED` | blocked (that stage only); keygen 502 | a reply this version does not recognise (the command or xpath is named), or a well-formed PAN-OS `status="error"` reply other than an auth rejection (code 403 is `PN_AUTH_REJECTED`; at keygen every `status="error"` is `PN_KEYGEN_REJECTED`); never read as empty |
+| `PN_INTERNAL_ERROR` | blocked (that stage only) | a CortexSim defect while evaluating the stage; exception type named, message withheld |
+| `PN_WRITE_REFUSED` | blocked | the read-only client refused a request the stage built; nothing was sent (a CortexSim defect) |
+| `PN_CALL_BUDGET` | blocked (firewall-wide) / skipped (per source) | `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` reached before this check |
+| `PN_MULTI_VSYS` | degraded (`system`) | multi-vsys is on; only the configured vsys was checked |
+| `PN_NOT_NORMAL_MODE` | degraded (`system`) | operational mode is not normal (e.g. FIPS-CC) |
+| `PN_CLOCK_SKEW` | degraded (`clock`) | firewall clock differs from SimCore UTC by more than 30 s |
+| `PN_CLOCK_TZ_UNKNOWN` | degraded (`clock`) | the firewall clock could not be converted to UTC (no or unknown timezone) |
+| `PN_LSF_DISABLED` | blocked (`forwarding_sls`) | Logging Service forwarding is off but the selected path needs it |
+| `PN_COLLECTOR_INACTIVE` | blocked (`forwarding_sls`) | LSF is on but no log collector connection is Active |
+| `PN_LOG_TYPE_STALE` | degraded (`forwarding_sls`) | traffic or threat last forwarded more than 15 min ago |
+| `PN_LOG_TYPE_NEVER` | degraded (`forwarding_sls`) | traffic or threat has never been forwarded |
+| `PN_LOG_TYPE_AGE_UNKNOWN` | degraded (`forwarding_sls`) | the last-forwarded age cannot be computed (clock unread, or a time in the future) |
+| `PN_SYSLOG_NO_SERVERS` | blocked (`forwarding_syslog`) | no syslog server profile has a server, and syslog is required |
+| `PN_SYSLOG_DELIVERY_UNVERIFIED` | degraded (`forwarding_syslog`) | syslog is configured; PAN-OS keeps no delivery counters, so confirm on the tenant side |
+| `PN_SYSLOG_UDP` | degraded (`forwarding_syslog`) | a syslog server uses UDP (loss is silent) |
+| `PN_NO_FORWARDING_PATH` | blocked (`forwarding_sls`, `forwarding_syslog`) / degraded (`log_forwarding_profiles`) | neither LSF nor syslog is configured, so no profile can be shown to deliver |
+| `PN_PATH_NOT_SELECTED` | ok (unconfigured, another path proven; or configured but not the selected `forwarding_path`, with `extra.would_report {status, code}` saying what it would have read) | this forwarding path is not the one in use; information only, so it never keeps the overall from `ready` |
+| `PN_EAL_DEVICE_OFF` | degraded (`eal_device`) | Enhanced Application Logging is off on the device |
+| `PN_NO_LFP` | blocked (`log_forwarding_profiles`) | no log forwarding profile exists |
+| `PN_LFP_MISSING_TYPE` | degraded (`log_forwarding_profiles`, as are the next four) | no profile forwards all of traffic, threat, url, wildfire and data |
+| `PN_LFP_EAL_OFF` | degraded | a profile has Enhanced Application Logging off |
+| `PN_LFP_TAG_ACTION` | degraded | a profile has a tagging action that can move a test host mid-run |
+| `PN_LFP_WRONG_TARGET` | degraded | a log type is forwarded only on a path that is not in use |
+| `PN_LFP_FILTERED` | degraded | a log type is forwarded only through a filter narrower than "All Logs" |
+| `PN_DECRYPTION_OFF` | degraded (`decryption`) | no enabled decryption rule |
+| `PN_REGISTERED_TAGS_PRESENT` | degraded (`registered_ip`) | registered IP tags exist on the firewall |
+| `PN_NO_AGENTS` | degraded (`sources[]`) | no enrolled agent selected; no source path was checked |
+| `PN_AGENT_UNKNOWN` | degraded (`sources[]`) | a requested `?agents=` id matches no enrolled agent; nothing was checked for it (`requested_agent_id` names it) |
+| `PN_SOURCE_UNKNOWN` | degraded (`address`); skipped (that source's network stages) | the firewall-observed source is unknown; nothing was sent for it |
+| `PN_SOURCE_COLLISION` | blocked (`address`) | two or more agents resolve to the same firewall-observed source |
+| `PN_NAT_BETWEEN_AGENT_AND_FW` | blocked (`address`) | agent-side and firewall-observed addresses are disjoint: NAT breaks the 5-tuple stitch |
+| `PN_AGENT_ADDRESS_UNKNOWN` | degraded (`address`) | the agent-side address is unknown, so the NAT verdict is unknown |
+| `PN_SOURCE_NOT_SEEN` | degraded (`source_seen`) | the firewall has no current session from this source |
+| `PN_ZONE_UNRESOLVED` | degraded (`policy_match`, `user_id`) / skipped (`nat`) | source or destination zone could not be resolved |
+| `PN_NO_RULE_MATCH` | degraded (`policy_match`) | no configured security rule matches the probe (default rule, no log) |
+| `PN_PROBE_FAMILY_MISMATCH` | degraded / skipped | the source and every probe are of different address families |
+| `PN_RULE_DENIES` | blocked (`rule_profiles`) | the matching rule does not allow the traffic |
+| `PN_RULE_CONFIG_MISMATCH` | degraded (`rule_profiles`) | the policy lookup's rule disagrees with running config (disabled, or another action) |
+| `PN_NO_PROFILE` | degraded (`rule_profiles`) | an allow with no inspection or logging for some threat types or severities |
+| `PN_PROFILE_BLOCKS` | degraded (`rule_profiles`) | a profile blocks some threats: threat log written, artefact never reaches the endpoint |
+| `PN_PROFILE_SIGNATURE_DEFAULT` | degraded (`rule_profiles`) | a profile action is `default` (defers to the signature; likely blocks critical/high) |
+| `PN_DNS_SEC_SINKHOLE` | degraded (`rule_profiles`) | DNS Security sinkholes some categories on this path |
+| `PN_DNS_SEC_UNCONFIGURED` | degraded (`rule_profiles`) | the spyware profile configures no DNS Security category |
+| `PN_RULE_NO_LOG_FORWARDING` | degraded (`rule_profiles`) | the matching rule has no log forwarding profile |
+| `PN_RULE_LOG_PROFILE_INCOMPLETE` | degraded (`rule_profiles`) | the rule's log forwarding profile was not complete in `log_forwarding_profiles` |
+| `PN_RULE_NO_LOG_END` | degraded (`rule_profiles`) | the rule does not log at session end: no traffic record to stitch |
+| `PN_OBJECT_NOT_FOUND` | degraded | a referenced rule, profile, group or zone is in no scope read and is not predefined |
+| `PN_NO_USER_MAPPING` | degraded (`user_id`) | no user mapping for this source |
+| `PN_ZONE_USERID_OFF` | degraded (`user_id`) | User-ID is off on the source's zone |
+| `PN_SOURCE_TAGGED` | degraded (`registered_tags`) | this source carries registered IP tags |
+
+URL-filtering and WildFire-analysis profile actions are **not evaluated** in v1 (reported
+as such, no code raised).
+
+- Route count: this branch adds 3 routes (`/api/ngfw` ×3; the preflight reuses
+  `/api/connectors/{kind}/preflight`).
+
 **Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
 Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
 Both are covered by their own design docs.
+
+### 1.16 Readiness (`core/api/readiness.py`, prefix `/readiness`)
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/readiness` | The connector ladder, stated server-side: the same four rungs (AUTHORED · CONFIGURED · REACHABLE · VERIFIED) and `tenant-verified: N` the console's Readiness page renders, for callers that are not the console | `{server_time, tenant_verified, tenant_verified_names[], integrations[], proves, outbound_calls, statement}` |
+
+**Zero outbound calls**, stated in the body as `outbound_calls: 0`: every field
+is read from the local DB, the vault's metadata or the in-process quota ledger.
+It never returns credential config. Per integration it carries `name`, `kind`,
+`capabilities` (`null` when the credential declares none), `xql_capability_granted`,
+`last_verified_ok` / `last_verified_at` / `last_verified_error`, a `ledger`
+snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`) and the
+four `rungs` booleans. `tenant_verified` is counted in Python by
+`core/connectors/provenance.py::tenant_verified` — runs and assertion runs whose
+verdict detail carries tenant provenance; `pending` and `not_applicable` do not
+count. **Authored is not proven:** today that count is 0 because nothing has run
+against a live tenant, and the `statement` field says so
+(`No tenant call is made by this route. tenant-verified: N`).
+
+**Changes to existing routes on the MCP branch** (all additive unless noted):
+
+| route | change |
+|---|---|
+| `GET /api/runs` | accepts `status` and `scenario_id` (equality filters) and `limit` (out of range is 422); `total` counts the filtered rows before `limit`; no parameters is unchanged. The MCP branch capped `limit` at 500; merged with the beta's paging it is 1..5000, default 500 (the console's Runs poll sends 5000), see the route row in §1.3 |
+| `POST /api/xsiam/tenants/{name}/operations/{op_id}`, `POST …/xql`, `GET …/xql/{query_id}`, `GET …/metrics` | reply carries `queries_issued` and a `ledger` snapshot (`null` on a preview). The executor reports 1 for a live op (XQL or not) **except** the result polls `OP-XQL-GET-QUERY-RESULTS` / `-STREAM`, which report 0, and 0 for a preview; `POST …/xql` and `GET …/metrics` report 1; `GET …/xql/{query_id}` reports 0. Refusals come in a fixed order and the tenant is not called when any refuses, but the order differs by path: the executor's `OP-XQL-START-XQL-QUERY` — capability (403), request shape (`XQL_REQUEST_SHAPE_INVALID`, 400), write stage (`XQL_WRITE_STAGE_REFUSED`, 400), per-tenant budget (`XSIAM_QUOTA_ERROR`, 429); `POST …/xql` — a malformed body is a pydantic 422 before the handler runs (not `XQL_REQUEST_SHAPE_INVALID`), then capability, write stage, budget; `GET …/metrics` — capability, budget; the polls and `OP-XQL-GET-QUOTA` — capability only, never budgeted. `GET …/xql/{query_id}` gains `limit` (1..1000) |
+| same XQL-class routes | **behaviour change:** a credential whose `config.capabilities` does not list `"xql"` is refused with 403 `XSIAM_CAPABILITY_MISSING`. Preflight and the verify/reconcile runner now agree: an **absent** `capabilities` field means *not granted* (preflight used to authorise XQL when it was absent) |
+| `POST /api/runs/{run_id}/reconcile` | summary reports `queries_issued` in ledger units (pull pages, plus the incidents pages when the correlation fallback read them) |
+| `POST /api/assertions/{id}/run` | reports `queries_issued` (runner calls; 0 for a dry run or no tenant). `GET /api/assertions/runs/{run_id}` does **not** carry it — the persisted row has no such column |
+| global `XsiamError` body | gains an additive `upstream_status` (the tenant's HTTP status); `{error, code, detail}` is unchanged |
+| `GET /api/health` | gains an `mcp` component: `MCP_DISABLED` (ok, opt-in) when the flag is off; with `CORTEXSIM_MCP_HTTP=1` it reads the actual mounted server and reports `MCP_SDK_IMPORT_FAILED`, `MCP_NOT_MOUNTED` or `MCP_NO_TOOLS` (degraded) rather than inferring the mount from the flag |
 
 ---
 
@@ -1706,12 +2143,12 @@ ctx cancelled → return (clean exit)
   `--- exit_code=… ---`). Each carries `frame_id` = `"<task_id>:<n>"` (n from 1
   per task; `"<agent_id>:<n>"` with no task), fixed before the first attempt
   so a retry carries the same key; SimCore stores a repeated `(run_id,
-  frame_id)` once (§10). Live streaming chunks carry no `frame_id`.
+  frame_id)` once (§11). Live streaming chunks carry no `frame_id`.
 - `POST /api/runs/{run_id}/complete` with `{exit_code, summary, steps[], task_id,
   agent_id}` where summary is
   `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...` and `steps[]` is the
   per-step host evidence (§1.3.1). `task_id` / `agent_id` are new in round 2;
-  SimCore counts a fan-out completion once per task with them (§10).
+  SimCore counts a fan-out completion once per task with them (§11).
 - On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
   interrupted", steps)` (exit 130) then return.
 - **Retries (2026-11, BEACON-11).** `/complete` and each step's `/output` retry
@@ -1856,14 +2293,229 @@ Most of the lifecycle backlog **shipped** in the multi-wave revamp:
 
 ---
 
-## 9. Stable failure codes added in the 2026-11 beta-readiness pass
+## 9. MCP server (`core/mcp_server/`)
+
+> **Authored is not proven. `tenant-verified: 0`.** The MCP layer is a
+> projection of routes SimCore already serves. No MCP tool has been run against
+> a live Cortex tenant, and no result it returns is tenant evidence until a run
+> or assertion verdict carries tenant provenance. Spec:
+> `docs/superpowers/specs/2026-11-02-cortexsim-mcp-server-design.md`.
+
+An agent reaches SimCore through a Model Context Protocol server instead of
+hand-built REST calls. The package is `core/mcp_server/` (not `core/mcp/`, which
+would shadow the `mcp` SDK under `PYTHONPATH=core`); the SDK is pinned
+`mcp==1.30.0`. There is one implementation of every tool and two transports; the
+only difference between them is the `httpx` transport handed to the client.
+
+The tool count is read from the registry, never typed: `cd core && PYTHONPATH=. python -m mcp_server --list-tools`
+prints one row per tool and ends with `41 tools` (25 `cortexsim.*`, 16 `xsiam.*`
+— 37 backed, 4 registered-but-unbacked). `make check-mcp-boot` runs that command
+inside the built image and fails below 41.
+
+### 9.1 Transports
+
+| | stdio | Streamable HTTP |
+|---|---|---|
+| who launches | the DC's client (`claude mcp add cortexsim -- …`) | SimCore, when `CORTEXSIM_MCP_HTTP=1` |
+| where it runs | the DC's host venv, or `docker exec -i <container> python -m mcp_server` | inside the SimCore process, mounted at `/mcp` |
+| reaches SimCore via | real HTTP to `CORTEXSIM_URL` (default `http://127.0.0.1:8888`) | `httpx.ASGITransport(app)` — in-process, zero sockets |
+| default | — | **off**. A port that answers JSON-RPC is a new surface; it is enabled per lab, not per image |
+| session mode | per process | `stateless_http=True` — SimCore restarts are routine mid-POV, and a stateful session manager would 404 every client after one |
+| DNS-rebinding guard | n/a | the SDK's transport-security allowlist, seeded with `localhost`, `127.0.0.1` and `CORTEXSIM_MCP_ALLOWED_HOSTS` (comma list, default empty) |
+
+Authentication posture is inherited, not widened: SimCore has no API
+authentication layer (`CORTEXSIM_SECRET` protects the vault at rest, not the
+routes), and the MCP surface sits inside that boundary. What the surface adds is
+the removal of the one thing an agent could newly do — writes to a tenant always
+preview (§9.5).
+
+Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
+`CORTEXSIM_MCP_ALLOWED_HOSTS`, `CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`
+(default 30, a process-local token bucket over tenant-class tools) and
+`CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read
+them. Other CLI flags: `--server URL`, `--list-tools`, `--manifest` (the P-2
+manifest the consumer vendors) and `--max-tenant-calls-per-minute N` (overrides
+`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE` for this process).
+
+### 9.2 Client install
+
+Streamable HTTP, when the mount is on (zero install on the laptop):
+
+```bash
+claude mcp add --transport http cortexsim http://localhost:8888/mcp
+```
+
+stdio, from the running container (no Python on the laptop needed; substitute
+the container name of the running image):
+
+```bash
+claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 python -m mcp_server --server http://127.0.0.1:8888
+```
+
+stdio, from a host venv that has `core/requirements.txt` installed:
+
+```bash
+claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -e PYTHONPATH=<checkout>/core -- python -m mcp_server
+```
+
+`<checkout>` is the absolute path to your clone. `claude mcp add` sets no working
+directory, so without `PYTHONPATH` the server exits with `No module named mcp_server`;
+`python` must be the venv's interpreter (give its absolute path if the venv is not active).
+
+### 9.3 Tools
+
+Canonical id (dotted) is what the manifest, the docs and the tests use; the wire
+name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
+`^[a-z0-9_]{1,48}$`).
+
+| canonical id | wire name | group | class | network | backing |
+|---|---|---|---|---|---|
+| `cortexsim.health.get` | `cortexsim_health_get` | cortexsim | read | simcore | `GET /api/health` |
+| `cortexsim.readiness.get` | `cortexsim_readiness_get` | cortexsim | read | simcore | composed |
+| `cortexsim.scenario.list` | `cortexsim_scenario_list` | cortexsim | read | simcore | `GET /api/scenarios` |
+| `cortexsim.scenario.get` | `cortexsim_scenario_get` | cortexsim | read | simcore | `GET /api/scenarios/{id}` |
+| `cortexsim.pov.profiles` | `cortexsim_pov_profiles` | cortexsim | read | simcore | `GET /api/pov/profiles` |
+| `cortexsim.pov.scope` | `cortexsim_pov_scope` | cortexsim | read | simcore | `POST /api/pov/scope` |
+| `cortexsim.uctc.summary` | `cortexsim_uctc_summary` | cortexsim | read | simcore | `GET /api/uctc/summary` |
+| `cortexsim.uctc.use_case` | `cortexsim_uctc_use_case` | cortexsim | read | simcore | `GET /api/uctc/use-cases/{id}` |
+| `cortexsim.uctc.test_case` | `cortexsim_uctc_test_case` | cortexsim | read | simcore | `GET /api/uctc/test-cases/{id}` |
+| `cortexsim.uctc.coverage` | `cortexsim_uctc_coverage` | cortexsim | read | simcore | `GET /api/uctc/coverage` |
+| `cortexsim.uctc.gaps` | `cortexsim_uctc_gaps` | cortexsim | read | simcore | `GET /api/uctc/gaps` |
+| `cortexsim.uctc.by_scenario` | `cortexsim_uctc_by_scenario` | cortexsim | read | simcore | `GET /api/uctc/by-scenario/{id}` |
+| `cortexsim.run.launch` | `cortexsim_run_launch` | cortexsim | write | simcore → host | `POST /api/runs` |
+| `cortexsim.run.get` | `cortexsim_run_get` | cortexsim | read | simcore | `GET /api/runs/{id}` |
+| `cortexsim.run.list` | `cortexsim_run_list` | cortexsim | read | simcore | `GET /api/runs` |
+| `cortexsim.run.results` | `cortexsim_run_results` | cortexsim | read | simcore | `GET /api/results/{run_id}` |
+| `cortexsim.run.report` | `cortexsim_run_report` | cortexsim | read | simcore | `GET /api/runs/{id}/report` |
+| `cortexsim.run.pair` | `cortexsim_run_pair` | cortexsim | read | simcore | `GET /api/runs/{id}/pair` |
+| `cortexsim.run.abort` | `cortexsim_run_abort` | cortexsim | destructive | simcore → host | `POST /api/runs/{id}/abort` |
+| `cortexsim.run.reconcile` | `cortexsim_run_reconcile` | cortexsim | write | tenant (`xsiam`) | `POST /api/runs/{id}/reconcile` |
+| `cortexsim.run.verify` | `cortexsim_run_verify` | cortexsim | write | tenant (`xsiam_tenant`) | `POST /api/runs/{id}/verify` |
+| `cortexsim.connector.preflight` | `cortexsim_connector_preflight` | cortexsim | read | tenant | `POST /api/connectors/{kind}/preflight` |
+| `cortexsim.assertion.list` | `cortexsim_assertion_list` | cortexsim | read | simcore | `GET /api/assertions` |
+| `cortexsim.assertion.get` | `cortexsim_assertion_get` | cortexsim | read | simcore | `GET /api/assertions/{id}` |
+| `cortexsim.assertion.run` | `cortexsim_assertion_run` | cortexsim | write | tenant when live | `POST /api/assertions/{id}/run` (`dry_run` default true) |
+| `xsiam.operation.list` | `xsiam_operation_list` | xsiam | read | none | `GET /api/xsiam/operations` |
+| `xsiam.operation.get` | `xsiam_operation_get` | xsiam | read | none | `GET /api/xsiam/operations/{op_id}` |
+| `xsiam.operation.execute` | `xsiam_operation_execute` | xsiam | by op | tenant (read ops) | `POST /api/xsiam/tenants/{name}/operations/{op_id}` |
+| `xsiam.session.index` | `xsiam_session_index` | xsiam | read | none | credentials list + ledger + provenance |
+| `xsiam.dataset.list` | `xsiam_dataset_list` | xsiam | read | tenant | `OP-XQL-GET-DATASETS` |
+| `xsiam.dataset.schema` | `xsiam_dataset_schema` | xsiam | read | tenant | one XQL, derived |
+| `xsiam.alert.list` | `xsiam_alert_list` | xsiam | read | tenant | `OP-ALERTS-GET-ALERTS-MULTI-EVENTS` |
+| `xsiam.correlation_rule.list` | `xsiam_correlation_rule_list` | xsiam | read | tenant | `OP-CORRELATIONS-GET` |
+| `xsiam.xql.query` | `xsiam_xql_query` | xsiam | read | tenant | start + poll, ledger-charged |
+| `xsiam.incident.list` | `xsiam_incident_list` | xsiam | read | tenant | `OP-INCIDENTS-GET-INCIDENTS` |
+| `xsiam.playbook.list` | `xsiam_playbook_list` | xsiam | read | tenant | `OP-PLAYBOOKS-GET` |
+| `xsiam.healthcheck` | `xsiam_healthcheck` | xsiam | read | tenant | `OP-HEALTHCHECK` |
+| `xsiam.modeling_rule.list` | `xsiam_modeling_rule_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.parser.list` | `xsiam_parser_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.content.list` | `xsiam_content_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.ingest.status` | `xsiam_ingest_status` | xsiam | — | none | `TOOL_NOT_BACKED` (v1) |
+
+Four tools are registered so a consumer that expects them gets an honest
+refusal (`TOOL_NOT_BACKED`) instead of a missing tool: the XSIAM public API
+exposes no listing for them, and nothing is queried.
+
+### 9.4 The result envelope
+
+Every tool returns `{data, evidence}` as `structuredContent`, and the same
+evidence as the first line of `content[0].text` for clients without
+structured-output support. The MCP layer computes none of the numbers: it reads
+them off SimCore responses (`queries_issued` from the routes in §1.16,
+`ledger` and `tenant_verified` from `GET /api/readiness`).
+
+| `evidence` field | meaning |
+|---|---|
+| `basis` | `authored` · `configured` · `reachable` · `verified` · `preview` · `simcore` · `derived`. The first four are the readiness ladder; `simcore` is SimCore's own state, `preview` a dry run, `derived` a tenant reply with the transformation stated in `data` |
+| `queries_issued` | metered tenant operations this call caused, in the ledger's unit (one live catalog read is 1, but `OP-XQL-GET-QUERY-RESULTS` run on its own is 0; one XQL query is 1 including its polls; one reconcile pull page is 1). It is a cost, not a contact signal. **`null` = SimCore accepted the request and did not report a count; whether the tenant was called is not known either — this is not zero** |
+| `tenant_answered` | `true` only when the tool got the tenant's reply back through SimCore (a live executor read, an XQL start or poll, the healthcheck's license-gated 403). Independent of `queries_issued`: a results poll answers at a cost of 0 and is `basis: reachable` |
+| `http_round_trips` | HTTP requests to the tenant when the route reports them; `null` otherwise, never a guess |
+| `tenant` | vault name; never the URL or key id |
+| `ledger` | `{key, used_today, budget, remaining, breaker_open, breaker_until}` or `null`; `null` for SimCore-only tools, not `{used: 0}` |
+| `tenant_verified` | counted by SimCore, today 0. **`null` = readiness could not be read — it is never rendered as 0** |
+| `statement` | one sentence in the console's words, below |
+| `as_of` | SimCore's clock, ISO-8601 UTC |
+| `truncated` | a capped list sets this flag; it is not an error |
+
+Statement strings (from `core/mcp_server/envelope.py::statement`, checked in this order; `N` is the count, or `not read` when `tenant_verified` is `null`):
+
+| condition | statement |
+|---|---|
+| SimCore unreachable | `No tenant answered this call. SimCore itself was unreachable. tenant-verified: N` |
+| not backed | `<id> has no backing operation in the XSIAM public API; nothing was queried. tenant-verified: N` |
+| preview | `Preview only. Nothing was sent to the tenant. To execute, a human runs the request in execute_as_human. tenant-verified: N` |
+| tenant answered (`tenant_answered`, or `queries_issued >= 1`) | `Tenant <name> answered; this call cost <n> metered operation(s). This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: N` — `<n>` may be 0 (a results poll); with `tenant_answered` and a `null` count it reads `… answered; how many metered operations this call cost is not known — this is not zero. …` |
+| `queries_issued` is `null` | `SimCore accepted the request; whether the tenant was called and how many operations it issued is not known — this is not zero. tenant-verified: N` |
+| `queries_issued == 0` | `No tenant answered this call. This is <basis>, not tenant evidence. tenant-verified: N` |
+
+**A zero is degraded, not ok, and tolerance hides bugs.** A response without the
+fields a tool reads raises `SIMCORE_SHAPE_UNKNOWN`; it is never read as empty. A
+named list whose shape declares a total (alerts, incidents, correlations,
+playbooks) raises `XSIAM_PARSE_ERROR` when the tenant omits it or returns a
+non-integer; only datasets falls back to the row count.
+
+### 9.5 Writes always preview
+
+No tool executes a write or destructive operation against a tenant. A request
+with `dry_run: false` on such an operation returns `MCP_WRITE_NOT_EXECUTABLE`
+with the preview attached; the human runs the previewed request in the console.
+There is no write path to Cortex through this surface, and the two REST flags
+`CORTEXSIM_XSIAM_ALLOW_WRITE` / `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay
+default-off. `xsiam.xql.query` refuses a write-stage query
+(`XQL_WRITE_STAGE_REFUSED`, refused rather than rewritten) and a credential
+without `"xql"` in `config.capabilities` (`XSIAM_CAPABILITY_MISSING`, 403).
+Every tenant-class tool is rate-limited per process
+(`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`). Only some of them charge the
+per-tenant daily ledger, one unit per query: an XQL start (`xsiam.xql.query`,
+`xsiam.dataset.schema`, the executor's `OP-XQL-START-XQL-QUERY`), `GET …/metrics`,
+and the verifier's runners behind `cortexsim.run.verify` and the live
+`cortexsim.assertion.run`. **Not charged:** result polls, `OP-XQL-GET-QUOTA`,
+every other catalog read (`OP-XQL-GET-DATASETS`, alerts, incidents,
+correlations, playbooks, healthcheck), reconcile pulls (`cortexsim.run.reconcile`)
+and preflight's scope and dataset XQL (`cortexsim.connector.preflight`).
+Preflight is the one remaining XQL path the ledger does not budget; those reads
+are bounded by the per-process rate limit only.
+
+### 9.6 Error codes
+
+The result carries `isError: true`, `content[0].text = "<code>: <error> — <detail>"`
+and `structuredContent = {error, code, detail, remediation, evidence}`. SimCore's
+own `{error, code, detail}` codes pass through untouched (for example
+`XSIAM_CAPABILITY_MISSING`, `XQL_WRITE_STAGE_REFUSED`, `XSIAM_PARSE_ERROR`,
+`XSIAM_QUOTA_ERROR`, documented where the routes are). The codes this layer
+adds (`core/mcp_server/errors.py` unless noted):
+
+| code | when |
+|---|---|
+| `MCP_WRITE_NOT_EXECUTABLE` | `dry_run: false` on a write or destructive op through MCP (preview attached) |
+| `TOOL_NOT_BACKED` | one of the four registered-but-unbacked tools |
+| `NO_TENANT_CONFIGURED` | no `xsiam_tenant` credential in the vault, or the named tenant is not one |
+| `TENANT_AMBIGUOUS` | more than one tenant is configured and none was named |
+| `MCP_RATE_LIMITED` | the per-process tenant-call bucket is exhausted (`retry_after_seconds`); SimCore-only tools keep working |
+| `SIMCORE_UNREACHABLE` | stdio mode, `CORTEXSIM_URL` did not answer — distinct from any tenant error, so "SimCore is down" never reads as "the tenant is down" |
+| `SIMCORE_SHAPE_UNKNOWN` | a SimCore response without the fields the tool reads |
+| `SIMCORE_TRANSPORT_ERROR` | the request reached SimCore but no complete answer came back |
+| `MCP_INVALID_ARGUMENTS` | arguments rejected against the tool's input schema |
+| `UCTC_INDEX_NOT_LOADED` | `core/mcp_server/tools/cortexsim.py`: a UC/TC tool called on a snapshot-less deploy, rendered as degraded rather than "0 test cases" |
+| `MCP_INTERNAL_ERROR` | `core/mcp_server/registry.py`: any unexpected exception, so the SDK's generic wrapper never drops the code |
+
+### 9.7 Health
+
+`GET /api/health` carries an `mcp` component (§1.16): `MCP_DISABLED` while the
+opt-in is off, and with the flag on the actual mounted server is read — never
+inferred from the flag. `cortexsim.health.get` and `cortexsim.readiness.get`
+expose both over MCP.
+
+---
+
+## 10. Stable failure codes added in the 2026-11 beta-readiness pass
 
 One index of every code this pass introduced or changed, with where it surfaces.
 **None of the Windows-side failure codes has been observed on a Windows host.**
 The green `windows` CI runs (42933820773 at `d7f4f29`, 43037077022 at
 `e434efa`) took the success path (install `OK`, uninstall complete) and saw only `UPSTREAM_FAILED` from
 its probe's fail-fast step. The rest are read from source and exercised under
-pwsh 7 / injected transports only. Round 2's additions are in §10.
+pwsh 7 / injected transports only. Round 2's additions are in §11.
 
 | Code | Surface | Meaning |
 |---|---|---|
@@ -1910,7 +2562,7 @@ pwsh 7 / injected transports only. Round 2's additions are in §10.
 | `NEEDS_ROOT` | POSIX uninstaller | Root install seen from a non-root shell; re-run with `sudo bash`. |
 | `UNINSTALL_INCOMPLETE` | both uninstallers | Something it found survived removal. |
 
-## 10. Wire and behaviour changes in round 2 (`c852eac` → `0b7a482`, 2026-11-10)
+## 11. Wire and behaviour changes in round 2 (`c852eac` → `0b7a482`, 2026-11-10)
 
 The `windows` CI job ran green at `d7f4f29`, inside this range, and again at
 `e434efa` (run 43037077022), which includes every row below. **Every beacon
@@ -1919,7 +2571,7 @@ rows its end-to-end phases also reached say so. Installer rows ran through the
 elevated install and uninstall phases only. Server rows are verified by host tests through the real routes.
 `tenant-verified` is 0.
 
-### 10.1 Run record and lifecycle
+### 11.1 Run record and lifecycle
 
 | Change | Surface | Detail |
 |---|---|---|
@@ -1938,7 +2590,7 @@ elevated install and uninstall phases only. Server rows are verified by host tes
 | Per-reason pull hint | `409 PULL_TARGET_UNSATISFIABLE` | The hint comes from `push_generator.unsatisfiable_hints()`, shared with the push refusal, plus "or launch against a POSIX/Windows agent". |
 | Step timeout | scenario `steps[].timeout_seconds` | `Optional[int]`, 1–86400 (a bool is refused); kept by the loader, omitted when unset, bounds the `.ps1` step. |
 
-### 10.2 Installers, Host guard and health
+### 11.2 Installers, Host guard and health
 
 | Change | Surface | Detail |
 |---|---|---|
@@ -1958,7 +2610,7 @@ elevated install and uninstall phases only. Server rows are verified by host tes
 | Exemption reasons | `GET /api/tools/adapters`, `unstaged_adapters[]` | Rows gain `shelf_backed` and `artifact_exempt {reason_code, reason, revisit}`; `UnstagedAdapter` gains `reason_code`, `revisit`, `tier`. Tiers 1/2/3/5 read `SOURCE_TREE_ON_DISK` / `IAC_PROVISIONED` / `EXTERNAL_ONLY`. The console does not render them yet. |
 | `BAD_INFRA_PARAM` (400) | `POST /api/infra/generate` | §1, SEC-17. |
 
-### 10.3 Beacon
+### 11.3 Beacon
 
 | Change | Flag / marker | Detail |
 |---|---|---|

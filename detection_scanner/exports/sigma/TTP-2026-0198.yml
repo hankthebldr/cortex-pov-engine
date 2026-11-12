@@ -1,0 +1,114 @@
+title: "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule \u2014 EDR-023 Cron Drop-In Written By Shell Outside Package Manager"
+id: ttp-2026-0198-bioc-01
+status: experimental
+description: |
+  A shell or file utility (not dpkg/apt) creates or writes a file under /etc/cron.* or the cron spool. Package installs write these through the package manager; a shell writing one is an operator planting persistence. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_path ~= "^/etc/cron[.](d|hourly|daily|weekly|monthly)/" or action_file_path ~= "^/var/spool/cron/"
+    | filter actor_process_image_name in ("sh", "bash", "dash", "zsh", "tee", "cp", "mv", "cat", "python3", "perl")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule \u2014 EDR-023 Cron Runs Payload From Hidden Var Tmp Directory"
+id: ttp-2026-0198-bioc-02
+status: experimental
+description: |
+  cron itself spawns a command that runs something from a dot-directory under /var/tmp. Fires on every re-execution of the foothold, and only on cron's direct child, so it raises one issue per cron run. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "cron"
+    | filter action_process_image_command_line ~= "/var/tmp/[.][^/ ]+/"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.003
+    - attack.t1564.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule \u2014 EDR-023 Persistence Artifact Timestomped With Touch Reference"
+id: ttp-2026-0198-bioc-03
+status: experimental
+description: |
+  touch with -r, -t or -d (or --reference / --date) rewrites the timestamps of a cron file, a systemd unit or a hidden /var/tmp artefact. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: evasion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "touch"
+    | filter action_process_image_command_line ~= "[ ]-(r|t|d)[ ]" or action_process_image_command_line ~= "--(reference|date)"
+    | filter action_process_image_command_line ~= "(/etc/cron|/etc/systemd/system/|/var/tmp/[.])"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule \u2014 UNIX LOLBIN process connected to a rare external host"
+id: ttp-2026-0198-abioc-04
+status: experimental
+description: |
+  PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447, raised by SIM-CDR-012's curl of the same WildFire URL. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT
+    | filter actor_process_image_name in ("curl", "wget")
+    | filter action_external_hostname != null
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: low

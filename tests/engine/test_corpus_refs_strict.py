@@ -62,8 +62,10 @@ def test_the_corpus_is_the_expected_size(parsed):
     177 -> 189 on 2026-10-27: library signal expansion (SIM-MP-023..034, Unit 42 stitched chains).
     189 -> 192 on 2026-10-28: SIM-MP-035..037 (Unit 42 recent chains).
     192 -> 193 on 2026-10-28: SIM-KOI-009 (GlassWorm agentic endpoint, binds already-evidenced TC-SCA-01/TC-SSCAN-01; evidenced pins unchanged).
+    193 -> 195 on 2026-11-11: SIM-EDR-023/024 (Linux cron and systemd-timer persistence built to group into one case; bind TC-IR-02, TC-EDR-03, TC-EDR-05).
     """
-    assert len(parsed) == 193
+    # 195 -> 198 on 2026-11-11: Unit42 deep-real trio SIM-EDR-025 (Akira Linux host), SIM-KOI-010 (npm supply-chain), SIM-KOI-011 (OpenClaw malicious skill).
+    assert len(parsed) == 198
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

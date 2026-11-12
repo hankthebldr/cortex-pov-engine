@@ -39,7 +39,7 @@ PLANES = {
     "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS", "AI_ACCESS", "AIRS",
     "AI_SPM", "BROWSER", "KOI", "ASM", "CSPM", "TIM", "EMAIL", "DLP",
 }
-DETECTION_TYPES = {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
+DETECTION_TYPES = {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC", "Prevention"}
 STATUSES = {"active", "draft", "deprecated"}
 # Causality contract vocabulary (mirrors scenario_loader._PIVOTS / _PLATFORMS
 # and causality_graph EDGE_* kinds).
@@ -97,6 +97,8 @@ def _card_detection_ids(card: dict) -> set:
                 or _slug(r.get("name") or f"correlation-{i+1}", "correlation"))
     for i, m in enumerate(dets.get("modeling_rules") or []):
         ids.add(m.get("detection_id") or _slug(m.get("name") or f"modeling-{i+1}", "modeling"))
+    for i, pm in enumerate(dets.get("prevention_modules") or []):
+        ids.add(pm.get("detection_id") or _slug(pm.get("name") or f"prevention-{i+1}", "prevention"))
     for i, ioc in enumerate(dets.get("iocs") or []):
         if isinstance(ioc, dict):
             val = ioc.get("value") or f"ioc-{i+1}"

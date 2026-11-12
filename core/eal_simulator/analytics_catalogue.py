@@ -217,6 +217,41 @@ def family_manifests(registry: Any) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _dataset_check(
+    emitters: dict[str, set[str]], tenant: set[str],
+) -> list[dict[str, Any]]:
+    """Does each emitter on a source name a dataset the tenant creates for it?
+
+    One verdict per emitter. ``match`` when any declared dataset is one a
+    documented route creates for this source (an emitter spanning several
+    sources declares one dataset per source, so the intersection is the right
+    test). ``mismatch`` when none is. ``no_documented_route`` when the source
+    has no route to compare against, which is a gap in our knowledge, not a
+    pass.
+
+    This is a naming check only. A matching name says nothing about whether the
+    emitter's delivery route reaches that dataset; the readiness gate's route
+    check answers that.
+    """
+    out: list[dict[str, Any]] = []
+    for name in sorted(emitters):
+        declared = emitters[name]
+        if not tenant:
+            state, code = "no_documented_route", "SOURCE_ROUTE_UNDOCUMENTED"
+        elif declared & tenant:
+            state, code = "match", None
+        else:
+            state, code = "mismatch", "EMITTER_DATASET_NOT_TENANT_DATASET"
+        out.append({
+            "emitter": name,
+            "state": state,
+            "code": code,
+            "declared_datasets": sorted(declared),
+            "tenant_datasets": sorted(tenant),
+        })
+    return out
+
+
 def coverage_report(registry: Any) -> dict[str, Any]:
     """Coverage of the analytics log-streamer family against the vendor catalogue.
 
@@ -225,9 +260,21 @@ def coverage_report(registry: Any) -> dict[str, Any]:
     ``tenant_verified`` is 0 until a detector is observed firing against a live
     tenant.
     """
+    # Imported here, not at module level: ingestion_routes imports this module.
+    from .ingestion_routes import (  # noqa: PLC0415
+        GENERIC_ROUTES,
+        INGESTION_ONLY_SOURCES,
+        routes_for,
+        tenant_datasets,
+    )
+
     # source_key -> [(emitter_name, supports_negative_control)]
     full_cover: dict[str, list[tuple[str, bool]]] = {}
     partial_cover: dict[str, list[str]] = {}
+    # source_key -> {emitter_name: declared datasets}
+    emitter_datasets: dict[str, dict[str, set[str]]] = {}
+    # every dataset any family emitter declares -> emitter names
+    datasets_declared: dict[str, set[str]] = {}
 
     for cls in registry:
         manifest = _plugin_family_manifest(cls)
@@ -235,12 +282,17 @@ def coverage_report(registry: Any) -> dict[str, Any]:
             continue
         name = manifest["name"]
         neg = bool(manifest["supports_negative_control"])
+        declared = set(manifest.get("datasets") or [])
+        for ds in declared:
+            datasets_declared.setdefault(ds, set()).add(name)
         for key in manifest["data_sources"]:
             get_source(key)  # validate — raises on typo
             full_cover.setdefault(key, []).append((name, neg))
+            emitter_datasets.setdefault(key, {})[name] = declared
         for key in manifest["data_sources_partial"]:
             get_source(key)
             partial_cover.setdefault(key, []).append(name)
+            emitter_datasets.setdefault(key, {})[name] = declared
 
     sources: list[dict[str, Any]] = []
     counts = {
@@ -253,6 +305,11 @@ def coverage_report(registry: Any) -> dict[str, Any]:
         "authored": 0,
         "proven": 0,  # tenant-verified is 0 — see module docstring.
         "with_negative_control": 0,
+        # Ingestion facts (see ingestion_routes): how many addressable sources
+        # have a documented route, and how many emitter→source pairs name a
+        # dataset no documented route creates. Measured, never fixed here.
+        "with_documented_route": 0,
+        "emitter_dataset_mismatch": 0,
     }
 
     for src in DATA_SOURCE_CATALOGUE:
@@ -268,6 +325,15 @@ def coverage_report(registry: Any) -> dict[str, Any]:
             state = "gap"
 
         has_neg = any(neg for _, neg in covering)
+        routes = routes_for(src.key)
+        dataset_check = _dataset_check(
+            emitter_datasets.get(src.key, {}), tenant_datasets(src.key),
+        )
+        if src.addressable and routes:
+            counts["with_documented_route"] += 1
+        counts["emitter_dataset_mismatch"] += sum(
+            1 for c in dataset_check if c["state"] == "mismatch"
+        )
         row = {
             "key": src.key,
             "name": src.name,
@@ -282,6 +348,8 @@ def coverage_report(registry: Any) -> dict[str, Any]:
             "emitters": sorted({n for n, _ in covering}),
             "partial_emitters": sorted(set(partials)),
             "note": src.note,
+            "routes": [r.to_dict() for r in routes],
+            "dataset_check": dataset_check,
         }
         sources.append(row)
 
@@ -299,6 +367,21 @@ def coverage_report(registry: Any) -> dict[str, Any]:
         "catalogue_version": "2026-09-04",
         "counts": counts,
         "sources": sources,
+        # Routes any source can take; each lands in a custom dataset.
+        "generic_routes": [r.to_dict() for r in GENERIC_ROUTES.values()],
+        # Sources with real data and no published analytics. Outside the
+        # coverage figure by construction; listed so their absence from it is
+        # visible rather than mistaken for an oversight.
+        "ingestion_only": [
+            {
+                **s.to_dict(),
+                "emitters": sorted({
+                    e for r in s.routes
+                    for e in datasets_declared.get(r.tenant_dataset, set())
+                }),
+            }
+            for s in INGESTION_ONLY_SOURCES
+        ],
         # The honesty banner every consumer must surface verbatim.
         "authored_not_proven": (
             f"{counts['authored']} of {counts['addressable']} addressable sources "

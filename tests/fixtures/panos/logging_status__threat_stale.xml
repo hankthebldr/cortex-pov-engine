@@ -1,0 +1,48 @@
+<response status="success"><result><show-logging-status><log-fwd-title>Logging Service forwarding
+-----------------------------------------------------------------------------------------------------------------------
+Type            Last Log Created      Last Log Fwded        Last Seq Num Fwded  Last Seq Num Acked  Total Logs Fwded
+-----------------------------------------------------------------------------------------------------------------------</log-fwd-title>
+<Conn-Info><ConnStatus><status>status                  :     success</status><msg>msg                     : no connection available</msg><timestamp>timestamp               : 2026/11/10 22:00:03</timestamp></ConnStatus>
+Log Collector           : RECEPTR00EXAMPLE
+Connection IP           : lr-203.0.113.50
+Conn Source IP          : lr - 192.0.2.1
+High speed mode         :    Disabled
+Connection Status       : lr - Active
+Rate                    :  11 logs/sec
+
+      traffic   2026/11/10 22:00:00   2026/11/10 22:00:00      7671628871414726498 7671628871414726498                     8692
+       threat   2026/11/09 04:10:00   2026/11/09 04:10:02      7671628871397356608 7671628871397356608                      917
+     hipmatch         Not Available         Not Available                        0                   0                        0
+   gtp-tunnel         Not Available         Not Available                        0                   0                        0
+         auth         Not Available         Not Available                        0                   0                        0
+        iptag         Not Available         Not Available                        0                   0                        0
+       userid         Not Available         Not Available                        0                   0                        0
+         sctp         Not Available         Not Available                        0                   0                        0
+   decryption         Not Available         Not Available                        0                   0                        0
+       config         Not Available         Not Available      7671628871392821263 7671628871392821263                        3
+       system   2026/11/10 21:59:30   2026/11/10 21:59:34      7671628871393651443 7671628871393651443                      186
+globalprotect   2026/11/10 21:59:30   2026/11/10 21:59:34      7671628871394148878 7671628871394148878                      151
+
+
+Log Collector           : 
+Connection IP           :     lr-cms0
+Conn Source IP          : lr - def
+High speed mode         :    Disabled
+Connection Status       : lr - Inactive
+Rate                    :  0 logs/sec
+
+      traffic         Not Available         Not Available                        0                   0                        0
+       threat         Not Available         Not Available                        0                   0                        0
+     hipmatch         Not Available         Not Available                        0                   0                        0
+   gtp-tunnel         Not Available         Not Available                        0                   0                        0
+         auth         Not Available         Not Available                        0                   0                        0
+        iptag         Not Available         Not Available                        0                   0                        0
+       userid         Not Available         Not Available                        0                   0                        0
+         sctp         Not Available         Not Available                        0                   0                        0
+   decryption         Not Available         Not Available                        0                   0                        0
+       config         Not Available         Not Available                        0                   0                        0
+       system         Not Available         Not Available                        0                   0                        0
+globalprotect         Not Available         Not Available                        0                   0                        0
+
+
+</Conn-Info></show-logging-status></result></response>

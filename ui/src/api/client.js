@@ -208,6 +208,42 @@ export async function getHealth() {
   return request('/api/health')
 }
 
+// ─── Ingestion doors (read-only, zero outbound calls) ────────────────────────
+
+function doorsShapeError(path, why) {
+  return apiError(`${path} returned an unrecognised shape: ${why}`, { code: 'DOORS_SHAPE_UNRECOGNISED', detail: { path } })
+}
+
+/** GET /api/doors → {doors[], registry_loaded, tenant_verified, outbound_calls} */
+export async function getDoors() {
+  const data = await request('/api/doors')
+  if (!data || !Array.isArray(data.doors)) throw doorsShapeError('/api/doors', 'doors is not a list')
+  return data
+}
+
+/**
+ * GET /api/doors/readiness[?agent_id=] → {scenarios: {scenario_id: readiness}, ...}
+ * An unrecognised envelope raises: an empty map would read as "nothing to check".
+ */
+export async function getDoorReadiness(agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/doors/readiness${qs}`)
+  if (!data || typeof data.scenarios !== 'object' || data.scenarios === null || Array.isArray(data.scenarios)) {
+    throw doorsShapeError('/api/doors/readiness', 'scenarios is not an object')
+  }
+  return data
+}
+
+/** GET /api/scenarios/{id}/doors[?agent_id=] → {readiness, detections[], ...} */
+export async function getScenarioDoors(scenarioId, agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/scenarios/${encodeURIComponent(scenarioId)}/doors${qs}`)
+  if (!data || typeof data.readiness !== 'object' || data.readiness === null) {
+    throw doorsShapeError(`/api/scenarios/${scenarioId}/doors`, 'readiness is missing')
+  }
+  return data
+}
+
 // ─── Scenarios ───────────────────────────────────────────────────────────────
 
 /**
@@ -906,6 +942,32 @@ export async function getAgentBinarySha256({ os = 'linux', arch = 'amd64' } = {}
   return digest
 }
 
+/**
+ * Relative URL of GET /api/agents/manifest — the Kubernetes manifest that puts
+ * an enrolled beacon into a pod. Parameters equal to their server default are
+ * omitted; a consent key is added only when it is exactly `true`. Never carries
+ * a token (the token lives in the cluster Secret, not in this URL).
+ *
+ * @param {{profile?:string, image?:string, arch?:string, prepare?:string,
+ *          ttlSeconds?:number, consent?:Object<string,boolean>, authorizedBy?:string}} opts
+ */
+export function agentManifestUrl({
+  profile = 'baseline', image, arch, prepare, ttlSeconds, consent = {}, authorizedBy,
+} = {}) {
+  const q = new URLSearchParams()
+  if (profile && profile !== 'baseline') q.set('profile', profile)
+  if (image && image !== 'debian:12-slim') q.set('image', image)
+  if (arch && arch !== 'amd64') q.set('arch', arch)
+  if (prepare && prepare !== 'packages') q.set('prepare', prepare)
+  if (ttlSeconds != null && Number(ttlSeconds) !== 43200) q.set('ttl_seconds', String(ttlSeconds))
+  for (const key of ['cluster_privilege_authorized', 'node_access_authorized']) {
+    if (consent && consent[key] === true) q.set(key, 'true')
+  }
+  if (authorizedBy) q.set('authorized_by', authorizedBy)
+  const qs = q.toString()
+  return `/api/agents/manifest${qs ? `?${qs}` : ''}`
+}
+
 // ─── Agent enrollment tokens ─────────────────────────────────────────────────
 // The documented front door for onboarding: mint a TTL/max-uses/revocable
 // token, hand the jumpbox ONE line, and let SimCore assign the agent id.
@@ -980,6 +1042,39 @@ export async function getTtps(filters = {}) {
  */
 export async function getTtp(ttpId) {
   return request(`/api/ttps/${encodeURIComponent(ttpId)}`)
+}
+
+/**
+ * GET /api/scenarios/:id/tenant-content
+ *
+ * What a scenario (or a saved draft) needs to exist in the TENANT: correlation
+ * rules with their content status and binding, the BIOCs / IOCs to deploy, the
+ * queries to run. READ-ONLY and derived from the TTP cards — it never contacts
+ * a tenant. `catalog_loaded: false` must render as degraded, never as "nothing
+ * needed"; `tenant_verified` is 0 and `write_path` is false, always.
+ *
+ * @param {string} scenarioId
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function getScenarioTenantContent(scenarioId) {
+  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/tenant-content`)
+}
+
+/**
+ * POST /api/scenarios/drafts/tenant-content
+ *
+ * The same manifest for an UNSAVED draft: the body the save route takes
+ * (`draftToApi`). Persists nothing, so an export can match the canvas before
+ * the chain is saved. Throws apiError on 422 {code:'DRAFT_SCHEMA_INVALID'}.
+ *
+ * @param {Object} body  DraftCreateRequest
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function postDraftTenantContent(body) {
+  return request('/api/scenarios/drafts/tenant-content', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 /**
@@ -1522,4 +1617,118 @@ export async function getInstallAttempts() {
     if (err && err.status === 404) return null
     throw err
   }
+}
+
+// ── Collector targets (/api/collector-targets) ────────────────────────────────
+// The tenant-side ingestion doors this instance's emitters POST to. Keys are
+// write-only: no response carries one, so nothing here can display one.
+
+/** GET /api/collector-targets — list + collector_plugins[] + unbound_plugins[]. */
+export async function listCollectorTargets() {
+  return request('/api/collector-targets')
+}
+
+/**
+ * PUT /api/collector-targets/:name — create or replace.
+ * Omit `token` to keep the stored key; `clear_token: true` removes it.
+ */
+export async function putCollectorTarget(name, body) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /api/collector-targets/:name — the target and its key. */
+export async function deleteCollectorTarget(name) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /api/collector-targets/:name/preflight.
+ * `writeCanary: false` (the default) never writes to the tenant; `true` POSTs
+ * one discard-safe record and is the only way to prove the collector accepts.
+ */
+export async function preflightCollectorTarget(name, { writeCanary = false } = {}) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}/preflight`, {
+    method: 'POST',
+    body: JSON.stringify({ write_canary: Boolean(writeCanary) }),
+  })
+}
+
+// ─── NGFW (PAN-OS) connection ────────────────────────────────────────────────
+//
+// Read-only toward the firewall in every path. Registration rides the generic
+// integrations surface (kind `panos_ngfw`); keygen, per-agent source overrides
+// and the listing live under /api/ngfw; the staged check is the connector
+// preflight every other kind uses. Spec: 2026-11-10-ngfw-connection-wizard §4–§6.
+
+/**
+ * GET /api/ngfw — registered firewalls, metadata only (never the key).
+ * @returns {Promise<{firewalls: Array, write_enabled: false, tenant_verified: 0}>}
+ */
+export async function listFirewalls() {
+  return request('/api/ngfw')
+}
+
+/**
+ * PUT /api/credentials/integrations with `kind: 'panos_ngfw'` — register a
+ * firewall with a pasted API key. A re-PUT of a registered name keeps its
+ * per-agent overrides (`observed_sources` / `agent_addresses`) when the
+ * normalised host is unchanged, and clears them when the host changes; the
+ * response's `overrides_cleared` says which happened. Probes, zones and any
+ * setting this body does not send are kept either way. 409
+ * `INTEGRATION_KIND_CONFLICT` when the name belongs to another kind.
+ */
+export async function putFirewall({ name, host, verify_tls = true, vsys = 'vsys1', forwarding_path = 'auto', api_key }) {
+  return request('/api/credentials/integrations', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name,
+      kind: 'panos_ngfw',
+      plaintext_secret: api_key,
+      config: { host, verify_tls, vsys, forwarding_path },
+      description: `PAN-OS NGFW: ${name}`,
+    }),
+  })
+}
+
+/**
+ * POST /api/ngfw/keygen — exchange admin credentials for an API key and register
+ * the firewall. The password is sent once in this body and nowhere else.
+ * @param {{name, host, verify_tls, username, password, vsys?}} body
+ * @returns {Promise<Object>} integration metadata + `overrides_cleared` + `warnings[]`
+ */
+export async function firewallKeygen(body) {
+  return request('/api/ngfw/keygen', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * POST /api/connectors/panos_ngfw/preflight?integration=<name>[&agents=a,b]
+ * Staged, read-only check. Returns 200 with `overall: blocked` rather than an
+ * HTTP error when the firewall refuses, so the whole ladder is always shown.
+ */
+export async function firewallPreflight(name, agentIds = null) {
+  const qs = new URLSearchParams()
+  if (name) qs.set('integration', name)
+  if (Array.isArray(agentIds) && agentIds.length) qs.set('agents', agentIds.join(','))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/connectors/panos_ngfw/preflight${suffix}`, { method: 'POST', _timeoutMs: 120_000 })
+}
+
+/**
+ * PUT /api/ngfw/{name}/sources/{agent_id} — set or clear one agent's
+ * firewall-observed source and agent-side addresses. A key left out is
+ * unchanged; `null` / `[]` clears the override.
+ */
+export async function putFirewallSource(name, agentId, body) {
+  return request(
+    `/api/ngfw/${encodeURIComponent(name)}/sources/${encodeURIComponent(agentId)}`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+/** DELETE /api/credentials/integrations/{name} — remove a firewall and its key. */
+export async function deleteFirewall(name) {
+  return request(`/api/credentials/integrations/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }

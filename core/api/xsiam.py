@@ -7,6 +7,7 @@ live tenant: liveness, health, ingestion metrics, and XQL.
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -22,12 +23,43 @@ from integrations.xsiam.client import (
 )
 from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client
 from integrations.xsiam.queries import INGESTION_HEALTH_XQL, shape_ingestion_results
-from integrations.xsiam.exceptions import XsiamApiError, XsiamConfigError, XsiamError
+from integrations.xsiam.exceptions import (
+    XsiamApiError, XsiamConfigError, XsiamError, XsiamQuotaError,
+)
+from integrations.xsiam import ledger as ledger_mod
+from integrations.xsiam.guards import (
+    XQL_OPERATION_IDS, XQL_POLL_OPERATION_IDS, ledger_key_for,
+    refuse_xql_write_stage, require_xql_capability, tenant_budget, xql_query_text,
+)
 from integrations.xsiam.operations.catalog import catalog as op_catalog
 
 router = APIRouter(prefix="/xsiam", tags=["xsiam"])
 
 _DEFAULT_TIMEFRAME = {"relativeTime": 24 * 60 * 60 * 1000}  # last 24h
+
+
+_START_XQL_OP_ID = "OP-XQL-START-XQL-QUERY"
+
+
+@contextlib.asynccontextmanager
+async def _budgeted(client: Any):
+    """guards.tenant_budget, with ledger refusals rendered as a structured 429.
+
+    ``ledger.charge`` raises RuntimeError subclasses that the global XsiamError
+    handler does not know; without this they would surface as a 500. Raised
+    before the body runs, so a refused budget never reaches the tenant.
+    """
+    try:
+        async with tenant_budget(client):
+            yield
+    except (ledger_mod.QuotaBreakerOpen, ledger_mod.DailyBudgetExhausted) as exc:
+        raise XsiamQuotaError(str(exc)) from exc
+
+
+def _ledger_snapshot(client: Any) -> dict[str, Any]:
+    from connectors import tuning  # noqa: PLC0415
+    return ledger_mod.ledger.snapshot(
+        ledger_key_for(client), limit=tuning.xsiam_max_queries_per_day())
 
 
 class XqlRequest(BaseModel):
@@ -82,9 +114,13 @@ async def tenant_health(name: str, session: AsyncSession = Depends(get_db)) -> d
 @router.get("/tenants/{name}/metrics")
 async def tenant_metrics(name: str, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     client = await load_xsiam_client(session, name)
-    reply = await client.run_xql(INGESTION_HEALTH_XQL, dict(_DEFAULT_TIMEFRAME))
+    require_xql_capability(getattr(client, "capabilities", None), tenant=name)
+    async with _budgeted(client):
+        reply = await client.run_xql(INGESTION_HEALTH_XQL, dict(_DEFAULT_TIMEFRAME))
     return {"sources": shape_ingestion_results(reply),
-            "remaining_quota": reply.get("remaining_quota")}
+            "remaining_quota": reply.get("remaining_quota"),
+            "queries_issued": 1,
+            "ledger": _ledger_snapshot(client)}
 
 
 @router.post("/tenants/{name}/xql")
@@ -95,18 +131,26 @@ async def start_xql(name: str, body: XqlRequest,
     # function, called early, not a second implementation.
     refuse_xql_write_stages(body.query)
     client = await load_xsiam_client(session, name)
-    query_id = await client.start_xql_query(body.query, body.timeframe)
-    return {"query_id": query_id}
+    require_xql_capability(getattr(client, "capabilities", None), tenant=name)
+    refuse_xql_write_stage(body.query)
+    async with _budgeted(client):
+        query_id = await client.start_xql_query(body.query, body.timeframe)
+    return {"query_id": query_id, "queries_issued": 1,
+            "ledger": _ledger_snapshot(client)}
 
 
 @router.get("/tenants/{name}/xql/{query_id}")
 async def get_xql(name: str, query_id: str,
+                  limit: int = Query(100, ge=1, le=1000),
                   session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     client = await load_xsiam_client(session, name)
-    reply = await client.get_query_results(query_id)
+    require_xql_capability(getattr(client, "capabilities", None), tenant=name)
+    reply = await client.get_query_results(query_id, limit=limit)
     return {"status": reply.get("status"),
             "results": reply.get("results"),
-            "remaining_quota": reply.get("remaining_quota")}
+            "remaining_quota": reply.get("remaining_quota"),
+            "queries_issued": 0,  # polling a started query is not metered
+            "ledger": _ledger_snapshot(client)}
 
 
 # ── API operation catalog + gated executor ──────────────────────────────────
@@ -232,11 +276,27 @@ async def execute_operation(
     }
     if dry:
         return {"dry_run": True, "op_id": op.op_id,
-                "access_class": op.access_class, "request": request_echo}
+                "access_class": op.access_class, "request": request_echo,
+                "queries_issued": 0, "ledger": None}
 
     client = await load_xsiam_client(session, name)
-    reply = await client.request(
-        op.method, path, json=payload, params=(body.query or None),
-    )
+    queries_issued = 1
+    if op.op_id in XQL_OPERATION_IDS:
+        require_xql_capability(getattr(client, "capabilities", None), tenant=name)
+        if op.op_id == _START_XQL_OP_ID:
+            refuse_xql_write_stage(xql_query_text(payload))
+            async with _budgeted(client):
+                reply = await client.request(
+                    op.method, path, json=payload, params=(body.query or None))
+        else:
+            if op.op_id in XQL_POLL_OPERATION_IDS:
+                queries_issued = 0  # polling a started query is not metered
+            reply = await client.request(
+                op.method, path, json=payload, params=(body.query or None))
+    else:
+        reply = await client.request(
+            op.method, path, json=payload, params=(body.query or None))
     return {"dry_run": False, "op_id": op.op_id,
-            "access_class": op.access_class, "reply": reply}
+            "access_class": op.access_class, "reply": reply,
+            "queries_issued": queries_issued,
+            "ledger": _ledger_snapshot(client)}

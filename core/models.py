@@ -279,6 +279,10 @@ class Run(Base):
     canary_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     severed_at_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     block_mode_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Per-module Action Mode, operator-attested: {"btp": "block", ...}. XDR sets
+    # Block / Report / Disabled per module, so a block-mode run says nothing
+    # about any one module (review F1). NULL = nothing attested per module.
+    module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
@@ -312,6 +316,7 @@ class Run(Base):
             "canary_run_id": self.canary_run_id,
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
+            "module_modes": self.module_modes,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
@@ -874,6 +879,9 @@ class Agent(Base):
     # lab-range address, never a made-up real one. See
     # engine.stitch_context.from_agent and docs/superpowers/specs §8.1(2).
     last_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # What a beacon inside a pod reports (pod, node, posture, tools, accounts).
+    # NULL = not a container agent / facts unknown — never "no tools".
+    runtime_facts: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -887,6 +895,7 @@ class Agent(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
             "last_ip": self.last_ip,
+            "runtime_facts": self.runtime_facts,
         }
 
 
@@ -1039,6 +1048,9 @@ class EalCampaignRun(Base):
     operator: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     step_results: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Where each collector step was sent and why (eal_simulator.targets), as
+    # resolved at launch. Never holds a key. NULL on runs from before targets.
+    collector_resolution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     campaign_rel: Mapped["EalCampaign"] = relationship(
         "EalCampaign", back_populates="runs", foreign_keys=[campaign_id],
@@ -1056,6 +1068,7 @@ class EalCampaignRun(Base):
             "operator": self.operator,
             "step_results": self.step_results,
             "error": self.error,
+            "collector_resolution": self.collector_resolution,
         }
 
 
@@ -1156,4 +1169,84 @@ class IntegrationCredential(Base):
             "last_verified_error": self.last_verified_error,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CollectorTargetConfig(Base):
+    """One tenant-side ingestion door for this instance's POV.
+
+    A SimCore instance serves one POV against one tenant, so the collectors
+    the emitters POST to are instance configuration, entered once and read by
+    every campaign, bundle and Composer dispatch through
+    ``eal_simulator.targets``. The key lives in the vault (``Secret`` named by
+    ``secret_name``); this row never holds it and ``to_dict`` never reports
+    more than whether one is set.
+    """
+
+    __tablename__ = "collector_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    dataset: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    auth_header: Mapped[str] = mapped_column(String, nullable=False, default="Authorization")
+    auth_scheme: Mapped[str] = mapped_column(String, nullable=False, default="")
+    plugins: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    secret_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_check: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "url": self.url,
+            "dataset": self.dataset,
+            "auth_header": self.auth_header,
+            "auth_scheme": self.auth_scheme,
+            "plugins": list(self.plugins or []),
+            "is_default": bool(self.is_default),
+            "has_key": self.secret_name is not None,
+            "last_check": self.last_check,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DoorEvent(Base):
+    """One state change of an ingestion door: an append-only timeline row.
+
+    A door's state at any moment is the last conclusive (open|closed) event at
+    or before it; ``unknown`` rows record a check that could not run and never
+    change the state. Nothing expires on a timer. Timestamps are naive UTC.
+    """
+
+    __tablename__ = "door_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    door_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    door_id: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False)  # open | closed | unknown
+    basis: Mapped[str] = mapped_column(String, nullable=False)  # verified | attested | check | configured
+    rung: Mapped[str] = mapped_column(String, nullable=False)  # authored | configured | reachable | verified
+    at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    attested_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    queries_issued: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "door_key": self.door_key,
+            "door_id": self.door_id,
+            "state": self.state,
+            "basis": self.basis,
+            "rung": self.rung,
+            "at": self.at.isoformat() if self.at else None,
+            "evidence": self.evidence,
+            "attested_by": self.attested_by,
+            "queries_issued": self.queries_issued,
         }

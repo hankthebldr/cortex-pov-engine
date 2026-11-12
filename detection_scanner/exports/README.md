@@ -197,4 +197,9 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0195` | PAN-OS CVE-2026-0257 Foothold — GlobalProtect Bypass to RMM, RDP/SMB, ESXi and VMDK Credential Theft (T1556 / T1003.003) | [sigma](sigma/TTP-2026-0195.yml), [xql](xql/TTP-2026-0195.xql), [correlation](correlation/TTP-2026-0195.json) |
 | `TTP-2026-0196` | PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) | [sigma](sigma/TTP-2026-0196.yml), [xql](xql/TTP-2026-0196.xql), [correlation](correlation/TTP-2026-0196.json) |
 | `TTP-2026-0197` | GlassWorm macOS Wave — Poisoned VS Code Extension → Keychain, LaunchAgent, Credential Staging and Archive Send | [sigma](sigma/TTP-2026-0197.yml), [xql](xql/TTP-2026-0197.xql), [correlation](correlation/TTP-2026-0197.json) |
+| `TTP-2026-0198` | Linux Cron Foothold — WildFire Test ELF Dropper Re-Executed on a Schedule | [sigma](sigma/TTP-2026-0198.yml), [xql](xql/TTP-2026-0198.xql), [correlation](correlation/TTP-2026-0198.json) |
+| `TTP-2026-0199` | Linux Identity Persistence — Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer | [sigma](sigma/TTP-2026-0199.yml), [xql](xql/TTP-2026-0199.xql), [correlation](correlation/TTP-2026-0199.json) |
+| `TTP-2026-0200` | Akira (Howling Scorpius) Linux-Host Kill Chain — Real On-Host File Encryption | [sigma](sigma/TTP-2026-0200.yml), [xql](xql/TTP-2026-0200.xql), [correlation](correlation/TTP-2026-0200.json) |
+| `TTP-2026-0201` | npm Supply-Chain Compromise on a Linux Developer Endpoint — Preinstall-Hook Credential Theft via a Phantom-Squatted Package | [sigma](sigma/TTP-2026-0201.yml), [xql](xql/TTP-2026-0201.xql), [correlation](correlation/TTP-2026-0201.json) |
+| `TTP-2026-0202` | OpenClaw ClawHub Malicious Skill — Padded README, base64 curl|bash Dropper and Developer-Credential Theft | [sigma](sigma/TTP-2026-0202.yml), [xql](xql/TTP-2026-0202.xql), [correlation](correlation/TTP-2026-0202.json) |
 

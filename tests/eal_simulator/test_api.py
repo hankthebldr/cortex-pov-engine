@@ -86,6 +86,22 @@ class TestPluginsAPI:
         assert data["name"] == "c2_http_beacon"
         assert "params_schema" in data
 
+    def test_list_plugins_says_how_each_delivers(self, api_client: TestClient):
+        """`delivery` is the signal-path class the Composer lanes read: a
+        collector plugin POSTs records, a wire plugin generates traffic. It
+        follows the console family and agrees with engine.signal_path."""
+        from engine.signal_path import COLLECTOR_PLUGINS, WIRE_PLUGINS  # noqa: PLC0415
+
+        data = api_client.get("/api/eal/plugins").json()
+        delivery = {p["name"]: p["delivery"] for p in data["plugins"]}
+        assert delivery["ngfw_eal_emitter"] == "collector"
+        assert delivery["llm_provider_egress"] == "wire"
+        for p in data["plugins"]:
+            expected = "collector" if p["family"] == "analytics_log_streamer" else "wire"
+            assert p["delivery"] == expected, p["name"]
+        assert {n for n, d in delivery.items() if d == "collector"} == set(COLLECTOR_PLUGINS)
+        assert {n for n, d in delivery.items() if d == "wire"} == set(WIRE_PLUGINS)
+
     def test_get_plugin_unknown_returns_404(self, api_client: TestClient):
         resp = api_client.get("/api/eal/plugins/does_not_exist")
         assert resp.status_code == 404
@@ -468,7 +484,8 @@ class TestDetectorReadinessAPI:
     def test_undeclared_onboarding_is_unknown_and_not_ready(self, api_client: TestClient):
         self._create(api_client)
         resp = api_client.post(
-            "/api/eal/campaigns/CMP-DET-001/detector-readiness", json={},
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"xdm_modeled_sources": ["third_party_firewalls"]},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -485,7 +502,8 @@ class TestDetectorReadinessAPI:
         recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         resp = api_client.post(
             "/api/eal/campaigns/CMP-DET-001/detector-readiness",
-            json={"source_onboarded_at": {"third_party_firewalls": recent}},
+            json={"source_onboarded_at": {"third_party_firewalls": recent},
+                  "xdm_modeled_sources": ["third_party_firewalls"]},
         )
         body = resp.json()
         assert body["counts"]["not_armed"] == 3
@@ -499,7 +517,8 @@ class TestDetectorReadinessAPI:
         old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
         resp = api_client.post(
             "/api/eal/campaigns/CMP-DET-001/detector-readiness",
-            json={"source_onboarded_at": {"third_party_firewalls": old}},
+            json={"source_onboarded_at": {"third_party_firewalls": old},
+                  "xdm_modeled_sources": ["third_party_firewalls"]},
         )
         body = resp.json()
         assert body["counts"]["armed"] == 3
@@ -568,7 +587,8 @@ class TestDetectorReadinessAPI:
         old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
         body = api_client.post(
             "/api/eal/campaigns/CMP-DET-003/detector-readiness",
-            json={"source_onboarded_at": {"duo": old}},
+            json={"source_onboarded_at": {"duo": old},
+                  "xdm_modeled_sources": ["duo"]},
         ).json()
         # 1 documented Duo detector is armed; 2 are unbacked claims.
         assert body["counts"]["armed"] == 1
@@ -577,6 +597,122 @@ class TestDetectorReadinessAPI:
         assert body["ready"] is False
         und = [d for d in body["detectors"] if not d["documented"]]
         assert all(d["undocumented_reason"] for d in und)
+
+    # -- route and soakless (LogSimv2 port, phase 1) -------------------------
+
+    def test_http_collector_campaign_is_not_armed_without_an_xdm_rule(
+        self, api_client: TestClient,
+    ):
+        # The pre-port behaviour read this campaign "armed": a custom HTTP
+        # collector dataset that built-in analytics never read.
+        self._create(api_client)
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewalls": old}},
+        ).json()
+        assert body["routes"] == {"third_party_firewall_emitter": "http_collector"}
+        assert body["counts"]["armed"] == 0
+        assert body["counts"]["unknown"] == 3
+        assert body["ready"] is False
+        for row in body["detectors"]:
+            assert row["readiness"]["code"] == "DETECTOR_ROUTE_REQUIRES_XDM"
+
+    def test_soakless_does_not_override_the_route(self, api_client: TestClient):
+        self._create(api_client)
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"soakless_attested": True, "attested_by": "henry"},
+        ).json()
+        assert body["counts"]["armed"] == 0
+        assert body["soakless_attested"] is True
+
+    def test_soakless_with_xdm_is_armed_on_day_one(self, api_client: TestClient):
+        self._create(api_client)
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"soakless_attested": True, "attested_by": "henry",
+                  "xdm_modeled_sources": ["third_party_firewalls"]},
+        ).json()
+        assert body["counts"]["armed"] == 3
+        assert body["ready"] is True
+        assert body["attested_by"] == "henry"
+        assert "soakless" in body["banner"]
+        for row in body["detectors"]:
+            assert row["readiness"]["armed_basis"] == "attested:soakless"
+        # Still a precondition, never evidence.
+        assert body["tenant_verified"] == 0
+
+    def test_cribl_receiver_url_is_unresolved(self, api_client: TestClient):
+        spec = {**self._CAMPAIGN, "campaign_id": "CMP-DET-004"}
+        spec["steps"] = [{
+            "step_id": "step-01",
+            "plugin": "third_party_firewall_emitter",
+            "params": {"collector_url":
+                       "https://collector.test/logs/v1/integrated/cribl/data"},
+        }]
+        api_client.post("/api/eal/campaigns", json=spec)
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-004/detector-readiness",
+            json={"soakless_attested": True},
+        ).json()
+        assert body["routes"] == {"third_party_firewall_emitter": "cribl_receiver"}
+        assert {r["readiness"]["code"] for r in body["detectors"]} == {
+            "DETECTOR_ROUTE_UNRESOLVED",
+        }
+
+    def test_one_emitter_on_two_doors_is_mixed(self, api_client: TestClient):
+        spec = {**self._CAMPAIGN, "campaign_id": "CMP-DET-005"}
+        spec["steps"] = [
+            {"step_id": "step-01", "plugin": "third_party_firewall_emitter",
+             "params": {"collector_url": "https://collector.test/logs/v1/event"}},
+            {"step_id": "step-02", "plugin": "third_party_firewall_emitter",
+             "params": {"collector_url": "https://collector.test/forward"}},
+        ]
+        api_client.post("/api/eal/campaigns", json=spec)
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-005/detector-readiness",
+            json={"soakless_attested": True,
+                  "xdm_modeled_sources": ["third_party_firewalls"]},
+        ).json()
+        assert body["routes"] == {"third_party_firewall_emitter": "mixed"}
+        assert body["counts"]["armed"] == 0
+
+    def test_typod_xdm_source_is_422(self, api_client: TestClient):
+        self._create(api_client)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"xdm_modeled_sources": ["third_party_firewall"]},  # missing 's'
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "UNKNOWN_DATA_SOURCE"
+
+
+class TestDataStreamsIngestionRoutes:
+    """The catalogue rows carry how each source reaches a tenant."""
+
+    def test_every_source_row_carries_routes_and_a_dataset_check(
+        self, api_client: TestClient,
+    ):
+        data = api_client.get("/api/eal/data-streams").json()
+        for row in data["sources"]:
+            assert "routes" in row and "dataset_check" in row
+        okta = next(r for r in data["sources"] if r["key"] == "okta")
+        assert "okta_sso_raw" in {r["tenant_dataset"] for r in okta["routes"]}
+
+    def test_generic_routes_and_ingestion_only_sources_are_listed(
+        self, api_client: TestClient,
+    ):
+        data = api_client.get("/api/eal/data-streams").json()
+        assert {r["pipe"] for r in data["generic_routes"]} == {
+            "http_collector", "cribl_generic",
+        }
+        only = {s["key"]: s for s in data["ingestion_only"]}
+        assert set(only) == {"proofpoint_tap", "infoblox_nios", "apache_httpd", "vmware_esxi"}
+        # email_emitter already writes proofpoint_tap_raw.
+        assert only["proofpoint_tap"]["emitters"] == ["email_emitter"]
+        # Outside the coverage figure: the totals still count 34 sources.
+        assert data["counts"]["total"] == 34
 
 
 class TestDataStreamsDetectorRows:
@@ -674,4 +810,5 @@ class TestCampaignSecretsAreNotReturned:
         resp = api_client.post("/api/eal/campaigns/CMP-SECRET-001/launch",
                                json={"operator": "tester", "dry_run": False})
         assert resp.status_code == 200, resp.text
-        assert seen.get("authorization") == f"Bearer {self._TOKEN}"
+        # The XSIAM HTTP log collector takes the bare API key, no scheme.
+        assert seen.get("authorization") == self._TOKEN

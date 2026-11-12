@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1053.003",
     "T1543.002",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution) STITCH BY agent_hostname, causality_actor_process_instance_id WITHIN 900s",
       "name": "Linux Multi-Mechanism Persistence Installation",
-      "rule_id": "CR-EDR-0003",
-      "severity": "high"
+      "rule_id": "CR-EDR-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0034"

@@ -573,3 +573,42 @@ def test_kill_switch_blocks_node_access_at_generation() -> None:
 def test_unknown_delivery_names_the_future_value() -> None:
     with pytest.raises(ValueError, match="known future value"):
         generate_k8s(scenario(), delivery="image")
+
+
+def _assert_reaper_revokes_binding_before_role(script: str, own: str) -> None:
+    """Shared by the push and agent tests: the order of the reaper's own deletes.
+
+    Each own delete revokes the permission the other needs, so only the first
+    can be expected to land. Binding first leaves an unbound ClusterRole (grants
+    nothing); role first left a binding pointing at a deleted role (observed on
+    kind 2026-11-10), which re-arms if anyone recreates a role of that name.
+    """
+    lines = script.splitlines()
+    binding = lines.index(f"kubectl delete clusterrolebindings {own} --ignore-not-found")
+    role = lines.index(f"kubectl delete clusterroles {own} --ignore-not-found")
+    ns = next(i for i, ln in enumerate(lines) if ln.startswith("kubectl delete namespace"))
+    assert ns < binding < role, (ns, binding, role)
+    assert role == max(i for i, ln in enumerate(lines) if ln.startswith("kubectl delete"))
+    # set -u, never -e: the last delete is expected to be Forbidden.
+    assert lines[0] == "set -u"
+    assert not any(ln.startswith("set -e") or "pipefail" in ln for ln in lines)
+
+
+def test_reaper_deletes_its_own_binding_before_its_own_role() -> None:
+    objs = gen(scenario(WILDCARD), consent={"cluster_privilege_authorized": True})
+    (job,) = [o for o in by_kind(objs, "Job")
+              if o["metadata"]["name"].startswith("cortexsim-reaper-")]
+    script = job["spec"]["template"]["spec"]["containers"][0]["args"][0]
+    _assert_reaper_revokes_binding_before_role(script, job["metadata"]["name"])
+
+
+def test_reaper_order_guard_has_teeth() -> None:
+    """The old role-first order must fail the guard."""
+    name = "cortexsim-reaper-x"
+    old = (
+        "set -u\nkubectl delete namespace \"${NS}\" --ignore-not-found --wait=false\n"
+        f"kubectl delete clusterroles {name} --ignore-not-found\n"
+        f"kubectl delete clusterrolebindings {name} --ignore-not-found\n"
+    )
+    with pytest.raises(AssertionError):
+        _assert_reaper_revokes_binding_before_role(old, name)

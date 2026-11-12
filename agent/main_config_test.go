@@ -76,7 +76,7 @@ func TestParseConfigRejectsWithConsoleExitCodes(t *testing.T) {
 		exit     int
 		contains string
 	}{
-		{"missing id", nil, 1, "--id is required"},
+		{"missing id", nil, 1, "--id or --enroll-token-file is required"},
 		{"interval zero", []string{"--id", "h", "--interval", "0"}, 1, "--interval must be at least 1 second"},
 		{"long-poll above 60", []string{"--id", "h", "--long-poll", "61"}, 1, "--long-poll must be between 0 and 60"},
 		{"long-poll negative", []string{"--id", "h", "--long-poll", "-1"}, 1, "--long-poll must be between 0 and 60"},

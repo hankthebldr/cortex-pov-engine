@@ -145,6 +145,7 @@ const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/T
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
 const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
 const TenantView = makeLazySurface(() => import('../components/console/TenantView.jsx'), 'Tenant')
+const FirewallView = makeLazySurface(() => import('../components/console/FirewallView.jsx'), 'Firewall')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -596,10 +597,17 @@ function ScopeHealthStrip() {
 // Each of these mounts exactly one lazy component with a straight props
 // pass-through, so `withSuspense` covers both the lazy-load and the boundary.
 const CoverageSurface = withSuspense(CoverageView)
-function TtpsSurface({ params = {}, onNavigate = () => {} }) {
+// `params` + `setParams` carry the grid's organization (`?group=&sort=&include=`)
+// so "by subdomain" survives a trip into the UC / TC index and back.
+function TtpsSurface({ params = {}, setParams, onNavigate = () => {} }) {
   return (
     <Suspense fallback={<DestinationLoading />}>
-      <TtpBrowserView initialTtpId={openParam(params, 'ttp')} onNavigate={onNavigate} />
+      <TtpBrowserView
+        initialTtpId={openParam(params, 'ttp')}
+        onNavigate={onNavigate}
+        params={params}
+        setParams={setParams}
+      />
     </Suspense>
   )
 }
@@ -632,6 +640,9 @@ const AgentsSurface = withSuspense(TargetsView)
 // — it is the Binding tab inside TenantView, because binding a tenant is a real
 // operation that has to happen once, it just stopped being the whole page.
 const TenantsSurface = withSuspense(TenantView)
+// PAN-OS NGFW: register, read-only preflight, per-agent stitch readiness
+// (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md §6).
+const FirewallSurface = withSuspense(FirewallView)
 // Proof & Export is its own destination now. It used to be a sub-tab of a run,
 // which meant the artefact a POV actually delivers was two clicks inside the
 // thing that produced it. EvidenceView takes its run as props rather than
@@ -671,7 +682,7 @@ function ProofSurface({ params = {} }) {
 //   Runs          what is executing and what just finished
 //   Results       the report, the coverage it adds up to, tenant read-back
 //   Catalog       reference content: TTP cards, packages, CLI, streams, UC/TC
-//   ── Manage ──  Agents · Tenant
+//   ── Manage ──  Agents · Tenant · Firewall
 //
 // NOTHING WAS DELETED. Every former destination is still routable (deep links,
 // bookmarks and ⌘K resolve) and the ones that belong to a task are reachable
@@ -692,6 +703,8 @@ export const DESTINATIONS = [
   // ── Manage ──
   { id: 'agents',   label: 'Agents',       group: 'Manage', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
   { id: 'tenants',  label: 'Tenant',       group: 'Manage', icon: 'people',          Component: TenantsSurface },
+  // No shield icon ships under /icons; threat-network is the existing network glyph.
+  { id: 'firewall', label: 'Firewall',     group: 'Manage', icon: 'threat-network',  Component: FirewallSurface },
 
   // ── Off-rail, reached as tabs or links ──
   // Immersive: the Composer is a full-screen node-graph editor, not a page

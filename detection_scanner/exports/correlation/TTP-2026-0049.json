@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1552.001",
     "T1059.004",
@@ -9,25 +11,25 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "(BIOC(MP-004 AWS CLI Invoked By www-data With Inline Access Key Env) AND XQL(MP-004 CloudTrail GetCallerIdentity From Unenrolled Source IP)) -> join on aws_access_key_id within 60s",
       "name": "Hybrid Cloud Cred Pivot Stitch \u2014 XDR AWS CLI + CloudTrail Principal",
-      "rule_id": "CR-MP-0007",
-      "severity": "high"
+      "rule_id": "CR-MP-0007"
     },
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "(BIOC(MP-004 Cloud Multi Service Describe List Burst From Single Principal) AND BIOC(MP-004 GetBucketAcl And ListObjects On Sensitive Tagged Bucket)) -> join on aws_access_key_id within 300s",
       "name": "Cloud Discovery To Collection Stitch \u2014 Multi Service Burst + Sensitive Bucket",
-      "rule_id": "CR-MP-0008",
-      "severity": "high"
+      "rule_id": "CR-MP-0008"
     },
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "(BIOC(MP-004 Recursive AWS Key Pattern Grep From Service Account) OR BIOC(MP-004 AWS CLI Invoked By www-data With Inline Access Key Env)) AND BIOC(MP-004 S3 CopyObject To Non Owned Destination Bucket) AND IOC(aws-s3-bucket: cortexsim-attacker-drop) -> join on principal within 1800s",
       "name": "APT29 Full Kill Chain Stitch \u2014 Cred Dump To Cloud Exfil",
-      "rule_id": "CR-MP-0009",
-      "severity": "high"
+      "rule_id": "CR-MP-0009"
     }
   ],
   "ttp_ref": "TTP-2026-0049"

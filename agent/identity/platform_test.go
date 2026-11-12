@@ -207,11 +207,12 @@ func TestResolveFor_WindowsElevatedIdentitiesNeedAnElevatedToken(t *testing.T) {
 	}
 }
 
-// Resolve must be ResolveFor bound to this host — otherwise the platform logic
+// Resolve must be ResolveWith bound to this host (and its account lookup) —
+// otherwise the platform logic
 // above is dead code that the beacon never reaches.
 func TestResolve_DelegatesToThisHost(t *testing.T) {
 	got := Resolve("www-data")
-	want := ResolveFor(runtime.GOOS, "www-data", CurrentUsername())
+	want := ResolveWith(runtime.GOOS, "www-data", CurrentUsername(), lookupAccount)
 	if got != want {
 		t.Fatalf("Resolve(www-data) = %+v, want %+v", got, want)
 	}

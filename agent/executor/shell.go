@@ -107,7 +107,10 @@ func RunShellCtxStreamOutcome(ctx context.Context, shell, cmdStr string, onChunk
 		cmd.Stderr = &errBuf
 	}
 
-	if startErr := cmd.Start(); startErr != nil {
+	// Started through the child gate so an orphan reaper cannot collect this
+	// child before cmd.Wait does (see childgate.go).
+	release, startErr := StartTracked(cmd)
+	if startErr != nil {
 		return Outcome{Stdout: outBuf.String(), Stderr: errBuf.String(), ExitCode: -1, Termination: TerminationExited}, startErr
 	}
 	// Taken immediately after Start, while the child's pid is still pinned by
@@ -132,6 +135,7 @@ func RunShellCtxStreamOutcome(ctx context.Context, shell, cmdStr string, onChunk
 	}()
 
 	runErr := cmd.Wait()
+	release()
 	close(waitDone)
 	// Reaped: from here on nothing may be killed on this command's behalf. A
 	// Kill already in progress still completes (and Windows keeps its handles

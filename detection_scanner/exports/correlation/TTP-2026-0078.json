@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1068",
     "T1134",
@@ -9,11 +11,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(ITDR-007 LSASS Process Handle Open By Non-System Process) OR BIOC(ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group) OR BIOC(ITDR-007 Kerberos Relay To LDAP From Local Host (KrbRelayUp)) OR BIOC(ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM) OR BIOC(ITDR-007 Access Token Theft And Impersonation Via Token Duplication) \u2014 groups credential access, ACL abuse, Kerberos relay, SeImpersonate escalation, and token theft from one host into a single Privilege Escalation incident.",
       "name": "AD Local-to-SYSTEM Privilege Escalation & Token Manipulation Chain From One Host",
-      "rule_id": "CR-ITDR-0007",
-      "severity": "high"
+      "rule_id": "CR-ITDR-0007"
     }
   ],
   "ttp_ref": "TTP-2026-0078"

@@ -28,8 +28,8 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
+        coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
+        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth \
         wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
 
 help: ## Show this help
@@ -205,13 +205,14 @@ POWERSHELL_GATE := check-powershell
 endif
 
 # `build` sits in front of the first gate that reads $(IMAGE). check-refs and
-# ground-truth run the tree's code inside the image; check-agent-shelf and
-# check-ui-shelf assert what the image itself SHIPS. Without a build here they
-# all ran against whatever tag was already on the machine, so after a Dockerfile
-# change the beacon and console parity gates passed against yesterday's image.
-# A warm rebuild costs seconds. The targeted gates stay assertions about a NAMED
-# image (CI builds cortexsim:ci once and points check-agent-shelf at it), so
-# they do not rebuild on their own.
+# ground-truth run the tree's code inside the image; check-agent-shelf,
+# check-ui-shelf and check-mcp-boot assert what the image itself SHIPS. Without
+# a build here they all ran against whatever tag was already on the machine, so
+# after a Dockerfile change the beacon and console parity gates passed against
+# yesterday's image. A warm rebuild costs seconds. The targeted gates stay
+# assertions about a NAMED image (CI builds cortexsim:ci once and points
+# check-agent-shelf and check-mcp-boot at it), so they do not rebuild on their
+# own.
 #
 # check-powershell is LAST on purpose: it is the only gate here with host
 # prerequisites beyond docker and python, and it must not stand in front of the
@@ -219,7 +220,7 @@ endif
 #
 # check-lab-ready is here because the refs job runs it: a gate CI has and this
 # aggregate lacks makes `make validate` green on a tree CI will turn red.
-validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
+validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
 ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
 	@echo "validate: finished with check-powershell SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1). Not a full pass."
 endif
@@ -314,6 +315,14 @@ check-powershell: ## render all emitted PowerShell + parse it as 5.1 reads it (p
 # in scripts/check-ui-shelf.sh.
 check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (needs `make build`)
 	IMAGE=$(IMAGE) scripts/check-ui-shelf.sh
+
+# Same argument for the MCP server: assert the IMAGE, never the checkout. The
+# host suite proves `python -m mcp_server --list-tools` works from core/ on a
+# dev box; only this proves the image ships core/mcp_server/ AND the pinned SDK
+# it imports. It fails closed: if --list-tools errors, n is empty and `test`
+# exits non-zero (measured against the pre-MCP 1.1.0 image).
+check-mcp-boot: ## assert the BUILT IMAGE boots the MCP server with every tool (needs `make build`)
+	docker run --rm --entrypoint sh $(IMAGE) -c 'cd /app/core && n=$$(python -m mcp_server --list-tools | tail -1 | cut -d" " -f1); test "$$n" -ge 41 && echo "mcp boot OK: $$n tools"'
 
 check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
 	scripts/build-rust-dist.sh --check-recipe
@@ -423,6 +432,13 @@ check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + paylo
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
 	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \
 		tests/e2e_isolated/test_tier_c_isolated_exec.py -v --tb=short
+
+# Real-pod proof for the container agent: a throwaway kind cluster
+# (`cortexsim-e2e`, deleted on exit) running the manifest a live SimCore serves.
+# Needs kind + docker + a SimCore listening on 0.0.0.0. Proves the pod runs and
+# reports, never that a detection fires. See deploy/kind/README.md.
+agent-k8s-e2e: ## container agent real-pod proof on kind (needs kind, docker, a running SimCore)
+	deploy/kind/run-agent-e2e.sh
 
 check-streamer: ## analytics-streamer emitter↔card dataset reconcile (fails on a dataset mismatch)
 	python3 scripts/check-streamer-fidelity.py

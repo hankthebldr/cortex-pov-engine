@@ -23,6 +23,7 @@ import (
 
 	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
+	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
 )
 
 // ErrUnknownAgent is returned by PollTasks when SimCore responds 404 — i.e. the
@@ -54,13 +55,16 @@ var ErrUnknownAgent = errors.New("agent not registered with SimCore")
 
 // Task is one pull-mode work item: an ordered list of steps to execute.
 type Task struct {
-	TaskID          string `json:"task_id"`
-	RunID           string `json:"run_id"`
-	ScenarioID      string `json:"scenario_id"`
-	Steps           []Step `json:"steps"`
-	IdentityContext string `json:"identity_context"` // launch-time username override; "" if null
-	IdentityDefault string `json:"identity_default"` // scenario execution_identity.default
-	CreatedAt       string `json:"created_at"`
+	TaskID     string `json:"task_id"`
+	RunID      string `json:"run_id"`
+	ScenarioID string `json:"scenario_id"`
+	Steps      []Step `json:"steps"`
+	// anchorNotHonoured is set by the chained path when the requested cgo_anchor
+	// could not be applied; buildSummary reports it.
+	anchorNotHonoured bool
+	IdentityContext   string `json:"identity_context"` // launch-time username override; "" if null
+	IdentityDefault   string `json:"identity_default"` // scenario execution_identity.default
+	CreatedAt         string `json:"created_at"`
 	// CgoAnchor is the scenario's declared Causality Group Owner (a realistic
 	// initial-access process). Present only for scenarios that declare the
 	// causality contract; nil (and ignored on the wire) otherwise.
@@ -362,6 +366,7 @@ type BeaconClient struct {
 	regOS           string
 	regCapabilities []string
 	regInterpreters []string
+	regFacts        *runtimefacts.Facts
 	// registerPending is true while the last Register attempt failed. The run
 	// loop retries it before every poll until it succeeds (INST-16): an
 	// ENROLLED row never answers /tasks with the 404 that triggers
@@ -419,6 +424,21 @@ type BeaconClient struct {
 	frameMu    sync.Mutex
 	frameScope string
 	frameSeq   uint64
+
+	// ExpiresAt, when non-zero, is the absolute end of this beacon's lifetime
+	// (--expires-at). Run takes no task once it has passed; a task already
+	// executing finishes first.
+	ExpiresAt time.Time
+}
+
+// lifetimeExpired reports, and logs, that ExpiresAt has passed.
+func (c *BeaconClient) lifetimeExpired() bool {
+	if c.ExpiresAt.IsZero() || time.Now().Before(c.ExpiresAt) {
+		return false
+	}
+	log.Printf("[beacon] LIFETIME_EXPIRED — expires-at %s has passed; taking no further tasks",
+		c.ExpiresAt.UTC().Format(time.RFC3339))
+	return true
 }
 
 // shutdownPostGrace is how long a step's /output or the run's /complete may
@@ -517,6 +537,9 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 // into the systemd unit at install time — deliberately NOT from the task body,
 // because queued_tasks.payload is plaintext JSON in SQLite.
 func (c *BeaconClient) SetArtifactToken(token string) { c.artifactToken = strings.TrimSpace(token) }
+
+// SetRuntimeFacts supplies the runtime facts Register (and so reRegister) sends.
+func (c *BeaconClient) SetRuntimeFacts(f *runtimefacts.Facts) { c.regFacts = f }
 
 // artifactClient returns the artifact-fetch HTTP client, building it on first
 // use so a zero-value BeaconClient built by a test with a struct literal works.
@@ -630,8 +653,8 @@ func windowsExecutionAccount() string {
 // scenario's declared `requires_interpreters` against the real target before
 // dispatch instead of discovering the gap mid-run. A nil/empty slice is a
 // legitimate answer (the host has none of the interpreters this beacon knows
-// how to check for), not an omission — it is always sent, unlike capabilities'
-// omit-when-default idiom, so a host that regresses from "has python" to "has
+// how to check for), not an omission — it is always sent (as [], never null:
+// SimCore refused null with a 422), unlike capabilities' omit-when-default idiom, so a host that regresses from "has python" to "has
 // nothing" is visible on its next registration rather than silently sticky.
 func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreters []string) error {
 	// Remember the metadata so the run loop can transparently re-register on an
@@ -645,8 +668,11 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreter
 		"agent_id":     c.AgentID,
 		"hostname":     hostname,
 		"os":           goos,
-		"capabilities": capabilities,
-		"interpreters": interpreters,
+		"capabilities": nonNilStrings(capabilities),
+		"interpreters": nonNilStrings(interpreters),
+	}
+	if c.regFacts != nil {
+		body["runtime_facts"] = c.regFacts
 	}
 	_, err := c.post("/api/agents/register", body)
 	c.registerPending = err != nil
@@ -904,11 +930,19 @@ func (c *BeaconClient) complete(runID, taskID string, exitCode int, summary stri
 // (SIGINT / SIGTERM).
 func (c *BeaconClient) Run(ctx context.Context) {
 	c.BindShutdown(ctx)
+	if c.lifetimeExpired() {
+		return
+	}
 	if c.LongPollTimeout > 0 {
 		log.Printf("[beacon] agent %q started — long-polling %s (wait=%ds)", c.AgentID, c.ServerURL, c.LongPollTimeout)
 		for {
 			if ctx.Err() != nil {
 				log.Printf("[beacon] context cancelled — shutting down cleanly")
+				return
+			}
+			// Lifetime first: an expired beacon takes no task, so it has no
+			// reason to retry a pending registration either.
+			if c.lifetimeExpired() {
 				return
 			}
 			c.retryPendingRegistration()
@@ -958,6 +992,9 @@ func (c *BeaconClient) Run(ctx context.Context) {
 			return
 
 		case <-ticker.C:
+			if c.lifetimeExpired() {
+				return
+			}
 			c.retryPendingRegistration()
 			task, err := c.PollTasks()
 			if err != nil {
@@ -1194,6 +1231,15 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 // the start failure that makes executeTaskChained degrade to executeTaskPerStep.
 var newChainSession = executor.NewChainSession
 
+// anchorNotHonouredLine is the run-record notice for a cgo_anchor the host's
+// shell could not carry (sh is busybox/toybox, which cannot be renamed, and
+// there is no bash).
+func anchorNotHonouredLine(image string) string {
+	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image's sh is a multi-call binary (busybox/toybox) "+
+		"that cannot be started under another name and there is no bash on PATH, "+
+		"so the chain runs under 'sh'. Detections keyed on the anchor process name will not match.", image)
+}
+
 // executeTaskChained runs the task through a single persistent anchor shell so
 // every step is a child of the same Causality Group Owner — a connected process
 // chain, not a star of independent `sh -c` invocations. It preserves the exact
@@ -1240,6 +1286,16 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] chain end run_id=%s clean=%t: %s", task.RunID, chainClean, how)
 		}
 	}()
+
+	// A requested cgo_anchor the host could not honour must say so in the run
+	// record, once, before any step: otherwise anchor-keyed detections read as
+	// "Cortex missed it".
+	if cgoImage != "" && !session.AnchorRenamed() && len(task.Steps) > 0 {
+		task.anchorNotHonoured = true
+		if err := c.SendOutput(task.RunID, task.Steps[0].ID, anchorNotHonouredLine(cgoImage)); err != nil {
+			log.Printf("[beacon] sendOutput (anchor notice, run_id=%s) error: %v", task.RunID, err)
+		}
+	}
 
 	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
 		task.RunID, cgoImage, totalSteps)
@@ -2079,6 +2135,10 @@ func buildSummary(task *Task, exitCode, degradedSteps int, steps []StepOutcome) 
 		summary += fmt.Sprintf(" | IDENTITY DEGRADED: %d step(s) ran as the beacon account "+
 			"instead of their declared identity — actor attribution is UNVALIDATED (see step output)",
 			degradedSteps)
+	}
+	if task.anchorNotHonoured {
+		summary += " | ANCHOR NOT HONOURED: the chain ran under 'sh', not the requested cgo_anchor " +
+			"name — detections keyed on the anchor process name will not match (see first step output)"
 	}
 	if id, term, ok := severedAt(steps); ok {
 		summary += fmt.Sprintf(" | SEVERED at %s (%s)", id, term)

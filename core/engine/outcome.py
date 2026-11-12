@@ -7,7 +7,7 @@ alert says "Prevented" AND the host says the process was killed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Mapping, Optional
 
 # --- host termination vocabulary -------------------------------------------
 TERMINATION_EXITED = "exited"
@@ -78,6 +78,14 @@ HOST_EVIDENCE_ABSENT = "HOST_EVIDENCE_ABSENT"
 #: A ``timeout`` is different -- the step ran its whole budget unprevented.
 RUN_ABORTED = "RUN_ABORTED"
 
+#: A ``prevent`` row in a block-mode run whose module the operator attested
+#: Report: the profile told that module to report, so a Detected alert is the
+#: module doing what it was set to do, not a prevention failure.
+MODULE_NOT_IN_BLOCK = "MODULE_NOT_IN_BLOCK"
+#: A ``prevent`` row whose module the operator attested Disabled: the module
+#: cannot raise anything, so its silence is a posture gap, not a product miss.
+MODULE_DISABLED = "MODULE_DISABLED"
+
 #: Soak reasons: a row silent for a reason that says nothing about the detector.
 SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
 
@@ -126,6 +134,33 @@ PROFILE_MODES = frozenset({"report", "block", "unknown"})
 BLOCK_MODE_CONFIRMED = "block_mode_confirmed"
 BLOCK_MODE_UNCONFIRMED_STATUS = "block_mode_unconfirmed"
 CANARY_NOT_AVAILABLE = "canary_not_available"
+
+def resolve_module_mode(*, agent_profile_mode: str,
+                        module_modes: Optional[Mapping[str, str]],
+                        prevention_module: Optional[str]) -> Optional[str]:
+    """The Action Mode one ``prevent`` row is graded against (review F1).
+
+    XDR sets Block / Report / Disabled per module, never per profile. Returns
+    the attested mode for this row's module in a block-mode run, else
+    ``None``: the run-level ``agent_profile_mode`` governs the row unchanged.
+    An unattested module trusts the run-level block (decided 2026-11-11).
+    ``module_modes`` is the run's ``{module: mode}`` map; ``prevention_module``
+    is the row's card module (``Result.prevention_module``).
+    """
+    if agent_profile_mode != "block" or not module_modes:
+        return None
+    return module_modes.get(prevention_module)
+
+
+def grades_as_prevention(agent_profile_mode: str, module_mode: Optional[str]) -> bool:
+    """True when a ``prevent`` row is judged by the two-witness rule.
+
+    The one predicate every surface asks before treating a row as a block
+    (host-kill seeding, the Tier-2 verifier's skip): a block-mode run, and a
+    module not attested Report or Disabled.
+    """
+    return agent_profile_mode == "block" and module_mode not in ("report", "disabled")
+
 
 _ALERT_OUTCOMES = frozenset({ALERT_PREVENTED, ALERT_DETECTED, ALERT_UNKNOWN})
 _RAW_PREVENTED = ("BLOCKED", "PROMPT_BLOCK")
@@ -200,10 +235,32 @@ def _pending(reason: Optional[str] = None) -> PreventVerdict:
     return PreventVerdict(OUTCOME_PENDING, "pending", reason)
 
 
+def _as_detect(alert_outcome: Optional[str], termination: Optional[str],
+               window_closed: bool, detected_reason: Optional[str]) -> PreventVerdict:
+    """A ``prevent`` row scored as a detect: never graded as prevention."""
+    if alert_outcome is not None:
+        reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else detected_reason
+        return PreventVerdict(OUTCOME_DETECTED, None, reason)
+    # No alert: the detect rule, host record required (round 4 C-1).
+    judged = silent_detect_verdict(termination, window_closed)
+    if judged is None:
+        return PreventVerdict(OUTCOME_PENDING, None, None)
+    return PreventVerdict(judged[0], None, judged[1])
+
+
 def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
                      termination: Optional[str], window_closed: bool,
-                     block_mode_status: Optional[str]) -> PreventVerdict:
-    """Evaluate a ``prevent`` expectation (spec section 5.3)."""
+                     block_mode_status: Optional[str],
+                     module_mode: Optional[str] = None) -> PreventVerdict:
+    """Evaluate a ``prevent`` expectation (spec section 5.3).
+
+    ``module_mode`` is :func:`resolve_module_mode`'s answer for this row.
+    ``None`` leaves the run-level mode in charge, exactly as before per-module
+    attestation existed; ``block`` grades the same way. In a block-mode run:
+    ``report`` scores the row as a detect (a Detected alert reads
+    ``MODULE_NOT_IN_BLOCK``, never a fail); ``disabled`` holds a silent row
+    ``pending`` / ``MODULE_DISABLED`` (any alert contradicts the attestation).
+    """
     if agent_profile_mode not in PROFILE_MODES:
         raise ValueError(f"unrecognised agent_profile_mode: {agent_profile_mode!r}")
     if alert_outcome is not None and alert_outcome not in _ALERT_OUTCOMES:
@@ -213,14 +270,21 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
 
     if agent_profile_mode != "block":
         # Report/unknown mode: scored as a detect; never graded as prevention.
+        return _as_detect(alert_outcome, termination, window_closed, None)
+
+    if module_mode == "report":
+        # The profile set THIS module to Report: a Detected alert is the
+        # module working as configured. A Prevented one contradicts the
+        # attestation, exactly as it does in a report-mode run.
+        return _as_detect(alert_outcome, termination, window_closed, MODULE_NOT_IN_BLOCK)
+    if module_mode == "disabled":
         if alert_outcome is not None:
-            reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else None
-            return PreventVerdict(OUTCOME_DETECTED, None, reason)
-        # No alert: the detect rule, host record required (round 4 C-1).
-        judged = silent_detect_verdict(termination, window_closed)
-        if judged is None:
-            return PreventVerdict(OUTCOME_PENDING, None, None)
-        return PreventVerdict(judged[0], None, judged[1])
+            # A disabled module raised nothing; an alert matched to it says
+            # the attestation (or the card's module) is wrong.
+            return PreventVerdict(OUTCOME_DETECTED, None, ATTESTATION_CONTRADICTED)
+        # Silence from a module the profile switched off is the customer's
+        # posture, not a miss -- but it stays in the denominator, visibly owed.
+        return _pending(MODULE_DISABLED if window_closed else None)
 
     # termination None = no host record yet: no host witness.
     host_witness = termination in HOST_WITNESS

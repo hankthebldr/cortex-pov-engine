@@ -467,7 +467,8 @@ _ATT = " — attested"
 
 def _attestations_section(run: Run) -> list[str]:
     if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
-            or run.soakless_attested is not None or run.attested_by):
+            or run.soakless_attested is not None or run.attested_by
+            or run.module_modes is not None):
         return []
 
     def _flag(v):
@@ -481,6 +482,10 @@ def _attestations_section(run: Run) -> list[str]:
         f"- BAS mode: {_flag(run.bas_mode_attested)}{_ATT if run.bas_mode_attested is not None else ''}",
         f"- soakless: {_flag(run.soakless_attested)}{_ATT if run.soakless_attested is not None else ''}",
     ]
+    if run.module_modes:
+        # Per-module Action Mode: what each prevent row was graded against.
+        modes = ", ".join(f"{k}: {v}" for k, v in sorted(run.module_modes.items()))
+        out.append(f"- module modes: {modes}{_ATT}")
     if run.block_mode_status and run.canary_run_id:
         out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
     elif run.block_mode_status:
@@ -538,6 +543,15 @@ class LaunchRequest(BaseModel):
     # Links this launch (the block-mode run) to its completed report-mode run.
     paired_with_run_id: Optional[str] = None
     canary_run_id: Optional[str] = None
+    # Per-module Action Mode, e.g. {"btp": "block", "local_analysis": "report"}.
+    # XDR sets Block / Report / Disabled per module, never per profile, so a
+    # block-mode launch says nothing about any ONE module until this says so.
+    # Only read in a block-mode launch; keys are PREVENTION_MODULES.
+    module_modes: Optional[dict[str, str]] = None
+    # Container agents only: run even though a step calls a tool the pod's
+    # roster lacks (the beacon still reports that step TOOL_ABSENT). Never
+    # overrides a posture refusal.
+    allow_missing_tools: bool = False
 
     @field_validator("agent_profile_mode")
     @classmethod
@@ -758,6 +772,10 @@ async def _reload_run(db: AsyncSession, run_id: str) -> Optional[Run]:
 #: says the body was malformed and sends the operator looking at their JSON.
 _LAUNCH_PRECONDITION_CODES = frozenset({
     "CONSENT_REQUIRED",
+    # Container-agent launch gate: the pod's fixed posture / tool roster cannot
+    # run this scenario. A valid body against an unmet precondition: 409.
+    "AGENT_POSTURE_INSUFFICIENT",
+    "AGENT_TOOL_ABSENT",
     "ADAPTER_MISSING_CLEANUP",
     # A composed multi-channel run named a per-step `target` agent that is not
     # enrolled. The request body is well-formed; the precondition (the second
@@ -905,6 +923,8 @@ async def _launch_run_impl(
         attested_by=body.attested_by,
         paired_with_run_id=body.paired_with_run_id,
         canary_run_id=body.canary_run_id,
+        module_modes=body.module_modes,
+        allow_missing_tools=body.allow_missing_tools,
     )
 
     if not result.success:
@@ -943,9 +963,12 @@ async def _launch_run_impl(
     }
     if result.download_url:
         response["download_url"] = result.download_url
-    # Present only when there is something to say (an offline target, an
-    # unknown agent OS, a step running a platform variant), so the response for
-    # an unremarkable launch keeps its exact historical shape.
+    # Present only when there is something to say, so the response for an
+    # unremarkable launch keeps its exact historical shape. Two element shapes
+    # (see LaunchResult.warnings): a string reservation SimCore also wrote onto
+    # the run (an offline target, an unknown agent OS, a step running a
+    # platform variant), and a {code, ...} dict from the container-agent
+    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN).
     if result.warnings:
         response["warnings"] = list(result.warnings)
 
@@ -1064,11 +1087,19 @@ async def list_runs(
         None, pattern="^summary$",
         description="`summary` drops `output` and adds `output_bytes` + `output_tail` "
                     "(the last 2 KB). Omit for the full historical row shape."),
+    status: Optional[str] = Query(None),
+    scenario_id: Optional[str] = Query(None),
     limit: int = Query(LIST_RUNS_DEFAULT_LIMIT, ge=1, le=LIST_RUNS_MAX_LIMIT),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     """List run records, newest first, ``limit`` / ``offset`` paged.
+
+    ``status`` and ``scenario_id`` are optional, additive equality filters.
+    ``total`` counts every row matching the filters before ``limit`` /
+    ``offset`` are applied; ``runs`` is the page. With no parameters the
+    response is the unfiltered list the console has always read, cut to the
+    default page.
 
     Each row carries ``expected_detections`` (seeded Result rows) and
     ``detected_count`` (hits by the one numerator rule) so the Runs list can
@@ -1076,13 +1107,20 @@ async def list_runs(
     rows reports ``0 / 0`` — the console renders that as a dash, never as a
     measured zero.
 
-    ``total`` is the number of runs that exist, not the length of this page.
-    Without ``fields`` the row and response shape are exactly the historical
-    ones (OPS-06: the console's 10 s poll used to pull every run's whole
-    output on every tick; it switches to ``fields=summary``).
+    ``total`` is the number of runs matching the filters (every run, with
+    none), not the length of this page. Without ``fields`` the row and
+    response shape are exactly the historical ones (OPS-06: the console's 10 s
+    poll used to pull every run's whole output on every tick; it switches to
+    ``fields=summary``).
     """
-    total = (await db.execute(select(func.count(Run.id)))).scalar_one()
-    page = select(Run).order_by(Run.started_at.desc()).limit(limit).offset(offset)
+    filtered = select(Run)
+    if status is not None:
+        filtered = filtered.where(Run.status == status)
+    if scenario_id is not None:
+        filtered = filtered.where(Run.scenario_id == scenario_id)
+    total = (await db.execute(
+        select(func.count()).select_from(filtered.subquery()))).scalar_one()
+    page = filtered.order_by(Run.started_at.desc()).limit(limit).offset(offset)
     summary = fields == "summary"
     if summary:
         stmt = (
@@ -1099,7 +1137,8 @@ async def list_runs(
         runs = (await db.execute(page)).scalars().all()
         extras = {}
     agg = await _detection_aggregates(db, [r.run_id for r in runs])
-    logger.info("list_runs count=%d total=%d fields=%s", len(runs), total, fields)
+    logger.info("list_runs count=%d total=%d fields=%s status=%s scenario_id=%s",
+                len(runs), total, fields, status, scenario_id)
     rows = []
     for r in runs:
         expected, detected = agg.get(r.run_id, (0, 0))
@@ -1733,7 +1772,8 @@ async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[s
 
 
 async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
-                               agent_profile_mode: str) -> None:
+                               agent_profile_mode: str,
+                               module_modes: Optional[dict[str, str]] = None) -> None:
     """Project reported step outcomes onto the run's Results from the stored StepOutcome rows (caller commits)."""
     if not steps:
         return
@@ -1747,7 +1787,8 @@ async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
         select(Result).where(Result.run_id == run_id,
                              Result.step_id.in_([s.step_id for s in stored]))
     )).scalars().all()
-    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode)
+    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode,
+                                      module_modes=module_modes)
     await db.flush()
 
 
@@ -1797,7 +1838,8 @@ async def _record_late_abort_evidence(db: AsyncSession, run: Run, steps: list) -
     if not steps or run.status != "aborted" or run.mode != "pull" or run.delivered_at is None:
         return 0
     await _record_step_outcomes(db, run.run_id, steps)
-    await _apply_host_evidence(db, run.run_id, steps, run.agent_profile_mode)
+    await _apply_host_evidence(db, run.run_id, steps, run.agent_profile_mode,
+                               run.module_modes)
     await db.commit()
     logger.info(
         "run_complete after abort — host evidence kept run_id=%s steps=%s",
@@ -1945,7 +1987,7 @@ async def complete_run(
     # Project the host evidence onto the Results INSIDE this write transaction,
     # before any terminalising commit: a crash must not leave a terminal run
     # with unprojected Results that a duplicate /complete cannot repair.
-    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode, run.module_modes)
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal

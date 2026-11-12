@@ -171,6 +171,49 @@ export function bundleRetryFormat(result, scenario) {
   return null
 }
 
+const GATE_WARNING_SHOWN_KEYS = new Set(['code', 'text', 'agent_id', 'steps'])
+
+/** One container-agent gate warning object as a line of text, no field dropped. */
+function gateWarningText(w) {
+  const parts = []
+  if (w.agent_id) parts.push(`agent ${w.agent_id}`)
+  if (Array.isArray(w.steps) && w.steps.length) parts.push(`steps ${w.steps.join(', ')}`)
+  for (const [k, v] of Object.entries(w)) {
+    if (GATE_WARNING_SHOWN_KEYS.has(k) || v == null || v === '') continue
+    if (k === 'detail' && typeof v === 'string') { parts.push(v); continue }
+    parts.push(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+  }
+  return parts.join(' — ')
+}
+
+/**
+ * The `warnings` of a launch response as one list, whichever producer wrote
+ * each entry. SimCore puts two shapes under the same key:
+ *
+ *   - a STRING reservation from launch/dispatch ("TARGET_AGENT_OFFLINE: …",
+ *     "!! PLATFORM VARIANT: …") → normalizeLaunchWarnings' `{code, text}`;
+ *   - an OBJECT from the container-agent gate, `{code, agent_id?, steps?,
+ *     detail?}` → kept whole, so LaunchGateNotice can list its steps and agent,
+ *     plus a `text` so LaunchSuccessNotice and the run view's session memory
+ *     read it under its code rather than as a JSON blob.
+ *
+ * An entry that is neither (no `code`) goes through normalizeLaunchWarnings and
+ * is shown as text — an unrecognised shape is never read as "no warnings".
+ *
+ * @returns {Array<{code: string|null, text: string}>}
+ */
+export function launchWarningsOf(response) {
+  const raw = response && typeof response === 'object' ? response.warnings : undefined
+  if (raw === undefined || raw === null) return []
+  const list = Array.isArray(raw) ? raw : [raw]
+  return list.flatMap((w) => {
+    if (w && typeof w === 'object' && !Array.isArray(w) && typeof w.code === 'string' && w.code) {
+      return [{ ...w, text: typeof w.text === 'string' && w.text ? w.text : gateWarningText(w) }]
+    }
+    return normalizeLaunchWarnings({ warnings: [w] })
+  })
+}
+
 /** The structured error record the launch and download surfaces render. */
 export function errorRecord(err, fallback) {
   return {
@@ -196,9 +239,16 @@ export function errorRecord(err, fallback) {
  * @param {object} callbacks
  * @param {(run) => void} callbacks.onRunComplete
  * @param {(message: string) => void} callbacks.onError
+ * @param {boolean} [callbacks.holdOnWarnings] — when the launch response carries
+ *   any `warnings[]` (a container-agent gate advisory, an offline target, an
+ *   unknown agent OS, a platform variant), do NOT call onRunComplete (which
+ *   usually navigates away); keep them on `lastRun.warnings` until
+ *   `continueToRun()`. Only a consumer that renders the warnings should set it.
+ *   Without it the warnings still ride on `lastRun` and in the session memory
+ *   the run view reads (launchWarnings.js).
  */
 export default function useLaunchScenario(scenario, {
-  onRunComplete, onError, payloadPlan = null,
+  onRunComplete, onError, payloadPlan = null, holdOnWarnings = false,
   // True only while a `?plan=` deep link's payload plan is still being
   // decoded (destinations.jsx::useDecodedPlan). MUST NOT be treated as
   // "no plan" — see the I-1 guard in `launch()` below.
@@ -341,8 +391,12 @@ export default function useLaunchScenario(scenario, {
     return () => { cancelled = true }
   }, [payloadPlan])
 
-  const launch = useCallback(async () => {
+  // `opts.allowMissingTools` re-sends the same launch with the container-agent
+  // gate's tool override (AGENT_TOOL_ABSENT). Read strictly: an onClick handler
+  // passing its event must never switch the override on.
+  const launch = useCallback(async (opts) => {
     if (!scenario) return null
+    const allowMissingTools = opts?.allowMissingTools === true
     // I-1 guard: a `?plan=` deep link's chunk can still be in flight when
     // Launch fires. Refusing here (not just disabling the button) means no
     // caller of `launch()` — including a race that slips past the disabled
@@ -378,17 +432,23 @@ export default function useLaunchScenario(scenario, {
       if (payloadPlanAccepted === true && payloadPlan?.artifacts?.length) {
         body.payload_plan = payloadPlan.artifacts
       }
+      if (allowMissingTools) body.allow_missing_tools = true
       const run = await postRun(body)
       // A 200 can still carry a reservation: the target is offline, registered
-      // no OS, or a step runs its platform variant. The response's `warnings`
+      // no OS, a step runs its platform variant, or the container-agent gate
+      // let the launch through with an advisory. The response's `warnings`
       // used to be dropped here, so a launch at a beacon that had stopped
       // polling read "Run … started" and nothing else. Kept on the result for
-      // the surfaces that stay, and remembered for the run view, because every
-      // surface navigates there on success.
-      const warnings = normalizeLaunchWarnings(run)
+      // the surfaces that stay (with the run, so a held launch can continue to
+      // it), and remembered for the run view, because every surface navigates
+      // there on success — except a holdOnWarnings consumer, which waits for
+      // the operator to read them and press continue.
+      const warnings = launchWarningsOf(run)
       rememberLaunchWarnings(runIdOf(run), warnings)
-      setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started`, warnings })
-      if (onRunComplete) onRunComplete(run)
+      setLastRun({
+        status: 'success', message: `Run ${runIdOf(run) || ''} started`, warnings, run,
+      })
+      if (onRunComplete && !(holdOnWarnings && warnings.length)) onRunComplete(run)
       return run
     } catch (err) {
       const msg = err.message || 'Launch failed'
@@ -396,15 +456,28 @@ export default function useLaunchScenario(scenario, {
       // secondary line so a 422 reads as a named field, not a status number,
       // and an OBJECT detail (PULL_TARGET_UNSATISFIABLE's unresolved steps,
       // TARGET_AGENT_NOT_ENROLLED's missing agents) as a list.
-      setLastRun(errorRecord(err, 'Launch failed'))
+      setLastRun({
+        ...errorRecord(err, 'Launch failed'),
+        // The structured detail of a container-agent gate refusal (missing
+        // tools per step, missing findings/rules, satisfying profile), read by
+        // LaunchGateNotice. `detail` above keeps the same object for every
+        // other refusal's renderer; `gate` only adds the gate's own handle.
+        gate: err.detail && typeof err.detail === 'object' && !Array.isArray(err.detail)
+          ? err.detail : null,
+      })
       if (onError) onError(msg)
       return null
     } finally {
       setLaunching(false)
     }
   }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
-      payloadPlanResolving, onRunComplete, onError,
+      payloadPlanResolving, onRunComplete, onError, holdOnWarnings,
       profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId])
+
+  // Leave a launch whose warnings were held (holdOnWarnings) for its run.
+  const continueToRun = useCallback(() => {
+    if (lastRun?.status === 'success' && lastRun.run && onRunComplete) onRunComplete(lastRun.run)
+  }, [lastRun, onRunComplete])
 
   // `formatOverride` lets a refusal offer a one-click retry in another format
   // ("Download as PowerShell"). It is ignored unless it is a string, because
@@ -477,6 +550,7 @@ export default function useLaunchScenario(scenario, {
     blockers,
     // actions
     launch,
+    continueToRun,
     downloadPushBundle,
   }
 }

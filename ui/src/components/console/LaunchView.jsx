@@ -2,13 +2,36 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario, { PUSH_FORMATS, bundleIsWindows } from './useLaunchScenario.js'
 import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice, WindowsBundleNote } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
-import { getToolAdapters, listIntegrations } from '../../api/client.js'
+import LaunchGateNotice, { GATE_TOOL_ABSENT, GATE_POSTURE } from './LaunchGateNotice.jsx'
+import { getToolAdapters, listIntegrations, getScenarioDoors, getDoors } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
 import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
 import { preflightScenario } from './readiness/scenarioPreflight.js'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
+
+/**
+ * The launch result as LaunchGateNotice reads it. Its warning list renders a
+ * warning's `code`, `agent_id`, `steps` and string `detail`. A launch
+ * reservation parsed from a string ("TARGET_AGENT_OFFLINE: …") carries its
+ * sentence as `text` and has none of those fields, so it would show as a bare
+ * code: the sentence that says the beacon is not polling would be dropped.
+ * Such an entry gets its `text` as the `detail` the notice prints. A gate
+ * warning object keeps its own fields untouched.
+ */
+function forGateNotice(lastRun) {
+  if (!lastRun || lastRun.status !== 'success' || !Array.isArray(lastRun.warnings)) return lastRun
+  return {
+    ...lastRun,
+    warnings: lastRun.warnings.map((w) => {
+      if (!w || typeof w !== 'object') return w
+      const shown = w.agent_id || (Array.isArray(w.steps) && w.steps.length)
+        || (typeof w.detail === 'string' && w.detail)
+      return shown || !w.text ? w : { ...w, detail: w.text }
+    }),
+  }
+}
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -40,7 +63,17 @@ export default function LaunchView({
   onGoTargets = () => {},
   onNavigate = null,
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan, payloadPlanResolving })
+  const launch = useLaunchScenario(scenario, {
+    onRunComplete, onError, payloadPlan, payloadPlanResolving, holdOnWarnings: true,
+  })
+  // A gate refusal renders as LaunchGateNotice instead of the generic line: the
+  // server's sentence names an API override the operator acts on via a button.
+  const gateRefusal = launch.lastRun?.status === 'error' && launch.lastRun.gate
+    && [GATE_TOOL_ABSENT, GATE_POSTURE].includes(launch.lastRun.code)
+  // holdOnWarnings kept a warned launch here instead of navigating to its run.
+  const heldOnWarnings = launch.lastRun?.status === 'success'
+    && Array.isArray(launch.lastRun.warnings) && launch.lastRun.warnings.length > 0
+  const gateNoticeRun = useMemo(() => forGateNotice(launch.lastRun), [launch.lastRun])
 
   // First-use hint on Launch (I6 / spec §5) — one of the five named
   // consequential controls (Arm · Launch · Abort · Reconcile · Export POV).
@@ -129,6 +162,35 @@ export default function LaunchView({
     return () => { cancelled = true }
   }, [])
 
+  // Door readiness for THIS scenario against the selected agent. A failure is
+  // null readiness plus the error text, rendered UNKNOWN by the Data path check
+  // ("door readiness unavailable: …", as the library chip does), never a pass.
+  const [doorReadiness, setDoorReadiness] = useState(null)
+  const [doorRows, setDoorRows] = useState(null)
+  const [doorError, setDoorError] = useState(null)
+  const doorScenarioId = scenario ? (scenario.scenario_id || scenario.id) : null
+  const doorAgentId = selectedTarget?.kind === 'agent' ? selectedTarget.id : null
+  useEffect(() => {
+    setDoorReadiness(null)
+    setDoorRows(null)
+    setDoorError(null)
+    if (!doorScenarioId) return undefined
+    let cancelled = false
+    Promise.all([getScenarioDoors(doorScenarioId, doorAgentId), getDoors()])
+      .then(([data, doors]) => {
+        if (cancelled) return
+        setDoorReadiness(data.readiness)
+        setDoorRows(doors.doors)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDoorReadiness(null)
+        setDoorRows(null)
+        setDoorError((err && err.message) || 'door readiness failed')
+      })
+    return () => { cancelled = true }
+  }, [doorScenarioId, doorAgentId])
+
   const preflight = useMemo(() => preflightScenario({
     scenario,
     target: selectedTarget,
@@ -138,8 +200,12 @@ export default function LaunchView({
     integrations,
     identity: launch.identity,
     pushFormat: launch.pushFormat,
+    doorReadiness,
+    doorRows,
+    doorAgentId,
+    doorError,
   }), [scenario, selectedTarget, launch.agents, shelf.shelf, adapterIndex, integrations,
-       launch.identity, launch.pushFormat])
+       launch.identity, launch.pushFormat, doorReadiness, doorRows, doorAgentId, doorError])
 
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
@@ -232,6 +298,10 @@ export default function LaunchView({
           integrations={integrations}
           identity={launch.identity}
           pushFormat={launch.pushFormat}
+          doorReadiness={doorReadiness}
+          doorRows={doorRows}
+          doorAgentId={doorAgentId}
+          doorError={doorError}
           onNavigate={onNavigate}
         />
 
@@ -405,11 +475,23 @@ export default function LaunchView({
             </ul>
           )}
 
-          <LaunchSuccessNotice result={launch.lastRun} testId="launch-success" />
-          {launch.lastRun?.status === 'error'
+          {/* A clean start is LaunchSuccessNotice's line. A launch held on its
+              warnings is LaunchGateNotice's: it lists every warning (gate
+              advisories and launch reservations alike) and owns the "View run"
+              that continues — listing them in both would say it twice. */}
+          {!heldOnWarnings && (
+            <LaunchSuccessNotice result={launch.lastRun} testId="launch-success" />
+          )}
+          {launch.lastRun?.status === 'error' && !gateRefusal
             && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
             <LaunchErrorNotice result={launch.lastRun} testId="launch-error" />
           )}
+          <LaunchGateNotice
+            lastRun={gateNoticeRun}
+            launching={launch.launching}
+            onContinue={launch.continueToRun}
+            onLaunchAnyway={() => launch.launch({ allowMissingTools: true })}
+          />
         </section>
       </div>
     </div>

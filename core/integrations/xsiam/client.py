@@ -227,6 +227,7 @@ class XsiamClient:
         *,
         transport: Optional[httpx.AsyncBaseTransport] = None,
         timeout: float = 30.0,
+        capabilities: Optional[list[str]] = None,
     ):
         if config.auth_mode not in (AuthMode.standard, AuthMode.advanced):
             raise XsiamConfigError(f"unsupported auth_mode '{config.auth_mode}'")
@@ -236,6 +237,11 @@ class XsiamClient:
         self._auth_mode = config.auth_mode
         self._transport = transport
         self._timeout = timeout
+        self.capabilities = capabilities
+
+    @property
+    def base_url(self) -> str:
+        return self._base
 
     def _build_headers(self) -> dict[str, str]:
         # Rebuilt per request: advanced auth signs a fresh nonce + timestamp

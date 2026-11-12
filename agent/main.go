@@ -3,13 +3,16 @@
 // Usage:
 //
 //	cortexsim-agent --server http://localhost:8888 --id <agent-id> [--interval 10] [--log-file <path>]
+//	cortexsim-agent --server http://simcore:8888 --enroll-token-file <path> [--state-dir <dir>] [--expires-at <RFC3339>]
 //
-// The agent registers with SimCore on startup, then enters a polling loop to
-// fetch and execute simulation tasks. Run from a console, or supervised by
-// systemd or launchd, it handles SIGINT/SIGTERM/SIGHUP cleanly. Started by the
-// Windows service control manager (the elevated Windows installer registers it
-// as the CortexSimAgent service) it runs as that service instead, and an SCM
-// STOP or SHUTDOWN takes the same graceful path.
+// The agent registers with SimCore on startup — first enrolling itself from a
+// token file when it is given one instead of an --id — then enters a polling
+// loop to fetch and execute simulation tasks, and takes no further task once
+// --expires-at has passed. Run from a console, or supervised by systemd,
+// launchd or a pod's supervisor, it handles SIGINT/SIGTERM/SIGHUP cleanly.
+// Started by the Windows service control manager (the elevated Windows
+// installer registers it as the CortexSimAgent service) it runs as that service
+// instead, and an SCM STOP or SHUTDOWN takes the same graceful path.
 package main
 
 import (
@@ -22,24 +25,45 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/hankthebldr/cortexsim/agent/beacon"
 	"github.com/hankthebldr/cortexsim/agent/executor"
+	"github.com/hankthebldr/cortexsim/agent/identity"
+	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
 )
 
 const (
 	defaultServer   = "http://localhost:8888"
 	defaultInterval = 10
+	defaultStateDir = "/var/lib/cortexsim-agent"
+
+	// enrollAttempts / enrollRetryDelay bound how long a pod waits for SimCore
+	// to become reachable before it crash-loops visibly.
+	enrollAttempts   = 5
+	enrollRetryDelay = 3 * time.Second
 
 	// serviceName is the Windows service the elevated installer registers
 	// (`sc.exe create CortexSimAgent ...` in core/api/agents.py).
 	serviceName = "CortexSimAgent"
 )
 
+// validateIdentityFlags enforces that exactly one of --id / --enroll-token-file
+// names how this beacon gets its agent id.
+func validateIdentityFlags(id, tokenFile string) error {
+	if id != "" && tokenFile != "" {
+		return fmt.Errorf("--id and --enroll-token-file are mutually exclusive")
+	}
+	if id == "" && tokenFile == "" {
+		return fmt.Errorf("--id or --enroll-token-file is required (e.g. --id myhost-01)")
+	}
+	return nil
+}
+
 // shutdownSignals are the signals that trigger a graceful stop on the console
-// path (console, systemd, launchd).
+// path (console, systemd, launchd, a pod's supervisor).
 //
 // SIGHUP matters as much as the other two: a beacon started from an SSH session
 // (the nohup fallback in the installer, or a DC running it by hand) receives
@@ -60,6 +84,15 @@ type beaconConfig struct {
 	artifactToken string
 	logFile       string // --log-file as given; see logsink.go for the resolution
 	proxy         string // --proxy as given: "" (environment), "direct", or a proxy URL
+
+	// Native enrollment and the container deployment. Every zero value is the
+	// behaviour a beacon had before these flags existed.
+	enrollTokenFile   string    // --enroll-token-file; mutually exclusive with id
+	stateDir          string    // --state-dir; carried only with enrollTokenFile, the one place it is read
+	postureProfile    string    // --posture-profile, reported as a runtime fact
+	prepareStatusFile string    // --prepare-status-file, reported as a runtime fact
+	expiresAt         time.Time // --expires-at; zero = never
+	subreaper         bool      // --subreaper
 }
 
 // agentProxyEnv is the environment fallback for --proxy. Like
@@ -71,6 +104,12 @@ const agentProxyEnv = "CORTEXSIM_AGENT_PROXY"
 type invalidConfigError struct {
 	msg       string
 	showUsage bool
+
+	// fatalCode, when set, also goes to the termination log as one
+	// "FATAL <code>: <fatalReason>" line, so `kubectl describe pod` shows why
+	// the pod is crash-looping (termination_log.go).
+	fatalCode   string
+	fatalReason string
 }
 
 func (e *invalidConfigError) Error() string { return e.msg }
@@ -90,9 +129,10 @@ func configExitCode(err error) int {
 }
 
 type rawFlags struct {
-	server, id, artifactToken, logFile, proxy *string
-	interval, longPoll, stepTimeout           *int
-	streamOutput                              *bool
+	server, id, artifactToken, logFile, proxy                             *string
+	enrollTokenFile, stateDir, postureProfile, prepareStatusFile, expires *string
+	interval, longPoll, stepTimeout                                       *int
+	streamOutput, subreaper                                               *bool
 }
 
 func defineFlags(fs *flag.FlagSet) *rawFlags {
@@ -129,6 +169,20 @@ func defineFlags(fs *flag.FlagSet) *rawFlags {
 		"Proxy for reaching SimCore: an http://, https:// or socks5:// URL, or 'direct' to never use one "+
 			"(env: "+agentProxyEnv+"). Empty uses HTTP_PROXY / HTTPS_PROXY / NO_PROXY. "+
 			"The Windows system proxy (WinINET/WinHTTP, PAC) is NOT read.")
+	// Native enrollment (container deployment): redeem a token from a file
+	// instead of being handed an --id, and remember the id across restarts.
+	f.enrollTokenFile = fs.String("enroll-token-file", "",
+		"Path to a file holding an enrollment token. The beacon enrolls itself and stores the assigned id under --state-dir. Mutually exclusive with --id.")
+	f.stateDir = fs.String("state-dir", defaultStateDir,
+		"Directory where the enrolled agent id is kept across restarts (used with --enroll-token-file)")
+	f.postureProfile = fs.String("posture-profile", "",
+		"Posture profile this pod was deployed with, reported to SimCore as a runtime fact")
+	f.prepareStatusFile = fs.String("prepare-status-file", "",
+		"File whose first line is the pod's tool-preparation status, reported to SimCore as a runtime fact")
+	f.expires = fs.String("expires-at", "",
+		"RFC3339 time after which the beacon takes no further tasks and exits 0 (empty = never)")
+	f.subreaper = fs.Bool("subreaper", false,
+		"Become a child subreaper (linux) and reap orphaned processes left by finished steps")
 	return f
 }
 
@@ -143,8 +197,8 @@ func parseConfig(args []string, getenv func(string) string) (beaconConfig, error
 		return beaconConfig{}, err
 	}
 
-	if *f.id == "" {
-		return beaconConfig{}, &invalidConfigError{msg: "--id is required (e.g. --id myhost-01)", showUsage: true}
+	if err := validateIdentityFlags(*f.id, *f.enrollTokenFile); err != nil {
+		return beaconConfig{}, &invalidConfigError{msg: err.Error(), showUsage: true}
 	}
 	if *f.interval < 1 {
 		return beaconConfig{}, &invalidConfigError{msg: "--interval must be at least 1 second"}
@@ -157,6 +211,13 @@ func parseConfig(args []string, getenv func(string) string) (beaconConfig, error
 	}
 	if *f.stepTimeout < 0 {
 		return beaconConfig{}, &invalidConfigError{msg: "--step-timeout must be >= 0 (0 selects the built-in default)"}
+	}
+	// A value that does not parse is an error, never a silent "no expiry": a
+	// pod would otherwise outlive the lifetime it was granted.
+	expiresAt, err := parseExpiresAt(*f.expires)
+	if err != nil {
+		return beaconConfig{}, &invalidConfigError{msg: "BAD_EXPIRES_AT: " + err.Error(),
+			fatalCode: "BAD_EXPIRES_AT", fatalReason: err.Error()}
 	}
 
 	token := *f.artifactToken
@@ -173,17 +234,26 @@ func parseConfig(args []string, getenv func(string) string) (beaconConfig, error
 		return beaconConfig{}, &invalidConfigError{msg: "--proxy (or " + agentProxyEnv + ") is not usable: " +
 			err.Error() + " — give an http://, https:// or socks5:// proxy URL, or 'direct'"}
 	}
-	return beaconConfig{
-		server:        *f.server,
-		id:            *f.id,
-		interval:      time.Duration(*f.interval) * time.Second,
-		longPoll:      *f.longPoll,
-		streamOutput:  *f.streamOutput,
-		stepTimeout:   time.Duration(*f.stepTimeout) * time.Second,
-		artifactToken: token,
-		logFile:       *f.logFile,
-		proxy:         proxy,
-	}, nil
+	cfg := beaconConfig{
+		server:            *f.server,
+		id:                *f.id,
+		interval:          time.Duration(*f.interval) * time.Second,
+		longPoll:          *f.longPoll,
+		streamOutput:      *f.streamOutput,
+		stepTimeout:       time.Duration(*f.stepTimeout) * time.Second,
+		artifactToken:     token,
+		logFile:           *f.logFile,
+		proxy:             proxy,
+		enrollTokenFile:   *f.enrollTokenFile,
+		postureProfile:    *f.postureProfile,
+		prepareStatusFile: *f.prepareStatusFile,
+		expiresAt:         expiresAt,
+		subreaper:         *f.subreaper,
+	}
+	if cfg.enrollTokenFile != "" {
+		cfg.stateDir = *f.stateDir
+	}
+	return cfg, nil
 }
 
 // printUsage writes the flag reference, in flag.Usage's format.
@@ -202,9 +272,15 @@ func printUsage(w io.Writer) {
 // goes to the service log instead and the service stops with the same code as
 // its service-specific exit code (`sc.exe query CortexSimAgent` shows it as
 // SERVICE_EXIT_CODE). The command line itself is not logged: it can carry
-// --artifact-token.
+// --artifact-token. In a pod, an error that carries a fatal code is also
+// written to the termination log.
 func exitOnConfigError(err error) {
 	code := configExitCode(err)
+	var inv *invalidConfigError
+	isInvalid := errors.As(err, &inv)
+	if isInvalid && inv.fatalCode != "" {
+		writeTerminationLog(terminationLogPath(), fatalLine(inv.fatalCode, inv.fatalReason))
+	}
 	handled, _, _ := runAsService(serviceName, func(context.Context) int {
 		installLogSink(log.Default(), logPathFor("", underSCM(), os.Getenv), logRotateBytes, os.Stderr)
 		log.Printf("ERROR: invalid service command line: %v — the service is stopping with exit code %d", err, code)
@@ -218,8 +294,7 @@ func exitOnConfigError(err error) {
 		os.Exit(0)
 	}
 	fmt.Fprintln(os.Stderr, "ERROR: "+err.Error())
-	var inv *invalidConfigError
-	if !errors.As(err, &inv) || inv.showUsage {
+	if !isInvalid || inv.showUsage {
 		printUsage(os.Stderr)
 	}
 	os.Exit(code)
@@ -253,9 +328,10 @@ func main() {
 	// StartServiceCtrlDispatcherW within 30 s (error 1053) and tears it down.
 	// Register alone can block for its full 30 s HTTP timeout against a SimCore
 	// that is briefly unreachable — the normal state just after a reboot — so
-	// beacon construction, the staging sweep and registration all live in
-	// runBeacon, which the dispatcher calls only after it has connected. On
-	// Linux, macOS, and a Windows console this returns handled=false at once.
+	// beacon construction, enrollment, the staging sweep and registration all
+	// live in runBeacon, which the dispatcher calls only after it has
+	// connected. On Linux, macOS, and a Windows console this returns
+	// handled=false at once.
 	handled, code, err := runAsService(serviceName, func(ctx context.Context) int {
 		if logPath == "" {
 			// No stderr under the SCM: default to the path the installer
@@ -287,36 +363,98 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, shutdownSignals...)
 
-	go func() {
-		sig := <-sigCh
-		log.Printf("received signal %s — initiating graceful shutdown", sig)
-		cancel()
-	}()
-
-	if code := runBeacon(ctx, cfg); code != 0 {
-		os.Exit(code)
+	// ----------------------------------------------------------------
+	// The beacon: returns on lifetime expiry or a fatal startup error, or
+	// within shutdownGrace of a shutdown signal.
+	// ----------------------------------------------------------------
+	// runUntilShutdown (lifetime.go) owns the signal: it cancels ctx — the one
+	// shutdown path, which tree-kills the in-flight step and completes its run
+	// as "agent shutdown — task interrupted" — then waits at most shutdownGrace
+	// for runBeacon to return, so a stuck loop still exits inside a pod's 30 s
+	// termination grace instead of being SIGKILLed by the kubelet.
+	exitCode := 0
+	if runUntilShutdown(ctx, cancel, func(ctx context.Context) { exitCode = runBeacon(ctx, cfg) }, sigCh, shutdownGrace) {
+		log.Printf("SHUTDOWN_TIMEOUT: poll loop still running %s after the signal — exiting", shutdownGrace)
+		return
+	}
+	if exitCode != 0 {
+		os.Exit(exitCode)
 	}
 }
 
-// runBeacon is the beacon itself: build the client, sweep stale staging,
-// register, then poll until ctx is cancelled. It is shared by the console path
-// (ctx cancelled by a signal) and the Windows service (ctx cancelled by an SCM
-// STOP or SHUTDOWN). Cancellation is the ONE shutdown path: client.Run
-// tree-kills the in-flight step and completes its run as "agent shutdown —
-// task interrupted" before returning. It returns the process exit code.
+// runBeacon is the beacon itself: gather what it reports about itself, enroll
+// when it was given a token file, build the client, sweep stale staging,
+// register, then poll until ctx is cancelled or its lifetime ends. It is
+// shared by the console path (ctx cancelled by a signal) and the Windows
+// service (ctx cancelled by an SCM STOP or SHUTDOWN). Cancellation is the ONE
+// shutdown path: client.Run tree-kills the in-flight step and completes its
+// run as "agent shutdown — task interrupted" before returning. It returns the
+// process exit code instead of exiting, so the service path can report it to
+// the SCM.
 func runBeacon(ctx context.Context, cfg beaconConfig) int {
+	// A lifetime that ran out before this process started (a container restart
+	// after expiry, a pod rescheduled late) must not redeem the enrollment token
+	// or register: exit 0 and let the supervisor idle until the reaper removes it.
+	if expiredAtStartup(cfg.expiresAt, time.Now()) {
+		log.Printf("LIFETIME_EXPIRED — expires-at %s passed before startup; not enrolling or registering",
+			cfg.expiresAt.UTC().Format(time.RFC3339))
+		return 0
+	}
+
+	// The server URL usually comes from a Kubernetes Secret and may carry a
+	// trailing slash or newline: normalise it once, before any use.
+	serverURL := beacon.NormalizeServerURL(cfg.server)
+
+	// Everything the agent reports about itself is gathered once, up front, so
+	// the same snapshot goes on Enroll and on Register.
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Printf("WARNING: could not determine hostname: %v — using agent ID", err)
+		hostname = cfg.id
+		if hostname == "" {
+			hostname = "unknown"
+		}
+	}
+	capabilities := agentCapabilities(runtime.GOOS, runtimefacts.InContainer(nil))
+	// Honest, live snapshot of what interpreters this host actually has right
+	// now — never a guess, never derived from GOOS. SimCore uses it to
+	// preflight a scenario's declared `requires_interpreters` before dispatch;
+	// the beacon re-checks live at execution time regardless (see
+	// resolveRuntimeDeps in agent/beacon/client.go), so a stale registration
+	// snapshot can never cause a silent false success — only a slower-to-refuse
+	// one, which the beacon's own live check closes.
+	interpreters := executor.AvailableLogicalNames()
+	facts := runtimefacts.Collect(runtimefacts.Options{
+		PostureProfile:    cfg.postureProfile,
+		PrepareStatusFile: cfg.prepareStatusFile,
+		ProbeTools:        runtimefacts.DefaultProbeTools,
+		ProbeAccounts:     identity.ServiceAccountNames(),
+	})
+
+	agentID := cfg.id
+	if cfg.enrollTokenFile != "" {
+		// Any failure is fatal, so a pod that cannot enroll crash-loops visibly
+		// rather than idling.
+		id, code, err := enrollAgent(serverURL, cfg.enrollTokenFile, cfg.stateDir,
+			hostname, capabilities, interpreters, &facts)
+		if err != nil {
+			return fatalStartup(code, err)
+		}
+		agentID = id
+	}
+
 	mode := "console"
 	if underSCM() {
 		mode = "service"
 	}
 	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds stream-output=%t step-timeout=%ds mode=%s",
-		cfg.server, cfg.id, int(cfg.interval/time.Second), cfg.longPoll, cfg.streamOutput,
+		serverURL, agentID, int(cfg.interval/time.Second), cfg.longPoll, cfg.streamOutput,
 		int(cfg.stepTimeout/time.Second), mode)
 
 	// ----------------------------------------------------------------
 	// Build beacon client
 	// ----------------------------------------------------------------
-	client := beacon.New(cfg.server, cfg.id, cfg.interval)
+	client := beacon.New(serverURL, agentID, cfg.interval)
 	// RG-AGENT-05: before anything that touches the network. The console signal
 	// handler (and the SCM STOP handler) only cancel ctx, so Register — which
 	// runs before client.Run — has to be able to see it, or a stop during a
@@ -332,8 +470,10 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	for _, line := range client.ProxyStartupLines(runtime.GOOS) {
 		log.Print(line)
 	}
+	client.SetRuntimeFacts(&facts)
 	client.LongPollTimeout = cfg.longPoll
 	client.StreamOutput = cfg.streamOutput
+	client.ExpiresAt = cfg.expiresAt
 	if cfg.stepTimeout > 0 {
 		client.StepTimeout = cfg.stepTimeout
 	}
@@ -354,23 +494,6 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	// ----------------------------------------------------------------
 	// Register with SimCore
 	// ----------------------------------------------------------------
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Printf("WARNING: could not determine hostname: %v — using agent ID", err)
-		hostname = cfg.id
-	}
-
-	capabilities := agentCapabilities(runtime.GOOS)
-
-	// Honest, live snapshot of what interpreters this host actually has right
-	// now — never a guess, never derived from GOOS. SimCore uses it to
-	// preflight a scenario's declared `requires_interpreters` before dispatch;
-	// the beacon re-checks live at execution time regardless (see
-	// resolveRuntimeDeps in agent/beacon/client.go), so a stale registration
-	// snapshot can never cause a silent false success — only a slower-to-refuse
-	// one, which the beacon's own live check closes.
-	interpreters := executor.AvailableLogicalNames()
-
 	log.Printf("registering — hostname=%s os=%s capabilities=%v interpreters=%v",
 		hostname, runtime.GOOS, capabilities, interpreters)
 	// BEACON-13: say why an interpreter a DC can see on the host is not in that
@@ -392,11 +515,95 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 		log.Printf("registration OK")
 	}
 
+	// Orphan reaping for the container deployment. Started only now, after the
+	// startup probes above have been waited on: the reaper's blanket Wait4(-1)
+	// skips only children the executor's child gate tracks.
+	if cfg.subreaper {
+		if err := setChildSubreaper(); err != nil {
+			log.Printf("WARNING SUBREAPER_UNAVAILABLE: %v — orphans of finished steps reparent to PID 1", err)
+		} else {
+			log.Printf("child subreaper enabled — orphans of finished steps are reaped here")
+		}
+		startChildReaper(ctx)
+	}
+
 	// ----------------------------------------------------------------
-	// Main poll loop (blocks until context is cancelled)
+	// Main poll loop: returns once ctx is cancelled, or once --expires-at has
+	// passed (the run in flight finishes first). Both are a clean exit 0.
 	// ----------------------------------------------------------------
 	client.Run(ctx)
 
 	log.Printf("agent exited cleanly")
 	return 0
+}
+
+// fatalStartup is a fatal startup failure inside runBeacon: the FATAL line on
+// the log and on the termination log, so `kubectl describe pod` shows why the
+// pod is crash-looping, then exit code 1 for the caller. It is exitFatal
+// (termination_log.go) returning instead of calling os.Exit, because runBeacon
+// also runs under the Windows SCM, where an os.Exit inside the service handler
+// is recorded only as "terminated unexpectedly" (1067) instead of as the
+// service's exit code.
+func fatalStartup(code string, err error) int {
+	log.Printf("FATAL %s: %v", code, err)
+	writeTerminationLog(terminationLogPath(), fatalLine(code, err.Error()))
+	return 1
+}
+
+// enrollSleep is the pause between SERVER_UNREACHABLE retries; tests replace it.
+var enrollSleep = time.Sleep
+
+// enrollAgent redeems the enrollment token (or reuses the id stored by an
+// earlier life of this pod) and returns the agent id. On failure it returns a
+// stable code for the one fatal log line. The token file is read lazily, only
+// when an enrollment is actually needed, so a restart that reuses a stored id
+// still works after the Secret's token was rotated or removed. The token is
+// never logged; only its last 6 characters are.
+func enrollAgent(serverURL, tokenFile, stateDir, hostname string,
+	capabilities, interpreters []string, facts *runtimefacts.Facts) (id, code string, err error) {
+
+	desired := strings.TrimSpace(os.Getenv("POD_NAME"))
+	if desired == "" {
+		desired = hostname
+	}
+	doEnroll := func() (string, error) {
+		token, err := beacon.ReadTokenFile(tokenFile)
+		if err != nil {
+			return "", err
+		}
+		log.Printf("enrolling — server=%s token=%s", serverURL, beacon.TokenSuffix(token))
+		return beacon.EnrollWithRetry(enrollAttempts, enrollRetryDelay, enrollSleep, func() (string, error) {
+			return beacon.Enroll(serverURL, token, hostname, runtime.GOOS, desired,
+				capabilities, interpreters, facts)
+		})
+	}
+	id, reused, err := beacon.LoadOrEnroll(stateDir, doEnroll)
+	if err != nil {
+		return "", enrollFailureCode(err), err
+	}
+	if reused {
+		log.Printf("enrollment reused — agent id %s read from %s", id, stateDir)
+	} else {
+		log.Printf("enrolled — agent id %s", id)
+	}
+	return id, "", nil
+}
+
+// enrollFailureCode maps an enrollment error to the code on the fatal log line.
+func enrollFailureCode(err error) string {
+	var se *beacon.StateDirError
+	var ee *beacon.EnrollError
+	switch {
+	case errors.As(err, &se):
+		return beacon.CodeStateDirUnwritable
+	case errors.Is(err, beacon.ErrEnrollTokenEmpty):
+		return "ENROLL_TOKEN_EMPTY"
+	case errors.Is(err, beacon.ErrEnrollTokenUnreadable):
+		return "ENROLL_TOKEN_UNREADABLE"
+	case errors.As(err, &ee) && ee.Status >= 300 && ee.Status < 400:
+		return "ENROLL_REDIRECTED"
+	case errors.As(err, &ee) && ee.Code != "":
+		return ee.Code
+	}
+	return "ENROLL_FAILED"
 }

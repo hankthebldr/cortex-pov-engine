@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1656",
     "T1059",
@@ -9,11 +11,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(KOI-007 Unattended MCP Tool Invocation with No User Interaction) AND ABIOC(KOI-007 Sampling-Request Token Consumption Anomaly from MCP Host) on the same agent_hostname and actor_effective_username within a 15-minute window \u2014 fuses the covert writeFile deviation and the quota-theft consumption anomaly into a single MCP-sampling-abuse incident anchored to the MCP-server session that drove the createMessage calls.",
       "name": "MCP Sampling Abuse \u2014 Quota Theft plus Covert Tool Invocation Stitch",
-      "rule_id": "CR-KOI-0007",
-      "severity": "high"
+      "rule_id": "CR-KOI-0007"
     }
   ],
   "ttp_ref": "TTP-2026-0110"

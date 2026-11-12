@@ -318,3 +318,16 @@ def test_launch_maps_integrity_error_to_pair_invalid(session_factory, monkeypatc
     assert not res.success and res.error_code == "PAIR_INVALID"
     assert "already paired" in res.error_detail
     assert len([x for x in _runs(session_factory) if x.paired_with_run_id == "first"]) == 1
+
+
+
+# ── per-module Action Mode (XDR profile review, finding F1) ────────────────
+
+def test_launch_persists_module_modes(client, session_factory):
+    _seed(session_factory)
+    modes = {"btp": "block", "local_analysis": "report"}
+    r = client.post("/api/runs", json=_body(agent_profile_mode="block", module_modes=modes))
+    assert r.status_code == 200, r.text
+    run = next(x for x in _runs(session_factory) if x.run_id == r.json()["run_id"])
+    assert run.module_modes == modes
+    assert run.attested_at is not None

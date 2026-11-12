@@ -119,6 +119,12 @@ class Settings(BaseSettings):
     # inflating the coverage number. Set false to load a corpus mid-re-key.
     CORTEXSIM_STRICT_REFS: bool = True
 
+    # Dataset requirement registry strictness (spec/dataset_requirements.yml).
+    # When true, boot raises DatasetRequirementsError if any dataset a detection
+    # card's xql_queries reads has no registry entry. Off by default: an
+    # unregistered dataset logs a warning and /api/health reports it degraded.
+    CORTEXSIM_STRICT_DATASETS: bool = False
+
 
     # XSIAM API harness — master safety switches for the operation executor.
     # Both OFF by default: the harness pulls freely from a configured tenant
@@ -128,6 +134,11 @@ class Settings(BaseSettings):
     # them only for a tenant you are explicitly authorized to mutate.
     CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
     CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
+
+    # PAN-OS NGFW connection is read-only in v1. The write flag is designed in
+    # spec section 7 and has no consumer yet; the budget caps one preflight run.
+    CORTEXSIM_PANOS_ALLOW_WRITE: bool = False
+    CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT: int = 120
 
     # Same posture, different surface: a pull-mode step whose declared
     # `requires_interpreters` is absent on the target may EITHER be reported
@@ -139,6 +150,21 @@ class Settings(BaseSettings):
     # CORTEXSIM_XSIAM_ALLOW_WRITE's two-key posture — so a single mis-set
     # request body can never mutate a customer endpoint on its own.
     CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL: bool = False
+
+    # MCP server (Model Context Protocol) over this REST API. The in-process
+    # streamable-HTTP mount at /mcp is OPT-IN and off by default: the SimCore
+    # port has no authentication, so exposing a tool surface on it is a
+    # deliberate decision, not a default. The stdio entry point needs no flag.
+    CORTEXSIM_MCP_HTTP: bool = False
+    # Comma-separated Host headers the /mcp mount accepts (DNS-rebinding guard),
+    # in addition to loopback. Empty = loopback only.
+    CORTEXSIM_MCP_ALLOWED_HOSTS: str = ""
+    # Ceiling on MCP tool calls that reach a customer tenant, per minute, so an
+    # agent loop cannot burn the tenant's XQL quota. Same posture as the other
+    # quota guards: a spent budget degrades to pending, never to a verdict.
+    CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE: int = 30
+    # Base URL the stdio MCP server uses to reach SimCore's REST API.
+    CORTEXSIM_URL: str = "http://127.0.0.1:8888"
 
     # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
     # which meant a dev boot log carried every aiosqlite statement TWICE (once

@@ -578,3 +578,192 @@
   align-self: flex-start;
   margin-bottom: 14px;
 }
+
+/* ─── Organize bar: group by / sort by the UC / TC index ────────────────
+   Sits directly under the filter rows and reuses their row + chip vocabulary
+   on purpose: filtering and organizing are the same gesture to a DC, and a
+   second visual language here would read as a second feature. The hairline is
+   the only separator — filters narrow WHAT is listed, these decide HOW. */
+
+.ttpb-organize {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: -6px 0 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bd);
+}
+/* A choice the index join cannot serve yet stays visible, and says why on
+   hover/focus (title) and in the note below — it is not hidden. */
+.ttpb-chip[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.ttpb-chip[disabled]:hover { border-color: var(--bd); color: var(--tx2); }
+.ttpb-chip:focus-visible {
+  outline: none;
+  border-color: var(--ac-line);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+
+.ttpb-organize__summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+}
+.ttpb-organize__actions { display: flex; flex: none; gap: 14px; font-size: 11px; }
+.ttpb-organize__note {
+  margin: 4px 0 0;
+  max-width: 96ch;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.ttpb-organize__summary .ttpb-organize__note { margin-top: 0; }
+/* The one warn callout in this destination besides remediation guidance:
+   the join that places cards under the index could not run. */
+.ttpb-organize__note--degraded {
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn-str) 10%, transparent);
+  color: var(--tx);
+}
+
+/* ─── Grouped outline ──────────────────────────────────────────────────
+   One row per subdomain / use case / test case with its count; the cards
+   live inside. Collapsed, the page is a table of contents for the corpus. */
+
+.ttpb-groups { display: flex; flex-direction: column; gap: 8px; }
+
+.ttpb-group {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--s1);
+}
+.ttpb-group.is-open { background: transparent; }
+/* "No scenario cites this card" is a real bucket, not a peer of the index
+   groups — dashed so it does not read as a tenth subdomain. */
+.ttpb-group--unbound { border-style: dashed; }
+
+.ttpb-group__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 12px;
+}
+.ttpb-group.is-open > .ttpb-group__head {
+  border-bottom: 1px solid var(--bd);
+  background: var(--s1);
+  border-radius: 8px 8px 0 0;
+}
+.ttpb-group__toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 11px 6px 11px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ttpb-group__toggle:hover .ttpb-group__label { text-decoration: underline; }
+.ttpb-group__toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ac-line);
+}
+.ttpb-group__caret { flex: none; width: 10px; font-size: 9px; color: var(--tx3); }
+.ttpb-group__label { flex: none; font-size: 13px; font-weight: 600; color: var(--tx); }
+.ttpb-group__label.mono { font-size: 12px; }
+/* The title gives way first: a test case title runs to a sentence, and the
+   use case · subdomain after it is the part a DC is scanning the column for. */
+.ttpb-group__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--tx);
+}
+.ttpb-group__sub {
+  flex: 0 0 auto;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--tx3);
+}
+.ttpb-group__count {
+  flex: none;
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--tx2);
+}
+/* Two classes: `.ttpb-link` (declared later) sets font-size: inherit. */
+.ttpb-link.ttpb-group__open { flex: none; font-size: 11px; white-space: nowrap; }
+.ttpb-group__body { padding: 12px; }
+
+/* ─── Card face: where the card sits in the index ───────────────────── */
+
+.ttpb-row__uctc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+.ttpb-row__uctc-uc   { font-weight: 600; color: var(--tx); }
+.ttpb-row__uctc-sub  { color: var(--tx2); }
+.ttpb-row__uctc-none { color: var(--tx3); font-style: italic; }
+/* The card is in this group through a non-primary test case. */
+.ttpb-row__uctc-secondary {
+  padding: 1px 6px;
+  border: 1px dashed var(--bd2);
+  border-radius: 999px;
+  color: var(--tx2);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ttpb-chip--tag-uctc { background: var(--s1); border-color: var(--bd2); color: var(--tx); }
+
+/* Inline link inside the detail tables (test case → UC / TC index). */
+.ttpb-link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--info);
+  font-size: inherit;
+  cursor: pointer;
+}
+.ttpb-link:hover { text-decoration: underline; }
+.ttpb-link:focus-visible { outline: 2px solid var(--ac-line); outline-offset: 2px; border-radius: 2px; }
+
+/* Narrow panes: a group row cannot hold id + title + subdomain + count + link
+   on one line (measured at 375px: 245px of content in a 146px toggle, the
+   count drawn over "Open in index"). Stack it instead of clipping it. */
+@media (max-width: 640px) {
+  .ttpb-group__head { flex-wrap: wrap; padding-right: 0; }
+  .ttpb-group__toggle { flex: 1 1 100%; flex-wrap: wrap; row-gap: 3px; padding-right: 12px; }
+  .ttpb-group__title,
+  .ttpb-group__sub {
+    order: 3;
+    flex: 1 1 100%;
+    max-width: none;
+    padding-left: 20px;
+    white-space: normal;
+  }
+  .ttpb-link.ttpb-group__open { padding: 0 12px 10px 34px; }
+  .ttpb-organize__summary { flex-direction: column; gap: 6px; }
+}

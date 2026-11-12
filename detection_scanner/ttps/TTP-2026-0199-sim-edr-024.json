@@ -1,0 +1,389 @@
+{
+  "id": "TTP-2026-0199",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T05:45:00+00:00",
+    "updated_at": "2026-11-11T05:45:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "linux",
+      "persistence",
+      "systemd-timer",
+      "backdoor-account",
+      "incident-grouping",
+      "long-dwell"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 2900,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Linux Identity Persistence — Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer",
+    "summary": "A root operator creates a sudo-group account, plants an SSH key for it, installs a systemd timer that re-runs a hidden payload every five minutes and survives a reboot, then makes the key immutable. Built so its Medium+ alerts group into one case.",
+    "description": "Grounded in the 2026-11-11 lab read-back on pov-target-01. The useradd/chpasswd shadow access raised built-in Low ABIOCs that never formed a case, so the grouping rests on operator-installed Medium BIOCs and a correlation. On Ubuntu 24.04 (systemd 255) a service's ExecStart child records its parent as \"9\" (/proc/self/fd/9, the fexecve'd systemd-executor), not \"systemd\"; the re-execution BIOC keys on both. The account is created already expired with a random, never-printed password.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "TeamTNT Linux persistence tradecraft (authorized_keys, chattr +i, service persistence)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.006",
+        "name": "Scheduled Task/Job: Systemd Timers",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1136",
+        "subtechnique_id": "T1136.001",
+        "name": "Create Account: Local Account",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.004",
+        "name": "Account Manipulation: SSH Authorized Keys",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1543",
+        "subtechnique_id": "T1543.002",
+        "name": "Create or Modify System Process: Systemd Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1222",
+        "subtechnique_id": "T1222.002",
+        "name": "File and Directory Permissions Modification: Linux and Mac File and Directory Permissions Modification",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "File: File Modification",
+      "User Account: User Account Creation",
+      "Scheduled Job: Scheduled Job Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-024 — sudo backdoor account, SSH key and systemd timer, delivered by the CortexSim beacon as root.",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint, policy in report mode for malware (lab: 9.4.0.470 on Ubuntu 24.04, policy SEBC-FY25-LAB-LinuxServerPolicy).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "systemd as PID 1 and an ext4 (chattr-capable) home filesystem.",
+        "check_command": "test \"$(ps -o comm= -p 1)\" = systemd && lsattr -d /home"
+      },
+      {
+        "description": "The five BIOCs and CR-EDR-0024 on this card are installed in the tenant at Medium before the run.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > BIOC and Correlations'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-024-systemd-timer-backdoor-account-grouped-case.yml is the delivery path (four steps, 40 s apart).\nuseradd -m -s /bin/bash -G sudo -e 1970-01-02 cortexsim-svc\nssh-keygen -q -t ed25519 -N '' -f /var/tmp/.cortexsim-sshd/id_ed25519\ncat /var/tmp/.cortexsim-sshd/id_ed25519.pub >> /home/cortexsim-svc/.ssh/authorized_keys\nsystemctl enable --now cortexsim-sync.timer\nchattr +i /home/cortexsim-svc/.ssh/authorized_keys",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "useradd putting the account in the sudo group, then chpasswd (both open /etc/shadow).",
+        "expected_value": "action_process_image_name = \"useradd\" and action_process_image_command_line contains \"-G sudo\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "authorized_keys written for the backdoor account.",
+        "expected_value": "action_file_path = \"/home/cortexsim-svc/.ssh/authorized_keys\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Service and timer units written under /etc/systemd/system.",
+        "expected_value": "action_file_path in (\"/etc/systemd/system/cortexsim-sync.service\", \"/etc/systemd/system/cortexsim-sync.timer\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Every five minutes for 45 minutes: the systemd executor runs the hidden payload (actor \"9\" on systemd 255).",
+        "expected_value": "actor_process_image_path ~= \"^/proc/self/fd/[0-9]+$\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshd/sync.sh\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "systemctl disable --now cortexsim-sync.timer || true\nrm -f /etc/systemd/system/cortexsim-sync.service /etc/systemd/system/cortexsim-sync.timer\nsystemctl daemon-reload\nchattr -i /home/cortexsim-svc/.ssh/authorized_keys || true\nuserdel -r cortexsim-svc || true\nrm -rf /var/tmp/.cortexsim-sshd"
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "EDR-024 Local Account Created In Sudo Group By Root Shell",
+        "description": "A shell runs useradd/adduser/usermod with a group list that includes sudo, wheel or admin. Matched read-only in the lab tenant 2026-11-11 against a real useradd -G sudo event on pov-target-01. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"useradd\", \"adduser\", \"usermod\")\n| filter action_process_image_command_line ~= \"(-G|--groups|-aG)[ =]?[^ ]*(sudo|wheel|admin)\"\n| filter actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"python3\", \"perl\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1136.001",
+          "T1098"
+        ]
+      },
+      {
+        "name": "EDR-024 SSH Authorized Keys Written For Local Account",
+        "description": "A shell or file utility writes an authorized_keys file. sshd and ssh-copy-id are not in the actor list. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path ~= \"/[.]ssh/authorized_keys2?$\"\n| filter actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1098.004"
+        ]
+      },
+      {
+        "name": "EDR-024 Systemd Unit Written Under etc systemd system By Shell",
+        "description": "A shell or file utility (not the package manager) writes a .service or .timer unit under /etc, /lib or /usr/lib systemd/system. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path ~= \"^/(etc|lib|usr/lib)/systemd/system/[^/]+[.](service|timer)$\"\n| filter actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1543.002",
+          "T1053.006"
+        ]
+      },
+      {
+        "name": "EDR-024 Systemd Service Runs Payload From Hidden Var Tmp Directory",
+        "description": "A systemd-started process runs something from a dot-directory under /var/tmp. On systemd 255 the service's parent records as \"9\" with path /proc/self/fd/9; the actor clause was matched read-only in the lab tenant against the sysstat service's sa1 starts. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"systemd\", \"9\") or actor_process_image_path ~= \"^/proc/self/fd/[0-9]+$\"\n| filter action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\" or action_process_image_path ~= \"^/var/tmp/[.]\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1053.006",
+          "T1564.001"
+        ]
+      },
+      {
+        "name": "EDR-024 Immutable Attribute Set On Persistence Artifact",
+        "description": "chattr +i on an SSH key, a systemd unit, a cron file or a hidden /var/tmp artefact — locking persistence in place. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: evasion.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"chattr\"\n| filter action_process_image_command_line ~= \"[+]i\"\n| filter action_process_image_command_line ~= \"(authorized_keys|/etc/systemd/system/|/etc/cron|/var/tmp/[.])\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1222.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "EDR-024 Systemd Timer Foothold Fired After Boot",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 86400\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"systemd\", \"9\") or actor_process_image_path ~= \"^/proc/self/fd/[0-9]+$\"\n| filter action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\"\n| comp count() as runs, min(_time) as first_run, max(_time) as last_run by agent_hostname, agent_id\n| fields agent_hostname, agent_id, runs, first_run, last_run",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious access to shadow file",
+        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 (issues 1500417, 1500418) on useradd and chpasswd, mapped by the tenant to T1003. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code; it matched those lab events read-only.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter action_file_path = \"/etc/shadow\"\n| filter actor_process_image_name in (\"useradd\", \"chpasswd\", \"usermod\", \"passwd\")",
+        "severity": "low",
+        "mitre_technique_ids": [
+          "T1003",
+          "T1136.001"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "The unpopular process opening /etc/shadow (useradd, chpasswd) and its causality chain; how rarely that process touches shadow across the tenant decides whether it fires."
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-024 Backdoor Account Key And Timer Foothold Re-Executed",
+        "rule_id": "CR-EDR-0024",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it). Alert name EXACTLY as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID. Tested read-only in the lab tenant 2026-11-11 (status SUCCESS; a relaxed variant returned pov-target-01). XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| alter leg = if(event_type = ENUM.PROCESS and action_process_image_name in (\"useradd\", \"adduser\", \"usermod\") and action_process_image_command_line ~= \"(-G|--groups|-aG)[ =]?[^ ]*(sudo|wheel|admin)\", \"account\", if(event_type = ENUM.FILE and action_file_path ~= \"/[.]ssh/authorized_keys2?$\", \"key\", if(event_type = ENUM.FILE and action_file_path ~= \"^/(etc|lib|usr/lib)/systemd/system/[^/]+[.](service|timer)$\" and actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\"), \"unit\", if(event_type = ENUM.PROCESS and (actor_process_image_name in (\"systemd\", \"9\") or actor_process_image_path ~= \"^/proc/self/fd/[0-9]+$\") and action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\", \"reexecuted\", \"other\"))))\n| filter leg in (\"account\", \"key\", \"unit\", \"reexecuted\")\n| alter reexec = if(leg = \"reexecuted\", 1, 0)\n| comp count_distinct(leg) as legs, max(reexec) as reexecuted, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 3 and reexecuted = 1"
+      }
+    ],
+    "analytics_modules": [
+      "Not declared: no built-in XDR Analytics (multi-event, baseline) alert has been observed on this endpoint, so none is an expectation."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "EDR-024 Local Account Created In Sudo Group By Root Shell",
+          "EDR-024 SSH Authorized Keys Written For Local Account",
+          "EDR-024 Systemd Unit Written Under etc systemd system By Shell",
+          "EDR-024 Systemd Service Runs Payload From Hidden Var Tmp Directory",
+          "EDR-024 Immutable Attribute Set On Persistence Artifact"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issues with these exact names on the endpoint, detection.method BIOC, severity Medium."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-ABIOC-SHADOW-FILE-ACCESS"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue 'Suspicious access to shadow file' (detection.method ANALYTICS_BIOC, Low)."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "case-grouping",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0024"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Every Medium+ issue from the run (the five BIOCs and CR-EDR-0024) carries one case_id."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-024",
+        "name": "Identity Persistence Re-Executed by a Systemd Timer, Grouped Into One Case",
+        "description": "Backdoor account, SSH key, systemd timer, immutable key — and prove the Medium+ alerts from the operator chain and the timer chain land in one case.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-024A",
+            "objective": "The account and key persistence raise Medium issues on the operator's chain.",
+            "preconditions": [
+              "Linux endpoint with the Cortex agent; the five BIOCs installed at Medium."
+            ],
+            "steps": [
+              "Create the sudo-group account.",
+              "Plant its SSH key."
+            ],
+            "success_criteria": [
+              "BIOC issues for the account and the key.",
+              "ABIOC `Suspicious access to shadow file` (Low) fires."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-EDR-024B",
+            "objective": "The timer's re-executions and the immutable key join the same case.",
+            "preconditions": [
+              "CR-EDR-0024 installed at Medium."
+            ],
+            "steps": [
+              "Install the timer.",
+              "Wait for at least two timer runs.",
+              "Set chattr +i on the key."
+            ],
+            "success_criteria": [
+              "BIOC issues for the unit write, each timer run and the chattr.",
+              "CR-EDR-0024 fires.",
+              "All Medium+ issues share one case_id."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Allow sudo-group membership changes only through configuration management.",
+      "Manage authorized_keys centrally (AuthorizedKeysCommand or a CA) instead of per-user files.",
+      "Alert on any systemd unit written outside the package manager or configuration management."
+    ],
+    "detection_engineering": [
+      "On systemd 255+ the service's parent records as \"9\" / /proc/self/fd/9: key systemd-launched rules on both that and \"systemd\".",
+      "Keep the BIOCs at Medium or higher: Low issues never create or join a case.",
+      "Map agent_hostname and agent_id in the correlation rule's alert fields; correlation issues group only through mapped artifacts."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 — TeamTNT Targets Exposed Docker APIs (cron, systemd, SSH-key and chattr persistence on Linux hosts)",
+      "url": "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1053.006 Systemd Timers",
+      "url": "https://attack.mitre.org/techniques/T1053/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Create a BIOC rule (XQL on xdr_data, filter and alter stages only)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex XSIAM — Case grouping (Medium-or-higher issues group; shared artifacts and causality chain)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

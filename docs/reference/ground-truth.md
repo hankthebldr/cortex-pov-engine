@@ -7,15 +7,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 193 |
+| Loadable scenarios | 198 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 191 |
+| TTP cards | 196 |
 | Detection planes | 16 |
-| Step-detections | 1369 |
-| Catalog detection objects | 2123 |
-| ABIOC+Analytics share (step-detections) | 15.5% |
-| Correlation share (step-detections) | 10.0% |
-| Distinct MITRE techniques (base) | 235 (128) |
+| Step-detections | 1403 |
+| Catalog detection objects | 2207 |
+| ABIOC+Analytics share (step-detections) | 15.6% |
+| Correlation share (step-detections) | 10.1% |
+| Distinct MITRE techniques (base) | 236 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
 
@@ -33,10 +33,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | CLOUD_APP | 10 |
 | CSPM | 5 |
 | DLP | 5 |
-| EDR | 22 |
+| EDR | 25 |
 | EMAIL | 5 |
 | ITDR | 20 |
-| KOI | 9 |
+| KOI | 11 |
 | NDR | 12 |
 | TIM | 9 |
 
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1369 (17.2%) |
-| Marker-only steps | 98/789 (12.4%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1403 (16.8%) |
+| Marker-only steps | 98/816 (12.0%) |
 | Scenarios with indicators | 14 |
 | Indicators (in-band) | 87 |
 | Indicators (not in-band) | 5 |
@@ -55,13 +55,13 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 156 |
+| ABIOC | 163 |
 | Analytics | 56 |
-| BIOC | 365 |
-| Correlation | 137 |
+| BIOC | 374 |
+| Correlation | 141 |
 | IOC | 119 |
-| Prevention | 0 |
-| XQL | 536 |
+| Prevention | 2 |
+| XQL | 548 |
 
 ## Tool adapters
 
@@ -73,7 +73,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Tier-4 exempt | 48 |
 | Tier-4 undeclared (should be 0 — `TA-13` rejects it) | 0 |
 | Distinct adapters wired via `adapter_ref` | 49 |
-| Scenarios wiring at least one adapter | 47 |
+| Scenarios wiring at least one adapter | 48 |
 
 ## Assertions (POS/PLT/AUT)
 
@@ -90,7 +90,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 |---|---:|
 | Index TCs evidenced by a scenario | 90/266 |
 | DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 124 |
+| S-13 tier disagreements | 127 |
 | S-14 posture-class-primary bindings | 14 |
 | PLT assertions authored | 7/43 rows (7 artifact(s), 7 row(s) no scenario reaches, 0 tenant-proven) |
 | POS assertions authored | 16/110 rows (18 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
@@ -102,10 +102,10 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 137 |
-| By HTTP method | `{"api_route": 1, "delete": 5, "get": 88, "post": 37, "put": 6}` |
-| `APIRouter()` instances | 25 |
-| Router files (`core/api/*.py`) | 23 |
+| Route decorators | 155 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 100, "post": 40, "put": 8}` |
+| `APIRouter()` instances | 30 |
+| Router files (`core/api/*.py`) | 28 |
 
 ## Strict UC/TC ref validation
 

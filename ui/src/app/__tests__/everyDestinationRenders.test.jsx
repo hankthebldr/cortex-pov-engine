@@ -43,6 +43,7 @@ const TITLES = {
   ttps: /ttp cards/i,
   agents: /agents/i,
   tenants: /^tenant$/i,
+  firewall: /^firewall$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
   coverage: /coverage/i,
@@ -61,7 +62,7 @@ const FOREIGN = [
   ['tenants', /^tenant$/i],
 ]
 
-// The five tasks and the Manage pair are the rail; their tab pages are walked
+// The five tasks and the Manage group are the rail; their tab pages are walked
 // too, because a tab is a page a DC lands on as often as a rail item. Redirect
 // stubs (retired seed pages) render nothing by design, and the legacy aliases
 // (guided/eal/environments/readiness) compose other surfaces and are covered
@@ -88,13 +89,14 @@ describe('every destination renders itself, and only itself', () => {
       'GET /api/health': { status: 'ok' },
       'GET /api/ttps': { ttps: [] },
       'GET /api/tools/adapters': { adapters: [] },
+      'GET /api/ngfw': { firewalls: [], write_enabled: false, tenant_verified: 0 },
     })
   })
   afterEach(cleanup)
 
-  it('the rail is the five tasks plus the Manage pair', () => {
+  it('the rail is the five tasks plus the Manage group', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Simulate', 'Runs', 'Results', 'Catalog', 'Agents', 'Tenant'],
+      ['Get started', 'Simulate', 'Runs', 'Results', 'Catalog', 'Agents', 'Tenant', 'Firewall'],
     )
   })
 
