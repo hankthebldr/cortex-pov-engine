@@ -21,7 +21,7 @@ preset = xdr_data
 preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
-| filter actor_process_image_name = "rundll32.exe"
+| filter action_process_image_name = "rundll32.exe"
 | filter action_process_image_command_line contains_any ("comsvcs.dll MiniDump", "comsvcs.dll, MiniDump", "comsvcs MiniDump")
 | fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, action_process_image_command_line
 

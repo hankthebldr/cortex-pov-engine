@@ -11,6 +11,7 @@ Manages an in-memory task queue: Dict[agent_id, List[Task]]
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import math
 import uuid
@@ -47,6 +48,20 @@ ARTIFACT_FETCH_CAPABILITY = "artifact-fetch"
 # synchronously inside the launch request, so a longer one holds the launch
 # open; over this ceiling the campaign stays dry-run (EAL_DRY_RUN_SLEEP_CAP).
 EAL_IN_PROCESS_MAX_SLEEP_SECONDS = 30
+
+
+@dataclass(eq=False)
+class _TaskWaiter:
+    """One parked ``GET /api/agents/{id}/tasks?wait=N`` (see ``wait_for_task``).
+
+    ``eq=False``: waiters are told apart by identity, never by value.
+    """
+
+    loop: asyncio.AbstractEventLoop
+    event: asyncio.Event
+    #: A newer poll for the same agent arrived; this one is never woken by an
+    #: enqueue and its caller should not dequeue.
+    superseded: bool = False
 
 
 @dataclass
@@ -155,9 +170,262 @@ class LaunchResult:
     # the two routes disagree about the same exception. None = let the API
     # decide from `error_code`, which is the historical behaviour.
     http_status: Optional[int] = None
-    # Advisory, non-refusing notices (e.g. the container-agent launch gate's
-    # AGENT_NO_RBAC_FOR_KUBECTL). The API surfaces them under `warnings`.
-    warnings: list[dict[str, Any]] = field(default_factory=list)
+    # Things the operator must know about a launch that was NOT refused. Empty
+    # for an unremarkable launch, so the API response for one is byte-identical
+    # to before. Two element shapes share the list, each as its producer and
+    # its tests define it:
+    #   * ``str`` -- a reservation SimCore also writes onto Run.output: the
+    #     target beacon is offline (the task waits), its OS is unknown (posix
+    #     was assumed), or a step runs a platform variant whose expectations
+    #     were authored against the primary command;
+    #   * ``dict`` -- an advisory, non-refusing notice from the container-agent
+    #     launch gate (engine/agent_launch_gate.py), e.g.
+    #     ``{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": [...], "agent_id": ...}``,
+    #     which SimCore also writes onto Run.output as one ``!! CODE: ...`` line
+    #     (``_gate_advisory_line``).
+    # The API surfaces both under ``warnings``.
+    warnings: list[Any] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Pull-mode platform gate (BEACON-01 / CONT-01)
+# ---------------------------------------------------------------------------
+#
+# A pull task used to ship ``scenario.steps`` verbatim, whatever the target's
+# operating system. A Windows beacon handed a POSIX primary runs it through
+# PowerShell, which exits 0 on text it cannot execute: the step "succeeds",
+# nothing the scenario expects fires, and every expectation reads `missed` — a
+# false negative about the customer's Windows coverage that CortexSim made.
+#
+# The push path already answers "can this content run on that OS?" per target
+# (``push_generator.resolve_target``). The pull path now asks the SAME function,
+# so a scenario that cannot emit a Windows bundle cannot be dispatched to a
+# Windows beacon either, and the two delivery modes cannot disagree.
+
+#: ``Agent.os`` values (lower-cased) and the execution target each one means.
+#: The beacon registers ``runtime.GOOS``; the installers send the same strings.
+_WINDOWS_AGENT_OS = frozenset({"windows"})
+_POSIX_AGENT_OS = frozenset({"linux", "darwin", "macos"})
+
+
+class AgentOsUnrecognised(ValueError):
+    """``Agent.os`` names no OS this engine knows how to target.
+
+    Raised rather than defaulted: guessing ``posix`` for an OS nobody
+    recognised is how a run executes the wrong dialect and reads green.
+    """
+
+
+def platform_target_for_os(os_value: Optional[str]) -> tuple[str, Optional[str]]:
+    """``(target, warning)`` for an agent's registered OS.
+
+    ``windows`` → ``windows``; ``linux`` / ``darwin`` / ``macos`` → ``posix``.
+    An EMPTY value (a legacy registration that never said) is treated as
+    ``posix`` — the historical behaviour — with an explicit warning, because
+    that is an assumption the run record must carry. Any other value raises
+    :class:`AgentOsUnrecognised`.
+    """
+    norm = (os_value or "").strip().lower()
+    if not norm:
+        return "posix", (
+            "!! TARGET_AGENT_OS_UNKNOWN: the target agent registered no operating "
+            "system, so POSIX commands were dispatched. If this endpoint is "
+            "Windows, every step ran the wrong dialect — re-register the beacon."
+        )
+    if norm in _WINDOWS_AGENT_OS:
+        return "windows", None
+    if norm in _POSIX_AGENT_OS:
+        return "posix", None
+    raise AgentOsUnrecognised(norm)
+
+
+def resolve_steps_for_target(
+    steps: list[dict[str, Any]], target: str,
+) -> tuple[list[dict[str, Any]], list[str], list[tuple[str, str]]]:
+    """Resolve each step's command for ``target``.
+
+    Returns ``(dispatched_steps, variant_markers, unresolved)``:
+
+    * ``dispatched_steps`` — NEW step dicts (the input is never mutated: the
+      scenario row is shared across runs) whose ``command`` is the text the
+      target can run, plus ``shell`` (``powershell`` / ``cmd`` on windows, ``""``
+      on posix — the beacon picks its interpreter from it) and
+      ``resolved_from`` (``primary`` / ``neutral`` / ``variant:<os>``). A
+      ``primary`` resolution keeps the authored command byte-for-byte.
+    * ``variant_markers`` — one ``!! PLATFORM VARIANT`` line per step that runs
+      a variant: its ``expected_detections`` were authored against the primary
+      command, so a miss on it is not yet a coverage measurement.
+    * ``unresolved`` — ``(step_id, REASON_CODE)`` for every step the target
+      cannot run. The caller REFUSES when this is non-empty: a partially
+      dispatched chain runs green, emits a subset of the attack, and the report
+      reads the gap as the customer's miss.
+
+    Pure: no DB, no I/O. Resolution reads the RAW authored steps — exactly the
+    document the push generator judges — so pull and push agree on every
+    scenario; ``{adapter:*}`` / ``{stitch:*}`` rendering happens afterwards on
+    whatever text was chosen.
+    """
+    from engine.push_generator import resolve_target  # noqa: PLC0415
+
+    resolution = resolve_target({"steps": steps}, target)  # type: ignore[arg-type]
+    by_id = {r.step_id: r for r in resolution.steps}
+    dispatched: list[dict[str, Any]] = []
+    markers: list[str] = []
+    for step in steps:
+        new_step = dict(step)
+        r = by_id.get(step.get("id", "step-??"))
+        if r is not None:
+            if r.source != "primary":
+                new_step["command"] = r.command
+            new_step["shell"] = r.shell if target == "windows" else ""
+            new_step["resolved_from"] = r.source
+            if r.source.startswith("variant:"):
+                variant_os = r.source.split(":", 1)[1]
+                markers.append(
+                    f"!! PLATFORM VARIANT: step={r.step_id} ran its {variant_os} "
+                    "variant; its expected_detections were authored against the "
+                    "primary command and are unverified for this OS"
+                )
+        dispatched.append(new_step)
+    return dispatched, markers, list(resolution.unresolved)
+
+
+def _label_matches_os(platform: Any, agent_os: str) -> bool:
+    """Does one ``platforms`` label name ``agent_os``? The console's rule
+    (``scenarioPreflight.js::matchesOs``): a container/k8s step runs wherever
+    the runtime is, which a Linux beacon satisfies; macos and darwin are one."""
+    p = str(platform).strip().lower()
+    if p == agent_os:
+        return True
+    if p in ("container", "k8s") and agent_os == "linux":
+        return True
+    return {p, agent_os} == {"macos", "darwin"}
+
+
+def posix_family_markers(
+    steps: list[dict[str, Any]], agent_os: Optional[str], agent_id: str,
+) -> list[str]:
+    """One ``!! PLATFORM MISMATCH`` line per step whose labels exclude this
+    POSIX beacon's OS (RG-UI-01, server half).
+
+    ``resolve_steps_for_target`` knows two targets, and a darwin beacon is
+    ``posix``: it is sent the primary command of a Linux-only step, and a Linux
+    beacon the commands of a macOS-only one. The step ``platforms`` labels are
+    the only linux-versus-macOS statement the corpus makes, so they are read
+    here exactly as the console's launch preflight reads them
+    (``posixFamilyCheck``): a step that declares a non-Windows platform, none
+    of which names this OS, is marked. A step labelled only ``windows`` says
+    nothing about linux versus macOS and is left alone, as is a step with no
+    labels. Nothing is refused and no command changes: the line goes onto the
+    run and the launch response, because a miss on such a step is not
+    evidence about the detection it expects.
+
+    Empty for a Windows beacon, an OS that registered nothing (that already
+    carries ``TARGET_AGENT_OS_UNKNOWN``) and an unremarkable launch.
+    """
+    os_norm = (agent_os or "").strip().lower()
+    if os_norm not in _POSIX_AGENT_OS:
+        return []
+    markers: list[str] = []
+    for step in steps:
+        labels = [str(p).strip().lower() for p in (step.get("platforms") or [])]
+        posix_labels = [p for p in labels if p != "windows"]
+        if not posix_labels or any(_label_matches_os(p, os_norm) for p in labels):
+            continue
+        markers.append(
+            f"!! PLATFORM MISMATCH: step={step.get('id', 'step-??')} is authored for "
+            f"{'/'.join(posix_labels)}, not {os_norm}; SimCore dispatched it unchanged "
+            f"to agent '{agent_id}' ({os_norm}), so its expected_detections are "
+            "unverified on this OS"
+        )
+    return markers
+
+
+def _unsatisfiable_refusal(
+    *, target: str, agent_id: str, agent_os: Optional[str],
+    unresolved: list[tuple[str, str]],
+) -> "LaunchResult":
+    """The 409 for a pull launch whose content the target OS cannot run.
+
+    Mirrors ``BUNDLE_TARGET_UNSATISFIABLE`` (the push twin) so a console
+    renders both with one code path.
+    """
+    from engine.push_generator import unsatisfiable_hints  # noqa: PLC0415
+
+    # The push twin's per-reason fix (MIXED_DIALECT / CMD_PERCENT_CONTEXT need
+    # the variant rewritten, not another declared), plus the pull alternative.
+    hint = "; ".join(unsatisfiable_hints(target, [r for _, r in unresolved])) + (
+        ", or launch against a POSIX agent" if target == "windows"
+        else ", or launch against a Windows agent")
+    steps = ", ".join(f"{sid} ({reason})" for sid, reason in unresolved)
+    return LaunchResult(
+        success=False,
+        error=(
+            f"PULL_TARGET_UNSATISFIABLE: agent '{agent_id}' is {target} and "
+            f"cannot run step(s) [{steps}] — {hint}"
+        ),
+        error_code="PULL_TARGET_UNSATISFIABLE",
+        error_detail={
+            "target": target,
+            "agent_id": agent_id,
+            "agent_os": agent_os,
+            "unresolved": [{"step_id": s, "reason": r} for s, r in unresolved],
+            "hint": hint,
+        },
+        http_status=409,
+    )
+
+
+def _os_refusal(agent_id: str, agent_os: str) -> "LaunchResult":
+    return LaunchResult(
+        success=False,
+        error=(
+            f"PULL_TARGET_OS_UNRECOGNISED: agent '{agent_id}' registered os="
+            f"'{agent_os}', which names no target this engine can dispatch to "
+            "(windows, linux, darwin, macos) — re-register the beacon"
+        ),
+        error_code="PULL_TARGET_OS_UNRECOGNISED",
+        error_detail={"agent_id": agent_id, "agent_os": agent_os},
+        http_status=409,
+    )
+
+
+def _offline_warning(agent: Any, now: datetime) -> Optional[str]:
+    """A non-refusing warning when the target beacon is not polling."""
+    from api.agents import _derive_status  # noqa: PLC0415 — one liveness rule
+
+    status, age = _derive_status(getattr(agent, "last_seen", None), now)
+    if status != "offline":
+        return None
+    seen = "never" if getattr(agent, "last_seen", None) is None else f"{int(age)}s ago"
+    return (
+        f"TARGET_AGENT_OFFLINE: agent '{agent.agent_id}' last polled {seen}; the "
+        "task is queued and runs only when its beacon polls again"
+    )
+
+
+def _gate_advisory_line(warning: dict[str, Any]) -> str:
+    """A container-agent gate advisory (engine/agent_launch_gate.py) as the
+    reservation text Run.output carries for it (RG-RUNS-06), e.g.
+    ``AGENT_NO_RBAC_FOR_KUBECTL: agent 'pod-1'; steps step-01``. The launch
+    response keeps the dict itself."""
+    parts = []
+    if warning.get("agent_id"):
+        parts.append(f"agent '{warning['agent_id']}'")
+    if warning.get("steps"):
+        parts.append("steps " + ", ".join(str(s) for s in warning["steps"]))
+    if warning.get("detail"):
+        parts.append(str(warning["detail"]))
+    return f"{warning['code']}: " + "; ".join(parts)
+
+
+@dataclass
+class _PullPlan:
+    """The single-endpoint dispatch decided BEFORE the Run row exists."""
+
+    steps: list[dict[str, Any]]
+    target: str
+    output_markers: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -183,13 +451,134 @@ class Orchestrator:
         # signal and prevents a queued-but-undelivered task from executing.
         # Unbounded in principle but runs are few/short; pruned on /complete.
         self._aborted: set[str] = set()
-        # agent_id -> (loop, asyncio.Event) for sub-second long-polling wakeup.
-        # The loop is stored alongside because asyncio.Event binds itself to the
-        # first loop that awaits it and raises "bound to a different event loop"
-        # on any other. uvicorn runs one loop per process so a bare Event
-        # survives in production, but it makes the whole path unreachable from
-        # TestClient — which is precisely why no Python test covered it.
-        self._events: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Event]] = {}
+        # agent_id -> the long-polls parked for that agent, oldest first, for
+        # sub-second wakeup. ONE entry per waiter (OPS-09): all waiters used to
+        # share a single asyncio.Event, which wakes first-in first-out, so the
+        # next task went to the OLDEST poll — after a beacon restart that is
+        # the handler whose socket is closed. The durable row was deleted, the
+        # run read delivered, and no host received it. Now a newer poll
+        # supersedes the older ones and an enqueue wakes only the current one.
+        #
+        # Each entry carries its own loop: an asyncio.Event binds to the loop
+        # that first awaits it and raises "bound to a different event loop" on
+        # any other. uvicorn runs one loop per process, but TestClient does not
+        # — which is precisely why no Python test covered this path at first.
+        self._waiters: dict[str, list[_TaskWaiter]] = {}
+        # run_id -> when a beacon last polled GET /api/runs/{id}/control. The
+        # beacon polls it before every step and every 2 s while one runs, so
+        # it is the one signal that says "a beacon is executing THIS run" —
+        # an agent's last_seen only says the agent is alive. In memory on
+        # purpose: it is a liveness signal, and a restart is measured from
+        # `started_at` (see engine.beacon_lost.terminalise_abandoned_runs).
+        self._control_polls: dict[str, datetime] = {}
+        # Idle evidence per ENDPOINT, for a multi-endpoint fan-out. The beacon
+        # executes one task at a time inside its poll loop, so a GET /tasks
+        # from an agent proves that agent is holding no task at that moment.
+        # `_task_polls[agent]` is the sequence number of its latest poll;
+        # `_deliveries[run][agent]` the sequence number at which that agent
+        # collected the run's task. A poll numbered after the delivery means
+        # the agent has let go of its partition (finished it, or dropped its
+        # /complete). Sequence numbers, not clock readings, because the poll
+        # that COLLECTS a task and the delivery it causes share a timestamp.
+        # In memory, like `_control_polls`: a delivery from before this
+        # process booted is unknown, and then any poll since boot counts.
+        self._liveness_seq = itertools.count(1)
+        self._task_polls: dict[str, int] = {}
+        self._deliveries: dict[str, dict[str, int]] = {}
+        self.started_at: datetime = datetime.utcnow()
+
+    # ------------------------------------------------------------------
+    # control-channel liveness (OPS-03)
+    # ------------------------------------------------------------------
+
+    #: Bound on the control-poll map. Entries are dropped when a run reaches a
+    #: terminal state; this only matters if that never happens.
+    _CONTROL_POLL_CAP = 10_000
+
+    def note_control_poll(self, run_id: str, when: Optional[datetime] = None) -> None:
+        """Record that a beacon just polled this run's control channel."""
+        if run_id not in self._control_polls and len(self._control_polls) >= self._CONTROL_POLL_CAP:
+            oldest = min(self._control_polls, key=self._control_polls.__getitem__)
+            self._control_polls.pop(oldest, None)
+        self._control_polls[run_id] = when or datetime.utcnow()
+
+    def last_control_poll(self, run_id: str) -> Optional[datetime]:
+        """When a beacon last polled this run's control channel, this process."""
+        return self._control_polls.get(run_id)
+
+    def forget_control_poll(self, run_id: str) -> None:
+        """Drop a terminal run's liveness entries (control poll and per-endpoint
+        deliveries). Idempotent."""
+        self._control_polls.pop(run_id, None)
+        self._deliveries.pop(run_id, None)
+
+    def note_task_poll(self, agent_id: str) -> None:
+        """Record that ``agent_id`` just polled ``/tasks`` — it holds no task."""
+        if agent_id not in self._task_polls and len(self._task_polls) >= self._CONTROL_POLL_CAP:
+            self._task_polls.pop(next(iter(self._task_polls)), None)
+        self._task_polls[agent_id] = next(self._liveness_seq)
+
+    def note_delivery(self, run_id: str, agent_id: str) -> None:
+        """Record that ``agent_id`` just collected its task for ``run_id``."""
+        if run_id not in self._deliveries and len(self._deliveries) >= self._CONTROL_POLL_CAP:
+            self._deliveries.pop(next(iter(self._deliveries)), None)
+        self._deliveries.setdefault(run_id, {})[agent_id] = next(self._liveness_seq)
+
+    def idle_since_delivery(self, run_id: str, agent_id: str) -> bool:
+        """Has ``agent_id`` polled for new work since it could have collected
+        its task for ``run_id``?
+
+        True means the agent has let go of that partition. False — including
+        "no poll from this agent since boot" — means it may still hold it.
+        """
+        polled = self._task_polls.get(agent_id)
+        if polled is None:
+            return False
+        return polled > self._deliveries.get(run_id, {}).get(agent_id, 0)
+
+    def has_queued_task(self, run_id: str) -> bool:
+        """Is any task for ``run_id`` still waiting in an agent's queue?"""
+        return any(t.run_id == run_id for q in self._queue.values() for t in q)
+
+    def reset_liveness(self) -> None:
+        """Forget every liveness record. A restarted process has none."""
+        self._control_polls.clear()
+        self._task_polls.clear()
+        self._deliveries.clear()
+
+    async def reap_abandoned(
+        self, agent_id: str, db: AsyncSession, now: Optional[datetime] = None,
+    ) -> list[str]:
+        """Terminalise ``agent_id``'s delivered runs its beacon walked away from.
+
+        Never lets a reaping failure break task delivery: the run stays
+        ``running`` and the next poll tries again.
+
+        Runs in its OWN session on the caller's engine: terminalisation may
+        roll back (a racing ``/complete``, a scoring fault), and a rollback on
+        the request's session would expire the ``Agent`` row the /tasks
+        handler still reads after this returns.
+        """
+        from config import settings as _settings  # noqa: PLC0415
+        from engine.beacon_lost import terminalise_abandoned_runs  # noqa: PLC0415
+
+        bind = getattr(db, "bind", None)
+        try:
+            if bind is None:  # pragma: no cover - an unbound session: share it
+                return await terminalise_abandoned_runs(
+                    db, now or datetime.utcnow(),
+                    after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
+                    agent_id=agent_id, control_polls=self,
+                )
+            async with AsyncSession(bind, expire_on_commit=False) as reap_db:
+                return await terminalise_abandoned_runs(
+                    reap_db, now or datetime.utcnow(),
+                    after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
+                    agent_id=agent_id, control_polls=self,
+                )
+        except Exception:
+            logger.exception("abandoned-run reaping failed agent=%s", agent_id)
+            return []
 
     # ------------------------------------------------------------------
     # launch
@@ -392,11 +781,29 @@ class Orchestrator:
         # target record no gaps here (None, not [] — "not checked", not
         # "checked and clean").
         runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
+        pull_plan: Optional[_PullPlan] = None
+        launch_warnings: list[str] = []
         if mode == "pull" and target_agent_id:
             agent_row = (await db.execute(
                 select(Agent).where(Agent.agent_id == target_agent_id)
             )).scalar_one_or_none()
+            # The platform gate and the enrollment check run BEFORE the Run
+            # row exists, so a launch that cannot be dispatched seeds nothing.
+            planned = self._plan_single_endpoint_pull(
+                scenario, target_agent_id, agent_row,
+            )
+            if isinstance(planned, LaunchResult):
+                logger.warning(
+                    "Launch refused scenario=%s code=%s target=%s detail=%s",
+                    scenario_id, planned.error_code, target_agent_id,
+                    planned.error_detail,
+                )
+                return planned
+            pull_plan = planned
             if agent_row is not None:
+                offline = _offline_warning(agent_row, datetime.utcnow())
+                if offline:
+                    launch_warnings.append(offline)
                 readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
                 runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
                 if readiness.gaps:
@@ -470,14 +877,21 @@ class Orchestrator:
             eal_authorized_by: Optional[str] = None
             if (consent or {}).get("simulation_authorized") and (authorized_by or "").strip():
                 eal_authorized_by = authorized_by.strip()
-            result = await self._handle_pull(
+            launched = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
+                pull_plan=pull_plan,
+                launch_warnings=launch_warnings,
                 allow_missing_tools=allow_missing_tools,
                 eal_authorized_by=eal_authorized_by,
             )
+            # Launch-time warnings first (offline target), then whatever the
+            # dispatch itself had to say (variants, unknown OS, the
+            # container-agent gate's advisory notices), then the SOC Framework
+            # Auto Triage advisories.
+            launched.warnings = launch_warnings + launched.warnings
             return await self._with_socfw_advisories(
-                result, db, scenario, paired_with_run_id, agent_profile_mode)
+                launched, db, scenario, paired_with_run_id, agent_profile_mode)
         elif mode == "push":
             result = await self._handle_push(run_id, scenario, db)
             return await self._with_socfw_advisories(
@@ -487,6 +901,66 @@ class Orchestrator:
                 db, run_id,
                 error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
             )
+
+    # ------------------------------------------------------------------
+    # pull pre-flight: enrollment + platform gate, before any Run row
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _plan_single_endpoint_pull(
+        scenario: Any, target_agent_id: str, agent_row: Optional[Any],
+    ) -> "Optional[_PullPlan | LaunchResult]":
+        """Decide a single-endpoint pull dispatch, or refuse it, pre-seed.
+
+        Returns ``None`` for a composed (multi-channel / per-step target) run:
+        its partitions are resolved per target agent in :meth:`_handle_pull`,
+        after that path's own all-or-nothing enrollment check.
+
+        Refusals (each a 409 with no Run, no Result, no task):
+
+        * ``TARGET_AGENT_NOT_ENROLLED`` — the target has no Agent row. This
+          used to seed a run and queue a task that nothing would ever collect,
+          which then sat ``running`` until a restart called it an orphan.
+        * ``PULL_TARGET_OS_UNRECOGNISED`` — ``Agent.os`` names no known OS.
+        * ``PULL_TARGET_UNSATISFIABLE`` — some step has no command the target
+          OS can run (the push path's ``BUNDLE_TARGET_UNSATISFIABLE``).
+        """
+        from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+        steps = list(getattr(scenario, "steps", None) or [])
+        if any(effective_channel(s) != "agent" or s.get("target") for s in steps):
+            return None
+        if agent_row is None:
+            return LaunchResult(
+                success=False,
+                error=(
+                    f"TARGET_AGENT_NOT_ENROLLED: target agent '{target_agent_id}' is "
+                    "not enrolled — enroll it, or launch against an enrolled agent"
+                ),
+                error_code="TARGET_AGENT_NOT_ENROLLED",
+                error_detail={
+                    "missing_agents": [target_agent_id],
+                    "referencing_steps": {
+                        target_agent_id: [s.get("id") for s in steps],
+                    },
+                },
+                http_status=409,
+            )
+        try:
+            target, os_warning = platform_target_for_os(agent_row.os)
+        except AgentOsUnrecognised:
+            return _os_refusal(target_agent_id, agent_row.os)
+        dispatched, markers, unresolved = resolve_steps_for_target(steps, target)
+        if unresolved:
+            return _unsatisfiable_refusal(
+                target=target, agent_id=target_agent_id, agent_os=agent_row.os,
+                unresolved=unresolved,
+            )
+        return _PullPlan(
+            steps=dispatched, target=target,
+            output_markers=([os_warning] if os_warning else []) + markers
+            + posix_family_markers(steps, agent_row.os, target_agent_id),
+        )
 
     # ------------------------------------------------------------------
     # SOC Framework Auto Triage advisory (never refuses, never calls a tenant)
@@ -566,7 +1040,9 @@ class Orchestrator:
 
         The seeded Result rows are deliberately KEPT: they record what the
         scenario expected to detect, and a failed run with its expectations
-        intact is evidence.
+        intact is evidence. They are stamped ``not_executed`` /
+        ``LAUNCH_REFUSED`` (OPS-01): nothing ran, so no alert can ever be
+        credited to them and they leave every efficacy denominator.
 
         Refusals that fire BEFORE the row is committed (the launch consent gate)
         must keep creating no run at all — a ``failed`` run would read as "we
@@ -583,6 +1059,7 @@ class Orchestrator:
             run.output = (run.output or "") + (
                 f"\n--- LAUNCH REFUSED — {error} ---\n"
             )
+            await stamp_not_executed(db, run_id, REASON_LAUNCH_REFUSED, commit=False)
             await db.commit()
             await _publish_run_status(run_id, "failed")
 
@@ -829,6 +1306,65 @@ class Orchestrator:
         await db.commit()
         return outcomes
 
+    async def _resolve_composed_partitions(
+        self,
+        scenario: Any,
+        launch_target: str,
+        db: AsyncSession,
+        output_markers: list[str],
+        warnings: list[str],
+    ) -> tuple[list[dict[str, Any]], Optional[LaunchResult]]:
+        """Platform-resolve a composed run, one agent partition at a time.
+
+        Returns ``(steps, refusal)``. ``steps`` keeps the authored order; agent
+        steps carry their partition agent's resolution, EAL steps (which run
+        in SimCore's own process) are untouched. ``refusal`` is a
+        ``PULL_TARGET_*`` LaunchResult when any partition cannot run on its
+        agent — all-or-nothing, the same posture as the enrollment check.
+
+        A partition whose agent is NOT enrolled is left unresolved and the raw
+        steps are returned: :meth:`_handle_pull`'s existing check refuses that
+        launch as ``TARGET_AGENT_NOT_ENROLLED``, which stays the first answer an
+        operator gets for a phantom endpoint.
+        """
+        from models import Agent  # noqa: PLC0415
+
+        raw = list(getattr(scenario, "steps", None) or [])
+        partitions, _eal = _partition_channels(raw, launch_target)
+        rows: dict[str, Any] = {}
+        for tgt in partitions:
+            rows[tgt] = (await db.execute(
+                select(Agent).where(Agent.agent_id == tgt)
+            )).scalar_one_or_none()
+        if any(row is None for row in rows.values()):
+            return raw, None
+
+        replaced: dict[int, dict[str, Any]] = {}
+        now = datetime.utcnow()
+        for tgt, part in partitions.items():
+            row = rows[tgt]
+            try:
+                target, os_warning = platform_target_for_os(row.os)
+            except AgentOsUnrecognised:
+                return raw, _os_refusal(tgt, row.os)
+            dispatched, markers, unresolved = resolve_steps_for_target(part, target)
+            if unresolved:
+                return raw, _unsatisfiable_refusal(
+                    target=target, agent_id=tgt, agent_os=row.os,
+                    unresolved=unresolved,
+                )
+            if os_warning:
+                output_markers.append(f"{os_warning} (agent '{tgt}')")
+            output_markers.extend(markers)
+            output_markers.extend(posix_family_markers(part, row.os, tgt))
+            if tgt != launch_target:  # launch() already warned for its own target
+                offline = _offline_warning(row, now)
+                if offline:
+                    warnings.append(offline)
+            for original, new in zip(part, dispatched):
+                replaced[id(original)] = new
+        return [replaced.get(id(s), s) for s in raw], None
+
     async def _handle_pull(
         self,
         run_id: str,
@@ -837,9 +1373,17 @@ class Orchestrator:
         identity: Optional[str],
         db: AsyncSession,
         runtime_install_authorized: bool = False,
+        pull_plan: Optional[_PullPlan] = None,
+        launch_warnings: Optional[list[str]] = None,
         allow_missing_tools: bool = False,
         eal_authorized_by: Optional[str] = None,
     ) -> LaunchResult:
+        """``launch_warnings`` are launch()'s own reservations (an offline
+        target). They are written onto Run.output with the dispatch markers; the
+        caller still returns them in ``warnings``, so they are not added here.
+
+        ``allow_missing_tools`` turns off ONLY the container-agent gate's tool
+        refusal (``AGENT_TOOL_ABSENT``); a posture gap is never overridable."""
         from models import Agent, Run  # noqa: PLC0415
 
         if not target_agent_id:
@@ -847,6 +1391,7 @@ class Orchestrator:
                 db, run_id,
                 error="target_agent_id is required for pull mode",
             )
+        output_markers: list[str] = list(pull_plan.output_markers) if pull_plan else []
 
         execution_identity = getattr(scenario, "execution_identity", None) or {}
 
@@ -915,8 +1460,31 @@ class Orchestrator:
             )
 
         egress_warnings = _egress_warnings(scenario)
+
+        # ── Platform gate (BEACON-01) ───────────────────────────────────────
+        # Choose, per step, the command text the target OS can actually run —
+        # BEFORE {adapter:*} / {stitch:*} rendering, on the same raw document
+        # the push generator judges. The single-endpoint plan was decided (and
+        # refusals issued) before the Run existed; a composed run is resolved
+        # here, per target agent, once every target is known to be enrolled.
+        dispatch_warnings: list[str] = []
+        if pull_plan is not None:
+            raw_steps = pull_plan.steps
+        else:
+            raw_steps, refusal = await self._resolve_composed_partitions(
+                scenario, target_agent_id, db, output_markers, dispatch_warnings,
+            )
+            if refusal is not None:
+                return await self._refuse_after_seed(
+                    db, run_id,
+                    error=refusal.error,
+                    error_code=refusal.error_code,
+                    error_detail=refusal.error_detail,
+                    http_status=refusal.http_status,
+                )
+
         adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
-            scenario.steps or []
+            raw_steps
         )
         steps = _resolve_stitch_placeholders(adapter_steps, binding)
         # The beacon refuses a step whose binary is not on PATH (not_run /
@@ -1115,11 +1683,23 @@ class Orchestrator:
 
         # Surface the egress warning on the run itself, before any beacon can
         # write: the console shows Run.output, a log line is not seen by a DC.
-        if egress_warnings:
+        # The platform markers (CONT-09: a step running a variant whose
+        # expectations were authored against the primary; an agent that never
+        # said which OS it is) go on the same record, for the same reason.
+        # An offline target (launch()'s own, and a composed run's other
+        # endpoints) goes on the record too (RG-RUNS-06): the launch response
+        # reaches only the tab that launched, not another browser or the report.
+        # So do the container-agent gate's advisories, rendered as one line each.
+        reservations = (
+            list(launch_warnings or []) + dispatch_warnings
+            + [_gate_advisory_line(w) for w in gate_warnings]
+        )
+        if egress_warnings or output_markers or reservations:
             lines = "".join(
                 f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
                 for aid, text in egress_warnings
-            )
+            ) + "".join(f"{m}\n" for m in output_markers) + "".join(
+                f"!! {w}\n" for w in reservations)
             await db.execute(
                 update(Run)
                 .where(Run.run_id == run_id)
@@ -1143,7 +1723,10 @@ class Orchestrator:
             run_id=run_id,
             mode="pull",
             message=queued_message,
-            warnings=gate_warnings,
+            # The platform/offline reservations (strings), then the
+            # container-agent gate's advisory notices (dicts); all of them
+            # are on Run.output too.
+            warnings=dispatch_warnings + output_markers + list(gate_warnings),
         )
 
     async def _container_agent_gate(
@@ -1321,40 +1904,82 @@ class Orchestrator:
         if agent_id not in self._queue:
             self._queue[agent_id] = []
         self._queue[agent_id].append(task)
-        entry = self._events.get(agent_id)
-        if entry is not None:
-            bound_loop, event = entry
-            try:
-                running = asyncio.get_running_loop()
-            except RuntimeError:
-                running = None
-            if running is bound_loop:
-                event.set()
+        self._wake_current_waiter(agent_id)
+
+    def _wake_current_waiter(self, agent_id: str) -> None:
+        """Wake the newest non-superseded long-poll for ``agent_id``, if any.
+
+        Only that one: a superseded waiter belongs to a connection its beacon
+        has since replaced, and waking it hands the task to a closed socket.
+        A waiter whose loop is gone is dropped instead of raising.
+        """
+        waiters = self._waiters.get(agent_id)
+        if not waiters:
+            return
+        try:
+            running: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        for waiter in reversed(list(waiters)):
+            if waiter.superseded:
+                continue
+            if waiter.loop.is_closed():
+                self._forget_waiter(agent_id, waiter)
+                continue
+            if running is waiter.loop:
+                waiter.event.set()
             else:
                 # Enqueued from outside the waiter's loop (or from no loop at
                 # all): hand the wakeup to the owning loop rather than touching
                 # its futures from here.
-                bound_loop.call_soon_threadsafe(event.set)
+                try:
+                    waiter.loop.call_soon_threadsafe(waiter.event.set)
+                except RuntimeError:  # closed between the check and the call
+                    self._forget_waiter(agent_id, waiter)
+                    continue
+            return
 
-    async def wait_for_task(self, agent_id: str, timeout: float) -> None:
-        """Wait up to timeout seconds for a task to be enqueued for agent_id."""
-        loop = asyncio.get_running_loop()
-        entry = self._events.get(agent_id)
-        if entry is None or entry[0] is not loop:
-            # First wait for this agent, or a different loop from the one the
-            # cached Event bound to. Reusing the stale Event raises
-            # RuntimeError("... is bound to a different event loop").
-            event = asyncio.Event()
-            self._events[agent_id] = (loop, event)
-        else:
-            event = entry[1]
-        event.clear()
-        if self._queue.get(agent_id):
+    def _forget_waiter(self, agent_id: str, waiter: "_TaskWaiter") -> None:
+        waiters = self._waiters.get(agent_id)
+        if not waiters:
             return
         try:
-            await asyncio.wait_for(event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+            waiters.remove(waiter)
+        except ValueError:
             pass
+        if not waiters:
+            self._waiters.pop(agent_id, None)
+
+    async def wait_for_task(self, agent_id: str, timeout: float) -> bool:
+        """Wait up to ``timeout`` seconds for a task to be enqueued for ``agent_id``.
+
+        Returns ``True`` when this waiter is still the agent's CURRENT poll and
+        ``False`` when a newer poll for the same agent superseded it while it
+        waited (OPS-09). A beacon holds one long-poll at a time, so a second
+        one means the first belongs to a connection the beacon has abandoned —
+        a restart inside the wait window. The caller should not dequeue for a
+        superseded waiter; if it does anyway, it finds the queue as the current
+        waiter left it, because an enqueue never wakes a superseded one.
+
+        A superseded waiter is NOT woken early: it runs out its own timeout.
+        Waking it would make two beacons that share an agent id spin against
+        each other.
+        """
+        loop = asyncio.get_running_loop()
+        waiter = _TaskWaiter(loop=loop, event=asyncio.Event())
+        waiters = self._waiters.setdefault(agent_id, [])
+        for older in waiters:
+            older.superseded = True
+        waiters.append(waiter)
+        try:
+            if not self._queue.get(agent_id):
+                try:
+                    await asyncio.wait_for(waiter.event.wait(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    pass
+            return not waiter.superseded
+        finally:
+            self._forget_waiter(agent_id, waiter)
 
     def dequeue(self, agent_id: str) -> Optional[Task]:
         """Pop the next deliverable task for an agent from the in-memory queue.
@@ -1387,9 +2012,22 @@ class Orchestrator:
         The run is stamped ``delivered_at`` in the same commit. Deleting the
         row erases the only other evidence that the task reached a beacon, and
         :meth:`rehydrate` needs that evidence to leave an executing run alone.
+
+        Every poll first reaps this agent's ABANDONED runs (OPS-03): a beacon
+        asking for new work is alive, and if it has stopped polling a delivered
+        run's control channel it is no longer executing that run. This is the
+        only periodic signal that fires for such an agent — its fresh
+        ``last_seen`` keeps the offline-agent beacon-lost sweep away.
+
+        The poll is recorded as idle evidence for this agent BEFORE the reap,
+        and the delivery it causes AFTER, so the collecting poll is never
+        mistaken for "has let go of the task it just collected".
         """
+        self.note_task_poll(agent_id)
+        await self.reap_abandoned(agent_id, db)
         task = self.dequeue(agent_id)
         if task is not None:
+            self.note_delivery(task.run_id, agent_id)
             from models import QueuedTask, Run  # noqa: PLC0415
             from sqlalchemy import delete, update  # noqa: PLC0415
 
@@ -1473,15 +2111,38 @@ class Orchestrator:
           * Any Run still in ``pending``/``running`` whose task did NOT survive
             in the durable queue AND was never delivered is marked ``failed``
             (its work was lost) so it does not hang forever. A note is appended
-            to the run output.
+            to the run output, and its Results are stamped ``not_executed`` /
+            ``TASK_LOST_ON_RESTART`` (OPS-01) so no later alert is credited to
+            a run that never reached the target.
           * A run whose task WAS delivered (``delivered_at`` set) has no row by
-            design — delivery deletes it — and is executing on its beacon. It
-            is left ``running``: failing it made /control stop the beacon
-            mid-step and put "the run never reached the target" in the POV
-            report of a run that did. Its own /complete terminalises it.
+            design — delivery deletes it — and is left ``running``: failing it
+            made /control stop the beacon mid-step and put "the run never
+            reached the target" in the POV report of a run that did.
+
+            Leaving it running is NOT the same as "its own /complete
+            terminalises it" (the claim this docstring used to make). The
+            beacon may have POSTed its /complete into the restart window, and
+            it does not wait for an answer the way a long-poll does; the run
+            then never hears from it again. Its agent keeps polling /tasks, so
+            ``last_seen`` stays fresh and the offline-agent beacon-lost sweep
+            never fires either. Such a run is reaped by
+            :func:`engine.beacon_lost.terminalise_abandoned_runs` (OPS-03): no
+            ``/control`` poll for the run within
+            ``CORTEXSIM_BEACON_LOST_AFTER_SECONDS`` of ``max(boot,
+            delivered_at)`` while its agent is demonstrably alive, no task for
+            it is still queued, and EVERY endpoint holding one of its tasks has
+            polled ``/tasks`` since boot means no beacon is executing it. A
+            multi-endpoint fan-out is not reaped while a second endpoint has
+            yet to collect its task or has not been seen idle since.
 
         Returns counts ``{rehydrated, failed_orphans, in_flight}`` for logging.
         """
+        # A fresh boot: no control poll, idle poll or delivery record survives a
+        # restart, so the abandoned-run sweep measures silence from now, never
+        # from before the process lived, and needs every endpoint to be seen
+        # idle again before it reaps.
+        self.started_at = datetime.utcnow()
+        self.reset_liveness()
         from models import QueuedTask, Run  # noqa: PLC0415
 
         # 1. Re-load every durable task into the in-memory queue.
@@ -1518,6 +2179,12 @@ class Orchestrator:
             run.output = (run.output or "") + (
                 "\n--- RUN FAILED ON RESTART — queued task was lost "
                 "(SimCore restarted before the agent picked it up) ---\n"
+            )
+            # A composed run's EAL steps ran in SimCore's own process at launch;
+            # only the beacon partitions were lost.
+            await stamp_not_executed(
+                db, run.run_id, REASON_TASK_LOST_ON_RESTART, commit=False,
+                exclude_steps=in_process_steps(run),
             )
             failed_orphans += 1
         if failed_orphans:
@@ -2251,6 +2918,85 @@ def _build_channel_dispatch(
                 "code": None,
             })
     return ledger
+
+
+#: ``Result.outcome_reason`` values for a run that terminated WITHOUT executing
+#: (OPS-01). Each one names the path that ended it, so a report can say why a
+#: row left the denominator rather than only that it did.
+REASON_LAUNCH_REFUSED = "LAUNCH_REFUSED"
+REASON_TASK_LOST_ON_RESTART = "TASK_LOST_ON_RESTART"
+REASON_BEACON_LOST_UNCLASSIFIED = "BEACON_LOST_UNCLASSIFIED"
+REASON_ABORTED_BEFORE_DELIVERY = "ABORTED_BEFORE_DELIVERY"
+REASON_AGENT_CANNOT_STAGE_ARTIFACTS = "AGENT_CANNOT_STAGE_ARTIFACTS"
+
+
+async def stamp_not_executed(
+    db: AsyncSession,
+    run_id: str,
+    reason: str,
+    *,
+    commit: bool = True,
+    exclude_steps: Any = (),
+) -> int:
+    """Stamp every Result of a run that never executed ``not_executed``.
+
+    The shared helper for every path that terminates a run without executing
+    it: a launch refused after seeding, an orphan failed by :meth:`rehydrate`,
+    a beacon-lost run that cannot be classified, an abort before delivery, and
+    (for the owner of ``core/api/agents.py``) a task refused at the
+    artifact-staging capability gate.
+
+    Before this, those runs kept their seeded rows with ``outcome`` NULL —
+    i.e. *pending, awaiting reconcile*. A matching alert from anything else on
+    the host then credited a detection, with a real-looking MTTD, to a run that
+    never touched the endpoint. ``not_executed`` is in
+    ``EXCLUDED_FROM_DENOMINATOR``: ``apply_verdicts`` never credits such a row
+    and every coverage figure leaves it out.
+
+    A row the host already marked ``not_reached`` / ``not_executed`` keeps its
+    own (better) reason. ``exclude_steps`` names steps that DID execute
+    in-process (a composed run's EAL steps) and must not be stamped.
+
+    Returns the number of rows stamped. ``commit=False`` leaves the commit to
+    a caller that is mid-transaction.
+    """
+    from engine.outcome import (  # noqa: PLC0415
+        EXCLUDED_FROM_DENOMINATOR,
+        OUTCOME_NOT_EXECUTED,
+    )
+    from models import Result  # noqa: PLC0415
+
+    if not reason:
+        raise ValueError("stamp_not_executed needs a reason")
+    skip = set(exclude_steps or ())
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == run_id)
+    )).scalars().all()
+    stamped = 0
+    for r in rows:
+        if r.step_id in skip or r.outcome in EXCLUDED_FROM_DENOMINATOR:
+            continue
+        r.outcome = OUTCOME_NOT_EXECUTED
+        r.outcome_reason = reason
+        stamped += 1
+    if commit:
+        await db.commit()
+    if stamped:
+        logger.info("run_id=%s: %d result(s) stamped not_executed (%s)",
+                    run_id, stamped, reason)
+    return stamped
+
+
+def in_process_steps(run: Any) -> set[str]:
+    """Step ids a composed run executed inside SimCore (its EAL steps).
+
+    Read from ``Run.channel_dispatch``; empty for a single-channel run.
+    """
+    ledger = getattr(run, "channel_dispatch", None) or []
+    return {
+        e.get("step_id") for e in ledger
+        if isinstance(e, dict) and e.get("channel") == "eal" and e.get("step_id")
+    }
 
 
 async def _publish_run_status(

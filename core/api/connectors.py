@@ -44,12 +44,35 @@ router = APIRouter(prefix="/connectors", tags=["connectors"])
 runs_reconcile_router = APIRouter(prefix="/runs", tags=["connectors"])
 
 
+#: OPS-06 — one manual batch is bounded. Matching is O(results x alerts) in
+#: process, so an unbounded paste is a request that can pin the event loop.
+MAX_OBSERVATIONS_PER_BATCH = 5000
+
+
+#: DNS name limit; a scope host longer than this is not a host name.
+MAX_SCOPE_HOST_LENGTH = 253
+
+_HOST_OVERRIDE_HELP = (
+    "the endpoint this run executed on, as Cortex names it. Scopes the match to "
+    "that host (recorded as host_source='operator'). Needed for a push run, "
+    "which has no target to resolve a host from: without it a matched detect "
+    "expectation is recorded pending (UNSCOPED_MATCH), never detected.")
+
+
+def _host_override(value: Optional[str]) -> Optional[str]:
+    """A blank override is no override, never a host named ''."""
+    return (value or "").strip() or None
+
+
 class ObservationsBody(BaseModel):
     """Manual batch of observed alerts (exported from the Cortex console)."""
 
-    observations: list[dict[str, Any]] = Field(default_factory=list)
+    observations: list[dict[str, Any]] = Field(
+        default_factory=list, max_length=MAX_OBSERVATIONS_PER_BATCH)
     window_seconds: int = DEFAULT_WINDOW_SECONDS
     reevaluate: bool = False  # if true, also re-check already-observed results
+    host: Optional[str] = Field(None, max_length=MAX_SCOPE_HOST_LENGTH,
+                                description=_HOST_OVERRIDE_HELP)
 
 
 # ---------------------------------------------------------------------------
@@ -138,16 +161,27 @@ async def ingest_observations(
     evidence for this run. The batch is ``unscoped`` -- every pass withheld
     (``PASS_WITHHELD_UNSCOPED``) -- when the run has no resolvable target or any
     submitted alert names no host, because then nothing ties it to this run.
+    ``host`` in the body names the endpoint instead of resolving it — the only
+    way a push run's batch is scoped (``host_source: "operator"``).
     """
     from connectors.matcher import scope_to_host
-    from connectors.service import (apply_verdicts, match_window_ends, resolve_run_host,
-                                    window_by_type)
+    from connectors.service import (NEVER_DELIVERED_WARNING, apply_verdicts,
+                                    host_source, match_window_ends,
+                                    reconcile_candidates, reported_step_ids,
+                                    resolve_run_host, window_by_type)
 
     run, results = await _load_run_results(db, run_id)
+    # OPS-01 defence in depth: a pull run no beacon ever collected ran nothing,
+    # so none of its beacon-step rows may be credited a pasted alert; an
+    # aborted one only on the steps its host reported (RG-RUNS-01).
+    candidates, never_delivered = reconcile_candidates(
+        run, results, reported_steps=await reported_step_ids(db, run_id))
     submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
-    alerts, host_scope = scope_to_host(submitted, await resolve_run_host(db, run))
+    override = _host_override(body.host)
+    scope_host = override if override is not None else await resolve_run_host(db, run)
+    alerts, host_scope = scope_to_host(submitted, scope_host)
     unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
-    verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
+    verdicts = reconcile(candidates, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=await match_window_ends(
@@ -158,16 +192,23 @@ async def ingest_observations(
         db, run_id, results, verdicts, source="manual-import",
         # The DC chose these alerts by hand, so silence is never a miss
         # (basis `manual`); a pass stands only when every alert was host-scoped.
+        # host_unresolved: the run has no host at all (push runs) — a detect
+        # match is then UNSCOPED_MATCH, never detected (DOCS-03).
         pull_context={"basis": "manual", "unscoped": unscoped, "truncated": False,
+                      "host_unresolved": host_scope["host"] is None,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
                                           if e in by_ext}},
         observations=alerts, window_seconds=body.window_seconds)
     summary["host_scope"] = host_scope
+    summary["host_source"] = host_source(override, host_scope)
     if unscoped:
         summary["unscoped"] = True
     summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
     warnings: list[str] = []
+    if never_delivered:
+        summary["never_delivered"] = True
+        warnings.append(NEVER_DELIVERED_WARNING)
     if dropped:
         # These alerts were submitted and NOT counted. Silently shortening the
         # list would understate coverage with no explanation; the old code was
@@ -216,6 +257,8 @@ async def reconcile_run_endpoint(
     connector: str = Query(..., description="connector kind, e.g. 'xsiam'"),
     integration: Optional[str] = Query(None, description="integration name (defaults to the first of this kind)"),
     window_seconds: int = Query(DEFAULT_WINDOW_SECONDS, ge=60, le=86400),
+    host: Optional[str] = Query(None, max_length=MAX_SCOPE_HOST_LENGTH,
+                                description=_HOST_OVERRIDE_HELP),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Pull observations from a configured integration and auto-validate.
@@ -223,6 +266,8 @@ async def reconcile_run_endpoint(
     Resolves the integration credential from the encrypted vault, pulls alerts
     for the run's execution window (± a margin), correlates, and sets MTTD.
     Delegates to the shared reconcile service (also used by the auto loop).
+    ``?host=`` names the endpoint to scope to instead of resolving it from the
+    run's target — the only way a push run is reconciled scoped.
     """
     from connectors.service import ReconcileError, reconcile_run
 
@@ -231,6 +276,7 @@ async def reconcile_run_endpoint(
         outcome = await reconcile_run(
             db, run, results, connector_kind=connector,
             integration_name=integration, window_seconds=window_seconds,
+            host=_host_override(host),
         )
     except ReconcileError as e:
         status = _RECONCILE_ERROR_STATUS.get(e.code, 500)

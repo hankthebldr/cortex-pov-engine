@@ -6,6 +6,10 @@
 namespace: eal-simulator
 createNamespace: true
 
+# The cluster's DNS domain. Only used to spell the Service's fully qualified
+# name (<service>.<namespace>.svc.<clusterDomain>) in the Host allowlist below.
+clusterDomain: cluster.local
+
 image:
   repository: ghcr.io/hankthebldr/cortex-pov-engine
   tag: latest
@@ -39,22 +43,68 @@ masterSecret:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API gateway — control plane the operator interacts with.
-# Binds to the Tailscale interface only (see service.bindAddress).
+# It listens on every pod interface. api.bindAddress below does NOT change
+# that: it is rendered into the ConfigMap as CORTEXSIM_BIND_ADDRESS, which
+# nothing in SimCore reads (SEC-18). Restrict who reaches the API with the
+# Service type, a NetworkPolicy or the Tailscale ingress.
 # ─────────────────────────────────────────────────────────────────────────────
 api:
   enabled: true
-  replicaCount: 2
+  # ONE replica. SimCore is single-process by construction: its task queue and
+  # its live-event bus live in the process (core/events.py: "Single process
+  # only"), and with persistence.enabled=false each pod has its own SQLite
+  # file. Two API pods behind one Service are two separate SimCores: an agent
+  # enrolled on one is unknown to the other, a task queued on one is never
+  # delivered by the other, and a campaign created on one is a 404 on the
+  # other. This defaulted to 2. Scale the pod's resources, not the count.
+  replicaCount: 1
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits:   {cpu: 500m, memory: 512Mi}
   env:
     CORTEXSIM_ENV: production
     CORTEXSIM_PORT: "8888"
-  # The API gateway should NEVER bind to 0.0.0.0 in production.
-  # On a K3s cluster running Tailscale as a daemonset, override this to the
-  # Tailscale-issued 100.x.y.z address per node and front it with the Tailscale
-  # ingress controller.
+  # INERT today: rendered as CORTEXSIM_BIND_ADDRESS, which no SimCore code
+  # reads, so overriding it to a Tailscale 100.x.y.z address does not stop the
+  # pod listening on 0.0.0.0. Keep the API off untrusted networks with the
+  # Service type, a NetworkPolicy or the Tailscale ingress controller.
+  # Wiring it into the container's uvicorn --host is a code change (SEC-18).
   bindAddress: "0.0.0.0"
+
+  # Host names SimCore answers to (CORTEXSIM_ALLOWED_HOSTS). SimCore refuses any
+  # request whose Host header is not localhost, an IP address, the pod's own
+  # hostname, or a name in that list, with 400 HOST_NOT_ALLOWED. This is its
+  # DNS-rebinding guard, and the API has no authentication behind it. A pod's
+  # hostname is the pod name, so none of the names clients actually use would
+  # be admitted on their own.
+  #
+  # The chart always admits the names it creates itself:
+  #   <release>-eal-simulator-api
+  #   <release>-eal-simulator-api.<namespace>
+  #   <release>-eal-simulator-api.<namespace>.svc
+  #   <release>-eal-simulator-api.<namespace>.svc.<clusterDomain>
+  #   every ingress.hosts[].host            (when ingress.enabled)
+  #   tailscale.hostname                    (when tailscale.enabled)
+  # List here every OTHER name a browser, a beacon's --server or a runbook's
+  # BASE= uses: the Tailscale MagicDNS FQDN (cortexsim-eal.<tailnet>.ts.net), a
+  # CNAME, a LoadBalancer DNS name, an Ingress rule with no host. '*.x' matches
+  # subdomains of x. '*' disables the guard; do not use it.
+  # kubectl port-forward (Host: localhost) and the kubelet probes (pod IP) need
+  # nothing here.
+  allowedHosts: []
+
+  # CIDRs whose X-Forwarded-For SimCore believes when it records an agent's
+  # address (CORTEXSIM_TRUSTED_PROXIES). Empty: the header is ignored and the
+  # socket peer is recorded, so behind an Ingress every agent reads as the
+  # ingress controller. List the controller's pod CIDR or address to fix that;
+  # list nothing you do not control, because a listed peer can claim any address.
+  trustedProxies: []
+
+  # Any other environment variable for the API and worker pods, rendered into
+  # the chart's ConfigMap as-is (for example CORTEXSIM_CORS_ORIGINS). Not for
+  # secrets: a ConfigMap is not one. The chart refuses a key it already manages
+  # (use the value named in the error instead) and refuses CORTEXSIM_SECRET.
+  extraEnv: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Worker pods — actually emit the simulation traffic. These pods need direct

@@ -111,12 +111,29 @@ def _slim_step(step: dict) -> dict:
     return out
 
 
+def _bundle_targets(doc: dict) -> list[str]:
+    """The push-bundle targets ``GET /{id}/download`` will actually serve (UI-08).
+
+    ``posix`` (bash / k8s) and/or ``windows`` (PowerShell), from the SAME
+    resolver the download route gates on — so the console can label a scenario
+    Windows-only, or offer the .ps1, without a speculative download that comes
+    back 409. ``[]`` for ``push_supported: false``: the route refuses those with
+    PUSH_NOT_SUPPORTED whatever the content could emit, and an empty list must
+    not be read as "this scenario has no commands". Measured cost: ~0.3 ms per
+    scenario, so the list projection carries it too.
+    """
+    if push_not_supported(doc):
+        return []
+    return list(emittable_targets(doc))
+
+
 def _slim_scenario(scenario: Scenario) -> dict:
     """Summary projection of a scenario for the list endpoint."""
     full = scenario.to_dict()
     slim = {k: v for k, v in full.items() if k not in _LIST_OMIT_FIELDS}
     steps = full.get("steps")
     slim["steps"] = [_slim_step(s) for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+    slim["bundle_targets"] = _bundle_targets(full)
     return slim
 
 
@@ -214,7 +231,9 @@ async def get_scenario(
         )
 
     logger.info("get_scenario scenario_id=%s", scenario_id)
-    return scenario.to_dict()
+    doc = scenario.to_dict()
+    doc["bundle_targets"] = _bundle_targets(doc)
+    return doc
 
 
 def tenant_content_manifest(scenario_doc: dict[str, Any]) -> dict[str, Any]:
@@ -1053,7 +1072,11 @@ async def generate_bundle(
         # The URL lands in the header, a preflight command line, an annotation
         # and the init container's env, and the pod fetches its payload from
         # it: it must be this SimCore, by the installer's one rule.
-        simcore_url = _own_server(request, body.server) if body.server else ""
+        simcore_url = _own_server(
+            request, body.server,
+            baked_into="a k8s bundle (its header, preflight line and payload URL)",
+            override_name="`server` (the bundle body field)",
+        ) if body.server else ""
         try:
             content = generate_k8s(
                 scenario_dict,

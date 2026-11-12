@@ -160,7 +160,7 @@ steps:
       echo "cortexsim-mp022-mass-staging-emitted files=40"
     identity: svc-backup
     mitre_technique: "T1074.001"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: process_lineage
@@ -187,7 +187,7 @@ steps:
       echo "cortexsim-mp022-chunked-egress-emitted sessions=8 chunk_bytes=$CHUNK"
     identity: svc-backup
     mitre_technique: "T1030"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: endpoint_network_stitch
@@ -223,7 +223,7 @@ steps:
     # temporal, deliberately: the benign arm co-occurs in the window but is
     # causally UNRELATED and owned by a different identity. If it were on the
     # spine it could not function as a discriminator.
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -244,7 +244,7 @@ steps:
       echo cortexsim-mp022-ransom-note-written
     identity: svc-backup
     mitre_technique: "T1657"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: process_lineage
@@ -268,7 +268,7 @@ steps:
       echo cortexsim-mp022-terminal-stitch-verified
     identity: root
     mitre_technique: "T1567.002"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-05
       pivot: exploit_impact

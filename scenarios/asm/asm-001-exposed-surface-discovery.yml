@@ -106,7 +106,11 @@ steps:
     # runs on. On Windows without Npcap raw sockets, a TCP connect scan (-sT) is
     # the equivalent; on macOS the SYN scan needs sudo like Linux.
     platform_variants:
-      windows: "nmap -sT -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX nmap-cortexsim-asm.xml %ASM_TARGET_HOST%"
+      # CONT-12: explicit PowerShell with an env-var default (a %VAR% only
+      # expands when cmd happens to be the inferred shell).
+      windows: |
+        $h = if ($env:ASM_TARGET_HOST) { $env:ASM_TARGET_HOST } else { '127.0.0.1' }
+        nmap -sT -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX nmap-cortexsim-asm.xml $h
       macos: "sudo nmap -sS -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX /tmp/nmap-cortexsim-asm.xml ${ASM_TARGET_HOST}"
     # nmap and the step-01 inventory call are sibling execs the operator launches
     # from the same jumpbox shell (the CGO) against the same target asset — not a
@@ -150,7 +154,16 @@ steps:
     # unauthenticated-service probes produce the same NGFW egress + asm_findings
     # regardless of scanner OS. Windows uses PowerShell for the direct probes.
     platform_variants:
-      windows: "nuclei -target http://%ASM_TARGET_HOST% -severity medium,high,critical -t exposures,misconfigurations,cves -o nuclei-cortexsim.json -j -rate-limit 150; Invoke-WebRequest -SkipCertificateCheck -Uri https://%ASM_TARGET_HOST%:9200/ | Select-Object -ExpandProperty Content"
+      # CONT-12/CONT-13: %ASM_TARGET_HOST% is never expanded by PowerShell, and
+      # -SkipCertificateCheck does not exist in Windows PowerShell 5.1 (the
+      # product floor). The lab's self-signed certificate is accepted for this
+      # process only, the 5.1 way.
+      windows: |
+        $h = if ($env:ASM_TARGET_HOST) { $env:ASM_TARGET_HOST } else { '127.0.0.1' }
+        nuclei -target "http://$h" -severity medium,high,critical -t exposures,misconfigurations,cves -o nuclei-cortexsim.json -j -rate-limit 150
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri "https://${h}:9200/" -ErrorAction Stop).Content }
+        catch { Write-Error ("banner probe of {0}:9200 failed: {1}" -f $h, $_.Exception.Message); exit 1 }
     # nuclei is another sibling exec off the same operator shell (CGO) against the
     # same target as nmap — shared_entity keeps the operator-tooling spine
     # connected step-01 → step-02 → step-03.

@@ -129,7 +129,8 @@ def test_duplicate_complete_does_not_duplicate_step_outcomes(client, session_fac
     _seed(session_factory, mode="block")
     assert client.post("/api/runs/r1/complete", json=_SEVER_BODY).status_code == 200
     again = client.post("/api/runs/r1/complete", json=_SEVER_BODY)
-    assert again.status_code == 200
+    # Already terminal: refused (409) and nothing re-applied.
+    assert again.status_code == 409
     assert len(_rows(session_factory, StepOutcome)) == 3
     assert _run(session_factory) == ("complete", "step-02")
 
@@ -291,3 +292,24 @@ def test_complete_not_run_turns_a_tier1_missed_prevent_row_not_reached(client, s
     verdict, detail = asyncio.run(_verdict())
     assert verdict != "fail"
     assert "det step-02" in (detail or {}).get("excluded", [])
+
+
+# ── cross-lane: the Windows beacon reports a platform-refused step ─────────
+
+def test_platform_unsatisfiable_step_is_accepted_and_not_executed(client, session_factory):
+    """agent/beacon/step_outcome.go sends reason PLATFORM_UNSATISFIABLE for a
+    step its host platform cannot run. Before this was in `_STEP_REASONS` the
+    /complete 422'd, postRetry treated the 4xx as terminal, and the run sat
+    `running` until the reaper. The step never ran: `not_executed`, not
+    `missed`."""
+    from models import Result
+
+    _seed(session_factory, mode="report", prevent_steps=())
+    body = {"exit_code": 0, "summary": "PLATFORM_UNSATISFIABLE: 1 step(s) not run", "steps": [
+        {"step_id": "step-01", "termination": "not_run", "reason": "PLATFORM_UNSATISFIABLE"},
+        {"step_id": "step-02", "exit_code": 0, "termination": "exited"},
+        {"step_id": "step-03", "exit_code": 0, "termination": "exited"}]}
+    r = client.post("/api/runs/r1/complete", json=body)
+    assert r.status_code == 200, r.text
+    res = {x.step_id: x.outcome for x in _rows(session_factory, Result)}
+    assert res["step-01"] == "not_executed"

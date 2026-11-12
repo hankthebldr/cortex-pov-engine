@@ -119,18 +119,19 @@ This is the substantive gate. Everything below is required.
 
 ### A1 · Automated (CI, blocking)
 
-`ci.yml` runs on every PR. All jobs must be green:
+`ci.yml` runs on every PR. All eight `ubuntu-22.04` jobs must be green. The ninth, `windows`, must run, but it is **not yet a required check**. It has been observed green three times, after two red runs: at `d7f4f29` (run 42933820773, 2026-11-10) and on the round-2 code at `fb0f646` and `e434efa` (run 43037077022, 2026-11-11). Making it required, and asking Gate B for Windows evidence, is an open decision (DOCS-12). A green run covers the commit it ran on, not later ones.
 
 | Job | Proves |
 |---|---|
-| `backend` | Python suite inside the **prod image** (not the host venv), then again under `TZ=America/Los_Angeles` |
-| `agent` | Go beacon build + vet + `test -race`, cross-compile linux/darwin/**windows** |
+| `backend` | Python suite inside the **prod image** (not the host venv, whose uvicorn / httpx are newer than the pins), then again under `TZ=America/Los_Angeles`; then `check-agent-shelf` (the image serves all five beacons, magic bytes checked) and `docker compose config -q` on `docker-compose.yml` |
+| `agent` | Go beacon build + vet + `test -race`, cross-compile all five shipped targets (linux and darwin on amd64 and arm64, **windows/amd64**); `pwsh` required (`CORTEXSIM_REQUIRE_POWERSHELL=1`) |
 | `ui` | vitest + `vite build` |
 | `detection` | corpus validator + deterministic export regeneration (`sha256sum -c`) |
-| `refs` | every scenario through the real loader under `CORTEXSIM_STRICT_REFS=true` |
-| `adapters` | tier-2 source trees present; adapter wiring check |
+| `refs` | `make check-powershell` (every emitted PowerShell parsed as Windows PowerShell 5.1 decodes it; an empty category fails; the only PS6+ variable allowed is the exact `if ($IsLinux -or $IsMacOS)` shape; this runs pwsh 7, not 5.1) + every scenario through the real loader under `CORTEXSIM_STRICT_REFS=true` + ground-truth drift + lab-readiness manifest drift; each gate runs even when an earlier one is red |
+| `adapters` | tier-2 source trees present; adapter wiring check; payload-shelf drift (`python3 -m engine.payload_shelf --check`, `PAYLOAD_ALLOW_UNPINNED=0`) |
 | `rust-dist` | static-musl builds of the three Rust tools |
 | `e2e-isolated` | Tier-C pure assertion suite |
+| `windows` | `windows-2022`, Windows PowerShell 5.1: native `go test`, 5.1 parse + PSScriptAnalyzer, SimCore boot, the install one-liner, pull / abort / push / uninstall against the beacon service, with CI probe scenarios. **Green at `d7f4f29`, `fb0f646` and `e434efa`; not yet required.** |
 
 A red job is never merged around. A **skipped** job reads exactly like a passing
 one — if you add a gate, it must run on the PR, not behind a label.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -148,6 +149,41 @@ def sandbox(tmp_path):
             "log": tmp_path / "beacon.log"}
 
 
+_LAUNCHD_LABEL = "com.paloaltonetworks.cortexsim.agent"
+
+
+def _loaded_launchd_plist() -> str | None:
+    """The plist behind this user's loaded CortexSim launchd job, or None when
+    no such job is loaded (or this is not macOS)."""
+    if os.uname().sysname != "Darwin" or shutil.which("launchctl") is None:
+        return None
+    p = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{_LAUNCHD_LABEL}"],
+                       capture_output=True, text=True, timeout=15)
+    if p.returncode != 0:
+        return None
+    m = re.search(r"^\s*path = (.+)$", p.stdout, re.M)
+    return m.group(1).strip() if m else ""
+
+
+@pytest.fixture(autouse=True)
+def _no_launchd_job_outlives_the_test(tmp_path):
+    """On macOS a service-mode install REALLY bootstraps a KeepAlive launchd
+    agent into the developer's own gui domain, pointing at a stub under this
+    test's tmp_path. Nothing removed it, so every run of this file left one
+    loaded, respawning a stub every few seconds for as long as the temp
+    directory lasted. Only a job whose plist is under THIS test's tmp_path is
+    touched; a real beacon installed on the machine is never booted out here."""
+    yield
+    mine = (str(tmp_path), os.path.realpath(tmp_path))
+    plist = _loaded_launchd_plist()
+    if plist and plist.startswith(mine):
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{_LAUNCHD_LABEL}"],
+                       capture_output=True, text=True, timeout=30)
+        left = _loaded_launchd_plist()
+        assert not (left and left.startswith(mine)), (
+            f"this test left a launchd job loaded on the developer's machine: {left}")
+
+
 def _fetch(url: str) -> str:
     import urllib.request
 
@@ -169,6 +205,31 @@ def _run_installer(script: str, sandbox, timeout: int = 60) -> subprocess.Comple
                           text=True, env=sandbox["env"], timeout=timeout)
 
 
+def _polling_stub(path: Path) -> Path:
+    """A stand-in beacon that really re-polls /tasks for a minute, so the
+    installer's check-in verification has something true to observe."""
+    path.write_text(
+        "#!/bin/sh\n"
+        "echo \"beacon-started $*\"\n"
+        "SERVER=\"\"; ID=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  case \"$1\" in\n"
+        "    --server) SERVER=\"$2\"; shift 2 ;;\n"
+        "    --id) ID=\"$2\"; shift 2 ;;\n"
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        "i=0\n"
+        "while [ \"$i\" -lt 60 ]; do\n"
+        "  curl -sS -m 5 \"$SERVER/api/agents/$ID/tasks\" >/dev/null 2>&1 || true\n"
+        "  sleep 1\n"
+        "  i=$((i + 1))\n"
+        "done\n"
+    )
+    path.chmod(0o755)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Happy path — a customer endpoint with no compiler
 # ---------------------------------------------------------------------------
@@ -183,7 +244,8 @@ def test_install_succeeds_with_no_go_toolchain_on_the_target(simcore, sandbox):
 
     # Downloaded, verified, installed, and launched — without a compiler.
     assert not sandbox["tripwire"].exists(), "the installer shelled out to `go`"
-    assert "checksum OK" in p.stdout
+    (ok_line,) = [ln for ln in p.stdout.splitlines() if "checksum OK" in ln]
+    assert "catches corruption, not tampering" in ok_line, ok_line
     assert sandbox["bin"].exists() and os.access(sandbox["bin"], os.X_OK)
     assert "beacon-started" in p.stdout
     assert f"--server {simcore}" in p.stdout
@@ -212,27 +274,7 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox, t
     test_installer_fails_when_agent_never_checks_in) — a one-shot stub would
     correctly be reported as AGENT_NEVER_CHECKED_IN, which is not what this
     test is about."""
-    staged = tmp_path / "polling-agent"
-    staged.write_text(
-        "#!/bin/sh\n"
-        "echo \"beacon-started $*\"\n"
-        "SERVER=\"\"; ID=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  case \"$1\" in\n"
-        "    --server) SERVER=\"$2\"; shift 2 ;;\n"
-        "    --id) ID=\"$2\"; shift 2 ;;\n"
-        "    *) shift ;;\n"
-        "  esac\n"
-        "done\n"
-        "i=0\n"
-        "while [ \"$i\" -lt 60 ]; do\n"
-        "  curl -sS -m 5 \"$SERVER/api/agents/$ID/tasks\" >/dev/null 2>&1 || true\n"
-        "  sleep 1\n"
-        "  i=$((i + 1))\n"
-        "done\n"
-    )
-    staged.chmod(0o755)
-    sandbox["env"]["CORTEXSIM_BIN"] = str(staged)
+    sandbox["env"]["CORTEXSIM_BIN"] = str(_polling_stub(tmp_path / "polling-agent"))
 
     token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
     script = _fetch(f"{simcore}/api/agents/install?token={token}&interval=2")  # service is the default
@@ -255,6 +297,45 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox, t
         codes = [a["code"] for a in attempts]
         assert codes[0] == "OK"
         assert "DEGRADED_NO_SUPERVISOR" in codes
+
+
+@pytest.mark.parametrize("as_root", [True, False], ids=["installed-as-root", "installed-as-user"])
+def test_the_closing_line_names_the_uninstall_that_matches_the_install(
+    simcore, sandbox, tmp_path, as_root
+):
+    """The closing line printed `| bash` for every install while the console
+    printed `| sudo bash` for every uninstall. A root install needs root to
+    remove; a user-mode install is removed by the user who made it.
+
+    Hermetic: systemctl and launchctl are stubs that fail, so the beacon takes
+    the nohup path and no supervisor on this host is touched. Root is simulated
+    with an `id` stub unless the suite really is root (the CI image)."""
+    real_root = os.geteuid() == 0
+    if as_root and real_root and os.uname().sysname.lower() == "darwin":
+        pytest.skip("a real-root macOS run would write /Library/LaunchDaemons")
+    fakebin = Path(sandbox["env"]["PATH"].split(os.pathsep)[0])
+    for tool in ("systemctl", "launchctl"):
+        (fakebin / tool).write_text("#!/bin/sh\nexit 1\n")
+        (fakebin / tool).chmod(0o755)
+    if as_root != real_root:
+        uid, name = (0, "root") if as_root else (1000, "dc")
+        (fakebin / "id").write_text(
+            f'#!/bin/sh\ncase "$*" in "-u") echo {uid}; exit 0;; "-un") echo {name}; exit 0;; esac\n'
+            f'exec {shutil.which("id")} "$@"\n')
+        (fakebin / "id").chmod(0o755)
+    sandbox["env"]["CORTEXSIM_BIN"] = str(_polling_stub(tmp_path / "polling-agent"))
+
+    token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
+    script = _fetch(f"{simcore}/api/agents/install?token={token}&interval=2")
+    p = _run_installer(script, sandbox, timeout=30)
+    assert p.returncode == 0, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}"
+
+    (line,) = [ln for ln in p.stdout.splitlines() if "uninstall:" in ln]
+    assert f"curl -fsSL '{simcore}/api/agents/install?uninstall=1' | " in line, line
+    if as_root:
+        assert "| sudo bash" in line, line
+    else:
+        assert "| bash" in line and "sudo" not in line, line
 
 
 def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):
@@ -282,7 +363,9 @@ def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):
 def test_enroll_denial_surfaces_the_servers_own_structured_detail(simcore, sandbox):
     """Regression: the old installer used `curl -f`, which discarded the body and
     replaced the server's ENROLL_DENIED detail with a guess."""
-    script = _fetch(f"{simcore}/api/agents/install?token=cxs_not_a_real_token&mode=foreground")
+    # Well-formed (the installer route refuses a malformed token with BAD_TOKEN
+    # before any script exists) but never minted, so the ENROLL step denies it.
+    script = _fetch(f"{simcore}/api/agents/install?token=cxs_not_a_real_token_but_well_formed&mode=foreground")
     p = _run_installer(script, sandbox)
 
     assert p.returncode == 1
@@ -294,6 +377,35 @@ def test_enroll_denial_surfaces_the_servers_own_structured_detail(simcore, sandb
     attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
     assert attempts[0]["code"] == "ENROLL_DENIED"     # visible in SimCore, not only on the target
     assert attempts[0]["stage"] == "enroll"
+
+
+def test_a_failure_before_enrollment_is_not_reported_under_the_default_agent_id(
+    simcore, sandbox, dist_dir
+):
+    """The route's default id is 'jumpbox-01' and the console's token URL carries
+    no id, so every host that failed before enrolling reported itself as
+    'jumpbox-01'. With a token in effect the id is SimCore's to assign."""
+    def _latest() -> dict:
+        return json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"][0]
+
+    bad = "cxs_not_a_real_token_but_well_formed"
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?token={bad}&mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=ENROLL_DENIED" in p.stderr
+    assert _latest()["agent_id"] is None, _latest()
+
+    # The console's own flow: the token rides in the environment, not the URL.
+    sandbox["env"]["CORTEXSIM_TOKEN"] = bad
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=ENROLL_DENIED" in p.stderr
+    assert _latest()["agent_id"] is None, _latest()
+    del sandbox["env"]["CORTEXSIM_TOKEN"]
+
+    # Negative control: a self-asserted id IS the id, and is still reported.
+    for f in dist_dir.iterdir():
+        f.unlink()
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?id=box-1&mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=BINARY_UNAVAILABLE" in p.stderr
+    assert _latest()["agent_id"] == "box-1", _latest()
 
 
 def test_empty_shelf_fails_with_the_command_that_fixes_it(simcore, sandbox, dist_dir):
@@ -314,7 +426,7 @@ def test_empty_shelf_fails_with_the_command_that_fixes_it(simcore, sandbox, dist
 
 
 def test_unreachable_server_is_distinguished_from_a_rejected_token(sandbox, simcore):
-    script = _fetch(f"{simcore}/api/agents/install?token=cxs_x&mode=foreground")
+    script = _fetch(f"{simcore}/api/agents/install?token=cxs_unreachable_server_test_token&mode=foreground")
     # Repoint the script at a closed port: same script, different failure mode.
     sandbox["env"]["CORTEXSIM_SERVER"] = f"http://127.0.0.1:{_free_port()}"
     sandbox["env"]["CORTEXSIM_TELEMETRY"] = "0"  # nothing is listening to report to
@@ -326,8 +438,12 @@ def test_unreachable_server_is_distinguished_from_a_rejected_token(sandbox, simc
 
 
 # ---------------------------------------------------------------------------
-# Integrity — a tampered binary must never be executed
+# Integrity — a download that does not match its digest is never executed
 # ---------------------------------------------------------------------------
+#
+# That is all the check sees: the binary and the digest come from the same
+# server, so someone able to rewrite one can rewrite both. The scripts say
+# "catches corruption, not tampering" on both the match and the mismatch.
 
 
 class _TamperingHandler(http.server.BaseHTTPRequestHandler):
@@ -377,6 +493,8 @@ def test_checksum_mismatch_aborts_before_the_binary_is_installed(simcore, sandbo
     assert p.returncode == 1
     assert "code=CHECKSUM_MISMATCH" in p.stderr
     assert "do NOT run this binary" in p.stderr
+    assert "catches corruption, not tampering" in p.stderr
+    assert "intercepting TLS proxy" not in p.stderr
     assert "TAMPERED" not in p.stdout                  # it was never executed
     assert not sandbox["bin"].exists()                 # nor installed
     assert any(r["code"] == "CHECKSUM_MISMATCH" for r in _TamperingHandler.reports)
@@ -487,3 +605,60 @@ def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(
     assert "installed system unit:" in p2.stdout, f"stdout:\n{p2.stdout}\nstderr:\n{p2.stderr}"
     assert "unit already existed — restarting" in p2.stdout
     assert "restart cortexsim-agent" in syslog.read_text()
+
+
+# ---------------------------------------------------------------------------
+# RG-INSTALL-03: a Host-guard refusal is named, not read as a bad token.
+#
+# A beacon --server that is a DNS name SimCore's guard does not admit gets
+# 400 HOST_NOT_ALLOWED on every request. The installer reported that at the
+# enroll stage as ENROLL_DENIED / "mint a fresh token", which sends the DC to
+# the token, and at the download stage as BINARY_FETCH_FAILED.
+# ---------------------------------------------------------------------------
+
+
+class _HostRefusingHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every request the way core/security/host_guard.py does."""
+
+    BODY = json.dumps({
+        "error": "Host not allowed", "code": "HOST_NOT_ALLOWED",
+        "detail": "Host 'jumpbox.lab' is not one SimCore answers to. Fix: set "
+                  "CORTEXSIM_ALLOWED_HOSTS=jumpbox.lab and restart SimCore.",
+    }).encode()
+
+    def log_message(self, *args):
+        pass
+
+    def _refuse(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length:
+            self.rfile.read(length)
+        self.send_response(400)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(self.BODY)))
+        self.end_headers()
+        self.wfile.write(self.BODY)
+
+    do_GET = _refuse
+    do_POST = _refuse
+
+
+@pytest.mark.parametrize("with_token, stage", [(True, "enroll"), (False, "download")])
+def test_a_host_guard_refusal_is_named_not_read_as_a_bad_token(simcore, sandbox, with_token, stage):
+    port = _free_port()
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), _HostRefusingHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        q = "token=cxs_host_refused_but_well_formed_token" if with_token else "id=box-1"
+        script = _fetch(f"{simcore}/api/agents/install?{q}&mode=foreground")
+        sandbox["env"]["CORTEXSIM_SERVER"] = f"http://127.0.0.1:{port}"
+        sandbox["env"]["CORTEXSIM_TELEMETRY"] = "0"
+        p = _run_installer(script, sandbox)
+    finally:
+        httpd.shutdown()
+
+    assert p.returncode == 1
+    assert f"stage={stage}  code=HOST_NOT_ALLOWED" in p.stderr, p.stderr
+    assert "CORTEXSIM_ALLOWED_HOSTS" in p.stderr
+    assert "mint a fresh token" not in p.stderr
+    assert "ENROLL_DENIED" not in p.stderr and "BINARY_FETCH_FAILED" not in p.stderr

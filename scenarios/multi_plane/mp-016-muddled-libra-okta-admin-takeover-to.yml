@@ -181,7 +181,22 @@ steps:
     mitre_technique: "T1078.004"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'Use-STSRoleWithSAML -PrincipalArn $idp -RoleArn $role -SAMLAssertion $b64  # AWS Tools for PowerShell federated AssumeRole burst'
+      # CONT-13: the old variant called AWS Tools' Use-STSRoleWithSAML with three
+      # undefined variables — a REAL STS call against whatever credentials the
+      # host holds, while the linux primary is SAFE-MODE — and "Use-" is not a
+      # verb the bundle recognises, so it ran under cmd. It now writes the same
+      # SAFE-MODE audit records the primary does.
+      windows: |
+        Write-Output '[MP-016] CLOUD_APP: SAFE-MODE federated AssumeRole burst into multiple AWS/Azure accounts'
+        $d = if ($env:WORK_DIR) { $env:WORK_DIR } else { Join-Path $env:TEMP 'cortexsim-mp016' }
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $admin = if ($env:TARGET_ADMIN) { $env:TARGET_ADMIN } else { 'tadmin@corp.example' }
+        foreach ($n in 1..6) {
+          $o = [ordered]@{ event_name = 'AssumeRoleWithSAML'; cloud_provider = 'AWS'; saml_subject = $admin; recipient_account_id = "acct-$n"; assumed_role_arn = "arn:aws:iam::acct-${n}:role/federated"; source_ip = '198.51.100.20' }
+          $o | ConvertTo-Json -Compress | Set-Content -Encoding ASCII -Path (Join-Path $d "04-assumerole-$n.json")
+        }
+        Get-ChildItem -Path $d -Filter '04-assumerole-*.json' | Select-Object -First 10 -ExpandProperty Name
+        Write-Output '[*] Cloud audit logs should show a fan-out of federated role assumptions into >= 2 accounts on the same subject'
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -208,7 +223,21 @@ steps:
     mitre_technique: "T1537"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'aws transfer create-server; aws datasync start-task-execution; aws secretsmanager get-secret-value  # run from a Windows operator box via AWS CLI'
+      # CONT-13: the old variant ran REAL `aws transfer create-server` /
+      # `datasync start-task-execution` / `secretsmanager get-secret-value`
+      # (under cmd, where `;` is not even a separator) while the linux primary is
+      # SAFE-MODE. It now writes the same SAFE-MODE audit records.
+      windows: |
+        Write-Output '[MP-016] CLOUD_APP: SAFE-MODE cloud data-movement abuse burst (AWS + Azure)'
+        $d = if ($env:WORK_DIR) { $env:WORK_DIR } else { Join-Path $env:TEMP 'cortexsim-mp016' }
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $admin = if ($env:TARGET_ADMIN) { $env:TARGET_ADMIN } else { 'tadmin@corp.example' }
+        foreach ($api in 'CreateServer','CreateUser','StartTaskExecution','CreateLocationS3','GetSecretValue','BatchGetSecretValue') {
+          [ordered]@{ event_name = $api; cloud_provider = 'AWS'; saml_subject = $admin; source_ip = '198.51.100.20' } | ConvertTo-Json -Compress | Set-Content -Encoding ASCII -Path (Join-Path $d "05-aws-$api.json")
+        }
+        [ordered]@{ event_name = 'MICROSOFT.COMPUTE/SNAPSHOTS/WRITE'; cloud_provider = 'AZURE'; caller_principal_id = $admin; target_subscription_id = 'attacker-sub'; home_subscription_id = 'victim-sub'; resource_id = 'disk-01'; source_ip = '198.51.100.20' } | ConvertTo-Json -Compress | Set-Content -Encoding ASCII -Path (Join-Path $d '05-azure-snapshot.json')
+        Get-ChildItem -Path $d -Filter '05-*.json' | Select-Object -First 10 -ExpandProperty Name
+        Write-Output '[*] Cloud audit logs should show Transfer Family/DataSync/Secrets Manager APIs + an Azure snapshot copied to an external subscription'
     causality:
       parent_step: step-04
       pivot: exploit_impact
@@ -249,6 +278,11 @@ steps:
 cleanup:
   commands:
     - "rm -rf /tmp/cortexsim-mp016"
+    # Windows: the SAFE-MODE records steps 04-05 write under %TEMP%. The bash
+    # bundle and the K8s bootstrap do NOT run this line: push_generator
+    # withholds a Windows-only cleanup line from the POSIX target and names it
+    # in a `# skipped (Windows-only)` comment.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp016" rd /s /q "%TEMP%\cortexsim-mp016"'
     - "echo '[CortexSim] SIM-MP-016 cleanup complete - no persistent artifacts'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

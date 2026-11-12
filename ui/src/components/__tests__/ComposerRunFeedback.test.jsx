@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 import ComposerView from '../console/ComposerView.jsx'
+import { forgetLaunchWarnings } from '../console/launchWarnings.js'
 
 beforeAll(() => {
   window.ResizeObserver = window.ResizeObserver || class {
@@ -132,6 +133,51 @@ describe('ComposerView — a canvas launch is followed in the Active run pane', 
     // The beacon's degradation marker is surfaced on the row, verbatim in the title.
     expect(within(second).getByText(/not honoured/i)).toBeInTheDocument()
     expect(active).toHaveTextContent('tenant-verified: 0')
+  })
+})
+
+// RG-RUNS-06. The Composer follows a launched run in its own pane instead of
+// navigating to Runs, so the run view's launch-warning banner never appears
+// here, and the 5-second notice is not where a DC reads "the beacon is
+// offline". The followed-run pane carries the warnings for as long as it
+// follows the run.
+describe('ComposerView — a launch SimCore warned about says so in the Active run pane', () => {
+  const OFFLINE = "TARGET_AGENT_OFFLINE: agent 'a1' last polled 10800s ago; the task is queued and runs only when its beacon polls again"
+
+  async function launchWith(warnings) {
+    const user = userEvent.setup()
+    let launched = false
+    routes({
+      'POST /api/run': () => {
+        launched = true
+        return { run_id: 'r-new', scenario_id: 'SIM-EDR-001', status: 'pending', mode: 'pull', ...(warnings ? { warnings } : {}) }
+      },
+      'GET /api/runs': () => ({ runs: launched ? [{ ...NEW_RUN, expected_detections: 1, detected_count: 0 }] : [] }),
+      'GET /api/runs/r-new': NEW_RUN,
+    })
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-preflight'))
+    await waitFor(() => expect(screen.getByTestId('composer-launch')).not.toBeDisabled())
+    await user.click(screen.getByTestId('composer-launch'))
+    return screen.findByTestId('ws-active')
+  }
+
+  // Both cases launch run id 'r-new'; the session memory is keyed by run id.
+  beforeEach(() => { forgetLaunchWarnings() })
+
+  it('lists the warning with its code, as status text that outlives the notice', async () => {
+    const active = await launchWith([OFFLINE])
+    const warn = await within(active).findByTestId('ws-launch-warnings')
+    expect(warn).toHaveAttribute('role', 'status')
+    expect(warn).toHaveTextContent('TARGET_AGENT_OFFLINE')
+    expect(warn).toHaveTextContent(/runs only when its beacon polls again/)
+  })
+
+  it('an unremarkable launch shows no warning block', async () => {
+    const active = await launchWith(null)
+    await waitFor(() => expect(screen.getAllByTestId('ws-step-row')).toHaveLength(2))
+    expect(within(active).queryByTestId('ws-launch-warnings')).toBeNull()
   })
 })
 

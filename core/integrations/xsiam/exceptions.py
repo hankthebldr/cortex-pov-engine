@@ -50,11 +50,15 @@ class XsiamCapabilityError(XsiamError):
     http_status = 403  # the credential was never authorised for XQL
 
 
-class XqlWriteStageRefused(XsiamError):
+# Both XQL refusals are config errors: the caller's request is wrong and is
+# refused before anything is sent. One class each, raised by both the SEC-05
+# lexer (client.refuse_xql_write_stages, client._xql_start_body) and the D-18
+# guards (guards.refuse_xql_write_stage, guards.xql_query_text).
+class XqlWriteStageRefused(XsiamConfigError):
     code = "XQL_WRITE_STAGE_REFUSED"
     http_status = 400  # caller's query tries to write
 
 
-class XqlRequestShapeInvalid(XsiamError):
+class XqlRequestShapeInvalid(XsiamConfigError):
     code = "XQL_REQUEST_SHAPE_INVALID"
     http_status = 400  # the start-query body has no usable query string

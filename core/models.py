@@ -311,8 +311,10 @@ class Run(Base):
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, *, include_output: bool = True) -> dict[str, Any]:
+        """``include_output=False`` omits ``output`` WITHOUT touching it, so a
+        caller that deferred the column (the run-list summary) never loads it."""
+        out = {
             "id": self.id,
             "run_id": self.run_id,
             "scenario_id": self.scenario_id,
@@ -341,8 +343,10 @@ class Run(Base):
             "module_modes": self.module_modes,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "output": self.output,
         }
+        if include_output:
+            out["output"] = self.output
+        return out
 
 
 class Result(Base):
@@ -487,6 +491,62 @@ class StepOutcome(Base):
             "reason": self.reason,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
         }
+
+
+class RunTaskCompletion(Base):
+    """One beacon task's ``/complete``, recorded so a retry counts once.
+
+    The beacon retries ``/complete`` when the reply is lost, and
+    ``complete_run`` decrements ``Run.open_tasks`` per accepted POST. On a
+    multi-endpoint fan-out an uncounted retry terminalised the run while
+    another endpoint was still executing (RG-AGENT-03). The row is inserted in
+    the same write transaction as the decrement; the unique key makes a repeat
+    of the same task a no-op.
+
+    ``task_key`` is ``task:<task_id>`` when the beacon sent the task's id, else
+    ``agent:<agent_id>`` (a fan-out carries one task per distinct agent). A
+    beacon that sends neither writes no row and is counted as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_task_completions"
+    __table_args__ = (UniqueConstraint("run_id", "task_key",
+                                       name="uq_run_task_completions_run_task"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    task_key: Mapped[str] = mapped_column(String, nullable=False)
+    agent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    exit_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                   default=datetime.utcnow)
+
+
+class RunOutputFrame(Base):
+    """One beacon ``/output`` frame already stored, so a retry is stored once.
+
+    The beacon retries a step's ``/output`` when the reply is lost, and the
+    append is unconditional, so a stored-but-unacknowledged frame used to land
+    twice (RG-AGENT-06). Since 661047c the beacon keys every non-streaming
+    frame with ``frame_id`` (``<task_id>:<n>``); this row is inserted in the
+    same transaction as the append and the unique key makes a repeat a no-op.
+    A body without ``frame_id`` writes no row and appends as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_output_frames"
+    __table_args__ = (UniqueConstraint("run_id", "frame_id",
+                                       name="uq_run_output_frames_run_frame"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    frame_id: Mapped[str] = mapped_column(String, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                  default=datetime.utcnow)
 
 
 class Observation(Base):

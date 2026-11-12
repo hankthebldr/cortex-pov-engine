@@ -7,7 +7,7 @@
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
 [![scenarios](https://img.shields.io/badge/scenarios-193-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1377-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1369-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -19,7 +19,7 @@
 
 CortexSim generates controlled, high-fidelity attack signal into a Cortex
 environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
-`BIOC · XQL · Analytics · Correlation · IOC · ABIOC` — before a customer's own
+`BIOC · XQL · Analytics · Correlation · IOC · ABIOC · Prevention` — before a customer's own
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
@@ -82,6 +82,43 @@ not free text.
 > catch. Open a scenario's YAML under `scenarios/{plane}/` and read the
 > `command:` lines before you build a POV plan around it.
 
+> [!CAUTION]
+> **Windows targets: read first.** The Windows path has run in one place: the
+> `windows-2022` CI job, **green** at `d7f4f29` (2026-11-10) and on the
+> round-2 code at `e434efa` (run 43037077022, 2026-11-11), on a GitHub-hosted
+> runner with Defender real-time protection off and no XDR agent. It ran the beacon's tests, the elevated install
+> one-liner, a pull run, an abort and the uninstaller against CI probe
+> scenarios. **No shipped scenario, no `.ps1` push bundle and no customer
+> endpoint has run it.** Changes made after `e434efa` have not run on
+> Windows until the job runs on them.
+> - **Product floor:** Windows PowerShell **5.1** (Server 2016+ / Windows 10+).
+>   CI parsed every shipped `.ps1` under 5.1 itself; the local gate uses
+>   pwsh 7, which is not 5.1.
+> - **Run the one-liner elevated.** That installs the `CortexSimAgent` service.
+>   Its handler started and stayed Running in CI; reboot survival has not been
+>   observed. A non-elevated run is refused
+>   (`NOT_ELEVATED`) unless `CORTEXSIM_ALLOW_UNSUPERVISED=1`, and then the
+>   beacon dies at logoff and at reboot.
+> - **The beacon is unsigned**, and the `iwr | iex` cradle may be blocked or
+>   quarantined by XDR/Defender in prevent mode. Get an allow-list entry or
+>   exclusion for `C:\ProgramData\CortexSim\cortexsim-agent.exe` and its
+>   published sha256 **before** the POV.
+> - **Identity collapses to the beacon's own account** (SYSTEM under the
+>   service, by its LocalSystem registration), with `IDENTITY NOT HONOURED` in
+>   the run record. A lineage-keyed miss is not a customer gap.
+> - **Only Windows-resolvable scenarios run**: 13 resolve for Windows and
+>   69 carry a Windows-labelled step. **There is no Windows canary**
+>   (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
+> - **On a managed host**, a Group Policy execution policy outranks
+>   `-ExecutionPolicy Bypass` for a `.ps1` bundle and every child step, and
+>   AMSI or the endpoint agent can block the whole file before step 1. The
+>   bundle warns (`cortexsim-policy-warning reason=EXECUTION_POLICY_GPO`) but
+>   cannot get past either.
+>
+> Procedure and known issues:
+> [`docs/release/mvp-launch-runbook.md`](docs/release/mvp-launch-runbook.md)
+> §7–§8.
+
 ---
 ## 5-minute quickstart
 
@@ -92,7 +129,7 @@ cd cortex-pov-engine
 ./scripts/dev-up.sh
 ```
 
-Verified live, this session:
+Verified live, at an earlier release (the transcript predates the Host guard):
 
 ```
 [dev-up] docker: Docker version 29.7.2, build a7dcaa6 — daemon reachable.
@@ -107,7 +144,24 @@ That's it — one command, Docker is the only prerequisite. `scripts/dev-up.sh`
 needs **no Go/Rust/Node toolchain and no git submodules on your host**: the
 image bakes the Go agent matrix, the Rust tools, and the tool-payload shelf
 at build time. It's idempotent — re-run it any time; an existing `.env` (and
-its generated secret) is never touched. Open `http://localhost:8888`.
+its generated secret) is never rewritten unless you pass `--apply`. Open
+`http://localhost:8888`.
+
+Usage is `scripts/dev-up.sh [--dev] [--apply]`; an unknown argument exits 2
+before anything starts. **Re-running it over an `.env` from before the Host
+guard** (one with no `CORTEXSIM_ALLOWED_HOSTS`) prints a WARNING block: it
+starts compose with this host's short and fully qualified names for that
+bring-up only, leaves `.env` untouched, and closes with a
+"Still open from this run:" list. `scripts/dev-up.sh --apply` writes the line
+instead; its first line reads `.env already present — keeping it; --apply adds
+only a missing CORTEXSIM_ALLOWED_HOSTS.`, and the previous file is kept under
+`.env-backups/<UTC>/.env`. A plain `docker compose up` afterwards drops an
+unpersisted value. Add any other name you use (a CNAME, an `/etc/hosts`
+alias, a Tailscale name) by hand. *These paths were driven with stubbed
+`docker`, `curl` and `hostname`, not on a jumpbox.* Back up the database
+volume before you upgrade an existing install: rolling back to 1.1.0 against a
+database this release has touched fails every launch
+([runbook §8.5](docs/release/mvp-launch-runbook.md)).
 
 **A `degraded` status on first boot is normal, not broken** — it almost
 always just means no agent has enrolled yet:
@@ -125,8 +179,8 @@ is actually wrong — see `docs/reference/lab-runbook.md` for the full read.
 
 No Docker on this host, or the daemon/registry unreachable (sandboxed CI,
 cloud dev container)? `./scripts/dev-up-native.sh` is the Docker-free twin —
-generates `.env`, builds the venv, builds the UI, launches SimCore natively,
-polls the same health endpoint.
+generates `.env`, builds the venv, builds the UI, launches SimCore natively
+on `${CORTEXSIM_BIND:-0.0.0.0}`, polls the same health endpoint.
 
 From here: [deploy an agent](#deploy-an-agent) →
 [launch a simulation](#launch-a-simulation).
@@ -174,7 +228,11 @@ cd cortex-pov-engine
 toolchain on the host, initializes all nine submodules, and builds every
 component from source (agent, Rust tools, React UI) before bringing up
 Docker Compose. Use it when you're modifying the toolchain itself, not to
-just run CortexSim. Requires Ubuntu 22.04 LTS+ or Debian 12+.
+just run CortexSim. Requires Ubuntu 22.04 LTS+ or Debian 12+. Its closing
+banner prints the by-name URL only when `CORTEXSIM_ALLOWED_HOSTS` admits that
+name; otherwise it leads with `localhost` and adds a
+`By name: … refused (400 HOST_NOT_ALLOWED)` note saying how to admit it.
+`install.sh` does not write `.env`.
 
 If `sources/CDR` or `sources/xsiam-prisma-cdr-lab` are inaccessible to your
 GitHub account, `install.sh` now **degrades to a named warning and
@@ -200,8 +258,8 @@ flowchart LR
         IDX["UC/TC index v2.2<br/>266 test cases"]
     end
 
-    subgraph CORE["SimCore — FastAPI :8888 · 134 routes"]
-        LOAD["scenario_loader<br/>S-01..S-19"]
+    subgraph CORE["SimCore — FastAPI :8888 · 137 routes"]
+        LOAD["scenario_loader<br/>S-01..S-30"]
         ORCH["orchestrator<br/>durable queue"]
         SHELF["payload_shelf<br/>digest-pinned"]
         VERIF["verifier<br/>two-tier scoring"]
@@ -250,11 +308,11 @@ flowchart LR
 | | **Pull** | **Push** | **EAL** |
 |---|---|---|---|
 | Vehicle | Go beacon polls SimCore | Rendered self-contained bundle | Plugin emits to a collector |
-| Target needs | nothing — beacon is served + sha256-verified | `bash` (or PowerShell 5.1) | network path to the collector |
+| Target needs | nothing — beacon is served + sha256-verified | `bash` (or Windows PowerShell 5.1, unproven) | network path to the collector |
 | SimCore at runtime | required | **none** | required (or use the offline bundle) |
-| Identity harness | ✅ full | ✅ full | n/a — log/traffic shapes |
+| Identity harness | ✅ POSIX only (Windows: `IDENTITY NOT HONOURED`) | ✅ POSIX only | n/a — log/traffic shapes |
 | Live progress | ✅ SSE | ✗ offline | ✅ SSE |
-| Abort mid-run | ✅ kills process group | ✗ | ✅ |
+| Abort mid-run | ✅ kills process group (Windows: Job Object, unproven) | ✗ | ✅ |
 | Terminal state | `complete` / `failed` / `aborted` | `staged` | campaign `delivery_verdict` |
 | Use when | you own the box | air-gapped / default-deny | the harness can't make that signal |
 
@@ -354,7 +412,7 @@ Server-Sent Events. Seven frame types drive the console with no polling:
 
 ### Evidence data model
 
-14 ORM models; these are the ones that carry evidence. `Result` is the unit
+16 ORM models; these are the ones that carry evidence. `Result` is the unit
 that turns into MTTD — one row per expected detection per step, seeded at
 launch with `executed_at`, closed by `observed_at`.
 
@@ -401,7 +459,7 @@ erDiagram
 
 ### API surface
 
-**134 routes across 23 router modules.** Interactive docs ship with the app at
+**137 route decorators across 23 router files** (`docs/reference/ground-truth.md`, `http_routes`). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -409,21 +467,24 @@ erDiagram
 
 | Module | Routes | What it owns |
 |---|---:|---|
-| `agents` | 15 | enrollment tokens, install script + telemetry, task claim, binary matrix |
-| `eal` | 13 | campaigns, collectors, preflight, offline bundle |
-| `runs` | 12 | launch, output, complete, abort, control, report export, SSE |
+| `agents` | 15 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix |
+| `eal` | 15 | campaigns, collectors, preflight, offline bundle |
+| `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
+| `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
-| `credentials` | 9 | encrypted integration vault |
 | `xsiam` | 8 | 151-op gated operation catalog (writes preview) + Tier-2 XQL |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
-| `assertions` | 6 | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) |
+| `payloads` | 7 | the shelf, mounted at `/shelf` and `/k8s` |
+| `assertions` · `drafts` | 6 each | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) · Composer drafts |
 | `scenarios` | 5 | corpus, bundle download |
-| `results` | 4 | detection validation → MTTD |
-| `infra` | 4 | IaC bundle generation |
-| `tools_dist` · `pov` · `payloads` | 3 each | binaries, entitlement scoping, shelf |
-| `mitre` · `events` · `connectors` | 2 each | coverage heatmap, SSE, preflight/reconcile |
+| `results` · `infra` · `connectors` | 4 each | detection validation → MTTD · IaC bundle generation · preflight / reconcile / observations |
+| `tools_dist` · `pov` | 3 each | binaries, entitlement scoping |
+| `mitre` · `events` | 2 each | coverage heatmap, SSE |
 | `storyline` · `health` · `causality` | 1 each | run narrative, diagnostics, causality graph |
+
+Counted 2026-11-10 by `@router.*` decorator per file; only the total (137) is
+regenerated into the ground truth.
 
 </details>
 
@@ -475,7 +536,7 @@ failure names the thing that broke:
 
 | Family | Range | Guards | Enforced by |
 |---|---|---|---|
-| `S-` | `S-01..S-19` | scenario schema, UC/TC binding, staging paths | `core/engine/scenario_loader.py` |
+| `S-` | `S-01..S-30` | scenario schema, UC/TC binding, staging paths, indicators (`S-22..S-27`), platform-label lint (`S-28..S-30`, warnings) | `core/engine/scenario_loader.py` |
 | `A-` | `A-01..A-24` | assertion structure + provability | `core/engine/assertions.py` |
 | `TA-` | `TA-01..TA-17` | adapter packs, artifact vs exemption | `core/tools/adapter_loader.py` |
 
@@ -645,22 +706,25 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
 | **Total** | | **193** | |
 
-**1,379 step-level expected detections** resolve against **2,123 catalog
-detection objects** across the six-value `detection_type` vocabulary, covering
+**1,369 step-level expected detections** resolve against **2,123 catalog
+detection objects** across the seven-value `detection_type` vocabulary
+(`Prevention` is the seventh, with 0 step-detections today), covering
 **235 MITRE techniques (128 base)**. XDM modeling rules are a normalization
-*substrate* — surfaced and exported, counted informationally, not a seventh type.
+*substrate*: surfaced and exported, counted informationally, not a detection type.
 
 <details>
 <summary><b>Step-detections by type</b></summary>
 
 | Type | Count | What it is |
 |---|---:|---|
-| `XQL` | 490 | query-defined detection |
-| `BIOC` | 272 | behavioral IOC |
-| `ABIOC` | 129 | PANW-authored, auto-tuned behavioral ML with a causality chain |
-| `Correlation` | 118 | multi-source stitched rule |
-| `IOC` | 57 | atomic indicator |
-| `Analytics` | 50 | baseline-deviation analytic |
+| `XQL` | 536 | query-defined detection |
+| `BIOC` | 365 | behavioral IOC |
+| `ABIOC` | 156 | PANW-authored, auto-tuned behavioral ML with a causality chain |
+| `Correlation` | 137 | multi-source stitched rule |
+| `IOC` | 119 | atomic indicator |
+| `Analytics` | 56 | baseline-deviation analytic |
+| `Prevention` | 0 | agent prevention-module block (two-witness rule) |
+| **Total** | **1369** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
 
 </details>
 
@@ -695,9 +759,13 @@ curl -fsSL 'http://<simcore-host>:8888/api/agents/install?os=linux' \
 Replace `<simcore-host>` with SimCore's **routable** address, not
 `localhost` — pasted on a remote jumpbox, `localhost` resolves to the
 jumpbox itself and the beacon "installs successfully" while talking to
-nothing. Put the token in the env var, not a `?token=` query param — the
-query form works but leaves a live credential in shell history and proxy
-logs.
+nothing. A DNS name must also be in SimCore's `CORTEXSIM_ALLOWED_HOSTS`: the
+installer route refuses one the Host guard would refuse
+(`400 SERVER_HOST_NOT_ALLOWED`), and the script names a refusal at enroll as
+`HOST_NOT_ALLOWED`. Put the token in the env var, not a `?token=` query
+param — the query form works but bakes a live credential into the URL, the
+served script and any proxy log. The env-var form still leaves the pasted
+line in shell history, so mint single-use, short-TTL tokens.
 
 No compiler and no public-internet egress are required on the target — the
 script downloads a **prebuilt** beacon from this same SimCore and
@@ -711,9 +779,8 @@ matrix today:
   {"os":"windows","arch":"amd64"}], "total":5}
 ```
 
-macOS is `os=darwin`. Windows gets a PowerShell installer at `os=windows` —
-its identity story is different (see the fragment below). Confirm the beacon
-checked in:
+macOS is `os=darwin`. Windows gets a PowerShell installer at `os=windows`;
+see **Windows targets** below before you use it. Confirm the beacon checked in:
 
 ```bash
 curl -s http://localhost:8888/api/agents | python3 -c '
@@ -733,14 +800,81 @@ window. If `last_seen_age_seconds` isn't dropping toward zero on repeat
 calls a few seconds apart, nothing is actually polling — full detail in
 [`docs/reference/agent-deployment.md`](docs/reference/agent-deployment.md) §4.
 
-Full detail — `?mode=` semantics, the loopback trap, the identity-harness
-false-negative it exists to close, and a console discrepancy worth knowing
-about — is written up, verified live, in
-**[`docs/reference/agent-deployment.md`](docs/reference/agent-deployment.md)**.
+Full detail is written up in
+**[`docs/reference/agent-deployment.md`](docs/reference/agent-deployment.md)**:
+`?mode=` semantics, the loopback trap, and the identity-harness false negative
+this step exists to close. Uninstall a POSIX beacon as the user who installed
+it, `curl -fsSL '<server>/api/agents/install?uninstall=1' | bash`, or with
+`| sudo bash` for a root install (which also removes user-mode installs under
+`SUDO_USER`, `/home` and `/Users`). Deleting an agent row that still has runs
+owed or in flight is refused with `409 AGENT_HAS_OPEN_RUNS`; abort those runs
+first.
+
+### Windows targets — read first
+
+> [!WARNING]
+> **Run in CI, not on a customer host.** The `windows-2022` CI job ran
+> the elevated path below green, most recently at `e434efa` (run 43037077022),
+> on a GitHub-hosted runner with no XDR agent. Floor: Windows PowerShell 5.1.
+
+From **Windows PowerShell opened as Administrator** (the console emits this
+line, TLS 1.2 opt-in included):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:CORTEXSIM_TOKEN='cxs_...'; iwr -useb "http://<simcore-host>:8888/api/agents/install?os=windows" | iex
+sc.exe query CortexSimAgent      # STATE : 4  RUNNING; log at %ProgramData%\CortexSim\agent.log
+```
+
+- Elevated, it installs the `CortexSimAgent` service. Its SCM handler started
+  and stayed Running in CI; reboot survival is unobserved. `OK` needs the
+  service still Running 35 s later and a real check-in. One install has been
+  timed, at about 47 s; allow up to about 70 s (the installer's own waits).
+- Behind a proxy, set a machine-level `CORTEXSIM_AGENT_PROXY`: the SYSTEM
+  service does not inherit yours, and the beacon does not read the Windows
+  system proxy.
+- The console also offers a download-then-run path (installer and beacon
+  links, digest, a `Get-FileHash` check) for hosts where `iwr | iex` is
+  blocked. It has not run on Windows.
+- Not elevated, it is refused with `NOT_ELEVATED`, unless
+  `CORTEXSIM_ALLOW_UNSUPERVISED=1`, in which case the beacon is per-user and
+  **dies at logoff and at reboot**.
+- The exe is **unsigned**. Get an XDR/Defender exclusion for
+  `C:\ProgramData\CortexSim\cortexsim-agent.exe` and its sha256
+  (`GET /api/agents/binary/sha256?os=windows&arch=amd64`) before the POV.
+- Steps run as **SYSTEM** (the service is LocalSystem; each Windows step frame
+  names the account it ran as). Every declared identity collapses to it, with
+  `IDENTITY NOT HONOURED` in the run record.
+- If you reach SimCore by DNS name, that name must be in SimCore's
+  `CORTEXSIM_ALLOWED_HOSTS`, or every poll is `400 HOST_NOT_ALLOWED`.
+- Uninstall, elevated:
+  `iwr -useb '<server>/api/agents/install?os=windows&uninstall=1' | iex`. A
+  per-user beacon is removed by the account that installed it, from a normal
+  PowerShell; an elevated run only reports another profile's beacon.
+
+Full procedure, `sc.exe` exit readings, push `.ps1` bundles and the beta
+known-issues list: [`docs/release/mvp-launch-runbook.md`](docs/release/mvp-launch-runbook.md)
+§7–§8.
 
 ---
 
 ## Launch a simulation
+
+**Ask the target first.** `GET /api/agents/{agent_id}/preflight` answers "can
+this host run this scenario?" from what the beacon registered (interpreters,
+capabilities) before you spend a run on it:
+
+```bash
+curl -s "http://localhost:8888/api/agents/<agent_id>/preflight?scenario_id=SIM-EDR-001"
+# -> {"agent_id": ..., "scenario_id": "SIM-EDR-001", "ready": true|false, "gaps": [...], ...}
+```
+
+It cannot see a missing login shell. `SIM-EDR-001` runs under `www-data`, so
+on a stock cloud image it fails in milliseconds whatever the preflight says
+(the warning at the top of this file). Launch it against the
+[`deploy/tier-d`](deploy/tier-d/Dockerfile.target) target, or start with a
+scenario whose steps run as root: on 2026-11-10 `SIM-EDR-008` ran 3 of 3 steps
+with exit 0 on a stock Ubuntu 24.04 VM with a Cortex XDR agent, against a
+SimCore with no tenant credential, so its 12 Results stayed `pending`.
 
 ```bash
 curl -s -X POST http://localhost:8888/api/runs -H "Content-Type: application/json" -d '{
@@ -749,6 +883,10 @@ curl -s -X POST http://localhost:8888/api/runs -H "Content-Type: application/jso
   "consent":{"simulation_authorized":true}
 }'
 ```
+
+A 200 can still carry `warnings[]`, for example `TARGET_AGENT_OFFLINE` when the
+target's beacon is not polling: the task waits in the queue, and the warning
+is also written onto the run.
 
 **The `consent` gate is real, at both `pull` and `push` mode** — a scenario
 that binds a dual-use adapter (e.g. Atomic Red Team) is refused `409
@@ -761,9 +899,62 @@ someone else.
 No agent, or want a bundle with no SimCore dependency at runtime instead?
 
 ```bash
-curl -s "http://localhost:8888/api/scenarios/SIM-EDR-001/download?format=auto" \
-  -o SIM-EDR-001.sh
+curl -s -OJ -D - "http://localhost:8888/api/scenarios/SIM-EDR-001/download?format=auto" \
+  | grep -i '^x-cortexsim-bundle-target'
 ```
+
+`format=auto|bash|powershell|k8s`. `auto` prefers POSIX and falls back to
+PowerShell for a Windows-only scenario, so name the saved file by the
+response, not by habit: `-OJ` keeps the server's `Content-Disposition`
+filename (`.sh` or `.ps1`), and `X-CortexSim-Bundle-Target` says `posix` or
+`windows`. `GET /api/scenarios/{id}` says which targets a download will serve
+(`bundle_targets`): 186 scenarios serve bash and 13 serve PowerShell, and 3
+serve neither (`SIM-MP-030` has no emittable target; `SIM-MP-031` / `-034` are
+`push_supported: false`). A raw download creates no Run and no Result rows;
+launch with `"mode":"push"` when you want a run to score. A Windows `.ps1` runs with
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-<id>.ps1`,
+after `Unblock-File` if Mark-of-the-Web policy requires it. It exits non-zero
+when any step failed or did not run, and refuses to start on cleanup residue
+unless `CORTEXSIM_ACCEPT_RESIDUE=1`. **None of the 13 shipped `.ps1` bundles
+has executed on Windows yet**: CI parsed them under 5.1 and ran a probe
+bundle. A push run has no host, so reconcile it with `?host=<endpoint>`;
+otherwise its matches stay `pending` (`UNSCOPED_MATCH`).
+
+### From run to verdict
+
+A completed run is not yet a measurement. Its Results stay `pending` until
+alerts are matched to them, and only then do MTTD and the test-case verdict
+mean anything. Two ways in, both through the same matcher:
+
+```bash
+# Offline: paste alerts you exported from the Cortex console. Each needs its own
+# timestamp (observed_at / timestamp / time, ISO-8601 or epoch); a row without a
+# readable time is dropped and counted, never stamped "now".
+curl -s -X POST "http://localhost:8888/api/runs/<run_id>/observations" \
+  -H 'Content-Type: application/json' -d '{
+  "host": "<endpoint hostname>",
+  "observations": [
+    {"observed_at": "2026-11-10T21:04:12Z", "name": "<alert name>",
+     "host": "<endpoint hostname>", "techniques": ["T1003.001"],
+     "detection_id": "<rule or BIOC id>", "alert_source": "XDR BIOC",
+     "external_id": "<alert id>"}
+  ]}'
+
+# Credential-backed: pull the run's window from a registered tenant.
+curl -s -X POST "http://localhost:8888/api/runs/<run_id>/reconcile?connector=xsiam&host=<endpoint hostname>"
+
+# Then the report.
+curl -s "http://localhost:8888/api/runs/<run_id>/report?format=markdown" -o pov-<run_id>.md
+```
+
+`host` scopes the match to the endpoint the run executed on; without it a push
+run's matches stay `pending` / `UNSCOPED_MATCH`, with no MTTD. MTTD is measured
+from launch to the alert's own time, so it includes queue wait and earlier
+steps (open decision OPS-07). Do not use `PUT /api/results/{id}/validate` for
+MTTD: a click records click latency. Full walkthrough:
+[`docs/reference/launching-a-simulation.md`](docs/reference/launching-a-simulation.md).
+`tenant-verified` is 0: no run in this repo has been matched against a live
+tenant.
 
 ### Run hanging at `running`?
 
@@ -871,7 +1062,7 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    23 routers · 134 routes
+│   ├── api/                    23 router files · 137 routes
 │   ├── engine/                 18 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
@@ -879,7 +1070,7 @@ cortex-pov-engine/
 │   ├── integrations/xsiam/     151-op gated operation catalog (writes preview) + Tier-2 XQL
 │   ├── eal_simulator/          27 plugins, two families
 │   ├── planes/                 declarative PlaneDescriptor registry (16)
-│   └── models.py               14 ORM models
+│   └── models.py               16 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
 ├── scenarios/                ← 193 scenario YAML, per plane
@@ -913,28 +1104,34 @@ cortex-pov-engine/
 ---
 ## CI & quality gates
 
-Eight jobs on every push and PR. The ones that matter most here don't check
-that the build is green — they check that a **claim about a customer's coverage
-can't be made without evidence**.
+Nine jobs on every push and PR: eight on `ubuntu-22.04` and one on
+`windows-2022`. The ones that matter most here don't check that the build is
+green. They check that a **claim about a customer's coverage can't be made
+without evidence**.
 
 | Job | Proves |
 |---|---|
-| `backend` | pytest inside the **prod image**, not a host venv |
-| `agent` | Go `build` + `vet` + `test -race`, **plus cross-compile for linux/darwin/windows** |
+| `backend` | pytest inside the **prod image**, not a host venv (the repo venv runs newer uvicorn / httpx than the image pins), plus the UI and beacon image-parity gates and a `docker compose config -q` parse of `docker-compose.yml` |
+| `agent` | Go `build` + `vet` + `test -race`, **plus cross-compile for all five shipped targets** (linux and darwin on amd64 and arm64, windows/amd64) |
 | `ui` | vitest + `vite build` |
 | `detection` | corpus validator (0 fail) **+ deterministic export regeneration** (`sha256sum -c`) |
-| `refs` | every scenario through the real loader under `CORTEXSIM_STRICT_REFS=true` **+ ground-truth drift gate** |
-| `adapters` | tier-2 source trees exist; de-hand-rolling gate (a scenario naming a tool that *has* an adapter must wire it) |
+| `refs` | `make check-powershell` (every emitted PowerShell parsed under pwsh 7 and decoded the way 5.1 reads it; necessary, not sufficient) + every scenario through the real loader under `CORTEXSIM_STRICT_REFS=true` **+ ground-truth drift gate + lab-readiness manifest gate**; a red gate no longer masks the ones after it |
+| `adapters` | tier-2 source trees exist; de-hand-rolling gate (a scenario naming a tool that *has* an adapter must wire it); the generated payload-shelf source list matches the packs |
 | `rust-dist` | static-musl build **+ exec proof** — the binary runs, not just compiles |
 | `e2e-isolated` | Tier-C isolated-execution assertion suite |
+| `windows` | **green three times** after two red runs: `d7f4f29` (42933820773), then the round-2 code at `fb0f646` and `e434efa` (43037077022, all nine jobs green). Windows PowerShell 5.1 on `windows-2022`: native `go test`, 5.1 parse + PSScriptAnalyzer, a real SimCore boot, the console's install one-liner, then pull / abort / push / uninstall against the beacon as a Windows service, all with CI probe scenarios. It is the only job that executes anything on Windows. It is not a required check (decision DOCS-12), and it covers no shipped scenario, no XDR agent, no reboot and no tenant. |
 
 Two of these are load-bearing in a non-obvious way:
 
-- **The Windows cross-compile arm.** The beacon silently could not compile for
-  Windows while 71 scenarios declared `platforms: [windows]`.
-- **The ground-truth drift gate.** Every count in this README is regenerated and
-  diffed against the corpus. A doc that drifts from the tree fails the build,
-  which is the only reason numbers here can be trusted.
+- **The Windows cross-compile arm.** The beacon once silently could not compile
+  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 193 do
+  today). Compiling is not executing: only the `windows` job runs the beacon on
+  Windows. Every third-party action in every workflow is pinned to a commit
+  SHA.
+- **The ground-truth drift gate.** `docs/reference/ground-truth.{json,md}` is
+  regenerated from the corpus and diffed in CI, so a stale inventory fails the
+  build. **This README is not gated.** Its counts are copied from that file by
+  hand (last 2026-11-10), so when they disagree, `ground-truth.md` wins.
 
 ### Running the suites locally
 
@@ -959,7 +1156,9 @@ cd agent && go test ./...        # Go beacon
 
 ```bash
 make -n ci              # enumerate the local equivalents
-make validate           # detection-corpus validator
+make validate           # builds the image, then every corpus/ref/shelf/lab-ready gate and check-powershell
+                        # (needs docker, pwsh 7, Go and core/requirements.txt; CORTEXSIM_SKIP_POWERSHELL_GATE=1
+                        #  skips only the PowerShell gate and says so)
 make check-refs         # UC/TC foreign-key integrity, strict
 make check-ground-truth # fail if docs drifted from the corpus
 make coverage-strict    # MITRE / plane / type floors — non-zero below floor
@@ -971,10 +1170,18 @@ make test-agent-cross   # beacon cross-compile gate
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
   — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0** and **v1.1.1** are published;
-  **v1.1.1** (a security hotfix) is the latest, cut 2026-11-12 (tagged by `tag-on-main.yml` from the first
-  `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges). Each release attaches `install.sh`,
-  `stage2-linux.tar.gz`, `stage2-windows.zip`, `SHA256SUMS` and
-  `manifest.json`. Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.
+  **v1.1.1** (a security hotfix) is the latest, cut 2026-11-12 (tagged by
+  `tag-on-main.yml` from the first `## [x.y.z]` heading in `CHANGELOG.md` when the
+  release PR merges). Releases up to v1.1.1 attached `install.sh`,
+  `stage2-linux.tar.gz`, `stage2-windows.zip` (which held one bash file, so it was
+  never a Windows installer), `SHA256SUMS` and `manifest.json`. **From the next
+  release**, a stage2 asset ships only when `installer/stage2/<os>/` exists, and
+  today none does. The release also attaches the five **unsigned** beacons,
+  `cortexsim-agent-SHA256SUMS` and `cortexsim-agent-buildinfo.txt`, and
+  `manifest.json` gains an `agent` block (`signed: false`). That `release.yml` has
+  not run yet. Windows onboarding is `/api/agents/install?os=windows` (pull) or
+  `format=powershell` (push), never a release archive. Changelog:
+  **[`CHANGELOG.md`](CHANGELOG.md)**.
 - **Container image:** the tag-triggered pipeline
   ([`.github/workflows/release.yml`](.github/workflows/release.yml)) pushes
   `ghcr.io/hankthebldr/cortexsim:<tag>` plus `:latest` for linux/amd64 and
@@ -1009,12 +1216,36 @@ make test-agent-cross   # beacon cross-compile gate
 ## No authentication, by design
 
 There is no login, no token, no session, and no RBAC anywhere in this app.
-CORS is wide open (`allow_origins=["*"]`, `allow_credentials=False` — the
-spec-valid form of fully-open, since the two together are rejected by every
-browser). This is deliberate: the DC running a POV lab is already full admin
-on that jumpbox and that network. **Run this only on a trusted, isolated lab
-network you control** — never expose it to the open internet or a shared
-corporate segment.
+The DC running a POV lab is already full admin on that jumpbox and that network.
+**Run this only on a trusted, isolated lab network you control.** Never expose
+it to the open internet or a shared corporate segment. `/api/health` says so on
+every deployment: its `api_auth` component reads `degraded` with
+`API_UNAUTHENTICATED` by design (SEC-01 is open), so overall `status` is
+`degraded`. Any *other* degraded component is a real fault.
+
+What narrows the exposure (2026-11):
+- **CORS is off** unless `CORTEXSIM_CORS_ORIGINS` names origins. It never
+  allows credentials.
+- **A Host guard** refuses DNS-rebinding pages (`400 HOST_NOT_ALLOWED`) for
+  any name other than `localhost`, an IP literal, the host's own name, or
+  `CORTEXSIM_ALLOWED_HOSTS`. `scripts/dev-up.sh` seeds that list with the
+  jumpbox's names.
+- **Compose publishes on the address in `CORTEXSIM_BIND`**
+  (`"${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"`). Empty or unset names no host address, which is every host
+  address, IPv4 and IPv6; `0.0.0.0` is IPv4 only; write an IPv6 address
+  without brackets. Set `127.0.0.1` for a console-only host, but beacons must
+  reach the port. Needs Compose v2. *Parsed by `docker compose config`; not
+  brought up under Docker in this pass.*
+- **`CORTEXSIM_TRUSTED_PROXIES`** names the proxies whose `X-Forwarded-For` is
+  believed. It may go in `.env`. `/api/health` flags an ignored forwarder
+  (`XFF_FROM_UNTRUSTED_PEER`) because every agent behind it is recorded with
+  the proxy's address.
+- **The image `HEALTHCHECK` is liveness only**, logs are capped at 5 × 20 MB,
+  and SimCore runs one worker by design.
+- **The `docker.sock` mount is gone.** `POST /api/tools/{tool}/start` no
+  longer lets a caller override the binary; that was a verified root RCE.
+- **The installer checksum** guards against corruption, not tampering:
+  SimCore serves plain HTTP.
 
 ## Agent access (MCP)
 
@@ -1103,6 +1334,6 @@ registered trademark of The MITRE Corporation.
 
 <sub>An independent project — not an official Palo Alto Networks product.</sub>
 
-<sub>Every count in this file is regenerated by `make ground-truth` and gated in CI.<br/>If a number here disagrees with the corpus, the build fails.</sub>
+<sub>Counts in this file are copied by hand from <a href="docs/reference/ground-truth.md"><code>docs/reference/ground-truth.md</code></a>, which <code>make ground-truth</code> regenerates and CI gates.<br/>This file itself is not gated: if a number here disagrees with <code>ground-truth.md</code>, that file wins.</sub>
 
 </div>

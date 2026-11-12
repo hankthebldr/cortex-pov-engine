@@ -533,9 +533,15 @@ def xsiam_query_runner(client: Any, timeframe: dict[str, Any]) -> QueryRunner:
     ``pending``. An unparseable reply is an open question, not a failed
     detection.
     """
+    from integrations.xsiam.client import refuse_xql_write_stages  # noqa: PLC0415
     from integrations.xsiam.queries import row_count  # noqa: PLC0415
 
     async def _run(query: str) -> int:
+        # SEC-05: authored content (a scenario's verification_xql, a draft's)
+        # may not write to the tenant. Refused BEFORE the budget is charged, so
+        # a refused query costs no quota; verify_results records it pending.
+        # start_xql_query enforces the same guard again at send time.
+        refuse_xql_write_stages(query)
         async with _tenant_budget(client):
             return row_count(await client.run_xql(query, timeframe))
 
@@ -561,9 +567,11 @@ def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
     artifacts would have reported **fail**. The A-17 guard cannot catch it: it
     proves the *evaluator* can go red, not that the *runner* can return rows.
     """
+    from integrations.xsiam.client import refuse_xql_write_stages  # noqa: PLC0415
     from integrations.xsiam.queries import result_rows  # noqa: PLC0415
 
     async def _run(query: str) -> list[dict[str, Any]]:
+        refuse_xql_write_stages(query)  # SEC-05; before the budget, as above
         async with _tenant_budget(client):
             return result_rows(await client.run_xql(query, timeframe))
 

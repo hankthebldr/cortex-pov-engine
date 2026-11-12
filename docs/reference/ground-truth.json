@@ -36,7 +36,7 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1568,
+    "abioc_analytics_share": 0.1555,
     "catalog_detections": 2260,
     "catalog_detections_by_kind": {
       "abioc": 171,
@@ -48,7 +48,7 @@
       "prevention": 3,
       "xql": 657
     },
-    "correlation_share": 0.1015,
+    "correlation_share": 0.1006,
     "detection_planes": 16,
     "methodology_family_counts": {
       "F1": 135,
@@ -84,15 +84,15 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1419,
+    "step_detections": 1411,
     "step_detections_by_type": {
-      "ABIOC": 166,
+      "ABIOC": 163,
       "Analytics": 56,
       "BIOC": 374,
-      "Correlation": 144,
+      "Correlation": 142,
       "IOC": 119,
       "Prevention": 3,
-      "XQL": 557
+      "XQL": 554
     },
     "ttp_cards": 197
   },
@@ -103,11 +103,11 @@
       "G-01": 0,
       "G-02": 2,
       "G-03": 0,
-      "G-04": 1050,
+      "G-04": 1042,
       "G-05": 0
     },
     "scenarios_analyzed": 199,
-    "step_detections_analyzed": 1419
+    "step_detections_analyzed": 1411
   },
   "http_routes": {
     "apirouter_instances": 30,
@@ -124,7 +124,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1663,
+    "hq_share": 0.1673,
     "hq_signals": 236,
     "indicators": 87,
     "indicators_not_in_band": 10,
@@ -141,11 +141,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1205,
-    "marker_only_steps": 100,
+    "marker_only_share": 0.1191,
+    "marker_only_steps": 98,
     "scenarios_with_indicators": 15,
-    "step_detections": 1419,
-    "steps": 830,
+    "step_detections": 1411,
+    "steps": 823,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -169,22 +169,32 @@
   },
   "tenant_verified": 0,
   "uctc_index": {
+    "aut_assertions": {
+      "artifacts": 3,
+      "bound": 3,
+      "documented_non_bindings": 0,
+      "index_rows_total": 6,
+      "net_new": 3,
+      "proven": 0
+    },
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
     "payload_resolved": 199,
     "payload_unresolved": 0,
     "plt_assertions": {
-      "artifacts": 4,
-      "bound": 4,
-      "documented_non_bindings": 9,
+      "artifacts": 7,
+      "bound": 7,
+      "documented_non_bindings": 8,
       "index_rows_total": 43,
+      "net_new": 7,
       "proven": 0
     },
     "pos_assertions": {
-      "artifacts": 2,
-      "bound": 2,
+      "artifacts": 18,
+      "bound": 16,
       "documented_non_bindings": 4,
       "index_rows_total": 110,
+      "net_new": 6,
       "proven": 0
     },
     "posture_class_primary_s14": 14,

@@ -15,13 +15,20 @@ def db_factory(memory_db):
 
 def _seed(SessionLocal, *, run_id, started_at, with_integration=True,
           integration_kind="xsiam"):
-    from models import Result, Run
+    from models import Agent, Result, Run
     from security.credentials import CredentialStore
 
     async def _seed_async():
         async with SessionLocal() as s:
+            # A pull run has a resolvable target host: an UNSCOPED reconcile
+            # (no host) leaves a detect match pending / UNSCOPED_MATCH.
+            from sqlalchemy import select
+
+            if (await s.execute(select(Agent).where(
+                    Agent.agent_id == "agent-1"))).scalar_one_or_none() is None:
+                s.add(Agent(agent_id="agent-1", hostname="lab-host", os="linux"))
             s.add(Run(run_id=run_id, scenario_id="SIM-EDR-001", mode="pull",
-                      status="complete", started_at=started_at))
+                      target="agent-1", status="complete", started_at=started_at))
             s.add(Result(run_id=run_id, step_id="step-02", plane="EDR",
                          signal_type="BIOC", expected_detection="LSASS dump",
                          observed=False, executed_at=started_at,

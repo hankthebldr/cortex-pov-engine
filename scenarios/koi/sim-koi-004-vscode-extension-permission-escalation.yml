@@ -143,7 +143,7 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
     identity: container-runtime
     mitre_technique: "T1195"
-    platforms: ["linux", "macos", "windows", "container"]
+    platforms: ["linux", "macos", "container"]
     causality:
       parent_step: step-01
       # Endpoint manifest-scan finding (step-01) stitched to the NGFW session

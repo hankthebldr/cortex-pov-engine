@@ -336,17 +336,31 @@ async def test_every_cortexsim_tool_returns_an_envelope():
 
 @pytest.mark.asyncio
 async def test_run_list_passes_filters_and_pages_against_the_route_total():
-    runs = [{"run_id": f"r{i}"} for i in range(10)]
-    mcp, calls = _mcp({("GET", "/api/runs"): {"runs": runs, "total": 42}})
+    # GET /api/runs pages itself (limit 1..5000, default 500, offset): the tool
+    # asks for exactly its page and the route answers with that page.
+    page = [{"run_id": f"r{i}"} for i in range(5, 10)]
+    mcp, calls = _mcp({("GET", "/api/runs"): {"runs": page, "total": 42}})
     res = await call(mcp, "cortexsim.run.list", status="completed", limit=5, offset=5)
     data = res.structuredContent["data"]
     assert [r["run_id"] for r in data["runs"]] == ["r5", "r6", "r7", "r8", "r9"]
     assert data["total"] == 42 and data["truncated"] is True
-    assert dict(_sent_json(calls, "GET", "/api/runs").url.params) == {"status": "completed", "limit": "10"}
+    assert dict(_sent_json(calls, "GET", "/api/runs").url.params) == {
+        "status": "completed", "limit": "5", "offset": "5"}
 
-    mcp2, calls2 = _mcp({("GET", "/api/runs"): {"runs": [], "total": 0}})
-    await call(mcp2, "cortexsim.run.list", limit=200, offset=400)
-    assert "limit" not in dict(_sent_json(calls2, "GET", "/api/runs").url.params)
+    # Past the route's default page of 500: without an offset the route would
+    # answer rows 0..499 and the tool would slice an empty page out of them.
+    deep = [{"run_id": f"r{i}"} for i in range(600, 650)]
+    mcp2, calls2 = _mcp({("GET", "/api/runs"): {"runs": deep, "total": 700}})
+    res2 = await call(mcp2, "cortexsim.run.list", limit=50, offset=600)
+    assert dict(_sent_json(calls2, "GET", "/api/runs").url.params) == {"limit": "50", "offset": "600"}
+    data2 = res2.structuredContent["data"]
+    assert [r["run_id"] for r in data2["runs"]] == [f"r{i}" for i in range(600, 650)]
+    assert data2["total"] == 700 and data2["truncated"] is True
+
+    mcp3, calls3 = _mcp({("GET", "/api/runs"): {"runs": [{"run_id": "r0"}], "total": 1}})
+    res3 = await call(mcp3, "cortexsim.run.list")
+    assert dict(_sent_json(calls3, "GET", "/api/runs").url.params) == {"limit": "50"}
+    assert res3.structuredContent["data"]["truncated"] is False
 
 
 @pytest.mark.asyncio

@@ -205,11 +205,31 @@ func ResolveWith(goos, requested, currentUser string, lookup func(string) error)
 	}
 }
 
-// ResolveFor is the pure, host-independent form of Resolve. goos is a
-// runtime.GOOS value and currentUser is the account the beacon itself runs as.
-// Exposed separately so Windows behaviour is testable from a Linux CI runner —
-// the only place this repo's Go suite executes.
+// ResolveFor is the host-independent form of Resolve. goos is a runtime.GOOS
+// value and currentUser is the account the beacon itself runs as. Exposed
+// separately so Windows behaviour is testable from a Linux CI runner. On
+// windows it consults this process's token elevation (processElevated, a
+// package var tests replace); ResolveForElevation takes it as an argument.
 func ResolveFor(goos, requested, currentUser string) Resolution {
+	return ResolveForElevation(goos, requested, currentUser, goos == "windows" && processElevated())
+}
+
+// requiresElevatedToken reports whether a requested identity asserts
+// administrative rights on Windows (CONT-07): root and container-runtime are
+// "direct, privileged" in the corpus, and administrator is the account the
+// Windows corpus names for privileged steps. The .ps1 push bundle's
+// Resolve-CsIdentity draws the same line.
+func requiresElevatedToken(requested string) bool {
+	switch strings.ToLower(strings.TrimSpace(requested)) {
+	case "root", "container-runtime", "administrator":
+		return true
+	}
+	return false
+}
+
+// ResolveForElevation is the pure form of ResolveFor: elevated says whether the
+// beacon's token is elevated, and is only consulted on windows.
+func ResolveForElevation(goos, requested, currentUser string, elevated bool) Resolution {
 	mode, user, unknown := ResolveIdentity(requested)
 
 	if goos == "darwin" && mode == "runuser" {
@@ -232,8 +252,31 @@ func ResolveFor(goos, requested, currentUser string) Resolution {
 		return Resolution{Mode: mode, Username: user, Unknown: unknown, Honoured: true}
 	}
 
-	// Windows from here down. Direct mode asks for no impersonation at all, so
-	// running as the beacon account is exactly what was requested.
+	who := currentUser
+	if who == "" {
+		who = "the beacon account"
+	}
+
+	// Windows from here down. CONT-14: root, container-runtime and
+	// administrator assert administrative rights. A beacon whose token is NOT
+	// elevated (a standard account, or an administrator under UAC's filtered
+	// token) runs such a step without them — the TTP fails or behaves
+	// differently — so the identity is not honoured, whatever the account name.
+	if requiresElevatedToken(requested) && !elevated {
+		return Resolution{
+			Mode:     "direct",
+			Unknown:  unknown,
+			Honoured: false,
+			Degradation: fmt.Sprintf(
+				"%s requires an elevated token; this beacon is not elevated. The step executed as %s "+
+					"WITHOUT administrative rights, so a TTP that needs them fails or behaves differently. "+
+					"Treat this step's evidence as UNVALIDATED.",
+				requested, who),
+		}
+	}
+
+	// Direct mode asks for no impersonation at all, so running as the
+	// (sufficiently privileged) beacon account is exactly what was requested.
 	if mode == "direct" {
 		return Resolution{Mode: "direct", Honoured: true}
 	}
@@ -245,10 +288,6 @@ func ResolveFor(goos, requested, currentUser string) Resolution {
 		return Resolution{Mode: "direct", Honoured: true}
 	}
 
-	who := currentUser
-	if who == "" {
-		who = "the beacon account"
-	}
 	return Resolution{
 		Mode:     "direct",
 		Unknown:  unknown,
@@ -286,6 +325,23 @@ func bareAccountName(s string) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// processElevated reports whether this process's token is elevated. A package
+// var so Windows behaviour is testable from any host.
+var processElevated = ProcessElevated
+
+var (
+	elevatedOnce sync.Once
+	elevatedVal  bool
+)
+
+// ProcessElevated reports whether this beacon's process token is elevated
+// (Windows: TOKEN_ELEVATION; POSIX: euid 0). Cached — a token's elevation does
+// not change during a process's lifetime. Unknown reads as NOT elevated.
+func ProcessElevated() bool {
+	elevatedOnce.Do(func() { elevatedVal = tokenElevated() })
+	return elevatedVal
 }
 
 var (

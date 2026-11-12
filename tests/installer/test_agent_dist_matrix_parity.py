@@ -145,3 +145,128 @@ def test_windows_output_path_carries_an_exe_suffix():
         "the output path references ${ext} but nothing sets it to .exe for "
         "GOOS=windows; the suffix would expand to empty"
     )
+
+
+# ---------------------------------------------------------------------------
+# CI-16 — the two producers must build the SAME WAY, not only the same targets
+# ---------------------------------------------------------------------------
+#
+# Target parity above is satisfiable while the two producers diverge on HOW
+# they build: add CGO or a build tag to one and it ships bytes the other never
+# produces, with every test in this file still green. The flags matched by
+# inspection; nothing asserted it.
+
+MAKEFILE = REPO_ROOT / "Makefile"
+WINDOWS_DRIVER = REPO_ROOT / "scripts" / "ci" / "windows-native-e2e.ps1"
+
+_GO_BUILD = re.compile(
+    r"(?P<env>(?:[A-Z][A-Z0-9_]*=\S+\s+)+)go\s+build\s+(?P<flags>.*?)\s+-o\s+\"[^\"]+\"\s+\.",
+    re.DOTALL,
+)
+
+
+def _build_invocation(text: str, where: str) -> tuple[dict[str, str], list[str]]:
+    """(environment, flags) of the one `VAR=... go build <flags> -o "<out>" .` call."""
+    import shlex
+
+    joined = re.sub(r"\\\n", " ", text)  # fold shell line continuations
+    hits = list(_GO_BUILD.finditer(joined))
+    assert len(hits) == 1, f"expected exactly one `go build ... -o` invocation in {where}, found {len(hits)}"
+    env = dict(tok.split("=", 1) for tok in shlex.split(hits[0]["env"]))
+    flags = shlex.split(hits[0]["flags"])
+    return env, flags
+
+
+def _shipped_names() -> set[str]:
+    names = set()
+    for target in _script_targets():
+        goos, goarch = target.split("/")
+        names.add(f"cortexsim-agent-{goos}-{goarch}" + (".exe" if goos == "windows" else ""))
+    return names
+
+
+def test_both_producers_use_the_identical_build_invocation():
+    s_env, s_flags = _build_invocation(BUILD_SCRIPT.read_text(), "scripts/build-agent-dist.sh")
+    d_env, d_flags = _build_invocation(_agent_builder_stage(), "the core/Dockerfile agent-builder stage")
+    assert s_env == d_env, (
+        f"build environment differs between the producers:\n  script:     {s_env}\n  Dockerfile: {d_env}")
+    assert s_flags == d_flags, (
+        f"go build flags differ between the producers:\n  script:     {s_flags}\n  Dockerfile: {d_flags}\n"
+        "A flag in one producer only ships beacon bytes the other never builds.")
+
+
+def test_the_shared_invocation_is_the_static_stripped_one():
+    """Parity is satisfiable by weakening BOTH. This is the floor the DC relies
+    on: a fully static binary (no libc to smuggle past change control) built
+    independently of the checkout path."""
+    env, flags = _build_invocation(BUILD_SCRIPT.read_text(), "scripts/build-agent-dist.sh")
+    assert env.get("CGO_ENABLED") == "0", env
+    assert env.get("GOOS") == "$goos" and env.get("GOARCH") == "$goarch", env
+    assert "-trimpath" in flags, flags
+    assert "-ldflags=-s -w" in flags, flags
+
+
+def test_a_flag_in_one_producer_only_is_caught():
+    """The guard above, shown going red. Same parser, one producer edited."""
+    script = BUILD_SCRIPT.read_text()
+    assert "go build -trimpath" in script
+    drifted = script.replace("go build -trimpath", "go build -tags netgo -trimpath", 1)
+    _, base_flags = _build_invocation(script, "script")
+    _, drift_flags = _build_invocation(drifted, "script with an extra flag")
+    assert drift_flags != base_flags and drift_flags[:2] == ["-tags", "netgo"]
+    cgo = script.replace("CGO_ENABLED=0 GOOS=", "CGO_ENABLED=1 GOOS=", 1)
+    assert _build_invocation(cgo, "script with cgo")[0]["CGO_ENABLED"] == "1"
+
+
+def test_the_script_does_not_disable_vcs_stamping_the_release_reads_back():
+    """A decision pinned, not an accident. A host or release build stamps
+    vcs.revision / vcs.time / vcs.modified into each beacon; the image stage
+    COPYs only agent/ (no .git) and cannot. So the same commit and toolchain
+    give DIFFERENT bytes from the two producers. That is harmless because
+    nothing pins a digest across them, and release.yml's provenance step reads
+    the stamp back from the released bytes (`go version -m`). Passing
+    -buildvcs=false here would buy byte parity nobody consumes at the cost of
+    the only commit identity an unsigned release beacon carries. Change both
+    together or neither."""
+    script = BUILD_SCRIPT.read_text()
+    code = "\n".join(ln for ln in script.splitlines() if not ln.lstrip().startswith("#"))
+    assert "buildvcs" not in code, "build-agent-dist.sh disables VCS stamping; release provenance depends on it"
+    release = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+    assert "go version -m" in release and "vcs.revision" in release, (
+        "release.yml no longer reads the VCS stamp back; revisit this pin with it")
+    stage = _agent_builder_stage()
+    copies = re.findall(r"^COPY\s+(.*)$", stage, re.MULTILINE)
+    assert copies == ["agent/ ./agent/"], (
+        f"the agent-builder stage now copies {copies}: if it can see .git it starts stamping too, "
+        "and the script header's account of host-vs-image bytes is out of date")
+    # The script's own header must say so. It used to claim that the same
+    # toolchain over the same source yields byte-identical binaries, full stop.
+    header = "\n".join(ln for ln in script.splitlines() if ln.startswith("#"))
+    assert "vcs.revision" in header and "vcs.modified" in header, (
+        "the header's reproducibility note does not name the VCS stamp as an input")
+
+
+def test_the_windows_job_and_the_image_gate_name_the_same_matrix():
+    """Two more hand-kept copies of the matrix: the windows job's DistTargets
+    (what it expects the shipped recipe to have produced) and the loop in
+    `make check-agent-shelf` (what a built image must serve). The driver's
+    comment already said this file kept it in step; nothing here did."""
+    shipped = _shipped_names()
+
+    driver = WINDOWS_DRIVER.read_text(encoding="ascii")
+    m = re.search(r"^\$script:DistTargets = @\((.*?)^\)", driver, re.MULTILINE | re.DOTALL)
+    assert m, "windows-native-e2e.ps1 no longer declares $script:DistTargets"
+    assert set(re.findall(r"'([^']+)'", m.group(1))) == shipped
+
+    makefile = MAKEFILE.read_text()
+    m = re.search(r"^check-agent-shelf:.*?for t in (.*?); do", makefile, re.MULTILINE | re.DOTALL)
+    assert m, "could not locate the `for t in ...; do` loop in `make check-agent-shelf`"
+    assert {f"cortexsim-agent-{t}" for t in m.group(1).split()} == shipped
+
+
+def test_health_wants_exactly_the_shipped_matrix():
+    """/api/health's agent_binaries probe must want what the producers build, or
+    a short shelf reads ok (it once wanted <goos>/amd64 only)."""
+    from api.health import _SHIPPED_BEACON_TARGETS
+
+    assert set(_SHIPPED_BEACON_TARGETS) == _script_targets()

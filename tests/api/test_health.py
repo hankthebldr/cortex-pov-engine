@@ -26,6 +26,17 @@ import asyncio
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_ignored_forwarders(monkeypatch):
+    """api.agents keeps the peers whose X-Forwarded-For it ignored in process
+    memory, and other test files POST such headers. probe_agents reports a
+    non-empty record (RG-INSTALL-05), so start every test here with none; a
+    test that wants one patches it again."""
+    import api.agents as agents_mod
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+
+
 # ---------------------------------------------------------------------------
 # Build identity
 # ---------------------------------------------------------------------------
@@ -348,7 +359,7 @@ def test_agent_binaries_incomplete_matrix_is_degraded(monkeypatch):
 
     monkeypatch.setattr(
         agents_mod, "_available_binaries",
-        lambda: [{"os": "linux", "arch": "amd64"}, {"os": "darwin", "arch": "amd64"}],
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX if o != "windows"],
     )
     comp = health.probe_agent_binaries()
     assert comp["status"] == "degraded"
@@ -367,7 +378,28 @@ def test_agent_binaries_empty_dist_is_degraded(monkeypatch):
     assert comp["code"] == "AGENT_DIST_EMPTY"
 
 
+SHIPPED_MATRIX = [("linux", "amd64"), ("linux", "arm64"), ("darwin", "amd64"),
+                  ("darwin", "arm64"), ("windows", "amd64")]
+
+
 def test_agent_binaries_full_matrix_is_ok(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(
+        agents_mod, "_available_binaries",
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX],
+    )
+    comp = health.probe_agent_binaries()
+    assert comp["status"] == "ok"
+    assert comp["missing"] == []
+
+
+def test_agent_binaries_amd64_only_shelf_is_degraded(monkeypatch):
+    """CRITIC-SHIPSTATE-AMD64. `want` was <goos>/amd64 only, so a shelf without
+    the arm64 beacons read ok while an Apple-silicon Mac or a Graviton host got
+    a 404 from /api/agents/binary and an installer that fell back to a source
+    build. The shipped matrix is five targets."""
     import api.agents as agents_mod
     from api import health
 
@@ -376,8 +408,10 @@ def test_agent_binaries_full_matrix_is_ok(monkeypatch):
         lambda: [{"os": o, "arch": "amd64"} for o in ("linux", "darwin", "windows")],
     )
     comp = health.probe_agent_binaries()
-    assert comp["status"] == "ok"
-    assert comp["missing"] == []
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_DIST_INCOMPLETE"
+    assert comp["missing"] == ["darwin/arm64", "linux/arm64"]
+    assert "WINDOWS_AGENT_UNAVAILABLE" not in comp["detail"], comp["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -749,6 +783,65 @@ def test_scenario_catalog_drafts_alone_is_still_degraded():
     assert comp["code"] == "SCENARIO_CATALOG_EMPTY"
     assert comp["count"] == 0
     assert comp["drafts"] == 2
+
+
+# ---------------------------------------------------------------------------
+# RG-INSTALL-05: agents recording a proxy's address as their own
+# ---------------------------------------------------------------------------
+
+
+class _AddrAgent:
+    def __init__(self, agent_id, hostname, last_ip, age_s=1):
+        from datetime import datetime, timedelta
+        self.agent_id, self.hostname, self.last_ip = agent_id, hostname, last_ip
+        self.last_seen = datetime.utcnow() - timedelta(seconds=age_s)
+
+
+def test_an_ignored_x_forwarded_for_is_a_named_degradation(monkeypatch):
+    """37dc374 logs the first X-Forwarded-For from each unlisted peer once and
+    keeps the peers in api.agents.ignored_forwarders(). A log line is not seen
+    by a DC; /api/health is the diagnostic surface."""
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([_AddrAgent("a1", "h1", "10.9.9.9")])))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER"
+    assert comp["ignored_forwarders"] == ["10.9.9.9"]
+    assert "CORTEXSIM_TRUSTED_PROXIES" in comp["detail"]
+
+
+def test_distinct_hosts_sharing_one_address_is_a_named_degradation(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "db-01", "10.0.0.1"),
+            _AddrAgent("a3", "app-01", "10.0.0.3")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_ADDRESS_SHARED"
+    assert comp["shared_addresses"] == {"10.0.0.1": ["db-01", "web-01"]}
+
+
+def test_one_host_with_two_agent_rows_is_not_shared(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "web-01", "10.0.0.1")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "ok", comp
+
+
+def test_an_ignored_forwarder_with_no_agent_enrolled_is_still_named(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([])))
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER", comp
 
 
 # ---------------------------------------------------------------------------

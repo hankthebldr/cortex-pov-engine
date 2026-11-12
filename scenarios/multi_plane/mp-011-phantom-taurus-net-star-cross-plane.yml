@@ -121,7 +121,10 @@ steps:
       echo '[*] Real telemetry: xdr_data process lineage w3wp.exe -> (cmd|powershell|pwsh|wmic)'
     identity: www-data
     mitre_technique: "T1505.003"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -143,7 +146,10 @@ steps:
       echo '[*] Real telemetry: xdr_data ENUM.REGISTRY write to NetworkProvider\ProviderOrder referencing an attacker .dll'
     identity: www-data
     mitre_technique: "T1556.008"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -163,7 +169,10 @@ steps:
       echo '[*] Real telemetry: xdr_data process lineage WmiPrvSE.exe -> (cmd|sqlcmd) with -U sa and .csv output'
     identity: www-data
     mitre_technique: "T1047"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: shared_entity
@@ -183,7 +192,10 @@ steps:
       echo '[*] Real telemetry: xdr_data ENUM.NETWORK tcp/443 initiated by w3wp.exe with large upload volume'
     identity: www-data
     mitre_technique: "T1071.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: endpoint_network_stitch
@@ -202,7 +214,10 @@ steps:
       echo '[*] Failure mode: four separate orphan alerts (stitch window missed) → Cross-Source Correlation Rate fails'
     identity: root
     mitre_technique: "T1556.008"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-04
       pivot: shared_entity

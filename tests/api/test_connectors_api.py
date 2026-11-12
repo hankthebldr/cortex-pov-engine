@@ -14,13 +14,19 @@ def client(make_client):
 
 
 def _seed_run_with_results(SessionLocal, run_id="run-conn-1"):
-    from models import Result, Run
+    from models import Agent, Result, Run
+    from sqlalchemy import select
 
     async def _seed():
         async with SessionLocal() as s:
             t0 = datetime(2026, 6, 10, 12, 0, 0)
+            # The run's target resolves to a host: with none, a detect match is
+            # an UNSCOPED_MATCH (pending), never a detection.
+            if (await s.execute(select(Agent).where(
+                    Agent.agent_id == "agent-1"))).scalar_one_or_none() is None:
+                s.add(Agent(agent_id="agent-1", hostname="lab-host", os="linux"))
             s.add(Run(run_id=run_id, scenario_id="SIM-EDR-001", mode="pull",
-                      status="complete", started_at=t0))
+                      target="agent-1", status="complete", started_at=t0))
             s.add(Result(run_id=run_id, step_id="step-02", plane="EDR",
                          signal_type="BIOC",
                          expected_detection="Credential file access shadow read",

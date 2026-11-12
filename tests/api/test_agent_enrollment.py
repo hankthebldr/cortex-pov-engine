@@ -101,8 +101,16 @@ def test_windows_installer_includes_enroll(client):
     token = client.post("/api/agents/enroll/tokens", json={}).json()["token"]
     r = client.get(f"/api/agents/install?os=windows&token={token}")
     assert r.status_code == 200
-    assert "Invoke-RestMethod" in r.text
     assert "/api/agents/enroll" in r.text
+    assert "$AgentId = Cs-Enroll" in r.text   # the call site, not just the URL
+    assert token in r.text
+
+
+def test_a_malformed_token_is_refused_before_it_reaches_a_script(client):
+    for os_name in ("linux", "windows"):
+        r = client.get(f"/api/agents/install?os={os_name}&token=cxs_tok")
+        assert r.status_code == 400
+        assert r.json()["detail"]["code"] == "BAD_TOKEN"
 
 
 # ── null lists from already-shipped beacons (kind run, D2) ───────────────────

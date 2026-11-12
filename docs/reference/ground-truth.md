@@ -11,10 +11,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Scenarios rejected at load | 0 |
 | TTP cards | 197 |
 | Detection planes | 16 |
-| Step-detections | 1419 |
+| Step-detections | 1411 |
 | Catalog detection objects | 2260 |
-| ABIOC+Analytics share (step-detections) | 15.7% |
-| Correlation share (step-detections) | 10.2% |
+| ABIOC+Analytics share (step-detections) | 15.6% |
+| Correlation share (step-detections) | 10.1% |
 | Distinct MITRE techniques (base) | 239 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1419 (16.6%) |
-| Marker-only steps | 100/830 (12.0%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1411 (16.7%) |
+| Marker-only steps | 98/823 (11.9%) |
 | Scenarios with indicators | 15 |
 | Indicators (in-band) | 87 |
 | Indicators (not in-band) | 10 |
@@ -55,24 +55,24 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 166 |
+| ABIOC | 163 |
 | Analytics | 56 |
 | BIOC | 374 |
-| Correlation | 144 |
+| Correlation | 142 |
 | IOC | 119 |
 | Prevention | 3 |
-| XQL | 557 |
+| XQL | 554 |
 
 ### Grouping keys (`make check-grouping`)
 
-1419 step-detections in 199 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+1411 step-detections in 199 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
 
 | Code | Outcome | Count |
 |---|---|---:|
 | G-01 | WARN: Medium+ detections share no native key | 0 |
 | G-02 | WARN: stitched step carries only below-Medium detections | 2 |
 | G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
-| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1050 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1042 |
 | G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters
@@ -104,8 +104,9 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | DET/HNT TCs evidenced | 70/107 |
 | S-13 tier disagreements | 127 |
 | S-14 posture-class-primary bindings | 14 |
-| PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
-| POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
+| PLT assertions authored | 7/43 rows (7 artifact(s), 7 row(s) no scenario reaches, 0 tenant-proven) |
+| POS assertions authored | 16/110 rows (18 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
+| AUT assertions authored | 3/6 rows (3 artifact(s), 3 row(s) no scenario reaches, 0 tenant-proven) |
 
 ## HTTP routes
 

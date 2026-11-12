@@ -90,7 +90,20 @@ steps:
     mitre_technique: "T1102.002"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "for /L %i in (1,1,10) do @curl.exe -s --max-time 3 \"http://127.0.0.1/bot0000000000:SIM-LAMPORAT-TELEGRAM-SHAPE/getUpdates?timeout=25&offset=%i\" & timeout /t 3 >nul"
+      # CONT-13 / PUSH-11: a cmd FOR variable is %%i in a .cmd file (how the
+      # beacon, and a multi-line push step, run cmd text) and %i on the command
+      # line (a single-line push step), so the resolver refuses it either way
+      # (CMD_PERCENT_CONTEXT). A PowerShell loop has neither trap, and
+      # Start-Sleep (unlike timeout.exe)
+      # works with redirected stdin. curl exits non-zero when nothing listens;
+      # the polling is the signal, so the exit code is reset.
+      windows: |
+        1..10 | ForEach-Object {
+          curl.exe -s --max-time 3 "http://127.0.0.1/bot0000000000:SIM-LAMPORAT-TELEGRAM-SHAPE/getUpdates?timeout=25&offset=$_"
+          Start-Sleep -Seconds 3
+        }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-ndr-011-telegram-shaped-polling-complete'
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -135,7 +148,7 @@ steps:
     command: "echo cortexsim-ndr-011-cr-ndr-0011-stitched-lamporat-telegram-c2-incident"
     identity: www-data
     mitre_technique: "T1102.002"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       # CR-NDR-0011 fuses the network C2-egress ABIOC and the avp.exe masquerade
       # ABIOC on the same agent_hostname / src_ip into one incident — a

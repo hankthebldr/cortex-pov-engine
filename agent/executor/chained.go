@@ -56,9 +56,18 @@ type ChainSession struct {
 	exited  chan struct{}
 	waitErr error
 
+	// killer tears the anchor's whole tree down (Windows: its Job Object;
+	// POSIX: its process group). Attached right after Start, released by Close.
+	killer *treeKiller
+
 	cancelled atomic.Bool
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+
+	// ended is closed once Close/Abandon has finished; teardown is what it had
+	// to stop (see Teardown).
+	ended    chan struct{}
+	teardown string
 }
 
 // NewChainSession starts the anchor shell. cgoImage, when non-empty, is used as
@@ -105,6 +114,8 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 		cancel: cancel,
 		ctx:    sctx,
 		exited: make(chan struct{}),
+		ended:  make(chan struct{}),
+		killer: attachTreeKiller(cmd),
 
 		anchorRenamed: renamed,
 	}
@@ -121,11 +132,22 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 
 	// Watcher: on ctx cancel, tear down the whole anchor tree so an in-flight
 	// step (and the idle anchor) die together — same contract as RunCommandCtx.
+	//
+	// BEACON-04: once the anchor has EXITED the watcher does nothing. That is
+	// the Close()/Abandon() path — they cancel only after the anchor has already
+	// exited — and base fired the tree kill from here anyway, on Windows at a
+	// pid os/exec had already released (free for reuse; the beacon runs as
+	// SYSTEM). What a finished chain leaves running is torn down by end()
+	// instead, synchronously and through reapSurvivors, which never names a
+	// released pid (RG-AGENT-01). The anchor-dies-mid-step case is handled
+	// separately in RunStep, through the same killer.
 	go func() {
 		<-sctx.Done()
 		s.cancelled.Store(true)
-		if s.cmd.Process != nil {
-			killProcessTree(s.cmd.Process.Pid)
+		select {
+		case <-s.exited:
+		default:
+			s.killer.Kill()
 		}
 	}()
 
@@ -156,15 +178,27 @@ func (s *ChainSession) scan(r io.Reader, ch chan<- string) {
 // wrappedCmd is the exact string the default path would pass to `sh -c` (e.g.
 // `runuser -l www-data -c '...'`), so identity-harness semantics are identical.
 func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCode int, err error) {
+	return s.RunStepShell("", "", wrappedCmd)
+}
+
+// RunStepShell is RunStep for a named step under a step shell ("" = the host
+// default; on Windows also "powershell" and "cmd"). stepID only labels the
+// not-launched marker a Windows anchor prints (BEACON-03).
+func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, stderr string, exitCode int, err error) {
 	if s.cancelled.Load() || s.ctx.Err() != nil {
 		return "", "", 130, context.Canceled
 	}
 
 	// The step runs in a real CHILD PROCESS of the anchor (a POSIX subshell, or a
-	// nested powershell.exe on Windows) so it is a descendant of the one CGO —
-	// a connected causality tree — while the sentinels are emitted by the ANCHOR
-	// itself so they still fire if the step called `exit`. See script.go.
-	script := chainStepScript(s.marker, wrappedCmd)
+	// nested powershell.exe / cmd.exe on Windows) so it is a descendant of the
+	// one CGO — a connected causality tree — while the sentinels are emitted by
+	// the ANCHOR itself so they still fire if the step called `exit`. See
+	// script.go.
+	script, cleanup, serr := chainStepScriptFor(s.marker, stepID, shell, wrappedCmd)
+	if serr != nil {
+		return "", "", -1, fmt.Errorf("chain step: %w", serr)
+	}
+	defer cleanup()
 	if _, werr := io.WriteString(s.stdin, script); werr != nil {
 		return "", "", -1, fmt.Errorf("chain write: %w", werr)
 	}
@@ -238,14 +272,16 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	// closed our read ends, so the scanners finish at once and RunStep returns
 	// ErrAnchorTerminated below via the !sawRC path -- the anchor died first, so
 	// the witness is anchor_terminated, never "step signaled". The kill is not
-	// awaited: killProcessTree sleeps killGrace, and RunStep must not.
+	// awaited: Kill sleeps killGrace, and RunStep must not. It goes through the
+	// session's killer, never the anchor's (now released) pid: on Windows the
+	// orphan is still in the anchor's Job Object, on POSIX in its group.
 	stepDone := make(chan struct{})
 	defer close(stepDone)
 	go func() {
 		select {
 		case <-s.exited:
 			if !sawRC.Load() {
-				killProcessTree(s.cmd.Process.Pid)
+				s.killer.Kill()
 			}
 		case <-stepDone:
 		}
@@ -254,10 +290,10 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	wg.Wait()
 
 	if s.cancelled.Load() || s.ctx.Err() != nil {
-		return outB.String(), errB.String(), 130, context.Canceled
+		return outB.String(), normalizeStepStderr(errB.String()), 130, context.Canceled
 	}
 	if rcErr != nil {
-		return outB.String(), errB.String(), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
+		return outB.String(), normalizeStepStderr(errB.String()), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
 	}
 	if !sawRC.Load() {
 		// The anchor closed its pipes before emitting this step's exit-code
@@ -267,23 +303,56 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 		// step that never completed — the exact false-green the engine exists to
 		// eliminate. Surface it as an execution error with a non-zero exit so
 		// executeTaskChained fails the run instead of recording a passing step.
-		return outB.String(), errB.String(), -1,
+		return outB.String(), normalizeStepStderr(errB.String()), -1,
 			fmt.Errorf("%w before step completed — step result unknown", ErrAnchorTerminated)
 	}
-	return outB.String(), errB.String(), rc, nil
+	return outB.String(), normalizeStepStderr(errB.String()), rc, nil
 }
 
-// Close ends the anchor shell cleanly (EOF on stdin) and waits for it to exit.
-// Safe to call more than once.
-func (s *ChainSession) Close() error {
+// Close ends a chain that finished cleanly: the anchor shell exits on its own
+// (EOF on stdin), is waited for, and then whatever the chain's steps left
+// running is torn down — on POSIX. Safe to call more than once; only the first
+// Close or Abandon acts.
+//
+// RG-AGENT-01: pull mode runs no scenario cleanup, so this teardown is the only
+// one a chained run's background helpers get. BEACON-04 had removed it (nothing
+// was signalled once the anchor had exited), and a helper left by run N then
+// answered run N+1's health check. It is back for POSIX, as a probe-guarded
+// signal to the anchor's process GROUP (treeKiller.reapSurvivors). Windows still
+// terminates nothing after a clean chain: that rule stands until Henry decides
+// what pull-mode cleanup is (CONT-11).
+func (s *ChainSession) Close() error { return s.end(false) }
+
+// Abandon ends a chain that did NOT finish cleanly — operator abort, control
+// channel lost, timeout, fail-fast, execution error. It is Close, except that
+// every process the chain started is stopped on Windows too (RG-AGENT-02): a run
+// that reads "aborted" must not leave an earlier step's tooling running.
+func (s *ChainSession) Abandon() error { return s.end(true) }
+
+// Teardown reports what ending the session had to stop: "" when nothing was
+// left running (or the session is still open), else a description for the log.
+func (s *ChainSession) Teardown() string {
+	select {
+	case <-s.ended:
+		return s.teardown
+	default:
+		return ""
+	}
+}
+
+func (s *ChainSession) end(failed bool) error {
 	var err error
 	s.closeOnce.Do(func() {
 		_, _ = io.WriteString(s.stdin, anchorExitScript)
 		_ = s.stdin.Close()
 		<-s.exited
 		err = s.waitErr
-		s.cancel()
+		s.cancel() // the anchor has exited: the watcher kills nothing
+		// Before Release, which is what refuses any later kill.
+		s.teardown = s.killer.reapSurvivors(failed)
 		s.wg.Wait()
+		s.killer.Release()
+		close(s.ended)
 	})
 	return err
 }

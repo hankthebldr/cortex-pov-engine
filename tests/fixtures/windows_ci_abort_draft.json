@@ -1,0 +1,28 @@
+{
+  "name": "CortexSim CI Windows abort probe",
+  "plane": "EDR",
+  "author": "ci-windows-native-e2e",
+  "tags": ["ci", "windows-native-e2e"],
+  "uc_ref": "UCS-EDR-02",
+  "tc_ref": "TC-EDR-03",
+  "mitre_tactic": "TA0002",
+  "mitre_tactic_name": "Execution",
+  "mitre_technique": "T1059.001",
+  "mitre_technique_name": "PowerShell",
+  "steps": [
+    {
+      "id": "step-01",
+      "name": "Long-running native under PowerShell, aborted by the operator",
+      "command": "Write-Output cortexsim-ci-abort-start; ping -n 600 127.0.0.1",
+      "mitre_technique": "T1059.001",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    }
+  ]
+}

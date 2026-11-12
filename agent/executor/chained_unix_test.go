@@ -1,4 +1,11 @@
+//go:build !windows
+
 package executor
+
+// POSIX-dialect ChainSession tests (CI-04): `1>&2`, `$PPID`, `$$`, `${X:-y}`,
+// `$((a+b))`, `kill -9 $$`. Their PowerShell-dialect twins are in
+// chained_windows_test.go. What a session tears down when it ends is in
+// chained_teardown_unix_test.go.
 
 import (
 	"context"

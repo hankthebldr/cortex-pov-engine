@@ -393,4 +393,28 @@ WORKDIR /app/core
 
 EXPOSE 8888
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888"]
+# Liveness. Without it a wedged event loop reads "Up" in `docker ps` while every
+# beacon poll times out. The probe asks /api/health on loopback: an IP literal,
+# which the Host guard admits whatever CORTEXSIM_ALLOWED_HOSTS holds, on the
+# port the CMD below listens on. /api/health is HTTP 200 whether the body says
+# ok or degraded, so this reports "the process answers", never "nothing is
+# degraded" (every deployment is degraded today: api_auth). curl gives up
+# (--max-time 5) before Docker's --timeout does, so a failure carries curl's
+# message. Docker marks the container unhealthy; it does not restart it.
+# Kubernetes ignores HEALTHCHECK and uses the chart's own probes.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["curl", "-fsS", "--max-time", "5", "-o", "/dev/null", "http://127.0.0.1:8888/api/health"]
+
+# --timeout-graceful-shutdown: on SIGTERM uvicorn otherwise waits for EVERY open
+# connection to close, and the console holds SSE streams (/api/events) open
+# indefinitely — so `docker compose down/restart` never finished a graceful
+# shutdown and was SIGKILLed mid-write after compose's grace period. 5 s bounds
+# it; docker-compose.yml's stop_grace_period (15 s) leaves room for the
+# lifespan shutdown after it.
+#
+# --workers 1 is explicit, not decoration. SimCore is single-process by
+# construction: the orchestrator's task queue, the SSE bus and the rehydrate
+# pass all live in the process. uvicorn takes its worker count from
+# $WEB_CONCURRENCY when --workers is absent, so one environment variable used
+# to fork N SimCores, each rehydrating and delivering the same queued tasks (a
+# scenario run twice on a customer host). Scale with a bigger host, not workers.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "1", "--timeout-graceful-shutdown", "5"]

@@ -12,7 +12,9 @@ A scenario is not a single artifact — it is a set of steps, each of which may
 carry a POSIX command, a ``platform_variants['windows']`` command, both, or
 neither.  ``resolve_target()`` decides, per target, whether the scenario can
 produce a bundle that will actually RUN, and which command text each step
-contributes.  ``emittable_targets()`` is the caller-facing summary.
+contributes.  ``emittable_targets()`` summarises that for the CONTENT;
+``pushable_targets()`` is the caller-facing answer to "what will a push
+download serve" (it also honours ``push_supported: false``).
 
 The rule is per-TARGET refusal, never per-scenario refusal: a scenario whose
 steps span both platforms still emits a POSIX bundle if every step has a POSIX
@@ -24,10 +26,11 @@ the label mismatch is left to the scenario linter.
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 logger = logging.getLogger("cortexsim.push_generator")
 
@@ -43,6 +46,66 @@ Shell = Literal["bash", "powershell", "cmd"]
 #: from "this scenario has no POSIX command" without parsing prose.
 REASON_POSIX_UNAVAILABLE = "POSIX_COMMAND_UNAVAILABLE"
 REASON_WINDOWS_UNAVAILABLE = "WINDOWS_COMMAND_UNAVAILABLE"
+#: The step's Windows command mixes cmd syntax (infix ``&``, ``%VAR%``) with
+#: PowerShell syntax, so it runs correctly under NEITHER interpreter. Refused
+#: rather than guessed: handed to cmd, the PowerShell half fails; handed to
+#: Windows PowerShell 5.1, the cmd ``&`` is a parse error and nothing runs.
+REASON_MIXED_DIALECT = "MIXED_DIALECT"
+#: The step's cmd text carries a ``%`` that cmd.exe reads differently from a
+#: .cmd file than from the command line (a FOR variable, ``%%``, a lone ``%``).
+#: cmd text reaches cmd.exe both ways — the beacon always writes a file, the
+#: push bundle passes a single line on the command line — so the same text
+#: would run on one path and fail on the other. Refused by name (PUSH-11).
+REASON_CMD_PERCENT_CONTEXT = "CMD_PERCENT_CONTEXT"
+
+# ---------------------------------------------------------------------------
+# Interpolation safety — every scenario-sourced value that lands in a bundle
+# ---------------------------------------------------------------------------
+#
+# Scenario YAML (and, through the composer, a draft a DC typed) is the input.
+# A value that reaches a ``#`` comment line must not be able to END that line:
+# a CR/LF in a name, step name or detection description would otherwise start a
+# new, uncommented line — a top-level command in the artifact a DC runs on a
+# customer host, invisible to ``bash -n`` and to the PowerShell parser.
+
+#: C0/C1 controls except TAB, plus the Unicode line/paragraph separators. TAB is
+#: kept because it cannot end a comment in either shell and corpus commands use it.
+_COMMENT_UNSAFE_RE = re.compile("[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def _comment_safe(value: Any) -> str:
+    """Render ``value`` for interpolation into a single bash/PowerShell comment line.
+
+    CR, LF and every other control character become a space, so the value can
+    never terminate the ``#`` line it is placed on. ``str()`` semantics are
+    kept (``None`` renders ``None``, as the f-strings this replaced did) so the
+    output for every clean value is byte-identical.
+    """
+    return _COMMENT_UNSAFE_RE.sub(" ", str(value))
+
+
+def _expected_comment(prefix: str, det: dict[str, Any]) -> str:
+    """One ``expected_detections`` entry as a comment line (bash and PowerShell)."""
+    return (
+        f"{prefix}[{_comment_safe(det.get('plane', '?'))}] "
+        f"{_comment_safe(det.get('type', '?'))}: {_comment_safe(det.get('description', ''))}"
+    )
+
+
+def _safe_token(value: Any, fallback: str = "UNKNOWN") -> str:
+    """A value used in CODE position (a file name, a log message, a variable):
+    restricted to ``[A-Za-z0-9_.-]``. Corpus scenario ids already are."""
+    out = re.sub(r"[^A-Za-z0-9_.-]", "_", str(value))
+    return out or fallback
+
+
+def _bash_dq(value: Any) -> str:
+    """Escape ``value`` for the inside of a bash DOUBLE-quoted string."""
+    s = _comment_safe(value)
+    for ch in ("\\", '"', "$", "`"):
+        s = s.replace(ch, "\\" + ch)
+    return s
+
 
 _HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _COMMENT_RE = re.compile(r"(?m)(?:(?<=^)|(?<=\s))#[^\n]*")
@@ -134,6 +197,11 @@ def code_only(command: str) -> str:
     return _COMMENT_RE.sub(" ", stripped)
 
 
+#: The STRONG-MARKER verb list (``has_strong_windows_marker`` /
+#: ``is_posix_shaped``). Deliberately NOT widened with the dialect classifier's
+#: full ``Get-Verb`` list below: widening it would change which steps the POSIX
+#: and Windows resolvers accept — i.e. which scenarios emit at all — which is a
+#: content decision, not a classifier fix.
 _CMDLET_VERBS = (
     "Get|Set|New|Remove|Add|Start|Stop|Invoke|Test|Out|Write|Select|Where|"
     "ForEach|Import|Export|Copy|Move|Enable|Disable|Register|Unregister|"
@@ -141,7 +209,6 @@ _CMDLET_VERBS = (
 )
 _CMDLET_RE = re.compile(rf"(?<![\w-])(?:{_CMDLET_VERBS})-[A-Z][A-Za-z]+")
 _PS_AUTOVAR_RE = re.compile(r"\$env:|\$PSVersionTable|\$ErrorActionPreference", re.IGNORECASE)
-_PS_INVOKE_RE = re.compile(r"(?<![\w./-])(?:powershell|pwsh)(?:\.exe)?\s+-", re.IGNORECASE)
 _WIN_EXE_RE = re.compile(
     r"(?<![\w./-])(?:cmd|reg|certutil|rundll32|schtasks|wmic|vssadmin|bcdedit|"
     r"wevtutil|nltest|klist|mshta|regsvr32)\.exe(?![\w.])",
@@ -155,16 +222,13 @@ _WIN_ENVVAR_RE = re.compile(
 )
 _BATCH_FOR_RE = re.compile(r"(?<![\w-])for\s+/[LFDR]\b", re.IGNORECASE)
 _BATCH_TIMEOUT_RE = re.compile(r"(?<![\w-])timeout\s+/t\b", re.IGNORECASE)
-_CMD_SLASH_C_RE = re.compile(r"(?<![\w./-])cmd(?:\.exe)?\s+/c\b", re.IGNORECASE)
 
 #: Sufficient evidence that a command is Windows-native.
 #:
 #: A bare ``powershell`` / ``pwsh`` TOKEN is deliberately NOT here — it is a
 #: weak marker.  SIM-EDR-018 step-02 is valid bash that guards an optional
 #: `pwsh -NoProfile -Command …` behind `command -v pwsh`; treating the token as
-#: strong would withdraw that scenario's working POSIX bundle.  `_PS_INVOKE_RE`
-#: requires the `-flag` form that only appears when PowerShell is the shell
-#: being driven, and even that is checked after the POSIX escape hatch below.
+#: strong would withdraw that scenario's working POSIX bundle.
 _STRONG_WINDOWS_MARKERS = (
     _CMDLET_RE,
     _PS_AUTOVAR_RE,
@@ -209,6 +273,54 @@ def is_posix_shaped(command: str) -> bool:
     return bool(_POSIX_ANCHOR_RE.search(code))
 
 
+def is_windows_only(command: str) -> bool:
+    """True when ``command`` is text no POSIX shell can run: it carries a strong
+    Windows marker and no POSIX anchor outranks it.
+
+    The exact complement of :func:`is_posix_shaped`, named for the cleanup
+    path: a scenario's ``cleanup.commands`` is one list for every target, so a
+    scenario that also emits a Windows bundle carries ``reg.exe delete …`` and
+    ``Remove-Item …`` lines that a bash bundle must not attempt.
+    """
+    return not is_posix_shaped(command)
+
+
+#: A plain lowercase command name at the head of a line: what a POSIX teardown
+#: line starts with (``kubectl``, ``pkill``, ``docker``, ``rm``, ``aws``).
+_POSIX_HEAD_RE = re.compile(r"^[a-z][a-z0-9._+-]*$")
+#: Lowercase heads that are Windows commands, or PowerShell / cmd keywords, so
+#: a line they start is still Windows teardown.
+_WINDOWS_HEADS = frozenset({
+    "del", "erase", "rd", "rmdir", "copy", "move", "ren", "set", "start", "reg",
+    "sc", "net", "netsh", "schtasks", "taskkill", "wevtutil", "vssadmin", "bcdedit",
+    "wmic", "certutil", "icacls", "attrib", "takeown", "cscript", "wscript", "mshta",
+    "rundll32", "regsvr32", "msiexec", "setx", "powershell", "pwsh", "cmd",
+    "if", "for", "foreach", "while", "do", "try", "function", "param", "switch",
+})
+
+
+def is_windows_teardown(command: str) -> bool:
+    """True when a ``cleanup.commands`` line is Windows teardown a POSIX target
+    must not run.
+
+    :func:`is_windows_only` alone fires on a Verb-Noun token ANYWHERE in the
+    line, so ``kubectl delete pod Test-Runner``, ``pkill -f New-Relic`` and
+    ``aws s3 rm s3://bucket/Export-Data`` read as Windows and were withheld
+    from bash and the K8s bootstrap while the run still logged
+    "Cleanup complete". A line whose HEAD is a plain lowercase command name
+    that is not a Windows command or keyword is POSIX teardown and is kept.
+    Every Windows-only line in the corpus starts with a cmdlet, a ``$``
+    assignment, an ``.exe`` or ``del``, so the corpus resolution is unchanged.
+    """
+    if not is_windows_only(command):
+        return False
+    head = command.strip().split(None, 1)[0] if command.strip() else ""
+    if _POSIX_HEAD_RE.match(head) and head not in _WINDOWS_HEADS \
+            and not re.search(r"\.(?:exe|cmd|bat|ps1|com)$", head):
+        return False
+    return True
+
+
 _NEUTRAL_STMT_RE = re.compile(r"^echo\s+'[^']*'$")
 _NEUTRAL_FORBIDDEN = ("|", "<", ">", "`", "$(", "&", "\\\n")
 
@@ -239,34 +351,176 @@ def is_shell_neutral(command: str) -> bool:
     return all(_NEUTRAL_STMT_RE.match(s) for s in statements)
 
 
-def infer_windows_shell(command: str) -> Shell:
-    """Infer whether a Windows command text is cmd-batch or PowerShell.
+#: What ``infer_windows_shell`` can answer. ``mixed`` is not a runnable shell:
+#: a step that classifies ``mixed`` is unresolved (``REASON_MIXED_DIALECT``).
+Dialect = Literal["powershell", "cmd", "mixed"]
 
-    The corpus' ``platform_variants['windows']`` entries are NOT all
-    PowerShell — measured, roughly 60 PowerShell / 15 cmd-batch / 26
-    ambiguous.  Pasting ``for /L %i in (1,1,10) do @curl.exe …`` into a .ps1
-    yields a script that PARSES under pwsh and then fails at runtime: exactly
-    the defect being fixed, in the other direction.
+# ── PowerShell STRUCTURE (each is syntax cmd.exe has no meaning for) ─────────
+#
+# Verbs: every verb `Get-Verb` lists on Windows PowerShell 5.1 and PowerShell 7,
+# plus the non-approved verbs of built-in cmdlets (ForEach-/Where-/Sort-/Tee-
+# Object). The old, hand-picked 28-verb list missed Clear-, Use-, Compress-,
+# Rename-, Format-, Expand-, Measure- … so `… & Clear-History` was sent to
+# cmd.exe and `Use-STSRoleWithSAML …` to cmd.exe as-is.
+_PS_VERBS = (
+    "Add|Approve|Assert|Backup|Block|Build|Checkpoint|Clear|Close|Compare|Complete|"
+    "Compress|Confirm|Connect|ConvertFrom|ConvertTo|Convert|Copy|Debug|Deny|Deploy|"
+    "Disable|Disconnect|Dismount|Edit|Enable|Enter|Exit|Expand|Export|Find|ForEach|"
+    "Format|Get|Grant|Group|Hide|Import|Initialize|Install|Invoke|Join|Limit|Lock|"
+    "Measure|Merge|Mount|Move|New|Open|Optimize|Out|Ping|Pop|Protect|Publish|Push|"
+    "Read|Receive|Redo|Register|Remove|Rename|Repair|Request|Reset|Resize|Resolve|"
+    "Restart|Restore|Resume|Revoke|Save|Search|Select|Send|Set|Show|Skip|Sort|Split|"
+    "Start|Step|Stop|Submit|Suspend|Switch|Sync|Tee|Test|Trace|Unblock|Undo|"
+    "Uninstall|Unlock|Unprotect|Unpublish|Unregister|Update|Use|Wait|Watch|Where|Write"
+)
+_PS_VERB_NOUN_RE = re.compile(rf"(?<![\w./\\-])(?:{_PS_VERBS})-[A-Z][A-Za-z0-9]*")
+#: `$name =`, `$o.Prop =`, `${x} +=` — assignment. cmd assigns with `set`.
+_PS_ASSIGN_RE = re.compile(r"\$(?:[A-Za-z_]\w*|\{[^}\n]+\})(?:\.[A-Za-z_]\w*)*\s*[-+*/%]?=(?!=)")
+#: `[Type]::Member` — static member access.
+_PS_STATIC_RE = re.compile(r"\[[A-Za-z_][\w.]*(?:\[\])?\]::")
+_PS_ENV_REF_RE = re.compile(r"\$env:|\$\{env:", re.IGNORECASE)
+_PS_AUTOVARS_RE = re.compile(
+    r"\$(?:_|PSItem|PSVersionTable|ErrorActionPreference|true|false|null|"
+    r"LASTEXITCODE|PSScriptRoot|args|input|Error)\b",
+    re.IGNORECASE,
+)
+_PS_ARRAY_HASH_RE = re.compile(r"@[({]")
+#: `& $x` / `& 'path'` at the START of a statement — the call operator. A
+#: leading `&` is a syntax error to cmd.exe ("& was unexpected").
+_PS_CALL_OP_RE = re.compile(r"(?m)(?:^|[;|{(])[ \t]*&(?!&)[ \t]*\S")
+#: `;` statement separator. cmd.exe has none — `whoami /all; net user` hands
+#: `/all;` to whoami and never runs `net user`.
+_PS_SEMICOLON_RE = re.compile(r";[ \t]+\S")
+_PS_KEYWORD_RE = re.compile(
+    r"(?<![\w-])(?:foreach|while|switch)\s*\("
+    r"|(?<![\w-])for\s*\(\s*\$"
+    r"|(?<![\w-])(?:try|finally)\s*\{"
+    r"|(?<![\w-])catch\s*(?:\[[^\]\n]*\]\s*)?\{"
+    r"|(?<![\w-])function\s+[\w-]+\s*\{"
+    r"|(?<![\w-])if\s*\(\s*(?:\$|-not\b|!)",
+    re.IGNORECASE,
+)
+_PS_RANGE_RE = re.compile(r"(?<![\w.])\d+\.\.\d+(?![\w.])")
+_PS_ALIAS_BLOCK_RE = re.compile(r"\|\s*[%?]\s*\{")
+#: A `#` comment (line start or after whitespace). cmd.exe has no `#` comment:
+#: it hands `# …` to the program as arguments.
+_PS_HASH_COMMENT_RE = re.compile(r"(?m)(?:^|(?<=\s))#")
 
-    Ambiguous resolves to ``cmd`` on purpose: ``cmd.exe /c "foo.exe args"``
-    executes a bare exe invocation correctly, PowerShell's parser may not.
+_PS_STRUCTURE = (
+    _PS_VERB_NOUN_RE, _PS_ASSIGN_RE, _PS_STATIC_RE, _PS_ENV_REF_RE,
+    _PS_AUTOVARS_RE, _PS_ARRAY_HASH_RE, _PS_CALL_OP_RE, _PS_SEMICOLON_RE,
+    _PS_KEYWORD_RE, _PS_RANGE_RE, _PS_ALIAS_BLOCK_RE,
+)
+
+# ── cmd.exe STRUCTURE (each is syntax Windows PowerShell 5.1 cannot run) ─────
+#: `%NAME%` expansion — any name, not a whitelist. PowerShell passes it literally.
+_CMD_ENVVAR_RE = re.compile(r"%[A-Za-z_][\w()#$\-]*%")
+_CMD_FOR_RE = re.compile(r"(?<![\w-])for\s+(?:/[LFDR]\b|%%?[A-Za-z]\s+in\b)", re.IGNORECASE)
+#: Infix `&` command separator (`a & b`). Excludes `&&`, the call operator
+#: (statement start), and redirections such as `2>&1`.
+_CMD_INFIX_AMP_RE = re.compile(r"[^\s;|{(&=<>][ \t]*&(?!&)")
+#: `&&` / `||` — cmd conditional chaining; PowerShell 7-only, so on the 5.1
+#: floor they are cmd syntax.
+_CMD_ANDOR_RE = re.compile(r"&&|\|\|")
+_CMD_NUL_RE = re.compile(r">\s*nul\b", re.IGNORECASE)
+_CMD_SET_RE = re.compile(r"(?i)(?:^|[&(\s])set\s+(?:/[ap]\s+)?\"?[A-Za-z_]\w*=")
+_CMD_IF_RE = re.compile(r"(?<![\w-])if\s+(?:/i\s+)?(?:not\s+)?(?:exist|errorlevel|defined)\b", re.IGNORECASE)
+_CMD_MISC_RE = re.compile(
+    r"(?im)(?<![\w-])(?:goto|call)\s+:\w|^\s*@?echo\s+(?:off|on)\b|^\s*rem\s|^\s*::"
+)
+
+_CMD_STRUCTURE = (
+    _CMD_ENVVAR_RE, _CMD_FOR_RE, _BATCH_TIMEOUT_RE, _CMD_INFIX_AMP_RE,
+    _CMD_ANDOR_RE, _CMD_NUL_RE, _CMD_SET_RE, _CMD_IF_RE, _CMD_MISC_RE,
+)
+
+
+#: A FOR loop variable in either spelling: ``%i`` (command line) or ``%%i``
+#: (batch file). Each form is an error in the other context.
+_CMD_FOR_VAR_RE = re.compile(
+    r"(?i)(?<![\w-])for\s+(?:/[LFDR]\s+)?(?:\"[^\"\n]*\"\s+)?%%?[A-Za-z]\s+in\b"
+)
+#: A well-formed variable reference, with an optional substring or replace
+#: modifier (``%NAME%``, ``%NAME:~0,4%``, ``%PATH:;= %``). These expand the same
+#: way from a file and from the command line when NAME is defined.
+_CMD_VAR_REF_RE = re.compile(r"%[A-Za-z_][\w()#$\-]*(?::[^%\r\n]*)?%")
+
+
+def cmd_percent_is_context_dependent(command: str) -> bool:
+    """True when cmd text carries a ``%`` whose meaning depends on HOW cmd.exe
+    is handed the text.
+
+    ============================  ==========================  ==================
+    text                          .cmd file                   command line
+    ============================  ==========================  ==================
+    ``for /L %i in (…) do …``     "i was unexpected"          runs
+    ``for /L %%i in (…) do …``    runs                        "%%i was unexpected"
+    ``a%20b``, ``1..3|%{…}``      the lone ``%`` is dropped   kept
+    ``100%% done``                one ``%``                   two
+    ============================  ==========================  ==================
+
+    Everything else is the same in both: a well-formed ``%NAME%`` reference to
+    a variable that is defined expands identically. (An UNDEFINED ``%NAME%``
+    is empty in a file and literal on the command line; that is a property of
+    the host, not of the text, and the bundle's operator-input preflight is
+    what covers it.)
+
+    Judged on the RAW text, not :func:`code_only`: cmd expands ``%`` inside
+    quotes too. These are documented cmd.exe rules; none was executed here.
+    """
+    if _CMD_FOR_VAR_RE.search(command):
+        return True
+    return "%" in _CMD_VAR_REF_RE.sub("", command)
+
+
+def _has_ps_hash_comment(command: str) -> bool:
+    """True when ``command`` carries a ``#`` comment outside string literals."""
+    text = _strip_heredocs(command)
+    stripped, balanced = _strip_quoted(text)
+    if not balanced:
+        # An apostrophe inside a `#` comment desynchronised the quote scan —
+        # which itself means there IS a comment.
+        return bool(_PS_HASH_COMMENT_RE.search(text))
+    return bool(_PS_HASH_COMMENT_RE.search(stripped))
+
+
+def infer_windows_shell(command: str) -> Dialect:
+    """Classify a Windows command text as ``cmd``, ``powershell`` or ``mixed``.
+
+    STRUCTURE, not vocabulary. The corpus' ``platform_variants['windows']``
+    entries are not all PowerShell (measured: 80 PowerShell / 47 cmd), and the
+    previous classifier keyed on a hand-picked list of cmdlet verbs, so a step
+    like ``wevtutil cl Security & wevtutil cl System & Clear-History`` (a
+    ``Clear-`` verb the list lacked) went to cmd.exe as-is.
+
+    * Any PowerShell structure — an assignment, ``[Type]::``, an approved
+      Verb-Noun, ``$env:``, a statement-start ``&``, a ``;`` separator, a ``#``
+      comment, a script-block keyword — means ``powershell``.
+    * Any cmd structure — ``%VAR%``, ``for /L``, an infix ``&``, ``&&``,
+      ``set X=`` … — means ``cmd``.
+    * BOTH means ``mixed``: it runs correctly under neither interpreter, so the
+      resolver refuses the step (``MIXED_DIALECT``) instead of guessing.
+    * Neither: a provably shell-neutral ``echo '…'`` is ``powershell``; any other
+      bare native invocation — including ``powershell.exe -Command "…"`` — is
+      ``cmd``. cmd.exe hands the double-quoted ``-Command`` string through
+      literally (and expands the ``%VAR%`` an author put inside it); an OUTER
+      PowerShell would interpolate every ``$x`` inside those double quotes to
+      empty before the inner interpreter ever saw it.
+
+    ``cmd.exe /c "…"`` is deliberately NOT a cmd marker: both interpreters run
+    a native invocation, and SIM-EDR-017 step-03 is a PowerShell block that
+    shells out with it (`$s = …; cmd.exe /c "md $s\\386354"`).
     """
     code = code_only(command)
-    # PowerShell-only syntax outranks a cmd marker, because PowerShell drives
-    # cmd but not the reverse.  SIM-EDR-017 step-03 is
-    # `$s = Join-Path $env:TEMP …; cmd.exe /c "md $s\386354"` — a PowerShell
-    # block that shells out; classifying it cmd because it mentions `cmd /c`
-    # would hand a `$s = …` assignment to cmd.exe, which cannot parse it.
-    if _CMDLET_RE.search(code) or _PS_AUTOVAR_RE.search(code):
+    ps = any(rx.search(code) for rx in _PS_STRUCTURE) or _has_ps_hash_comment(command)
+    cmd = any(rx.search(code) for rx in _CMD_STRUCTURE)
+    if ps and cmd:
+        return "mixed"
+    if ps:
         return "powershell"
-    if (
-        _CMD_SLASH_C_RE.search(code)
-        or _WIN_ENVVAR_RE.search(code)
-        or _BATCH_FOR_RE.search(code)
-        or _BATCH_TIMEOUT_RE.search(code)
-    ):
+    if cmd:
         return "cmd"
-    if _PS_INVOKE_RE.search(code):
+    if is_shell_neutral(command):
         return "powershell"
     return "cmd"
 
@@ -299,6 +553,39 @@ class TargetResolution:
     skipped_cleanup: tuple[str, ...] = ()
 
 
+def unsatisfiable_hints(target: str, reasons: Iterable[str]) -> list[str]:
+    """The fix for each reason a step cannot run on ``target``.
+
+    One reading for the push refusal (``BUNDLE_TARGET_UNSATISFIABLE``) and the
+    pull refusal (``PULL_TARGET_UNSATISFIABLE``): a step that HAS a Windows
+    variant the resolver refuses as MIXED_DIALECT or CMD_PERCENT_CONTEXT needs
+    that variant rewritten, not another one declared.
+    """
+    reasons = set(reasons)
+    hints: list[str] = []
+    if reasons - {REASON_MIXED_DIALECT, REASON_CMD_PERCENT_CONTEXT} or not reasons:
+        hints.append(
+            "declare platform_variants.windows on those steps"
+            if target == "windows"
+            else "declare platform_variants.linux on those steps"
+        )
+    if REASON_MIXED_DIALECT in reasons:
+        hints.append(
+            "rewrite each MIXED_DIALECT step's Windows command in ONE dialect "
+            "(cmd or PowerShell) — cmd `&`/%VAR% mixed with PowerShell syntax "
+            "runs correctly under neither interpreter"
+        )
+    if REASON_CMD_PERCENT_CONTEXT in reasons:
+        hints.append(
+            "each CMD_PERCENT_CONTEXT step is cmd text with a FOR variable, a "
+            "`%%` or a lone `%`, which cmd.exe reads differently from a .cmd "
+            "file than from the command line — write the loop in PowerShell "
+            "(`1..N | ForEach-Object { … }`, `ForEach-Object` instead of the "
+            "`%` alias) and keep every remaining `%` inside a `%NAME%` reference"
+        )
+    return hints
+
+
 class BundleTargetUnsatisfiable(Exception):
     """A bundle was requested for a target the scenario cannot satisfy.
 
@@ -318,11 +605,7 @@ class BundleTargetUnsatisfiable(Exception):
     def to_error(self) -> dict[str, Any]:
         """Structured-JSON error body per the repo convention."""
         steps = ", ".join(f"{sid} ({reason})" for sid, reason in self.unresolved)
-        hint = (
-            "declare platform_variants.windows on those steps"
-            if self.target == "windows"
-            else "declare platform_variants.linux on those steps"
-        )
+        hint = "; ".join(unsatisfiable_hints(self.target, [r for _, r in self.unresolved]))
         return {
             "error": "Scenario cannot emit a bundle for this target",
             "code": "BUNDLE_TARGET_UNSATISFIABLE",
@@ -406,12 +689,20 @@ def _resolve_step_windows(step: dict[str, Any]) -> StepResolution | tuple[str, s
     variant = _variant(step, "windows")
     if variant is not None:
         shell = infer_windows_shell(variant)
+        if shell == "mixed":
+            return (step_id, REASON_MIXED_DIALECT)
+        if shell == "cmd" and cmd_percent_is_context_dependent(variant):
+            return (step_id, REASON_CMD_PERCENT_CONTEXT)
         return StepResolution(
             step_id, identity, shell, variant, "variant:windows",
             note=f"dialect inferred: {shell}",
         )
     if _declared_platforms(step) == {"windows"} and has_strong_windows_marker(command):
         shell = infer_windows_shell(command)
+        if shell == "mixed":
+            return (step_id, REASON_MIXED_DIALECT)
+        if shell == "cmd" and cmd_percent_is_context_dependent(command):
+            return (step_id, REASON_CMD_PERCENT_CONTEXT)
         return StepResolution(
             step_id, identity, shell, command, "primary",
             note=f"dialect inferred: {shell}",
@@ -433,12 +724,33 @@ def _resolve_cleanup(
         if target == "posix":
             # Cleanup never gates emittability — a bundle that runs its steps
             # and warns on cleanup still delivers the signal the POV needs.
-            kept.append((cmd, "bash"))
+            #
+            # A Windows-only line is withheld, not run. On Linux it removes
+            # nothing (what it names exists only on a Windows host), and
+            # running it costs a `command not found` line in the teardown log
+            # a DC shows the customer — or, for a double-quoted `$env:` under
+            # `set -u`, ends the shell and strands every later teardown line.
+            # The bash bundle names each withheld line in a comment; the K8s
+            # bootstrap reads this same resolution.
+            if is_windows_teardown(cmd):
+                skipped.append(cmd)
+            else:
+                kept.append((cmd, "bash"))
             continue
         if is_shell_neutral(cmd):
             kept.append((cmd, "powershell"))
         elif has_strong_windows_marker(cmd):
-            kept.append((cmd, infer_windows_shell(cmd)))
+            dialect = infer_windows_shell(cmd)
+            if dialect == "mixed":
+                # Runnable under neither interpreter — named as residue, never
+                # run and silently failed.
+                skipped.append(cmd)
+            elif dialect == "cmd" and cmd_percent_is_context_dependent(cmd):
+                # Reads differently from a file than from the command line —
+                # residue for the same reason a step like it is refused.
+                skipped.append(cmd)
+            else:
+                kept.append((cmd, dialect))
         else:
             skipped.append(cmd)
     return tuple(kept), tuple(skipped)
@@ -477,8 +789,31 @@ def resolve_target(scenario: dict[str, Any], target: Target) -> TargetResolution
 
 
 def emittable_targets(scenario: dict[str, Any]) -> tuple[Target, ...]:
-    """Targets this scenario can emit a runnable bundle for, POSIX first."""
+    """Targets this scenario's CONTENT resolves for, POSIX first.
+
+    Content only. It deliberately does NOT read ``push_supported``: pull
+    dispatch resolves the same steps whatever the push flag says, and the
+    composer calls this to DERIVE ``push_supported``, so reading the flag here
+    would make that derivation circular. The consequence is that a scenario
+    which withdrew push delivery (SIM-MP-031, SIM-MP-034) still reads
+    ``("posix",)`` here. To ask "what will a push download serve", call
+    :func:`pushable_targets`.
+    """
     return tuple(t for t in ("posix", "windows") if resolve_target(scenario, t).emittable)
+
+
+def pushable_targets(scenario: dict[str, Any]) -> tuple[Target, ...]:
+    """Targets a push DOWNLOAD will serve for this scenario, POSIX first.
+
+    ``()`` when the scenario declares ``push_supported: false`` (the download
+    route refuses those with ``PUSH_NOT_SUPPORTED`` whatever the content could
+    emit), else :func:`emittable_targets`. An absent flag is unknown, not
+    withdrawn. This is the answer a console, a count or a report should read;
+    ``emittable_targets`` alone over-states it (PUSH-17).
+    """
+    if push_not_supported(scenario):
+        return ()
+    return emittable_targets(scenario)
 
 
 # ---------------------------------------------------------------------------
@@ -521,14 +856,14 @@ set -euo pipefail
 # Logging setup
 # ---------------------------------------------------------------------------
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="/tmp/cortexsim-{scenario_id}-${{TIMESTAMP}}.log"
+LOG_FILE="/tmp/cortexsim-{safe_scenario_id}-${{TIMESTAMP}}.log"
 exec > >(tee -a "${{LOG_FILE}}") 2>&1
 
 log() {{
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$1] $2"
 }}
 
-log INFO "CortexSim bundle starting — scenario={scenario_id}"
+log INFO "CortexSim bundle starting — scenario={safe_scenario_id}"
 log INFO "Log file: ${{LOG_FILE}}"
 """
 
@@ -639,6 +974,11 @@ cleanup() {{
 trap cleanup EXIT
 """
 
+#: How the bash bundle names a cleanup line it withholds (see
+#: ``_resolve_cleanup``). A comment, never a log line: the point of withholding
+#: is that the teardown log carries no noise about a platform the host is not.
+_BASH_SKIPPED_CLEANUP_PREFIX = "    # skipped (Windows-only): "
+
 _FOOTER = """\
 
 log INFO "CortexSim bundle complete — scenario={scenario_id}"
@@ -680,28 +1020,31 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     expected_lines: list[str] = []
     for step in steps:
         for det in step.get("expected_detections", []):
-            expected_lines.append(
-                f"#   [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}"
-            )
+            expected_lines.append(_expected_comment("#   ", det))
     expected_detections_comment = "\n".join(expected_lines) + "\n" if expected_lines else "#   (none specified)\n"
 
     # --- Header ---
+    # Every comment-line value is _comment_safe (SEC-13): a newline in a name or
+    # description must not start an uncommented line. The scenario id is also
+    # used in CODE position (log path, log messages) so it goes through
+    # _safe_token there — byte-identical for every corpus id.
     script = _BASH_HEADER_TMPL.format(
-        scenario_id=scenario_id,
-        name=name,
-        version=version,
-        plane=plane,
-        uc_ref=uc_ref,
-        uc_name=uc_name,
-        tc_ref=tc_ref,
-        tc_name=tc_name,
-        mitre_tactic=mitre_tactic,
-        mitre_tactic_name=mitre_tactic_name,
-        mitre_technique=mitre_technique,
-        mitre_technique_name=mitre_technique_name,
+        scenario_id=_comment_safe(scenario_id),
+        safe_scenario_id=_safe_token(scenario_id),
+        name=_comment_safe(name),
+        version=_comment_safe(version),
+        plane=_comment_safe(plane),
+        uc_ref=_comment_safe(uc_ref),
+        uc_name=_comment_safe(uc_name),
+        tc_ref=_comment_safe(tc_ref),
+        tc_name=_comment_safe(tc_name),
+        mitre_tactic=_comment_safe(mitre_tactic),
+        mitre_tactic_name=_comment_safe(mitre_tactic_name),
+        mitre_technique=_comment_safe(mitre_technique),
+        mitre_technique_name=_comment_safe(mitre_technique_name),
         expected_detections_comment=expected_detections_comment,
-        threat_report=threat_report,
-        author=author,
+        threat_report=_comment_safe(threat_report),
+        author=_comment_safe(author),
     )
 
     # --- Identity harness ---
@@ -719,7 +1062,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         if tool_name and tool.get("type") == "binary" and not tool.get("install_inline", False):
             deps_seen.add(tool_name)
     for dep in sorted(deps_seen):
-        script += f'check_dep "{dep}"\n'
+        script += f'check_dep "{_bash_dq(dep)}"\n'
     script += "\n"
 
     # --- Inline tool downloads (install_inline tools) ---
@@ -731,8 +1074,11 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         for tool in inline_tools:
             tname = tool.get("name", "tool")
             tsource = tool.get("source", "")
-            script += f'log INFO "Downloading inline tool: {tname}"\n'
-            script += f'curl -sSLo "/tmp/{tname}" "{tsource}" || log WARN "Failed to download {tname}"\n'
+            script += f'log INFO "Downloading inline tool: {_bash_dq(tname)}"\n'
+            script += (
+                f'curl -sSLo "/tmp/{_bash_dq(tname)}" "{_bash_dq(tsource)}" '
+                f'|| log WARN "Failed to download {_bash_dq(tname)}"\n'
+            )
         script += "\n"
 
     # --- Tool-adapter installs ---
@@ -749,7 +1095,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             continue
         ad = adapter_catalog.find(ref)
         if ad is None:
-            adapter_lines.append(f'log WARN "Adapter {ref} not in catalog — install skipped"')
+            adapter_lines.append(f'log WARN "Adapter {_bash_dq(ref)} not in catalog — install skipped"')
             continue
         if ad.safety_class == "c2-framework":
             adapter_lines.append(
@@ -786,10 +1132,20 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         script += "\n".join(adapter_lines) + "\n\n"
 
     # --- Cleanup registration ---
-    cleanup_cmds = cleanup_data.get("commands", [])
-    cleanup_lines = "\n".join(f'    {cmd}' for cmd in cleanup_cmds) if cleanup_cmds else "    true  # no cleanup commands defined"
+    # The same rule (`is_windows_teardown`) `_resolve_cleanup(..., "posix")` applies, so what this
+    # bundle runs cannot disagree with `resolve_target(...).cleanup`: a
+    # Windows-only teardown line is named in a comment (flattened to one line,
+    # so it cannot end the comment) and never handed to bash.
+    cleanup_cmds = cleanup_data.get("commands") or []
+    cleanup_rendered = [
+        _BASH_SKIPPED_CLEANUP_PREFIX + _comment_safe(" ".join(cmd.split()))
+        if isinstance(cmd, str) and is_windows_teardown(cmd)
+        else f"    {cmd}"
+        for cmd in cleanup_cmds
+    ]
+    cleanup_lines = "\n".join(cleanup_rendered) if cleanup_rendered else "    true  # no cleanup commands defined"
     script += _CLEANUP_TMPL.format(
-        scenario_id=scenario_id,
+        scenario_id=_safe_token(scenario_id),
         cleanup_commands=cleanup_lines,
     )
     script += "\n"
@@ -831,11 +1187,11 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             identity = step.get("identity", "direct")
             command = step.get("command", "true")
 
-        script += f"# --- {step_id}: {step_name}\n"
+        script += f"# --- {_comment_safe(step_id)}: {_comment_safe(step_name)}\n"
         if mitre_tech:
-            script += f"# MITRE: {mitre_tech}\n"
+            script += f"# MITRE: {_comment_safe(mitre_tech)}\n"
         for det in expected:
-            script += f"# Expected: [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}\n"
+            script += _expected_comment("# Expected: ", det) + "\n"
         # Escape EVERY value embedded in the run_as call, not just the command.
         # identity and step_id are single-quoted positional args too, and a quote
         # in either breaks out and injects a top-level command into the bundle a
@@ -857,7 +1213,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         script += f"run_as '{escaped_identity}' '{escaped_cmd}' '{escaped_step_id}' || true\n\n"
 
     # --- Footer ---
-    script += _FOOTER.format(scenario_id=scenario_id)
+    script += _FOOTER.format(scenario_id=_safe_token(scenario_id))
 
     logger.info("Generated bash bundle for scenario=%s (%d steps)", scenario_id, len(steps))
     return script
@@ -872,6 +1228,17 @@ def generate_bash(scenario: dict[str, Any]) -> str:
 # braces (hashtables, script blocks, "$($x)") and str.format() detonates on
 # them.  Substitution is single-pass so an injected value containing @@FOO@@ is
 # never re-expanded.
+#
+# THE STEP TEXT NEVER APPEARS AS CODE IN THE BUNDLE. Each step and cleanup
+# command travels as a base64 literal of its UTF-8 bytes, which the harness
+# decodes at run time and writes into that step's own child script. There is
+# therefore no quoting layer around author text to escape out of: not a
+# double-quoted string (the bug that made every PowerShell step a no-op from
+# ea5a52f until this change — see tests/engine/test_push_ps_execution.py), not
+# a here-string (whose terminator a typographic quote can forge), not a
+# single-quoted literal. The decoded text is ALSO printed as a `#   | ` comment
+# listing above each call, so a DC reviewing the .ps1 still reads every line
+# that will run.
 
 _PS_PLACEHOLDER_RE = re.compile(r"@@([A-Z0-9_]+)@@")
 
@@ -879,7 +1246,12 @@ _PS_PLACEHOLDER_RE = re.compile(r"@@([A-Z0-9_]+)@@")
 #: mangles the em-dashes and box characters the scenario corpus puts inside
 #: string literals (e.g. SIM-EDR-017 step-04's Write-Host banner).  Mojibake in
 #: a marker string breaks the very grep a DC runs to prove the step executed.
-_PS_BOM = "﻿"
+_PS_BOM = "\ufeff"
+
+#: A step's timeout when it declares no ``timeout_seconds``.
+_PS_DEFAULT_TIMEOUT = 300
+#: Each cleanup command's timeout.
+_PS_CLEANUP_TIMEOUT = 120
 
 
 def _render(template: str, fields: dict[str, Any]) -> str:
@@ -892,31 +1264,260 @@ def _render(template: str, fields: dict[str, Any]) -> str:
     return _PS_PLACEHOLDER_RE.sub(_sub, template)
 
 
+#: Every character PowerShell's tokenizer treats as a SINGLE QUOTE: ASCII plus
+#: the typographic quotes U+2018..U+201B. An author pasting from a document
+#: produces `don’t` — and inside '…' that ’ CLOSES the literal exactly as an
+#: ASCII quote would; at the start of a line, `’@` closes a here-string.
+_PS_SQ_CHARS = "'\u2018\u2019\u201a\u201b"
+_PS_SQ_RE = re.compile(f"([{_PS_SQ_CHARS}])")
+_PS_HERE_TERMINATOR_RE = re.compile(f"^[{_PS_SQ_CHARS}]@")
+_PS_LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
+
+
+def _ps_sq(text: Any) -> str:
+    """A PowerShell single-quoted literal of ``text``.
+
+    Every single-quote-class character (ASCII and U+2018..U+201B) is doubled —
+    PowerShell's escape inside '…' — so no quote in ``text`` can end it.
+    """
+    return "'" + _PS_SQ_RE.sub(r"\1\1", str(text)) + "'"
+
+
 def _ps_literal(text: str) -> str:
     """Render ``text`` as a PowerShell string literal that needs no escaping.
 
-    Prefers a literal here-string (``@'…'@``) so 17 KB of authored attacker
-    text survives verbatim with no ``$`` interpolation and no backtick
-    escaping.  Falls back to a single-quoted string with doubled quotes when
-    the text contains a line that would terminate the here-string early.
+    Prefers a literal here-string (``@'…'@``) so authored text survives
+    verbatim with no ``$`` interpolation and no backtick escaping. Falls back
+    to :func:`_ps_sq` when any line would terminate the here-string early —
+    which a typographic quote does too (``’@``), and which CR alone can start.
+
+    ``generate_powershell`` no longer embeds step bodies with this (they travel
+    base64-encoded); it is kept, hardened, for any literal embedding of
+    multi-line text.
     """
     body = text.rstrip("\n")
-    if not any(line.startswith("'@") or line.startswith('"@') for line in body.split("\n")):
+    if not any(_PS_HERE_TERMINATOR_RE.match(line) for line in _PS_LINE_SPLIT_RE.split(body)):
         return "@'\n" + body + "\n'@"
-    return "'" + body.replace("'", "''") + "'"
+    return _ps_sq(body)
 
 
-def _ps_inline(text: str, limit: int = 160) -> str:
+def _ps_inline(text: Any, limit: int = 160) -> str:
     """Single-quoted, single-line literal for log messages."""
-    flat = " ".join(text.split())
+    flat = " ".join(_comment_safe(text).split())
     if len(flat) > limit:
         flat = flat[: limit - 3] + "..."
-    return "'" + flat.replace("'", "''") + "'"
+    return _ps_sq(flat)
 
 
-def _ps_var(step_id: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9]", "_", step_id)
-    return f"$CsCmd_{safe}"
+def _ps_array(items: list[str]) -> str:
+    """``@('a', 'b')`` — every element a single-quoted literal."""
+    return "@(" + ", ".join(_ps_sq(i) for i in items) + ")"
+
+
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def _ps_listing(command: str) -> str:
+    """The decoded command, as review-only comment lines (one per source line)."""
+    lines = _PS_LINE_SPLIT_RE.split(command.rstrip("\r\n"))
+    return "".join(f"#   | {_comment_safe(line)}\n" for line in lines)
+
+
+# ── per-step preflight: prerequisites, operator inputs, elevation ───────────
+
+_PS_KEYWORDS = frozenset(
+    "begin break catch class continue data default define do dynamicparam else elseif end "
+    "enum exit filter finally for foreach from function hidden if in inlinescript "
+    "parallel param process return sequence static switch throw trap try until "
+    "using var while workflow".split()
+)
+_CMD_BUILTINS = frozenset(
+    "assoc break call cd chdir cls color copy date del dir echo endlocal erase exit "
+    "for ftype goto if md mkdir mklink move path pause popd prompt pushd rd rem ren "
+    "rename rmdir set setlocal shift start time title type ver verify vol".split()
+)
+_TOOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\\/:-]+$")
+#: A statement head that is unmistakably a command even mid-body: a cmdlet,
+#: a file with an executable extension, or a path.
+_EXE_EXT_RE = re.compile(r"\.(?:exe|com|bat|cmd|ps1)$", re.IGNORECASE)
+_STMT_SPLIT_PS_RE = re.compile(r"\n|;|\|")
+_STMT_SPLIT_CMD_RE = re.compile(r"\n|&&|\|\||&|\|")
+_GET_PREREQS_RE = re.compile(r"(?<![\w-])-GetPrereqs\b", re.IGNORECASE)
+
+
+def _is_tool_token(tok: str, dialect: str) -> bool:
+    """Conservative: only a token that is unmistakably a command NAME.
+
+    Over-reporting is the dangerous direction — a token wrongly judged a
+    missing tool stops a step that would have run, manufacturing a
+    not-executed. So variables, parameters, numbers, ranges, keywords and
+    interpreter built-ins are never probed.
+    """
+    if not tok or not _TOOL_TOKEN_RE.match(tok):
+        return False
+    if tok.startswith(("-", ":")) or re.fullmatch(r"[\d.]+", tok):
+        return False
+    if tok.startswith(".") and not tok.startswith((".\\", "./")):
+        return False
+    lower = tok.lower()
+    if lower in _PS_KEYWORDS and dialect != "cmd":
+        return False
+    if lower in _CMD_BUILTINS and dialect == "cmd":
+        return False
+    return lower != "echo"
+
+
+def _step_prerequisites(command: str, dialect: str, adapter_binaries: list[str]) -> list[str]:
+    """Binaries/cmdlets a step names, to probe with ``Get-Command`` before it runs.
+
+    * the FIRST token of the command (the program the step is built around);
+    * for cmd, every statement head (``a & b | c`` — cmd has no other grammar
+      a bare word could be);
+    * for PowerShell, a later statement head only when it is unmistakably a
+      command — a Verb-Noun cmdlet, a file with an executable extension, or a
+      path. A bare word mid-body may be a hashtable key or a ``switch`` label,
+      and probing it would refuse a step that would have run;
+    * any scenario adapter's ``install.binary`` the step's code names.
+
+    Quoted text, comments and here-strings are never probed.
+    """
+    code = code_only(command)
+    splitter = _STMT_SPLIT_CMD_RE if dialect == "cmd" else _STMT_SPLIT_PS_RE
+    found: list[str] = []
+    first = True
+    for piece in splitter.split(code):
+        piece = piece.strip()
+        if dialect == "cmd":
+            piece = piece.lstrip("@").strip()
+        elif piece.startswith("&"):
+            piece = piece[1:].strip()
+        if not piece:
+            continue
+        tok = piece.split()[0]
+        is_first, first = first, False
+        if piece[len(tok):].lstrip().startswith("="):
+            continue  # `Name = value` — an assignment/hashtable entry, not a command
+        if not _is_tool_token(tok, dialect):
+            continue
+        if (
+            is_first
+            or dialect == "cmd"
+            or _PS_VERB_NOUN_RE.fullmatch(tok)
+            or _EXE_EXT_RE.search(tok)
+            or "/" in tok
+            or "\\" in tok
+        ):
+            found.append(tok)
+    for binary in adapter_binaries:
+        if re.search(rf"(?<![\w.-]){re.escape(binary)}(?![\w.-])", code, re.IGNORECASE):
+            if _is_tool_token(binary, dialect):
+                found.append(binary)
+    seen: set[str] = set()
+    out: list[str] = []
+    for tok in found:
+        if tok.lower() not in seen:
+            seen.add(tok.lower())
+            out.append(tok)
+    return out
+
+
+def _adapter_binaries(external_tools: list[dict[str, Any]]) -> list[str]:
+    """Basenames of the ``install.binary`` of every adapter the scenario wires."""
+    from tools.adapter_catalog import catalog as adapter_catalog  # noqa: PLC0415
+
+    names: list[str] = []
+    for tool in external_tools:
+        ref = tool.get("adapter_ref") if isinstance(tool, dict) else None
+        if not ref:
+            continue
+        ad = adapter_catalog.find(ref)
+        binary = getattr(getattr(ad, "install", None), "binary", None) if ad else None
+        if binary:
+            base = re.split(r"[\\/]", str(binary))[-1]
+            if base:
+                names.append(base)
+    return names
+
+
+#: Variables Windows defines for every session, plus cmd's dynamic variables.
+#: Referencing one is not an operator input. USERDNSDOMAIN is deliberately NOT
+#: here: it exists only on a domain-joined host, which is exactly what a step
+#: referencing it needs.
+_SYSTEM_ENV_VARS = frozenset(
+    "ALLUSERSPROFILE APPDATA CMDCMDLINE CMDEXTVERSION COMMONPROGRAMFILES "
+    "COMMONPROGRAMFILES(X86) COMMONPROGRAMW6432 COMPUTERNAME COMSPEC CD DATE "
+    "DRIVERDATA ERRORLEVEL HOMEDRIVE HOMEPATH LOCALAPPDATA LOGONSERVER "
+    "NUMBER_OF_PROCESSORS OS PATH PATHEXT PROCESSOR_ARCHITECTURE "
+    "PROCESSOR_IDENTIFIER PROCESSOR_LEVEL PROCESSOR_REVISION PROGRAMDATA "
+    "PROGRAMFILES PROGRAMFILES(X86) PROGRAMW6432 PSMODULEPATH PUBLIC RANDOM "
+    "SESSIONNAME SYSTEMDRIVE SYSTEMROOT TEMP TIME TMP USERDOMAIN USERNAME "
+    "USERPROFILE WINDIR".split()
+)
+_ENV_REF_PS_RE = re.compile(r"\$env:([A-Za-z_][A-Za-z0-9_]*)|\$\{env:([^}\r\n]+)\}", re.IGNORECASE)
+_ENV_REF_CMD_RE = re.compile(r"%([A-Za-z_][\w()#$\-]*)%")
+_ENV_ASSIGN_PS_RE = re.compile(r"\$env:([A-Za-z_]\w*)\s*=(?!=)|\$\{env:([^}\r\n]+)\}\s*=(?!=)", re.IGNORECASE)
+_ENV_ASSIGN_CMD_RE = re.compile(r"(?i)(?<![\w-])set\s+\"?([A-Za-z_]\w*)=")
+_PS_SINGLE_QUOTED_RE = re.compile(r"'(?:[^']|'')*'")
+
+
+def _operator_inputs(command: str) -> tuple[list[str], list[str]]:
+    """Environment variables a step references → ``(required, optional)``.
+
+    ``$env:NAME`` / ``${env:NAME}`` (outside single quotes, where PowerShell
+    would not expand them) and ``%NAME%`` (which cmd expands everywhere).
+    Exempt: Windows' own session variables and anything the step assigns
+    itself. A reference guarded by ``if ($env:NAME)`` / ``if defined NAME`` has
+    a fallback, so it is OPTIONAL — listed for the operator, never enforced:
+    refusing such a step would manufacture a not-executed.
+    """
+    view = _PS_SINGLE_QUOTED_RE.sub(lambda m: " " * len(m.group(0)), command)
+    refs = [m.group(1) or m.group(2) for m in _ENV_REF_PS_RE.finditer(view)]
+    refs += [m.group(1) for m in _ENV_REF_CMD_RE.finditer(command)]
+    assigned = {(m.group(1) or m.group(2)).upper() for m in _ENV_ASSIGN_PS_RE.finditer(view)}
+    assigned |= {m.group(1).upper() for m in _ENV_ASSIGN_CMD_RE.finditer(command)}
+    required: list[str] = []
+    optional: list[str] = []
+    seen: set[str] = set()
+    for name in refs:
+        up = name.upper()
+        if up in seen or up in _SYSTEM_ENV_VARS or up in assigned:
+            continue
+        seen.add(up)
+        esc = re.escape(name)
+        guarded = re.search(
+            rf"if\s*\(\s*(?:-not\s+|!\s*)?(?:\$env:{esc}\b|\$\{{env:{esc}\}})", view, re.IGNORECASE,
+        ) or re.search(rf"if\s+(?:not\s+)?defined\s+{esc}\b", command, re.IGNORECASE)
+        (optional if guarded else required).append(name)
+    return required, optional
+
+
+def _step_timeout(step: dict[str, Any]) -> int:
+    raw = step.get("timeout_seconds")
+    if isinstance(raw, bool):
+        return _PS_DEFAULT_TIMEOUT
+    if isinstance(raw, (int, float)) and raw > 0:
+        return max(1, int(raw))
+    if isinstance(raw, str) and raw.strip().isdigit() and int(raw) > 0:
+        return int(raw)
+    return _PS_DEFAULT_TIMEOUT
+
+
+@dataclass(frozen=True)
+class _PsStepPlan:
+    index: int
+    res: StepResolution
+    raw: dict[str, Any]
+    file_name: str
+    tools: tuple[str, ...]
+    inputs: tuple[str, ...]
+    optional_inputs: tuple[str, ...]
+    timeout: int
+    needs_elevation: bool
+    #: The step declares an account Windows cannot impersonate, so it runs as
+    #: the invoking user. Mirrors the harness's ``Resolve-CsIdentity`` exactly.
+    identity_degraded: bool
+    network_fetch: bool
 
 
 _PS_HEADER_TMPL = """\
@@ -941,46 +1542,110 @@ _PS_HEADER_TMPL = """\
 #
 # Resolved execution plan (step: source -> shell):
 @@STEP_PLAN_COMMENT@@#
+# Preflight — checked before EACH step. A step that fails a check is NOT run
+# and is reported `not-executed` with the reason in brackets:
+@@PREFLIGHT_COMMENT@@#
+@@IDENTITY_COMMENT@@#
+@@RESIDUE_COMMENT@@#
+# Exit codes (this script's process exit code):
+#   0  every step ran and exited 0, and every cleanup command ran clean
+#   1  a step exited non-zero, threw, or hit its timeout
+#   2  refused before any step ran: RESIDUE not acknowledged (see above)
+#   3  a step was NOT executed (prerequisite, operator input or elevation missing)
+#   4  every step ran clean but a cleanup command failed (artifacts may remain)
+# An identity-DEGRADED step does not change the exit code: 0 says every step
+# ran and exited 0, NOT that every step ran as the identity it declares.
+# Every run ends with a per-step outcome table:
+#   OUTCOME          ran-ok / ran-nonzero / not-executed / threw / timed-out
+#   IDENTITY column  direct / elevated / DEGRADED (ran as the invoking user,
+#                    not as the declared account) / - (the step was not executed)
+# and a `cortexsim-identity-summary degraded=N ran=M` line naming every
+# DEGRADED step.
+#
 # IMPORTANT: Self-contained — no SimCore dependency at runtime.
 #            Windows PowerShell 5.1 floor (Server 2016+ / Windows 10+): no
 #            PS7-only syntax, no Install-Module, no PSGallery, no callback to
-#            SimCore. Nothing is installed; missing tools are logged as WARN.
+#            SimCore. The bundle itself installs nothing: a step whose tool is
+#            absent is reported not-executed [PREREQ_MISSING], never run
+#            tool-less. Network fetches a step makes at run time are listed
+#            under Preflight above.
+#            Each step runs in its own child process with a timeout (the
+#            step's timeout_seconds, else @@DEFAULT_TIMEOUT@@ s; its process tree
+#            is killed on expiry) and its output is copied into the log. Step
+#            and cleanup text travels base64-encoded; it is shown decoded, as
+#            comments, above each call.
 #
-# Run with:
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\cortexsim-@@SCENARIO_ID@@.ps1
-#
+# Run with@@RUN_ELEVATED_NOTE@@:
+@@RUN_WITH_COMMENT@@#
 # A downloaded file carries Mark-of-the-Web. If your policy requires it, run
-# `Unblock-File .\\cortexsim-@@SCENARIO_ID@@.ps1` first — this bundle never calls
+# `Unblock-File .\\cortexsim-@@FILE_ID@@.ps1` first — this bundle never calls
 # Set-ExecutionPolicy (a machine-scope mutation that also fails unelevated).
+#
+# Before you run it on a managed host (documented Windows behaviour; this
+# bundle has not been executed on Windows):
+#  * Group Policy outranks -ExecutionPolicy Bypass. Run
+#    `Get-ExecutionPolicy -List`: if MachinePolicy or UserPolicy reads AllSigned
+#    or Restricted, that policy wins over the command line, for this file and
+#    for every PowerShell step (each runs as its own child script). This bundle
+#    is not signed. A step refused by policy reads ran-nonzero, exactly like a
+#    failed TTP: a column of ran-nonzero rows whose output says "not digitally
+#    signed" or "running scripts is disabled" is a policy refusal, not a
+#    detection result. The run logs `cortexsim-policy-warning` when it sees
+#    such a policy; it does not change the exit code.
+#  * AMSI and the endpoint agent scan this file as a whole before step 1, and
+#    each step's child script again as it starts. One flagged string can
+#    therefore stop the whole bundle (nothing runs, no outcome table) or stop
+#    one step (that row: ran-nonzero or threw). This bundle attributes neither
+#    to a detection; check the endpoint agent's own alert for which it was.
 # =============================================================================
 
-# Warn-and-continue, mirroring the bash bundle's intent: a step exiting
-# non-zero is often EXPECTED (a blocked LOLBin is a detection, not a failure).
+# Warn-and-continue in the HARNESS: a step exiting non-zero is often EXPECTED
+# (a blocked LOLBin is a detection, not a failure) and must not abort the run.
+# Each STEP runs in its own child process under its own wrapper (below).
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
-$CortexSimScenarioId = '@@SCENARIO_ID@@'
-$CortexSimStamp      = (Get-Date).ToString('yyyyMMdd_HHmmss')
-$CortexSimWorkRoot   = if ($env:TEMP) { $env:TEMP } else { (Get-Location).Path }
-$CortexSimLog        = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.log')
-$CortexSimStage      = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.d')
+$CortexSimScenarioId    = @@SCENARIO_ID_LITERAL@@
+$CortexSimStamp         = (Get-Date).ToString('yyyyMMdd_HHmmss')
+$CortexSimWorkRoot      = if ($env:TEMP) { $env:TEMP } else { (Get-Location).Path }
+$CortexSimLog           = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.log')
+$CortexSimStage         = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.d')
+# $IsLinux/$IsMacOS are PS6+ automatic variables; on the 5.1 floor they are
+# undefined, so null and falsy, which is the Windows branch. Kept to the one
+# shape scripts/ci/ps51-gate.ps1 allows: `if ($IsLinux -or $IsMacOS)`.
+$CortexSimIsWindows     = $true
+if ($IsLinux -or $IsMacOS) { $CortexSimIsWindows = $false }
+$CortexSimTranscript    = $false
+$CortexSimOutcomes      = New-Object System.Collections.ArrayList
+$CortexSimCleanupFailed = $false
+$CortexSimExitCode      = 1
+$CortexSimPlannedSteps  = @@PLANNED_STEPS@@
+$CortexSimElevatedSteps = @@ELEVATED_STEPS@@
+$CortexSimDegradedSteps = @@DEGRADED_STEPS@@
+$CortexSimResidue       = @@RESIDUE_ITEMS@@
+
+function Write-CsLine {
+    param([string]$Line)
+    Write-Host $Line
+    # Without a transcript the log file would otherwise not exist at all.
+    if (-not $CortexSimTranscript) {
+        try { Add-Content -LiteralPath $CortexSimLog -Value $Line -Encoding UTF8 -ErrorAction Stop } catch { }
+    }
+}
 
 function Write-CsLog {
     param([string]$Level, [string]$Message)
-    Write-Host ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '] [' + $Level + '] ' + $Message)
+    Write-CsLine ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '] [' + $Level + '] ' + $Message)
 }
 
 # Transcription is disabled by policy on some hardened hosts; degrade to
-# console logging rather than aborting the simulation.
-$CortexSimTranscript = $false
+# writing the log file directly rather than aborting the simulation.
 try {
     Start-Transcript -Path $CortexSimLog -Append -ErrorAction Stop | Out-Null
     $CortexSimTranscript = $true
 } catch {
-    Write-CsLog WARN 'Start-Transcript unavailable (policy or already running) — console logging only'
+    Write-CsLog WARN 'Start-Transcript unavailable (policy or already running) - writing the log file directly'
 }
-
-New-Item -ItemType Directory -Force -Path $CortexSimStage -ErrorAction SilentlyContinue | Out-Null
 
 Write-CsLog INFO ('CortexSim bundle starting — scenario=' + $CortexSimScenarioId)
 Write-CsLog INFO ('Log file: ' + $CortexSimLog)
@@ -994,10 +1659,18 @@ _PS_HARNESS_TMPL = """\
 # impersonation. `runas` prompts for a password; `Start-Process -Credential`
 # needs a credential a self-contained bundle must never carry. So a step that
 # declares a POSIX service account (www-data, postgres, …) CANNOT achieve that
-# identity here — it runs as the invoking user and says so, loudly, via a
-# `cortexsim-identity-degraded` marker line. Never silently pretend: that
-# marker is what keeps the POV's causality story honest about which steps did
-# not reach their declared identity.
+# identity here — it runs as the invoking user and says so, loudly: a
+# `cortexsim-identity-degraded` marker line before the step, DEGRADED in the
+# IDENTITY column of the closing outcome table, and a closing
+# `cortexsim-identity-summary` line. Never silently pretend: `ran-ok` on such
+# a row says the command exited 0, not that the identity was achieved, and
+# those markers are what keep the POV's causality story honest about which
+# steps did not reach their declared identity. The exit code is unaffected.
+#
+# A step that declares an ELEVATED identity (root, container-runtime,
+# administrator, SYSTEM) is a different case: it needs an elevated session,
+# and unelevated it is NOT run at all (reason=NOT_ELEVATED) — running it
+# unelevated would emit the access-denied version of the TTP and report it.
 #
 # The direct-identity allowlist below is generated from the canonical spec
 # (spec/identity_harness.json) — the same file the bash harness and the Go
@@ -1010,19 +1683,48 @@ $CortexSimDirectIdentities = @(@@DIRECT_IDENTITIES@@)
 # that is the interpreter steps run under. The fallback exists so a DC can
 # DRY-RUN the bundle under pwsh on a jumpbox before taking it to the customer:
 # without it the bundle is unverifiable anywhere except the target host.
-$CortexSimPwsh = 'powershell.exe'
-if (-not (Get-Command $CortexSimPwsh -ErrorAction SilentlyContinue)) {
-    $CortexSimPwsh = (Get-Process -Id $PID).Path
-}
+$CortexSimPwsh = $null
+$CortexSimPwshInfo = Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($CortexSimPwshInfo) { $CortexSimPwsh = $CortexSimPwshInfo.Path }
+if (-not $CortexSimPwsh) { $CortexSimPwsh = (Get-Process -Id $PID).Path }
 
 function Test-CsElevated {
-    try {
-        $wi = [Security.Principal.WindowsIdentity]::GetCurrent()
-        $wp = New-Object Security.Principal.WindowsPrincipal($wi)
-        return $wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    } catch {
-        return $false
+    if ($CortexSimIsWindows) {
+        try {
+            $wi = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $wp = New-Object Security.Principal.WindowsPrincipal($wi)
+            return [bool]$wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        } catch {
+            return $false
+        }
     }
+    # A dry run on a Linux/macOS jumpbox: root is the elevated analogue.
+    try { return ([string](& id -u) -eq '0') } catch { return $false }
+}
+
+$CortexSimElevated = Test-CsElevated
+
+# A Group Policy execution policy (MachinePolicy / UserPolicy scope) outranks
+# the -ExecutionPolicy Bypass each step is launched with. AllSigned and
+# Restricted refuse an unsigned script, which every step file is. Returns
+# 'scope=<s> policy=<p>' for the first such row, else ''. Read-only: it names
+# the conflict in the log and gates nothing.
+function Get-CsPolicyConflict {
+    param($Rows)
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $scope = [string]$row.Scope
+        $policy = [string]$row.ExecutionPolicy
+        if (($scope -eq 'MachinePolicy' -or $scope -eq 'UserPolicy') -and ($policy -eq 'AllSigned' -or $policy -eq 'Restricted')) {
+            return ('scope=' + $scope + ' policy=' + $policy)
+        }
+    }
+    return ''
+}
+
+$CortexSimPolicyConflict = ''
+if ($CortexSimIsWindows) {
+    try { $CortexSimPolicyConflict = [string](Get-CsPolicyConflict -Rows (Get-ExecutionPolicy -List -ErrorAction Stop)) } catch { }
 }
 
 function Resolve-CsIdentity {
@@ -1032,85 +1734,336 @@ function Resolve-CsIdentity {
     if ($lower -eq 'direct') { return 'direct' }
     # root / container-runtime / administrator / SYSTEM all assert elevation.
     if ($CortexSimDirectIdentities -contains $lower -or $lower -eq 'administrator' -or $lower -eq 'system') {
-        if (Test-CsElevated) { return 'elevated' }
-        return 'degraded'
+        if ($CortexSimElevated) { return 'elevated' }
+        return 'not-elevated'
     }
     return 'degraded'
 }
 
-function Invoke-CsShell {
-    param([string]$Name, [string]$Shell, [string]$Command)
+# ---------------------------------------------------------------------------
+# Step wrapper — every PowerShell step runs inside it, which gives a push step
+# the SAME exit semantics as the Go beacon's Windows wrapper
+# (agent/executor/script.go::powerShellExitWrapper), the canonical truth table:
+#   Write-Output                       -> 0
+#   last native command exits 3        -> 3
+#   a failing cmdlet                   -> 1
+#   a native writes stderr, exits 0    -> 0
+# ErrorActionPreference stays Continue (sh -c semantics: a non-fatal error
+# does not abandon the rest of the step). $? and $LASTEXITCODE are snapshotted
+# on the line straight after the body, because any statement overwrites $?.
+# Windows PowerShell 5.1 wraps a native tool's stderr as a NativeCommandError
+# when the stream is redirected - it is, here - which clears $? although the
+# tool exited 0; that one shape is a success.
+# ---------------------------------------------------------------------------
+$CortexSimStepPrelude = @'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+try { $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
+$Error.Clear()
+$global:LASTEXITCODE = $null
+'@
+$CortexSimStepEpilogue = @'
+$__cs_ok = $?
+$__cs_native = $LASTEXITCODE
+if ($env:CORTEXSIM_STEP_SENTINEL) { try { [System.IO.File]::WriteAllText($env:CORTEXSIM_STEP_SENTINEL, '1') } catch { } }
+if ((-not $__cs_ok) -and ($__cs_native -eq 0) -and ($Error.Count -gt 0) -and ([string]$Error[0].FullyQualifiedErrorId -like 'NativeCommandError*')) { $__cs_ok = $true }
+if (($null -ne $__cs_native) -and ($__cs_native -ne 0)) { exit $__cs_native }
+if (-not $__cs_ok) { exit 1 }
+exit 0
+'@
 
-    # The command text is written to a file and the interpreter is invoked on
-    # that file, never on an argument string. Two reasons: (1) it sidesteps
-    # Windows PowerShell 5.1's well-known mangling of embedded quotes when
-    # passing arguments to a native exe — SIM-EDR-017 step-02 nests doubled
-    # quotes inside a cmd /c argument and would not survive it;
-    # (2) it produces one real child process per step, matching the bash
-    # bundle's `bash -c` causality shape.
-    $ext = if ($Shell -eq 'cmd') { '.cmd' } else { '.ps1' }
-    $file = Join-Path $CortexSimStage ($Name + $ext)
-    if ($Shell -eq 'cmd') {
-        # cmd.exe cannot read a BOM; OEM keeps it byte-clean.
-        Set-Content -LiteralPath $file -Value $Command -Encoding Oem -Force
-        & $env:ComSpec /c $file
-    } else {
-        # PowerShell's default ErrorActionPreference is 'Continue', so a cmdlet
-        # that fails NON-terminatingly writes to stderr and still exits 0 —
-        # which made Invoke-CsStep log "completed successfully" for a step that
-        # did nothing. That is a manufactured false green: the DC reads it as
-        # "the TTP ran and Cortex missed it". 'Stop' is the PowerShell analogue
-        # of the bash bundle's `set -e`, and it is scoped to the step script so
-        # the harness itself keeps its own preference.
-        $stepBody = "$ErrorActionPreference = 'Stop'" + [Environment]::NewLine + $Command
-        Set-Content -LiteralPath $file -Value $stepBody -Encoding UTF8 -Force
-        # $IsLinux/$IsMacOS are PS6+ automatic variables; on the 5.1 floor they
-        # are simply undefined -> $null -> falsy, which is the Windows branch.
-        if ($IsLinux -or $IsMacOS) {
-            # -ExecutionPolicy is a Windows-only switch; pwsh rejects it there.
-            & $CortexSimPwsh -NoProfile -NonInteractive -File $file
-        } else {
-            & $CortexSimPwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file
-        }
+function Copy-CsOutput {
+    param([string]$Path, [string]$Name, [string]$Stream, [string]$Encoding)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    foreach ($line in @(Get-Content -LiteralPath $Path -Encoding $Encoding -ErrorAction SilentlyContinue)) {
+        Write-CsLine ('    ' + $Name + ' ' + $Stream + '| ' + $line)
     }
 }
 
+function Invoke-CsProcess {
+    param([string]$Name, [string]$Shell, [string]$Text, [int]$TimeoutSeconds)
+
+    $out = Join-Path $CortexSimStage ($Name + '.stdout.txt')
+    $err = Join-Path $CortexSimStage ($Name + '.stderr.txt')
+    $in  = Join-Path $CortexSimStage ($Name + '.stdin.txt')
+    # An empty stdin: a step that prompts (ssh, runas) reads end-of-file
+    # instead of hanging the unattended bundle on the console.
+    [System.IO.File]::WriteAllText($in, '')
+    # Reaching the epilogue is a positive signal: it writes this file. A step
+    # body that ends early (a top-level return / break / continue / exit 0)
+    # skips the epilogue's exit-code check and exits 0 whatever failed, so a
+    # 0 without the file is not a success.
+    $sentinel = $null
+
+    if ($Shell -eq 'cmd') {
+        if ((-not $CortexSimIsWindows) -or [string]::IsNullOrEmpty($env:ComSpec)) {
+            return @{ Outcome = 'not-executed'; Code = $null; Detail = 'reason=SHELL_UNAVAILABLE shell=cmd' }
+        }
+        $exe = $env:ComSpec
+        $encoding = 'Oem'
+        # cmd reads a FOR variable, a doubled or a lone percent sign differently
+        # in these two branches, so the generator refuses a step that carries
+        # one (CMD_PERCENT_CONTEXT): what reaches here means the same in both.
+        if ($Text.Contains([string][char]10)) {
+            # Multi-line cmd text runs as a batch file.
+            $file = Join-Path $CortexSimStage ($Name + '.cmd')
+            Set-Content -LiteralPath $file -Value $Text -Encoding Oem -Force
+            $argLine = '/d /v:off /c "' + $file + '"'
+        } else {
+            # One line runs in command-line context, as typed at a prompt. An
+            # UNDEFINED %NAME% stays literal here and is empty in a batch file.
+            $argLine = '/d /v:off /s /c "' + $Text + '"'
+        }
+    } else {
+        $file = Join-Path $CortexSimStage ($Name + '.ps1')
+        $sentinel = Join-Path $CortexSimStage ($Name + '.epilogue')
+        if (Test-Path -LiteralPath $sentinel) { Remove-Item -LiteralPath $sentinel -Force }
+        $nl = [Environment]::NewLine
+        $body = $CortexSimStepPrelude + $nl + $Text + $nl + $CortexSimStepEpilogue + $nl
+        # UTF-8 WITH a BOM on 5.1 and 7 alike: 5.1 reads a BOM-less file as ANSI.
+        [System.IO.File]::WriteAllText($file, $body, (New-Object System.Text.UTF8Encoding($true)))
+        $exe = $CortexSimPwsh
+        $encoding = 'UTF8'
+        if ($CortexSimIsWindows) {
+            $argLine = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $file + '"'
+        } else {
+            # -ExecutionPolicy is a Windows-only switch; pwsh rejects it elsewhere.
+            $argLine = '-NoProfile -NonInteractive -File "' + $file + '"'
+        }
+    }
+
+    $startArgs = @{
+        FilePath               = $exe
+        ArgumentList           = $argLine
+        NoNewWindow            = $true
+        PassThru               = $true
+        RedirectStandardOutput = $out
+        RedirectStandardError  = $err
+        RedirectStandardInput  = $in
+        ErrorAction            = 'Stop'
+    }
+    if ($sentinel) { $env:CORTEXSIM_STEP_SENTINEL = $sentinel }
+    try { $p = Start-Process @startArgs }
+    finally { Remove-Item -LiteralPath 'env:CORTEXSIM_STEP_SENTINEL' -ErrorAction SilentlyContinue }
+    # Windows PowerShell 5.1: without a cached handle, ExitCode reads null
+    # once the process has exited. Touching .Handle caches it.
+    $null = $p.Handle
+    if ($p.WaitForExit($TimeoutSeconds * 1000)) {
+        $p.WaitForExit()
+        $code = $p.ExitCode
+        if ($null -eq $code) {
+            $result = @{ Outcome = 'threw'; Code = $null; Detail = 'exit code unavailable' }
+        } elseif ($code -eq 0 -and $sentinel -and -not (Test-Path -LiteralPath $sentinel)) {
+            $result = @{ Outcome = 'threw'; Code = 0; Detail = 'reason=EPILOGUE_NOT_REACHED (a top-level return, break, continue or exit 0 ended the step before its result was read)' }
+        } elseif ($code -eq 0) {
+            $result = @{ Outcome = 'ran-ok'; Code = 0; Detail = '' }
+        } else {
+            $result = @{ Outcome = 'ran-nonzero'; Code = $code; Detail = '' }
+        }
+    } else {
+        if ($CortexSimIsWindows) {
+            # Windows has no signalable process group: kill the whole tree.
+            & taskkill.exe /T /F /PID $p.Id 2>&1 | Out-Null
+        } else {
+            try { $p.Kill($true) } catch { try { $p.Kill() } catch { } }
+        }
+        try { $null = $p.WaitForExit(10000) } catch { }
+        $result = @{ Outcome = 'timed-out'; Code = $null; Detail = ('after=' + $TimeoutSeconds + 's') }
+    }
+    Copy-CsOutput -Path $out -Name $Name -Stream 'stdout' -Encoding $encoding
+    Copy-CsOutput -Path $err -Name $Name -Stream 'stderr' -Encoding $encoding
+    return $result
+}
+
+function Add-CsOutcome {
+    param([string]$StepId, [string]$Outcome, $Code, [string]$Detail, [string]$Identity = '-', [string]$Declared = '')
+    $exitText = '-'
+    if ($null -ne $Code) { $exitText = [string]$Code }
+    [void]$CortexSimOutcomes.Add([pscustomobject]@{ Step = $StepId; Outcome = $Outcome; Exit = $exitText; Identity = $Identity; Declared = $Declared; Detail = $Detail })
+    Write-CsLog INFO ('cortexsim-step-result step=' + $StepId + ' outcome=' + $Outcome + ' exit=' + $exitText + ' identity=' + $Identity)
+}
+
+function Complete-CsStep {
+    param([string]$StepId, $Result, [string]$Mode = '-', [string]$Declared = '')
+    $outcome = [string]$Result.Outcome
+    $code = $Result.Code
+    $detail = [string]$Result.Detail
+    if ($outcome -eq 'ran-ok') {
+        Write-CsLog INFO ('Step ' + $StepId + ' completed successfully (exit 0)')
+    } elseif ($outcome -eq 'ran-nonzero') {
+        Write-CsLog WARN ('Step ' + $StepId + ' exited ' + $code)
+    } elseif ($outcome -eq 'timed-out') {
+        Write-CsLog WARN ('cortexsim-step-timeout step=' + $StepId + ' ' + $detail + ' - process tree killed')
+    } elseif ($outcome -eq 'not-executed') {
+        Write-CsLog WARN ('cortexsim-step-not-executed step=' + $StepId + ' ' + $detail)
+    } else {
+        $outcome = 'threw'
+        Write-CsLog WARN ('Step ' + $StepId + ' threw: ' + $detail)
+    }
+    # The identity a step ACHIEVED sits beside its outcome. A step that was not
+    # executed achieved none, so it is never counted as degraded.
+    $identity = '-'
+    if ($outcome -ne 'not-executed') { $identity = $Mode }
+    if ($identity -eq 'degraded') {
+        $note = 'declared=' + $Declared + ' actual=' + [Environment]::UserName
+        if ([string]::IsNullOrEmpty($detail)) { $detail = $note } else { $detail = $note + ' ' + $detail }
+    }
+    Add-CsOutcome -StepId $StepId -Outcome $outcome -Code $code -Detail $detail -Identity $identity -Declared $Declared
+}
+
+function Skip-CsStep {
+    param([string]$StepId, [string]$Detail)
+    Complete-CsStep -StepId $StepId -Result @{ Outcome = 'not-executed'; Code = $null; Detail = $Detail }
+}
+
 function Invoke-CsStep {
-    param([string]$StepId, [string]$Identity, [string]$Shell, [string]$Command)
+    param(
+        [string]$StepId,
+        [string]$FileName,
+        [string]$Identity,
+        [string]$Shell,
+        [string]$CommandB64,
+        [string[]]$Tools = @(),
+        [string[]]$Inputs = @(),
+        [int]$TimeoutSeconds = @@DEFAULT_TIMEOUT@@
+    )
 
     $mode = Resolve-CsIdentity -Identity $Identity
-    Write-CsLog INFO ('STEP ' + $StepId + ' identity=' + $Identity + ' shell=' + $Shell + ' mode=' + $mode)
-    if ($mode -eq 'degraded') {
-        Write-CsLog WARN ('cortexsim-identity-degraded step=' + $StepId + ' declared=' + $Identity +
-                          ' actual=' + $env:USERNAME + ' reason=no-credential-free-impersonation-on-windows')
-    }
+    Write-CsLog INFO ('STEP ' + $StepId + ' identity=' + $Identity + ' shell=' + $Shell + ' mode=' + $mode + ' timeout=' + $TimeoutSeconds + 's')
 
-    $global:LASTEXITCODE = 0
-    try {
-        Invoke-CsShell -Name $StepId -Shell $Shell -Command $Command
-    } catch {
-        Write-CsLog WARN ('Step ' + $StepId + ' threw: ' + $_.Exception.Message)
+    # Preflight. Each refusal is a not-executed outcome with a stable reason,
+    # never a step run tool-less, input-less or unelevated and logged as a pass.
+    if ($mode -eq 'not-elevated') {
+        Skip-CsStep -StepId $StepId -Detail ('reason=NOT_ELEVATED declared=' + $Identity + ' - re-run from an elevated session')
         return
     }
-    if ($LASTEXITCODE -ne 0) {
-        Write-CsLog WARN ('Step ' + $StepId + ' exited with code ' + $LASTEXITCODE + ' (non-zero — may be expected)')
-    } else {
-        Write-CsLog INFO ('Step ' + $StepId + ' completed successfully')
+    foreach ($inputName in $Inputs) {
+        if ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($inputName))) {
+            Skip-CsStep -StepId $StepId -Detail ('reason=OPERATOR_INPUT_MISSING var=' + $inputName)
+            return
+        }
     }
+    foreach ($tool in $Tools) {
+        if (-not (Get-Command -Name $tool -ErrorAction SilentlyContinue)) {
+            Skip-CsStep -StepId $StepId -Detail ('reason=PREREQ_MISSING tool=' + $tool)
+            return
+        }
+    }
+    if ($mode -eq 'degraded') {
+        Write-CsLog WARN ('cortexsim-identity-degraded step=' + $StepId + ' declared=' + $Identity +
+                          ' actual=' + [Environment]::UserName + ' reason=no-credential-free-impersonation-on-windows')
+    }
+
+    try {
+        $text = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($CommandB64))
+        $result = Invoke-CsProcess -Name $FileName -Shell $Shell -Text $text -TimeoutSeconds $TimeoutSeconds
+    } catch {
+        $result = @{ Outcome = 'threw'; Code = $null; Detail = [string]$_.Exception.Message }
+    }
+    Complete-CsStep -StepId $StepId -Result $result -Mode $mode -Declared $Identity
+}
+
+function Invoke-CsCleanupCommand {
+    param([string]$Name, [string]$Shell, [string]$CommandB64)
+    try {
+        $text = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($CommandB64))
+        $result = Invoke-CsProcess -Name $Name -Shell $Shell -Text $text -TimeoutSeconds @@CLEANUP_TIMEOUT@@
+    } catch {
+        $result = @{ Outcome = 'threw'; Code = $null; Detail = [string]$_.Exception.Message }
+    }
+    if ($result.Outcome -eq 'ran-ok') {
+        Write-CsLog INFO ($Name + ' ok')
+    } else {
+        $script:CortexSimCleanupFailed = $true
+        Write-CsLog WARN ('cortexsim-cleanup-failed name=' + $Name + ' outcome=' + $result.Outcome + ' exit=' + $result.Code + ' ' + $result.Detail)
+    }
+}
+
+function Write-CsSummary {
+    $reported = @{}
+    foreach ($o in $CortexSimOutcomes) { $reported[[string]$o.Step] = $true }
+    foreach ($s in $CortexSimPlannedSteps) {
+        if (-not $reported.ContainsKey($s)) {
+            Add-CsOutcome -StepId $s -Outcome 'not-executed' -Code $null -Detail 'reason=NOT_REACHED'
+        }
+    }
+    Write-CsLog INFO 'Step outcome summary:'
+    Write-CsLine ('    ' + 'STEP'.PadRight(28) + 'OUTCOME'.PadRight(14) + 'EXIT'.PadRight(7) + 'IDENTITY'.PadRight(10) + 'DETAIL')
+    $ran = 0
+    $degraded = New-Object System.Collections.ArrayList
+    foreach ($o in $CortexSimOutcomes) {
+        $identityText = [string]$o.Identity
+        if ($o.Outcome -ne 'not-executed') { $ran++ }
+        if ($identityText -eq 'degraded') {
+            $identityText = 'DEGRADED'
+            [void]$degraded.Add(([string]$o.Step) + ' (' + ([string]$o.Declared) + ')')
+        }
+        Write-CsLine ('    ' + ([string]$o.Step).PadRight(28) + ([string]$o.Outcome).PadRight(14) + ([string]$o.Exit).PadRight(7) + $identityText.PadRight(10) + [string]$o.Detail)
+    }
+    # Said again after the table, because the exit code does not carry it.
+    if ($degraded.Count -gt 0) {
+        Write-CsLog WARN ('cortexsim-identity-summary degraded=' + $degraded.Count + ' ran=' + $ran + ' - ran as ' + [Environment]::UserName + ', NOT as the identity they declare: ' + ($degraded -join ', ') + '. On these rows ran-ok means the command exited 0, not that the identity was achieved; a detection keyed on the declared account will not match them.')
+    } else {
+        Write-CsLog INFO ('cortexsim-identity-summary degraded=0 ran=' + $ran + ' - no executed step ran under a degraded identity')
+    }
+}
+
+function Get-CsExitCode {
+    $notRun = 0
+    $failed = 0
+    foreach ($o in $CortexSimOutcomes) {
+        if ($o.Outcome -eq 'not-executed') { $notRun++ }
+        elseif ($o.Outcome -ne 'ran-ok') { $failed++ }
+    }
+    if ($notRun -gt 0) { return 3 }
+    if ($failed -gt 0) { return 1 }
+    if ($CortexSimCleanupFailed) { return 4 }
+    return 0
 }
 
 # ---------------------------------------------------------------------------
 # Dependency checks — probe only. Installing would break the cardinal
-# invariant (self-contained, no network dependency, no module install).
+# invariant (self-contained, no network dependency, no module install). The
+# per-step Get-Command preflight above is what decides whether a step runs.
 # ---------------------------------------------------------------------------
 function Test-CsDep {
     param([string]$Name)
     if (Get-Command $Name -ErrorAction SilentlyContinue) {
         Write-CsLog INFO ('Dependency OK: ' + $Name)
     } else {
-        Write-CsLog WARN ('Dependency not found: ' + $Name + ' — some steps may fail')
+        Write-CsLog WARN ('Dependency not found: ' + $Name)
     }
 }
+
+Write-CsLog INFO ('Step interpreter: ' + $CortexSimPwsh)
+Write-CsLog INFO ('Elevated session: ' + $CortexSimElevated)
+if ($CortexSimPolicyConflict) {
+    Write-CsLog WARN ('cortexsim-policy-warning reason=EXECUTION_POLICY_GPO ' + $CortexSimPolicyConflict + ' - Group Policy outranks -ExecutionPolicy Bypass and this bundle is not signed. Expect every PowerShell step to be refused and to read ran-nonzero: that is a policy refusal, not a detection result.')
+}
+if ((-not $CortexSimElevated) -and ($CortexSimElevatedSteps.Count -gt 0)) {
+    Write-CsLog WARN ('Not elevated - these steps declare an elevated identity and will NOT run (reason=NOT_ELEVATED): ' + ($CortexSimElevatedSteps -join ', '))
+}
+if ($CortexSimDegradedSteps.Count -gt 0) {
+    Write-CsLog WARN ('Identity DEGRADED - these steps declare an account Windows cannot impersonate without a credential. Each one that runs does so as ' + [Environment]::UserName + ' and is marked DEGRADED in the outcome table: ' + ($CortexSimDegradedSteps -join ', '))
+}
+
+# ---------------------------------------------------------------------------
+# RESIDUE gate — teardown this bundle cannot perform is named up front, and
+# nothing runs until the operator accepts it.
+# ---------------------------------------------------------------------------
+if ($CortexSimResidue.Count -gt 0) {
+    Write-CsLog WARN ('RESIDUE: ' + $CortexSimResidue.Count + ' teardown command(s) of this scenario cannot run on Windows (POSIX-only, or mixed cmd and PowerShell). What they would remove is LEFT on this host:')
+    foreach ($residueItem in $CortexSimResidue) { Write-CsLog WARN ('  residue: ' + $residueItem) }
+    if ($env:CORTEXSIM_ACCEPT_RESIDUE -ne '1') {
+        Write-CsLog ERROR 'cortexsim-refused reason=RESIDUE_NOT_ACKNOWLEDGED - no step was run. To run anyway set the environment variable CORTEXSIM_ACCEPT_RESIDUE to 1, and remove the residue above by hand afterwards.'
+        if ($CortexSimTranscript) { try { Stop-Transcript | Out-Null } catch { } }
+        exit 2
+    }
+    Write-CsLog WARN 'CORTEXSIM_ACCEPT_RESIDUE=1 - proceeding; the operator has accepted the residue above.'
+}
+
+New-Item -ItemType Directory -Force -Path $CortexSimStage -ErrorAction SilentlyContinue | Out-Null
 
 """
 
@@ -1122,31 +2075,31 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
     command, naming the offending steps.  Emitting a partial bundle would be
     worse: it would run green, emit a subset of the attack, and the POV report
     would read the gap as "the customer's stack detected nothing".
+
+    What the emitted bundle is meant to guarantee. Each is asserted by
+    execution in tests/engine/test_push_ps_execution.py under pwsh 7 on
+    Linux/macOS only. The Windows PowerShell 5.1 and cmd.exe paths (taskkill
+    tree kill, the NativeCommandError rule, Handle/ExitCode, cmd command-line
+    context) are UNPROVEN until that file runs on a Windows runner; no Windows
+    host has executed a bundle:
+
+    * every step's text actually runs, in its own child process, with the
+      beacon's exit-code semantics, a timeout and a killed process tree;
+    * a step whose tool, operator input or elevation is missing is not run and
+      is reported ``not-executed`` with a stable reason;
+    * a step that declares an account Windows cannot impersonate still runs,
+      as the invoking user, and says so in three places: the header, the
+      IDENTITY column of the closing table (``DEGRADED``) and the closing
+      ``cortexsim-identity-summary`` line. The exit code does not carry it;
+    * teardown the bundle cannot perform is named in the header and refused at
+      run time until ``CORTEXSIM_ACCEPT_RESIDUE=1``; "Cleanup complete" is
+      printed only when it is true;
+    * the process exit code and a closing outcome table tell the truth.
     """
     scenario_id = scenario.get("scenario_id", "UNKNOWN")
     resolution = resolve_target(scenario, "windows")
     if not resolution.emittable:
         raise BundleTargetUnsatisfiable(scenario_id, "windows", resolution.unresolved)
-
-    steps_by_id = {s.get("id", "step-??"): s for s in (scenario.get("steps") or [])}
-    external_tools = scenario.get("external_tools") or []
-
-    expected_lines: list[str] = []
-    for step in scenario.get("steps") or []:
-        for det in step.get("expected_detections", []):
-            expected_lines.append(
-                f"#   [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}"
-            )
-    expected_detections_comment = (
-        "\n".join(expected_lines) + "\n" if expected_lines else "#   (none specified)\n"
-    )
-
-    plan_lines = [
-        f"#   {r.step_id}: {r.source} -> {r.shell}"
-        + (f"  ({r.note})" if r.note else "")
-        for r in resolution.steps
-    ]
-    step_plan_comment = "\n".join(plan_lines) + "\n"
 
     from engine.identity_spec import direct_identities  # noqa: PLC0415
 
@@ -1171,39 +2124,185 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
             "it never achieved"
         )
 
-    direct_list = ", ".join(f"'{i.lower()}'" for i in direct_identities())
+    direct = [i.lower() for i in direct_identities()]
+    elevated_ids = ({"administrator", "system"} | set(direct)) - {"direct"}
+    safe_id = _safe_token(scenario_id)
+    raw_steps = list(scenario.get("steps") or [])
+    external_tools = scenario.get("external_tools") or []
+    adapter_bins = _adapter_binaries(external_tools)
+
+    def _degraded(identity: Any) -> bool:
+        # The same three branches as the harness's Resolve-CsIdentity: blank or
+        # `direct` runs as-is; an elevation claim is elevated or not run; every
+        # other name is an account this bundle cannot become.
+        text = str(identity)
+        if not text.strip() or text.lower() == "direct":
+            return False
+        return text.lower() not in elevated_ids
+
+    # emittable ⇒ exactly one resolution per scenario step, in order.
+    plans: list[_PsStepPlan] = []
+    for idx, (res, raw) in enumerate(zip(resolution.steps, raw_steps), start=1):
+        required, optional = _operator_inputs(res.command)
+        plans.append(_PsStepPlan(
+            index=idx,
+            res=res,
+            raw=raw if isinstance(raw, dict) else {},
+            file_name=f"{idx:02d}-{_safe_token(res.step_id, 'step')[:48]}",
+            tools=tuple(_step_prerequisites(res.command, res.shell, adapter_bins)),
+            inputs=tuple(required),
+            optional_inputs=tuple(optional),
+            timeout=_step_timeout(raw if isinstance(raw, dict) else {}),
+            needs_elevation=str(res.identity).lower() in elevated_ids,
+            identity_degraded=_degraded(res.identity),
+            network_fetch=bool(_GET_PREREQS_RE.search(code_only(res.command))),
+        ))
+
+    # --- header blocks ---------------------------------------------------
+    expected_lines = [
+        _expected_comment("#   ", det)
+        for step in raw_steps if isinstance(step, dict)
+        for det in step.get("expected_detections", []) or []
+        if isinstance(det, dict)
+    ]
+    expected_detections_comment = (
+        "\n".join(expected_lines) + "\n" if expected_lines else "#   (none specified)\n"
+    )
+    step_plan_comment = "".join(
+        f"#   {_comment_safe(p.res.step_id)}: {p.res.source} -> {p.res.shell}"
+        + (f"  ({p.res.note})" if p.res.note else "")
+        + f"  [timeout {p.timeout}s]\n"
+        for p in plans
+    )
+
+    def _block(title: str, rows: list[str]) -> str:
+        body = "".join(f"#     {_comment_safe(r)}\n" for r in rows) if rows else "#     (none)\n"
+        return f"#   {title}\n{body}"
+
+    inputs_by_var: dict[str, list[str]] = {}
+    optional_by_var: dict[str, list[str]] = {}
+    for p in plans:
+        for v in p.inputs:
+            inputs_by_var.setdefault(v, []).append(p.res.step_id)
+        for v in p.optional_inputs:
+            optional_by_var.setdefault(v, []).append(p.res.step_id)
+    preflight_comment = (
+        _block(
+            "Prerequisites, probed with Get-Command [PREREQ_MISSING]:",
+            [f"{p.res.step_id}: {', '.join(p.tools)}" for p in plans if p.tools],
+        )
+        + _block(
+            "Required operator inputs — environment variables to set first [OPERATOR_INPUT_MISSING]:",
+            [f"{v:<28} <- {', '.join(sids)}" for v, sids in inputs_by_var.items()],
+        )
+        + _block(
+            "Optional operator inputs (the step falls back to a default when unset):",
+            [f"{v:<28} <- {', '.join(sids)}" for v, sids in optional_by_var.items()],
+        )
+        + _block(
+            "Elevation — needs an elevated (Run as Administrator) session [NOT_ELEVATED]:",
+            [f"{p.res.step_id} (identity {p.res.identity})" for p in plans if p.needs_elevation],
+        )
+        + _block(
+            "Network fetches at run time (outside the TTP itself):",
+            [
+                f"{p.res.step_id}: Invoke-AtomicTest -GetPrereqs downloads that test's "
+                f"prerequisites from the public internet"
+                for p in plans if p.network_fetch
+            ],
+        )
+    )
+
+    # Known at generation time, so the operator reads it BEFORE running: Windows
+    # has no impersonation primitive, so these steps are degraded on every host.
+    degraded_plans = [p for p in plans if p.identity_degraded]
+    identity_comment = (
+        "# Identity DEGRADED — Windows has no credential-free impersonation, so a step\n"
+        "# that declares a service account cannot run as it. Such a step is not\n"
+        "# refused: it runs as the user who launches this bundle and is marked\n"
+        "# DEGRADED in the closing outcome table. A detection keyed on the declared\n"
+        "# account will not match it:\n"
+        + (
+            "".join(
+                f"#     {_comment_safe(p.res.step_id)} (identity {_comment_safe(p.res.identity)})\n"
+                for p in degraded_plans
+            )
+            if degraded_plans else "#     (none)\n"
+        )
+    )
+
+    residue = list(resolution.skipped_cleanup)
+    if residue:
+        residue_comment = (
+            "# RESIDUE — teardown this bundle CANNOT perform on Windows (POSIX-only or\n"
+            "# mixed-dialect commands in the scenario's cleanup). What they would remove\n"
+            "# is LEFT on the host. The bundle refuses to run any step (exit 2) until\n"
+            "# you accept this by setting CORTEXSIM_ACCEPT_RESIDUE=1:\n"
+            + "".join(f"#     - {_comment_safe(' '.join(c.split()))}\n" for c in residue)
+        )
+    else:
+        residue_comment = "# RESIDUE: none — every declared cleanup command runs on Windows.\n"
+
+    run_with = ""
+    if residue:
+        run_with += "#   $env:CORTEXSIM_ACCEPT_RESIDUE = '1'   # only once you accept the RESIDUE above\n"
+    run_with += f"#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\cortexsim-{safe_id}.ps1\n"
 
     script = _render(
         _PS_HEADER_TMPL,
         {
-            "SCENARIO_ID": scenario_id,
-            "NAME": scenario.get("name", ""),
-            "VERSION": scenario.get("version", "1.0"),
-            "PLANE": scenario.get("plane", ""),
-            "UC_REF": scenario.get("uc_ref", ""),
-            "UC_NAME": scenario.get("uc_name", ""),
-            "TC_REF": scenario.get("tc_ref", ""),
-            "TC_NAME": scenario.get("tc_name", ""),
-            "MITRE_TACTIC": scenario.get("mitre_tactic", ""),
-            "MITRE_TACTIC_NAME": scenario.get("mitre_tactic_name", ""),
-            "MITRE_TECHNIQUE": scenario.get("mitre_technique", ""),
-            "MITRE_TECHNIQUE_NAME": scenario.get("mitre_technique_name", ""),
+            "SCENARIO_ID": _comment_safe(scenario_id),
+            "SCENARIO_ID_LITERAL": _ps_sq(safe_id),
+            "FILE_ID": safe_id,
+            "NAME": _comment_safe(scenario.get("name", "")),
+            "VERSION": _comment_safe(scenario.get("version", "1.0")),
+            "PLANE": _comment_safe(scenario.get("plane", "")),
+            "UC_REF": _comment_safe(scenario.get("uc_ref", "")),
+            "UC_NAME": _comment_safe(scenario.get("uc_name", "")),
+            "TC_REF": _comment_safe(scenario.get("tc_ref", "")),
+            "TC_NAME": _comment_safe(scenario.get("tc_name", "")),
+            "MITRE_TACTIC": _comment_safe(scenario.get("mitre_tactic", "")),
+            "MITRE_TACTIC_NAME": _comment_safe(scenario.get("mitre_tactic_name", "")),
+            "MITRE_TECHNIQUE": _comment_safe(scenario.get("mitre_technique", "")),
+            "MITRE_TECHNIQUE_NAME": _comment_safe(scenario.get("mitre_technique_name", "")),
             "EXPECTED_DETECTIONS_COMMENT": expected_detections_comment,
-            "THREAT_REPORT": scenario.get("threat_report") or "N/A",
-            "AUTHOR": scenario.get("author") or "CortexSim",
+            "THREAT_REPORT": _comment_safe(scenario.get("threat_report") or "N/A"),
+            "AUTHOR": _comment_safe(scenario.get("author") or "CortexSim"),
             "STEP_PLAN_COMMENT": step_plan_comment,
+            "PREFLIGHT_COMMENT": preflight_comment,
+            "IDENTITY_COMMENT": identity_comment,
+            "RESIDUE_COMMENT": residue_comment,
+            "DEFAULT_TIMEOUT": _PS_DEFAULT_TIMEOUT,
+            "RUN_ELEVATED_NOTE": (
+                " (from an ELEVATED prompt — some steps need it)"
+                if any(p.needs_elevation for p in plans) else ""
+            ),
+            "RUN_WITH_COMMENT": run_with,
+            "PLANNED_STEPS": _ps_array([p.res.step_id for p in plans]),
+            "ELEVATED_STEPS": _ps_array([p.res.step_id for p in plans if p.needs_elevation]),
+            "DEGRADED_STEPS": "@(" + ", ".join(
+                _ps_inline(f"{p.res.step_id} ({p.res.identity})") for p in degraded_plans
+            ) + ")",
+            "RESIDUE_ITEMS": "@(" + ", ".join(_ps_inline(c, limit=240) for c in residue) + ")",
         },
     )
-    script += _render(_PS_HARNESS_TMPL, {"DIRECT_IDENTITIES": direct_list})
+    script += _render(
+        _PS_HARNESS_TMPL,
+        {
+            "DIRECT_IDENTITIES": ", ".join(_ps_sq(i) for i in direct),
+            "DEFAULT_TIMEOUT": _PS_DEFAULT_TIMEOUT,
+            "CLEANUP_TIMEOUT": _PS_CLEANUP_TIMEOUT,
+        },
+    )
 
     # --- Dependency probes ---
     deps = {"powershell.exe", "cmd.exe"}
     for tool in external_tools:
-        if tool.get("adapter_ref"):
+        if not isinstance(tool, dict) or tool.get("adapter_ref"):
             continue
         tname = tool.get("name", "")
         if tname and tool.get("type") == "binary" and not tool.get("install_inline", False):
-            deps.add(tname)
+            deps.add(str(tname))
     for dep in sorted(deps):
         script += f"Test-CsDep {_ps_inline(dep)}\n"
     script += "\n"
@@ -1217,7 +2316,7 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
 
     adapter_lines: list[str] = []
     for tool in external_tools:
-        ref = tool.get("adapter_ref")
+        ref = tool.get("adapter_ref") if isinstance(tool, dict) else None
         if not ref:
             continue
         ad = adapter_catalog.find(ref)
@@ -1253,26 +2352,31 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
     script += "# Cleanup / Teardown — runs from the script-scope finally block below, the\n"
     script += "# PowerShell analogue of bash's `trap cleanup EXIT`. Register-EngineEvent\n"
     script += "# PowerShell.Exiting is NOT used: it does not fire for a script run via -File.\n"
+    script += "# Each command runs like a step (own child process, timeout, logged outcome).\n"
+    script += "# 'Cleanup complete' is printed only when it is true.\n"
     script += "# ---------------------------------------------------------------------------\n"
     script += "function Invoke-CsCleanup {\n"
     script += "    Write-CsLog INFO ('Running cleanup for scenario=' + $CortexSimScenarioId)\n"
     for idx, (cmd, shell) in enumerate(resolution.cleanup, start=1):
-        script += f"    try {{ Invoke-CsShell -Name 'cleanup-{idx:02d}' -Shell '{shell}' -Command {_ps_literal(cmd)} }}\n"
+        script += f"    # cleanup-{idx:02d} ({shell}):\n"
+        script += "".join("    " + line + "\n" for line in _ps_listing(cmd).splitlines())
         script += (
-            f"    catch {{ Write-CsLog WARN ('cleanup-{idx:02d} threw: ' + $_.Exception.Message) }}\n"
+            f"    Invoke-CsCleanupCommand -Name 'cleanup-{idx:02d}' -Shell '{shell}' "
+            f"-CommandB64 '{_b64(cmd)}'\n"
         )
-    for cmd in resolution.skipped_cleanup:
-        # Named, not silently dropped: an operator must be able to see which
-        # teardown the Windows bundle could not perform.
-        script += (
-            "    Write-CsLog WARN "
-            + _ps_inline(f"cleanup step skipped — POSIX-only command not runnable on Windows: {cmd}")
-            + "\n"
-        )
-    if not resolution.cleanup and not resolution.skipped_cleanup:
+    if not resolution.cleanup and not residue:
         script += "    Write-CsLog INFO 'No cleanup commands defined for this scenario'\n"
     script += "    try { Remove-Item -LiteralPath $CortexSimStage -Recurse -Force -ErrorAction SilentlyContinue } catch { }\n"
-    script += "    Write-CsLog INFO 'Cleanup complete'\n"
+    script += "    if ($CortexSimResidue.Count -gt 0) {\n"
+    script += "        Write-CsLog WARN ('RESIDUE: cleanup is INCOMPLETE - ' + $CortexSimResidue.Count + ' teardown command(s) could not run on Windows. Remove what they would have removed by hand:')\n"
+    script += "        foreach ($residueItem in $CortexSimResidue) { Write-CsLog WARN ('  residue: ' + $residueItem) }\n"
+    script += "    }\n"
+    script += "    if ($CortexSimCleanupFailed) {\n"
+    script += "        Write-CsLog WARN 'cleanup is INCOMPLETE - a cleanup command failed, see cortexsim-cleanup-failed above'\n"
+    script += "    }\n"
+    script += "    if (($CortexSimResidue.Count -eq 0) -and (-not $CortexSimCleanupFailed)) {\n"
+    script += "        Write-CsLog INFO 'Cleanup complete'\n"
+    script += "    }\n"
     script += "}\n\n"
 
     # --- Steps, inside a script-scope try/finally ---
@@ -1280,37 +2384,51 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
     script += "# TTP Execution Steps\n"
     script += "# ---------------------------------------------------------------------------\n"
     script += "try {\n\n"
-    for res in resolution.steps:
-        raw = steps_by_id.get(res.step_id, {})
-        script += f"# --- {res.step_id}: {raw.get('name', '')}\n"
+    for p in plans:
+        res, raw = p.res, p.raw
+        script += f"# --- {_comment_safe(res.step_id)}: {_comment_safe(raw.get('name', ''))}\n"
         if raw.get("mitre_technique"):
-            script += f"# MITRE: {raw['mitre_technique']}\n"
+            # A step carries ONE technique, authored for its primary command.
+            # A Windows variant is often a different sub-technique (cron vs
+            # schtasks.exe), and the schema has no per-variant technique, so
+            # say whose it is instead of presenting it as this command's.
+            script += f"# MITRE: {_comment_safe(raw['mitre_technique'])}"
+            if res.source.startswith("variant:"):
+                script += (
+                    " (authored for the primary command; this step runs its "
+                    f"{res.source.split(':', 1)[1]} variant)"
+                )
+            script += "\n"
         script += f"# Command source: {res.source}"
         script += f" ({res.note})\n" if res.note else "\n"
-        for det in raw.get("expected_detections", []):
-            script += (
-                f"# Expected: [{det.get('plane','?')}] {det.get('type','?')}: "
-                f"{det.get('description','')}\n"
-            )
-        var = _ps_var(res.step_id)
-        # Escape step id and identity for their single-quoted PowerShell literals
-        # (double the quote). Unescaped, a quote in either closes the literal and
-        # injects into the invoke call — the PowerShell analogue of the bash
-        # run_as breakout. res.shell is a fixed enum, so it needs no escaping.
-        sid_lit = res.step_id.replace("'", "''")
-        ident_lit = res.identity.replace("'", "''")
-        script += f"{var} = {_ps_literal(res.command)}\n"
+        for det in raw.get("expected_detections", []) or []:
+            if isinstance(det, dict):
+                script += _expected_comment("# Expected: ", det) + "\n"
+        script += "# Command (runs exactly as decoded from the base64 literal below):\n"
+        script += _ps_listing(res.command)
+        var = f"$CsCmd_{p.index:02d}"
+        # Every scenario-sourced value is a single-quoted literal with ALL
+        # single-quote-class characters doubled (ASCII and U+2018..U+201B), so
+        # none can close its literal and inject into the call. res.shell is a
+        # fixed enum; the command itself is base64 and needs no escaping.
+        script += f"{var} = '{_b64(res.command)}'\n"
         script += (
-            f"Invoke-CsStep -StepId '{sid_lit}' -Identity '{ident_lit}' "
-            f"-Shell '{res.shell}' -Command {var}\n\n"
+            f"Invoke-CsStep -StepId {_ps_sq(res.step_id)} -FileName '{p.file_name}' "
+            f"-Identity {_ps_sq(res.identity)} -Shell '{res.shell}' -CommandB64 {var} "
+            f"-Tools {_ps_array(list(p.tools))} -Inputs {_ps_array(list(p.inputs))} "
+            f"-TimeoutSeconds {p.timeout}\n\n"
         )
-    script += "    Write-CsLog INFO ('CortexSim bundle complete — scenario=' + $CortexSimScenarioId)\n"
-    script += "    Write-CsLog INFO 'Review detections in Cortex XDR/XSIAM console.'\n"
+    script += "    Write-CsLog INFO ('CortexSim bundle steps finished — scenario=' + $CortexSimScenarioId)\n"
     script += "}\n"
     script += "finally {\n"
     script += "    Invoke-CsCleanup\n"
+    script += "    Write-CsSummary\n"
+    script += "    $CortexSimExitCode = Get-CsExitCode\n"
+    script += "    Write-CsLog INFO ('CortexSim bundle complete — scenario=' + $CortexSimScenarioId + ' exit=' + $CortexSimExitCode)\n"
+    script += "    Write-CsLog INFO 'Review detections in Cortex XDR/XSIAM console.'\n"
     script += "    if ($CortexSimTranscript) { try { Stop-Transcript | Out-Null } catch { } }\n"
     script += "}\n"
+    script += "exit $CortexSimExitCode\n"
 
     logger.info(
         "Generated PowerShell bundle for scenario=%s (%d steps)",

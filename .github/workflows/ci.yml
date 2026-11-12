@@ -13,12 +13,15 @@ name: CI
 #               to reproduce the ~1551-test green run faithfully. Then the
 #               same suite AGAIN under TZ=America/Los_Angeles, because the
 #               runner and the image are UTC and a naive-UTC-read-as-local bug
-#               is invisible there.
+#               is invisible there. Then the image-parity gates on that same
+#               image: the console, every beacon target, every MCP tool.
 #   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent,
-#               PLUS a cross-compile gate for every host family the engine
-#               claims to support (linux, darwin, windows). The Windows arm is
+#               PLUS a cross-compile + vet gate for every target the beacon
+#               shelf ships (linux/amd64 natively; linux/arm64, darwin/amd64,
+#               darwin/arm64 and windows/amd64 cross). The Windows arm is
 #               load-bearing: the beacon silently could not compile for Windows
-#               while 71 scenarios declared platforms: [windows].
+#               while 71 scenarios declared platforms: [windows]. Compiling for
+#               a target is not executing on it.
 #   ui        — Node 20: npm ci + vite build + vitest run (>=305 tests).
 #   detection — detection_scanner/scripts/validate.py (0 fail) AND the
 #               export-determinism gate: regenerate every artifact and assert
@@ -33,15 +36,33 @@ name: CI
 #               ALSO check-adapter-wiring.py: the de-hand-rolling gate, FAIL if a
 #               scenario names a tool with a non-reference-only adapter pack but
 #               never wires it via external_tools[].adapter_ref.
+#               ALSO `python3 -m engine.payload_shelf --check`: the generated
+#               payloads/sources.json must match the packs it is derived from.
 #               ALSO check-installer-submodules.py: FAIL if install.sh would
 #               check out a denylisted submodule or one shipping Binaries/*.zip.
+#   refs      — every scenario through the real loader under
+#               CORTEXSIM_STRICT_REFS, the PowerShell 5.1 floor gate (pwsh 7:
+#               necessary, not sufficient), and the ground-truth and
+#               lab-readiness determinism gates. None may mask another.
 #   rust-dist — static-musl build of signalbench/ackbarx/xdrtop, then EXECUTE
 #               each on clean ubuntu:22.04 AND alpine:3 with --network none.
 #               Change-filtered (gitlink / recipe / registry only) and NOT a
 #               required check; the always-on half lives in `adapters`.
 #   e2e-isolated — Tier-C observed-signal assertion suite (no docker) as a hard
 #               gate; the docker detonation e2e is opt-in behind a `tier-c-e2e`
-#               PR label.
+#               PR label, and the container-agent kind e2e behind an
+#               `agent-k8s-e2e` PR label.
+#   windows   — the ONLY job that executes anything on Windows: windows-2022,
+#               Windows PowerShell 5.1, native go test, 5.1 parse +
+#               PSScriptAnalyzer, a real SimCore boot, the console's install
+#               one-liner, and pull / abort / push / uninstall against a beacon
+#               running as a Windows service. See its header for what it does
+#               NOT cover.
+#
+# Every native Linux job that runs suites with a real-PowerShell test (agent,
+# refs here; python-tests, ttp-static, go-tests in test.yml) asserts pwsh is
+# present and sets CORTEXSIM_REQUIRE_POWERSHELL=1, so such a test fails rather
+# than skips: a skipped guard reads exactly like a passing one.
 #
 # All jobs run independently and in parallel — a failure in one surfaces a
 # precise gate without masking the others.
@@ -74,7 +95,7 @@ jobs:
     name: backend (pytest in prod image)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         # The image COPYs scenarios/, detection_scanner/ and tools/ in; the
         # tier-2 adapter sources are git submodules consumed by some suites,
         # so pull them too.
@@ -84,6 +105,17 @@ jobs:
       - name: Build simcore image
         id: image
         run: docker build -f core/Dockerfile -t cortexsim:ci .
+
+      - name: Compose parses docker-compose.yml (config -q)
+        # Compose itself reads the file: the port mapping (CORTEXSIM_BIND,
+        # ${VAR:+...} with a nested operand) and the logging block are checked
+        # by a YAML parser in pytest. Its first run (43033286928) caught an
+        # empty host_ip that Compose rejects and the YAML tests accepted. This parses and
+        # interpolates; it does not bring the stack up. The secret is a
+        # throwaway, because the file refuses to interpolate without one.
+        env:
+          CORTEXSIM_SECRET: ci-compose-parse-only-not-a-real-secret
+        run: docker compose -f docker-compose.yml config -q
 
       - name: Run pytest inside the image
         # The repo is mounted at /repo so the tests/ tree (which is NOT baked
@@ -138,6 +170,15 @@ jobs:
       - name: UI image-parity gate (image serves the console this tree builds)
         run: IMAGE=cortexsim:ci scripts/check-ui-shelf.sh
 
+      # The same Gate B question asked of the beacon: does the BUILT IMAGE ship
+      # every target, windows-amd64.exe included? The tree shipped 5 targets
+      # from the script and 4 from the image for months because every gate
+      # looked at the source and agreed with itself. Like the non-UTC pass, it
+      # runs whenever the image built, so a pytest failure cannot hide it.
+      - name: Beacon image-parity gate (image serves every beacon target)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make IMAGE=cortexsim:ci check-agent-shelf
+
       # The MCP server ships in the image (Gate B parity): the built image must
       # import core/mcp_server/ and the pinned SDK and register every tool. The
       # host suite cannot see this; it runs from the checkout. Fails closed — a
@@ -152,9 +193,15 @@ jobs:
   agent:
     name: agent (go build/vet/test -race)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The PowerShell exec tests skip when no PowerShell is on PATH. The
+      # hosted image ships pwsh: assert it, so the skip can never happen here.
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.21'
           cache-dependency-path: agent/go.sum
@@ -168,9 +215,14 @@ jobs:
       # Cross-compile gate. 71 of the 162 scenarios declare platforms: [windows],
       # yet the beacon could not compile for GOOS=windows at all (POSIX-only
       # Setpgid / syscall.Kill in agent/executor) — so pull mode was impossible
-      # on Windows and nothing in CI ever said so. Building for every host family
-      # the engine claims to support is what keeps that honest. CGO_ENABLED=0
-      # matches scripts/build-agent-dist.sh, which is what actually ships.
+      # on Windows and nothing in CI ever said so. Building for every TARGET the
+      # shelf ships is what keeps that honest: one step per GOOS/GOARCH pair in
+      # scripts/build-agent-dist.sh TARGETS other than linux/amd64, which is
+      # this runner's native build above. It used to be one architecture per OS
+      # family, so linux/arm64 and darwin/amd64 were compiled for the first time
+      # inside the image build. tests/ci/test_agent_cross_matrix.py holds these
+      # steps equal to TARGETS. CGO_ENABLED=0 matches the script, which is what
+      # ships.
       - name: Cross-compile (windows/amd64)
         working-directory: agent
         env:
@@ -183,6 +235,22 @@ jobs:
         working-directory: agent
         env:
           GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
+      - name: Cross-compile (darwin/amd64)
+        working-directory: agent
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
+      - name: Cross-compile (linux/arm64)
+        working-directory: agent
+        env:
+          GOOS: linux
           GOARCH: arm64
           CGO_ENABLED: '0'
         run: go build ./... && go vet ./...
@@ -205,8 +273,8 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: npm
@@ -228,8 +296,8 @@ jobs:
     name: detection (validate + export determinism)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -271,23 +339,51 @@ jobs:
   # Every other UC/TC test exercises the machinery on synthetic refs. Without
   # this job a scenario re-keyed to a dangling test case ships green: the loader
   # would reject it at boot, but nothing in CI would ever watch that happen.
+  #
+  # Five gates share this job (PowerShell floor, strict refs, ground truth,
+  # lab readiness, grouping keys) and none may mask another. Each one after the dependency
+  # install carries `!cancelled()` plus the outcome of the step it actually
+  # needs, so a red PowerShell gate still reports a dangling tc_ref from the
+  # same push, and a gate never runs vacuously behind a failed prerequisite.
   # ---------------------------------------------------------------------------
   refs:
     name: refs (UC/TC strict validation + ground-truth drift gate)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
+      # The PowerShell gate renders the beacon's own wrapper by running
+      # `go test` in agent/ (scripts/ci/render_powershell.py), so this job
+      # needs a Go and it must be the one the beacon is tested with. Without
+      # this step it used whatever the runner image shipped that week.
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          # Same string as the agent job until CI-11 settles which Go ships.
+          go-version: '1.21'
+          # The beacon is stdlib-only: there is no agent/go.sum to key a cache on.
+          cache: false
       - name: Install loader deps
+        id: deps
         run: |
           python -m pip install --upgrade pip
           pip install -r core/requirements.txt pytest pytest-asyncio
+      # Every emitted PowerShell artifact parsed under pwsh AND walked for the
+      # PowerShell-7-only syntax Windows PowerShell 5.1 (the product floor)
+      # cannot parse. pwsh parsing alone is necessary, not sufficient; the
+      # windows job is where 5.1 itself parses them.
+      - name: PowerShell 5.1 floor gate
+        run: make check-powershell
       - name: Every scenario resolves under CORTEXSIM_STRICT_REFS
         # A failure here names the scenario that would refuse to load in
         # production. Fix the ref (or the crosswalk), never the gate.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
           CORTEXSIM_ENV: development
@@ -303,6 +399,8 @@ jobs:
       # here — the committed files' shape does not depend on which job
       # regenerated them.
       - name: Regenerate ground-truth inventory
+        id: ground_truth
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
           CORTEXSIM_ENV: development
@@ -315,11 +413,28 @@ jobs:
         # `python3 scripts/generate_ground_truth.py` (or `make ground-truth`)
         # locally and commit the result. This is the gate that keeps a repeat
         # of the README drifting 30-90% from reality from recurring.
+        #
+        # Gated on the regeneration, not merely on `!cancelled()`: after a
+        # FAILED regeneration this diff compares the committed files with
+        # themselves and reads green.
+        if: ${{ !cancelled() && steps.ground_truth.outcome == 'success' }}
         run: git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
+      # docs/reference/lab-readiness.{json,md} is the reference a DC reads to
+      # pick scenarios that emit real signal in a lab. It is generated from the
+      # scenario corpus, and it went stale when Windows steps and detections
+      # were cut: the release runbook lists `make check-lab-ready` as a PASS
+      # gate, and no workflow ran it. If this fails, run `make lab-ready` and
+      # commit the two files.
+      - name: Lab-readiness determinism gate (committed manifest must match the corpus)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: make check-lab-ready
       - name: Grouping-key gate (fails only on G-03)
         # A G-03 means a card's correlation rule maps the scenario's declared
         # stitching_key to a custom destination XSIAM does not group on. Every
         # other code (incl. G-04 GROUPING_KEY_UNKNOWN) is reported, not gated.
+        # It reads the corpus with pyyaml from the dependency install, and like
+        # every gate behind the PowerShell one it must not be masked by it.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: make check-grouping
 
   # ---------------------------------------------------------------------------
@@ -333,8 +448,15 @@ jobs:
   adapters:
     name: adapters (tier-2 source + rust recipe preflight)
     runs-on: ubuntu-22.04
+    env:
+      # scripts/build-payloads.sh records whatever it downloaded for an artifact
+      # that carries no digest pin, unless this is 0. No step stages the shelf
+      # today (it fetches from the public internet), so this is the default
+      # for the day one does: an unpinned artifact fails the build here.
+      # tests/ci/test_payload_shelf_gate.py holds every workflow to the same rule.
+      PAYLOAD_ALLOW_UNPINNED: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         # Tier-2 adapter sources are git submodules; the check FAILs if any
         # declared source_path is missing on disk, so pull them. The Rust gate
         # additionally needs sources/signalbench/helpers/pacemaker.
@@ -344,12 +466,16 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: scripts/check-adapter-sources.sh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
       - name: Install lint deps
-        run: pip install pyyaml
+        # pyyaml for the wiring lint; pydantic because the shelf drift check
+        # goes through the REAL pack loader. Both at the versions
+        # core/requirements.txt pins, so packs are validated here the way the
+        # image validates them at boot.
+        run: pip install $(grep -E '^(pyyaml|pydantic)==' core/requirements.txt)
       - name: Adapter-wiring lint (de-hand-rolling gate)
         # FAILs if a scenario names a tool that HAS an adapter pack but never
         # wires it via external_tools[].adapter_ref — the case that silently
@@ -358,6 +484,16 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: python3 scripts/check-adapter-wiring.py --list
+      - name: Payload shelf drift check (payloads/sources.json is derived from the packs)
+        # payloads/sources.json is GENERATED from every pack's install.artifact
+        # (`python3 -m engine.payload_shelf --write`). The hand-kept list had
+        # already drifted once: it named an adapter that never existed. A stale
+        # copy stages the wrong bytes, or none, for a tool a scenario declares.
+        # Exit 1 prints the diff; regenerate and commit.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}/core
+        run: python3 -m engine.payload_shelf --check
       - name: Installer submodule denylist (no compiled implants on a jumpbox)
         # Runs install.sh's real init_submodules with real git in a sandbox and
         # FAILs if it checks out a denylisted submodule (sources/MITRE-Turla-
@@ -393,7 +529,7 @@ jobs:
       github.event_name == 'push' ||
       github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
       - name: Detect whether anything that can break the Rust build changed
@@ -438,7 +574,7 @@ jobs:
           echo "6/6 started on clean glibc + musl hosts with no network"
       - name: Upload the matrix
         if: steps.changed.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rust-dist-linux-amd64
           path: |
@@ -464,8 +600,8 @@ jobs:
     name: e2e (Tier-C isolated execution)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -498,12 +634,20 @@ jobs:
         # Real-pod proof: a kind cluster pulls the manifest from a SimCore built
         # from this tree. Proves the pod runs and reports, never that a Cortex
         # detection fires (tenant-verified stays 0). deploy/kind/README.md.
+        #
+        # CORTEXSIM_ALLOWED_HOSTS: SimCore's Host guard (core/security/
+        # host_guard.py) refuses a Host it cannot explain with 400
+        # HOST_NOT_ALLOWED. The pod calls SIMCORE_URL; run-agent-e2e.sh swaps
+        # host.docker.internal for the node's gateway IP (always admitted) only
+        # when the name does not resolve inside the node. Where it does resolve,
+        # the pod's Host is host.docker.internal, so it is named here.
         if: contains(toJson(github.event.pull_request.labels.*.name), 'agent-k8s-e2e')
         run: |
           docker build -f core/Dockerfile -t cortexsim:agentk8s .
           docker run -d --name simcore-k8s -p 8888:8888 \
             -e CORTEXSIM_ENV=development \
             -e CORTEXSIM_SECRET="$(openssl rand -hex 32)" \
+            -e CORTEXSIM_ALLOWED_HOSTS=host.docker.internal \
             cortexsim:agentk8s
           for i in $(seq 1 30); do
             curl -sf http://localhost:8888/api/health && break || sleep 2
@@ -514,3 +658,169 @@ jobs:
           SIMCORE_URL=http://host.docker.internal:8888 \
             SIMCORE_API=http://localhost:8888 \
             deploy/kind/run-agent-e2e.sh
+
+  # ---------------------------------------------------------------------------
+  # windows — the only job that EXECUTES anything on Windows.
+  #
+  # Every other job runs on ubuntu-22.04. Before this job, nothing behind
+  # //go:build windows had ever run, no Windows PowerShell 5.1 had parsed a
+  # bundle or an installer, and no Windows service had ever been created: the
+  # `agent` job proves only that the beacon COMPILES for GOOS=windows.
+  #
+  # One phase per step (scripts/ci/windows-native-e2e.ps1 -Phase <p>), so a
+  # failure names its gate and the independent phases after it still run:
+  #   floor      Windows PowerShell 5.1 Desktop, or nothing below is 5.1 proof
+  #   go         native go vet + go test ./... -count=1 (no -race: it needs
+  #              cgo), Git's sh removed from PATH; a TestPowerShell* skip fails
+  #   build      the SHIPPED recipe, scripts/build-agent-dist.sh, then PE32+
+  #              x86-64 / SHA256SUMS / Authenticode checks on what it wrote
+  #   render     scripts/ci/render_powershell.py (the powershell-gate lane)
+  #   parse      ParseFile (as -File reads it) + ParseInput (as iwr | iex does),
+  #              then control fixtures the 5.1 parser must REJECT (a PS7-only
+  #              file, a BOM-less em dash) so the phase can be seen to fail
+  #   pssa       PSScriptAnalyzer compatibility rules vs Server 2016/2019 5.1
+  #   boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout
+  #   install    the console's token one-liner in a child powershell.exe
+  #   pull       exit codes, fail-fast, step_outcomes, stderr as plain text
+  #   abort      tree-kill reaches the step and nothing outside it
+  #   push       the PowerShell push bundle for the same probe, run with -File
+  #   uninstall  no service, no install dir, no beacon process left behind
+  #   collect    SCM events, sc.exe, Defender state, SimCore db (always runs)
+  # Everything lands in the `windows-proof` artifact.
+  #
+  # Unconditional, no paths: filter, no needs:, no continue-on-error: a job
+  # that can be skipped or soft-fail reads exactly like a passing one. It is
+  # EXPECTED RED until the beacon-windows-service, beacon-windows-exec,
+  # windows-installer and push-bundle-harness lanes land; make it a required
+  # check once it is green.
+  #
+  # What a green run does NOT cover:
+  #   - an https SimCore under Windows PowerShell 5.1's TLS defaults
+  #   - Server Core (no desktop experience, different feature set)
+  #   - code pages other than cp1252 (the runner is en-US)
+  #   - AppLocker, WDAC or Constrained Language Mode
+  #   - a real Cortex XDR agent on the host (prevention, blocking, injection)
+  #   - reboot survival of the service
+  #   - the non-admin install path (DEGRADED_NO_SUPERVISOR)
+  # It never contacts a Cortex tenant. tenant-verified stays 0.
+  # ---------------------------------------------------------------------------
+  windows:
+    name: windows (native 5.1 + beacon service e2e)
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        # Windows PowerShell 5.1 (powershell.exe), not pwsh.
+        shell: powershell
+    env:
+      CGO_ENABLED: '0'
+      PYTHONUTF8: '1'
+      CORTEXSIM_ENV: development
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
+      # TODO(pssa-pin): no PSGallery lookup was made when this job was written.
+      # Empty installs the newest PSScriptAnalyzer and records its version in
+      # windows-proof/pssa-meta.json; pin that version here after the first run.
+      CORTEXSIM_PSSA_VERSION: ''
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          # Same string as the agent job until CI-11 settles which Go ships.
+          go-version: '1.21'
+          cache: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: floor (Windows PowerShell 5.1 Desktop)
+        id: floor
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase floor
+
+      - name: go (native go vet + go test, no sh on PATH)
+        id: go
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase go
+
+      - name: build (shipped recipe scripts/build-agent-dist.sh)
+        id: build_dist
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: OUT_DIR="$RUNNER_TEMP/agent-dist" bash scripts/build-agent-dist.sh
+
+      - name: build (PE32+ x86-64, SHA256SUMS, Authenticode)
+        id: build
+        if: ${{ !cancelled() && steps.build_dist.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase build
+
+      # cmd, not powershell: pip writes progress to stderr, and native stderr
+      # under the powershell shell's ErrorActionPreference=stop is a throw.
+      - name: deps (pip install -r core/requirements.txt)
+        id: deps
+        if: ${{ !cancelled() }}
+        shell: cmd
+        run: python -m pip install --disable-pip-version-check -r core/requirements.txt
+
+      - name: render (scripts/ci/render_powershell.py)
+        id: render
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase render
+
+      - name: parse (ParseFile + ParseInput under 5.1)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase parse
+
+      - name: pssa (PSScriptAnalyzer, Server 2016/2019 5.1 profiles)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
+        timeout-minutes: 15
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pssa
+
+      # Gated on build_dist (the exe exists), not on the build assertion phase:
+      # one assertion failure there must not skip every e2e phase after it.
+      # The timeout keeps a wedged boot from eating the job's 40 minutes.
+      - name: boot (SimCore on 127.0.0.1:8888)
+        id: boot
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' && steps.build_dist.outcome == 'success' }}
+        timeout-minutes: 5
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase boot
+
+      - name: install (console token one-liner, service)
+        id: install
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        timeout-minutes: 10
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase install
+
+      - name: pull (exit codes, fail-fast, stderr)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pull
+
+      - name: abort (tree-kill scope)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase abort
+
+      - name: push (PowerShell bundle with -File)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        timeout-minutes: 10
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase push
+
+      - name: uninstall (uninstall one-liner)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase uninstall
+
+      - name: collect (evidence, always)
+        if: ${{ always() }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase collect
+
+      - name: Upload windows-proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-proof
+          path: ${{ runner.temp }}/windows-proof
+          if-no-files-found: warn
+          retention-days: 14

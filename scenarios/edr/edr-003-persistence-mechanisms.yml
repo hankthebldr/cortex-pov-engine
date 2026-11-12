@@ -93,7 +93,20 @@ steps:
     # descends from the apache2 CGO. No causality block → links from the CGO.
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'schtasks /create /tn "SystemHealthMonitor" /tr "C:\\Windows\\Temp\\beacon.exe" /sc minute /mo 15 /ru SYSTEM'
+      # SAFE-MODE, matching the Linux primary: a REAL schtasks.exe /create (the
+      # telemetry the BIOC needs) of a uniquely named task whose action is the
+      # inert, non-writable %SystemRoot%\System32\whoami.exe, deleted in this
+      # same step before its first 15-minute trigger can fire. No /ru SYSTEM.
+      windows: |
+        $tn = 'cortexsim-edr003-healthmonitor'
+        $tr = Join-Path $env:SystemRoot 'System32\whoami.exe'
+        schtasks.exe /create /tn $tn /tr $tr /sc minute /mo 15 /f
+        $rc = $LASTEXITCODE
+        schtasks.exe /query /tn $tn /fo LIST
+        Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue
+        if ($rc -ne 0) { Write-Error "schtasks /create exited $rc"; exit $rc }
+        if (Get-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue) { Write-Error "task $tn survived teardown"; exit 1 }
+        Write-Output 'cortexsim-edr003-scheduled-task-created-and-deleted'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -133,7 +146,20 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'sc.exe create SysHealthMon binPath= "C:\\Windows\\Temp\\beacon.exe" start= auto'
+      # SAFE-MODE: a REAL auto-start service registration pointing at the inert
+      # whoami.exe (not a service binary, so SCM can never run it), deleted in
+      # this same step.
+      windows: |
+        $svc = 'cortexsim-edr003-syshealthmon'
+        $bin = Join-Path $env:SystemRoot 'System32\whoami.exe'
+        sc.exe create $svc binPath= $bin start= auto DisplayName= 'CortexSim EDR-003 SysHealthMon (lab stand-in)'
+        $rc = $LASTEXITCODE
+        sc.exe qc $svc
+        sc.exe delete $svc
+        if ($rc -ne 0) { Write-Error "sc.exe create exited $rc"; exit $rc }
+        if (Get-Service -Name $svc -ErrorAction SilentlyContinue) { Write-Error "service $svc survived teardown"; exit 1 }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-edr003-service-created-and-deleted'
       macos: 'sudo cp com.cortexsim.beacon.plist /Library/LaunchDaemons/ && sudo launchctl load /Library/LaunchDaemons/com.cortexsim.beacon.plist'
     expected_detections:
       - plane: EDR
@@ -162,7 +188,22 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'net user cortexsim_testuser TempP@ss123 /add && net localgroup administrators cortexsim_testuser /add'
+      # SAFE-MODE: a REAL local account + Administrators membership with a
+      # password generated in-step (never a literal from this repo), deleted in
+      # this same step. 14 characters on purpose: net.exe prompts (Y/N) for a
+      # longer password, which would hang a non-interactive step. The group is
+      # resolved by its well-known SID so a non-English OS works.
+      windows: |
+        $u = 'cortexsim-edr003'
+        $pw = 'Cx!' + [guid]::NewGuid().ToString('N').Substring(0, 9) + 'Q7'
+        $admins = (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')).Translate([System.Security.Principal.NTAccount]).Value.Split('\')[-1]
+        net.exe user $u $pw /add /comment:'CortexSim SIM-EDR-003 lab stand-in'
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0) { net.exe localgroup $admins $u /add }
+        net.exe user $u /delete
+        if ($rc -ne 0) { Write-Error "net user /add exited $rc"; exit $rc }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-edr003-local-admin-created-and-deleted'
       macos: 'sudo sysadminctl -addUser cortexsim_testuser -password TempP@ss123 -admin'
     expected_detections:
       - plane: EDR
@@ -192,7 +233,33 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'ssh-keygen -t ed25519 -f $env:TEMP\cortexsim_key -N "" ; Add-Content $env:USERPROFILE\.ssh\authorized_keys (Get-Content $env:TEMP\cortexsim_key.pub)'
+      # SAFE-MODE: a REAL ssh-keygen run and a REAL append to the user's
+      # authorized_keys. The original file is backed up first (or its absence
+      # recorded) and restored byte-for-byte — or the file removed, if this step
+      # created it — before the step ends. `--%` passes `-N ""` verbatim:
+      # Windows PowerShell 5.1 silently drops an empty native argument.
+      windows: |
+        $d = Join-Path $env:TEMP 'cortexsim-edr003'
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $k = Join-Path $d 'id_ed25519'
+        $kg = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue
+        if (-not $kg) { Remove-Item -Recurse -Force $d; Write-Error 'ssh-keygen.exe not found: install the Windows OpenSSH client; without it this step proves nothing'; exit 1 }
+        & $kg.Source -q -t ed25519 -C cortexsim-edr003 -f $k --% -N ""
+        $ssh = Join-Path $env:USERPROFILE '.ssh'
+        $ak = Join-Path $ssh 'authorized_keys'
+        $bak = Join-Path $d 'authorized_keys.bak'
+        $hadDir = Test-Path $ssh
+        $hadFile = Test-Path $ak
+        # The backup, or an absence marker when there was no file, is what the
+        # interrupted-run cleanup lines key on to restore or remove the file.
+        if ($hadFile) { Copy-Item -Force -LiteralPath $ak -Destination $bak } else { Set-Content -Path (Join-Path $d 'authorized_keys.absent') -Value $ak }
+        New-Item -ItemType Directory -Force -Path $ssh | Out-Null
+        Add-Content -Path $ak -Value (Get-Content "$k.pub")
+        Get-Item $ak | Select-Object FullName, Length
+        if ($hadFile) { [IO.File]::WriteAllBytes($ak, [IO.File]::ReadAllBytes($bak)) } else { Remove-Item -Force $ak }
+        if (-not $hadDir) { Remove-Item -Recurse -Force $ssh -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force $d
+        Write-Output 'cortexsim-edr003-authorized-keys-written-and-restored'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -220,7 +287,18 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v SysHealth /d "C:\\Windows\\Temp\\beacon.exe" /f'
+      # SAFE-MODE: a REAL HKCU Run value pointing at the inert whoami.exe,
+      # deleted in this same step.
+      windows: |
+        $v = 'cortexsim-edr003-syshealth'
+        $exe = Join-Path $env:SystemRoot 'System32\whoami.exe'
+        reg.exe add 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v $v /t REG_SZ /d $exe /f
+        $rc = $LASTEXITCODE
+        reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v $v
+        reg.exe delete 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v $v /f
+        if ($rc -ne 0) { Write-Error "reg add exited $rc"; exit $rc }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-edr003-run-key-written-and-deleted'
       macos: 'echo "nohup /tmp/.cortexsim_beacon &>/dev/null &" >> ~/.zshrc'
     expected_detections:
       - plane: EDR
@@ -239,6 +317,25 @@ cleanup:
     - "userdel cortexsim_testuser 2>/dev/null"
     - "rm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test"
     - "rm -rf /tmp/.cortexsim_ssh_test"
+    # Windows teardown, for a step interrupted between create and its in-step
+    # delete. The bash bundle and the K8s bootstrap do NOT run these lines:
+    # push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment. `sc.exe` and
+    # `net.exe` are wrapped in `cmd.exe /c` because neither is a marker the
+    # generator recognises on its own: unwrapped, the Windows bundle would
+    # list them as residue and the bash bundle would try to run them.
+    - "schtasks.exe /delete /tn cortexsim-edr003-healthmonitor /f"
+    - "cmd.exe /c sc.exe delete cortexsim-edr003-syshealthmon"
+    - "cmd.exe /c net.exe user cortexsim-edr003 /delete"
+    - 'reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v cortexsim-edr003-syshealth /f'
+    # A step-04 interrupted mid-way leaves its backup (or the absence marker)
+    # under %TEMP%\cortexsim-edr003; a completed step-04 already deleted it, so
+    # these three lines are then no-ops. copy /b writes the backup's bytes back
+    # into the existing file (as the in-step WriteAllBytes does) rather than
+    # moving the backup, with its %TEMP% ACL, into the user's .ssh directory.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.bak" copy /y /b "%TEMP%\cortexsim-edr003\authorized_keys.bak" "%USERPROFILE%\.ssh\authorized_keys"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.absent" del /f /q "%USERPROFILE%\.ssh\authorized_keys"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003" rd /s /q "%TEMP%\cortexsim-edr003"'
     - "echo '[CortexSim] SIM-EDR-003 cleanup complete'"
 
 author: "Henry Reed"
