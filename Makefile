@@ -327,9 +327,10 @@ ground-truth: ## Regenerate docs/reference/ground-truth.{json,md} from the corpu
 check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): regenerate and diff against committed files
 	git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
 
-check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'adapters' job)
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + installer submodule denylist (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
 	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
+	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-installer-submodules.py
 
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
 	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \

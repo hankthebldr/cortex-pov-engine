@@ -31,10 +31,6 @@
 	url = https://github.com/hankthebldr/xsiam-prisma-cdr-lab.git
 	branch = 1.0
 
-[submodule "sources/MITRE-Turla-Carbon"]
-	path = sources/MITRE-Turla-Carbon
-	url = https://github.com/Palo-Cortex/MITRE-Turla-Carbon.git
-
 [submodule "sources/atomic-red-team"]
 	path = sources/atomic-red-team
 	url = https://github.com/redcanaryco/atomic-red-team.git
