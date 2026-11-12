@@ -504,10 +504,13 @@ function agentOsOf(target, agents) {
  *
  * SimCore's resolver knows two targets, posix and windows. A darwin beacon is
  * `posix`, so SimCore sends it the primary command of a Linux-only scenario
- * (`cat /etc/shadow`, `runuser`, `apt`) with no marker on the run, and sends a
- * Linux beacon the macOS-only SIM-KOI-009 the same way. Nothing server-side
- * refuses either. The step labels are the only linux-versus-macOS statement
- * there is, so inside the POSIX family they are the verdict.
+ * (`cat /etc/shadow`, `runuser`, `apt`), and sends a Linux beacon the
+ * macOS-only SIM-KOI-009 the same way. Nothing server-side refuses either:
+ * SimCore reads the same labels and writes `!! PLATFORM MISMATCH` onto the run
+ * for each such step (`orchestrator.posix_family_markers`, RG-UI-01), which is
+ * a caveat on the evidence, not a gate. The step labels are the only
+ * linux-versus-macOS statement there is, so inside the POSIX family they are
+ * the verdict.
  *
  * A step labelled ONLY `windows` says nothing about linux versus macOS (that
  * is the mislabelled-POSIX-text shape, already a `platform-labels` WARN), so
@@ -528,13 +531,14 @@ function posixFamilyCheck(declaring, os) {
     posixDeclaring.flatMap((s) => s.platforms).filter((p) => String(p).toLowerCase() !== 'windows'),
   ))
   const noMarker = '`bundle_targets` only separates POSIX from Windows, so SimCore does not refuse '
-    + `this launch: it sends that command text to the ${os} host with no marker on the run.`
+    + `this launch: it sends that command text to the ${os} host unchanged and marks each such `
+    + 'step PLATFORM MISMATCH on the run.'
 
   if (other.length === posixDeclaring.length) {
     return mk('platform', 'Platform', PF.BLOCK, `no step declares ${os}`,
       `Every platform-declaring step is authored for ${union.join(' / ')} and this beacon is ${os}. `
-      + `${noMarker} Steps then fail or do nothing, their expected detections never fire, and the `
-      + 'run reads as detections the customer\'s stack missed.',
+      + `${noMarker} Steps then fail or do nothing and their expected detections never fire: `
+      + 'the run proves nothing about the customer\'s stack.',
       `Pick a ${union.join(' or ')} beacon. A scenario meant for ${os} as well needs \`${os === 'darwin' ? 'macos' : os}\` `
       + 'in its steps\' `platforms`.')
   }

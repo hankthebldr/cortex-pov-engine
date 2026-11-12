@@ -496,6 +496,16 @@ describe('platform — inside the POSIX family (RG-UI-01)', () => {
     expect(p.detail).not.toMatch(/PULL_TARGET_UNSATISFIABLE/)
   })
 
+  it('says SimCore marks each such step PLATFORM MISMATCH on the run (server half)', () => {
+    for (const scenario of [linuxOnly, {
+      ...linuxOnly, steps: [...linuxOnly.steps, { id: 'step-03', platforms: ['linux', 'macos'] }],
+    }]) {
+      const p = check(base({ scenario, agents: [MAC] }), 'platform')
+      expect(p.detail).toMatch(/PLATFORM MISMATCH/)
+      expect(p.detail).not.toMatch(/no marker/)
+    }
+  })
+
   it('a Linux beacon BLOCKS on a macOS-only scenario (SIM-KOI-009 shape)', () => {
     const p = check(base({ scenario: macOnly }), 'platform')
     expect(p.status).toBe(PF.BLOCK)

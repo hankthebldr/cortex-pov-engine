@@ -131,6 +131,9 @@ def _execution_integrity(run: Any) -> dict[str, Any]:
 _STEP_HEADER_RE = __import__("re").compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
 _PLATFORM_VARIANT_RE = __import__("re").compile(
     r"!! PLATFORM VARIANT: step=(\S+) ran its (\S+) variant")
+#: ``engine.orchestrator.posix_family_markers`` (RG-UI-01).
+_PLATFORM_MISMATCH_RE = __import__("re").compile(
+    r"!! PLATFORM MISMATCH: step=(\S+) is authored for (\S+), not ([^\s;]+);")
 _IDENTITY_MARKER = "!! IDENTITY NOT HONOURED"
 
 
@@ -196,6 +199,23 @@ def _report_caveats(run: Any, scenario: Optional[Any]) -> list[str]:
             "on them is unverified for this OS:",
             "",
             *[f"- `{sid}` — {os_name} variant" for sid, os_name in variants],
+        ])
+
+    mismatches = []
+    for found in _PLATFORM_MISMATCH_RE.findall(output):
+        if found not in mismatches:
+            mismatches.append(found)
+    if mismatches:
+        blocks.append([
+            "### Platform Mismatch",
+            "",
+            "These steps are labelled for another POSIX platform than the beacon "
+            "that ran them. SimCore resolves POSIX versus Windows only, so it sent "
+            "the authored command unchanged; a miss on them is not a coverage "
+            "measurement:",
+            "",
+            *[f"- `{sid}` — authored for {labels}, ran on {os_name}"
+              for sid, labels, os_name in mismatches],
         ])
 
     cleanup = (getattr(scenario, "cleanup", None) or {}) if scenario is not None else {}

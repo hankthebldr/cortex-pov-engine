@@ -110,6 +110,25 @@ def test_platform_variant_steps_are_listed(client, session_factory):
     assert "step-02" in section and "windows" in section
 
 
+def test_platform_mismatch_steps_are_listed(client, session_factory):
+    """RG-UI-01: a Linux-only step sent to a macOS beacon is marked at launch;
+    the report a DC exports must carry it, not only the run transcript."""
+    out = ("!! PLATFORM MISMATCH: step=step-02 is authored for linux, not darwin; "
+           "SimCore dispatched it unchanged to agent 'mac-1' (darwin), so its "
+           "expected_detections are unverified on this OS\n"
+           "!! PLATFORM MISMATCH: step=step-04 is authored for linux/container, not "
+           "darwin; SimCore dispatched it unchanged to agent 'mac-1' (darwin), so its "
+           "expected_detections are unverified on this OS\n")
+    _seed(session_factory, run_id="pm-1", output=out)
+    body = _report(client, "pm-1")
+    assert "Platform Mismatch" in body
+    section = body.split("Platform Mismatch", 1)[1].split("\n## ", 1)[0]
+    assert "`step-02` — authored for linux, ran on darwin" in section, section
+    assert "`step-04` — authored for linux/container, ran on darwin" in section, section
+    assert "not a coverage measurement" in section
+    assert "READ THIS FIRST" not in body
+
+
 def test_an_unremarkable_run_grows_no_caveat_section(client, session_factory):
     _seed(session_factory, run_id="plain-1", output="=== STEP 1/1 · step-01 · T1 · identity=root ===\nok\n")
     body = _report(client, "plain-1")

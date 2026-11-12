@@ -274,6 +274,57 @@ def resolve_steps_for_target(
     return dispatched, markers, list(resolution.unresolved)
 
 
+def _label_matches_os(platform: Any, agent_os: str) -> bool:
+    """Does one ``platforms`` label name ``agent_os``? The console's rule
+    (``scenarioPreflight.js::matchesOs``): a container/k8s step runs wherever
+    the runtime is, which a Linux beacon satisfies; macos and darwin are one."""
+    p = str(platform).strip().lower()
+    if p == agent_os:
+        return True
+    if p in ("container", "k8s") and agent_os == "linux":
+        return True
+    return {p, agent_os} == {"macos", "darwin"}
+
+
+def posix_family_markers(
+    steps: list[dict[str, Any]], agent_os: Optional[str], agent_id: str,
+) -> list[str]:
+    """One ``!! PLATFORM MISMATCH`` line per step whose labels exclude this
+    POSIX beacon's OS (RG-UI-01, server half).
+
+    ``resolve_steps_for_target`` knows two targets, and a darwin beacon is
+    ``posix``: it is sent the primary command of a Linux-only step, and a Linux
+    beacon the commands of a macOS-only one. The step ``platforms`` labels are
+    the only linux-versus-macOS statement the corpus makes, so they are read
+    here exactly as the console's launch preflight reads them
+    (``posixFamilyCheck``): a step that declares a non-Windows platform, none
+    of which names this OS, is marked. A step labelled only ``windows`` says
+    nothing about linux versus macOS and is left alone, as is a step with no
+    labels. Nothing is refused and no command changes: the line goes onto the
+    run and the launch response, because a miss on such a step is not
+    evidence about the detection it expects.
+
+    Empty for a Windows beacon, an OS that registered nothing (that already
+    carries ``TARGET_AGENT_OS_UNKNOWN``) and an unremarkable launch.
+    """
+    os_norm = (agent_os or "").strip().lower()
+    if os_norm not in _POSIX_AGENT_OS:
+        return []
+    markers: list[str] = []
+    for step in steps:
+        labels = [str(p).strip().lower() for p in (step.get("platforms") or [])]
+        posix_labels = [p for p in labels if p != "windows"]
+        if not posix_labels or any(_label_matches_os(p, os_norm) for p in labels):
+            continue
+        markers.append(
+            f"!! PLATFORM MISMATCH: step={step.get('id', 'step-??')} is authored for "
+            f"{'/'.join(posix_labels)}, not {os_norm}; SimCore dispatched it unchanged "
+            f"to agent '{agent_id}' ({os_norm}), so its expected_detections are "
+            "unverified on this OS"
+        )
+    return markers
+
+
 def _unsatisfiable_refusal(
     *, target: str, agent_id: str, agent_os: Optional[str],
     unresolved: list[tuple[str, str]],
@@ -849,7 +900,8 @@ class Orchestrator:
             )
         return _PullPlan(
             steps=dispatched, target=target,
-            output_markers=([os_warning] if os_warning else []) + markers,
+            output_markers=([os_warning] if os_warning else []) + markers
+            + posix_family_markers(steps, agent_row.os, target_agent_id),
         )
 
     # ------------------------------------------------------------------
@@ -1097,6 +1149,7 @@ class Orchestrator:
             if os_warning:
                 output_markers.append(f"{os_warning} (agent '{tgt}')")
             output_markers.extend(markers)
+            output_markers.extend(posix_family_markers(part, row.os, tgt))
             if tgt != launch_target:  # launch() already warned for its own target
                 offline = _offline_warning(row, now)
                 if offline:

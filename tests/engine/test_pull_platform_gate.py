@@ -42,6 +42,7 @@ CORPUS = {
     "SIM-EDR-003": REPO / "scenarios/edr/edr-003-persistence-mechanisms.yml",
     "SIM-EDR-006": REPO / "scenarios/edr/edr-006-lsass-memory-dump.yml",
     "SIM-MP-030": REPO / "scenarios/multi_plane/mp-030-jumpy-pisces-play-ransomware-handoff.yml",
+    "SIM-KOI-009": REPO / "scenarios/koi/sim-koi-009-glassworm-agentic-endpoint-takeover.yml",
 }
 #: The corpus wires TOOL-ATOMIC-RED-TEAM (dual-use-lab-only). Whether the consent
 #: gate fires depends on whether an earlier test loaded the adapter catalog, so
@@ -483,3 +484,132 @@ def test_a_missing_variant_still_says_declare_one():
     res = _unsatisfiable_refusal(target="windows", agent_id="w1", agent_os="windows",
                                  unresolved=[("step-01", REASON_WINDOWS_UNAVAILABLE)])
     assert "declare platform_variants.windows" in res.error_detail["hint"]
+
+
+# ---------------------------------------------------------------------------
+# Inside the POSIX family: linux versus macOS (RG-UI-01, server half)
+# ---------------------------------------------------------------------------
+#
+# ``platform_target_for_os`` maps darwin to ``posix``, and the resolver knows
+# only posix and windows. So a macOS beacon was sent the primary command of a
+# Linux-only step (SIM-EDR-001: ``cat /etc/shadow``, ``runuser``) and a Linux
+# beacon the macOS-only SIM-KOI-009, with nothing on the run to say so. The
+# console's preflight blocked it; an API client got no word. The step labels are
+# the only linux-versus-macOS statement there is, so the server now reads them
+# the way the console does (``posixFamilyCheck``) and marks each such step.
+# It does not refuse: what runs is unchanged, and labels are known to disagree
+# with command text, so the marker is a caveat on the evidence, not a gate.
+
+_MISMATCH = "!! PLATFORM MISMATCH:"
+
+
+def _run_output(session_factory) -> str:
+    async def _go():
+        from models import Run
+        async with session_factory() as db:
+            return (await db.execute(select(Run.output))).scalar_one() or ""
+
+    return asyncio.run(_go())
+
+
+@pytest.mark.parametrize("os_name", ["darwin", "macos"])
+def test_a_linux_only_scenario_to_a_macos_beacon_is_marked_on_the_run(session_factory, os_name):
+    res, orch, (runs, _, tasks) = _launch(session_factory, "SIM-EDR-001", "mac-1", os_name)
+    assert res.success, (res.error_code, res.error)
+    assert runs == 1 and tasks == 1
+
+    # What runs is unchanged: the POSIX primary, as before.
+    (task,) = orch.peek_queue("mac-1")
+    authored = _scenario_steps("SIM-EDR-001")
+    assert all(s["command"] == authored[s["id"]]["command"] for s in task.steps)
+
+    # Every linux-labelled step is marked; step-01 declares no platform and is not.
+    marked = [w for w in res.warnings if w.startswith(_MISMATCH)]
+    assert [m.split()[3] for m in marked] == [
+        f"step=step-0{i}" for i in range(2, 6)], res.warnings
+    for m in marked:
+        assert "authored for linux" in m and os_name in m and "agent 'mac-1'" in m, m
+        assert "unverified" in m, m
+    output = _run_output(session_factory)
+    assert output.count(_MISMATCH) == 4, output
+    assert "step=step-01" not in output
+
+
+def test_a_macos_only_scenario_to_a_linux_beacon_is_marked_on_the_run(session_factory):
+    """SIM-KOI-009 shape: every step is ``platforms: [macos]``."""
+    res, _, _ = _launch(session_factory, "SIM-KOI-009", "lin-1", "linux")
+    assert res.success, (res.error_code, res.error)
+    marked = [w for w in res.warnings if w.startswith(_MISMATCH)]
+    assert len(marked) == len(_scenario_steps("SIM-KOI-009")) == 6, res.warnings
+    assert all("authored for macos, not linux" in m for m in marked), marked
+    assert _run_output(session_factory).count(_MISMATCH) == 6
+
+
+def test_a_beacon_on_an_os_every_step_declares_gets_no_mismatch(session_factory):
+    res, _, _ = _launch(session_factory, "SIM-EDR-001", "lin-1", "linux")
+    assert res.success, res.error
+    assert not [w for w in res.warnings if w.startswith(_MISMATCH)], res.warnings
+    assert _MISMATCH not in _run_output(session_factory)
+
+
+def test_a_darwin_beacon_matches_steps_labelled_macos(session_factory):
+    res, _, _ = _launch(session_factory, "SIM-KOI-009", "mac-1", "darwin")
+    assert res.success, res.error
+    assert not [w for w in res.warnings if w.startswith(_MISMATCH)], res.warnings
+
+
+def _launch_synthetic(session_factory, steps, agents, target):
+    from engine.orchestrator import Orchestrator
+
+    async def _go():
+        orch = Orchestrator()
+        async with session_factory() as db:
+            for agent_id, os_name in agents:
+                await _agent(db, agent_id, os_name)
+            await _synthetic(db, steps)
+            return await orch.launch(scenario_id="SIM-EDR-900", mode="pull", db=db,
+                                     target_agent_id=target)
+
+    return asyncio.run(_go())
+
+
+def test_container_and_k8s_labels_are_satisfied_by_linux_only(session_factory):
+    """The console's rule: a container/k8s step runs wherever the runtime is,
+    which a Linux beacon satisfies and a macOS one does not."""
+    steps = [_step("step-01", "id -un", platforms=["container"]),
+             _step("step-02", "uname -a", platforms=["k8s", "container"])]
+    res = _launch_synthetic(session_factory, steps, [("lin-1", "linux")], "lin-1")
+    assert res.success, res.error
+    assert not [w for w in res.warnings if w.startswith(_MISMATCH)], res.warnings
+
+
+def test_container_labels_on_a_macos_beacon_are_marked(session_factory):
+    steps = [_step("step-01", "id -un", platforms=["container"])]
+    res = _launch_synthetic(session_factory, steps, [("mac-1", "darwin")], "mac-1")
+    assert res.success, res.error
+    assert [w for w in res.warnings if w.startswith(_MISMATCH)] == [
+        "!! PLATFORM MISMATCH: step=step-01 is authored for container, not darwin; "
+        "SimCore dispatched it unchanged to agent 'mac-1' (darwin), so its "
+        "expected_detections are unverified on this OS"], res.warnings
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin"])
+def test_a_windows_only_label_says_nothing_about_linux_versus_macos(session_factory, os_name):
+    """SIM-EDR-014 shape: POSIX text under ``platforms: [windows]``. That label
+    disagreement is not an intra-POSIX statement, so it raises no mismatch."""
+    steps = [_step("step-01", "id -un", platforms=["windows"])]
+    res = _launch_synthetic(session_factory, steps, [("a-1", os_name)], "a-1")
+    assert res.success, res.error
+    assert not [w for w in res.warnings if w.startswith(_MISMATCH)], res.warnings
+
+
+def test_the_composed_path_marks_each_partition_for_its_own_agent(session_factory):
+    steps = [_step("step-01", "id -un", platforms=["linux"]),
+             _step("step-02", "uname -a", target="mac-2", platforms=["linux"])]
+    res = _launch_synthetic(session_factory, steps,
+                            [("lin-1", "linux"), ("mac-2", "darwin")], "lin-1")
+    assert res.success, res.error
+    marked = [w for w in res.warnings if w.startswith(_MISMATCH)]
+    assert len(marked) == 1, res.warnings
+    assert "step=step-02" in marked[0] and "agent 'mac-2' (darwin)" in marked[0]
+    assert _run_output(session_factory).count(_MISMATCH) == 1
