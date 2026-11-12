@@ -448,6 +448,16 @@ class TestRegistration:
 #   ``recipientCount``. Operation ``Send`` and Teams ``MessageSent`` are the
 #   operation names listed at
 #   https://learn.microsoft.com/en-us/purview/audit-log-activities
+# Confirmed rows (fetched 2026-11-11):
+#   https://learn.microsoft.com/en-us/purview/audit-mailboxes, "Mailbox actions
+#   for user mailboxes": "Send | The user sends an email message, replies to an
+#   email message, or forwards an email message."
+#   https://learn.microsoft.com/purview/audit-log-activities#teams-activities:
+#   "Posted new message | MessageSent | A new message was posted to a chat or a
+#   channel."
+#   Schema page, "Exchange Mailbox schema": "recipientList |
+#   Collection(Self.EmailAddress) | Captures the list of mailbox recipients,
+#   maximum 1000" and "recipientCount | Edm.Int64".
 # --------------------------------------------------------------------------
 
 _PINK_IP = "172.93.100.252"
@@ -529,13 +539,14 @@ class TestPinkShapes:
         monkeypatch.setattr(M365ActivityEmitter, "_build_client", lambda self, p: stub)
         campaign = _campaign(
             event_pattern="storage_exfiltration", burst_count=6,
-            user_agents=_PINK_UAS,
+            user_agents=_PINK_UAS, user_agent="CortexSim-Test/1.0",
         )
         _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
         bodies = _bodies(stub)
         assert [b["UserAgent"] for b in bodies] == _PINK_UAS * 2
         for req in stub.requests:
             ua = {k.lower(): v for k, v in req["headers"].items()}.get("user-agent", "")
+            assert ua == "CortexSim-Test/1.0"  # header present, so the check below is not vacuous
             assert not any(u in ua for u in _PINK_UAS)
 
     def test_storage_targets_both_workloads(self):
@@ -560,3 +571,33 @@ class TestPinkShapes:
         assert all(r["ClientIP"] == _PINK_IP for r in recs)
         assert all(r["internal_extortion_notice_marker"] is True for r in recs)
         assert all(r["UserId"] == "ada.lovelace@cortexsim-canary.invalid" for r in recs)
+
+
+class _TickingDatetime:
+    """datetime stand-in whose now() advances one second per call."""
+
+    _n = 0
+
+    @classmethod
+    def now(cls, tz=None):
+        from datetime import datetime, timedelta, timezone
+        cls._n += 1
+        return datetime(2026, 11, 11, tzinfo=timezone.utc) + timedelta(seconds=cls._n)
+
+
+class TestPerRecordTimestamps:
+    def test_default_records_each_take_their_own_now(self, monkeypatch):
+        import eal_simulator.plugins.m365_activity_emitter as mod
+        _TickingDatetime._n = 0
+        monkeypatch.setattr(mod, "datetime", _TickingDatetime)
+        recs = _build("storage_exfiltration", burst_count=4)
+        assert len({r["CreationTime"] for r in recs}) == 4
+
+    def test_back_dated_extortion_keeps_send_before_teams(self):
+        from datetime import datetime
+        recs = _build("internal_extortion_notice", burst_count=4,
+                      event_time_offset_seconds=-3600)
+        send = next(r for r in recs if r["Operation"] == "Send")
+        teams = [r for r in recs if r["Operation"] == "MessageSent"]
+        t0 = datetime.fromisoformat(send["CreationTime"])
+        assert all(datetime.fromisoformat(t["CreationTime"]) > t0 for t in teams)

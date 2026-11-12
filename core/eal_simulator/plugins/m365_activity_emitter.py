@@ -366,15 +366,19 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
         pattern = params.event_pattern
         events: list[dict[str, Any]] = []
         src = params.source_ip or _ANOMALOUS_IP
-        when = body_time(params.event_time_offset_seconds)
+        offset = params.event_time_offset_seconds
         uas = params.user_agents
 
-        def common(idx: int) -> dict[str, Any]:
-            return {
+        def common(idx: int, *, plus: float = 0.0) -> dict[str, Any]:
+            kw: dict[str, Any] = {
                 "source_ip": src,
-                "when": when,
                 "user_agent": uas[idx % len(uas)] if uas else None,
             }
+            # Only back-dated runs pass an explicit time; by default each record
+            # takes its own now(), exactly as before.
+            if offset:
+                kw["when"] = body_time(offset, plus_seconds=plus)
+            return kw
 
         if pattern == "storage_exfiltration":
             # A burst of bulk downloads across the sensitive bait files — the
@@ -560,7 +564,7 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     sim_run_id=sim_run_id,
                     user_id=user,
                     object_id=f"teams-chat-{idx:02d}",
-                    **common(idx),
+                    **common(idx, plus=3.0 * idx),
                     extra={
                         "MessageId": secrets.token_hex(8),
                         "Members": [
