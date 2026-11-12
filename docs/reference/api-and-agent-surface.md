@@ -534,8 +534,8 @@ A pull-mode run's `channel: eal` steps run as one campaign inside SimCore's own
 process at launch (`orchestrator._dispatch_eal_in_process`); no beacon is
 involved. This is the one path on which a **scenario run** makes SimCore itself
 POST to a customer collector, so the campaign goes live only when **every**
-condition below holds, and otherwise runs dry-run (records pre-rendered, nothing
-POSTed):
+condition below holds, and otherwise runs dry-run (nothing delivered: no POST,
+and the analytics emitters build no records in a dry run):
 
 1. the launch carried `consent.simulation_authorized: true` **and** a non-blank
    `authorized_by`;

@@ -627,8 +627,8 @@ class Orchestrator:
         the campaign was built, every step is a collector step resolved to a
         keyed collector target whose last check did not fail, and the campaign
         sleeps no longer than ``EAL_IN_PROCESS_MAX_SLEEP_SECONDS``.
-        Otherwise the whole campaign runs dry-run (records pre-rendered, nothing
-        POSTed) and each step's ledger ``code`` is the ``EAL_DRY_RUN_*`` reason.
+        Otherwise the whole campaign runs dry-run (nothing delivered: no POST,
+        and the analytics emitters build no records) and each step's ledger ``code`` is the ``EAL_DRY_RUN_*`` reason.
         Keys are read from the vault only on the live path, after the gate
         passed, and live only in the in-memory campaign.
 
@@ -776,7 +776,7 @@ class Orchestrator:
                     if r.status == "success":
                         status = "dry_run" if state.dry_run else "dispatched"
                         if state.dry_run:
-                            detail = "dry-run: records pre-rendered, not delivered"
+                            detail = "dry-run: nothing delivered"
                             if why:
                                 detail = f"{detail} — {why}"
                         else:

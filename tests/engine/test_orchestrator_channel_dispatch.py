@@ -13,7 +13,7 @@ to route them, but only as a skeleton:
     silent no-op or a task nothing will collect.
   * An ``eal`` step is dispatched IN-PROCESS at launch (Phase 3b): the
     orchestrator builds a Campaign and runs it through ``CampaignExecutor`` in
-    dry_run (records pre-rendered, nothing POSTed), injecting the shared identity
+    dry_run (nothing delivered), injecting the shared identity
     principal via the binding->params adapter, seeding the step's detections with
     a real executed_at, and recording the real dispatch outcome (dry_run /
     dispatched / not_delivered / error) on ``Run.channel_dispatch`` — never a
@@ -661,6 +661,8 @@ def test_eal_dry_run_without_consent_says_why(session_factory, recorder):
             _, ledger = await _launch_and_ledger(_fresh_orchestrator(), db)
             assert ledger["step-01"]["status"] == "dry_run"
             assert ledger["step-01"]["code"] == "EAL_DRY_RUN_NO_CONSENT"
+            # A dry run builds no records; the ledger must not claim it did.
+            assert ledger["step-01"]["detail"].startswith("dry-run: nothing delivered")
             assert recorder.posts == []
 
     asyncio.run(_run())
