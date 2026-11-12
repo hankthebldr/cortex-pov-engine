@@ -499,6 +499,12 @@ def test_legitimate_values_are_still_served(client, shelf, os_name, params, monk
     # shape of the value, so the deployment admits the name.
     from config import settings
     monkeypatch.setattr(settings, "CORTEXSIM_ALLOWED_HOSTS", "simcore.corp.local", raising=False)
+    # And a ?server= is only bakeable when it names this SimCore (dev's
+    # SERVER_NOT_THIS_SIMCORE rule, test_agents_install_server_origin.py), so
+    # the deployment lists these servers as its own URLs.
+    monkeypatch.setattr(settings, "CORTEXSIM_PUBLIC_URLS",
+                        "http://10.0.0.5:8888,https://simcore.corp.local,"
+                        "https://simcore.corp.local/cortexsim,http://[::1]:8888")
     r = client.get("/api/agents/install", params={"os": os_name, **params})
     assert r.status_code == 200, r.text[:400]
 

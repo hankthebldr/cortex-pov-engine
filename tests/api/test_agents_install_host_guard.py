@@ -8,7 +8,9 @@ the outermost Host guard answers every request the beacon makes with
 
 Now the route refuses up front with 400 SERVER_HOST_NOT_ALLOWED and names the
 setting. A server taken from the request's own Host header was admitted by
-the guard to get here, so only ?server= can trip it.
+the guard to get here, so only ?server= can trip it. Since the merge with
+dev's own-URL rule, that ?server= is one listed in CORTEXSIM_PUBLIC_URLS:
+any other is SERVER_NOT_THIS_SIMCORE before the guard is asked.
 """
 from __future__ import annotations
 
@@ -28,6 +30,11 @@ def allowed(monkeypatch):
     def _set(value: str):
         monkeypatch.setattr(settings, "CORTEXSIM_ALLOWED_HOSTS", value, raising=False)
     _set("")
+    # A ?server= must also name this SimCore (SERVER_NOT_THIS_SIMCORE, checked
+    # first). The servers below are listed as its own URLs, so what is left to
+    # decide is the Host guard: the case this file is about.
+    monkeypatch.setattr(settings, "CORTEXSIM_PUBLIC_URLS",
+                        "http://jumpbox-zz.lab.example:8888,http://10.0.0.5:8888")
     return _set
 
 
