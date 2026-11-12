@@ -16,6 +16,15 @@ The card, the dataset registration and the scenario land last, on one branch reb
 
 **Tech Stack:** Python 3.11, FastAPI, SQLAlchemy async (SQLite), pydantic v2, pytest. XQL lives in TTP card JSON. Scenario YAML follows `scenarios/_schema.yml`.
 
+**Status (2026-11-12):** Tasks 1–6 are built, task-reviewed and through a final whole-branch review with one fix wave. Their heads, all local and unpushed:
+- `fix/api-verify-run-window` f7fc715b
+- `feature/api-eal-live-in-process` b7f301d4
+- `fix/scenarios-s25-eal-params` b81cb093
+- `fix/scenarios-eal-step-not-marker-only` 4d118eaa
+- `feature/api-emitters-pink-shapes` 6e92513d
+
+Tasks 7–9 wait for those to merge into `dev`.
+
 **Spec:** `docs/superpowers/specs/2026-11-11-pink-cl-cri-1147-chain-design.md` (draft v2, approved 2026-11-11). Section references (§N) below point into it.
 
 ## Global Constraints
@@ -379,7 +388,8 @@ git commit -m "feat(api): m365 emitter takes a source IP, record user agents, st
 | CR-3 | `xql_queries` | hunt | `MP-038 Lure Resolution Within Thirty Minutes of the Sign-in` |
 
 - Query rules:
-  - Collector rows read `dataset = cortexsim_saas_raw` and scope by the fixed principal `cortexsim.pink.canary@cortexsim-canary.invalid`, plus `canary_token = "cortexsim-mp-038-pink"` in whatever field `plant_canary` writes for each emitter's `CANARY_FIELDS`.
+  - Collector rows read `dataset = cortexsim_saas_raw` and scope by the `cortexsim_canary` field plus the planted canary principal. Once `canary_token = "cortexsim-mp-038-pink"` is set, `plant_canary` rewrites the principal fields to the canary principal (`userPrincipalName`, `initiatedBy.user.userPrincipalName`, m365 `UserId`/`UserKey`). So **do not scope on `target_user`**: `MailboxOwnerUPN`, Teams `Members[]` and `targetResources[]` keep it (amended 2026-11-12 after the final review, finding I5).
+  - Never join on a list-valued field (`Members[]`, `targetResources[]`, `recipientList`). Join records on `UserId` / `userPrincipalName`.
   - Agent and NGFW rows scope by the exact domain.
   - No host name appears in any query, and no query uses `current_time(`.
   - Ordering and gaps (D6, CR-1, CR-2) key on body time fields (`createdDateTime`, `activityDateTime`, `CreationTime`), never `_time`.
@@ -436,7 +446,7 @@ git commit -m "feat(ttp): Pink CL-CRI-1147 card and the cortexsim_saas_raw datas
 - [ ] **Step 1: Write the failing shape test** `tests/engine/test_sim_mp_038_shape.py`:
   - `test_loads_under_strict_refs`. The real loader returns SIM-MP-038.
   - `test_four_steps_one_agent_three_eal`. Check channels and plugins per the Interfaces block.
-  - `test_eal_params_validate_against_their_plugins`. For each eal step, `registry.get(plugin).Meta.params_model(**params, collector_url="https://collector.lab.invalid/x")` validates. The loader does not validate `eal.params`, so this is where a bad pattern name gets caught.
+  - `test_eal_params_validate_against_their_plugins`. For each eal step, `registry.get(plugin).Meta.params_model(**params, collector_url="https://collector.lab.invalid/x")` validates. The loader does not validate `eal.params`, so this is where a bad pattern name gets caught. Then render each step with the plugin's `records_for(params, sim_run_id=..., iteration=0)` and assert it returns at least one record. A dry run never builds records (amended 2026-11-12, finding M3), so validation alone proves nothing about rendering.
   - `test_nine_indicators_seven_in_band`. ind-04 is out of band and the rest are in band.
   - `test_every_declared_detection_has_verification_xql`. Ten rows, each with a non-empty query.
   - `test_no_verification_query_reads_relative_to_now`. No `verification_xql` contains `current_time(` (Review Focus 2).
@@ -475,7 +485,7 @@ git commit -m "feat(scenarios): SIM-MP-038 Pink CL-CRI-1147 on today's lab doors
 - Create: `docs/lab/<date>-pink-cl-cri-1147-lab-run.md` (shape: `docs/lab/2026-11-11-unit42-deep-real-verification.md`)
 - Possibly modify: the Task 7 card and the scenario, only to correct field names against the captured row
 
-- [ ] **Step 1: Capture one real collector row.** Use `POST /api/collector-targets/{name}/preflight` with `write_canary: true`, then a read-only XQL `dataset = cortexsim_saas_raw | limit 1`. Compare its field names and nesting against the Task 7 queries. Fix any query that disagrees, re-run `make validate-detection`, and commit as `fix(ttp): MP-038 queries match the stored collector row`.
+- [ ] **Step 1: Capture one real collector row.** Use `POST /api/collector-targets/{name}/preflight` with `write_canary: true`, then a read-only XQL `dataset = cortexsim_saas_raw | limit 1`. Compare its field names and nesting against the Task 7 queries. Record whether the row's `_time` is the ingest time or the record's body time: verify widens the window for back-dated bodies either way (finding I4), but the evidence doc must say which. Fix any query that disagrees, re-run `make validate-detection`, and commit as `fix(ttp): MP-038 queries match the stored collector row`.
 
 - [ ] **Step 2: Launch the run.** `POST /api/runs/launch` with `scenario_id: SIM-MP-038`, `mode: pull`, `target_agent_id: <pov-target-01 beacon id>`, `consent: {simulation_authorized: true}` and `authorized_by: <Henry>`. Expected:
   - `channel_dispatch` shows step-02..04 `dispatched` with code `null`;
