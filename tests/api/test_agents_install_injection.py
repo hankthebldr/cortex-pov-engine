@@ -107,8 +107,20 @@ def test_query_params_never_execute_in_the_powershell_installer(client, tmp_path
     assert r.json()["detail"]["code"] == _BAD_CODE[param]
 
 
+@pytest.fixture
+def public_urls(monkeypatch):
+    """List servers as this SimCore's own (?server= must name this SimCore)."""
+    import config
+
+    def _set(value: str) -> None:
+        monkeypatch.setattr(config.settings, "CORTEXSIM_PUBLIC_URLS", value)
+
+    return _set
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
-def test_valid_values_reach_the_bash_installer_verbatim(client, tmp_path):
+def test_valid_values_reach_the_bash_installer_verbatim(client, tmp_path, public_urls):
+    public_urls("https://simcore.corp.local:8443/cortexsim")
     token = "cxs_" + "A1-_" * 10 + "xyz"
     r = client.get("/api/agents/install", params={
         "os": "linux", "id": "jumpbox-01.lab", "token": token,
@@ -130,7 +142,8 @@ def test_env_overrides_still_win_on_the_target(client, tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="needs pwsh")
-def test_valid_values_reach_the_powershell_installer_verbatim(client, tmp_path):
+def test_valid_values_reach_the_powershell_installer_verbatim(client, tmp_path, public_urls):
+    public_urls("http://[fd00::5]:8888")
     r = client.get("/api/agents/install", params={
         "os": "windows", "id": "win-box_01", "token": "cxs_tok-1",
         "server": "http://[fd00::5]:8888",

@@ -131,6 +131,14 @@ class Settings(BaseSettings):
     # request body can never mutate a customer endpoint on its own.
     CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL: bool = False
 
+    # Comma-separated http(s) origins this SimCore is also reachable at, for
+    # names a request cannot show (a LAN IP behind NAT, a DNS name the cluster
+    # uses). The agent installer's ?server= and a served k8s bundle's `server`
+    # must be the origin the request arrived on or one of these; anything else
+    # is 400 SERVER_NOT_THIS_SIMCORE. Scheme and host case, default ports and
+    # trailing slashes are normalised. Empty = only the request's own origin.
+    CORTEXSIM_PUBLIC_URLS: str = ""
+
     # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
     # which meant a dev boot log carried every aiosqlite statement TWICE (once
     # from the sqlalchemy.engine logger, once through the app formatter). A DC
