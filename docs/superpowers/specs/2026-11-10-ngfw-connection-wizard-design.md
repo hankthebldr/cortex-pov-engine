@@ -4,7 +4,7 @@
 **Status:** draft v2 (builder check folded in; SLS + syslog scope decided by Henry), awaiting approval
 **Inputs:** the PA-440 → deathstar stitch investigation of 2026-11-10 and the 90-scenario
 NGFW audit (improvement notes §1–8), both in the side-session notes; the `NGF` mechanism
-and `PM-NGF-01..03` on `docs/docs-ngfw-lab-mechanics` (`docs/product-mechanics/ledger.yml`).
+and `PM-NGF-01..03` in `docs/product-mechanics/ledger.yml`.
 
 ## 1. Intent
 
@@ -427,7 +427,7 @@ step-destination extraction the audit did by hand (`extract.py`); that is its ow
 ## 10. Product-mechanics ledger
 
 New product facts learned while building go into `docs/product-mechanics/ledger.yml`
-under `NGF`, per `.claude/skills/product-mechanics/SKILL.md`, on the ledger's branch.
+under `NGF`, per `.claude/skills/product-mechanics/SKILL.md`.
 Candidates already seen: URL/WildFire/data logs have no own row in `show logging-status`
 (threat subtypes); `test security-policy-match` returns no profile setting;
 `show system info` time carries no zone.
