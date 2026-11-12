@@ -276,3 +276,12 @@ def test_pair_endpoint_across_tenants_is_pending_without_a_code(client, session_
     merge = client.get("/api/runs/rep/pair").json()["merge"]
     assert merge["merge_class"] == "PENDING" and "code" not in merge
     assert "different tenants" in merge["merge_reason"]
+
+
+def test_pair_corrupt_ledger_from_another_tenant_still_reports_unreadable(client, session_factory):
+    la = stored_ledger(case_id="900")
+    la["tenant"] = "api-a.xdr.us.paloaltonetworks.com"
+    _pair_seed(session_factory, la, {"basis": "alert_incident_ids", "cases": "x",
+                                     "tenant": "api-b.xdr.us.paloaltonetworks.com"})
+    merge = client.get("/api/runs/rep/pair").json()["merge"]
+    assert merge["merge_class"] == "PENDING" and merge["code"] == "CASE_LEDGER_UNREADABLE"

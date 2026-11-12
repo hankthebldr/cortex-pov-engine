@@ -371,6 +371,10 @@ def pair_merge(a: Optional[dict], b: Optional[dict]) -> dict:
         return {"merge_class": "PENDING", "basis": None,
                 "merge_reason": "one run of the pair has no case ledger yet"}
     basis = a.get("basis") if a.get("basis") == b.get("basis") else "mixed"
+    # Parse both first: a corrupt stored ledger raises and is reported with its
+    # code by the caller, whatever else is true of the pair.
+    aa, ac = ledger_from_dict(a)
+    ba, bc = ledger_from_dict(b)
     ta, tb = a.get("tenant"), b.get("tenant")
     if ta and tb and ta != tb:
         # Case ids are tenant-local. A legacy ledger without the key keeps the
@@ -378,8 +382,6 @@ def pair_merge(a: Optional[dict], b: Optional[dict]) -> dict:
         return {"merge_class": "PENDING", "basis": basis,
                 "merge_reason": (f"the two runs' ledgers were read from different tenants "
                                  f"({ta}, {tb}); case ids are tenant-local")}
-    aa, ac = ledger_from_dict(a)
-    ba, bc = ledger_from_dict(b)
     cases = dict(ac)
     for cid, c in bc.items():
         # Same case in both runs: keep the fresher read.
