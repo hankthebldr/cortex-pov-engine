@@ -1073,7 +1073,12 @@ class CloudAuditEmitterParams(AnalyticsEmitterParams):
                     "stream_bucket_delete. burst_count sizes the object-delete "
                     "burst of log_destination_delete (aws) and "
                     "stream_bucket_delete; the bucket delete that follows is "
-                    "always a single record.",
+                    "always a single record. Every iteration reuses the same "
+                    "resource names, so with iterations > 1 "
+                    "log_destination_delete, log_router_delete, "
+                    "log_router_create and stream_bucket_delete repeat a "
+                    "delete or create of one named resource, which no tenant "
+                    "could produce.",
     )
     source_ip: Optional[str] = Field(
         default=None,

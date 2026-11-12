@@ -973,7 +973,7 @@ a successful key change on a global bucket is a record no tenant can produce.
 | `provider` | str = `aws` | `aws` / `gcp` |
 | `event_pattern` | str = `iam_privilege_escalation` | one of the nineteen presets; anything else raises `event_pattern must be one of […]` |
 | `burst_count` | int = 8 | 2–200. Sizes the object-delete burst of `log_destination_delete` (`aws`) and `stream_bucket_delete`; the bucket delete after it is always one record. Ignored by the other six |
-| `iterations` | int = 1 | 1–200; the whole preset is emitted once per iteration |
+| `iterations` | int = 1 | 1–200; the whole preset is emitted once per iteration, with the same resource names, so with `iterations` > 1 `log_destination_delete`, `log_router_delete`, `log_router_create` and `stream_bucket_delete` repeat a delete or create of one named resource, which no tenant could produce |
 | `source_ip` | str? | dotted quad; overrides `sourceIPAddress` / `requestMetadata.callerIp` (default `203.0.113.201`) |
 | `request_timeout` | float = 15.0 | 1–300 |
 | `auth_token` | SecretStr? | collector key, sent as the bare `Authorization` value; never written into a record |
