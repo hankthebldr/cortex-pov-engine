@@ -2493,7 +2493,7 @@ stdio, from the running container (no Python on the laptop needed; substitute
 the container name of the running image):
 
 ```bash
-claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 python -m mcp_server --server http://127.0.0.1:8888
+claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.2.0 python -m mcp_server --server http://127.0.0.1:8888
 ```
 
 stdio, from a host venv that has `core/requirements.txt` installed:

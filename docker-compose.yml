@@ -11,8 +11,8 @@ services:
     # two together). Keeps the engine's namespace distinct from the SEPARATE
     # cortex-pov-agent project. The engine's own beacon, if ever containerized,
     # is reserved the name cortex-pov-engine-agent-v<version> — never pov-agent.
-    image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.1.1}
-    container_name: cortex-pov-engine-simcore-v${CORTEXSIM_VERSION:-1.1.1}
+    image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.2.0}
+    container_name: cortex-pov-engine-simcore-v${CORTEXSIM_VERSION:-1.2.0}
     build:
       context: .
       dockerfile: core/Dockerfile

@@ -43,7 +43,7 @@ logger = logging.getLogger("cortexsim.api.health")
 
 router = APIRouter(tags=["health"])
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 OK = "ok"
 DEGRADED = "degraded"
