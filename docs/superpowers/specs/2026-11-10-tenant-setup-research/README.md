@@ -93,13 +93,18 @@ Read from the XSIAM 3.x page "Set up an HTTP log collector to receive logs"
   synthetic records reach only XQL and correlation rules unless a Data Model
   (XDM) rule maps the dataset.
 
-Defects in this repo, confirmed in code:
+Defects in this repo, confirmed in code on 2026-11-10. PR #178 (merge
+`cef57d4b`, 2026-11-11) fixed the first and third; the batch content type is
+still open.
 
-| Defect | Where | Effect |
-|---|---|---|
-| Default `auth_scheme="Bearer"` sends `Authorization: Bearer <key>` | `core/eal_simulator/analytics_emitter.py:119` | Every collector POST with defaults is rejected (401); delivery accounting reports `not_delivered` |
-| Batch mode sends `application/x-ndjson`, which the docs do not list | emitter batch path | Unknown; test with a one-record canary first |
-| Remediation text names a "Broker VM HTTP applet"; the docs list no such applet (the HTTP collector is a tenant endpoint) | `core/eal_simulator/delivery.py` remediation strings | Sends a DC to the wrong screen |
+| Defect | Where (as found) | Effect | Status |
+|---|---|---|---|
+| Default `auth_scheme="Bearer"` sends `Authorization: Bearer <key>` | `core/eal_simulator/analytics_emitter.py:119` | Every collector POST with defaults is rejected (401); delivery accounting reports `not_delivered` | **Fixed by #178.** `AnalyticsEmitterParams.auth_scheme` defaults to `""`, so the 14 collector emitters send the bare key. `llm_provider_egress` keeps `Bearer` for provider APIs. Guard: `tests/eal_simulator/test_collector_auth_default.py` |
+| Batch mode sends `application/x-ndjson`, which the docs do not list | emitter batch path (`analytics_emitter.py`, `bundle.py`) | Unknown; test with a one-record canary first | Open |
+| Remediation text names a "Broker VM HTTP applet"; the docs list no such applet (the HTTP collector is a tenant endpoint) | `core/eal_simulator/delivery.py` remediation strings | Sends a DC to the wrong screen | **Fixed by #178.** Remediation in `delivery.py`, `bundle.py`, `collector.py` and `analytics_emitter.py` names the HTTP log collector, and a collector 500 reads as a body that does not match the collector's Log Format |
+
+`email_emitter` was outside #178. It has no auth parameters, so it still cannot
+authenticate to an XSIAM collector.
 
 Vendor/Product pairs that produce each pack's dataset (from the packs' parsing
 rules): Okta `okta`/`sso`; Windows `microsoft`/`windows`; Entra `msft`/`Azure AD`;
@@ -198,8 +203,10 @@ plane or scenario, not on a dataset row; that shape decision is open.
 
 ### 8. Recommended order
 
-1. Fix the sender: default `auth_scheme` to empty, and correct the remediation
-   text. Small, and every collector campaign depends on it.
+1. ~~Fix the sender: default `auth_scheme` to empty, and correct the remediation
+   text.~~ **Done in PR #178** (merge `cef57d4b`, 2026-11-11). What remains of
+   this step: the batch `application/x-ndjson` content type (section 2) and
+   `email_emitter`, which has no auth parameters.
 2. Decide section 7's naming option, then correct the datasets in descending
    order of card references.
 3. Add a per-scenario "day-one" label from section 3 so a report never scores an
