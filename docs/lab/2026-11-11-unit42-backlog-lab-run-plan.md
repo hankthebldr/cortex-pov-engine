@@ -19,7 +19,9 @@ remote-access tool on the machine, and the tool then downloads and runs Palo
 Alto Networks' official malware test file. The run proves something only if
 the endpoint agent classifies that file as malicious and the alert opens or
 joins an incident. Everything else the run produces is supporting evidence
-that never raises the score. Two things must be managed. The agent suppresses
+and should not raise the score; one way it can is described in section 5, so
+the score is read row by row, not as a single number. Two things must be
+managed. The agent suppresses
 repeat verdicts on the same file for an hour, so this run has to be spaced at
 least an hour from the other lab test that uses the file. And the stronger
 result, two alerts grouped in one incident, needs the operator to install one
@@ -133,7 +135,13 @@ is outside this plan.
 
 Expected timeline. The times come from the step sleeps; the author's
 container run of the bundle took 247 s end to end, longest step 43 s. Not
-measured on the VM.
+measured on the VM. In that run step-06 returned 126: the download and the
+dot-file write worked, but the container was arm64 and the x86-64 test ELF
+did not execute (`Exec format error`). So no host has yet executed the
+peinject payload, the one step a built-in verdict can come from. On a host
+that cannot run an x86-64 ELF, step-06 reads 126, the beacon stops there and
+step-07 is not reached (the author's replay of the pull path showed exactly
+that).
 
 | t (approx.) | Step | What runs |
 |---|---|---|
@@ -147,9 +155,11 @@ measured on the VM.
 | ~4:30 | — | run `complete` |
 | ≤ ~15:00 | — | CR-KOI-0012's first scheduled run after step-06, if installed |
 
-Step-06 exit codes: 0 when the payload ran; 126 or 127 when it did not start
-(blocked, noexec, wrong architecture); 128 + N when it was killed by signal N.
-None is masked.
+Step-06 exit codes: 126 or 127 when the payload did not start (blocked,
+noexec, wrong architecture); 128 + N when it was killed by signal N; 0
+otherwise. The test ELF exits 0 when it runs; any other child status from 1
+to 128 also reads 0, so read the `peinject child status=` line in the step
+output, not the step's exit code alone.
 
 ### 4. What the tenant must show
 
@@ -168,7 +178,9 @@ oracle, or the SimCore read-back in step 4 below).
      it by hand: under the matcher's rules it shares one evidence token with
      the row (two are needed) and does not carry the card's name, so
      reconcile credits it only if its MITRE technique equals the step's
-     (T1105). Not observed.
+     (T1105). Not observed. If its source maps to no engine family, a
+     technique match also credits XQL rows: T1105 the step-02 and step-06
+     rows, T1204.x the step-01 row (section 5).
 2. **The correlation (only if installed).** `KOI-012 Axios Postinstall
    Dropper To Python RAT Payload Execution`, MEDIUM, method `CORRELATION`,
    carrying **the same case id** as the verdict through its mapped Host Name /
@@ -213,8 +225,33 @@ The eight step-detections:
 
 Detection Accuracy is observed alert-backed rows over the eight rows that ran.
 The threshold is **≥ 12.5%**: the built-in verdict alone, 1 of 8. The ceiling
-is **25%**, 2 of 8, reached only when CR-KOI-0012 is installed and fires. The
-six XQL rows never raise it.
+is **25%**, 2 of 8, reached only when CR-KOI-0012 is installed and fires.
+Tier-2 verify never raises it.
+
+Reconcile can mark an XQL row observed, though. The matcher keeps a
+Prevention row and an XQL row apart only when the alert's source maps to an
+engine family: `TRAPS` and `XDR Agent` read as prevention, and the connector
+takes the source from `source`, then `alert_source`, then `detection.method`.
+An alert whose source maps to no family is unconstrained and credits every
+row whose step technique it carries, exactly or by base technique. Measured
+offline with `connectors.matcher.reconcile` and
+`connectors.measures.detection_accuracy` on this scenario's eight rows, built
+with the fields `Orchestrator._seed_results` sets, one hypothetical alert at a
+time (no tenant):
+
+| One alert, source mapping to no family | Rows reconcile credits | Detection Accuracy |
+|---|---|---|
+| `WildFire Malware`, technique T1105 | step-02 XQL, step-06 Prevention, step-06 XQL | 37.5% |
+| `WildFire Malware`, technique T1204.002 | step-01 XQL (T1204.005, same base) | 12.5%, verdict row not observed |
+| `Local Analysis Malware`, technique T1105 | step-02 XQL, step-06 Prevention | 25.0% |
+
+With source `TRAPS` or `XDR Agent` instead, the two T1105 alerts credit the
+Prevention row alone (12.5%) and the T1204.002 one credits nothing (0%). A
+`WildFire Malware` alert with no technique and an unmapped source credits
+nothing. Before quoting the percentage, read which rows reconcile marked
+observed: each one's `notes` names the alert and the keys it matched on. An
+XQL row that reconcile marked observed is not a detection, and the table
+below assumes none was.
 
 | Local Analysis row | CR-KOI-0012 row | Detection Accuracy | Read as |
 |---|---|---|---|
