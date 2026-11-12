@@ -5,9 +5,9 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-193-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-199-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1369-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1411-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **193 scenarios across 16 detection planes** through either a pull-model
+It runs **199 scenarios across 16 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -77,10 +77,13 @@ not free text.
 
 > [!WARNING]
 > **A meaningful slice of the corpus is placeholder.**
-> At minimum 100 of the corpus's steps are pure `echo`/`printf` — they declare
-> `expected_detections` without producing the underlying signal a sensor could
-> catch. Open a scenario's YAML under `scenarios/{plane}/` and read the
-> `command:` lines before you build a POV plan around it.
+> 98 of the corpus's 823 steps are marker-only, pure `echo`/`printf` a sensor
+> cannot see (`signal_quality` in
+> [`ground-truth.md`](docs/reference/ground-truth.md)), and the
+> [lab-readiness manifest](docs/reference/lab-readiness.md) counts 142
+> detection-bearing steps that declare `expected_detections` without producing
+> the underlying signal. Open a scenario's YAML under `scenarios/{plane}/` and
+> read the `command:` lines before you build a POV plan around it.
 
 > [!CAUTION]
 > **Windows targets: read first.** The Windows path has run in one place: the
@@ -253,14 +256,14 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>193 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>191 TTP cards"]
+        SC["scenarios/<br/>199 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>197 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
     end
 
-    subgraph CORE["SimCore — FastAPI :8888 · 137 routes"]
+    subgraph CORE["SimCore — FastAPI :8888 · 166 routes"]
         LOAD["scenario_loader<br/>S-01..S-30"]
         ORCH["orchestrator<br/>durable queue"]
         SHELF["payload_shelf<br/>digest-pinned"]
@@ -461,7 +464,7 @@ erDiagram
 
 ### API surface
 
-**137 route decorators across 23 router files** (`docs/reference/ground-truth.md`, `http_routes`). Interactive docs ship with the app at
+**156 route decorators across 28 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **166 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (156, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -469,24 +472,24 @@ erDiagram
 
 | Module | Routes | What it owns |
 |---|---:|---|
-| `agents` | 15 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix |
-| `eal` | 15 | campaigns, collectors, preflight, offline bundle |
+| `agents` | 16 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix, preflight |
 | `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
+| `eal` | 15 | campaigns, collectors, preflight, offline bundle |
 | `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
 | `xsiam` | 8 | 151-op gated operation catalog (writes preview) + Tier-2 XQL |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
-| `payloads` | 7 | the shelf, mounted at `/shelf` and `/k8s` |
-| `assertions` · `drafts` | 6 each | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) · Composer drafts |
-| `scenarios` | 5 | corpus, bundle download |
+| `payloads` · `drafts` | 7 each | the shelf, mounted at `/shelf` and `/k8s` · Composer drafts |
+| `assertions` · `scenarios` | 6 each | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) · corpus, bundle download |
+| `collector_targets` | 5 | the tenant's ingestion doors for this POV, per-target preflight |
 | `results` · `infra` · `connectors` | 4 each | detection validation → MTTD · IaC bundle generation · preflight / reconcile / observations |
-| `tools_dist` · `pov` | 3 each | binaries, entitlement scoping |
+| `tools_dist` · `pov` · `doors` · `ngfw` · `prerequisites` | 3 each | binaries · entitlement scoping · ingestion doors (read-only) · read-only PAN-OS connection · dataset requirements and query library |
 | `mitre` · `events` | 2 each | coverage heatmap, SSE |
-| `storyline` · `health` · `causality` | 1 each | run narrative, diagnostics, causality graph |
+| `storyline` · `health` · `causality` · `readiness` | 1 each | run narrative, diagnostics, causality graph, connector ladder |
 
-Counted 2026-11-10 by `@router.*` decorator per file; only the total (137) is
-regenerated into the ground truth.
+Counted 2026-11-12 by `@router.*` decorator per file with the generator's own
+pattern; only the total (156) is regenerated into the ground truth.
 
 </details>
 
@@ -692,12 +695,12 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 |---|---|---:|---|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
 | Analytics | XSIAM Correlation Engine | 38 | multi-plane stitching |
-| EDR | Cortex XDR Agent | 22 | identity harness · signalbench |
+| EDR | Cortex XDR Agent | 25 | identity harness · signalbench |
 | ITDR | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
 | NDR | Network Security / Firewall Analytics | 12 | EAL network plugins |
+| KOI | Agentic endpoint / supply-chain | 12 | `agentic_egress` + artifact pack |
 | Cloud App | Cortex Cloud App Security | 10 | `oauth_grant_emulator` |
 | TIM | Cortex Threat Intel Management | 9 | mocktaxii · IOC feeds |
-| KOI | Agentic endpoint / supply-chain | 9 | `agentic_egress` + artifact pack |
 | AI_SPM | Cortex AI Security Posture Management | 7 | `ai-spm` IaC planted findings |
 | ASM | Cortex Attack Surface Management | 6 | `asm` IaC exposed surface |
 | AI_ACCESS | Cortex AI Access Security | 6 | `llm_provider_egress` |
@@ -706,12 +709,12 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **193** | |
+| **Total** | | **199** | |
 
-**1,369 step-level expected detections** resolve against **2,123 catalog
+**1,411 step-level expected detections** resolve against **2,260 catalog
 detection objects** across the seven-value `detection_type` vocabulary
-(`Prevention` is the seventh, with 0 step-detections today), covering
-**235 MITRE techniques (128 base)**. XDM modeling rules are a normalization
+(`Prevention` is the seventh, with 3 step-detections today), covering
+**239 MITRE techniques (128 base)**. XDM modeling rules are a normalization
 *substrate*: surfaced and exported, counted informationally, not a detection type.
 
 <details>
@@ -719,14 +722,14 @@ detection objects** across the seven-value `detection_type` vocabulary
 
 | Type | Count | What it is |
 |---|---:|---|
-| `XQL` | 536 | query-defined detection |
-| `BIOC` | 365 | behavioral IOC |
-| `ABIOC` | 156 | PANW-authored, auto-tuned behavioral ML with a causality chain |
-| `Correlation` | 137 | multi-source stitched rule |
+| `XQL` | 554 | query-defined detection |
+| `BIOC` | 374 | behavioral IOC |
+| `ABIOC` | 163 | PANW-authored, auto-tuned behavioral ML with a causality chain |
+| `Correlation` | 142 | multi-source stitched rule |
 | `IOC` | 119 | atomic indicator |
 | `Analytics` | 56 | baseline-deviation analytic |
-| `Prevention` | 0 | agent prevention-module block (two-witness rule) |
-| **Total** | **1369** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
+| `Prevention` | 3 | agent prevention-module block (two-witness rule) |
+| **Total** | **1411** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
 
 </details>
 
@@ -910,9 +913,10 @@ PowerShell for a Windows-only scenario, so name the saved file by the
 response, not by habit: `-OJ` keeps the server's `Content-Disposition`
 filename (`.sh` or `.ps1`), and `X-CortexSim-Bundle-Target` says `posix` or
 `windows`. `GET /api/scenarios/{id}` says which targets a download will serve
-(`bundle_targets`): 186 scenarios serve bash and 13 serve PowerShell, and 3
-serve neither (`SIM-MP-030` has no emittable target; `SIM-MP-031` / `-034` are
-`push_supported: false`). A raw download creates no Run and no Result rows;
+(`bundle_targets`): 190 scenarios serve bash and 13 serve PowerShell (9 serve
+both), and 5 serve neither, because `SIM-EDR-023` / `-024` and `SIM-MP-030` /
+`-031` / `-034` are `push_supported: false` (counted 2026-11-12 through the real
+loader and the route's own `_bundle_targets`). A raw download creates no Run and no Result rows;
 launch with `"mode":"push"` when you want a run to score. A Windows `.ps1` runs with
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-<id>.ps1`,
 after `Unblock-File` if Mark-of-the-Web policy requires it. It exits non-zero
@@ -1064,20 +1068,22 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    23 router files · 137 routes
-│   ├── engine/                 18 modules — loader · orchestrator · verifier
+│   ├── api/                    28 router files · 156 route decorators · 166 served routes
+│   ├── engine/                 40 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop
 │   ├── integrations/xsiam/     151-op gated operation catalog (writes preview) + Tier-2 XQL
+│   ├── integrations/panos/     read-only NGFW (PAN-OS) connection
+│   ├── mcp_server/             MCP server, 41 tools (stdio, or opt-in HTTP at /mcp)
 │   ├── eal_simulator/          27 plugins, two families
-│   ├── planes/                 declarative PlaneDescriptor registry (16)
-│   └── models.py               16 ORM models
+│   ├── planes/                 declarative PlaneDescriptor registry (15; dlp.py unregistered)
+│   └── models.py               20 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 193 scenario YAML, per plane
+├── scenarios/                ← 199 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 191 TTP cards → 2,123 detection objects
+├── detection_scanner/ttps/   ← 197 TTP cards → 2,260 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules
@@ -1126,7 +1132,7 @@ without evidence**.
 Two of these are load-bearing in a non-obvious way:
 
 - **The Windows cross-compile arm.** The beacon once silently could not compile
-  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 193 do
+  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 199 do
   today). Compiling is not executing: only the `windows` job runs the beacon on
   Windows. Every third-party action in every workflow is pinned to a commit
   SHA.

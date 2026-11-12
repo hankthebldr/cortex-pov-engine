@@ -44,12 +44,16 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **165 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
-  below, on `feature/api-ingestion-doors`; not re-counted against a built image).
-  Routers under `/api`, plus the app-level `GET /api/health` and a static file mount
-  at `/`, plus 4 FastAPI-owned docs/openapi routes. The walker reads 162 on dev
-  `8c90739` (the 161 that stood here was 1 stale); the ingestion doors read API adds 3
-  (§1.16b). Per-prefix breakdown: run the walker; a quoted breakdown went stale twice.
+- **166 HTTP routes total** (counted 2026-11-12 with the walker below on the
+  merged 1.2.0 tree, on the host venv and inside the built
+  `cortex-pov-engine-simcore:1.2.0` image alike). Routers under `/api`, plus the
+  app-level `GET /api/health` and a static file mount at `/`, plus 4 FastAPI-owned
+  docs/openapi routes. The ground truth's static count is 156 route decorators; the
+  walker adds the 4 docs routes and the 6 shelf artifact routes that
+  `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
+  `/api/shelf` without a decorator. Before the merge the walker read 165 on
+  `feature/api-ingestion-doors` and 162 on dev `8c90739`. Per-prefix breakdown: run
+  the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
 > here was two content passes stale, and the 133 after it was 20 stale. The
