@@ -582,8 +582,14 @@ executor reported as failed or partial, or `skipped`; delivery is accounted by
 `eal_simulator/delivery.py` (only a 2xx delivers, so a collector 401 reads
 `not_delivered`). Each eal step's seeded
 `Result.executed_at` is that step's own recorded start (naive UTC), or the launch
-time when the step has no result. ***tenant-verified is 0***: nothing on this
-path has delivered to a live tenant.
+time when the step has no result. A step that delivered no record (`status`
+`dry_run`, `error` or `skipped`, or `not_delivered` with zero records accepted)
+seeds its Results with `outcome: not_executed` and `outcome_reason` = its ledger
+`code`, else its `status`, so they leave the efficacy denominator
+(`engine.outcome.is_in_denominator`): Tier-2 verify skips them and scoring lists
+them under `excluded`, so silence on records never sent cannot read `fail`. A step
+that delivered at least one record stays in the denominator. ***tenant-verified
+is 0***: nothing on this path has delivered to a live tenant.
 
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 

@@ -840,3 +840,85 @@ def test_eal_step_with_invalid_params_holds_the_rest(session_factory, recorder):
             assert FAKE_KEY not in json.dumps(ledger, default=str)
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# An eal step that delivered nothing is not executed, not missed: its Results
+# leave the efficacy denominator, so a later Tier-2 verify cannot read `fail`
+# for records that were never sent.
+# ---------------------------------------------------------------------------
+
+VERIFY_XQL = "dataset = msft_o365_audit | limit 1"
+
+
+def _m365_verified_step(step_id, **params):
+    step = _m365_step(step_id, **params)
+    step["expected_detections"] = [{"type": "Analytics", "description": step_id,
+                                    "verification_xql": VERIFY_XQL}]
+    return step
+
+
+def test_dry_run_eal_results_are_not_executed_and_never_verify_fail(session_factory, recorder):
+    from connectors.service import verify_run_now
+    from engine.outcome import is_in_denominator
+    from models import Result, Run
+
+    queries: list[str] = []
+
+    async def _zero_rows(xql):
+        queries.append(xql)
+        return 0
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_verified_step("step-01"),
+                                            _m365_verified_step("step-02")])
+            result, ledger = await _launch_and_ledger(_fresh_orchestrator(), db)
+            assert {e["status"] for e in ledger.values()} == {"dry_run"}
+
+            rows = (await db.execute(
+                select(Result).where(Result.run_id == result.run_id)
+            )).scalars().all()
+            assert len(rows) == 2
+            for r in rows:
+                assert r.outcome == "not_executed"
+                assert r.outcome_reason == "EAL_DRY_RUN_NO_CONSENT"
+                assert not is_in_denominator(r.outcome, r.outcome_reason)
+
+            run = (await db.execute(
+                select(Run).where(Run.run_id == result.run_id))).scalar_one()
+            run.status = "complete"
+            out = await verify_run_now(db, run, runner=_zero_rows, tenant="lab")
+            await db.commit()
+            assert out.tc_verdict != "fail", out
+            assert queries == []
+            for r in rows:
+                assert r.kpi_verdict != "fail"
+
+    asyncio.run(_run())
+
+
+def test_live_dispatched_eal_results_stay_in_the_denominator(session_factory, recorder):
+    from engine.outcome import is_in_denominator
+    from models import Result
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_verified_step("step-01")])
+            result, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-01"]["status"] == "dispatched", ledger["step-01"]
+
+            rows = (await db.execute(
+                select(Result).where(Result.run_id == result.run_id)
+            )).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].outcome is None
+            assert is_in_denominator(rows[0].outcome, rows[0].outcome_reason)
+            assert rows[0].kpi_verdict == "pending"
+
+    asyncio.run(_run())

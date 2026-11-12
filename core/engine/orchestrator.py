@@ -679,6 +679,8 @@ class Orchestrator:
         resolutions: dict[str, Any] = {}
         blockers: dict[str, tuple[str, str]] = {}
         step_started: dict[str, datetime] = {}
+        # Records the collector accepted, per campaign step (0 in a dry run).
+        delivered: dict[str, int] = {}
         if campaign_steps:
             try:
                 # Collector steps take their destination from the instance's
@@ -769,6 +771,7 @@ class Orchestrator:
                     started = coerce_utc(r.started_at)
                     if started is not None:
                         step_started[cs.step_id] = started
+                    delivered[cs.step_id] = 0 if state.dry_run else int(r.events_emitted or 0)
                     code, why = blockers.get(cs.step_id, (None, None))
                     if r.status == "success":
                         status = "dry_run" if state.dry_run else "dispatched"
@@ -793,13 +796,21 @@ class Orchestrator:
         # Seed a Result row per expected detection for the eal steps. executed_at
         # is when the step itself started — a live campaign runs its steps one
         # after another, so the launch time would skew every MTTD after the first.
+        # A step that delivered no record (dry_run / error / skipped, or
+        # not_delivered with nothing accepted) seeds `not_executed`, so its rows
+        # leave the efficacy denominator: silence on records never sent is not
+        # a miss, and a later Tier-2 verify must not read it as `fail`.
         for s in eal_steps:
             step_id = s.get("id")
             step_name = s.get("name", "")
             step_technique = s.get("mitre_technique")
             step_executed_at = step_started.get(step_id, executed_at)
+            step_outcome, step_outcome_reason = _eal_unsent_outcome(
+                outcomes.get(step_id), delivered.get(step_id, 0))
             for det in s.get("expected_detections", []):
                 db.add(Result(
+                    outcome=step_outcome,
+                    outcome_reason=step_outcome_reason,
                     run_id=run_id,
                     step_id=step_id,
                     step_name=step_name,
@@ -2018,6 +2029,30 @@ def _eal_step_sleep_seconds(params: Mapping[str, Any]) -> float:
     if math.isnan(total):
         return math.inf
     return max(total, 0.0)
+
+
+def _eal_unsent_outcome(
+    outcome: Optional[Mapping[str, Any]], delivered: int,
+) -> tuple[Optional[str], Optional[str]]:
+    """``(Result.outcome, Result.outcome_reason)`` to seed for an eal step's
+    expected detections, given its ``channel_dispatch`` outcome and how many
+    records its collector accepted.
+
+    ``("not_executed", <code, else status>)`` when the step delivered nothing:
+    ``dry_run``, ``error``, ``skipped``, or ``not_delivered`` with zero records
+    accepted. ``(None, None)`` -- in the denominator, as any seeded row -- when
+    it delivered at least one record, or has no outcome at all.
+    """
+    from engine.outcome import OUTCOME_NOT_EXECUTED  # noqa: PLC0415
+
+    if not outcome:
+        return None, None
+    status = outcome.get("status")
+    unsent = status in ("dry_run", "error", "skipped") or (
+        status == "not_delivered" and delivered <= 0)
+    if not unsent:
+        return None, None
+    return OUTCOME_NOT_EXECUTED, outcome.get("code") or status
 
 
 def _eal_params_invalid(steps: Sequence[Mapping[str, Any]], registry: Any) -> dict[str, str]:
