@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1574.014",
+    "T1558.003",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when BIOC 'SIM-MP-023 Edge VPN Gateway Exploit Probe', BIOC 'SIM-MP-023 Endpoint AppDomainManager Execution Flow Hijack', and ABIOC 'SIM-MP-023 Anomalous Endpoint Kerberos Service Ticket Burst' are observed within a 3600s correlation window across related network and endpoint entities, consolidating the intrusion into a unified P1 incident.",
+      "name": "SIM-MP-023 Screening Serpens Cross-Plane Multi-Stage Incident Stitch",
+      "rule_id": "CR-MP-0023",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0183"
+}

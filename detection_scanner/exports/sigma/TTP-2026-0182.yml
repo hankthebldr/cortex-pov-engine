@@ -1,0 +1,61 @@
+title: "Iranian APT Screening Serpens: AppDomainManager Hijacking & Living-Off-The-Land Defense Evasion \u2014 SIM-EDR-023 .NET AppDomainManager Config Drop and Host Execution"
+id: ttp-2026-0182-bioc-01
+status: experimental
+description: |
+  Detects process start of a signed .NET binary referencing an AppDomain configuration file or AppDomainManager environment variable from an atypical user directory.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "appdomain" or action_process_image_command_line contains "APPDOMAIN_MANAGER_ASM" or action_file_name endswith ".exe.config"
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.014
+    - attack.t1059.001
+    - attack.t1082
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Iranian APT Screening Serpens: AppDomainManager Hijacking & Living-Off-The-Land Defense Evasion \u2014 SIM-EDR-023 Anomalous .NET Host Process Spawning Shell Interpreter"
+id: ttp-2026-0182-abioc-02
+status: experimental
+description: |
+  Behavioral analytics detects a trusted Microsoft .NET runtime host binary spawning an interactive command shell under a service or non-interactive account.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("caspol.exe", "powershell.exe", "dotnet", "mono") and action_process_image_name in ("cmd.exe", "powershell.exe", "sh", "bash")
+    | filter actor_effective_username in ("svc-account", "www-data", "administrator", "root")
+    | comp count() as spawn_count by agent_hostname, actor_process_image_name, action_process_image_name, actor_effective_username
+    | filter spawn_count >= 1
+    | fields agent_hostname, actor_process_image_name, action_process_image_name, actor_effective_username, spawn_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574
+    - attack.t1059
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

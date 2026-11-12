@@ -181,4 +181,6 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0179` | Unsanctioned SaaS Web Upload of Confidential Financial Records | [sigma](sigma/TTP-2026-0179.yml), [xql](xql/TTP-2026-0179.xql), [correlation](correlation/TTP-2026-0179.json) |
 | `TTP-2026-0180` | Cross-Channel DLP: Local SQL Database Staging Correlated to Network Exfiltration | [sigma](sigma/TTP-2026-0180.yml), [xql](xql/TTP-2026-0180.xql), [correlation](correlation/TTP-2026-0180.json) |
 | `TTP-2026-0181` | Clipboard and Local Memory Harvesting of Protected Health Information (PHI) | [sigma](sigma/TTP-2026-0181.yml), [xql](xql/TTP-2026-0181.xql), [correlation](correlation/TTP-2026-0181.json) |
+| `TTP-2026-0182` | Iranian APT Screening Serpens: AppDomainManager Hijacking & Living-Off-The-Land Defense Evasion | [sigma](sigma/TTP-2026-0182.yml), [xql](xql/TTP-2026-0182.xql), [correlation](correlation/TTP-2026-0182.json) |
+| `TTP-2026-0183` | Screening Serpens: Edge Exploit to EDR AppDomain Hijack and AD Kerberoast Stitch | [sigma](sigma/TTP-2026-0183.yml), [xql](xql/TTP-2026-0183.xql), [correlation](correlation/TTP-2026-0183.json) |
 

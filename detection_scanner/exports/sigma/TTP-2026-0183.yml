@@ -1,0 +1,91 @@
+title: "Screening Serpens: Edge Exploit to EDR AppDomain Hijack and AD Kerberoast Stitch \u2014 SIM-MP-023 Edge VPN Gateway Exploit Probe"
+id: ttp-2026-0183-bioc-01
+status: experimental
+description: |
+  Detects anomalous exploit probing targeting edge VPN interfaces in NGFW threat logs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = panw_ngfw_threat_raw
+    | filter threat_category = "vulnerability" or threat_name contains "VPN" or threat_name contains "GlobalProtect"
+    | filter action in ("alert", "block", "reset-both")
+    | fields _time, src_ip, dst_ip, threat_name, threat_category, app_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1574.014
+    - attack.t1558.003
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Screening Serpens: Edge Exploit to EDR AppDomain Hijack and AD Kerberoast Stitch \u2014 SIM-MP-023 Endpoint AppDomainManager Execution Flow Hijack"
+id: ttp-2026-0183-bioc-02
+status: experimental
+description: |
+  Detects execution of an AppDomainManager hijacked host process on the internal network following edge intrusion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "appdomain" or action_process_image_command_line contains "APPDOMAIN_MANAGER_ASM"
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1574.014
+    - attack.t1558.003
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Screening Serpens: Edge Exploit to EDR AppDomain Hijack and AD Kerberoast Stitch \u2014 SIM-MP-023 Anomalous Endpoint Kerberos Service Ticket Burst"
+id: ttp-2026-0183-abioc-03
+status: experimental
+description: |
+  Behavioral analytics identifies an anomalous volume of Kerberos TGS ticket requests with RC4 encryption originating from a compromised endpoint.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "spn" or action_process_image_command_line contains "kerberoast" or action_process_image_command_line contains "RequestUserJScriptTicket"
+    | comp count() as ticket_burst by agent_hostname, actor_effective_username
+    | filter ticket_burst >= 1
+    | fields agent_hostname, actor_effective_username, ticket_burst
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

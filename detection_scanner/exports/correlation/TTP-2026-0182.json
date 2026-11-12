@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1574.014",
+    "T1059.001",
+    "T1082"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when BIOC 'SIM-EDR-023 .NET AppDomainManager Config Drop and Host Execution' and ABIOC 'SIM-EDR-023 Anomalous .NET Host Process Spawning Shell Interpreter' correlate on the same agent_hostname within a 300s window, confirming execution flow hijacking.",
+      "name": "SIM-EDR-023 Screening Serpens Execution Flow Hijack and Discovery Fusion",
+      "rule_id": "CR-EDR-0023",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0182"
+}

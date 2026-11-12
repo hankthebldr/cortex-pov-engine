@@ -120,7 +120,7 @@ KNOWN_DATASETS = frozenset({
     "xdr_data", "panw_ngfw_traffic_raw", "panw_ngfw_threat_raw", "pan_ngfw_traffic",
     "pan_dns", "network_story", "okta_sso", "saas_okta_raw", "saas_audit_logs",
     "cloud_audit_logs", "cloud_audit", "google_workspace_audit", "msft_o365",
-    "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog",
+    "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog", "linux_syslog",
     "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
     "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
     "full_mailbox", "admin_consent", "benign",
