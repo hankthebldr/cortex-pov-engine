@@ -559,6 +559,10 @@
     "bash": "a0ecbd95012843ad92660321c73d69da80d7ffad300f4f768617b6f06b472e2e",
     "powershell": null
   },
+  "SIM-KOI-012": {
+    "bash": "e7a6fe2494617c72a18f487c7fd59f2e7d2b3229868d169f1c0560ee3b1f0d96",
+    "powershell": null
+  },
   "SIM-MP-001": {
     "bash": "474e60f21d6ba652c58765be328dc7d90573fc33f945bdbbb78ca8f3a2bffb4e",
     "powershell": "c7062ee5b883d158d36465160843deb667b2e1e39dfe0320914a46e5c27f6fb1"
