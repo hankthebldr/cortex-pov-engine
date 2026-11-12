@@ -755,6 +755,7 @@ def test_dry_run_eal_run_persists_pending_and_the_report_says_so(session_factory
     assert run.tc_verdict == "pending"
     assert run.tc_verdict_detail["reason"] == "not_executed"
     section = "\n".join(_verdict_section(run))
-    assert "PENDING" in section
+    assert "PENDING — nothing executed" in section
     assert "EAL_DRY_RUN_NO_CONSENT" in section
     assert "NOT SCOREABLE" not in section
+    assert "verification outstanding" not in section

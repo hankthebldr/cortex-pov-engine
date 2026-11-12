@@ -739,6 +739,10 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `tc_verdict_detail.reason` set to `not_executed` (or `soak_pending`), and its
   `detail` names each `outcome_reason`. `not_applicable` keeps its one meaning: the
   rows that ran carry no measurable threshold.
+- The run report labels such a run "PENDING — nothing executed" (or "every
+  detector is still soaking") rather than "verification outstanding".
+  `GET /api/uctc/test-cases/{id}` adds `runs.pending_reasons` and
+  `runs.latest.reason`.
 
 ### Added — HTTP collector backend (declaration, detections list, arrival check)
 

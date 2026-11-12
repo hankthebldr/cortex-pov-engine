@@ -500,7 +500,10 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   measurable threshold, or a PASS was clamped. The run report labels it "NOT
   SCOREABLE — the test case carries no measurable threshold" and the console greys
   it out, so using it for a run where nothing ran would misreport that run. `reason`
-  is `null` on every other score. The Tier-2 sweep still visits a run like this
+  is `null` on every other score. Both report renderers take their label from
+  `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
+  executed; the test case is still owed" or "PENDING — every detector is still
+  soaking", not "PENDING — verification outstanding". The Tier-2 sweep still visits a run like this
   because `pending` is not terminal, but it sends no XQL for excluded rows.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
@@ -1333,6 +1336,12 @@ console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
 - `is_scoreable` is surfaced deliberately — 57 of the 107 detection-backable
   rows carry no measurable threshold, so `pass` is impossible for them by
   construction.
+- The detail's `runs` block is `{total, verdicts, pending_reasons, latest}`.
+  `pending_reasons` counts the `pending` runs whose `tc_verdict_detail.reason`
+  is set (`not_executed`, `soak_pending`, see §1.3.1). Those runs need a re-run or
+  a closed soak window, not more verification. The map holds only the reasons
+  that occur, so it is `{}` when there are none. `latest.reason` carries the
+  same field for the newest run, or `null`.
 
 ### 1.15 Payload shelf (`core/api/payloads.py`, prefixes `/shelf` **and** `/k8s`)
 
