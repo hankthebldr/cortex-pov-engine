@@ -357,13 +357,13 @@ with 409 `PUSH_NOT_SUPPORTED`.
   create `www-data`) and review found a profile-downgrade hole; all fixed. A final
   run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
   re-apply, downgrade, digest mismatch, the anchor rename (then via bash) and
-  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below,
-  so a re-run on the PR head `2762d22` (arm64) passed with zero defect lines and
+  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below;
+  a re-run on the PR head `2762d22` (arm64) passed with zero defect lines and
   observed the debian rename via `sh` (dash), the alpine `bash` anchor and the
   60 s expiry (namespace and both `cortexsim-agent` objects plus the reaper's
   ClusterRole deleted within 150 s). It also found the reaper left its own
   ClusterRoleBinding `cortexsim-reaper-agent` behind. PR #176 now deletes that
-  binding first, so the one residue left at expiry is the inert, unbound
+  binding first, so the one residue expected at expiry is the inert, unbound
   ClusterRole `cortexsim-reaper-agent`, removed by the label delete; not observed
   in a cluster since the fix. The hard-linked busybox detection postdates the
   re-run, unexercised in a pod.

@@ -80,8 +80,8 @@ namespace, `clusterrole`/`clusterrolebinding` `cortexsim-agent` and
 its own ClusterRole first and so lost the permission to delete its own binding.
 PR #176 reversed the order in the reaper script, which push manifests share: the
 binding first, the ClusterRole last. Each of the two deletes revokes the
-permission the other needs, so expiry now leaves **one inert residue: the
-unbound ClusterRole `cortexsim-reaper-agent`**. It grants nothing, and the label
+permission the other needs, so expiry is now expected to leave **one inert
+residue: the unbound ClusterRole `cortexsim-reaper-agent`**. It grants nothing, and the label
 delete above removes it. That residue is read from the script and the unit tests
 that pin the order; expiry has **not been observed in a cluster since the fix**.
 
@@ -368,10 +368,12 @@ Both appear in the run record. Neither is silent and neither is a pass.
 Observed in a real pod (`debian:12-slim` unless noted); this run's binary
 predates commit `aa390d0`:
 
-* debian: the anchor rename via `sh` is `/usr/bin/dash` (the processes named
-  `apache2` resolve to it; asserted);
-* `alpine:3.20` with `prepare=packages`: the anchor is `/bin/bash`, renamed, and
-  the run completed without `ANCHOR NOT HONOURED` (asserted);
+* debian: processes named `apache2` were present mid-step (the rename; their
+  absence is the one `DEFECT` signature, and none was recorded), and their
+  `/proc/<pid>/exe` read `/usr/bin/dash` (observed, not asserted);
+* `alpine:3.20` with `prepare=packages`: a renamed `apache2` process was present
+  mid-step and the run completed without `ANCHOR NOT HONOURED` (both asserted);
+  its `/proc/<pid>/exe` read `/bin/bash` (observed, not asserted);
 * `alpine:3.20` with `prepare=none`: `ANCHOR NOT HONOURED` (asserted);
 * the manifest's `# REMOVAL:` header is present and does not change the `kubectl
   apply` output;
@@ -386,7 +388,7 @@ ClusterRole before its own ClusterRoleBinding. The leftover bound to a deleted
 role and granted nothing; `kubectl delete clusterrole,clusterrolebinding -l
 cortexsim.io/agent=true` removes it. The cause was in the reaper script, which
 the push manifests also use. PR #176 (`c0a6267`) deletes the binding first and
-the ClusterRole last, so what it leaves is one inert, unbound ClusterRole
+the ClusterRole last, so what it is expected to leave is one inert, unbound ClusterRole
 `cortexsim-reaper-agent`, removed by the same label delete. That order is pinned
 by unit tests, not observed in a cluster.
 
@@ -491,7 +493,7 @@ place. All four were fixed in code and re-run.
 * the beacon logged "child subreaper enabled", and no zombies were left after
   `SIM-CDR-010`;
 * the anchor rename (then via `bash`; the anchor is `sh` since the final-review
-  fix, §11, re-confirmation pending): processes with `cmd=apache2` were present
+  fix, §11; the `sh` rename was observed in the §11 re-run): processes with `cmd=apache2` were present
   mid-step (asserted);
 * baseline refused `AGENT_POSTURE_INSUFFICIENT` (`SIM-CDR-015`) and
   `AGENT_TOOL_ABSENT`; `SIM-CDR-010` completed 4 steps;

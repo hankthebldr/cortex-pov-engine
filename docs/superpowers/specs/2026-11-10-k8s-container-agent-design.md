@@ -619,10 +619,11 @@ run on GitHub.
     and `clusterrole/cortexsim-reaper-agent` gone within 150 s of a 60 s TTL) but
     `clusterrolebinding/cortexsim-reaper-agent` remained: the reaper deleted its
     own ClusterRole before its own ClusterRoleBinding. PR #176 reversed that order
-    in the shared reaper script (`k8s_manifest._REAPER_SCRIPT`, also used by push
-    manifests; no golden digest moved, because the push-bundle goldens cover
+    in the shared reaper (`k8s_manifest._reaper`, whose `own` list renders into
+    `_REAPER_SCRIPT`; push manifests and the agent reaper Deployment both use it;
+    no golden digest moved, because the push-bundle goldens cover
     bash/PowerShell only). Each own delete revokes the permission the other
-    needs, so what PR #176 leaves is one inert, unbound ClusterRole
+    needs, so what PR #176 is expected to leave is one inert, unbound ClusterRole
     `cortexsim-reaper-agent`: it grants nothing and the label delete removes it.
     The order is pinned by unit tests; expiry has not been observed in a cluster
     since the fix.
