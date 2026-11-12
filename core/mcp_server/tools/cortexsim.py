@@ -180,12 +180,14 @@ async def run_get(ctx: ToolContext, args: RunIdIn) -> Envelope:
 
 async def run_list(ctx: ToolContext, args: RunListIn) -> Envelope:
     where = "GET /api/runs"
-    want = args.offset + args.limit  # the route caps limit at 500; past that, fetch unbounded
+    # The route pages itself (limit 1..5000, default 500, plus offset); a call
+    # without them reads only the newest 500, so the page is always asked for.
     body = await ctx.client.get("/api/runs", params=_params(
-        status=args.status, scenario_id=args.scenario_id, limit=want if want <= 500 else None))
+        status=args.status, scenario_id=args.scenario_id,
+        limit=args.limit, offset=args.offset or None))
     _require(body, where, "runs")
     total = _int(body, where, "total")
-    page = body["runs"][args.offset:args.offset + args.limit]
+    page = body["runs"][:args.limit]
     truncated = args.offset + len(page) < total
     return await _simcore(ctx, {"runs": page, "total": total, "truncated": truncated}, "simcore", truncated)
 
