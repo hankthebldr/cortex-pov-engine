@@ -813,8 +813,10 @@ before it and passed after; host and httptest evidence only, no lab run):
   sends the command unchanged; the console's preflight still blocks it. The
   run-detail banner does not render this marker yet.
 - RG-AGENT-04, residual (`46a827e`). `Control()` is bound to the shutdown
-  context: a stop during a blocked `/control` poll returns at once (2.01 s in
-  the in-step test, which is the poll interval) instead of after 30 s, and
+  context: a stop during a blocked `/control` poll returns at once instead of
+  after 30 s (the tests require under 1 s from the stop; the in-step test
+  takes 2.01 s in all, almost all of it the 2 s poll interval before the
+  poll that hangs), and
   the run records "agent shutdown — task interrupted", not
   `CONTROL_CHANNEL_LOST`. Not observed under a real launchd or SCM stop.
 - RG-RUNS-01, residual (`271320d`). On an aborted, delivered pull run an
@@ -826,8 +828,9 @@ before it and passed after; host and httptest evidence only, no lab run):
 - RG-UI-05, residual (`b7e6e25`). `api_auth` publishes `local_host_names`
   and `local_fqdn_names` (`null` until the running guard has resolved its
   FQDN; health does no DNS). Get started admits the machine's own names and
-  says POVengine *refuses* an unlisted name when both are known; with the
-  FQDN unresolved it names the host name and says only the FQDN is unknown.
+  says POVengine *refuses* an unlisted name when both are known, naming the
+  resolved FQDN as a name that works (`d4e850f`); with the FQDN unresolved
+  it names the host name and says only the FQDN is unknown.
 
 **Regression findings still open** (re-checked at the round-2 head):
 - RG-AGENT-01, Windows half (decision). After a chained run that ends
