@@ -34,6 +34,13 @@ def test_no_completed_at_uses_start_plus_window():
     assert tf["to"] == _ms(2026, 11, 11, 11, 0)
 
 
+def test_short_window_still_gets_the_lead_as_a_tail():
+    """A 10 s correlation window leaves no room for log-generation delay or
+    clock skew; the tail is never shorter than the lead."""
+    tf = run_timeframe(STARTED, COMPLETED, 10, now=datetime(2026, 11, 11, 14, 0, 0))
+    assert tf["to"] == _ms(2026, 11, 11, 10, 7)  # completed + 300 s, not + 10 s
+
+
 @pytest.fixture
 def la_tz(monkeypatch):
     monkeypatch.setenv("TZ", "America/Los_Angeles")
