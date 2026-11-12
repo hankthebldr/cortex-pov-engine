@@ -75,11 +75,15 @@ proof script's teardown. The manifest header carries the same two lines.
 Letting the pod expire (`ttl_seconds`) lets the reaper run. Observed in the
 re-run against 2762d22 (`ttl_seconds` 60): within 150 s it deleted the
 namespace, `clusterrole`/`clusterrolebinding` `cortexsim-agent` and
-`clusterrole/cortexsim-reaper-agent`. **It leaves
-`clusterrolebinding/cortexsim-reaper-agent` behind**: the reaper deletes its own
-ClusterRole first, so the binding points at a deleted role and grants nothing.
-The label delete above removes it. This is a known defect in the reaper script,
-which push manifests share; it is not fixed yet.
+`clusterrole/cortexsim-reaper-agent`, and left
+`clusterrolebinding/cortexsim-reaper-agent` behind, because that build deleted
+its own ClusterRole first and so lost the permission to delete its own binding.
+PR #176 reversed the order in the reaper script, which push manifests share: the
+binding first, the ClusterRole last. Each of the two deletes revokes the
+permission the other needs, so expiry now leaves **one inert residue: the
+unbound ClusterRole `cortexsim-reaper-agent`**. It grants nothing, and the label
+delete above removes it. That residue is read from the script and the unit tests
+that pin the order; expiry has **not been observed in a cluster since the fix**.
 
 ## 3 · Query parameters
 
@@ -250,8 +254,11 @@ image and script). It waits to the **absolute** expiry (`EXPIRES_AT_EPOCH` again
 `date +%s`), then deletes namespace `cortexsim-agent` and the cluster-scoped
 `ClusterRole` and `ClusterRoleBinding` named `cortexsim-agent` — the whole set
 any profile can emit, whatever the current one. Expiry-triggered cleanup was
-observed in the re-run against 2762d22, with one residue: the reaper's own
-`ClusterRoleBinding` `cortexsim-reaper-agent` survives (see "Removal" in §2).
+observed in the re-run against 2762d22, which left the reaper's own
+`ClusterRoleBinding` `cortexsim-reaper-agent` behind. Since PR #176 the reaper
+deletes that binding first, so the one residue to expect is its own unbound
+`ClusterRole` `cortexsim-reaper-agent`, inert and removed by the label delete;
+not observed in a cluster since the fix (see "Removal" in §2).
 If the node clock gives no epoch
 it exits 70 (`REAPER_CLOCK_UNAVAILABLE`) and crash-loops visibly rather than
 restarting its clock. It is a safety net; remove the agent yourself when done.
@@ -373,15 +380,20 @@ predates commit `aa390d0`:
   `cortexsim-agent` and `clusterrole/cortexsim-reaper-agent` were gone. Before
   expiry all four cluster-scoped objects existed.
 
-**Defect found by this run (not fixed here).** `clusterrolebinding/
-cortexsim-reaper-agent` is left behind after expiry: the reaper deletes its own
-ClusterRole before its own ClusterRoleBinding. The leftover binds to a deleted
-role and grants nothing; `kubectl delete clusterrole,clusterrolebinding -l
-cortexsim.io/agent=true` removes it. The cause is in the reaper script, which the
-push manifests also use.
+**Defect found by this run, since changed by PR #176.** `clusterrolebinding/
+cortexsim-reaper-agent` was left behind after expiry: the reaper deleted its own
+ClusterRole before its own ClusterRoleBinding. The leftover bound to a deleted
+role and granted nothing; `kubectl delete clusterrole,clusterrolebinding -l
+cortexsim.io/agent=true` removes it. The cause was in the reaper script, which
+the push manifests also use. PR #176 (`c0a6267`) deletes the binding first and
+the ClusterRole last, so what it leaves is one inert, unbound ClusterRole
+`cortexsim-reaper-agent`, removed by the same label delete. That order is pinned
+by unit tests, not observed in a cluster.
 
 **Not covered by this run:** the hard-linked busybox `sh` detection (commit
 `aa390d0`) postdates it. No pod with a hard-linked busybox `sh` has exercised it.
+PR #176's binding-first reaper order also postdates it; no expiry has been
+observed since.
 
 ## 12 · The beacon
 

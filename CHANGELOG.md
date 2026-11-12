@@ -361,9 +361,12 @@ with 409 `PUSH_NOT_SUPPORTED`.
   so a re-run on the PR head `2762d22` (arm64) passed with zero defect lines and
   observed the debian rename via `sh` (dash), the alpine `bash` anchor and the
   60 s expiry (namespace and both `cortexsim-agent` objects plus the reaper's
-  ClusterRole deleted within 150 s). It also found the reaper leaves its own
-  ClusterRoleBinding `cortexsim-reaper-agent` behind (inert; not fixed), and the
-  hard-linked busybox detection postdates it, unexercised in a pod.
+  ClusterRole deleted within 150 s). It also found the reaper left its own
+  ClusterRoleBinding `cortexsim-reaper-agent` behind. PR #176 now deletes that
+  binding first, so the one residue left at expiry is the inert, unbound
+  ClusterRole `cortexsim-reaper-agent`, removed by the label delete; not observed
+  in a cluster since the fix. The hard-linked busybox detection postdates the
+  re-run, unexercised in a pod.
   `lab-privileged` has never been run; no amd64 node, no CI run on GitHub, console tab not
   browser-checked, no Cortex detection observed. `tenant-verified` is still 0.
 - **Delivery.** PR #171 merged Tasks 1-11 at ef71c30; the fixes for re-apply,
