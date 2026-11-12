@@ -1,7 +1,7 @@
 # Pink (CL-CRI-1147) chain, testable on today's lab: design
 
 **Date:** 2026-11-11 · **Branch:** `docs/scenarios-pink-extortion-chain-spec` (from `dev` b1ee28f)
-**Status:** draft v2 (builder check folded in), awaiting Henry's approval. Henry asked to skip the questions ("go
+**Status:** v2, approved by Henry 2026-11-11; build plan `docs/superpowers/plans/2026-11-11-pink-cl-cri-1147-chain.md`. Henry asked to skip the questions ("go
 straight to the spec, prefer ones that we can test immediately e.g. have syslog/http
 event and agent / ngfw based scenarios"), so calls marked **[my call]** are mine and
 open to veto. Four decisions only Henry can make are in §12.
@@ -259,6 +259,10 @@ dry-run). Delivery accounting is the existing one (`delivery.py`: only 2xx count
 launch request must stay short: the EAL steps' total sleep is capped (builder picks the
 cap; Pink needs < 30 s).
 
+*Found while planning:* a live `Campaign` refuses to validate without `authorized_by`,
+and the scenario launch request has no such field. The plan adds
+`LaunchRequest.authorized_by`; live delivery needs it non-blank as well as consent.
+
 Tests: dry-run without consent; dry-run with consent but an unresolved target, with the
 code; live POST with consent and a keyed target, against an injected transport;
 `Result.executed_at` taken from the real send time.
@@ -294,6 +298,10 @@ at send time plus the offset, and a pattern's internal gaps (the passkey's +90 s
 added on top. Zero keeps every existing record byte-identical. Tests: offset 0 is
 byte-identical to today's golden records; a negative offset moves every body timestamp
 by exactly that amount; a positive offset is refused.
+
+*Refined in the plan:* the field goes on the two params models that honour it
+(`idp_signin_emulator`, `m365_activity_emitter`), and only the timestamp helper is shared,
+so the 19 other emitters do not advertise a field they would ignore.
 
 ### 9.5 E-1: `idp_signin_emulator`
 
