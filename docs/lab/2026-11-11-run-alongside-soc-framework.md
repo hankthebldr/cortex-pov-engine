@@ -76,8 +76,9 @@ to run.
      recent ledgers (`CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` 24,
      `..._MAX_RUNS_PER_SWEEP` 20, `..._MIN_INTERVAL_MINUTES` 60). A ledger is
      terminal when every case in it is sealed (resolved and not
-     auto-resolved) and is skipped; a case that is open or auto-resolved can
-     still change, so its ledger keeps being refreshed.
+     auto-resolved), its merge is not `PENDING` and every case an alert names
+     is in it, and is skipped; otherwise it can still change, so it keeps
+     being refreshed.
    - Tenant disposition is shown for context. It is not detection evidence.
      It never changes `detected`, `missed`, MTTD or a detection verdict. The
      one effect: a `SPLIT_SEALED` run withholds a Cross-Source Correlation

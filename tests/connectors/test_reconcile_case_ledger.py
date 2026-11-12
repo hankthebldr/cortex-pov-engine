@@ -534,3 +534,77 @@ def test_unreadable_stored_ledger_is_rebuilt_from_this_pull(session_factory):
     _, run = asyncio.run(_reconcile(session_factory, fetcher))
     assert run.case_ledger["merge_class"] == "ONE_CASE"
     assert [x["external_id"] for x in run.case_ledger["alerts"]] == ["a", "b"]
+
+
+# ── final-wave minors ──────────────────────────────────────────────────────
+
+def test_unrequested_case_in_the_reply_degrades_and_is_never_rendered(session_factory):
+    """M4: the tenant answered with a case the read did not ask for."""
+    fetcher, _ = _tenant(_alerts(), [_case("900"), _case("999")])
+    _, run = _go(session_factory, fetcher)
+    led = run.case_ledger
+    assert led["code"] == "CASE_STATUS_UNRECOGNIZED" and led["merge_class"] == "PENDING"
+    assert "999" in led["merge_reason"]
+    assert [c["case_id"] for c in led["cases"]] == []
+
+
+def test_reconcile_records_the_tenant_key(session_factory):
+    """M5: the ledger names the tenant (the same key the XQL ledger uses)."""
+    fetcher, _ = _tenant(_alerts(), [_case()])
+    _, run = _go(session_factory, fetcher)
+    assert run.case_ledger["tenant"] == "api-t.xdr.us.paloaltonetworks.com"
+
+
+def test_stored_ledger_from_another_tenant_is_not_carried(session_factory):
+    from connectors.case_ledger import LedgerAlert, LedgerCase, build_case_ledger
+    from models import Run
+    from sqlalchemy import select
+    _seed(session_factory, results=2, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    now = datetime.utcnow()
+    other = build_case_ledger([LedgerAlert("x", now, "high", "800", None, None, None)],
+                              {"800": LedgerCase("800", "new", None, None, False, False, None, 1)},
+                              basis="alert_incident_ids", read_at=now)
+    other.update({"integration": "acme", "tenant": "api-other.xdr.us.paloaltonetworks.com"})
+
+    async def put():
+        async with session_factory() as db:
+            (await db.execute(select(Run))).scalars().first().case_ledger = other
+            await db.commit()
+    asyncio.run(put())
+    fetcher, _ = _tenant(_alerts(), [_case()])
+    _, run = asyncio.run(_reconcile(session_factory, fetcher))
+    assert [x["external_id"] for x in run.case_ledger["alerts"]] == ["a", "b"]
+    assert run.case_ledger["tenant"] == "api-t.xdr.us.paloaltonetworks.com"
+
+
+def test_bridge_two_endpoint_records_is_unread_end_to_end(session_factory):
+    base, _ = _split_tenant()
+    f, _ = _with_endpoint(base, [{"endpoint_name": "web-01", "ip": ["10.0.1.20"]},
+                                 {"endpoint_name": "web-01", "ip": ["10.0.1.21"]}])
+    summary, run = _go_ip(session_factory, f)
+    assert run.case_ledger["bridge"]["code"] == "BRIDGE_UNREAD"
+    assert summary["queries_issued"] == 4
+
+
+# ── storage ────────────────────────────────────────────────────────────────
+
+def test_init_db_adds_case_ledger_to_a_legacy_runs_table(tmp_path, monkeypatch):
+    """M9: create_all never adds a column; the registered migration must."""
+    import database
+    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    path = tmp_path / "legacy.db"
+    legacy = create_engine(f"sqlite:///{path}")
+    with legacy.begin() as conn:
+        conn.execute(text("CREATE TABLE runs (run_id VARCHAR PRIMARY KEY, scenario_id VARCHAR)"))
+    with legacy.begin() as conn:
+        assert "case_ledger" not in {c["name"] for c in inspect(conn).get_columns("runs")}
+    monkeypatch.setattr(database, "engine", create_async_engine(f"sqlite+aiosqlite:///{path}"))
+    for _ in range(2):                                  # the second boot proves idempotence
+        asyncio.run(database._init_db_inner())
+    with legacy.begin() as conn:
+        assert "case_ledger" in {c["name"] for c in inspect(conn).get_columns("runs")}
+        conn.execute(text("INSERT INTO runs (run_id, scenario_id) VALUES ('r', 'S')"))
+        assert conn.execute(text("SELECT case_ledger FROM runs")).scalar_one() is None

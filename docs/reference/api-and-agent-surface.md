@@ -229,7 +229,7 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
-| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
+| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger}` (markdown gains a `## Case` section); 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
@@ -451,9 +451,13 @@ a refresh. Otherwise reconcile reads the cases by id, then the issue statuses by
 on a `SPLIT_NATIVE` that mixes an IP-only and a host-keyed alert, one endpoint record (the
 bridge diagnosis): at most three reads per reconcile, one page per 100 ids each. A failed
 case read keeps the stored ledger and scores the run with `merge_class: PENDING` (summary
-`case_ledger.stored_ledger_kept: true`). The ledger is stored with the tenant `integration`
-it came from. Shape: `{merge_class, merge_reason, basis, read_at, integration, code,
-cases[], alerts[], issue_read, shared_with_other_runs}`; `read_at`, `resolved_at` and
+`case_ledger.stored_ledger_kept: true`). The ledger is stored with the `integration` that
+read it and its `tenant` (the per-tenant XQL ledger's key, `tenant_ledger_key` of the
+normalised base URL): a reconcile carries stored alerts only from the same tenant, a
+refresh refuses a ledger whose integration now points elsewhere, and a pair read from two
+tenants merges to `PENDING`; a legacy ledger without `tenant` behaves as before. Shape:
+`{merge_class, merge_reason, basis, read_at, integration, tenant, code, cases[], alerts[],
+issue_read, shared_with_other_runs}`; `read_at`, `resolved_at` and
 `observed_at` are naive UTC ISO strings. `merge_class` is `ONE_CASE | SPLIT_SEALED |
 SPLIT_NATIVE | LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`. Severity decides only Low-only,
 no case yet, fewer than two Medium+ alerts and Medium+ alerts not yet in a case; the
@@ -464,8 +468,9 @@ was sealed before the later one's first alert), **native** (the earlier case was
 auto-resolved, or sealed after) or **unknown** (sealed, no resolve time). Any native
 boundary is `SPLIT_NATIVE`; otherwise any unknown one is `PENDING`; only all-seal is
 `SPLIT_SEALED`. A case `closed_by` is `open | socfw_auto_triage | auto_resolved |
-other_resolved`; an issue adds `socfw_ai_close | unread`. An unrecognised case status
-raises and the ledger reports `CASE_STATUS_UNRECOGNIZED` with merge `PENDING`.
+other_resolved`; an issue adds `socfw_ai_close | unread`. An unrecognised case status,
+or a reply row for a case the read did not request, raises and the ledger reports
+`CASE_STATUS_UNRECOGNIZED` with merge `PENDING` (that case is never rendered).
 `GET /api/runs/{id}/pair` returns the pair-level `merge`; a corrupt stored ledger reads
 `PENDING` / `CASE_LEDGER_UNREADABLE`.
 
@@ -480,15 +485,18 @@ refreshes ledgers of runs started within `CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` (2
 `CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP` (20) per sweep, skipping any read newer than the
 same minimum interval and terminal ledgers, and stops the sweep on the first HTTP 429; a
 429 in the reconcile sweep skips the refresh phase for that cycle. A ledger is terminal
-when every case in it is sealed (resolved and not auto-resolved); a case that is open or
-auto-resolved can still change, so its ledger keeps being refreshed.
+when every case in it is sealed (resolved and not auto-resolved), its merge is not
+`PENDING` and every case an alert names is in it; an open or auto-resolved case, a
+`PENDING` merge or a missing case can still change, so its ledger keeps being refreshed.
 
 **Disposition is context, not detection evidence** (`Tenant disposition is shown for context. It is not detection evidence.`): it never feeds `detected`/`missed`, MTTD or a
 detection verdict. The single exception: `SPLIT_SEALED` withholds a Cross-Source
 Correlation Rate FAIL as `pending` (reason: `fail withheld: a case was sealed by the response layer before the chain finished — the split is not the detection engine's`), and only
 when the ledger classified every cased alert the KPI counted, in the same case; otherwise
 the FAIL stands and the measurement carries `sealed_split_not_applied`. A PASS is never
-touched. The endpoint reply fields used by the bridge diagnosis come from
+touched. The bridge diagnosis reads `BRIDGE_UNREAD` (never `BRIDGED`) when the endpoint
+read fails, returns no record or more than one record for the host, or a record whose IPs
+are all unparseable. The endpoint reply fields used by the bridge diagnosis come from
 `docs/reference/xsiam-platform-apis/05-endpoints-api.md` and are unverified against a live
 tenant. `tenant-verified` is 0.
 

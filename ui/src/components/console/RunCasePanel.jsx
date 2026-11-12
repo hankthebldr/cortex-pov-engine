@@ -47,6 +47,9 @@ export function ledgerUnreadableReason(l) {
   if (!l || typeof l !== 'object' || Array.isArray(l)) return 'stored ledger is not an object'
   if (typeof l.merge_class !== 'string' || !l.merge_class) return 'merge_class missing or not a string'
   if (!Array.isArray(l.cases)) return 'cases missing or not a list'
+  if (!l.cases.every((c) => c && typeof c === 'object' && !Array.isArray(c))) {
+    return 'cases contains a non-object entry'
+  }
   if (typeof l.code !== 'string' || !l.code) return 'code missing or not a string'
   return null
 }
@@ -86,7 +89,8 @@ export default function RunCasePanel({ ledger = null }) {
         <span className="run-case__reason">{ledger.merge_reason || '—'}</span>
       </div>
       <p className="run-case__meta mono">
-        read {ledger.read_at || '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
+        {/* Stored timestamps are naive UTC ISO strings: say so where they are shown. */}
+        read {ledger.read_at ? `${ledger.read_at} UTC` : '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
       </p>
 
       {ledger.merge_class === 'NO_CASE_YET' && (

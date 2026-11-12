@@ -205,7 +205,9 @@ def _md_cell(value, *, code: bool = False) -> str:
     code span (``code=False``) every markdown/HTML metacharacter
     ``\\ | [ ] ( ) < > * _ # ! ~ &`` is backslash-escaped, so no link, tag,
     heading or emphasis is interpreted. Inside a code span (``code=True``)
-    backslashes would show literally, so nothing more is added.
+    backslashes would show literally, so nothing more is added; that includes
+    ``|``, which is safe only because ``code=True`` is used in inline lines and
+    never inside a table cell (a ``|`` there would split the cell).
     """
     text = "" if value is None else str(value)
     text = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in text)
@@ -224,6 +226,8 @@ def ledger_unreadable_reason(led) -> Optional[str]:
         return "merge_class missing or not a string"
     if not isinstance(led.get("cases"), list):
         return "cases missing or not a list"
+    if not all(isinstance(c, dict) for c in led["cases"]):
+        return "cases contains a non-object entry"
     if not isinstance(led.get("code"), str) or not led["code"]:
         return "code missing or not a string"
     return None
@@ -248,7 +252,9 @@ def _case_section(run: Run) -> list[str]:
         return out
     out.append(f"**Case merge:** `{_md_cell(led['merge_class'], code=True)}` — {_md_cell(led.get('merge_reason') or '—')}")
     out.append("")
-    out.append(f"Read at {_md_cell(led.get('read_at') or '—')} from `{_md_cell(led.get('integration') or '—', code=True)}` "
+    # Stored timestamps are naive UTC ISO strings: say so where they are shown.
+    read_at = f"{_md_cell(led['read_at'])} UTC" if led.get("read_at") else "—"
+    out.append(f"Read at {read_at} from `{_md_cell(led.get('integration') or '—', code=True)}` "
                f"(basis: {_md_cell(led.get('basis') or '—')}).")
     out.append("")
     if led["merge_class"] == "NO_CASE_YET":
@@ -259,7 +265,7 @@ def _case_section(run: Run) -> list[str]:
     if isinstance(ir, dict) and not ir.get("ok", True):
         out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—', code=True)}` — "
                 f"{_md_cell(ir.get('remediation') or 'no remediation recorded')}", ""]
-    cases = [c for c in led["cases"] if isinstance(c, dict)]
+    cases = led["cases"]            # every entry is a dict: ledger_unreadable_reason
     if cases:
         out.append("| Case | Status | Closed by | Sealed | Issues (this run / other) | Link |")
         out.append("|------|--------|-----------|--------|---------------------------|------|")
@@ -1799,7 +1805,8 @@ async def refresh_case_ledger_endpoint(
         out = await refresh_case_ledger(db, run, force=force)
     except ReconcileError as e:
         status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
-                  "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409}.get(e.code, 500)
+                  "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409,
+                  "CASE_LEDGER_TENANT_MISMATCH": 409}.get(e.code, 500)
         raise HTTPException(status_code=status, detail={
             "error": str(e), "code": e.code, "detail": e.detail})
     return out

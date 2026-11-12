@@ -345,3 +345,52 @@ def test_unseverity_alert_in_another_case_is_not_one_case():
     # The correlation KPI counts every alert with a case id; so does the classifier.
     al = [A("a1", 0, case="A"), A("a2", 1, case="A"), A("x", 3, sev=None, case="B")]
     assert _cls(al, {"A": C("A"), "B": C("B")})[0] == "SPLIT_NATIVE"
+
+
+# ── final-wave minors ──────────────────────────────────────────────────────
+
+def test_unknown_issue_status_string_raises():
+    """B1: a string outside the issue vocabulary is a shape we do not read; it is
+    never 'open'."""
+    with pytest.raises(cl.CaseShapeError, match="Escalated"):
+        cl.issue_closed_by(A("1", status="Escalated"))
+
+
+def test_case_the_read_did_not_ask_for_raises():
+    """M4: a reply row for an id nobody requested is not this run's case."""
+    rows = [ObservedIncident(incident_id="900", status="new", alert_count=2, raw={}),
+            ObservedIncident(incident_id="999", status="new", alert_count=2, raw={})]
+    with pytest.raises(cl.CaseShapeError, match="999"):
+        cl.cases_from_reply(rows, ["900"])
+    assert set(cl.cases_from_reply(rows[:1], ["900", "901"])) == {"900"}
+
+
+def _tenant_ledger(case_id, tenant):
+    led = cl.build_case_ledger([A("1", 0, case=case_id), A("2", 1, case=case_id)],
+                               {case_id: C(case_id, count=2)}, basis="alert_incident_ids",
+                               read_at=T0)
+    if tenant:
+        led["tenant"] = tenant
+    return led
+
+
+def test_pair_merge_across_tenants_is_pending():
+    """M5: case ids are tenant-local; two tenants' ids are not one population."""
+    m = cl.pair_merge(_tenant_ledger("A", "api-a.xdr.us.paloaltonetworks.com"),
+                      _tenant_ledger("B", "api-b.xdr.us.paloaltonetworks.com"))
+    assert m["merge_class"] == "PENDING"
+    assert "different tenants" in m["merge_reason"] and "code" not in m
+
+
+def test_pair_merge_legacy_ledger_without_tenant_keeps_todays_behaviour():
+    m = cl.pair_merge(_tenant_ledger("A", None), _tenant_ledger("B", "api-b.xdr.us.paloaltonetworks.com"))
+    assert m["merge_class"] == "SPLIT_NATIVE"
+
+
+def test_bridge_all_unparseable_endpoint_ips_is_unread():
+    """B7: a record whose ips are all unparseable proves nothing either way."""
+    d = cl.bridge_diagnosis(host="web-01", agent_ip="10.0.1.20", endpoint_ips=["n/a", "?"])
+    assert d["code"] == "BRIDGE_UNREAD"
+    # An empty list is a record read that carries no IP: unbridged, as before.
+    assert cl.bridge_diagnosis(host="web-01", agent_ip="10.0.1.20",
+                               endpoint_ips=[])["code"] == "UNBRIDGED_IP_HOST"

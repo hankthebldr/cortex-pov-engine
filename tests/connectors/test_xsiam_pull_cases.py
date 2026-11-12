@@ -226,3 +226,13 @@ def test_pull_cases_empty_ids_zero_posts():
     rec = Recorder({})
     res = XsiamConnector(fetcher=rec).pull_cases(CFG, [])
     assert res.ok and rec.calls == [] and res.detail["pages"] == 0
+
+
+def test_pull_endpoint_ips_two_records_for_the_host_is_none():
+    """B7: two endpoint records for one host (e.g. a stale reinstall) cannot say
+    which one XSIAM stitched on: never union them into a BRIDGED claim."""
+    rec = Recorder({"reply": {"total_count": 2, "result_count": 2, "endpoints": [
+        {"endpoint_name": "web-01", "ip": ["10.0.1.20"]},
+        {"endpoint_name": "WEB-01", "ip": ["10.9.9.9"]}]}})
+    assert XsiamConnector(fetcher=rec).pull_endpoint_ips(CFG, "web-01") is None
+    assert len(rec.calls) == 1

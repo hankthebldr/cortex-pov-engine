@@ -154,6 +154,25 @@ def ledger_case_from_incident(i: ObservedIncident) -> LedgerCase:
     )
 
 
+def cases_from_reply(incidents: Sequence[ObservedIncident],
+                     requested: Sequence[str]) -> dict[str, LedgerCase]:
+    """The by-id case read's rows -> ``{case_id: LedgerCase}``.
+
+    A row for an id the read did not request raises :class:`CaseShapeError`:
+    it is not one of this run's cases, and rendering it would put another
+    case's disposition in the run's report. A requested id the tenant did not
+    return is simply absent (the classifier reads that as ``PENDING``).
+    """
+    want = {str(i) for i in requested}
+    cases: dict[str, LedgerCase] = {}
+    for inc in incidents:
+        c = ledger_case_from_incident(inc)
+        if c.case_id not in want:
+            raise CaseShapeError(f"case {c.case_id} was returned but not requested")
+        cases[c.case_id] = c
+    return cases
+
+
 # ── disposition ───────────────────────────────────────────────────────────
 
 def case_closed_by(c: LedgerCase) -> str:
@@ -352,6 +371,13 @@ def pair_merge(a: Optional[dict], b: Optional[dict]) -> dict:
         return {"merge_class": "PENDING", "basis": None,
                 "merge_reason": "one run of the pair has no case ledger yet"}
     basis = a.get("basis") if a.get("basis") == b.get("basis") else "mixed"
+    ta, tb = a.get("tenant"), b.get("tenant")
+    if ta and tb and ta != tb:
+        # Case ids are tenant-local. A legacy ledger without the key keeps the
+        # old behaviour (it is compared as if from the same tenant).
+        return {"merge_class": "PENDING", "basis": basis,
+                "merge_reason": (f"the two runs' ledgers were read from different tenants "
+                                 f"({ta}, {tb}); case ids are tenant-local")}
     aa, ac = ledger_from_dict(a)
     ba, bc = ledger_from_dict(b)
     cases = dict(ac)
@@ -386,7 +412,11 @@ def bridge_diagnosis(*, host: Optional[str], agent_ip: Optional[str],
     * ``BRIDGED`` - ``agent_ip`` is one of the endpoint record's IPs;
     * ``UNBRIDGED_IP_HOST`` - the record was read and does not carry it;
     * ``BRIDGE_UNREAD`` - anything that prevents the comparison (no host, no
-      agent IP, endpoint not returned or unreadable). Never ``BRIDGED``.
+      agent IP, endpoint not returned or unreadable, or a record whose IPs are
+      all unparseable). Never ``BRIDGED``.
+
+    An empty IP list is a record that was read and carries no IP:
+    ``UNBRIDGED_IP_HOST``.
     """
     ips = None if endpoint_ips is None else [str(i) for i in endpoint_ips]
     base = {"host": host, "agent_ip": agent_ip, "endpoint_ips": ips}
@@ -394,4 +424,6 @@ def bridge_diagnosis(*, host: Optional[str], agent_ip: Optional[str],
     if not host or want is None or ips is None:
         return {**base, "code": "BRIDGE_UNREAD"}
     have = {k for k in (_ip_key(i) for i in ips) if k is not None}
+    if ips and not have:
+        return {**base, "code": "BRIDGE_UNREAD"}
     return {**base, "code": "BRIDGED" if want in have else "UNBRIDGED_IP_HOST"}

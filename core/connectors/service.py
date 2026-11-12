@@ -34,8 +34,8 @@ from connectors.case_ledger import (
     MEDIUM_PLUS,
     bridge_diagnosis,
     build_case_ledger,
+    cases_from_reply,
     ledger_alert,
-    ledger_case_from_incident,
     LEDGER_READ_ERRORS,
     ledger_from_dict,
 )
@@ -66,6 +66,8 @@ from engine.outcome import (
 from events import event_bus
 from connectors.xsiam import IssueReadError
 from integrations.xsiam.codes import remediation_for
+from integrations.xsiam.ledger import tenant_ledger_key
+from integrations.xsiam.tenant_url import normalize_tenant_base_url
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
 from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
@@ -282,7 +284,8 @@ async def reconcile_run(
     ledger: Optional[dict] = None
     population, fresh = ledger_population(run.case_ledger, by_ext, matched_ext,
                                           integration=cfg.integration_name,
-                                          source=connector_kind)
+                                          source=connector_kind,
+                                          tenant=case_ledger_tenant(cfg))
     if population and hasattr(conn, "pull_cases"):
         ledger, case_queries = await build_and_store_case_ledger(
             db, run, conn=conn, cfg=cfg, alerts=population, bridge_alerts=fresh,
@@ -345,9 +348,24 @@ async def reconcile_run(
     return ReconcileOutcome(summary=summary, newly_matched=newly)
 
 
+def case_ledger_tenant(cfg: ConnectorConfig) -> Optional[str]:
+    """The tenant a case ledger was read from: the per-tenant XQL ledger's key
+    (``tenant_ledger_key``) of the connector's normalised base URL, or None when
+    the integration's URL is unusable (the read itself then fails on config).
+    Case ids are tenant-local, so this is what a refresh and a pair compare."""
+    conf = cfg.config or {}
+    raw = conf.get("base_url") or conf.get("fqdn") or conf.get("tenant_url")
+    if not raw:
+        return None
+    try:
+        return tenant_ledger_key(normalize_tenant_base_url(str(raw)))
+    except Exception:  # noqa: BLE001 - XsiamConfigError and friends: no key, never a guess
+        return None
+
+
 def ledger_population(
     stored: Optional[dict], by_ext: dict[str, ObservedAlert], matched_ext: list[str], *,
-    integration: str, source: str,
+    integration: str, source: str, tenant: Optional[str] = None,
 ) -> tuple[list[ObservedAlert], list[ObservedAlert]]:
     """The alerts a reconcile builds the case ledger from: ``(population, fresh)``.
 
@@ -358,14 +376,18 @@ def ledger_population(
     from the stored entry. ``fresh`` is the subset taken from this pull: only
     those carry a host, so only they can answer the bridge's mixed-key question.
 
-    The stored alerts are carried only when the stored ledger was read through
-    the same integration (or records none): case ids are tenant-local. A stored
-    ledger that cannot be read back is not carried; the rebuilt ledger replaces
-    it, and the read error is logged.
+    The stored alerts are carried only when they came from this tenant: case
+    ids are tenant-local. A ledger that records its ``tenant`` must match
+    ``tenant``; a legacy one that does not must have been read through the same
+    integration (or record none). A stored ledger that cannot be read back is
+    not carried; the rebuilt ledger replaces it, and the read error is logged.
     """
     picked: dict[str, ObservedAlert] = {}
     fresh: dict[str, ObservedAlert] = {}
-    if isinstance(stored, dict) and stored.get("integration") in (None, integration):
+    same_tenant = isinstance(stored, dict) and (
+        stored.get("tenant") == tenant if stored.get("tenant")
+        else stored.get("integration") in (None, integration))
+    if same_tenant:
         try:
             entries = [(str(e["external_id"]), e) for e in stored["alerts"]]
             for eid, e in entries:
@@ -413,7 +435,8 @@ async def build_and_store_case_ledger(
       stored ledger on the run, the stored ledger is NOT replaced: the returned
       ledger carries ``stored_ledger_kept: True`` and is not stored, so a
       transient failure cannot erase a good ledger;
-    * unrecognised case/issue shape (:class:`CaseShapeError`)
+    * unrecognised case/issue shape (:class:`CaseShapeError`), including a
+      reply row for a case id that was not requested
       -> ``code="CASE_STATUS_UNRECOGNIZED"``, ``PENDING``, stored (the old
       merge claim can no longer be trusted);
     * issue read fails (the cases were read fine) -> the merge claim stands and
@@ -465,10 +488,7 @@ async def build_and_store_case_ledger(
                                        "remediation": remediation_for(cpull.code)}
                 return ledger
             try:
-                cases = {}
-                for inc in cpull.incidents:
-                    c = ledger_case_from_incident(inc)
-                    cases[c.case_id] = c
+                cases = cases_from_reply(cpull.incidents, case_ids)
             except CaseShapeError as e:
                 return degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped)
 
@@ -500,9 +520,11 @@ async def build_and_store_case_ledger(
             return ledger
 
     ledger = compute()
-    # Case ids are tenant-local: record WHICH integration read them so a refresh
-    # asks the same tenant (a second tenant can return another case under the id).
+    # Case ids are tenant-local: record WHICH integration read them, and the
+    # tenant it pointed at, so a refresh asks the same tenant (a second tenant
+    # can return another case under the id) and a pair is not merged across two.
     ledger["integration"] = cfg.integration_name
+    ledger["tenant"] = case_ledger_tenant(cfg)
     if (keep_stored_on_read_failure and ledger["code"] == "CASE_READ_FAILED"
             and isinstance(run.case_ledger, dict)):
         ledger["stored_ledger_kept"] = True
@@ -576,8 +598,9 @@ async def refresh_case_ledger(
 ) -> dict:
     """Re-read the cases named in ``run.case_ledger`` and rebuild it.
 
-    Disposition drifts after a run (Auto Triage seals cases ~6 h later), so the
-    stored ledger goes stale. This re-reads CASES only: the stored alerts are
+    Disposition drifts after a run (Auto Triage seals cases after a window that
+    is the shipped default and tenant-configurable), so the stored ledger goes
+    stale. This re-reads CASES only: the stored alerts are
     kept, and each alert's stored ``issue_closed_by`` is carried forward
     unchanged (``issue_override``), never recomputed from the restored alerts,
     which carry no issue status and would all read ``unread``. ``merge_class``
@@ -587,6 +610,9 @@ async def refresh_case_ledger(
 
     * ``NO_CASE_LEDGER`` - nothing to refresh (409 at the API);
     * ``CASE_LEDGER_UNREADABLE`` - the stored ledger is corrupt;
+    * ``CASE_LEDGER_TENANT_MISMATCH`` - the ledger records a ``tenant`` and the
+      integration it names now points at another one (no read; stored kept). A
+      legacy ledger without ``tenant`` is refreshed as before and gains one;
     * ``CONNECTOR_PULL_FAILED`` - the case read failed. The stored ledger is
       KEPT: a transient failure must not overwrite a good ledger with PENDING.
       ``detail["queries_issued"]`` carries the pages spent (the sweep counts
@@ -661,6 +687,15 @@ async def refresh_case_ledger(
     # A recorded name that no longer exists raises INTEGRATION_NOT_FOUND (stored ledger kept).
     conn, cfg, _store, integ = await _resolve_connector(
         db, CASE_LEDGER_CONNECTOR, recorded, fetcher)
+    now_tenant = case_ledger_tenant(cfg)
+    if stored.get("tenant") and stored["tenant"] != now_tenant:
+        raise ReconcileError(
+            "CASE_LEDGER_TENANT_MISMATCH",
+            f"this ledger was read from tenant '{stored['tenant']}' but integration "
+            f"'{integ.name}' now points at '{now_tenant}'; case ids are tenant-local, "
+            "so it is not refreshed",
+            detail={"recorded": stored["tenant"], "integration": integ.name,
+                    "integration_tenant": now_tenant})
     cpull = conn.pull_cases(cfg, case_ids)
     pages = _pages_issued(cpull.detail)
     if not cpull.ok:
@@ -672,10 +707,7 @@ async def refresh_case_ledger(
 
     read_at = datetime.now(timezone.utc)
     try:
-        cases = {}
-        for inc in cpull.incidents:
-            c = ledger_case_from_incident(inc)
-            cases[c.case_id] = c
+        cases = cases_from_reply(cpull.incidents, case_ids)
         ledger = build_case_ledger(alerts, cases, basis=basis, read_at=read_at,
                                    issue_override=carried)
     except CaseShapeError as e:
@@ -685,6 +717,7 @@ async def refresh_case_ledger(
         ledger["merge_reason"] = str(e)
     ledger["issue_read"] = stored.get("issue_read", {"ok": None})
     ledger["integration"] = integ.name
+    ledger["tenant"] = now_tenant
     if stored.get("bridge") and ledger["merge_class"] == "SPLIT_NATIVE":
         # Carried, not re-read: the stored ledger keeps no per-alert host, so the
         # mixed-key condition cannot be re-evaluated here (see _add_bridge).
@@ -705,10 +738,23 @@ async def refresh_case_ledger(
 
 
 def _ledger_terminal(ledger: dict) -> bool:
-    """Every case sealed (resolved and not ``auto_resolved``): nothing can change.
-    An ``auto_resolved`` case can still reopen, so it is NOT terminal."""
+    """Nothing a re-read could change: every case sealed (resolved and not
+    ``auto_resolved``), the merge settled (not ``PENDING``) and every case an
+    alert names present in the ledger. An ``auto_resolved`` case can still
+    reopen, a ``PENDING`` merge may resolve, and a missing case may be
+    returned next time, so none of those is terminal. Any shape this cannot
+    read is not terminal either (the refresh then reports it)."""
     cases = ledger.get("cases")
-    return bool(cases) and all(c.get("sealed") is True for c in cases)
+    alerts = ledger.get("alerts")
+    if not isinstance(cases, list) or not cases or not isinstance(alerts, list):
+        return False
+    if ledger.get("merge_class") == "PENDING":
+        return False
+    if not all(isinstance(c, dict) and c.get("sealed") is True for c in cases):
+        return False
+    have = {c.get("case_id") for c in cases}
+    return all(isinstance(a, dict) and (not a.get("case_id") or a["case_id"] in have)
+               for a in alerts)
 
 
 def _read_at_of(ledger: dict) -> Optional[datetime]:

@@ -329,6 +329,8 @@ class XsiamConnector(Connector):
         ids = _clean_ids(case_ids)
 
         def _one(chunk: list[str]) -> PullResult:
+            # `search_from` is ignored on purpose: the explicit `limit` below makes
+            # this ONE page per chunk, so the window is always [0, len(chunk)).
             def body(search_from: int, page_size: int) -> dict:
                 return {"request_data": {
                     "filters": [{"field": "incident_id_list", "operator": "in",
@@ -365,6 +367,7 @@ class XsiamConnector(Connector):
         def _one(chunk: list[str]) -> PullResult:
             values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
 
+            # One page per chunk (explicit `limit`), so `search_from` is ignored.
             def body(search_from: int, page_size: int) -> dict:
                 return {"request_data": {
                     "filters": [{"field": "id", "operator": "in", "value": values}],
@@ -401,8 +404,10 @@ class XsiamConnector(Connector):
         Exactly ONE request (an explicit ``limit`` is a single page), so the
         caller counts one query per call whatever the outcome. ``None`` means
         "do not claim anything": the read failed, no record's ``endpoint_name``
-        matched the host, the result was truncated, or a matching record had no
-        ``ip`` list. It is never ``[]`` for a failure.
+        matched the host, more than one record matched it (a stale reinstall
+        record cannot be told from the live one, so the two are never unioned
+        into a BRIDGED claim), the result was truncated, or a matching record had
+        no ``ip`` list. It is never ``[]`` for a failure.
         """
         want = (hostname or "").strip().lower()
         if not want:
@@ -410,6 +415,8 @@ class XsiamConnector(Connector):
         conf = cfg.config or {}
         path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
 
+        # Exactly one page (explicit `limit`), so `search_from` is ignored; a
+        # truncated reply reads as None below rather than as a partial record set.
         def body(search_from: int, page_size: int) -> dict:
             return {"request_data": {
                 "filters": [{"field": "hostname", "operator": "in", "value": [hostname]}],
@@ -423,18 +430,14 @@ class XsiamConnector(Connector):
                             normalize=norm, kind="endpoints", request_for=body)
         if not res.ok or res.detail.get("truncated"):
             return None
-        ips: list[str] = []
-        matched = False
-        for rec in res.observations:
-            name = _s(rec.get("endpoint_name"))
-            if name is None or name.lower() != want:
-                continue
-            raw = rec.get("ip")
-            if not isinstance(raw, list) or not all(isinstance(i, str) for i in raw):
-                return None                         # unrecognised record shape
-            matched = True
-            ips.extend(raw)
-        return list(dict.fromkeys(ips)) if matched else None
+        records = [rec for rec in res.observations
+                   if (_s(rec.get("endpoint_name")) or "").lower() == want]
+        if len(records) != 1:
+            return None                             # none, or ambiguous
+        raw = records[0].get("ip")
+        if not isinstance(raw, list) or not all(isinstance(i, str) for i in raw):
+            return None                             # unrecognised record shape
+        return list(dict.fromkeys(raw))
 
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:

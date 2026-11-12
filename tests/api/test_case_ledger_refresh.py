@@ -217,3 +217,62 @@ def test_refresh_force_reads_inside_the_min_interval(client, session_factory, in
     assert body["refreshed"] is True and body["queries_issued"] == 1 and calls["cases"] == 1
     assert body["reason_code"] is None
     assert _get(session_factory, "r1").case_ledger["cases"][0]["status"] == "resolved_other"
+
+
+# ── final-wave minors ──────────────────────────────────────────────────────
+
+def test_refresh_against_a_different_tenant_is_refused(client, session_factory, inject):
+    """M5: the recorded integration now points at another tenant."""
+    led = stored_ledger(integration="acme")
+    led["tenant"] = "api-elsewhere.xdr.us.paloaltonetworks.com"
+    seed(session_factory, [("r1", datetime.utcnow(), led)])
+    fetcher, calls = tenant({"900": "resolved_other"})
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 409, r.text
+    d = r.json()["detail"]
+    assert d["code"] == "CASE_LEDGER_TENANT_MISMATCH"
+    assert d["detail"] == {"recorded": "api-elsewhere.xdr.us.paloaltonetworks.com",
+                           "integration": "acme",
+                           "integration_tenant": "api-acme.xdr.us.paloaltonetworks.com"}
+    assert calls["cases"] == 0
+    assert _get(session_factory, "r1").case_ledger == led
+
+
+def test_refresh_of_a_legacy_ledger_proceeds_and_records_the_tenant(client, session_factory, inject):
+    led = stored_ledger(integration="acme")
+    assert "tenant" not in led
+    seed(session_factory, [("r1", datetime.utcnow(), led)])
+    fetcher, calls = tenant()
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 200 and r.json()["refreshed"] is True and calls["cases"] == 1
+    assert _get(session_factory, "r1").case_ledger["tenant"] == "api-acme.xdr.us.paloaltonetworks.com"
+
+
+def test_refresh_reply_with_an_unrequested_case_degrades(client, session_factory, inject):
+    """M4 on the refresh path."""
+    import json as _json
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger())])
+    base, _ = tenant()
+
+    def extra(method, url, headers, body, timeout):
+        code, text = base(method, url, headers, body, timeout)
+        doc = _json.loads(text)
+        doc["reply"]["incidents"].append({"incident_id": "999", "status": "new", "alert_count": 1})
+        return code, _json.dumps(doc)
+    inject(extra)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 200
+    led = _get(session_factory, "r1").case_ledger
+    assert led["code"] == "CASE_STATUS_UNRECOGNIZED" and led["merge_class"] == "PENDING"
+    assert "999" not in [c["case_id"] for c in led["cases"]]
+
+
+def test_pair_endpoint_across_tenants_is_pending_without_a_code(client, session_factory):
+    la, lb = stored_ledger(case_id="900"), stored_ledger(case_id="901")
+    la["tenant"], lb["tenant"] = "api-a.xdr.us.paloaltonetworks.com", "api-b.xdr.us.paloaltonetworks.com"
+    _pair_seed(session_factory, la, lb)
+    merge = client.get("/api/runs/rep/pair").json()["merge"]
+    assert merge["merge_class"] == "PENDING" and "code" not in merge
+    assert "different tenants" in merge["merge_reason"]

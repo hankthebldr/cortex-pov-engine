@@ -126,6 +126,18 @@ describe('RunCasePanel', () => {
       'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
   })
 
+  it('renders read_at as UTC', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, read_at: '2026-11-11T10:00:00' }} />)
+    expect(screen.getByText(/read 2026-11-11T10:00:00 UTC/)).toBeTruthy()
+  })
+
+  it('a non-object case entry renders unreadable', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [LEDGER.cases[0], 'oops'] }} />)
+    expect(screen.getByTestId('run-case-unreadable').textContent)
+      .toMatch(/cases contains a non-object entry/)
+    expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
+  })
+
   it('ledger with wrong-typed cases renders unreadable', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, cases: 'oops' }} />)
     expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()

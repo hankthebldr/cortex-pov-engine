@@ -196,3 +196,20 @@ def test_no_case_yet_says_the_next_reconcile_advances_it(client, session_factory
     assert NO_CASE_YET_HINT in text
     assert NO_CASE_YET_HINT == ("No case yet: the next reconcile re-reads these alerts and rebuilds the"
                                 " ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.")  # mirrored verbatim in RunCasePanel.jsx
+
+
+
+# ── final-wave minors ──────────────────────────────────────────────────────
+
+def test_read_at_is_rendered_as_utc(client, session_factory):
+    """M1: stored read_at is naive UTC; the report says so."""
+    _seed(session_factory, {**LEDGER, "read_at": "2026-11-11T10:00:00"})
+    assert "Read at 2026-11-11T10:00:00 UTC from" in _md(client)
+
+
+def test_non_object_case_entry_is_unreadable(client, session_factory):
+    """B6: a case row that is not an object is a shape we do not read."""
+    _seed(session_factory, {**LEDGER, "cases": [LEDGER["cases"][0], "oops"]})
+    text = _md(client)
+    assert "Ledger unreadable: cases contains a non-object entry" in text
+    assert "| 900 |" not in text

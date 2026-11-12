@@ -406,3 +406,24 @@ def test_repeated_refresh_does_not_duplicate_bridge_suffix(session_factory):
         out = _refresh(session_factory, f)
     assert out["ledger"]["merge_reason"].count("ip-to-host bridge") == 1
     assert out["ledger"]["bridge"]["read_at"] == "2026-11-11T10:00:00+00:00"
+
+
+# ── B5: a ledger is terminal only when nothing can change it ───────────────
+
+def test_all_sealed_but_pending_ledger_is_still_refreshed(session_factory):
+    led = stored_ledger(status="resolved_other")
+    led["merge_class"] = "PENDING"
+    seed(session_factory, [("r0", datetime.utcnow(), led)])
+    fetcher, calls = tenant({"900": "resolved_other"})
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 1 and out["refreshed"] == 1
+
+
+def test_all_sealed_ledger_with_a_missing_referenced_case_is_still_refreshed(session_factory):
+    led = stored_ledger(status="resolved_other")
+    led["alerts"][1]["case_id"] = "901"          # named by an alert, never returned
+    led["merge_class"] = "SPLIT_SEALED"          # whatever the stored class says
+    seed(session_factory, [("r0", datetime.utcnow(), led)])
+    fetcher, calls = tenant({"900": "resolved_other"})
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 1 and out["refreshed"] == 1
