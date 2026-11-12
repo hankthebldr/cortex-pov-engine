@@ -5,8 +5,9 @@ as ``Authorization: {api_key}`` with no scheme prefix. The emitters used to
 default ``auth_scheme`` to ``"Bearer"``, so a campaign that only supplied a token
 sent ``Authorization: Bearer <key>`` and every POST was refused (401).
 
-Subjects are discovered from the plugin registry so a new collector emitter is
-covered without editing this file.
+Subjects are discovered from the plugin registry by the ``auth_token`` field, not
+by base class, so a collector emitter with its own params model (``email_emitter``)
+is covered too, and a new one is covered without editing this file.
 """
 
 from __future__ import annotations
@@ -28,15 +29,25 @@ _REQUIRED_EXTRAS = {
 
 _EMITTERS = sorted(
     (cls for cls in get_default_registry()
-     if issubclass(cls.Meta.params_model, AnalyticsEmitterParams)),
+     if "auth_token" in cls.Meta.params_model.model_fields),
     key=lambda cls: cls.Meta.name,
 )
 
 
 def test_discovery_finds_the_collector_emitters():
-    # Fourteen emitters inherit the collector auth fields today. A smaller
-    # number means discovery broke and the tests below would pass on nothing.
-    assert len(_EMITTERS) >= 14, [cls.Meta.name for cls in _EMITTERS]
+    # Fourteen analytics emitters plus email_emitter carry the collector auth
+    # fields today. A smaller number means discovery broke and the tests below
+    # would pass on nothing.
+    names = [cls.Meta.name for cls in _EMITTERS]
+    assert len(_EMITTERS) >= 15, names
+    assert "email_emitter" in names
+
+
+def test_every_collector_emitter_defaults_to_an_empty_scheme():
+    for cls in _EMITTERS:
+        fields = cls.Meta.params_model.model_fields
+        assert fields["auth_scheme"].default == "", cls.Meta.name
+        assert fields["auth_header"].default == "Authorization", cls.Meta.name
 
 
 def test_base_default_scheme_is_empty():

@@ -51,10 +51,11 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
+from .collector_auth import AuthHeader, AuthScheme, AuthToken, apply_collector_auth
 from .delivery import REMEDIATION, DeliveryLedger, response_evidence
 from .safety import url_host_port
 
@@ -102,27 +103,10 @@ class AnalyticsEmitterParams(BaseModel):
     )
 
     # -- net-new ingestion-auth door -------------------------------------
-    auth_token: Optional[SecretStr] = Field(
-        default=None,
-        description="Optional ingestion token (HEC-style raw token, or the "
-                    "credential portion of a Bearer/Splunk header). Held as a "
-                    "SecretStr so it is never logged and never emitted into an "
-                    "event body. Comes from the operator/vault, never hardcoded.",
-    )
-    auth_header: str = Field(
-        default="Authorization",
-        description="Header name the auth token is presented under. The XSIAM "
-                    "HTTP log collector reads 'Authorization'; a forwarder may "
-                    "want a custom X-... header.",
-    )
-    auth_scheme: str = Field(
-        default="",
-        description="Scheme prefix prepended to the token. Empty by default, "
-                    "because the XSIAM HTTP log collector expects the bare API "
-                    "key ('Authorization: <api_key>') and refuses 'Bearer <key>' "
-                    "with a 401. Set 'Bearer' or 'Splunk' only for a forwarder "
-                    "that asks for one.",
-    )
+    # Declared once in collector_auth.py and shared with email_emitter.
+    auth_token: AuthToken
+    auth_header: AuthHeader
+    auth_scheme: AuthScheme
 
     # -- net-new transport toggles ---------------------------------------
     compress: bool = Field(
@@ -610,11 +594,7 @@ class AnalyticsLogEmitter(BaseSimulation):
         }
         if params.user_agent:
             headers["user-agent"] = params.user_agent
-        if params.auth_token is not None:
-            token = params.auth_token.get_secret_value()
-            # Empty scheme -> raw token (HEC-style); .strip() drops the leading
-            # space so 'Bearer <t>' and a bare '<t>' both come out clean.
-            headers[params.auth_header] = f"{params.auth_scheme} {token}".strip()
+        apply_collector_auth(headers, params)
         return httpx.AsyncClient(
             timeout=params.request_timeout,
             # default False (NGFW MitM friendly); opt back in per campaign via

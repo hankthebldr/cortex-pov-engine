@@ -781,6 +781,31 @@ class TestCampaignSecretsAreNotReturned:
         assert params["auth_token"] is None
         assert params["auth_token_configured"] is True
 
+    def test_an_email_emitter_token_is_not_returned_either(self, api_client: TestClient):
+        # email_emitter has its own params model, not AnalyticsEmitterParams.
+        # The token must still survive validation into the stored spec and be
+        # redacted from every response.
+        spec = self._spec()
+        spec["campaign_id"] = "CMP-SECRET-EMAIL-001"
+        spec["steps"][0] = {
+            "step_id": "step-01",
+            "plugin": "email_emitter",
+            "params": {
+                "collector_url": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+                "auth_token": self._TOKEN,
+            },
+        }
+        created = api_client.post("/api/eal/campaigns", json=spec)
+        assert created.status_code == 201, created.text
+        listed = api_client.get("/api/eal/campaigns")
+        single = api_client.get("/api/eal/campaigns/CMP-SECRET-EMAIL-001")
+        for label, resp in (("POST", created), ("LIST", listed), ("GET", single)):
+            assert resp.status_code in (200, 201)
+            assert self._TOKEN not in resp.text, f"{label} returned the email token"
+        params = single.json()["spec"]["steps"][0]["params"]
+        assert params["auth_token"] is None
+        assert params["auth_token_configured"] is True
+
     def test_the_live_run_still_authenticates_with_the_stored_token(
         self, api_client: TestClient, monkeypatch,
     ):
