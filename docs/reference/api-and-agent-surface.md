@@ -647,7 +647,7 @@ get it.
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
 | GET | `/api/infra/modules` | List Terraform modules | query: `provider=aws` (default) | `{"modules":[<metadata>],"total":N}` |
-| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic) | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 `GENERATION_FAILED` |
+| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic): `region` must be an AWS region (`us-east-1`, `us-gov-west-1`), `params.jumpbox_size` an AWS instance type (`t3.medium`, `m7i-flex.large`, ≤32 chars); string values reach the `.tf`/`.tfvars` only as escaped HCL literals | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 request validation (incl. a bad `region`/`jumpbox_size`); 422 `GENERATION_FAILED` |
 | GET | `/api/infra/bundles` | List previously generated bundles | — | `{"bundles":[<summary>],"total":N}` |
 | GET | `/api/infra/bundles/{bundle_id}/download` | Download tar.gz | — | `FileResponse` gzip; 404 `BUNDLE_NOT_FOUND` |
 

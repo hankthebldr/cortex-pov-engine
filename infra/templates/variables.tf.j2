@@ -1,25 +1,25 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "{{ region }}"
+  default     = {{ region | hcl_string }}
 }
 
 variable "project_name" {
   description = "Resource prefix / tag"
   type        = string
-  default     = "{{ project_name }}"
+  default     = {{ project_name | hcl_string }}
 }
 
 variable "dc_ssh_cidr" {
   description = "DC's CIDR for SSH + SimCore UI access"
   type        = string
-  default     = "{{ dc_ssh_cidr }}"
+  default     = {{ dc_ssh_cidr | hcl_string }}
 }
 
 variable "jumpbox_size" {
   description = "Jumpbox instance type"
   type        = string
-  default     = "{{ jumpbox_size }}"
+  default     = {{ jumpbox_size | hcl_string }}
 }
 
 variable "k8s_node_count" {

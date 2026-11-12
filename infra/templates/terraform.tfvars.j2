@@ -1,7 +1,7 @@
-region           = "{{ region }}"
-project_name     = "{{ project_name }}"
-dc_ssh_cidr      = "{{ dc_ssh_cidr }}"
-jumpbox_size     = "{{ jumpbox_size }}"
+region           = {{ region | hcl_string }}
+project_name     = {{ project_name | hcl_string }}
+dc_ssh_cidr      = {{ dc_ssh_cidr | hcl_string }}
+jumpbox_size     = {{ jumpbox_size | hcl_string }}
 k8s_node_count   = {{ k8s_node_count }}
 edr_target_count = {{ edr_target_count }}
 # ttl_hours: Torque environment time-to-live hint (GAP-IAC-009). Surfaced both
