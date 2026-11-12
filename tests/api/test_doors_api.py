@@ -74,7 +74,8 @@ def test_readiness_bulk_keys_every_loaded_scenario(client):
     assert client.get("/api/doors/readiness?agent_id=a1").json()["agent_scoped_evaluated"] is True
     for sid, row in body["scenarios"].items():
         assert row["scenario_id"] == sid
-        assert {"route_blocked", "unevaluated", "closed", "state"} <= set(row)
+        assert {"route_blocked", "unevaluated", "not_open", "state"} <= set(row)
+        assert "closed" not in row  # renamed: the list means "not in the open set", not a closed state
 
 
 def test_scenario_doors_per_detection(client):
@@ -156,3 +157,27 @@ def test_open_event_without_configured_fact_reads_open(client, session_factory):
     asyncio.run(_rec())
     row = next(d for d in client.get("/api/doors").json()["doors"] if d["door_id"] == "saas_okta")
     assert row["state"] == "open" and row["basis"] == "attested"
+
+
+def test_detections_needing_excludes_composer_drafts(client, session_factory):
+    """A Composer draft is not corpus coverage: it must not inflate any door's count."""
+    from engine.scenario_loader import _parse_and_validate, _schema_to_orm_kwargs
+    from models import Scenario
+
+    before = {d["key"]: d["detections_needing"] for d in client.get("/api/doors").json()["doors"]}
+    assert before["xdr_agent"] > 0
+
+    async def _seed_draft():
+        p = os.path.join(settings.CORTEXSIM_BASE_DIR, "scenarios", "multi_plane",
+                         "mp-001-c2-beacon-ngfw-xdr-stitch.yml")
+        schema, err = _parse_and_validate(p)
+        assert err is None, err
+        kw = _schema_to_orm_kwargs(schema)
+        kw.update(scenario_id="SIM-DRAFT-001", status="draft")
+        async with session_factory() as s:
+            s.add(Scenario(**kw))
+            await s.commit()
+
+    asyncio.run(_seed_draft())
+    after = {d["key"]: d["detections_needing"] for d in client.get("/api/doors").json()["doors"]}
+    assert after == before

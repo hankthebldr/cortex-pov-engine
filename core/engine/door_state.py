@@ -93,7 +93,15 @@ async def current(db: AsyncSession) -> dict[str, dict]:
 
 
 async def configured_facts(db: AsyncSession) -> dict[str, str]:
-    """Rungs derivable with zero outbound calls: ``configured`` or ``authored``."""
+    """Rungs derivable with zero outbound calls: ``configured`` or ``authored``.
+
+    An agent-scoped door (``xdr_agent``, ``xdr_agent_xth``, ``ngfw_stitch``) reads
+    ``configured`` for a beacon only when the beacon is online **and** an
+    ``xsiam_tenant`` credential with XQL granted exists to check it with;
+    ``ngfw_stitch`` also needs a registered firewall. An online beacon alone is the
+    CortexSim beacon, not the Cortex XDR agent on that host (spec §1 defect 1), so
+    it configures nothing by itself.
+    """
     import integrations.panos as panos
     from api.agents import _derive_status
     from engine import collector_targets
@@ -117,7 +125,7 @@ async def configured_facts(db: AsyncSession) -> dict[str, str]:
             facts[d.id] = "configured" if ok else "authored"
         elif d.scope == "agent":
             for a in agents:
-                ok = a.agent_id in online and (firewall if d.id == "ngfw_stitch" else True)
+                ok = a.agent_id in online and xql and (firewall if d.id == "ngfw_stitch" else True)
                 facts[door_key(d.id, a.agent_id)] = "configured" if ok else "authored"
         elif d.scope == "target":
             for s in specs:

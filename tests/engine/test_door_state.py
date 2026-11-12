@@ -71,8 +71,7 @@ def test_unrecognised_state_raises():
 
 # ---- DB-backed ------------------------------------------------------------
 
-@pytest.fixture
-def Session():
+def _fresh_session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:",
                                  connect_args={"check_same_thread": False},
                                  poolclass=StaticPool)
@@ -86,6 +85,11 @@ def Session():
 
     asyncio.run(_init())
     return async_sessionmaker(bind=engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def Session():
+    return _fresh_session()
 
 
 def test_record_and_current(Session):
@@ -157,6 +161,38 @@ def test_configured_facts_zero_outbound(Session, monkeypatch):
     assert f["http_collector:lab"] == "configured"
     assert f["xdr_agent:on"] == f["xdr_agent_xth:on"] == f["ngfw_stitch:on"] == "configured"
     assert f["xdr_agent:off"] == f["ngfw_stitch:off"] == "authored"
+
+
+def test_online_beacon_alone_does_not_configure_agent_doors():
+    """An online beacon is the CortexSim beacon, not the Cortex XDR agent (spec §1 defect 1):
+    the agent doors read configured only with an XQL tenant credential to check them with,
+    and ngfw_stitch also needs a registered firewall."""
+    from models import Agent
+    from security import CredentialStore
+
+    async def go(Session, *, tenant_caps, firewall):
+        async with Session() as db:
+            store = CredentialStore(db)
+            if tenant_caps is not None:
+                await store.put_integration(name="t", kind="xsiam_tenant",
+                                            plaintext_secret="x", config={"capabilities": tenant_caps})
+            if firewall:
+                await store.put_integration(name="fw", kind="panos_ngfw",
+                                            plaintext_secret="x", config={})
+            db.add(Agent(agent_id="on", hostname="on", os="linux", last_seen=datetime.utcnow()))
+            await db.commit()
+            return await door_state.configured_facts(db)
+
+    agent_doors = ("xdr_agent:on", "xdr_agent_xth:on", "ngfw_stitch:on")
+    beacon_only = asyncio.run(go(_fresh_session(), tenant_caps=None, firewall=True))
+    assert {beacon_only[k] for k in agent_doors} == {"authored"}
+
+    no_xql = asyncio.run(go(_fresh_session(), tenant_caps=[], firewall=True))
+    assert {no_xql[k] for k in agent_doors} == {"authored"}
+
+    no_fw = asyncio.run(go(_fresh_session(), tenant_caps=["xql"], firewall=False))
+    assert no_fw["xdr_agent:on"] == no_fw["xdr_agent_xth:on"] == "configured"
+    assert no_fw["ngfw_stitch:on"] == "authored"
 
 
 def test_tenant_without_xql_stays_authored(Session):

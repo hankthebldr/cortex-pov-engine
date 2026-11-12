@@ -357,25 +357,25 @@ def test_readiness_ready_partial_needs(catalog):
     ready = _ready(catalog, sc, {"xdr_agent:a1", "ngfw_traffic"})
     assert ready == {
         "scenario_id": "SIM-TEST-001", "state": "ready", "scorable": 2, "total": 3, "underived": 1,
-        "route_blocked": 0, "unevaluated": 0, "closed": [], "agent_scoped_evaluated": True,
+        "route_blocked": 0, "unevaluated": 0, "not_open": [], "agent_scoped_evaluated": True,
     }
 
     partial = _ready(catalog, sc, {"xdr_agent:a1"})
     assert partial["state"] == "partial" and partial["scorable"] == 1
-    assert partial["closed"] == [{"door_id": "ngfw_traffic", "detections": 1}]
+    assert partial["not_open"] == [{"door_id": "ngfw_traffic", "detections": 1}]
 
     # A door open for another agent does not open it for this one.
     needs = _ready(catalog, sc, {"xdr_agent:a2"})
     assert needs["state"] == "needs_doors" and needs["scorable"] == 0 and needs["underived"] == 1
-    assert needs["closed"] == [{"door_id": "ngfw_traffic", "detections": 1},
+    assert needs["not_open"] == [{"door_id": "ngfw_traffic", "detections": 1},
                                {"door_id": "xdr_agent", "detections": 1}]
 
 
-def test_readiness_counts_a_detection_once_per_closed_door(catalog):
+def test_readiness_counts_a_detection_once_per_not_open_door(catalog):
     sc = _scenario((ENDPOINT_STEP, [_det("Correlation", "TTP-EDR", "CR-JOIN"),
                                     _det("BIOC", "TTP-EDR", "BIOC-XDR")]))
     out = _ready(catalog, sc, set())
-    assert out["closed"] == [{"door_id": "xdr_agent", "detections": 2},
+    assert out["not_open"] == [{"door_id": "xdr_agent", "detections": 2},
                              {"door_id": "ngfw_traffic", "detections": 1}]
 
 
@@ -385,11 +385,11 @@ def test_agent_doors_not_evaluated_without_agent(catalog):
     # The tenant door is still judged; the agent door is not, so nothing reads ready.
     assert out["agent_scoped_evaluated"] is False
     assert out["scorable"] == 1 and out["unevaluated"] == 1
-    assert out["state"] == "partial" and out["closed"] == []
+    assert out["state"] == "partial" and out["not_open"] == []
 
-    closed_tenant = _ready(catalog, sc, set(), agent_id=None)
-    assert closed_tenant["state"] == "needs_doors"
-    assert closed_tenant["closed"] == [{"door_id": "ngfw_traffic", "detections": 1}]
+    unopened_tenant = _ready(catalog, sc, set(), agent_id=None)
+    assert unopened_tenant["state"] == "needs_doors"
+    assert unopened_tenant["not_open"] == [{"door_id": "ngfw_traffic", "detections": 1}]
 
     agent_only = _scenario((ENDPOINT_STEP, [_det("BIOC", "TTP-EDR", "BIOC-XDR")]))
     assert _ready(catalog, agent_only, set(), agent_id=None)["state"] == "not_evaluated"
@@ -398,7 +398,7 @@ def test_agent_doors_not_evaluated_without_agent(catalog):
 def test_mixed_scope_or_set_without_agent(catalog):
     sc = _scenario((ENDPOINT_STEP, [_det("BIOC", "TTP-EDR", "BIOC-WIN")]))
     assert _ready(catalog, sc, {"windows_events"}, agent_id=None)["state"] == "ready"
-    # windows_events closed, xdr_agent_xth not evaluated: the OR-set could still be met.
+    # windows_events not open, xdr_agent_xth not evaluated: the OR-set could still be met.
     assert _ready(catalog, sc, set(), agent_id=None)["state"] == "not_evaluated"
     assert _ready(catalog, sc, {"xdr_agent_xth:a1"}, agent_id="a1")["state"] == "ready"
 
@@ -406,7 +406,7 @@ def test_mixed_scope_or_set_without_agent(catalog):
 def test_readiness_counts_collector_route_blocked(catalog):
     sc = _scenario((COLLECTOR_STEP, [_det("XQL", "TTP-IDP", "XQL-OKTA"), _det("BIOC", "TTP-IDP", "BIOC-OKTA")]))
     out = _ready(catalog, sc, {"http_collector:okta-col", "saas_okta"})
-    assert out["route_blocked"] == 2 and out["scorable"] == 0 and out["closed"] == []
+    assert out["route_blocked"] == 2 and out["scorable"] == 0 and out["not_open"] == []
     assert out["state"] == "needs_doors"
 
 
@@ -419,7 +419,7 @@ def test_readiness_keeps_going_past_missing_card(catalog):
     out = _ready(catalog, sc, {"xdr_agent:a1"})
     assert out["total"] == 4 and out["underived"] == 2
     assert out["scorable"] == 1 and out["state"] == "partial"
-    assert out["closed"] == [{"door_id": "ngfw_traffic", "detections": 1}]
+    assert out["not_open"] == [{"door_id": "ngfw_traffic", "detections": 1}]
 
 
 def test_readiness_with_nothing_derivable_is_not_evaluated(catalog):

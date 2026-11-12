@@ -290,13 +290,16 @@ def detection_requirement(
 
 
 def _judge(req: DoorRequirement, open_keys: set[str], agent_id: Optional[str]) -> tuple[str, tuple[str, ...]]:
-    """``(verdict, closed door ids)``; verdict is one of underived, route_blocked,
-    scorable, closed or unevaluated (an agent-scoped OR-set with no agent to key it)."""
+    """``(verdict, not-open door ids)``; verdict is one of underived, route_blocked,
+    scorable, not_open or unevaluated (an agent-scoped OR-set with no agent to key it).
+
+    ``not_open`` means an OR-set has no door in ``open_keys``. It does not say the
+    door is closed: a door nobody has checked is not open either."""
     if req.underived:
         return "underived", ()
     if req.route_blocked:
         return "route_blocked", ()
-    closed: list[str] = []
+    not_open: list[str] = []
     unevaluated = False
     for element in req.all_of:
         shut: list[str] = []
@@ -317,9 +320,9 @@ def _judge(req: DoorRequirement, open_keys: set[str], agent_id: Optional[str]) -
             if skipped:
                 unevaluated = True
             else:
-                closed.extend(d for d in shut if d not in closed)
-    if closed:
-        return "closed", tuple(closed)
+                not_open.extend(d for d in shut if d not in not_open)
+    if not_open:
+        return "not_open", tuple(not_open)
     return ("unevaluated" if unevaluated else "scorable"), ()
 
 
@@ -340,10 +343,17 @@ def scenario_readiness(
     counts in ``route_blocked``.
 
     ``state``: ``ready`` (every derived detection scorable), ``partial`` (some),
-    ``needs_doors`` (none, with ``closed`` naming each closed door and how many
-    detections it holds back), ``not_evaluated`` (no derived detection could be
+    ``needs_doors`` (none), ``not_evaluated`` (no derived detection could be
     judged). ``total = scorable + underived + route_blocked + unevaluated`` plus
-    the detections held back by a closed door.
+    the detections held back by a door that is not open.
+
+    ``not_open`` lists each door that is **not in the open set** (``open_keys``)
+    and how many detections it holds back, most first. It does **not**
+    distinguish a door that was checked and found closed from one nobody has
+    checked: both are simply not open. A caller that needs the difference joins
+    each door id against the door's own state (``GET /api/doors``). A detection
+    held back by two doors counts once under each, so the per-door counts can sum
+    to more than the detections held back.
     """
     if not isinstance(scenario, Mapping):
         raise DoorResolutionError(f"a scenario must be a mapping, got {type(scenario).__name__}")
@@ -351,7 +361,7 @@ def scenario_readiness(
     if not isinstance(steps, list):
         raise DoorResolutionError(f"scenario {scenario.get('scenario_id')!r}: steps must be a list")
     counts: Counter = Counter()
-    closed: Counter = Counter()
+    not_open: Counter = Counter()
     for step in steps:
         if not isinstance(step, Mapping):
             raise DoorResolutionError(
@@ -368,10 +378,10 @@ def scenario_readiness(
             verdict, doors = _judge(req, open_keys, agent_id)
             counts["total"] += 1
             counts[verdict] += 1
-            closed.update(doors)
+            not_open.update(doors)
 
     derived = counts["total"] - counts["underived"]
-    judged = counts["scorable"] + counts["closed"] + counts["route_blocked"]
+    judged = counts["scorable"] + counts["not_open"] + counts["route_blocked"]
     if judged == 0:
         state = "not_evaluated"
     elif counts["scorable"] == derived:
@@ -388,7 +398,7 @@ def scenario_readiness(
         "underived": counts["underived"],
         "route_blocked": counts["route_blocked"],
         "unevaluated": counts["unevaluated"],
-        "closed": [{"door_id": d, "detections": n}
-                   for d, n in sorted(closed.items(), key=lambda kv: (-kv[1], kv[0]))],
+        "not_open": [{"door_id": d, "detections": n}
+                     for d, n in sorted(not_open.items(), key=lambda kv: (-kv[1], kv[0]))],
         "agent_scoped_evaluated": agent_id is not None,
     }

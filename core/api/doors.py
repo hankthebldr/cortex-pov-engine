@@ -2,7 +2,9 @@
 CortexSim API — ingestion doors, read side.
 
   GET /api/doors                          — every door (per scope instance) with its state and
-                                            how many corpus detections name it
+                                            how many corpus detections name it (Composer drafts
+                                            excluded; collector-route detections, route-blocked or
+                                            not, count under http_collector)
   GET /api/doors/readiness?agent_id=      — door readiness of every loaded scenario, in one fetch
   GET /api/scenarios/{scenario_id}/doors  — one scenario's readiness plus each detection's requirement
 
@@ -120,7 +122,8 @@ async def list_doors(db: AsyncSession = Depends(get_db)):
     needing: Optional[dict[str, int]] = None
     if registry is not None:
         needing = {}
-        scenarios = (await db.execute(select(Scenario))).scalars().all()
+        # A Composer draft is not corpus coverage, so it never adds to a door's count.
+        scenarios = (await db.execute(select(Scenario).where(Scenario.status != "draft"))).scalars().all()
         try:
             for sc in scenarios:
                 for step, det in _detections(sc.to_dict()):
