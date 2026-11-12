@@ -170,6 +170,7 @@ The engine that links records from different sensors (agent network events, NGFW
 - SIM-MP-006 stitches NGFW and container endpoint on 5-tuple + container_id inside 10 s, but its endpoint query groups by action_local_ip, action_remote_ip, action_remote_port and omits the local port. — `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131`
 - `stitching_key` is one of src_host | session_id | user_principal | container_id; in the corpus it is src_host 28x, user_principal 13x and a long tail, and `correlation_window_seconds` ranges 10 s to 86400 s against "XSIAM's default correlation window". — `scenarios/_schema.yml:380`
 - 62 of the 87 EAL `plugin:` references in the multi-plane and NDR scenarios (15 files) name `ngfw_eal_emitter` (32) or `ngfw_threat_emitter` (30). Both POST firewall-shaped records to a custom HTTP collector, not through the native NGFW integration, yet those scenarios declare stitched expectations. — `core/eal_simulator/plugins/ngfw_eal_emitter.py ; scenarios/multi_plane/ ; scenarios/ndr/`
+- NAT between the agent and the firewall leaves nothing to join on. The PAN-OS preflight blocks the POV for such an agent (PN_NAT_BETWEEN_AGENT_AND_FW: "No src-IP / 5-tuple / container_id stitch can form for this agent"). One lab run joined a libvirt NAT guest's session to the firewall record anyway (known, operator report), so the block may be stricter than the engine. PM-STI-03 decides it. — `core/integrations/panos/sources.py:89 ; core/integrations/panos/sources.py:191 ; core/integrations/panos/sources.py:453`
 
 **How this differs from**
 
@@ -199,7 +200,7 @@ The engine that links records from different sensors (agent network events, NGFW
 
 **P0 · asked** — Which exact fields does the data fusion engine match to link an NGFW traffic/threat log to an XDR agent network event: the full 5-tuple (src IP, src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host identity? Is matching done on raw fields or XDM fields?
 
-- **Why we ask:** Henry's finding says the full tuple must agree. SIM-MP-006's endpoint query omits the local port (mp-006:131), so either the query is wrong or the port is not part of the key.
+- **Why we ask:** Henry's finding says the full tuple must agree. SIM-MP-006's endpoint query omits the local port (mp-006:131), so either the query is wrong or the port is not part of the key. A lab NAT guest's connection joined its firewall session although the two records carried different source IPs (PM-STI-03), so the source port may carry more of the join than the source IP.
 - **What the answer moves:** Which fields every network-shaped emitter and agent step must carry and agree on.
   - *if* full 5-tuple → Make src_port deterministic and shared; fix the SIM-MP-006 query to include action_local_port.
   - *if* subset (no src port) → Drop src_port from the stitch contract; stop pinning ephemeral ports.
@@ -220,9 +221,12 @@ The engine that links records from different sensors (agent network events, NGFW
 
 **P0 · asked** — When NAT is in play, which side of the translation does stitching use: the firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT source? Does the engine read the NGFW's NAT fields (nat source IP/port) to bridge the two?
 
-- **Why we ask:** Henry's correction put the source in the endpoint's view. If the engine bridges with NAT fields, emitters must populate both pre- and post-NAT fields consistently, or the bridge breaks.
-- **What the answer moves:** Which NGFW fields carry the endpoint's address; whether emitters must also fill NAT fields.
-- **Touches:** `ngfw_eal_emitter`, `third_party_firewall_emitter`, `core/engine/stitch_context.py`
+- **Why we ask:** Henry's correction put the source in the endpoint's view. If the engine bridges with NAT fields, emitters must populate both pre- and post-NAT fields consistently, or the bridge breaks. Lab, 2026-11-10 (operator report, STI known): a libvirt NAT guest's curl joined the firewall session although the firewall logged the hypervisor's address and never saw the guest's, so a matching source IP may not be needed. The PAN-OS preflight blocks exactly this setup today (PN_NAT_BETWEEN_AGENT_AND_FW).
+- **What the answer moves:** Which NGFW fields carry the endpoint's address; whether emitters must also fill NAT fields; whether PN_NAT_BETWEEN_AGENT_AND_FW stays a blocking code.
+  - *if* the join needs the agent's own source IP on the firewall record → Keep PN_NAT_BETWEEN_AGENT_AND_FW blocking; find what the lab causality view joined on and correct the STI fact.
+  - *if* the join holds across NAT on source port, destination, protocol and time → PN_NAT_BETWEEN_AGENT_AND_FW becomes degraded, not blocked; the stitch contract pins the source port and stops requiring equal source IPs.
+- **Settle it in the lab:** From the libvirt NAT guest, run one curl with a fixed source port (--local-port) to a destination the firewall logs. Compare the agent's network event with the firewall traffic record field by field (source IP, source port, NAT fields, destination, protocol, time), and read the network_story row for that connection if one exists.
+- **Touches:** `ngfw_eal_emitter`, `third_party_firewall_emitter`, `core/engine/stitch_context.py`, `core/integrations/panos/sources.py`
 - **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-04
@@ -1446,7 +1450,7 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
 
 ### NGFW sensor configuration (what the firewall must be set to emit)
 
-Everything on the firewall that decides whether an NGFW record exists in the tenant at all: which security rule a session matches (first match wins), the profile group that rule carries and whether each profile alerts or blocks, the log forwarding profile and the log types it sends, Enhanced Application Logging, the logging-service connection, decryption, NAT and User-ID / Cloud Identity Engine. A scenario that expects "the firewall will see it" is making a claim about this config, and CortexSim checks none of it today.
+Everything on the firewall that decides whether an NGFW record exists in the tenant at all: which security rule a session matches (first match wins), the profile group that rule carries and whether each profile alerts or blocks, the log forwarding profile and the log types it sends, Enhanced Application Logging, the logging-service connection, decryption, NAT and User-ID / Cloud Identity Engine. A scenario that expects "the firewall will see it" is making a claim about this config. The PAN-OS preflight (`POST /api/connectors/panos_ngfw/preflight`) reads most of it from a registered firewall: the device EAL switch, each log forwarding profile's log types and EAL flag, the rule a probe matches, that rule's profile actions (DNS Security categories included), decryption, NAT, User-ID on the source zone and whether the firewall sees each agent's own address. A green preflight proves the configuration, not that a record reached the tenant.
 
 **Known**
 
@@ -1464,12 +1468,15 @@ Everything on the firewall that decides whether an NGFW record exists in the ten
 
 - Synthetic NGFW threat records may only carry action alert or allow; block-class actions are refused. A real lab firewall running block profiles writes drop, reset or sinkhole, which the synthetic contract never produces, so the two shapes differ in the action field. — `core/eal_simulator/plugins/ngfw_threat_emitter.py:162`
 - Synthetic NGFW records default the source user to corp\cortexsim-canary and the source address to 10.0.12.34. A firewall with no User-ID or Cloud Identity Engine mapping logs no user at all. — `core/eal_simulator/plugins/ngfw_eal_emitter.py:83 ; core/eal_simulator/plugins/ngfw_threat_emitter.py:45`
-- The NDR IaC module's VM-Series path documents HTTP log forwarding to a lab collector. Nothing in the repo describes the logging-service path a customer firewall actually uses for XSIAM (CSP registration, device certificate, logging-service region, log forwarding profile, profile actions, rule order, decryption, User-ID). — `infra/modules/aws/ndr/README.md:27`
+- The NDR IaC module's VM-Series path documents HTTP log forwarding to a lab collector, not the logging-service path a customer firewall uses for XSIAM (CSP registration, device certificate, logging-service region). The PAN-OS preflight checks that path on a registered firewall, but nothing in the repo generates the firewall config a lab needs. — `infra/modules/aws/ndr/README.md:27 ; core/integrations/panos/preflight.py:47`
+- EAL needs both the device enhanced-application-logging switch and the EAL flag on each log forwarding profile: the preflight degrades when either is off (PN_EAL_DEVICE_OFF, PN_LFP_EAL_OFF). PM-NGF-01 asks whether both are required. — `core/integrations/panos/preflight.py:732 ; core/integrations/panos/preflight.py:815`
+- A block-class profile action changes nothing about the NGFW issue; it only stops the artefact before the endpoint. The preflight degrades on block, sinkhole and signature `default` actions, DNS Security categories included, and its PN_PROFILE_BLOCKS remediation says "a block still writes a threat log" so only the agent half is lost. PM-NGF-02 asks whether that holds. — `core/integrations/panos/sources.py:131 ; core/integrations/panos/sources.py:661`
+- The NGFW source user is a stitch key: the preflight degrades a source zone without User-ID because "user-principal stitches cannot resolve on the firewall side" (PN_ZONE_USERID_OFF). PM-NGF-03 asks whether XSIAM joins on it at all. — `core/integrations/panos/sources.py:163 ; core/integrations/panos/sources.py:926`
 
 **How this differs from**
 
 - **ING (Ingestion, parsing and XDM modeling)** — NGF decides whether the firewall writes and forwards a record; ING decides what the tenant does with it once received. A missing NGFW record is usually an NGF problem (wrong rule, block profile, no decryption) that looks like an ING problem.
-- **STI (Stitching (data fusion across sources))** — NGF decides which identity fields an NGFW record carries (pre-NAT source, NAT fields, user). Stitching can only join on fields that are there, so a NAT guest or a missing User-ID mapping breaks the join before the engine ever runs.
+- **STI (Stitching (data fusion across sources))** — NGF decides which identity fields an NGFW record carries (pre-NAT source, NAT fields, user). Stitching can only join on fields that are there, so a missing User-ID mapping removes the user before the engine ever runs. NAT is less clear: the preflight treats NAT between agent and firewall as fatal to the join, but one lab run joined a NAT guest's session anyway (STI known, PM-STI-03).
 
 **Questions**
 
@@ -1483,31 +1490,31 @@ Everything on the firewall that decides whether an NGFW record exists in the ten
 
 **P0 · open** — For XSIAM analytics that read Enhanced Application Logging, which firewall settings must all be on for the EAL records to reach the tenant: the device-level enhanced-application-logging switch, the flag on the rule's log forwarding profile, or both? Which log types must the profile forward for EAL (traffic only, or also url, data, auth)? Is a minimum PAN-OS or content version required?
 
-- **Why we ask:** ngfw_eal_emitter fabricates EAL-shaped records; a real firewall only emits them if configured. The lab firewall has both switches on and still nothing in CortexSim checks either one, so a DC cannot tell "EAL off" from "missed".
-- **What the answer moves:** The required-settings list in an NGFW preflight and in a generated firewall config; which EAL-based scenarios may run against a given firewall.
-  - *if* device switch alone is enough → Preflight checks one setting; the generated config sets it once.
-  - *if* both are required → Preflight checks the device switch and every log forwarding profile used by a lab egress rule.
+- **Why we ask:** ngfw_eal_emitter fabricates EAL-shaped records; a real firewall only emits them if configured. The lab firewall has both switches on. The PAN-OS preflight already requires both: its eal_device stage degrades when the device switch is off (PN_EAL_DEVICE_OFF), and its log_forwarding_profiles stage degrades every profile whose EAL flag is off (PN_LFP_EAL_OFF). If the device switch alone is enough, the second check is a false degrade.
+- **What the answer moves:** Which EAL checks the PAN-OS preflight keeps, which log types it requires of a profile (PN_LFP_MISSING_TYPE), and which EAL-based scenarios may run against a given firewall.
+  - *if* device switch alone is enough → Drop PN_LFP_EAL_OFF from the profile checks; keep PN_EAL_DEVICE_OFF.
+  - *if* both are required → Keep both preflight checks as they are.
 - **Settle it in the lab:** Turn off the profile-level EAL flag on the lab-scoped rule only, generate the same FTP egress from a lab host, and compare EAL dataset rows with and without the flag over 15 minutes.
-- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `infra/modules/aws/ndr`
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/integrations/panos/preflight.py`, `infra/modules/aws/ndr`
 
 #### PM-NGF-02
 
 **P0 · open** — Does the action on an NGFW threat log (alert, drop, reset-both, sinkhole) change which XSIAM issue is raised, its severity, or whether it can join a case with agent issues on the same host?
 
-- **Why we ask:** In the lab a dropped DNS Security lookup still produced an NGFW issue. The synthetic emitter refuses block-class actions (ngfw_threat_emitter.py:162), and a block on the wire can stop the next step from ever running, so the agent half of a stitch never happens.
-- **What the answer moves:** Whether lab egress profiles must be alert-only for stitched scenarios, and whether a scenario declares the NGFW action it expects.
-  - *if* action changes nothing upstream → Keep block profiles for realism; only require alert where a later step needs the traffic to pass.
-  - *if* block actions change the issue or its grouping → Generated lab config uses alert-only profiles (DNS Security categories included); scenarios declare the expected action.
+- **Why we ask:** In the lab a dropped DNS Security lookup still produced an NGFW issue. The synthetic emitter refuses block-class actions (ngfw_threat_emitter.py:162), and a block on the wire can stop the next step from ever running, so the agent half of a stitch never happens. The PAN-OS preflight already assumes the first branch: it degrades on block, sinkhole and signature-default actions, and its PN_PROFILE_BLOCKS remediation says a block still writes a threat log and only stops the artefact before the endpoint.
+- **What the answer moves:** Whether lab egress profiles must be alert-only for stitched scenarios, whether a scenario declares the NGFW action it expects, and what the preflight's block and sinkhole remediations tell a DC.
+  - *if* action changes nothing upstream → Keep block profiles for realism; only require alert where a later step needs the traffic to pass. PN_PROFILE_BLOCKS stays as written.
+  - *if* block actions change the issue or its grouping → Lab profiles are alert-only (DNS Security categories included); scenarios declare the expected action; PN_PROFILE_BLOCKS and PN_DNS_SEC_SINKHOLE say the issue itself changes.
 - **Settle it in the lab:** From the same lab host, resolve test-c2.testpanw.com once under a profile whose DNS Security C2 category is set to alert and once under sinkhole; compare the two issues and their cases.
-- **Touches:** `core/eal_simulator/plugins/ngfw_threat_emitter.py`
+- **Touches:** `core/eal_simulator/plugins/ngfw_threat_emitter.py`, `core/integrations/panos/sources.py`
 
 #### PM-NGF-03
 
 **P1 · open** — When the firewall maps source IPs to users (User-ID or Cloud Identity Engine), does XSIAM use the NGFW source-user field as an entity when it links NGFW records or issues to agent and identity data, and which format does it match (domain\user, UPN, or a normalised identity)?
 
-- **Why we ask:** Synthetic NGFW records always carry corp\cortexsim-canary (ngfw_eal_emitter.py:84); the lab firewall has no User-ID and logs no user, so a user-keyed stitch can never form from real traffic.
-- **What the answer moves:** Whether the generated firewall config must include User-ID or CIE mappings for lab hosts, and how emitters format the user field.
-  - *if* user is a join or grouping key → The firewall config generator adds a User-ID mapping (or CIE) for each lab host; emitters match its format.
-  - *if* user is enrichment only → Leave User-ID optional; drop user from the stitch contract.
+- **Why we ask:** Synthetic NGFW records always carry corp\cortexsim-canary (ngfw_eal_emitter.py:84); the lab firewall has no User-ID and logs no user, so a user-keyed stitch can never form from real traffic. The PAN-OS preflight already assumes the first branch: it degrades a source zone without User-ID because "user-principal stitches cannot resolve on the firewall side" (PN_ZONE_USERID_OFF).
+- **What the answer moves:** Whether a lab firewall must carry User-ID or CIE mappings for lab hosts, how emitters format the user field, and whether PN_ZONE_USERID_OFF degrades.
+  - *if* user is a join or grouping key → Lab setup adds a User-ID mapping (or CIE) for each lab host; emitters match its format; PN_ZONE_USERID_OFF stays.
+  - *if* user is enrichment only → Leave User-ID optional; drop user from the stitch contract; PN_ZONE_USERID_OFF stops claiming stitches need it.
 - **Settle it in the lab:** Register a static IP-to-user mapping for one lab host through the firewall's User-ID API, run the DNS Security test from that host, and compare the resulting issue's entities and grouping with the same test unmapped.
-- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/eal_simulator/plugins/ngfw_threat_emitter.py`
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/eal_simulator/plugins/ngfw_threat_emitter.py`, `core/integrations/panos/sources.py`

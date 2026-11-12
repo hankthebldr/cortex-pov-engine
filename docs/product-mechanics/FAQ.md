@@ -54,7 +54,7 @@ and still fail its incident check.
 
 **My firewall session didn't stitch to the endpoint process. What do I check first?**
 
-*Basis: working model, unconfirmed · reviewed 2026-11-10*
+*Basis: working model, unconfirmed · reviewed 2026-11-12*
 
 Work down this list; the cheapest checks come first. Each item says how sure we
 are of it.
@@ -73,9 +73,12 @@ are of it.
 3. **Does the 5-tuple agree?** *(operator report)* Source IP and port as the
    endpoint recorded them, destination IP and port as the firewall transaction
    recorded them, same protocol (FAQ-STI-03).
-4. **Is NAT or a container in between?** *(unknown)* Both sides record NAT fields,
-   but which pair stitching compares is PM-STI-03. A pod behind node SNAT is
-   PM-STI-04.
+4. **Is NAT or a container in between?** *(operator report / unknown)* Both sides
+   record NAT fields, but which pair stitching compares is PM-STI-03. One lab run
+   joined a NAT guest's connection to the firewall session although the firewall
+   never saw the guest's address; what made the join is not confirmed. The NGFW
+   preflight still blocks that setup (`PN_NAT_BETWEEN_AGENT_AND_FW`). A pod behind
+   node SNAT is PM-STI-04.
 5. **Did you look too early, or in the wrong place?** *(documented / unknown)*
    Stories are published after their events (`story_publish_timestamp`) and can be
    re-versioned; the delay is PM-STI-14. Look in `network_story`, not the raw
@@ -84,13 +87,13 @@ are of it.
    were checked; PM-STI-05 stays partial.
 
 - **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked) · [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, asked) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked) · [PM-STI-04](LEDGER.md#pm-sti-04) (P0, asked) · [PM-STI-14](LEDGER.md#pm-sti-14) (P1, open) · [PM-STI-02](LEDGER.md#pm-sti-02) (P0, asked) · [PM-STI-05](LEDGER.md#pm-sti-05) (P0, provisional)
-- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect · `core/eal_simulator/plugins/ngfw_eal_emitter.py`
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect · `core/eal_simulator/plugins/ngfw_eal_emitter.py` · `core/integrations/panos/sources.py:89`
 
 ### FAQ-STI-03
 
 **Which side of the connection goes into which field?**
 
-*Basis: operator report · reviewed 2026-11-10*
+*Basis: operator report · reviewed 2026-11-12*
 
 For a connection the endpoint makes outbound:
 
@@ -111,10 +114,14 @@ local port, so either that query or our model is wrong. And NAT: the agent recor
 `action_remote_nat_port` and `action_nat`, and the firewall carries pre- and post-NAT
 addresses, but which pair stitching compares is not published (PM-STI-03). An
 agent behind source NAT sees only its local address, so keep the firewall's pre-NAT
-source equal to the agent's `action_local_*` *(our inference)*.
+source equal to the agent's `action_local_*` *(our inference)*. That is the safe
+choice, not a proven requirement: one lab run joined a NAT guest's connection to the
+firewall session although the firewall logged the hypervisor's address *(operator
+report; the fields that made the join are not confirmed)*. Until PM-STI-03 is
+answered, the NGFW preflight treats NAT between agent and firewall as blocking.
 
 - **Would change if answered:** [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked)
-- **Sources:** https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor · `core/engine/stitch_context.py:75` · `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131`
+- **Sources:** https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor · `core/engine/stitch_context.py:75` · `core/integrations/panos/sources.py:89` · `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131`
 
 ### FAQ-STI-04
 
