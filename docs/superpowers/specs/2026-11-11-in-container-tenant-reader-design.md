@@ -1,6 +1,6 @@
 # In-container tenant reader and the Results page — design
 
-Status: **design** (revised after the builder check, awaiting review) · 2026-11-11
+Status: **approved (Henry, 2026-11-11 22:36 CST)** · 2026-11-11
 Author: Henry + Claude
 Branch: `docs/docs-in-container-tenant-reader` (cut from `dev` @ `b1ee28fa`)
 Depends on: the SOC Framework Part B branch `feature/api-run-case-ledger` (read at
