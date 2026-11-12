@@ -38,6 +38,13 @@ ALLOWED_MODULES = (
     "telemetry-replay",
 )
 
+# region and jumpbox_size are rendered into Terraform string literals, so they
+# are held to the shapes AWS actually uses (aws is the only provider with
+# modules). Region: us-east-1, us-gov-west-1, ap-southeast-7. Instance type:
+# t3.medium, m7i-flex.large, u-6tb1.metal.
+AWS_REGION_PATTERN = r"^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
+AWS_INSTANCE_TYPE_PATTERN = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*\.[a-z0-9]+$"
+
 
 class InfraGenerateParams(BaseModel):
     """Per-request parameters applied to the generated Terraform."""
@@ -50,7 +57,12 @@ class InfraGenerateParams(BaseModel):
         description="Lowercase-hyphen project name used as resource prefix",
     )
     dc_ssh_cidr: str = Field(..., description="CIDR allowed SSH access, e.g. 203.0.113.0/32")
-    jumpbox_size: str = Field(default="t3.medium", description="Provider-specific instance type")
+    jumpbox_size: str = Field(
+        default="t3.medium",
+        max_length=32,
+        pattern=AWS_INSTANCE_TYPE_PATTERN,
+        description="AWS instance type, e.g. t3.medium",
+    )
     k8s_node_count: int = Field(
         default=2, ge=1, le=10, description="Worker nodes for CDR module"
     )
@@ -74,7 +86,7 @@ class InfraGenerateParams(BaseModel):
 
 class InfraGenerateRequest(BaseModel):
     provider: Literal["aws", "gcp", "azure"]
-    region: str = Field(..., min_length=3, max_length=32)
+    region: str = Field(..., min_length=3, max_length=32, pattern=AWS_REGION_PATTERN)
     modules: list[str] = Field(..., min_length=1)
     params: InfraGenerateParams
     adapter_refs: list[str] = Field(
