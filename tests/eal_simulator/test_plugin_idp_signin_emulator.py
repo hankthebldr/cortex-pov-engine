@@ -251,9 +251,9 @@ class TestProviderShapes:
     def test_three_providers_registered(self):
         assert _list_providers() == sorted(["okta", "microsoft", "google"])
 
-    def test_eight_event_patterns_registered(self):
+    def test_nine_event_patterns_registered(self):
         assert _list_event_patterns() == sorted(_EVENT_PATTERNS)
-        assert len(_EVENT_PATTERNS) == 8
+        assert len(_EVENT_PATTERNS) == 9
 
     def test_every_provider_has_a_dataset(self):
         for provider in _PROVIDER_BUILDERS:
@@ -643,3 +643,165 @@ class TestRegistration:
         assert is_c2_plugin(
             "idp_signin_emulator", IdpSigninEmulator.Meta.mitre_techniques,
         ) is False
+
+
+# --------------------------------------------------------------------------
+# Pink chain shapes: body_time, source_ip, event_time_offset_seconds,
+# vishing_passkey_enrollment.
+#
+# Record shapes follow Microsoft Graph (learn.microsoft.com):
+#   signIn: createdDateTime, ipAddress, isInteractive, userPrincipalName,
+#     https://learn.microsoft.com/en-us/graph/api/resources/signin?view=graph-rest-1.0
+#   authenticationDetail (beta): authenticationMethod, authenticationMethodDetail,
+#     authenticationStepDateTime, authenticationStepRequirement,
+#     authenticationStepResultDetail, succeeded,
+#     https://learn.microsoft.com/en-us/graph/api/resources/authenticationdetail?view=graph-rest-beta
+#   directoryAudit: activityDateTime, activityDisplayName, category,
+#     loggedByService, initiatedBy.user.ipAddress, targetResources,
+#     additionalDetails, result,
+#     https://learn.microsoft.com/en-us/graph/api/resources/directoryaudit?view=graph-rest-1.0
+#   Activity name "User registered security info" (category UserManagement,
+#     service Authentication Methods):
+#     https://learn.microsoft.com/entra/identity/monitoring-health/reference-audit-activities
+# --------------------------------------------------------------------------
+
+import dataclasses
+from datetime import datetime, timedelta, timezone
+
+from eal_simulator import analytics_emitter
+
+_HOME_IP = "203.0.113.10"
+_ATTACKER_IP = "172.93.100.252"
+
+
+def _build(pattern: str, **param_overrides):
+    provider = "microsoft" if pattern == "vishing_passkey_enrollment" else "okta"
+    params = IdpSigninEmulatorParams(
+        collector_url=_DEFAULT_COLLECTOR,
+        provider=provider,
+        event_pattern=pattern,
+        **param_overrides,
+    )
+    return IdpSigninEmulator().build_events(params, sim_run_id="run-x", iteration=0)
+
+
+def _record_ip(rec: dict) -> str:
+    if "client" in rec:
+        return rec["client"]["ipAddress"]
+    if "initiatedBy" in rec:
+        return rec["initiatedBy"]["user"]["ipAddress"]
+    return rec["ipAddress"]
+
+
+def test_body_time_offset_moves_timestamp(monkeypatch):
+    frozen = datetime(2026, 11, 11, 12, 0, 0, tzinfo=timezone.utc)
+
+    class _Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen
+
+    monkeypatch.setattr(analytics_emitter, "datetime", _Frozen)
+    assert analytics_emitter.body_time(-1500) == (frozen - timedelta(seconds=1500)).isoformat()
+    assert analytics_emitter.body_time(-1500, plus_seconds=90) == \
+        (frozen - timedelta(seconds=1410)).isoformat()
+    assert analytics_emitter.body_time() == frozen.isoformat()
+
+
+def test_positive_offset_refused():
+    with pytest.raises(Exception):
+        IdpSigninEmulatorParams(
+            collector_url=_DEFAULT_COLLECTOR, event_time_offset_seconds=10,
+        )
+
+
+def test_invalid_source_ip_refused():
+    with pytest.raises(Exception):
+        IdpSigninEmulatorParams(collector_url=_DEFAULT_COLLECTOR, source_ip="not-an-ip")
+
+
+@pytest.mark.parametrize("pattern", sorted(_EVENT_PATTERNS))
+def test_source_ip_replaces_attacker_side_ips(pattern):
+    baseline = _build(pattern)
+    replaced = _build(pattern, source_ip=_ATTACKER_IP)
+    assert len(baseline) == len(replaced)
+    for before, after in zip(baseline, replaced):
+        if _record_ip(before) == _HOME_IP:
+            assert _record_ip(after) == _HOME_IP
+        else:
+            assert _record_ip(after) == _ATTACKER_IP
+
+
+@pytest.mark.parametrize(
+    "pattern", sorted(set(_EVENT_PATTERNS) - {"vishing_passkey_enrollment"}),
+)
+def test_default_source_ip_keeps_todays_ips(pattern):
+    expected = {
+        "impossible_travel": {"us-west", "apac-east"},
+        "mfa_fatigue": {"africa-south"},
+        "credential_stuffing": {"sa-east"},
+        "token_replay": {"us-west", "eu-central"},
+        "brute_force_lockout": {"sa-east"},
+        "azure_risky_login": {"us-west", "anon-vpn"},
+        "azure_ad_powershell_first_use": {"eu-central"},
+        "entra_mfa_reported_suspicious": {"anon-vpn"},
+    }[pattern]
+    got = {_record_ip(r) for r in _build(pattern)}
+    assert got == {_LOCATIONS[k].ip for k in expected}
+
+
+def test_offset_backdates_body_timestamp():
+    rec = _build("impossible_travel", event_time_offset_seconds=-3600)[0]
+    published = datetime.fromisoformat(rec["published"])
+    age = (datetime.now(timezone.utc) - published).total_seconds()
+    assert 3590 < age < 3700
+    fresh = _build("impossible_travel")[0]
+    assert (datetime.now(timezone.utc) - datetime.fromisoformat(fresh["published"])
+            ).total_seconds() < 60
+
+
+def test_vishing_passkey_enrollment_shapes():
+    recs = _build(
+        "vishing_passkey_enrollment",
+        source_ip=_ATTACKER_IP, event_time_offset_seconds=-1500,
+    )
+    assert len(recs) == 2
+    signin, audit = recs
+    assert signin["isInteractive"] is True
+    assert signin["vishing_passkey_marker"] is True
+    assert signin["ipAddress"] == _ATTACKER_IP
+    assert signin["status"]["errorCode"] == 0
+    methods = {d["authenticationMethod"] for d in signin["authenticationDetails"]}
+    assert "Password" in methods
+    push = [d for d in signin["authenticationDetails"]
+            if d["authenticationMethod"] == "Mobile app notification"]
+    assert push and push[0]["succeeded"] is True
+    assert "number" in push[0]["authenticationStepResultDetail"].lower()
+
+    assert audit["activityDisplayName"] == "User registered security info"
+    assert audit["category"] == "UserManagement"
+    assert audit["loggedByService"] == "Authentication Methods"
+    assert audit["result"] == "success"
+    assert audit["vishing_passkey_marker"] is True
+    assert audit["initiatedBy"]["user"]["ipAddress"] == _ATTACKER_IP
+    assert audit["initiatedBy"]["user"]["userPrincipalName"] == signin["userPrincipalName"]
+    assert any("Passkey" in str(d.get("value", "")) for d in audit["additionalDetails"])
+    t1 = datetime.fromisoformat(signin["createdDateTime"])
+    t2 = datetime.fromisoformat(audit["activityDateTime"])
+    assert t2 - t1 == timedelta(seconds=90)
+    age = (datetime.now(timezone.utc) - t1).total_seconds()
+    assert 1490 < age < 1600
+
+
+def test_vishing_passkey_default_location_is_anon_vpn():
+    signin, audit = _build("vishing_passkey_enrollment")
+    assert signin["ipAddress"] == _LOCATIONS["anon-vpn"].ip
+    assert audit["initiatedBy"]["user"]["ipAddress"] == _LOCATIONS["anon-vpn"].ip
+
+
+def test_vishing_passkey_needs_microsoft():
+    with pytest.raises(Exception, match="needs provider microsoft"):
+        IdpSigninEmulatorParams(
+            collector_url=_DEFAULT_COLLECTOR, provider="okta",
+            event_pattern="vishing_passkey_enrollment",
+        )
