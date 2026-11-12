@@ -467,7 +467,7 @@ jobs:
             echo "\`scripts/dev-up.sh\` needs only Docker. It builds the image locally (\`docker compose up -d --build\`) and waits for \`/api/health\`."
             echo
             if [ -f dist/install.sh ]; then
-              echo "**\`install.sh\` is the source bootstrap, not a one-line installer.** It installs a Go/Rust/Node/Python toolchain, initialises the submodules, builds every component and runs \`docker compose up -d --build\`, all relative to the directory it runs in. Run it from the root of the clone above as your normal user (\`./install.sh\`); it calls \`sudo\` itself. Do not pipe it (\`curl … | bash\`). Outside a checkout it installs the toolchain, skips every build step with a warning, starts nothing, and still prints \"Installation complete\". The attached copy is the same file as \`install.sh\` at the root of the tree this release was built from."
+              echo "**\`install.sh\` is the source bootstrap, not a one-line installer.** It installs a Go/Rust/Node/Python toolchain, initialises the submodules, builds every component and runs \`docker compose up -d --build\`, all relative to the directory it runs in. Run it from the root of the clone above as your normal user (\`./install.sh\`); it calls \`sudo\` itself. Do not pipe it (\`curl … | bash\`). Outside a checkout it refuses at step 0 with \`INSTALL_NOT_A_CHECKOUT\` (exit 2) before it installs anything, and prints the two supported ways to run it. The attached copy is the same file as \`install.sh\` at the root of the tree this release was built from."
               echo
             fi
             # Every claim below is about what this run did. Signing is not
