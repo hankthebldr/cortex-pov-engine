@@ -156,6 +156,8 @@ def test_unreferenced_key_is_refused(tools_client, popen_recorder):
     "T1082;id",
     "",
     "T1082\n",
+    "T١٠٨٢",   # Arabic-Indic digits: \d matched them
+    "T１０８２",   # fullwidth digits
 ])
 def test_mitre_id_is_validated(tools_client, popen_recorder, bad):
     resp = tools_client.post(
@@ -193,8 +195,9 @@ def test_valid_mitre_id_reaches_popen_as_one_token(tools_client, popen_recorder,
 def test_config_path_outside_base_dir_is_refused(tools_client, popen_recorder, tmp_path):
     outside = tmp_path / "ackbarx.yml"
     outside.write_text("x: 1\n")
+    # "." and "cfg/.." name the base dir itself, which is not a config file.
     for bad in ("../../../etc/passwd", str(outside), "-c/etc/passwd",
-                "cfg/a b.yml"):
+                "cfg/a b.yml", ".", "cfg/.."):
         resp = tools_client.post(
             "/api/tools/ackbarx/start", json={"params": {"config_path": bad}},
         )

@@ -45,7 +45,8 @@ logger = logging.getLogger("cortexsim.tools")
 #: Placeholders the registry itself fills. Never the caller's to set.
 _REGISTRY_SUPPLIED = frozenset({"source_path", "binary", "port"})
 
-_MITRE_ID_RE = re.compile(r"^T\d{4}(\.\d{3})?$")
+# [0-9], not \d: \d also matches Arabic-Indic, fullwidth and other Unicode digits.
+_MITRE_ID_RE = re.compile(r"^T[0-9]{4}(\.[0-9]{3})?$")
 #: Generic placeholder value: one plain token. Deliberately narrow — no
 #: whitespace, quotes, backslashes, shell metacharacters or format braces.
 _GENERIC_VALUE_RE = re.compile(r"^[A-Za-z0-9_.:/@+,=-]{1,256}$")
@@ -109,10 +110,12 @@ def _validate_value(name: str, value: Any, base_dir: str) -> str:
         if not candidate.is_absolute():
             candidate = base / candidate
         resolved = candidate.resolve()
-        if resolved != base and base not in resolved.parents:
+        # Strictly under: the base dir itself is a directory, never a file a
+        # tool can be pointed at.
+        if base not in resolved.parents:
             raise ToolParamError(
-                f"param '{name}' must resolve under CORTEXSIM_BASE_DIR ({base}); "
-                f"{value!r} resolves to {resolved}"
+                f"param '{name}' must resolve to a path under CORTEXSIM_BASE_DIR "
+                f"({base}); {value!r} resolves to {resolved}"
             )
         return str(resolved)
     if not _GENERIC_VALUE_RE.fullmatch(value):
