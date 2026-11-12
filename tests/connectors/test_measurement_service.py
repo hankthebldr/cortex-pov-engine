@@ -131,7 +131,11 @@ def test_correlation_uses_incident_ids_on_the_alerts_when_present(session_factor
     m = summary["measurement"]
     assert m["basis"] == "alert_incident_ids" and m["value"] == 100.0 and m["alerts"] == 3
     assert run.tc_verdict == "pass"
-    assert not any("incidents" in c for c in calls), "no incidents read when the alerts carry ids"
+    # No time-window incident LIST read (the fallback) when the alerts carry ids.
+    # The one remaining "incidents" call is the by-id case read for the case
+    # ledger (get_incidents with incident_id_list), which is context, not basis.
+    assert sum("incidents" in c for c in calls) == 1, "only the case-ledger by-id read"
+    assert summary["case_ledger"]["merge_class"] == "PENDING"  # this tenant returned no case
 
 
 def test_correlation_falls_back_to_host_scoped_incidents(session_factory):

@@ -178,6 +178,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_prevention_columns)
         await conn.run_sync(_migrate_eal_run_columns)
         await conn.run_sync(_migrate_integration_response_layer_columns)
+        await conn.run_sync(_migrate_case_ledger_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -437,6 +438,20 @@ def _migrate_eal_run_columns(connection) -> None:
     if "collector_resolution" not in existing:
         connection.execute(text(
             "ALTER TABLE eal_campaign_runs ADD COLUMN collector_resolution JSON"))
+
+
+def _migrate_case_ledger_columns(connection) -> None:
+    """Add ``runs.case_ledger`` if absent (same ``create_all``-never-adds-a-COLUMN
+    rationale as the helpers above). Nullable JSON: a legacy run reads as "no
+    ledger built", never as "one case"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("runs")}
+    if "case_ledger" not in existing:
+        connection.execute(text("ALTER TABLE runs ADD COLUMN case_ledger JSON"))
 
 
 def _migrate_prevention_columns(connection) -> None:
