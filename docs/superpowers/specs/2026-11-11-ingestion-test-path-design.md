@@ -1,8 +1,9 @@
 # Ingestion test path: Broker VM applets, XDR Collector, HTTP log collector
 
 Date: 2026-11-11 · Branch: `docs/docs-ingestion-test-path` (cut from `origin/dev`
-b1ee28fa) · Status: design only, nothing built; revised after the builder check
-with Henry's decisions of 2026-11-11, ~21:00 CST. `tenant-verified` is 0.
+b1ee28fa) · Status: approved (Henry, 2026-11-11 22:36 CST). Nothing built; plan:
+`docs/superpowers/plans/2026-11-11-ingestion-test-path.md`. Revised after the
+builder check with Henry's decisions of 2026-11-11, ~21:00 CST. `tenant-verified` is 0.
 
 Every choice Henry did not make is marked **Claude's call:**, so he can veto it.
 Repo facts were re-read on `origin/dev` b1ee28fa. Vendor facts were re-fetched
