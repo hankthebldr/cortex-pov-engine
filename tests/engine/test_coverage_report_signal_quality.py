@@ -148,6 +148,11 @@ def test_marker_only_canonical_vectors(module, cmd, expected):
     assert module.is_marker_only_step({"command": cmd}) is expected
 
 
+def test_eal_channel_step_is_not_marker_only(module):
+    assert module.is_marker_only_step({"channel": "eal", "command": "true"}) is False
+    assert module.is_marker_only_step({"command": "true"}) is True
+
+
 def test_marker_ceiling_compares_before_rounding(module, tmp_path, monkeypatch):
     sdir, tdir = _corpus(tmp_path)
     real = module.signal_quality

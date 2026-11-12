@@ -266,6 +266,16 @@ def test_fix_canonical_marker_rule(cmd, expected):
     assert _load_hook().is_marker_only(cmd) is expected
 
 
+def test_hook_no_marker_warning_on_eal_step(tmp_path):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["steps"][0]["command"] = "true"
+    d["steps"][0]["channel"] = "eal"
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert "marker-only step " + d["steps"][0]["id"] not in r.stdout
+
+
 # ── Fix round 2: loader parity + malformed-field robustness ──────────────────
 def _pairs(lines):
     import re as _re  # noqa: PLC0415

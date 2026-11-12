@@ -674,7 +674,7 @@ def main() -> int:
             errors.extend(unsafe_indicator_lines(indicators, step_dicts, cl_cmds))
     errors.extend(campaign_id_errors(step_dicts))
     for st in step_dicts:
-        if is_marker_only(st.get("command")):
+        if st.get("channel") != "eal" and is_marker_only(st.get("command")):
             warnings.append(
                 f"marker-only step {st.get('id', '?')}: command only echoes/no-ops "
                 f"and emits no signal a detection could key on")
