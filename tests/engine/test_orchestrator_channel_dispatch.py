@@ -13,7 +13,7 @@ to route them, but only as a skeleton:
     silent no-op or a task nothing will collect.
   * An ``eal`` step is dispatched IN-PROCESS at launch (Phase 3b): the
     orchestrator builds a Campaign and runs it through ``CampaignExecutor`` in
-    dry_run (records pre-rendered, nothing POSTed), injecting the shared identity
+    dry_run (nothing delivered), injecting the shared identity
     principal via the binding->params adapter, seeding the step's detections with
     a real executed_at, and recording the real dispatch outcome (dry_run /
     dispatched / not_delivered / error) on ``Run.channel_dispatch`` — never a
@@ -552,5 +552,376 @@ def test_eal_step_without_a_collector_url_uses_the_instance_target(session_facto
             entry = run.channel_dispatch[0]
             assert entry["status"] == "dry_run", entry
             assert entry["collector_target"] == "ngfw-hec"
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Live delivery for in-process eal steps. A scenario run's eal steps POST to a
+# customer collector only behind launch consent, a named operator, and a keyed,
+# healthy collector target for every eal step. Every dry-run says why.
+# ---------------------------------------------------------------------------
+
+FAKE_KEY = "fake-collector-key-for-tests-0000"
+TARGET_URL = "https://api-acme.example.test/logs/v1/event"
+LIVE_CONSENT = {"simulation_authorized": True}
+
+
+class _RecordingClient:
+    """Stub ``httpx.AsyncClient`` capturing every POST the plugin makes
+    (copied from tests/eal_simulator/test_plugin_m365_activity_emitter.py)."""
+
+    def __init__(self, status_code: int = 202, raise_exc: Exception | None = None):
+        self.requests: list[dict] = []
+        self.status_code = status_code
+        self.raise_exc = raise_exc
+        self.closed = False
+
+    async def post(self, url: str, *, headers=None, content=None):
+        self.requests.append({
+            "url": url,
+            "headers": dict(headers or {}),
+            "content": content,
+        })
+        if self.raise_exc is not None:
+            raise self.raise_exc
+
+        class _R:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+
+        return _R(self.status_code)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _Recorder:
+    """Every client the analytics emitters build, plus the auth header the
+    real ``_build_client`` would have put on it."""
+
+    def __init__(self) -> None:
+        self.status_code = 202
+        self.clients: list[_RecordingClient] = []
+        self.authorization: list = []
+
+    @property
+    def posts(self) -> list[dict]:
+        return [r for c in self.clients for r in c.requests]
+
+
+@pytest.fixture
+def recorder(monkeypatch) -> _Recorder:
+    from eal_simulator.analytics_emitter import AnalyticsLogEmitter
+
+    rec = _Recorder()
+    original = AnalyticsLogEmitter._build_client
+
+    def _build(self, params):
+        real = original(self, params)
+        rec.authorization.append(real.headers.get("authorization"))
+        stub = _RecordingClient(status_code=rec.status_code)
+        rec.clients.append(stub)
+        return stub
+
+    monkeypatch.setattr(AnalyticsLogEmitter, "_build_client", _build)
+    return rec
+
+
+async def _seed_target(db, name="m365-hec", *, plugins=("m365_activity_emitter",),
+                       key=FAKE_KEY):
+    from engine.collector_targets import upsert
+
+    await upsert(
+        db, name, kind="xsiam_http_collector", url=TARGET_URL, dataset=None,
+        auth_header="Authorization", auth_scheme="", plugins=list(plugins),
+        is_default=False, token=key, clear_token=False,
+    )
+
+
+def _m365_step(step_id, **params):
+    return _eal_step(step_id, plugin="m365_activity_emitter", params=params)
+
+
+async def _launch_and_ledger(orch, db, **launch_kw):
+    from models import Run
+
+    result = await orch.launch(scenario_id="SIM-EDR-001", mode="pull", db=db,
+                               target_agent_id="agent-1", **launch_kw)
+    assert result.success, result.error
+    run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
+    return result, {e["step_id"]: e for e in run.channel_dispatch}
+
+
+def test_eal_dry_run_without_consent_says_why(session_factory, recorder):
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_step("step-01")])
+            _, ledger = await _launch_and_ledger(_fresh_orchestrator(), db)
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_NO_CONSENT"
+            # A dry run builds no records; the ledger must not claim it did.
+            assert ledger["step-01"]["detail"].startswith("dry-run: nothing delivered")
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_consent_without_authorized_by_stays_dry_run(session_factory, recorder):
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_step("step-01")])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="   ")
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_NO_CONSENT"
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_consent_with_unresolved_target_stays_dry_run_with_code(session_factory, recorder):
+    async def _run():
+        async with session_factory() as db:
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_step("step-01")])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_TARGET_UNRESOLVED"
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_one_keyless_step_holds_the_whole_campaign(session_factory, recorder):
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db, "m365-hec")
+            await _seed_target(db, "keyless-hec", plugins=(), key=None)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01"),
+                _m365_step("step-02", collector_target="keyless-hec"),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-02"]["code"] == "EAL_DRY_RUN_TARGET_NO_KEY"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_HELD"
+            assert "step-02" in ledger["step-01"]["detail"]
+            assert {e["status"] for e in ledger.values()} == {"dry_run"}
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_sleep_over_cap_stays_dry_run(session_factory, recorder):
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01", iterations=3, sleep_seconds=20),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_SLEEP_CAP"
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_live_with_consent_and_keyed_target_posts(session_factory, recorder, monkeypatch):
+    from datetime import timezone
+
+    import eal_simulator.executor as executor_mod
+    from eal_simulator.base import BaseSimulation
+    from models import Result
+
+    step_start = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    # The executor stamps a failed step; the plugin stamps its own result.
+    monkeypatch.setattr(executor_mod, "_utcnow", lambda: step_start)
+    monkeypatch.setattr(BaseSimulation, "utcnow", staticmethod(lambda: step_start))
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_step("step-01")])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            entry = ledger["step-01"]
+            assert entry["status"] == "dispatched", entry
+            assert entry["code"] is None
+            assert entry["collector_target"] == "m365-hec"
+
+            assert recorder.posts, "a live step must POST"
+            assert {p["url"] for p in recorder.posts} == {TARGET_URL}
+            assert recorder.authorization == [FAKE_KEY]
+
+            results = (await db.execute(
+                select(Result).where(Result.step_id == "step-01")
+            )).scalars().all()
+            assert len(results) == 1
+            assert results[0].executed_at == datetime(2030, 1, 1)
+
+    asyncio.run(_run())
+
+
+def test_eal_live_collector_401_reads_not_delivered(session_factory, recorder):
+    recorder.status_code = 401
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_step("step-01")])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert recorder.posts, "the live step must have tried to POST"
+            assert ledger["step-01"]["status"] == "not_delivered", ledger["step-01"]
+
+    asyncio.run(_run())
+
+
+def test_eal_step_rejected_before_the_campaign_holds_the_rest(session_factory, recorder):
+    """A step dropped before the campaign is built (unregistered plugin) must
+    hold the clean steps at dry-run: a scenario run is never half-live."""
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01"),
+                _eal_step("step-02", plugin="no_such_plugin"),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-02"]["status"] == "error"
+            assert ledger["step-02"]["code"] == "PLUGIN_MISCONFIGURED"
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_HELD"
+            assert "step-02" in ledger["step-01"]["detail"]
+            assert recorder.posts == []
+
+    asyncio.run(_run())
+
+
+def test_eal_step_with_invalid_params_holds_the_rest(session_factory, recorder):
+    """Params are validated by the executor only once the campaign runs, after
+    the go-live decision. A step whose params cannot validate must be caught
+    before it, or the clean steps beside it go live and the run is half-live."""
+    import json
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db, "m365-hec")
+            await _seed_target(db, "idp-hec", plugins=("idp_signin_emulator",))
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01"),
+                # The invalid value is key-shaped: the ledger must never echo it.
+                _eal_step("step-02", plugin="idp_signin_emulator",
+                          params={"event_pattern": FAKE_KEY}),
+                _m365_step("step-03"),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-02"]["status"] == "error", ledger["step-02"]
+            assert ledger["step-02"]["code"] == "EAL_STEP_INVALID"
+            assert "event_pattern" in ledger["step-02"]["detail"]
+            for sid in ("step-01", "step-03"):
+                assert ledger[sid]["status"] == "dry_run", ledger[sid]
+                assert ledger[sid]["code"] == "EAL_DRY_RUN_HELD"
+                assert "step-02" in ledger[sid]["detail"]
+            assert recorder.posts == []
+            assert FAKE_KEY not in json.dumps(ledger, default=str)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# An eal step that delivered nothing is not executed, not missed: its Results
+# leave the efficacy denominator, so a later Tier-2 verify cannot read `fail`
+# for records that were never sent.
+# ---------------------------------------------------------------------------
+
+VERIFY_XQL = "dataset = msft_o365_audit | limit 1"
+
+
+def _m365_verified_step(step_id, **params):
+    step = _m365_step(step_id, **params)
+    step["expected_detections"] = [{"type": "Analytics", "description": step_id,
+                                    "verification_xql": VERIFY_XQL}]
+    return step
+
+
+def test_dry_run_eal_results_are_not_executed_and_never_verify_fail(session_factory, recorder):
+    from connectors.service import verify_run_now
+    from engine.outcome import is_in_denominator
+    from models import Result, Run
+
+    queries: list[str] = []
+
+    async def _zero_rows(xql):
+        queries.append(xql)
+        return 0
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_verified_step("step-01"),
+                                            _m365_verified_step("step-02")])
+            result, ledger = await _launch_and_ledger(_fresh_orchestrator(), db)
+            assert {e["status"] for e in ledger.values()} == {"dry_run"}
+
+            rows = (await db.execute(
+                select(Result).where(Result.run_id == result.run_id)
+            )).scalars().all()
+            assert len(rows) == 2
+            for r in rows:
+                assert r.outcome == "not_executed"
+                assert r.outcome_reason == "EAL_DRY_RUN_NO_CONSENT"
+                assert not is_in_denominator(r.outcome, r.outcome_reason)
+
+            run = (await db.execute(
+                select(Run).where(Run.run_id == result.run_id))).scalar_one()
+            run.status = "complete"
+            out = await verify_run_now(db, run, runner=_zero_rows, tenant="lab")
+            await db.commit()
+            assert out.tc_verdict != "fail", out
+            assert queries == []
+            for r in rows:
+                assert r.kpi_verdict != "fail"
+
+    asyncio.run(_run())
+
+
+def test_live_dispatched_eal_results_stay_in_the_denominator(session_factory, recorder):
+    from engine.outcome import is_in_denominator
+    from models import Result
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[_m365_verified_step("step-01")])
+            result, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-01"]["status"] == "dispatched", ledger["step-01"]
+
+            rows = (await db.execute(
+                select(Result).where(Result.run_id == result.run_id)
+            )).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].outcome is None
+            assert is_in_denominator(rows[0].outcome, rows[0].outcome_reason)
+            assert rows[0].kpi_verdict == "pending"
 
     asyncio.run(_run())

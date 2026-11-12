@@ -13,10 +13,11 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Collection, Mapping, Optional, Sequence
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +42,12 @@ logger = logging.getLogger("cortexsim.orchestrator")
 # negative artifact staging exists to prevent, delivered by the back-compat
 # mechanism itself.
 ARTIFACT_FETCH_CAPABILITY = "artifact-fetch"
+
+# The most an in-process EAL campaign may sleep between iterations, summed over
+# its steps (``sleep_seconds × (iterations − 1)`` each). The campaign runs
+# synchronously inside the launch request, so a longer one holds the launch
+# open; over this ceiling the campaign stays dry-run (EAL_DRY_RUN_SLEEP_CAP).
+EAL_IN_PROCESS_MAX_SLEEP_SECONDS = 30
 
 
 @dataclass(eq=False)
@@ -594,6 +601,7 @@ class Orchestrator:
         canary_run_id: Optional[str] = None,
         allow_missing_tools: bool = False,
         module_modes: Optional[dict[str, str]] = None,
+        authorized_by: Optional[str] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
@@ -617,6 +625,13 @@ class Orchestrator:
 
         The last two are ORTHOGONAL, not nested: a manifest that wants wildcard
         RBAC and touches no node needs only the first.
+
+        ``authorized_by`` names the operator. Together with
+        ``consent.simulation_authorized`` it is what lets the run's in-process
+        EAL steps deliver live to the instance's collector targets; without
+        both (a blank name counts as none) every EAL step stays dry-run with
+        ``EAL_DRY_RUN_NO_CONSENT``. See :func:`_eal_live_blockers` for the rest
+        of the live gate.
 
         ``allow_runtime_install`` (docs/design/agent-runtime-dependencies.md) —
         per-run authorization for the beacon to attempt a package-manager
@@ -858,12 +873,17 @@ class Orchestrator:
         )
 
         if mode == "pull":
+            # Live EAL delivery needs BOTH the consent flag and a named operator.
+            eal_authorized_by: Optional[str] = None
+            if (consent or {}).get("simulation_authorized") and (authorized_by or "").strip():
+                eal_authorized_by = authorized_by.strip()
             launched = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
                 pull_plan=pull_plan,
                 launch_warnings=launch_warnings,
                 allow_missing_tools=allow_missing_tools,
+                eal_authorized_by=eal_authorized_by,
             )
             # Launch-time warnings first (offline target), then whatever the
             # dispatch itself had to say (variants, unknown OS, the
@@ -1067,6 +1087,8 @@ class Orchestrator:
         binding: Any,
         executed_at: datetime,
         db: AsyncSession,
+        *,
+        authorized_by: Optional[str] = None,
     ) -> dict[str, dict[str, Any]]:
         """Dispatch the run's EAL-channel steps IN-PROCESS (Phase 3b).
 
@@ -1074,13 +1096,27 @@ class Orchestrator:
         ``eal.params`` merged with the stitch binding projected onto that
         plugin's own fields (the shared identity principal via ``canary_token``;
         see ``eal_simulator.stitch_params``) — and runs it synchronously through
-        ``CampaignExecutor``. Defaults to **dry_run** (records pre-rendered,
-        nothing POSTed): the safe baseline. Real delivery (``dry_run=false``) is
-        a consent-gated follow-up, not this cut. Seeds each eal step's
-        ``expected_detections`` as ``Result`` rows with a REAL ``executed_at``,
-        and returns a per-step outcome for the ``channel_dispatch`` ledger. It
-        NEVER fabricates an ingest or a CONFIRMED verdict (Gate A5).
+        ``CampaignExecutor``.
+
+        The campaign delivers LIVE only when ``authorized_by`` is set (the launch
+        carried ``consent.simulation_authorized`` and named the operator) and
+        :func:`_eal_live_blockers` finds nothing: no eal step was rejected before
+        the campaign was built, every step is a collector step resolved to a
+        keyed collector target whose last check did not fail, and the campaign
+        sleeps no longer than ``EAL_IN_PROCESS_MAX_SLEEP_SECONDS``.
+        Otherwise the whole campaign runs dry-run (nothing delivered: no POST,
+        and the analytics emitters build no records) and each step's ledger ``code`` is the ``EAL_DRY_RUN_*`` reason.
+        Keys are read from the vault only on the live path, after the gate
+        passed, and live only in the in-memory campaign.
+
+        Seeds each eal step's ``expected_detections`` as ``Result`` rows whose
+        ``executed_at`` is the step's own recorded start (the launch time when
+        the step has no result), and returns a per-step outcome for the
+        ``channel_dispatch`` ledger. It NEVER fabricates an ingest or a
+        CONFIRMED verdict (Gate A5); delivery accounting is ``delivery.py``'s
+        (only a 2xx delivers).
         """
+        from connectors.base import coerce_utc  # noqa: PLC0415
         from eal_simulator import get_default_registry  # noqa: PLC0415
         from eal_simulator.executor import CampaignExecutor  # noqa: PLC0415
         from eal_simulator.campaign import Campaign, CampaignStep  # noqa: PLC0415
@@ -1118,30 +1154,81 @@ class Orchestrator:
                 }
 
         resolutions: dict[str, Any] = {}
+        blockers: dict[str, tuple[str, str]] = {}
+        step_started: dict[str, datetime] = {}
+        # Records the collector accepted, per campaign step (0 in a dry run).
+        delivered: dict[str, int] = {}
         if campaign_steps:
             try:
                 # Collector steps take their destination from the instance's
                 # collector targets, like every other in-process consumer.
-                # Never with keys: this path is dry-run only.
-                from eal_simulator.targets import apply_targets  # noqa: PLC0415
-                from engine.collector_targets import load_specs  # noqa: PLC0415
+                from eal_simulator.targets import (  # noqa: PLC0415
+                    apply_targets,
+                    collector_plugin_names,
+                )
+                from engine.collector_targets import (  # noqa: PLC0415
+                    load_specs,
+                    load_tokens,
+                )
 
-                resolved, res = apply_targets(
-                    {"steps": [cs.model_dump() for cs in campaign_steps], "target_allowlist": []},
-                    registry, await load_specs(db),
-                )
-                campaign_steps = [CampaignStep(**rs) for rs in resolved["steps"]]
+                spec = {"steps": [cs.model_dump() for cs in campaign_steps], "target_allowlist": []}
+                specs = await load_specs(db)
+                resolved, res = apply_targets(spec, registry, specs)
                 resolutions = {r.step_id: r for r in res}
-                campaign = Campaign(
-                    # Ephemeral, not persisted; run_id (passed to execute) is the
-                    # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
-                    campaign_id="CMP-COMPOSER-001",
-                    name=f"composer eal dispatch {run_id[:8]}",
-                    steps=campaign_steps,
-                    dry_run=True,  # safe baseline; real delivery is consent-gated (follow-up)
+                # The executor validates params only as each step runs, after
+                # the go-live decision. Validate them here, without the token,
+                # the same way: a step that fails is rejected before the
+                # campaign and holds the rest at dry-run.
+                invalid = _eal_params_invalid(resolved["steps"], registry)
+                if invalid:
+                    for step_id, why in invalid.items():
+                        outcomes[step_id] = {
+                            "status": "error", "code": "EAL_STEP_INVALID", "detail": why,
+                        }
+                    spec["steps"] = [st for st in spec["steps"] if st["step_id"] not in invalid]
+                    resolved["steps"] = [
+                        st for st in resolved["steps"] if st["step_id"] not in invalid
+                    ]
+                    campaign_steps = [cs for cs in campaign_steps if cs.step_id not in invalid]
+                # Every entry in `outcomes` so far is an eal step rejected
+                # before the campaign; it holds the rest at dry-run.
+                blockers = _eal_live_blockers(
+                    campaign_steps, resolutions, collector_plugin_names(registry),
+                    authorized_by=authorized_by, rejected=set(outcomes),
                 )
-                executor = CampaignExecutor(registry=registry)
-                state = await executor.execute(campaign, run_id=run_id)
+                # Ephemeral, not persisted; run_id (passed to execute) is the
+                # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
+                campaign_kw: dict[str, Any] = {
+                    "campaign_id": "CMP-COMPOSER-001",
+                    "name": f"composer eal dispatch {run_id[:8]}",
+                }
+                if not campaign_steps:
+                    campaign = None  # every eal step was rejected; nothing to run
+                elif blockers:
+                    campaign = Campaign(
+                        **campaign_kw,
+                        steps=[CampaignStep(**rs) for rs in resolved["steps"]],
+                        dry_run=True,
+                    )
+                else:
+                    # The gate passed: only now are the keys decrypted, and only
+                    # into this in-memory spec. Same target rows as the gate saw.
+                    tokens = await load_tokens(db, {r.target for r in res if r.target})
+                    resolved, res = apply_targets(spec, registry, specs, tokens=tokens)
+                    resolutions = {r.step_id: r for r in res}
+                    campaign = Campaign(
+                        **campaign_kw,
+                        steps=[CampaignStep(**rs) for rs in resolved["steps"]],
+                        dry_run=False,
+                        simulation_authorized=True,
+                        authorized_by=authorized_by,
+                        target_allowlist=resolved["target_allowlist"],
+                    )
+                campaign_steps = list(campaign.steps) if campaign is not None else []
+                state = None
+                if campaign is not None:
+                    executor = CampaignExecutor(registry=registry)
+                    state = await executor.execute(campaign, run_id=run_id)
             except Exception as exc:  # a dispatch fault must never crash the launch
                 logger.exception("EAL in-process dispatch faulted run_id=%s", run_id)
                 for cs in campaign_steps:
@@ -1149,7 +1236,7 @@ class Orchestrator:
                         "status": "error", "code": "EAL_DISPATCH_FAULT", "detail": str(exc),
                     }
             else:
-                by_step = {r.step_id: r for r in state.step_results}
+                by_step = {r.step_id: r for r in state.step_results} if state else {}
                 for cs in campaign_steps:
                     r = by_step.get(cs.step_id)
                     if r is None:
@@ -1158,33 +1245,49 @@ class Orchestrator:
                             "detail": "executor returned no result for this step",
                         }
                         continue
+                    started = coerce_utc(r.started_at)
+                    if started is not None:
+                        step_started[cs.step_id] = started
+                    delivered[cs.step_id] = 0 if state.dry_run else int(r.events_emitted or 0)
+                    code, why = blockers.get(cs.step_id, (None, None))
                     if r.status == "success":
                         status = "dry_run" if state.dry_run else "dispatched"
-                        detail = (
-                            "dry-run: records pre-rendered, not delivered"
-                            if state.dry_run
-                            else f"{r.events_emitted} record(s) delivered"
-                        )
+                        if state.dry_run:
+                            detail = "dry-run: nothing delivered"
+                            if why:
+                                detail = f"{detail} — {why}"
+                        else:
+                            detail = f"{r.events_emitted} record(s) delivered"
                     elif r.status == "skipped":
                         status, detail = "skipped", "step skipped"
                     else:
                         status, detail = "not_delivered", str(r.detail or "delivery failed")
                     outcomes[cs.step_id] = {
-                        "status": status, "code": None, "detail": detail,
+                        "status": status, "code": code, "detail": detail,
                     }
             for step_id, r in resolutions.items():
                 if step_id in outcomes:
                     outcomes[step_id]["collector_target"] = r.target
                     outcomes[step_id]["collector_source"] = r.source
 
-        # Seed a Result row per expected detection for the eal steps, with a REAL
-        # executed_at (the seeding 3a deferred): the step actually ran here.
+        # Seed a Result row per expected detection for the eal steps. executed_at
+        # is when the step itself started — a live campaign runs its steps one
+        # after another, so the launch time would skew every MTTD after the first.
+        # A step that delivered no record (dry_run / error / skipped, or
+        # not_delivered with nothing accepted) seeds `not_executed`, so its rows
+        # leave the efficacy denominator: silence on records never sent is not
+        # a miss, and a later Tier-2 verify must not read it as `fail`.
         for s in eal_steps:
             step_id = s.get("id")
             step_name = s.get("name", "")
             step_technique = s.get("mitre_technique")
+            step_executed_at = step_started.get(step_id, executed_at)
+            step_outcome, step_outcome_reason = _eal_unsent_outcome(
+                outcomes.get(step_id), delivered.get(step_id, 0))
             for det in s.get("expected_detections", []):
                 db.add(Result(
+                    outcome=step_outcome,
+                    outcome_reason=step_outcome_reason,
                     run_id=run_id,
                     step_id=step_id,
                     step_name=step_name,
@@ -1192,7 +1295,7 @@ class Orchestrator:
                     signal_type=det.get("type", "Analytics"),
                     expected_detection=det.get("description", ""),
                     observed=False,
-                    executed_at=executed_at,
+                    executed_at=step_executed_at,
                     ttp_ref=det.get("ttp_ref"),
                     detection_id=det.get("detection_id"),
                     mitre_technique=step_technique,
@@ -1273,6 +1376,7 @@ class Orchestrator:
         pull_plan: Optional[_PullPlan] = None,
         launch_warnings: Optional[list[str]] = None,
         allow_missing_tools: bool = False,
+        eal_authorized_by: Optional[str] = None,
     ) -> LaunchResult:
         """``launch_warnings`` are launch()'s own reservations (an offline
         target). They are written onto Run.output with the dispatch markers; the
@@ -1520,15 +1624,19 @@ class Orchestrator:
 
             # Phase 3b: dispatch the EAL steps IN-PROCESS (synchronous),
             # injecting the shared identity principal, and seed their results.
-            # No beacon is involved — the executor runs the campaign here.
+            # No beacon is involved — the executor runs the campaign here. It
+            # delivers live only when the launch named an operator under
+            # consent and every eal step clears _eal_live_blockers.
             if eal_steps:
                 eal_outcomes = await self._dispatch_eal_in_process(
-                    run_id, scenario, eal_steps, binding, now, db
+                    run_id, scenario, eal_steps, binding, now, db,
+                    authorized_by=eal_authorized_by,
                 )
 
             # The honest routing ledger: agent steps enqueued to their endpoint,
             # eal steps carrying their real dispatch outcome (dispatched /
-            # dry_run / not_delivered), never a fabrication.
+            # dry_run / not_delivered) and, for a dry run, the EAL_DRY_RUN_*
+            # code saying why — never a fabrication.
             channel_dispatch = _build_channel_dispatch(
                 steps, target_agent_id, eal_outcomes=eal_outcomes
             )
@@ -2569,6 +2677,157 @@ def _render_stitch(
         logger.warning("Stitch placeholder unresolved: %s", original_placeholder)
         return original_placeholder
     return str(value)
+
+
+def _eal_step_sleep_seconds(params: Mapping[str, Any]) -> float:
+    """How long one eal step sleeps between its iterations:
+    ``sleep_seconds × (iterations − 1)``, with defaults 0 and 1.
+
+    A value that does not read as a number counts as infinite, never as zero,
+    so it keeps the campaign under the sleep cap's dry-run instead of slipping
+    past it. A negative product is 0: the plugin refuses it and sleeps nothing.
+    """
+    try:
+        sleep = float(params.get("sleep_seconds") or 0)
+        iterations = float(params.get("iterations") or 1)
+    except (TypeError, ValueError):
+        return math.inf
+    total = sleep * (iterations - 1)
+    if math.isnan(total):
+        return math.inf
+    return max(total, 0.0)
+
+
+def _eal_unsent_outcome(
+    outcome: Optional[Mapping[str, Any]], delivered: int,
+) -> tuple[Optional[str], Optional[str]]:
+    """``(Result.outcome, Result.outcome_reason)`` to seed for an eal step's
+    expected detections, given its ``channel_dispatch`` outcome and how many
+    records its collector accepted.
+
+    ``("not_executed", <code, else status>)`` when the step delivered nothing:
+    ``dry_run``, ``error``, ``skipped``, or ``not_delivered`` with zero records
+    accepted. ``(None, None)`` -- in the denominator, as any seeded row -- when
+    it delivered at least one record, or has no outcome at all.
+    """
+    from engine.outcome import OUTCOME_NOT_EXECUTED  # noqa: PLC0415
+
+    if not outcome:
+        return None, None
+    status = outcome.get("status")
+    unsent = status in ("dry_run", "error", "skipped") or (
+        status == "not_delivered" and delivered <= 0)
+    if not unsent:
+        return None, None
+    return OUTCOME_NOT_EXECUTED, outcome.get("code") or status
+
+
+def _eal_params_invalid(steps: Sequence[Mapping[str, Any]], registry: Any) -> dict[str, str]:
+    """``{step_id: detail}`` for each campaign step whose params fail its
+    plugin's own ``validate_params`` -- the call ``CampaignExecutor._run_step``
+    makes -- on the token-free resolved spec.
+
+    The detail names the failing fields and error types only, never a value, so
+    nothing pasted into a param (a key fragment included) reaches the ledger.
+    """
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for st in steps:
+        plugin = st.get("plugin")
+        try:
+            registry.get(plugin).validate_params(st.get("params") or {})
+        except ValidationError as exc:
+            fields = ", ".join(
+                f"{'.'.join(str(p) for p in (e.get('loc') or ())) or '(params)'} "
+                f"({e.get('type')})"
+                for e in exc.errors()
+            )
+            out[st["step_id"]] = f"params invalid for plugin '{plugin}': {fields}"
+        except Exception as exc:  # noqa: BLE001 -- a non-pydantic refusal is still a refusal
+            out[st["step_id"]] = f"params invalid for plugin '{plugin}': {type(exc).__name__}"
+    return out
+
+
+def _eal_live_blockers(
+    campaign_steps: Sequence[Any],
+    resolutions: Mapping[str, Any],
+    collector_plugins: set[str],
+    *,
+    authorized_by: Optional[str],
+    rejected: Collection[str] = (),
+) -> dict[str, tuple[str, str]]:
+    """Why each step of an in-process EAL campaign may not deliver live.
+
+    ``campaign_steps`` are the campaign's ``CampaignStep`` rows and
+    ``resolutions`` maps a collector step's id to its
+    ``eal_simulator.targets.StepResolution``. ``rejected`` names the run's eal
+    steps that never made it into the campaign (unregistered plugin, invalid
+    step id). Returns ``{step_id: (code, detail)}``; an empty dict means the
+    campaign may go live.
+
+    The run's eal steps go live whole or not at all: when any step is blocked
+    or was rejected, every other campaign step is held at dry-run with
+    ``EAL_DRY_RUN_HELD``, naming those steps. Pure — no database, no network.
+    """
+    from eal_simulator.targets import FAILING_VERDICTS  # noqa: PLC0415
+
+    if authorized_by is None:
+        detail = (
+            "live delivery needs consent.simulation_authorized and a named "
+            "authorized_by on the launch"
+        )
+        return {cs.step_id: ("EAL_DRY_RUN_NO_CONSENT", detail) for cs in campaign_steps}
+
+    blockers: dict[str, tuple[str, str]] = {}
+    for cs in campaign_steps:
+        res = resolutions.get(cs.step_id)
+        if cs.plugin not in collector_plugins:
+            blockers[cs.step_id] = (
+                "EAL_DRY_RUN_NOT_COLLECTOR",
+                f"plugin '{cs.plugin}' does not POST to a collector target; only "
+                "collector steps deliver live from a scenario run",
+            )
+        elif res is None or res.source in ("none", "error", "inline"):
+            why = f"{res.code}: {res.detail}" if res is not None else "no target resolution"
+            blockers[cs.step_id] = (
+                "EAL_DRY_RUN_TARGET_UNRESOLVED",
+                f"no configured collector target for this step ({why})",
+            )
+        elif not res.has_key:
+            blockers[cs.step_id] = (
+                "EAL_DRY_RUN_TARGET_NO_KEY",
+                f"collector target '{res.target}' has no key stored",
+            )
+        elif res.check in FAILING_VERDICTS:
+            blockers[cs.step_id] = (
+                "EAL_DRY_RUN_TARGET_FAILING",
+                f"collector target '{res.target}' last checked {res.check}; fix it "
+                "and re-run its preflight",
+            )
+
+    sleeps = {cs.step_id: _eal_step_sleep_seconds(cs.params) for cs in campaign_steps}
+    total_sleep = sum(sleeps.values())
+    if total_sleep > EAL_IN_PROCESS_MAX_SLEEP_SECONDS:
+        for cs in campaign_steps:
+            if cs.step_id not in blockers and sleeps[cs.step_id] > 0:
+                blockers[cs.step_id] = (
+                    "EAL_DRY_RUN_SLEEP_CAP",
+                    f"the campaign would sleep {total_sleep:g}s between iterations, "
+                    f"over the {EAL_IN_PROCESS_MAX_SLEEP_SECONDS}s in-process ceiling",
+                )
+
+    if blockers or rejected:
+        # str(): a rejected step may have no id at all.
+        held = ", ".join(sorted(str(i) for i in set(blockers) | set(rejected)))
+        for cs in campaign_steps:
+            if cs.step_id not in blockers:
+                blockers[cs.step_id] = (
+                    "EAL_DRY_RUN_HELD",
+                    f"held at dry-run because step(s) {held} cannot deliver live; "
+                    "the campaign goes live whole or not at all",
+                )
+    return blockers
 
 
 def _partition_channels(

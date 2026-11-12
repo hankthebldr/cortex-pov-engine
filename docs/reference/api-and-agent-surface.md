@@ -297,7 +297,7 @@ stamp `severity: "high"` on every rule.
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
@@ -325,6 +325,10 @@ stamp `severity: "high"` on every rule.
   `simulation_authorized` (for `dual-use-lab-only`). The orchestrator refuses to
   create a Run and returns 422 `LAUNCH_FAILED` if a gated adapter lacks consent
   (see §3.1 / `_check_adapter_consent`).
+- **`authorized_by`** (`str`, optional) names the operator. With
+  `consent.simulation_authorized` it is the first key of the live gate for the
+  run's in-process EAL steps (§1.3.2); a blank name counts as none. It gates
+  nothing else and refuses no launch.
 - `/complete` appends a `--- COMPLETION SUMMARY ---` block to `run.output` and
   decrements `open_tasks`. A non-zero `exit_code` makes the run `failed`, and
   failure is sticky across a fan-out. The endpoint that brings `open_tasks` to 0
@@ -640,6 +644,69 @@ get it.
 > live tenant: the three host witnesses are proven against a branch SimCore (§5.6) and the
 > rest by injected transports. Tier-D has no Cortex agent, so no run there reads
 > `prevented`.
+
+#### 1.3.2 In-process EAL steps: the live gate
+
+A pull-mode run's `channel: eal` steps run as one campaign inside SimCore's own
+process at launch (`orchestrator._dispatch_eal_in_process`); no beacon is
+involved. This is the one path on which a **scenario run** makes SimCore itself
+POST to a customer collector, so the campaign goes live only when **every**
+condition below holds, and otherwise runs dry-run (nothing delivered: no POST,
+and the analytics emitters build no records in a dry run):
+
+1. the launch carried `consent.simulation_authorized: true` **and** a non-blank
+   `authorized_by`;
+2. every eal step entered the campaign (its plugin is registered, its id is
+   `step-NN`, and its params, resolved against the collector targets but without
+   the key, pass the plugin's own `validate_params`, the check the executor would
+   otherwise make only after the go-live decision), and every one's plugin is a
+   collector plugin (`targets.collector_plugin_names`);
+3. every eal step resolves to a configured collector target (§1.9.1) — `explicit`,
+   `binding` or `default`; an inline `collector_url` does not count;
+4. every such target has a key in the vault;
+5. no such target's last preflight is failing (`not_configured` / `unreachable` /
+   `refused`);
+6. the campaign's total sleep, Σ `sleep_seconds × (iterations − 1)` over its eal
+   steps (defaults 0 and 1), is at most **30 s**
+   (`EAL_IN_PROCESS_MAX_SLEEP_SECONDS`) — the campaign runs synchronously inside
+   the launch request.
+
+The run's eal steps go live whole or not at all. In a dry run each campaign
+step's `Run.channel_dispatch` entry has `status: dry_run` (`not_delivered` when
+the executor reported the step failed, `skipped` when it skipped it) and a `code`
+saying why. A step rejected before the campaign keeps `status: error` with its
+own code (`PLUGIN_MISCONFIGURED`, `EAL_STEP_INVALID`; for invalid params the
+`detail` names the failing fields and error types only, never a value), as does every step when
+the dispatch itself faults (`EAL_DISPATCH_FAULT`) or the executor returns no
+result (`EAL_NO_RESULT`); `error` comes only from those orchestrator codes.
+
+| `code` | Meaning |
+|---|---|
+| `EAL_DRY_RUN_NO_CONSENT` | Every step, when condition 1 fails |
+| `EAL_DRY_RUN_NOT_COLLECTOR` | The step's plugin does not POST to a collector target |
+| `EAL_DRY_RUN_TARGET_UNRESOLVED` | The step's target resolution is `none`, `error` or `inline` |
+| `EAL_DRY_RUN_TARGET_NO_KEY` | The step's target has no key stored |
+| `EAL_DRY_RUN_TARGET_FAILING` | The step's target's last preflight failed |
+| `EAL_DRY_RUN_SLEEP_CAP` | Total sleep is over 30 s; set on the steps that sleep |
+| `EAL_DRY_RUN_HELD` | This step is clean, but another step blocks or was rejected before the campaign; `detail` names those steps |
+
+When the gate passes, the keys are read from the vault (`collector_targets.load_tokens`)
+only then and only into the in-memory campaign, which runs with
+`dry_run: false`, `simulation_authorized: true`, the launch's `authorized_by` and
+the resolved targets' exact `host:port` pins as `target_allowlist`. The ledger
+`status` is then `dispatched` (code `null`), or `not_delivered` for any step the
+executor reported as failed or partial, or `skipped`; delivery is accounted by
+`eal_simulator/delivery.py` (only a 2xx delivers, so a collector 401 reads
+`not_delivered`). Each eal step's seeded
+`Result.executed_at` is that step's own recorded start (naive UTC), or the launch
+time when the step has no result. A step that delivered no record (`status`
+`dry_run`, `error` or `skipped`, or `not_delivered` with zero records accepted)
+seeds its Results with `outcome: not_executed` and `outcome_reason` = its ledger
+`code`, else its `status`, so they leave the efficacy denominator
+(`engine.outcome.is_in_denominator`): Tier-2 verify skips them and scoring lists
+them under `excluded`, so silence on records never sent cannot read `fail`. A step
+that delivered at least one record stays in the denominator. ***tenant-verified
+is 0***: nothing on this path has delivered to a live tenant.
 
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 
