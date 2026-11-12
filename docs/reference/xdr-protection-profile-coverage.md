@@ -33,6 +33,10 @@ platform truth. The recommended action, in order:
 
 Do this before any further prevention content is authored.
 
+*Status (2026-11-11): the first two actions are done (findings F1 and F2
+below). The third is still a decision owed, together with the module-binding,
+alert-matching and agent-settings findings that follow it.*
+
 ---
 
 ## Technical detail
@@ -63,7 +67,7 @@ Do this before any further prevention content is authored.
 | Identity profile | LDAP Protection · AD-SPM · Conditional Access | identity page |
 | `PREVENTION_MODULES` values | 8 | `core/engine/scenario_loader.py:62`, `detection_scanner/scripts/validate.py:45` |
 | …that map 1:1 to one documented module | 2 (`btp`, `anti_ransomware`) | §4 |
-| Cards with `prevention_modules[]` | 2 (TTP-2026-0198 `local_analysis`, TTP-2026-0200 `anti_ransomware`) | |
+| Cards with `prevention_modules[]` | 2 (TTP-2026-0198 `local_analysis`, TTP-2026-0200 `anti_ransomware`; the latter re-keyed to `btp` by PR #190, see F2) | |
 | Scenarios with `outcome: prevent` | 1 (SIM-EDR-023) | |
 | `panw_mapping` prevention-tier entries naming the XDR agent | 10 cards, all 10 citing rule ids an agent module does not have (`BTP-*`, `XDR-*`, `TBD-XDR-*`); plus 5 Prisma Browser cards labelled `cortex-xdr` | §3 F8 |
 | Canary scenario configured by default | none (`CORTEXSIM_CANARY_SCENARIO_LINUX = ""`) | `core/config.py:83` |
@@ -87,8 +91,8 @@ mode. *Fix:* attest per module
 (`{module_key: block|report|disabled}` + `attested_by/at`), have the
 expectation's module look up its own attested mode, and resolve a non-Block
 module to `detected` with reason `MODULE_NOT_IN_BLOCK`, never to `fail`.
-*Status (2026-11-11): fixed on `fix/api-prevent-per-module-attestation`
-(530bebb, unpushed).* A launch takes `module_modes`; Report reads
+*Status (2026-11-11): fixed, merged into `dev` as PR #189 (merge
+`09c98be3`, fix commit `530bebb`).* A launch takes `module_modes`; Report reads
 `MODULE_NOT_IN_BLOCK`, Disabled holds a silent row `pending` /
 `MODULE_DISABLED`, and an unattested module trusts the run-level block, so
 legacy runs grade unchanged.
@@ -112,8 +116,8 @@ On Linux, mass-encryption prevention can come only from **Global Behavioral
 Threat Protection Rules**. *Fix:* re-key SIM-EDR-025 to `btp`, drop the
 `Ransomware*` name pattern (see F5), and correct the TTP-2026-0073 remediation
 text. SIM-EDR-025 uses `outcome: detect`, so no false grade is live today.
-*Status (2026-11-11): fixed on `fix/scenarios-linux-ransomware-btp-key`
-(6091687, unpushed).* TTP-2026-0200 is keyed `btp` with
+*Status (2026-11-11): fixed, merged into `dev` as PR #190 (merge
+`4492e4b4`, fix commit `6091687`).* TTP-2026-0200 is keyed `btp` with
 `"Behavioral Threat*"` (still authored, not observed; F5 still applies);
 TTP-2026-0073 and TTP-2026-0026 remediation names the BTP rule setting. The
 `anti_ransomware` enum value and spec line 500 are left for the F3 decision.
