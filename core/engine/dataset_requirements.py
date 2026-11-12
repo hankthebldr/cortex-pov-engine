@@ -25,6 +25,12 @@ import yaml
 
 from config import settings
 from engine.ingestion_doors import UnknownDoorError, get_door
+# The payload shelf's TA-16 rule, imported rather than copied so the two cannot drift: prose
+# that means "nobody decided" (a placeholder prefix) or is too short to explain anything is
+# not a reason. tools.adapter_loader imports only stdlib, yaml and pydantic at module level,
+# so this creates no import cycle.
+from tools.adapter_loader import _EXEMPT_REASON_MIN_CHARS as _MIN_REASON_CHARS
+from tools.adapter_loader import _EXEMPT_REASON_PLACEHOLDER_RE as _PLACEHOLDER_RE
 
 logger = logging.getLogger("cortexsim.dataset_requirements")
 
@@ -161,8 +167,20 @@ def _text(val: object, where: str, path: str) -> str:
     return val
 
 
-# Mirrors the payload shelf's TA-16: prose that means "nobody decided" is not a reason.
-_PLACEHOLDER_REASONS = frozenset({"tbd", "unknown", "n/a"})
+def _doors_unknown_reason(reason: object, where: str, path: str) -> str:
+    """TA-16's rule applied to ``doors_unknown``: whitespace-normalised, not a placeholder,
+    at least ``_MIN_REASON_CHARS`` long. The authored string is kept as written."""
+    if not isinstance(reason, str):
+        raise _bad(path, where, f"must be a string that says what is unconfirmed, got {reason!r}")
+    raw = " ".join(reason.split())
+    if not raw:
+        raise _bad(path, where, "must be non-empty: say what is unconfirmed")
+    if _PLACEHOLDER_RE.match(raw):
+        raise _bad(path, where, f"{raw!r} is a placeholder, not a reason (the TA-16 rule)")
+    if len(raw) < _MIN_REASON_CHARS:
+        raise _bad(path, where, f"must be at least {_MIN_REASON_CHARS} characters, got {len(raw)} "
+                                f"({raw!r}); say what is unconfirmed (the TA-16 rule)")
+    return reason
 
 
 def _doors(e: dict, w: str, path: str) -> tuple[tuple[str, ...], str | None]:
@@ -170,12 +188,7 @@ def _doors(e: dict, w: str, path: str) -> tuple[tuple[str, ...], str | None]:
     if ("doors" in e) == ("doors_unknown" in e):
         raise _bad(path, w, "exactly one of `doors` or `doors_unknown` must be present")
     if "doors_unknown" in e:
-        reason = e["doors_unknown"]
-        if not isinstance(reason, str) or not reason.strip() \
-                or reason.strip().lower() in _PLACEHOLDER_REASONS:
-            raise _bad(path, f"{w}.doors_unknown",
-                       f"must say what is unconfirmed, not a placeholder or blank, got {reason!r}")
-        return (), reason
+        return (), _doors_unknown_reason(e["doors_unknown"], f"{w}.doors_unknown", path)
     raw = _list(e["doors"], f"{w}.doors", path)
     if not raw:
         raise _bad(path, f"{w}.doors", "must not be empty (use `doors_unknown` when no door is known)")

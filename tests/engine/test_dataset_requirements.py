@@ -179,13 +179,37 @@ def test_neither_key_rejected():
         parse_registry(_row(), "p")
 
 
-@pytest.mark.parametrize("reason", ["tbd", "TBD", " Unknown ", "n/a", "N/A", "", "   ", None, 3])
-def test_placeholder_doors_unknown_rejected(reason):
-    with pytest.raises(DatasetRequirementsError):
+@pytest.mark.parametrize("reason, match", [
+    ("tbd", "placeholder"), ("TBD", "placeholder"), (" Unknown ", "placeholder"),
+    ("n/a", "placeholder"), ("N/A", "placeholder"), ("na", "placeholder"),
+    ("TODO: find out which product emits this dataset and how", "placeholder"),
+    ("unknown which product emits this dataset or how it is onboarded", "placeholder"),
+    ("Not confirmed.", "at least 40 characters"),
+    ("", "non-empty"), ("   ", "non-empty"),
+    (None, "must be a string"), (3, "must be a string"),
+])
+def test_placeholder_doors_unknown_rejected(reason, match):
+    with pytest.raises(DatasetRequirementsError, match=match):
         parse_registry(_row(doors_unknown=reason), "p")
 
 
-@pytest.mark.parametrize("doors", [[], "ngfw_traffic", None, [3], [""], ["ngfw_traffic", "ngfw_traffic"]])
-def test_doors_must_be_nonempty_list(doors):
-    with pytest.raises(DatasetRequirementsError):
+def test_doors_unknown_reuses_ta16_rule():
+    """Parity with the payload shelf's TA-16 is by import, not by a copy that can drift."""
+    from engine import dataset_requirements
+    from tools import adapter_loader
+
+    assert dataset_requirements._PLACEHOLDER_RE is adapter_loader._EXEMPT_REASON_PLACEHOLDER_RE
+    assert dataset_requirements._MIN_REASON_CHARS == adapter_loader._EXEMPT_REASON_MIN_CHARS
+
+
+@pytest.mark.parametrize("doors, match", [
+    ([], "must not be empty"),
+    ("ngfw_traffic", "expected a list"),
+    (None, "expected a list"),
+    ([3], "non-blank string"),
+    ([""], "non-blank string"),
+    (["ngfw_traffic", "ngfw_traffic"], "listed twice"),
+])
+def test_doors_must_be_nonempty_list(doors, match):
+    with pytest.raises(DatasetRequirementsError, match=match):
         parse_registry(_row(doors=doors), "p")
