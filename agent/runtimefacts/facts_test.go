@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -50,6 +51,16 @@ func lookupUserIn(present ...string) func(string) error {
 		}
 		return errors.New("unknown user")
 	}
+}
+
+// wantAnchor is the AnchorRename this platform's executor rule gives for a case
+// whose POSIX answer is posix. On Windows the Args[0] rewrite needs no shell, so
+// the rule is always true whatever the seams report (executor/platform_windows.go).
+func wantAnchor(posix bool) bool {
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return posix
 }
 
 func TestCollect(t *testing.T) {
@@ -98,7 +109,7 @@ func TestCollect(t *testing.T) {
 				ReadFile:          readFileFrom(nil),
 				LookupUser:        lookupUserIn(),
 			},
-			want: Facts{Tools: []string{}, Accounts: []string{}},
+			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false)},
 		},
 		{
 			name: "no status file configured",
@@ -106,7 +117,7 @@ func TestCollect(t *testing.T) {
 				Getenv: envFrom(nil), LookPath: lookPathIn(), ReadFile: readFileFrom(nil),
 				LookupUser: lookupUserIn(),
 			},
-			want: Facts{Tools: []string{}, Accounts: []string{}},
+			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false)},
 		},
 	}
 	for _, tc := range cases {
@@ -268,7 +279,8 @@ func TestCollectCapsListsAndDropsOverlongItems(t *testing.T) {
 }
 
 // AnchorRename is the executor's anchor rule over Collect's injected seams: a
-// single-purpose sh is renamed; a busybox/toybox sh needs bash.
+// single-purpose sh is renamed; a busybox/toybox sh needs bash. On Windows the
+// rule ignores the seams and every case is true (wantAnchor).
 func TestCollectAnchorRenameFollowsTheShRule(t *testing.T) {
 	links := func(target string) func(string) (string, error) {
 		return func(p string) (string, error) {
@@ -295,14 +307,15 @@ func TestCollectAnchorRenameFollowsTheShRule(t *testing.T) {
 			EvalSymlinks: links(c.target), ReadFile: readFileFrom(nil),
 			LookupUser: lookupUserIn(),
 		})
-		if f.AnchorRename != c.want {
-			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, c.want)
+		if want := wantAnchor(c.want); f.AnchorRename != want {
+			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, want)
 		}
 	}
 }
 
 // A hard-linked busybox sh has no symlink for EvalSymlinks to follow; the
 // executor's rule compares it with `busybox` on PATH through the SameFile seam.
+// On Windows every case is true (wantAnchor).
 func TestCollectAnchorRenameDetectsHardLinkedBusybox(t *testing.T) {
 	same := func(a, b string) bool { return a == "/usr/bin/sh" && b == "/usr/bin/busybox" }
 	cases := []struct {
@@ -319,8 +332,8 @@ func TestCollectAnchorRenameDetectsHardLinkedBusybox(t *testing.T) {
 			EvalSymlinks: func(p string) (string, error) { return p, nil },
 			SameFile:     same, ReadFile: readFileFrom(nil), LookupUser: lookupUserIn(),
 		})
-		if f.AnchorRename != c.want {
-			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, c.want)
+		if want := wantAnchor(c.want); f.AnchorRename != want {
+			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, want)
 		}
 	}
 }
