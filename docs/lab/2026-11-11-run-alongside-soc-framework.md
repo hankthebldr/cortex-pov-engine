@@ -51,19 +51,27 @@ to run.
 5. **Read the run's case and its disposition.** After the run is reconciled
    (`POST /api/runs/{id}/reconcile`), open the run view: the **Case** panel
    shows the run's `merge_class`, each case's status, who closed it and
-   whether it is sealed. The same data is the `## Case` section of the
+   whether it is sealed. A case is **sealed** when it was resolved with any
+   reason other than *Resolved - Auto Resolved*, whoever resolved it (Auto
+   Triage, an analyst or a playbook): XSIAM never reopens it, so a later alert
+   opens a new case. The same data is the `## Case` section of the
    markdown report and `case_ledger` in the json report
    (`GET /api/runs/{id}/report`); a paired run also shows a pair-level
    `merge` on `GET /api/runs/{id}/pair`.
-   - `merge_class` is one of `ONE_CASE`, `SPLIT_SEALED` (a case was sealed by
-     the response layer before the chain finished), `SPLIT_NATIVE` (the
-     platform split the chain on its own), `LOW_ONLY_NO_CASE`, `NO_CASE_YET`
-     or `PENDING` (a case could not be read; never `ONE_CASE`).
+   - `merge_class` is one of `ONE_CASE`, `SPLIT_SEALED` (every split between
+     the run's cases came after the earlier case was sealed), `SPLIT_NATIVE`
+     (at least one split is the platform's own: the earlier case was still
+     open or auto-resolved), `LOW_ONLY_NO_CASE`, `NO_CASE_YET` (no alert has a
+     case id yet; the next reconcile advances it, a refresh cannot) or
+     `PENDING` (a case could not be read, or a seal time is unknown; never
+     `ONE_CASE`).
    - Disposition (`open`, `socfw_auto_triage`, `auto_resolved`,
      `other_resolved`; an issue can also be `socfw_ai_close` or `unread`)
      drifts after the run: by default Auto Triage seals cases about 6 h later (tenant-configurable; shown as a shipped default on Readiness). Re-read it
      with `POST /api/runs/{id}/case-ledger/refresh` (cases only, read-only,
-     409 `NO_CASE_LEDGER` before the first reconcile). With
+     409 `NO_CASE_LEDGER` before the first reconcile; not re-read within
+     `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES` of the last read unless you
+     pass `force=true`). With
      `CORTEXSIM_AUTO_RECONCILE` on, the auto-reconcile loop also refreshes
      recent ledgers (`CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` 24,
      `..._MAX_RUNS_PER_SWEEP` 20, `..._MIN_INTERVAL_MINUTES` 60). A ledger is
@@ -74,7 +82,7 @@ to run.
      It never changes `detected`, `missed`, MTTD or a detection verdict. The
      one effect: a `SPLIT_SEALED` run withholds a Cross-Source Correlation
      Rate FAIL as `pending` (a PASS is never touched), because that split is
-     not the detection engine's.
+     not the detection engine's. On `SPLIT_NATIVE` the FAIL stands.
    - A firewall-to-endpoint split on `SPLIT_NATIVE` carries a bridge
      diagnosis (`BRIDGED`, `UNBRIDGED_IP_HOST`, `BRIDGE_UNREAD`). Its
      endpoint reply fields come from the repo's transcription of the

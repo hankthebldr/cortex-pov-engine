@@ -71,10 +71,15 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `ONE_CASE | SPLIT_SEALED | SPLIT_NATIVE | LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`
   with per-case status, `closed_by` and sealed flag. A case the tenant does not
   return is `PENDING`; an unrecognised case status raises and reads
-  `CASE_STATUS_UNRECOGNIZED`, never `open`. The ledger records its tenant
-  integration and its reads are counted in `queries_issued`.
-- **`POST /api/runs/{id}/case-ledger/refresh`** re-reads the cases (read-only);
-  the auto-reconcile loop refreshes recent ledgers (a ledger is terminal when every case in it is sealed, i.e. resolved and not auto-resolved, and is skipped; an open or auto-resolved case can still change, so its ledger keeps being refreshed) behind
+  `CASE_STATUS_UNRECOGNIZED`, never `open`. Every reconcile rebuilds it from the
+  stored alerts plus the new matches; alerts with no case id yet store
+  `NO_CASE_YET` with no tenant read, and a failed case read keeps the stored
+  ledger. A split is classified per boundary between cases: any native boundary
+  is `SPLIT_NATIVE`, only all-seal is `SPLIT_SEALED`. The ledger records its
+  tenant integration and its reads are counted in `queries_issued` (they do not
+  charge the per-tenant XQL ledger).
+- **`POST /api/runs/{id}/case-ledger/refresh`** re-reads the cases (read-only;
+  refused inside the minimum interval unless `force=true`); the auto-reconcile loop refreshes recent ledgers (a ledger is terminal when every case in it is sealed, i.e. resolved and not auto-resolved, and is skipped; an open or auto-resolved case can still change, so its ledger keeps being refreshed) behind
   `CORTEXSIM_CASE_LEDGER_{WINDOW_HOURS,MAX_RUNS_PER_SWEEP,MIN_INTERVAL_MINUTES}`.
   `GET /api/runs/{id}/pair` gains a pair-level `merge`; the markdown report gains
   a `## Case` section and the json report `case_ledger`; the console run view
@@ -82,8 +87,8 @@ with 409 `PUSH_NOT_SUPPORTED`.
   diagnosis.
 - **Disposition is context, not detection evidence.** It never feeds
   detected/missed, MTTD or a detection verdict. One exception: `SPLIT_SEALED`
-  withholds a Cross-Source Correlation Rate FAIL as `pending` (a PASS is never
-  touched).
+  withholds a Cross-Source Correlation Rate FAIL as `pending` when the ledger
+  classified every alert the KPI counted (a PASS is never touched).
 - Runbook step 5 now describes reading the Case panel; `docs/reference/lab-runbook.md`
   says `not_checked` names six claims.
 - **Honesty.** `tenant-verified` is still 0. The endpoint reply fields used by
