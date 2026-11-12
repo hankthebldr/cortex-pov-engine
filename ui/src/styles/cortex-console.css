@@ -1951,7 +1951,7 @@
 .theme-console .scorecard__head,
 .theme-console .scorecard__row {
   display: grid;
-  grid-template-columns: 90px 110px 1fr 80px 130px 220px;
+  grid-template-columns: 90px 110px 1fr 80px 130px 150px 220px;
   gap: 16px;
   padding: 12px 20px;
   align-items: center;
@@ -2002,6 +2002,11 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--c-text-muted);
+}
+.theme-console .scorecard__source {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* status pill */
