@@ -2742,12 +2742,6 @@ questions:
     lever: How the lab marks its honey account and which expectation type the scenario declares.
     affects: ["scenarios/itdr/", "detection_scanner/ttps"]
 
-# ── FAQ — rendered to FAQ.md ──────────────────────────────────────────────────
-# Short answers for a DC whose signal stayed dark. `basis` is the weakest thing
-# that is true of the whole answer; items inside an answer carry their own tag.
-# `see` lists the questions whose answers would change it (FAQ.md shows their
-# live status). Bump `reviewed` after re-checking an entry against the ledger.
-
   # ── NGF — NGFW sensor configuration ───────────────────────────────────────────
   - id: PM-NGF-01
     mechanism: NGF
@@ -2843,6 +2837,11 @@ questions:
       resulting issue's entities and grouping with the same test unmapped.
     affects: ["core/eal_simulator/plugins/ngfw_eal_emitter.py", "core/eal_simulator/plugins/ngfw_threat_emitter.py", "core/integrations/panos/sources.py"]
 
+# ── FAQ — rendered to FAQ.md ──────────────────────────────────────────────────
+# Short answers for a DC whose signal stayed dark. `basis` is the weakest thing
+# that is true of the whole answer; items inside an answer carry their own tag.
+# `see` lists the questions whose answers would change it (FAQ.md shows their
+# live status). Bump `reviewed` after re-checking an entry against the ledger.
 faq:
 
   - id: FAQ-STI-01
