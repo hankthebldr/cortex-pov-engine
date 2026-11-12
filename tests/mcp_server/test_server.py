@@ -30,6 +30,10 @@ pytestmark = [
     pytest.mark.filterwarnings(r"ignore:invalid escape sequence '\\\$':SyntaxWarning"),
 ]
 
+#: main.app sits behind the Host guard (core/security/host_guard.py), which
+#: answers 400 HOST_NOT_ALLOWED to Starlette's default Host "testserver".
+LOCAL = "http://localhost"
+
 MCP_HEADERS = {"Host": "localhost", "Accept": "application/json, text/event-stream",
                "Content-Type": "application/json"}
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -46,13 +50,15 @@ def boot_main(tmp_path, monkeypatch, restore_core_modules):
     root = logging.getLogger()
     handlers_before = list(root.handlers)
 
-    def _boot(*, http: bool, allowed_hosts: str = ""):
+    def _boot(*, http: bool, allowed_hosts: str = "", guard_hosts: str = ""):
         monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
         monkeypatch.setenv("CORTEXSIM_STATIC_DIR", str(static))
         monkeypatch.setenv("CORTEXSIM_ENV", "development")
         monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
         monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
         monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
+        # The app-wide Host guard runs before the /mcp mount's own list.
+        monkeypatch.setenv("CORTEXSIM_ALLOWED_HOSTS", guard_hosts)
         # Another suite (tests/scripts/test_lab_readiness.py) puts scripts/ at
         # sys.path[0] during collection, and scripts/eal_simulator/ is a package
         # of the same name as core/eal_simulator/. The fresh import below must
@@ -88,7 +94,7 @@ def test_mount_off_registers_nothing_and_health_says_disabled(boot_main):
     assert not [r for r in main.app.router.routes if str(getattr(r, "path", "")).startswith("/mcp")]
     assert getattr(main.app.state, "mcp", None) is None
     assert "mcp_server.server" not in sys.modules, "flag off must not even import the MCP server"
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url=LOCAL) as client:
         comp = client.get("/api/health").json()["components"]["mcp"]
     assert comp["mounted"] is False
     assert comp["code"] == "MCP_DISABLED"
@@ -101,7 +107,7 @@ def test_mount_on_initialize_then_tools_list_over_asgi(boot_main):
     main = boot_main(http=True)
     from mcp_server.naming import CANONICAL_IDS, wire_name
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url=LOCAL) as client:
         init = _rpc(client, INIT)
         assert init.status_code == 200, init.text
         assert init.json()["result"]["serverInfo"]["name"] == "cortexsim"
@@ -136,14 +142,24 @@ def test_mcp_mount_precedes_the_static_catch_all(boot_main):
 
 
 def test_unlisted_host_header_is_refused(boot_main):
+    """Two layers: the app-wide Host guard first, then the /mcp mount's own list.
+
+    A name the guard does not admit is refused 400 HOST_NOT_ALLOWED before it
+    reaches /mcp. An IP literal passes the guard (an address cannot be
+    rebound) but is refused 421 by the mount unless CORTEXSIM_MCP_ALLOWED_HOSTS
+    lists it. A name reaches the MCP server only when both lists carry it.
+    """
     from starlette.testclient import TestClient
 
-    main = boot_main(http=True, allowed_hosts="lab.example, ,")
-    with TestClient(main.app) as client:
+    main = boot_main(http=True, allowed_hosts="lab.example, ,", guard_hosts="lab.example")
+    with TestClient(main.app, base_url=LOCAL) as client:
         evil = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "evil.example"})
+        unlisted_ip = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "10.9.8.7:8888"})
         listed = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "lab.example:8888"})
         loop = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "127.0.0.1:8888"})
-    assert evil.status_code == 421
+    assert evil.status_code == 400, evil.text
+    assert evil.json()["code"] == "HOST_NOT_ALLOWED"
+    assert unlisted_ip.status_code == 421, unlisted_ip.text
     assert listed.status_code == 200, listed.text
     assert loop.status_code == 200, loop.text
 
@@ -156,7 +172,7 @@ def test_flag_on_with_the_sdk_unimportable_health_is_degraded_not_mounted(boot_m
     monkeypatch.setitem(sys.modules, "mcp_server.server", None)
     main = boot_main(http=True)
     assert _mcp_route_index(main.app) is None
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url=LOCAL) as client:
         body = client.get("/api/health").json()
     comp = body["components"]["mcp"]
     assert comp["mounted"] is False
@@ -170,7 +186,7 @@ def test_lifespan_closes_the_in_process_client(boot_main):
 
     main = boot_main(http=True)
     client = main.app.state.mcp_client
-    with TestClient(main.app):
+    with TestClient(main.app, base_url=LOCAL):
         assert client._http.is_closed is False
     assert client._http.is_closed is True
 
@@ -181,7 +197,7 @@ def test_lifespan_runs_the_session_manager_only_when_mounted(boot_main):
     main = boot_main(http=True)
     sm = main.app.state.mcp.session_manager
     assert sm._has_started is False
-    with TestClient(main.app):
+    with TestClient(main.app, base_url=LOCAL):
         assert sm._has_started is True
 
 
