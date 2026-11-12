@@ -251,12 +251,31 @@ class XsiamClient:
         return standard_auth_headers(self._api_key, self._api_key_id)
 
     def _client(self) -> httpx.AsyncClient:
+        # Every use of this client is ONE HTTP request (`async with
+        # self._client() as c: resp = await c.<verb>(...)`), so charging here is
+        # one token per request to the tenant, XQL polls included.
+        self._charge_request()
         return httpx.AsyncClient(
             base_url=self._base,
             headers=self._build_headers(),
             transport=self._transport,
             timeout=self._timeout,
         )
+
+    def _charge_request(self) -> None:
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import (  # noqa: PLC0415
+            QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+        )
+        try:
+            ledger.acquire_request(
+                tenant_ledger_key(self._base),
+                per_minute=tuning.xsiam_max_requests_per_minute())
+        except (QuotaBreakerOpen, RequestBudgetExhausted) as exc:
+            raise XsiamQuotaError(
+                str(exc), retry_after_seconds=max(1, int(exc.retry_after_seconds)),
+            ) from exc
 
     async def healthcheck(self) -> dict[str, Any]:
         async with self._client() as c:
@@ -309,7 +328,15 @@ class XsiamClient:
         if resp.status_code == 401:
             raise XsiamAuthError("XSIAM rejected the API key (HTTP 401)")
         if resp.status_code == 429:
-            raise XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)")
+            from connectors import tuning  # noqa: PLC0415
+
+            from .ledger import ledger, tenant_ledger_key  # noqa: PLC0415
+            ledger.trip(tenant_ledger_key(self._base),
+                        cooldown_seconds=tuning.xsiam_breaker_cooldown())
+            err = XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)",
+                                  upstream_status=429)
+            err.tripped = True
+            raise err
         if resp.status_code >= 400:
             raise XsiamApiError(
                 f"XSIAM API error (HTTP {resp.status_code})",

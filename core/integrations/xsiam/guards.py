@@ -98,6 +98,8 @@ async def tenant_budget(client: Any):
     ledger.charge(tenant, limit=tuning.xsiam_max_queries_per_day())
     try:
         yield
-    except XsiamQuotaError:
-        ledger.trip(tenant, cooldown_seconds=tuning.xsiam_breaker_cooldown())
+    except XsiamQuotaError as exc:
+        # A 429 already tripped the breaker inside the client: one 429, one trip.
+        if not getattr(exc, "tripped", False):
+            ledger.trip(tenant, cooldown_seconds=tuning.xsiam_breaker_cooldown())
         raise

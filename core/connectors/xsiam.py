@@ -33,8 +33,12 @@ from typing import Any, Callable, Optional, Sequence
 from integrations.xsiam import codes
 from integrations.xsiam.auth import advanced_auth_headers, standard_auth_headers
 from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.ledger import (
+    QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+)
 from integrations.xsiam.tenant_url import normalize_tenant_base_url
 
+from . import tuning
 from .base import (
     Connector,
     ConnectorConfig,
@@ -224,6 +228,18 @@ class XsiamConnector(Connector):
                                                 search_from=search_from,
                                                 page_size=page_size))
             body = json.dumps(payload).encode("utf-8")
+            # One token per page, from the same per-tenant bucket (and the same
+            # key) the tenant client spends: two egress points, one budget.
+            try:
+                ledger.acquire_request(
+                    tenant_ledger_key(base),
+                    per_minute=tuning.xsiam_max_requests_per_minute())
+            except (QuotaBreakerOpen, RequestBudgetExhausted) as e:
+                return PullResult(
+                    ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
+                    error=str(e),
+                    detail={"pages": pages, "path": path,
+                            "retry_after_seconds": max(1, int(e.retry_after_seconds))})
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
@@ -240,6 +256,9 @@ class XsiamConnector(Connector):
                 # the server log; ship only a status and a digest the operator
                 # can correlate with it. A failure on page N>1 fails the WHOLE
                 # pull: page 1 alone would read as "the tenant held this many".
+                if status == 429:
+                    ledger.trip(tenant_ledger_key(base),
+                                cooldown_seconds=tuning.xsiam_breaker_cooldown())
                 logger.warning("xsiam %s pull HTTP %s from %s (page %d); body=%s",
                                kind, status, _host_only(url), pages + 1, text[:500])
                 return PullResult(

@@ -44,6 +44,14 @@ class XsiamQuotaError(XsiamError):
     code = "XSIAM_QUOTA_ERROR"
     http_status = 429
 
+    def __init__(self, detail: str, *, upstream_status: Optional[int] = None,
+                 retry_after_seconds: Optional[int] = None):
+        super().__init__(detail, upstream_status=upstream_status)
+        self.retry_after_seconds = retry_after_seconds
+        # True once the breaker has already been opened for this failure, so a
+        # caller that trips on quota errors does not count one 429 twice.
+        self.tripped = False
+
 
 class XsiamCapabilityError(XsiamError):
     code = "XSIAM_CAPABILITY_MISSING"

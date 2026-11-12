@@ -96,7 +96,10 @@ def test_a_configured_v2_that_404s_points_back_to_v1():
 
 def test_role_and_quota_failures_never_spend_a_probe_on_the_other_path():
     """403 and 429 say nothing about the path; probing would just burn quota."""
+    from integrations.xsiam.ledger import ledger
+
     for status in (401, 403, 429, 500):
+        ledger.reset()  # a 429 opens the tenant breaker; each status is its own tenant run
         fetcher, calls = _tenant({V1: (status, "no"), V2: (200, [_ALERT])})
         r = pf.preflight_reconcile(_CFG, "k", fetcher=fetcher)
         assert calls == [V1], f"HTTP {status} must not trigger the alternate probe"
