@@ -81,6 +81,14 @@ the `SIM-MP-015` step-03 ABIOC, inner-joins `xdr_data` with
 one agent, 150 scenarios read ready, 30 partial, 10 needs doors (collector
 only) and 8 not evaluated (nothing derivable).
 
+**Re-measured after the beta-readiness merge (24bbe240).** The merge carries
+the beta's 25c3ba8b, which keeps only the Windows detections a lab run can fire
+in `SIM-EDR-013`, `SIM-EDR-017` and `SIM-EDR-021`. That removes 8 of the 1,411
+detections, so the corpus now has 1,403: `xdr_agent` 497 detections in 103
+scenarios (496 agent-only), `ngfw_stitch` 11 in 9 and `NO_DATASET` 223. Every
+other row above is unchanged, and so are the scenario states.
+`tests/engine/test_door_corpus.py` pins the merged numbers.
+
 Four defects follow from this:
 
 1. **The XDR agent is never checked.** Get Started's "Install an agent" step
