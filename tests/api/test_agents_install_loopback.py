@@ -102,9 +102,12 @@ def test_routable_script_carries_no_hint(client_at):
     assert 'CS_LOOPBACK_HINT=""' in r.text
 
 
-def test_explicit_override_wins_over_the_request_origin(client_at):
-    """The DC knows the jumpbox's reachable address — honour it, and with it
-    the hint disappears, because the baked SERVER is no longer loopback."""
+def test_explicit_override_wins_over_the_request_origin(client_at, monkeypatch):
+    """The DC knows the jumpbox's reachable address — honour it once it is
+    listed as this SimCore's, and with it the hint disappears, because the
+    baked SERVER is no longer loopback."""
+    import config
+    monkeypatch.setattr(config.settings, "CORTEXSIM_PUBLIC_URLS", "http://10.0.10.5:8888")
     r = client_at("http://localhost:8888").get(
         "/api/agents/install?os=linux&server=http://10.0.10.5:8888"
     )

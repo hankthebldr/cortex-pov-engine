@@ -340,8 +340,8 @@ jobs:
   # this job a scenario re-keyed to a dangling test case ships green: the loader
   # would reject it at boot, but nothing in CI would ever watch that happen.
   #
-  # Four gates share this job (PowerShell floor, strict refs, ground truth,
-  # lab readiness) and none may mask another. Each one after the dependency
+  # Five gates share this job (PowerShell floor, strict refs, ground truth,
+  # lab readiness, grouping keys) and none may mask another. Each one after the dependency
   # install carries `!cancelled()` plus the outcome of the step it actually
   # needs, so a red PowerShell gate still reports a dangling tc_ref from the
   # same push, and a gate never runs vacuously behind a failed prerequisite.
@@ -428,6 +428,14 @@ jobs:
       - name: Lab-readiness determinism gate (committed manifest must match the corpus)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: make check-lab-ready
+      - name: Grouping-key gate (fails only on G-03)
+        # A G-03 means a card's correlation rule maps the scenario's declared
+        # stitching_key to a custom destination XSIAM does not group on. Every
+        # other code (incl. G-04 GROUPING_KEY_UNKNOWN) is reported, not gated.
+        # It reads the corpus with pyyaml from the dependency install, and like
+        # every gate behind the PowerShell one it must not be masked by it.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: make check-grouping
 
   # ---------------------------------------------------------------------------
   # adapters — tool-adapter source preflight + Rust build-recipe preflight.

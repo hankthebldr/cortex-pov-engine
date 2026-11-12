@@ -29,7 +29,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth \
+        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth check-grouping \
         wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
 
 help: ## Show this help
@@ -218,9 +218,10 @@ endif
 # prerequisites beyond docker and python, and it must not stand in front of the
 # older gates when one of them is missing.
 #
-# check-lab-ready is here because the refs job runs it: a gate CI has and this
-# aggregate lacks makes `make validate` green on a tree CI will turn red.
-validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
+# check-lab-ready and check-grouping are here because the refs job runs them: a
+# gate CI has and this aggregate lacks makes `make validate` green on a tree CI
+# will turn red.
+validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-grouping check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + grouping-key + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
 ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
 	@echo "validate: finished with check-powershell SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1). Not a full pass."
 endif
@@ -418,6 +419,14 @@ ground-truth: ## Regenerate docs/reference/ground-truth.{json,md} from the corpu
 
 check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): regenerate and diff against committed files
 	git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
+
+# Grouping-key corpus gate (spec 2026-11-11-socfw-coexistence §5.3): reports
+# G-01..G-05 per scenario and exits 1 ONLY on a G-03 (a correlation rule maps
+# the declared stitching_key to a custom destination XSIAM does not group on).
+# G-04 GROUPING_KEY_UNKNOWN is reported, never gated. Needs pyyaml (.venv/bin
+# first on PATH).
+check-grouping: ## Grouping-key gate (CI 'refs' step): fail only on G-03
+	python3 scripts/check_grouping_keys.py
 
 # The shelf drift check goes through the REAL pack loader (pydantic + pyyaml),
 # so it runs under the same interpreter as the other loader-backed gates here

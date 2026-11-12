@@ -10,7 +10,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 This section carries two lines of work, merged with `git merge` (no rebase):
 the **beta-readiness pass** summarised next, and the **features merged to
-`dev` after 1.1.0** (PRs #169–#192), among them ingestion doors, collector
+`dev` after 1.1.0** (PRs #169–#212), among them ingestion doors, collector
 targets, the read-only NGFW connection, the MCP server, the Kubernetes
 container agent, ingestion routes and the dataset requirement registry. The
 sections below are grouped by kind of change, not by line of work, and the
@@ -99,12 +99,12 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `WEB_CONCURRENCY` in the environment could start several SimCores sharing
   one database. *Authored; no container ran.*
 - **Settings under compose.** `.env.example` now documents all 29 settings the
-  beta pass covered, split at a marked heading; the merge with `dev` adds the
-  seven dev declared (two NGFW, four MCP, `CORTEXSIM_STRICT_DATASETS`), 36 in
-  all. The container never reads `.env`: compose passes
-  only `CORTEXSIM_ENV`, `_SECRET`, `_BIND`, `_ALLOWED_HOSTS`, `_CORS_ORIGINS`
-  and `_TRUSTED_PROXIES`, so any other setting keeps its default in a compose
-  deployment.
+  beta pass covered, split at a marked heading; the merges with `dev` add the
+  eleven dev declared (two NGFW, four MCP, `CORTEXSIM_STRICT_DATASETS`, three
+  case-ledger, `CORTEXSIM_PUBLIC_URLS`), 40 in all. The container never reads
+  `.env`: compose passes only `CORTEXSIM_ENV`, `_SECRET`, `_BIND`,
+  `_ALLOWED_HOSTS`, `_CORS_ORIGINS`, `_TRUSTED_PROXIES` and `_PUBLIC_URLS`, so
+  any other setting keeps its default in a compose deployment.
 - **Helm chart 1.1.0.** The API defaults to one replica (it was 2, which gave
   two separate SimCores behind one Service). The chart now admits its own
   Service names, enabled Ingress hosts and `tailscale.hostname` in
@@ -729,6 +729,70 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Security — no route runs a program or a template the caller chose
+
+v1.1.0 ships every defect below. Every route below is still unauthenticated,
+like the rest of SimCore.
+
+From `dev` (#212). Its tool-start fix is the SEC-02 fix recorded under
+*Security* above, landed on both lines independently. The merged code is
+`dev`'s, which also holds `mitre_id` to ASCII digits and `config_path` to a
+file strictly below `CORTEXSIM_BASE_DIR`. The installer keeps the beta's
+narrower formats (agent id 1-64 characters, token `cxs_` + 20-128) and adds
+`dev`'s quoting and own-URL rule; `SERVER_HOST_NOT_ALLOWED` is checked after
+`SERVER_NOT_THIS_SIMCORE`.
+
+- **Tool start refuses caller-supplied argv.** The body's `params` were merged
+  over the registry's `binary` / `source_path` / `port` before
+  `run_template.format`, so `{"params": {"binary": "<any command line>"}}` ran
+  that command as SimCore's user (root in the image). Caller params now fill
+  only the placeholders a tool's `run_template` leaves open (`mitre_id` for
+  signalbench, `config_path` for ackbarx), each validated and quoted into one
+  argv token; anything else is `400 BAD_TOOL_PARAM` and nothing is spawned, and
+  a missing required placeholder is that 400 rather than a 500.
+  `POST /api/tools/{tool}/install` runs its build off the event loop, one at a
+  time; a concurrent install gets `409 INSTALL_IN_PROGRESS`.
+- **EAL campaigns no longer pick the executable.** `airs_prompt_attack` and
+  `browser_attack_runner` spawned whatever path a step's `params.binary` named,
+  and `POST /api/eal/campaigns` + `/launch` take the step params and the consent
+  gates from the same caller, so any program ran as SimCore's user. Both
+  plugins now run only their own CLI (`cortex-prompt-attacker`,
+  `cortex-browser-attacker`) from SimCore's PATH, and both routes refuse a step
+  that sets `params.binary` with `400 CALLER_EXECUTABLE_REFUSED`, including a
+  campaign stored before this release.
+- **The agent installer no longer runs its query string.** `GET
+  /api/agents/install` pasted `id`, `server` and `token` raw into the bash and
+  PowerShell scripts that are piped into `bash` / `iex`, so `?id=$(…)` ran on
+  the target. Each is now checked against its real format (agent id
+  `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
+  derived one included) and baked in as a single-quoted literal; a bad value is
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+- **The agent installer names only this SimCore.** `?server=` chose the host
+  the script downloads the beacon and its digest from and the beacon takes
+  tasks from, and any well-formed URL was accepted. It must now be this
+  SimCore: the origin the install request arrived on, or an entry in the new
+  `CORTEXSIM_PUBLIC_URLS` setting (comma-separated http(s) origins for LAN or
+  NAT names; scheme and host case, default ports and trailing slashes are
+  normalised). Any other host is `400 SERVER_NOT_THIS_SIMCORE` with no script.
+  The console's one-liner sends no `?server=` and is unaffected; if you pass
+  `?server=` with an address the request did not arrive on, list it in
+  `CORTEXSIM_PUBLIC_URLS` (`docker-compose.yml` passes it through).
+- **Served k8s bundles carry only this SimCore's URL.** `POST
+  /api/scenarios/{id}/bundle` (`format: k8s`) wrote the body's `server` raw
+  into the manifest's header comment and its preflight command, so a newline
+  in it added YAML documents, such as a `Pod`, that the header and the consent
+  record did not describe. `server` is now held to the installer's rule:
+  `400 BAD_SERVER` / `SERVER_NOT_THIS_SIMCORE`, and no manifest.
+- **Infra bundles no longer take Terraform from the request.** `POST
+  /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
+  raw into Terraform string literals, so a quote and newlines could add a
+  `data "external"` block that `terraform plan` runs on the DC's machine.
+  `region` must now be an AWS region and `jumpbox_size` an AWS instance type
+  (422 otherwise), and the templates write string values, `tags` included, only
+  as escaped HCL literals. Bundles for valid input carry the same values, and
+  the same bytes unless a tag holds `'`, `<`, `>`, `&` or non-ASCII text
+  (which `tojson` wrote as `\uXXXX`).
+
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
@@ -784,6 +848,30 @@ with 409 `PUSH_NOT_SUPPORTED`.
   is removed; nothing in the run path reads the column; and
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
+
+### Added — grouping-key corpus gate (`make check-grouping`)
+
+- **`core/engine/grouping_keys.py`** works out, for each expected detection,
+  the native XSIAM case-grouping key classes it populates (host, user, file,
+  IP) and its severity, and reports per scenario: **G-01** (WARN) Medium+
+  detections share no key, **G-02** (WARN) a stitched step carries only
+  below-Medium detections, **G-03** (ERROR) a correlation rule maps the
+  declared `stitching_key` to a custom destination, **G-04** (INFO)
+  `GROUPING_KEY_UNKNOWN`, **G-05** (INFO) `BRIDGEABLE_IP_HOST`. The native
+  field list is ported from the SOC Framework's
+  `tools/correlation_rule_grouping_check.py` (MIT, notice kept).
+- **`scripts/check_grouping_keys.py`** (`make check-grouping`, a step in CI's
+  `refs` job, part of `make validate`) exits 1 only on G-03. The ground truth
+  gains a `grouping` block.
+- **Measured:** 199 scenarios, 1419 step-detections: G-01 0, G-02 2
+  (SIM-EMAIL-003/004, informational BIOCs on a stitched step), G-03 0, G-04
+  **1050**, G-05 0. G-04 is the size of the later authoring program: no card
+  carries `alert_fields`, and only custom-BIOC severity is read from the
+  corpus. The analysis is by key class, never by value, so it is advisory.
+  `tenant-verified` is still 0. Those counts are `dev`'s. On the beta tree,
+  where the Windows content declares eight fewer step-detections, the gate
+  reads 199 scenarios, 1411 step-detections, G-04 **1042**, the other codes
+  unchanged (`scripts/check_grouping_keys.py`, after the merge).
 
 ### Added — CortexSim alongside the SOC Framework: the run case ledger (Part B)
 

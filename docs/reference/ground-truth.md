@@ -63,6 +63,18 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Prevention | 3 |
 | XQL | 554 |
 
+### Grouping keys (`make check-grouping`)
+
+1411 step-detections in 199 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+
+| Code | Outcome | Count |
+|---|---|---:|
+| G-01 | WARN: Medium+ detections share no native key | 0 |
+| G-02 | WARN: stitched step carries only below-Medium detections | 2 |
+| G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1042 |
+| G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
+
 ## Tool adapters
 
 | Metric | Value |

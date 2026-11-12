@@ -114,6 +114,12 @@
     `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
+- **Grouping-key gate (2026-11-11 — SOC Framework coexistence, Part C):**
+  `make check-grouping` (`scripts/check_grouping_keys.py`; a step in CI's `refs`
+  job and in `make validate`) reports G-01..G-05 per scenario and fails only on
+  **G-03**. Counts live in the ground truth's `grouping` block; measured at 198
+  scenarios: G-04 `GROUPING_KEY_UNKNOWN` **1042 of 1411** step-detections, G-02 2,
+  G-01/G-03/G-05 0. Advisory by design: the analysis is by key class, not value.
 - **Counted ground truth (regenerated 2026-10-28 — SIM-KOI-009 GlassWorm pass; the 13 stitched chains and `SIM-MP-035..037` below were added by the earlier Unit 42 recent-posts pass):**
   **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1377 step-detections ·
   2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:

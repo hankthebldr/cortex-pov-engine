@@ -390,6 +390,22 @@ def boot_truth_scenarios() -> Optional[dict[str, Any]]:
     }
 
 
+def count_grouping() -> Optional[dict[str, Any]]:
+    """Grouping-key findings by code (`make check-grouping`). Returns None
+    (never a wrong number) if pyyaml isn't importable here."""
+    _ensure_core_on_path()
+    scripts_dir = str(REPO_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from check_grouping_keys import corpus_report  # type: ignore
+    except ImportError:
+        return None
+    report = corpus_report(REPO_ROOT)
+    return {k: report[k] for k in ("scenarios_analyzed", "step_detections_analyzed",
+                                   "counts_by_code")}
+
+
 def boot_truth_assertions() -> Optional[dict[str, Any]]:
     _ensure_core_on_path()
     try:
@@ -541,6 +557,7 @@ def build() -> dict[str, Any]:
     boot_scenarios = boot_truth_scenarios()
     boot_assertions = boot_truth_assertions()
     boot_refs = boot_truth_strict_refs()
+    grouping = count_grouping()
 
     # --- Cross-checks: independent methods must agree. Disagreement is the
     # exact class of drift this generator exists to catch, so it is a hard
@@ -563,6 +580,15 @@ def build() -> dict[str, Any]:
         checks.append((
             "scenario count: schema-valid (real loader) vs coverage_report.py --json",
             boot_scenarios["schema_valid"], coverage["meta"]["scenario_count"],
+        ))
+    if grouping is not None:
+        checks.append((
+            "scenario count: filesystem glob vs check_grouping_keys.py",
+            fs_scenario_count, grouping["scenarios_analyzed"],
+        ))
+        checks.append((
+            "step-detection count: check_grouping_keys.py vs coverage_report.py --json",
+            grouping["step_detections_analyzed"], coverage["meta"]["step_detection_count"],
         ))
     if boot_assertions is not None:
         fs_assertions = count_assertions_filesystem()
@@ -615,6 +641,10 @@ def build() -> dict[str, Any]:
             "methodology_family_counts": coverage["methodology"]["counts"],
         },
         "signal_quality": coverage["signal_quality"],
+        "grouping": (grouping if grouping is not None
+                     else {"status": "not_run", "note": (
+                         "pyyaml unavailable in this interpreter — see "
+                         "`make check-grouping` or the CI 'refs' job")}),
         "adapters": adapters,
         "assertions": {
             "artifacts_total": (boot_assertions["loaded"] if boot_assertions
@@ -725,6 +755,31 @@ def render_markdown(doc: dict[str, Any]) -> str:
     lines.append("|---|---:|")
     for k, v in sorted(c["step_detections_by_type"].items()):
         lines.append(f"| {k} | {v} |")
+    lines.append("")
+
+    g = doc["grouping"]
+    lines.append("### Grouping keys (`make check-grouping`)")
+    lines.append("")
+    if "counts_by_code" in g:
+        lines.append(
+            f"{g['step_detections_analyzed']} step-detections in {g['scenarios_analyzed']} "
+            "scenarios, analysed by key class (never by value). Only G-03 fails the gate. "
+            "G-04 is the number of step-detections whose grouping key or severity the "
+            "corpus does not yet declare.")
+        lines.append("")
+        lines.append("| Code | Outcome | Count |")
+        lines.append("|---|---|---:|")
+        outcomes = {
+            "G-01": "WARN: Medium+ detections share no native key",
+            "G-02": "WARN: stitched step carries only below-Medium detections",
+            "G-03": "ERROR: stitching_key mapped to a custom destination",
+            "G-04": "INFO: `GROUPING_KEY_UNKNOWN`",
+            "G-05": "INFO: `BRIDGEABLE_IP_HOST`",
+        }
+        for code, n in sorted(g["counts_by_code"].items()):
+            lines.append(f"| {code} | {outcomes.get(code, code)} | {n} |")
+    else:
+        lines.append(f"Not run by this generator this pass ({g.get('note', 'unavailable')}).")
     lines.append("")
 
     lines.append("## Tool adapters")
