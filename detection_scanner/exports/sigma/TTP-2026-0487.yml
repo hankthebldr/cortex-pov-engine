@@ -1,0 +1,58 @@
+title: "Weakly-Encrypted Kerberos TGT Response Attack \u2014 Weakly-Encrypted Kerberos TGT Process"
+id: ttp-2026-0487-bioc-01
+status: experimental
+description: |
+  Detection of process starting with weakly-encrypted Kerberos ticket handling
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'cmd.exe' and action_process_image_name = 'cmd.exe'
+    | filter action_file_path contains 'ticket.kirbi'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+    - attack.t1078
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Weakly-Encrypted Kerberos TGT Response Attack \u2014 Weakly-Encrypted Kerberos TGT Response"
+id: ttp-2026-0487-abioc-02
+status: experimental
+description: |
+  Behavioral deviation in Kerberos ticket handling using weak encryption
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter action_file_path contains 'ticket.kirbi'
+    | filter action_remote_ip = '192.0.2.100'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+    - attack.t1078
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

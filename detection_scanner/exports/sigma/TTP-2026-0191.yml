@@ -1,0 +1,55 @@
+title: "PowerShell Attack with Defender Tampering and AMSI Patching \u2014 Defender Tampering via PowerShell"
+id: ttp-2026-0191-bioc-01
+status: experimental
+description: |
+  Detection of Set-MpPreference command disabling real-time monitoring
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'DisableRealtimeMonitoring'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PowerShell Attack with Defender Tampering and AMSI Patching \u2014 AMSI Memory Patching via Reflection"
+id: ttp-2026-0191-bioc-02
+status: experimental
+description: |
+  Detection of PowerShell process attempting to patch AMSI using reflection
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'amsiInitFailed'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

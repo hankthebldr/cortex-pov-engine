@@ -1,5 +1,65 @@
+title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 High DNS Query Volume Burst"
+id: ttp-2026-0102-bioc-01
+status: experimental
+description: |
+  Detection of a sudden spike in DNS query volume from a single host, exceeding the learned per-minute baseline for a specific domain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.DNS
+    | filter dns_query_name contains ".exfil.testmynids.org"
+    | comp count() as cnt by agent_hostname, dns_query_name, window(1m)
+    | comp count = count()
+    | filter count > 10
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+    - attack.t1071
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 High Entropy Subdomain Detection"
+id: ttp-2026-0102-bioc-02
+status: experimental
+description: |
+  Detection of DNS queries with long, high-entropy first labels that deviate from the host's learned DNS name shape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.DNS
+    | filter arrayindex(split(dns_query_name, "."), 0) matches "[a-zA-Z0-9]{20,}"
+    | filter len(arrayindex(split(dns_query_name, "."), 0)) >= 20
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071
+    - attack.t1572
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline"
-id: ttp-2026-0102-abioc-01
+id: ttp-2026-0102-abioc-03
 status: experimental
 description: |
   A host whose learned Cortex DNS profile is a small, low-rate set of resolutions suddenly emits dozens of lookups under a single base domain within a minute. The ABIOC anchors the volume deviation to the causality chain (one host -> one base domain -> high-rate label burst) rather than to any known-bad domain, catching a DNS tunnel over an unseen base domain that a static domain-block would miss.
@@ -31,7 +91,7 @@ falsepositives:
 level: high
 ---
 title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline"
-id: ttp-2026-0102-abioc-02
+id: ttp-2026-0102-abioc-04
 status: experimental
 description: |
   A host resolves long, encoded first-labels whose length and character distribution diverge from its learned DNS name shape — the encoded-payload signature of DNS tunneling. Every query is a legitimate DNS lookup; the ABIOC fires on the entropy-and-length deviation from the host's learned name baseline, anchored to the query-volume burst that carries it.

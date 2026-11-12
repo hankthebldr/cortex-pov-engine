@@ -1,0 +1,57 @@
+title: "Scrcons.exe Rare Child Process Behavior \u2014 Scrcons.exe Rare Child Process"
+id: ttp-2026-0369-bioc-01
+status: experimental
+description: |
+  scrcons.exe starts an uncommon child process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'scrcons.exe'
+    | filter action_process_image_name not in ('explorer.exe', 'cmd.exe', 'powershell.exe', 'svchost.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Scrcons.exe Rare Child Process Behavior \u2014 Scrcons.exe Unusual Child Process"
+id: ttp-2026-0369-abioc-02
+status: experimental
+description: |
+  scrcons.exe starts a non-standard child process that deviates from normal behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'scrcons.exe'
+    | filter action_process_image_name not in ('explorer.exe', 'cmd.exe', 'powershell.exe', 'svchost.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

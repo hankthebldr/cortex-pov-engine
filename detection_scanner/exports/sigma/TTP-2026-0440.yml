@@ -1,0 +1,60 @@
+title: "Persistence via Registry Run Key Modification \u2014 Uncommon login item persistency was registered or modified"
+id: ttp-2026-0440-bioc-01
+status: experimental
+description: |
+  Detection of registry modifications to the Run key by non-standard processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'reg.exe'
+    | filter action_file_path contains 'Run'
+    | filter action_file_path contains 'CurrentVersion'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1060/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1060
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Persistence via Registry Run Key Modification \u2014 Uncommon login item persistency behavior"
+id: ttp-2026-0440-abioc-02
+status: experimental
+description: |
+  Detection of non-standard process modifying Run key with uncommon persistence pattern
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'reg.exe'
+    | filter action_file_path contains 'Run'
+    | filter action_file_path contains 'CurrentVersion'
+    | filter not actor_process_image_name in ('explorer.exe', 'svchost.exe', 'cmd.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1060/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1060
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

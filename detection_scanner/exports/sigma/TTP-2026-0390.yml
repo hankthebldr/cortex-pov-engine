@@ -1,0 +1,58 @@
+title: "ICMP-based Command and Control via Windows \u2014 Suspicious ICMP Packet"
+id: ttp-2026-0390-bioc-01
+status: experimental
+description: |
+  Detects ping commands sending data to test-net IP
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'ping.exe'
+    | filter action_remote_ip = '192.0.2.1'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ICMP-based Command and Control via Windows \u2014 PowerShell Ping C2 Activity"
+id: ttp-2026-0390-abioc-02
+status: experimental
+description: |
+  Detects PowerShell invoking ping to test-net IP for C2
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'ping.exe'
+    | filter action_remote_ip = '192.0.2.1'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

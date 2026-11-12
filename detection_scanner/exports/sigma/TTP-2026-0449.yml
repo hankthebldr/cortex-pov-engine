@@ -1,0 +1,57 @@
+title: "Node.js Package Communication to External Host \u2014 Uncommon Node.js package initiated communication"
+id: ttp-2026-0449-bioc-01
+status: experimental
+description: |
+  Detection of Node.js process starting and connecting to external host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'node'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.008
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Node.js Package Communication to External Host \u2014 Uncommon Node.js package initiated communication"
+id: ttp-2026-0449-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where Node.js package initiates communication to external host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'node'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.008
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

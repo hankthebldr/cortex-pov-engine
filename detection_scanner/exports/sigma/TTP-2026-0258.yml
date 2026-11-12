@@ -1,0 +1,62 @@
+title: "Abusing WMI for Persistence via System Service \u2014 Commonly Abused Process Launched as System Service"
+id: ttp-2026-0258-bioc-01
+status: experimental
+description: |
+  Detection of wmiprvse.exe being started as a system service, a behavior often abused by attackers for persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmiprvse.exe'
+    | filter action_process_image_name = 'sc.exe'
+    | filter causality_actor_process_image_name = 'system'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1543.003
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Abusing WMI for Persistence via System Service \u2014 Suspicious WMI Service Launch"
+id: ttp-2026-0258-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where wmiprvse.exe is launched as a system service with a non-standard binary path, indicating potential abuse.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmiprvse.exe'
+    | filter action_process_image_name = 'sc.exe'
+    | filter causality_actor_process_image_name = 'system'
+    | filter action_file_path = 'C:\temp\malware.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1543.003
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

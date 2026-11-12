@@ -1,5 +1,36 @@
+title: "Hands-on-Keyboard Behavioral Anomaly on a Service Account \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) \u2014 EDR-010 Discovery Burst of LOLBin Utilities on Automation Account"
+id: ttp-2026-0096-bioc-01
+status: experimental
+description: |
+  A service account whose learned Cortex profile is scheduled, non-interactive automation runs a rapid burst of discovery utilities (whoami, id, uname, hostname, ss) — every utility is legitimate, a static BIOC keyed on a bad command string would miss. This deterministic rule fires on the specific image names and the short-window fan-out that the ML ABIOC also covers on the behavioral layer; the BIOC is the rule-based layer, distinct from the auto-tuned ABIOC.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username = "svc-backup"
+    | filter action_process_image_name in ("whoami", "id", "uname", "hostname", "ss")
+    | comp count_distinct(action_process_image_name) as distinct_tools by agent_hostname, actor_effective_username, within 60s
+    | filter distinct_tools >= 4
+    | fields agent_hostname, actor_effective_username, distinct_tools
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Hands-on-Keyboard Behavioral Anomaly on a Service Account \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) \u2014 EDR-010 Anomalous Interactive Shell Lineage from Automation Account"
-id: ttp-2026-0096-abioc-01
+id: ttp-2026-0096-abioc-02
 status: experimental
 description: |
   A service account whose learned Cortex behavioral profile is scheduled, non-interactive automation suddenly parents an interactive shell (login-style bash with a controlling tty). ABIOC anchors the deviation to the causality chain (service-account auth -> interactive shell) rather than to any known-bad binary, catching hands-on-keyboard use of a legitimate account that a static rule keyed on a bad command string would miss.
@@ -32,7 +63,7 @@ falsepositives:
 level: high
 ---
 title: "Hands-on-Keyboard Behavioral Anomaly on a Service Account \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) \u2014 EDR-010 Living-off-the-Land Discovery Burst Deviating from Account Baseline"
-id: ttp-2026-0096-abioc-02
+id: ttp-2026-0096-abioc-03
 status: experimental
 description: |
   An automation account whose learned baseline is a narrow, repetitive process set runs a rapid burst of discovery/staging utilities (whoami, id, uname, hostname, ss, curl). Every utility is legitimate; the ABIOC fires on the cadence-and-diversity deviation from the account's learned behavior, anchored to the interactive shell that spawned them.

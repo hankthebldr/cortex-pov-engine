@@ -1,0 +1,61 @@
+title: "Unsigned Process Execution via Scheduled Task \u2014 Rare unsigned process execution by scheduled task"
+id: ttp-2026-0348-bioc-01
+status: experimental
+description: |
+  Detection of unsigned process execution triggered by schtasks.exe
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'schtasks.exe'
+    | filter action_process_image_name != 'signed.exe'
+    | filter action_file_path contains 'malware.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+    - attack.t1059.001
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned Process Execution via Scheduled Task \u2014 Unusual unsigned process start from scheduled task"
+id: ttp-2026-0348-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where an unsigned executable is started by schtasks.exe
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'schtasks.exe'
+    | filter action_process_image_name != 'signed.exe'
+    | filter action_file_path contains 'malware.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+    - attack.t1059.001
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

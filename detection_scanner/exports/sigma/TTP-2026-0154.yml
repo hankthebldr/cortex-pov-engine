@@ -1,5 +1,73 @@
+title: "AWS S3 Mass-Object Exfiltration by a Suspicious Identity \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1530) \u2014 Suspicious S3 Exfiltration Process Execution"
+id: ttp-2026-0154-bioc-01
+status: experimental
+description: |
+  Detection of process execution that matches the pattern of AWS CLI or Python script used in S3 exfiltration payload
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "python3" or actor_process_image_name = "aws"
+    | filter action_process_image_name contains "python3" or action_process_image_name contains "aws"
+    | filter action_file_path contains "scripts.eal_simulator" or action_file_path contains "cloud_audit_emitter"
+    | filter actor_effective_username != "root"
+    | filter agent_hostname != ""
+    | filter causality_actor_process_image_name = "bash" or causality_actor_process_image_name = "sh"
+    | comp count() as cnt by agent_hostname, actor_effective_username
+    | filter count() > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1530/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1530
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AWS S3 Mass-Object Exfiltration by a Suspicious Identity \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1530) \u2014 High Volume S3 GetObject API Calls from Suspicious Identity"
+id: ttp-2026-0154-bioc-02
+status: experimental
+description: |
+  Detection of high-volume S3 GetObject API calls from a single suspicious identity within a short time window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip != ""
+    | filter action_file_path contains "s3.amazonaws.com"
+    | filter action_file_path contains "GetObject"
+    | filter agent_hostname != ""
+    | filter actor_effective_username != "root"
+    | comp count() as cnt by agent_hostname, actor_effective_username, action_remote_ip
+    | filter count() > 50
+    | filter count() > 50
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1530/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1530
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "AWS S3 Mass-Object Exfiltration by a Suspicious Identity \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1530) \u2014 Suspicious identity downloaded multiple objects from a bucket"
-id: ttp-2026-0154-abioc-01
+id: ttp-2026-0154-abioc-03
 status: experimental
 description: |
   A single IAM identity whose learned Cortex object-access baseline is a small, steady read of a handful of S3 objects suddenly issues a high-volume burst of s3:GetObject calls on one bucket, from a source new for that identity. The ABIOC anchors the mass-download deviation to the causality chain (suspicious identity -> GetObject read burst on one bucket) rather than to any single API name, catching bulk cloud-storage theft a static rule keyed on GetObject would drown in noise on.
@@ -32,7 +100,7 @@ falsepositives:
 level: high
 ---
 title: "AWS S3 Mass-Object Exfiltration by a Suspicious Identity \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1530) \u2014 An identity performed a suspicious download of multiple cloud storage objects"
-id: ttp-2026-0154-abioc-02
+id: ttp-2026-0154-abioc-04
 status: experimental
 description: |
   An identity issues an anomalously high volume of s3:GetObject reads on one bucket, far above its learned per-bucket access volume. Every read is a legitimate call; the ABIOC fires on the read-volume deviation from the identity's learned cloud-storage behavior, anchored to the high-volume download burst on the same bucket.

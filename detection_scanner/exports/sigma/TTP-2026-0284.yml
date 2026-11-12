@@ -1,0 +1,55 @@
+title: "Interactive Login by Service Account \u2014 Interactive Login by Service Account"
+id: ttp-2026-0284-bioc-01
+status: experimental
+description: |
+  Detection of interactive login using a service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'winlogon.exe' and action_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.002
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Interactive Login by Service Account \u2014 Service Account Interactive Login"
+id: ttp-2026-0284-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating interactive login via service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'winlogon.exe' and action_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.002
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

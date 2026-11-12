@@ -1,0 +1,59 @@
+title: "Rundll32 Executes Rare Unsigned Module \u2014 Rundll32 Executes Rare Unsigned Module"
+id: ttp-2026-0366-bioc-01
+status: experimental
+description: |
+  Detects rundll32.exe executing a rare or unsigned DLL module.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'rundll32.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_path not in (SELECT DISTINCT action_file_path FROM xdr_data WHERE action_file_signature_status = 'signed')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1218.011
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rundll32 Executes Rare Unsigned Module \u2014 Suspicious Rundll32 Execution with Unsigned DLL"
+id: ttp-2026-0366-abioc-02
+status: experimental
+description: |
+  Behavioral ABIOC detecting rundll32.exe executing an unsigned DLL, which is a common technique used in malicious payload delivery.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'rundll32.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_signature_status = 'unsigned'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1218.011
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

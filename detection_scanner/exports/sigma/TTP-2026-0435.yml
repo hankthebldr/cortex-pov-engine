@@ -1,0 +1,57 @@
+title: "Persistence via Registry Run Key Modification \u2014 Uncommon Launch Daemon persistency was registered or modified"
+id: ttp-2026-0435-bioc-01
+status: experimental
+description: |
+  Detection of registry modifications to run keys that are not typical for the system
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'reg.exe'
+    | filter action_file_path contains 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1060/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1060
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Persistence via Registry Run Key Modification \u2014 Uncommon Launch Daemon persistency was registered or modified"
+id: ttp-2026-0435-abioc-02
+status: experimental
+description: |
+  Behavioral deviation based on registry modification that is not commonly seen in benign processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'reg.exe'
+    | filter action_file_path contains 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1060/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1060
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

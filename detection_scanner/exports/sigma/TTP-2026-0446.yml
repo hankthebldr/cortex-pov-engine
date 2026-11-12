@@ -1,0 +1,62 @@
+title: "Uncommon net localgroup command execution on Windows endpoint \u2014 Uncommon net localgroup command execution"
+id: ttp-2026-0446-bioc-01
+status: experimental
+description: |
+  Detection of net.exe being executed with localgroup argument outside of expected context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'C:\\Windows\\System32\\net.exe'
+    | filter action_file_path contains 'localgroup'
+    | filter not (causality_actor_process_image_name in ('explorer.exe', 'services.exe', 'svchost.exe'))
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1069/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1069.001
+    - attack.t1059.001
+    - attack.t1078.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon net localgroup command execution on Windows endpoint \u2014 Uncommon net localgroup behavior"
+id: ttp-2026-0446-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating net.exe being used to manipulate local group memberships outside of normal administrative context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'C:\\Windows\\System32\\net.exe'
+    | filter action_file_path contains 'localgroup'
+    | filter not (causality_actor_process_image_name in ('explorer.exe', 'services.exe', 'svchost.exe'))
+    | filter not (agent_hostname in ('admin-host-01', 'domain-controller-01'))
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1069/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1069.001
+    - attack.t1059.001
+    - attack.t1078.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

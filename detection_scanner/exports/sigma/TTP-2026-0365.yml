@@ -1,0 +1,58 @@
+title: "Kubelet Credential Retrieval via Windows PowerShell \u2014 PowerShell Execution with Bypass Policy"
+id: ttp-2026-0365-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell execution with -ExecutionPolicy Bypass flag
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains '-ExecutionPolicy Bypass'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1078
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kubelet Credential Retrieval via Windows PowerShell \u2014 Suspicious File Access After PowerShell Execution"
+id: ttp-2026-0365-abioc-02
+status: experimental
+description: |
+  Detection of file access after PowerShell execution with bypass policy
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS
+    | filter action_file_path = 'C:\temp\kubeletcreds.txt'
+    | filter causality_actor_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1078
+    - attack.t1566
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

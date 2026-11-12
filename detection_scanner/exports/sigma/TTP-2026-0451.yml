@@ -1,0 +1,57 @@
+title: "Uncommon Recurring Rare External Host Access via PowerShell \u2014 Uncommon Recurring Rare External Host Access"
+id: ttp-2026-0451-bioc-01
+status: experimental
+description: |
+  Detection of process accessing rare external IP address repeatedly
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d))
+    | filter actor_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon Recurring Rare External Host Access via PowerShell \u2014 Rare External Host Access via PowerShell"
+id: ttp-2026-0451-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of PowerShell accessing uncommon external IP address
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
+    | filter action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)
+    | filter actor_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

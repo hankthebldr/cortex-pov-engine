@@ -1,0 +1,60 @@
+title: "Wscript/Cscript loads .NET DLLs via PowerShell \u2014 Wscript/Cscript loads .NET DLL"
+id: ttp-2026-0493-bioc-01
+status: experimental
+description: |
+  Detection of wscript.exe or cscript.exe loading .NET DLLs
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ('wscript.exe', 'cscript.exe')
+    | filter action_file_path contains '.dll'
+    | filter action_file_path contains '.NET'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.005
+    - attack.t1106
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Wscript/Cscript loads .NET DLLs via PowerShell \u2014 Suspicious .NET DLL Load via Script Host"
+id: ttp-2026-0493-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where script hosts (wscript/cscript) load .NET DLLs from non-standard paths
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ('wscript.exe', 'cscript.exe')
+    | filter action_file_path contains '.dll'
+    | filter action_file_path not in ('C:\\Windows\\Microsoft.NET\\', 'C:\\Windows\\System32\\')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.005
+    - attack.t1106
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

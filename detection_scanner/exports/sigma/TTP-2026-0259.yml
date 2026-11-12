@@ -1,0 +1,57 @@
+title: "Conhost Spawning Suspicious Cmd Process \u2014 Conhost Spawning Cmd with Suspicious Args"
+id: ttp-2026-0259-bioc-01
+status: experimental
+description: |
+  Detection of conhost.exe spawning cmd.exe with suspicious command-line arguments
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'
+    | filter action_process_command_line contains 'powershell' or action_process_command_line contains 'iex'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Conhost Spawning Suspicious Cmd Process \u2014 Suspicious Cmd Execution via Conhost"
+id: ttp-2026-0259-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where conhost.exe spawns cmd.exe with PowerShell execution flags
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'
+    | filter action_process_command_line contains 'powershell' or action_process_command_line contains 'iex'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

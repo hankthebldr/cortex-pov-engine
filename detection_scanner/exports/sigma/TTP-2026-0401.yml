@@ -1,0 +1,56 @@
+title: "Malicious PowerShell Execution via Adobe Reader \u2014 Suspicious Process Spawned by Adobe Reader"
+id: ttp-2026-0401-bioc-01
+status: experimental
+description: |
+  Detects when a process is started by Adobe Reader, which is often used by attackers to execute malicious code.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'AcroRd32.exe' and action_process_image_name in ('powershell.exe', 'cmd.exe', 'wscript.exe', 'cscript.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Malicious PowerShell Execution via Adobe Reader \u2014 Adobe Reader Process Spawn with PowerShell"
+id: ttp-2026-0401-abioc-02
+status: experimental
+description: |
+  Detects anomalous behavior where Adobe Reader spawns PowerShell with suspicious command-line arguments, indicating potential exploitation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'AcroRd32.exe' and action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains 'DownloadString' or action_process_command_line contains 'IEX'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

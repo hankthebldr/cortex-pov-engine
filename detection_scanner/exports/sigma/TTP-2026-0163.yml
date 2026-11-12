@@ -1,5 +1,65 @@
+title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Kubernetes Secret Enumeration via Python Script"
+id: ttp-2026-0163-bioc-01
+status: experimental
+description: |
+  Detection of python process executing k8s audit emitter simulator with list/get verbs on secrets resource
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'python3'
+    | filter action_process_image_name = 'scripts.eal_simulator.cli'
+    | filter action_file_path contains 'cdr-026-enum.yml'
+    | filter action_remote_ip = 'kubernetes_api_server_ip'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Unusual Kubernetes Secret Access by Service Account"
+id: ttp-2026-0163-bioc-02
+status: experimental
+description: |
+  Detection of python process accessing k8s audit emitter simulator with get verb on secrets resource by out-of-baseline service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'python3'
+    | filter action_process_image_name = 'scripts.eal_simulator.cli'
+    | filter action_file_path contains 'cdr-026-access.yml'
+    | filter actor_effective_username = 'system:serviceaccount:cortexsim-canary:compromised-sa'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Kubernetes secrets enumeration for the first time"
-id: ttp-2026-0163-abioc-01
+id: ttp-2026-0163-abioc-03
 status: experimental
 description: |
   Analytics (first-seen ML): a Kubernetes identity lists secrets for the first time. XSIAM learns which service accounts enumerate secrets in baseline; a previously-unseen subject issuing a list-secrets call is flagged as reconnaissance. This is a first-seen anomaly over the API-server audit feed, not a parent->child causality-chain ABIOC. Keyed on the kubernetes_audit_logs API-server audit feed.
@@ -29,7 +89,7 @@ falsepositives:
 level: high
 ---
 title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Unusual Kubernetes secret access"
-id: ttp-2026-0163-abioc-02
+id: ttp-2026-0163-abioc-04
 status: experimental
 description: |
   Analytics (behavioral / ML): a Kubernetes identity reads secrets in a way that deviates from its established access baseline. XSIAM learns typical per-identity secret get/watch behavior from the API-server audit feed and flags atypical reads (new secrets, new source IP, or a spike in volume). Keyed on kubernetes_audit_logs.

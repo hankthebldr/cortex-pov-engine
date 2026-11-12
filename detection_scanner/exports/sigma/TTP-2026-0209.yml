@@ -1,0 +1,55 @@
+title: "Rare Local Administrator Login on Windows Endpoint \u2014 Rare Local Admin Login"
+id: ttp-2026-0209-bioc-01
+status: experimental
+description: |
+  Interactive logon with a local admin account not seen on host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN
+    | filter actor_user_name = 'Administrator' and actor_user_domain = 'LOCAL'
+    | filter not in(actor_user_name, (select distinct actor_user_name from xdr_data where event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN and agent_hostname = 'target-host'))
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare Local Administrator Login on Windows Endpoint \u2014 A rare local administrator login"
+id: ttp-2026-0209-abioc-02
+status: experimental
+description: |
+  Detection of interactive login with local admin account not seen on this host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN
+    | filter actor_user_name = 'Administrator' and actor_user_domain = 'LOCAL'
+    | filter not in(actor_user_name, (select distinct actor_user_name from xdr_data where event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN and agent_hostname = 'target-host'))
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

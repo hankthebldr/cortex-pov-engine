@@ -1,0 +1,62 @@
+title: "RDP Brute-Force via Windows Command Line Tools \u2014 RDP Brute Force Attempt"
+id: ttp-2026-0317-bioc-01
+status: experimental
+description: |
+  Multiple failed RDP connection attempts from same host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'net.exe'
+    | filter action_file_path contains 'net.exe'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 445
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1110.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "RDP Brute-Force via Windows Command Line Tools \u2014 Unusual RDP Access Pattern"
+id: ttp-2026-0317-abioc-02
+status: experimental
+description: |
+  Unexpected use of net.exe to attempt RDP connection to a remote host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'net.exe'
+    | filter action_file_path contains 'net.exe'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 445
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1110.001
+    - attack.t1059.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

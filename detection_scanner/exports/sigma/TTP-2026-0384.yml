@@ -1,0 +1,57 @@
+title: "Disable Windows Firewall via netsh \u2014 Firewall Disabled via Netsh"
+id: ttp-2026-0384-bioc-01
+status: experimental
+description: |
+  Detection of netsh command executed with arguments to disable Windows Firewall
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'netsh.exe'
+    | filter action_process_command_line contains 'advfirewall set allprofiles state off'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+    - attack.t1059.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Disable Windows Firewall via netsh \u2014 Suspicious Disablement of Windows Firewall"
+id: ttp-2026-0384-abioc-02
+status: experimental
+description: |
+  Behavioral ABIOC detecting suspicious disablement of Windows Firewall via netsh
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'netsh.exe'
+    | filter action_process_command_line contains 'advfirewall set allprofiles state off'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+    - attack.t1059.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

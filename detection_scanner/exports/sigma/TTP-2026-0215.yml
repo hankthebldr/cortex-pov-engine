@@ -1,0 +1,55 @@
+title: "ELF Padding with dd to Evade Hash/Size Detection \u2014 Possible Binary Padding Using dd"
+id: ttp-2026-0215-bioc-01
+status: experimental
+description: |
+  Detection of dd command being used to append null bytes to an ELF binary
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = '/bin/dd'
+    | filter action_process_command_line contains 'conv=notrunc'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1027/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1027.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ELF Padding with dd to Evade Hash/Size Detection \u2014 Possible binary padding using dd"
+id: ttp-2026-0215-abioc-02
+status: experimental
+description: |
+  Detection of dd command being used to append null bytes to an ELF binary to evade hash/size detection
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = '/bin/dd'
+    | filter action_process_command_line contains 'conv=notrunc'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1027/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1027.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

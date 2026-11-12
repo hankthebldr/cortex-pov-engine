@@ -1,0 +1,56 @@
+title: "RDP Connection to Localhost with Remote Command Execution \u2014 RDP Connection to Localhost"
+id: ttp-2026-0352-bioc-01
+status: experimental
+description: |
+  Detection of RDP connection to localhost (127.0.0.1)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '127.0.0.1' and dst_port = 3389
+    | filter causality_actor_process_image_name = 'mstsc.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "RDP Connection to Localhost with Remote Command Execution \u2014 RDP to Localhost followed by PowerShell Execution"
+id: ttp-2026-0352-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where an RDP connection to localhost is followed by PowerShell execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and action_remote_ip = '127.0.0.1' and dst_port = 3389
+    | filter event_type = ENUM.PROCESS and action_process_image_name = 'powershell.exe'
+    | join by causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

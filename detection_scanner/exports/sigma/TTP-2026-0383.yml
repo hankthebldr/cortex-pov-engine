@@ -1,0 +1,61 @@
+title: "Windows Endpoint: Suspicious Data Encryption via Ransomware-like Activity \u2014 Suspicious Certutil Usage"
+id: ttp-2026-0383-bioc-01
+status: experimental
+description: |
+  Detects usage of certutil.exe for file encryption/decryption
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'certutil.exe'
+    | filter action_command_line contains 'encrypt'
+    | filter action_command_line contains 'decrypt'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Endpoint: Suspicious Data Encryption via Ransomware-like Activity \u2014 Unusual File Encryption Process"
+id: ttp-2026-0383-abioc-02
+status: experimental
+description: |
+  Detects process behavior involving file encryption using certutil and PowerShell
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'certutil.exe'
+    | filter action_command_line contains 'encrypt'
+    | filter action_command_line contains 'decrypt'
+    | filter causality_actor_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+    - attack.t1059.001
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

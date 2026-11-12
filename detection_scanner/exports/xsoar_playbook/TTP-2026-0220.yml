@@ -1,0 +1,25 @@
+id: cortexsim-ttp-2026-0220-response
+version: 1
+name: "CortexSim — Suspicious curl beacon with empty User-Agent to rare C2 host"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0220.
+  Triggered by Cortex correlation rules: (none declared).
+  Reference playbook in panw_mapping: XSOAR-PB-LinuxCredentialTheftResponse-v1
+triggers:
+  - playbook_rule_id: XSOAR-PB-LinuxCredentialTheftResponse-v1
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0220
+  cortexsim_version: 1.0

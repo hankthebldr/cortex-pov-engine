@@ -1,0 +1,61 @@
+title: "Unsigned DLL Side-Loading via Malicious Process Execution \u2014 Unsigned DLL Side-Load"
+id: ttp-2026-0468-bioc-01
+status: experimental
+description: |
+  Detection of unsigned DLLs loaded by legitimate processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'calc.exe'
+    | filter action_file_path contains 'temp\malicious.dll'
+    | filter action_file_path not in (whitelisted_paths)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073.001
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned DLL Side-Loading via Malicious Process Execution \u2014 Suspicious DLL Loading Pattern"
+id: ttp-2026-0468-abioc-02
+status: experimental
+description: |
+  Legitimate process loading unsigned DLL from non-standard directory
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'calc.exe'
+    | filter action_file_path contains 'temp\malicious.dll'
+    | filter action_file_path not in (standard_system_paths)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073.001
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

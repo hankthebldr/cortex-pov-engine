@@ -1,0 +1,60 @@
+title: "WMI Execution via WmiPrvSe.exe with Rare Child Command Line \u2014 WmiPrvSe.exe Rare Child Command Line"
+id: ttp-2026-0492-bioc-01
+status: experimental
+description: |
+  Detection of WmiPrvSe.exe spawning a child process with an uncommon command line pattern
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'WmiPrvSe.exe'
+    | filter action_command_line not in ['\'powershell.exe -EncodedCommand ...\'', '\'cmd.exe /c ...\'']
+    | filter action_command_line contains 'WindowStyle Hidden'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WMI Execution via WmiPrvSe.exe with Rare Child Command Line \u2014 WmiPrvSe.exe Unusual PowerShell Execution"
+id: ttp-2026-0492-abioc-02
+status: experimental
+description: |
+  Detection of WmiPrvSe.exe executing PowerShell with unusual command line parameters
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'WmiPrvSe.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'WindowStyle Hidden'
+    | filter action_command_line not in ['\'powershell.exe -EncodedCommand ...\'', '\'cmd.exe /c ...\'']
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

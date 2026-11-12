@@ -1,0 +1,65 @@
+title: "Windows EDR Mimicking Linux Discovery Commands via PowerShell \u2014 Multiple Discovery Commands by Same Process"
+id: ttp-2026-0306-bioc-01
+status: experimental
+description: |
+  Detection of multiple discovery commands executed by the same PowerShell process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | comp count() as cnt by causality_actor_process_image_name
+    | comp count(action_process_image_name) as cmd_count
+    | filter cmd_count > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1082
+    - attack.t1046
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows EDR Mimicking Linux Discovery Commands via PowerShell \u2014 Windows PowerShell Executing Linux Discovery Commands"
+id: ttp-2026-0306-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a Windows PowerShell process initiates multiple Linux discovery commands
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_file_path contains 'malware.sh'
+    | filter action_process_command_line contains 'whoami;hostname;ls -la'
+    | filter action_process_command_line contains 'ps aux;netstat -an;df -h'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1082
+    - attack.t1046
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,63 @@
+title: "Signed Process Image Load with Uncommon Execution Path \u2014 Uncommon Image Load from Signed Process"
+id: ttp-2026-0274-bioc-01
+status: experimental
+description: |
+  Detection of unsigned binaries being loaded by a signed Windows process from an uncommon execution path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'C:\\Windows\\System32\\svchost.exe'
+    | filter action_file_path contains 'Temp'
+    | filter action_file_path not contains 'Windows\\System32'
+    | filter action_file_path not contains 'Windows\\SysWOW64'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073.001
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Signed Process Image Load with Uncommon Execution Path \u2014 Behavioral Deviation in Signed Process Load"
+id: ttp-2026-0274-abioc-02
+status: experimental
+description: |
+  ML-based detection of signed process loading binaries from non-standard paths
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'C:\\Windows\\System32\\svchost.exe'
+    | filter action_file_path contains 'Temp'
+    | filter action_file_path not contains 'Windows\\System32'
+    | filter action_file_path not contains 'Windows\\SysWOW64'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073.001
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

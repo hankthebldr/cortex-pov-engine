@@ -1,0 +1,62 @@
+title: "Signed Process Exploiting Uncommon Root-Domain Port Combination \u2014 Globally Uncommon Root-Domain Port Combination from Signed Process"
+id: ttp-2026-0280-bioc-01
+status: experimental
+description: |
+  Detection of a signed process initiating a network connection to a root domain with an uncommon port combination.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 443
+    | filter action_file_path contains 'cmd.exe'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Signed Process Exploiting Uncommon Root-Domain Port Combination \u2014 Unusual Port Usage from Signed Process"
+id: ttp-2026-0280-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a signed process connects to a test-net IP on an uncommon port.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 443
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter action_file_path contains 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

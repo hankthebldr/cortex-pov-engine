@@ -1,0 +1,61 @@
+title: "JavaScript Runtime Reading Git Authentication Tokens \u2014 JS Runtime Reading Git Credentials"
+id: ttp-2026-0285-bioc-01
+status: experimental
+description: |
+  A JavaScript runtime process attempts to read files in the .git directory, which is indicative of credential harvesting.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'node'
+    | filter action_file_path contains '.git'
+    | filter action_file_path contains 'credentials'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1552.001
+    - attack.t1078.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "JavaScript Runtime Reading Git Authentication Tokens \u2014 Suspicious JS Runtime File Access"
+id: ttp-2026-0285-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a JavaScript runtime process accesses Git credential files, which is not typical for normal JS execution.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS
+    | filter actor_process_image_name = 'node'
+    | filter action_file_path contains '.git'
+    | filter action_file_path contains 'credentials'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1552.001
+    - attack.t1078.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

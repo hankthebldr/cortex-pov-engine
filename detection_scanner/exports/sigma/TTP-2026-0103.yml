@@ -1,5 +1,86 @@
+title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 AWS CLI Process Start with High API Call Rate"
+id: ttp-2026-0103-bioc-01
+status: experimental
+description: |
+  Detection of aws CLI process execution that triggers a burst of API calls exceeding the learned baseline rate for the assumed role.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "aws"
+    | filter action_process_image_name = "aws"
+    | filter action_file_path contains "aws"
+    | filter actor_effective_username contains "AssumedRole"
+    | comp count() as call_count by actor_effective_username, agent_hostname
+    | filter call_count > 10
+    | filter agent_hostname in (dataset = xdr_data
+    | filter event_type = ENUM.CLOUD_TRAIL
+    | filter event_name in ("GetCallerIdentity", "ListUsers", "ListRoles", "DescribeInstances", "ListBuckets")
+    | filter user_identity_type = "AssumedRole"
+    | comp count() as cnt by agent_hostname
+    | comp count() as api_calls by agent_hostname
+    | filter api_calls > 5)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1580
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 New IAM Discovery Actions from Assumed Role"
+id: ttp-2026-0103-bioc-02
+status: experimental
+description: |
+  Detection of new IAM discovery API actions (ListUsers, ListRoles, DescribeInstances, ListBuckets) initiated by an assumed role not in its baseline action set.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.CLOUD_TRAIL
+    | filter event_name in ("ListUsers", "ListRoles", "DescribeInstances", "ListBuckets")
+    | filter user_identity_type = "AssumedRole"
+    | filter action_remote_ip != ""
+    | comp count() as cnt by agent_hostname, event_name
+    | comp count() as action_count by agent_hostname, event_name
+    | filter action_count > 1
+    | filter agent_hostname in (dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter actor_process_image_name = "aws"
+    | filter action_process_image_name = "aws"
+    | filter actor_effective_username contains "AssumedRole"
+    | comp count() as cnt by agent_hostname
+    | comp count() as process_count by agent_hostname
+    | filter process_count > 1)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1580
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 CDR-016 Anomalous IAM API-Call Rate Spike from Baselined Workload Role"
-id: ttp-2026-0103-abioc-01
+id: ttp-2026-0103-abioc-03
 status: experimental
 description: |
   A cloud workload identity whose learned Cortex baseline is a narrow set of API calls at a low, steady rate suddenly issues a burst of calls well above its learned rate within a short window. ABIOC anchors the deviation to the causality chain (assumed-role session -> call-rate spike from a source/agent new for this identity) rather than to any known-bad API name, catching post-compromise credential abuse a static rule keyed on a specific action would miss.
@@ -30,7 +111,7 @@ falsepositives:
 level: high
 ---
 title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 CDR-016 New-Action-Set Deviation from Learned IAM Usage Baseline"
-id: ttp-2026-0103-abioc-02
+id: ttp-2026-0103-abioc-04
 status: experimental
 description: |
   A workload role whose learned action set is a small, stable list of application API calls suddenly invokes Discovery and IAM actions it has never used in its learned profile. Every action is a legitimate AWS call; the ABIOC fires on the new-action-set deviation from the identity's learned behavior, anchored to the assumed-role session that issued them.

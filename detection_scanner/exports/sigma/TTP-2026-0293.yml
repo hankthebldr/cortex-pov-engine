@@ -1,0 +1,64 @@
+title: "LOLBIN Process Execution with High Integrity Level \u2014 LOLBIN Process with High Integrity"
+id: ttp-2026-0293-bioc-01
+status: experimental
+description: |
+  Detection of a legitimate Windows binary (LOLBIN) executed with high integrity privileges
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('svchost.exe', 'powershell.exe', 'certutil.exe')
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter process_integrity_level = 'high'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1068
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "LOLBIN Process Execution with High Integrity Level \u2014 Suspicious LOLBIN Execution Chain"
+id: ttp-2026-0293-abioc-02
+status: experimental
+description: |
+  Detects a sequence of legitimate binaries used to execute malicious code with elevated privileges
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('svchost.exe', 'powershell.exe', 'certutil.exe')
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter process_integrity_level = 'high'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+    | filter action_file_path contains 'temp'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1068
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

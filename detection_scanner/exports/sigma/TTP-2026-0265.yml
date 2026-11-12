@@ -1,0 +1,64 @@
+title: "Execution of Uncommon Process with User SID at Early Startup \u2014 Uncommon Process with Local/User SID at Startup"
+id: ttp-2026-0265-bioc-01
+status: experimental
+description: |
+  Detection of an uncommon process being executed with a local or domain user SID during early startup stages
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter action_process_image_name in ('powershell.exe', 'reg.exe', 'net.exe')
+    | filter causality_actor_process_image_name = 'services.exe' or causality_actor_process_image_name = 'svchost.exe'
+    | filter not action_file_path contains 'system32' or action_file_path contains 'Temp'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1547.001
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Execution of Uncommon Process with User SID at Early Startup \u2014 Early Startup Execution with User Context"
+id: ttp-2026-0265-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating execution of uncommon process with user SID at early startup stage
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'cmd.exe'
+    | filter action_process_image_name in ('powershell.exe', 'reg.exe', 'net.exe')
+    | filter causality_actor_process_image_name = 'services.exe' or causality_actor_process_image_name = 'svchost.exe'
+    | filter not action_file_path contains 'system32' or action_file_path contains 'Temp'
+    | filter action_process_image_name != 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1547.001
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,58 @@
+title: "Rare Process Spawned by srvany.exe \u2014 Rare process spawned by srvany.exe"
+id: ttp-2026-0340-bioc-01
+status: experimental
+description: |
+  Detection of a process launched directly by srvany.exe, which is not typical behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'srvany.exe'
+    | filter action_process_image_name != 'cmd.exe' and action_process_image_name != 'powershell.exe'
+    | filter not action_file_path contains 'Windows\\System32\\'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare Process Spawned by srvany.exe \u2014 Unusual Process Launch from srvany.exe"
+id: ttp-2026-0340-abioc-02
+status: experimental
+description: |
+  Detection of a non-standard process being launched from srvany.exe, indicating potential abuse of the service wrapper
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'srvany.exe'
+    | filter not action_process_image_name in ('cmd.exe', 'powershell.exe', 'wmic.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1073
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,58 @@
+title: "Domain Credential Theft via ntdsutil Shadow Copy \u2014 Suspicious Shadow Copy Creation with ntdsutil or vssadmin"
+id: ttp-2026-0204-bioc-01
+status: experimental
+description: |
+  Detection of vssadmin or ntdsutil being used to create a shadow copy for credential theft
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter (actor_process_image_name = 'ntdsutil.exe' or actor_process_image_name = 'vssadmin.exe')
+    | filter action_process_command_line contains 'create shadow'
+    | filter action_process_command_line contains 'ntds'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Domain Credential Theft via ntdsutil Shadow Copy \u2014 Suspicious dump of ntds.dit using Shadow Copy with ntdsutil or vssadmin"
+id: ttp-2026-0204-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating use of shadow copy to extract ntds.dit for credential theft
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'vssadmin.exe' or actor_process_image_name = 'ntdsutil.exe'
+    | filter action_process_command_line contains 'create shadow'
+    | filter action_process_command_line contains 'ntds'
+    | filter action_file_path contains '\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

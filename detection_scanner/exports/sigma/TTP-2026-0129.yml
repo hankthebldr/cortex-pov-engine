@@ -1,5 +1,34 @@
+title: "ClickFix Interpreter-Depth Loader Chain: mshta -> extrac32 CAB Unpack -> Masqueraded Signed AutoIt3 (.a3x) \u2014 Lumma Stealer ABIOC \u2014 findstr.exe Security-Product Discovery Command Line"
+id: ttp-2026-0129-bioc-01
+status: experimental
+description: |
+  A process named findstr.exe running with security-software product names (opssvc, wrsa, SophosHealth, AvastUI, AVGUI, nsWscSvc, ekrn) on its command line. These are benign admin tools; the BIOC fires on the command-shape itself, not on a known-bad string.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "findstr.exe"
+    | filter action_process_command_line contains "opssvc" or action_process_command_line contains "wrsa" or action_process_command_line contains "SophosHealth" or action_process_command_line contains "AvastUI" or action_process_command_line contains "AVGUI" or action_process_command_line contains "nsWscSvc" or action_process_command_line contains "ekrn"
+    | fields agent_hostname, action_process_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1518/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1518.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
 title: "ClickFix Interpreter-Depth Loader Chain: mshta -> extrac32 CAB Unpack -> Masqueraded Signed AutoIt3 (.a3x) \u2014 Lumma Stealer ABIOC \u2014 ClickFix mshta Remote Fetch Parenting a Windows Command-Shell Loader Lineage"
-id: ttp-2026-0129-abioc-01
+id: ttp-2026-0129-abioc-02
 status: experimental
 description: |
   A signed Microsoft mshta.exe carrying a remote/URL argument parents a cmd.exe or powershell.exe loader stage. mshta and cmd are both legitimate; the ABIOC anchors on the lineage (signed-binary-proxy remote fetch spawning an interpreter loader) rather than any known-bad string, catching the ClickFix post-paste loader hand-off that a static rule keyed on a single binary would miss.
@@ -32,7 +61,7 @@ falsepositives:
 level: high
 ---
 title: "ClickFix Interpreter-Depth Loader Chain: mshta -> extrac32 CAB Unpack -> Masqueraded Signed AutoIt3 (.a3x) \u2014 Lumma Stealer ABIOC \u2014 AV and EDR Product Discovery via tasklist Piped to findstr in a Loader Lineage"
-id: ttp-2026-0129-abioc-02
+id: ttp-2026-0129-abioc-03
 status: experimental
 description: |
   A cmd/mshta-parented lineage runs tasklist piped to findstr searching for security-product process names (opssvc, wrsa, bdservicehost, SophosHealth, AvastUI, AVGUI, nsWscSvc, ekrn). The commands are benign admin tools; the ABIOC fires on the security-software-discovery intent inside a loader lineage, anchored to the parent that spawned the probe.
@@ -64,7 +93,7 @@ falsepositives:
 level: medium
 ---
 title: "ClickFix Interpreter-Depth Loader Chain: mshta -> extrac32 CAB Unpack -> Masqueraded Signed AutoIt3 (.a3x) \u2014 Lumma Stealer ABIOC \u2014 extrac32 CAB Unpack into a Masqueraded Signed AutoIt3 Interpreter Running an a3x Script"
-id: ttp-2026-0129-abioc-03
+id: ttp-2026-0129-abioc-04
 status: experimental
 description: |
   The flagship grouping ABIOC. It requires TWO distinct loader stages under ONE non-cmd causality owner (mshta.exe / extrac32.exe / PartyContinued.exe) inside the window: extrac32.exe unpacking a Cabinet archive delivered under a benign extension AND a validly-signed AutoIt3 interpreter running under a NON-standard image name (e.g. Slovenia.com instead of autoit3.exe). Signer says AutoIt, filename does not — that masquerade PLUS a second distinct stage sharing the lineage is what the ABIOC scores (filter distinct_stages >= 2), so a lone extrac32 /E CAB extraction or a single renamed binary does NOT trip it. cmd.exe is deliberately excluded as a causality owner because it is the CGO for enormous benign volume (routine CAB extraction, legitimately compiled AutoIt tools). This is the MODEL-ONLY detection a full (destructive) detonation of the masqueraded signed AutoIt3 stage would raise; SIM-EDR-017 runs the extrac32 unpack for real but models the AutoIt3 masquerade with a SAFE-MODE marker, so the pair does not assert this grouping fires under SAFE-MODE.

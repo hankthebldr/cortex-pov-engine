@@ -1,0 +1,57 @@
+title: "PsExec Lateral Movement via Remote Service Creation \u2014 PsExec Remote Process Execution"
+id: ttp-2026-0201-bioc-01
+status: experimental
+description: |
+  Detection of PsExec process starting with remote service execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'psexec.exe'
+    | filter action_process_image_name = 'cmd.exe'
+    | filter action_remote_ip != null
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PsExec Lateral Movement via Remote Service Creation \u2014 Attempt to execute a command on a remote host using PsExec"
+id: ttp-2026-0201-abioc-02
+status: experimental
+description: |
+  Detection of PsExec creating a remote service and executing a command
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'psexec.exe'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter action_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

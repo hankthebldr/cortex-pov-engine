@@ -1,0 +1,59 @@
+title: "High Integrity Process Execution via Task Scheduler \u2014 Suspicious Process Executed with High Integrity Level"
+id: ttp-2026-0398-bioc-01
+status: experimental
+description: |
+  A process was started with SYSTEM integrity level that was initiated by a scheduled task
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'C:\\Windows\\System32\\schtasks.exe'
+    | filter action_process_integrity_level = ENUM.HIGH
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+    - attack.t1059.001
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "High Integrity Process Execution via Task Scheduler \u2014 Unusual Scheduled Task Execution with Elevated Privileges"
+id: ttp-2026-0398-abioc-02
+status: experimental
+description: |
+  Detection of scheduled task execution that results in a process with SYSTEM integrity level
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'C:\\Windows\\System32\\schtasks.exe'
+    | filter action_process_integrity_level = ENUM.HIGH
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+    - attack.t1059.001
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

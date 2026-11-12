@@ -1,0 +1,61 @@
+title: "Suspicious PowerShell Command Line Execution \u2014 Suspicious PowerShell CommandLine"
+id: ttp-2026-0395-bioc-01
+status: experimental
+description: |
+  PowerShell process with command line containing suspicious parameters such as -WindowStyle Hidden and direct execution of .exe files
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains '-WindowStyle Hidden'
+    | filter action_command_line contains 'Start-Process'
+    | filter action_command_line contains '.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Suspicious PowerShell Command Line Execution \u2014 Suspicious PowerShell Command Line"
+id: ttp-2026-0395-abioc-02
+status: experimental
+description: |
+  Behavioral deviation modeled on PowerShell command lines that contain suspicious parameters and direct execution of .exe files without invoking typical PowerShell cmdlets
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains '-WindowStyle Hidden'
+    | filter action_command_line contains 'Start-Process'
+    | filter action_command_line contains '.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

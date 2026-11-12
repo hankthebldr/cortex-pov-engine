@@ -1,0 +1,62 @@
+title: "Kubernetes Pod Reconnaissance for Container Enumeration \u2014 Suspicious K8s Pod Reconnaissance Process"
+id: ttp-2026-0502-bioc-01
+status: experimental
+description: |
+  Execution of a binary that queries Kubernetes pod and node metadata
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = '/tmp/kube-info'
+    | filter causality_actor_process_image_name = 'sh'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1069.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kubernetes Pod Reconnaissance for Container Enumeration \u2014 Container Reconnaissance Behavioral Pattern"
+id: ttp-2026-0502-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of process execution followed by DNS resolution to Kubernetes service endpoints
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = '/tmp/kube-info'
+    | filter causality_actor_process_image_name = 'sh'
+    | join with dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.100'
+    | filter dst_port = 53
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1069.001
+    - attack.t1082
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

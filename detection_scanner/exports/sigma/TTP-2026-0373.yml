@@ -1,0 +1,58 @@
+title: "Service Execution via sc.exe \u2014 Suspicious Service Creation"
+id: ttp-2026-0373-bioc-01
+status: experimental
+description: |
+  Detection of service creation via sc.exe with suspicious binary path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'sc.exe'
+    | filter action_file_path contains 'malware.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.003
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Service Execution via sc.exe \u2014 Unusual Service Execution via sc.exe"
+id: ttp-2026-0373-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where sc.exe is used to start a new service with non-standard binary path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'sc.exe'
+    | filter action_file_path contains 'temp\\'
+    | filter causality_actor_process_image_name != 'services.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.003
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

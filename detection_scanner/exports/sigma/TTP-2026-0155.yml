@@ -1,5 +1,66 @@
+title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 AWS CLI Process with Secret Retrieval Commands"
+id: ttp-2026-0155-bioc-01
+status: experimental
+description: |
+  Detection of aws cli process execution with arguments related to SecretsManager and SSM parameter retrieval
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'aws'
+    | filter action_process_image_name = 'aws'
+    | filter action_file_path contains 'secretsmanager' or action_file_path contains 'ssm'
+    | filter action_file_path contains 'get-secret-value' or action_file_path contains 'get-parameter' or action_file_path contains 'get-parameters-by-path'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 Process Executing AWS CLI with Canary IP Access"
+id: ttp-2026-0155-bioc-02
+status: experimental
+description: |
+  Detection of aws cli process accessing RFC 5737 / .invalid canary domains used in CloudTrail simulation
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter actor_process_image_name = 'aws'
+    | filter action_remote_ip in ('192.0.2.1', '198.51.100.1', '203.0.113.1')
+    | filter action_remote_ip != '0.0.0.0'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 Suspicious secrets dump activity"
-id: ttp-2026-0155-abioc-01
+id: ttp-2026-0155-abioc-03
 status: experimental
 description: |
   ABIOC — behavioral-ML anomaly: a single IAM identity reads an unusually high volume of AWS Secrets Manager secrets in a short window (a 'secrets dump'), well above the identity's learned baseline. Keyed on the cloud_audit_logs dataset (AWS CloudTrail control-plane events normalised to the XDM cloud-audit schema).
@@ -31,7 +92,7 @@ falsepositives:
 level: high
 ---
 title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 AWS SSM parameters retrieval"
-id: ttp-2026-0155-abioc-02
+id: ttp-2026-0155-abioc-04
 status: experimental
 description: |
   ABIOC — behavioral-ML anomaly: a single IAM identity retrieves an unusually high volume of SSM Parameter Store parameters (with_decryption=true, exposing tokens/keys held as SecureString) in a short window, above the identity's learned baseline. Keyed on the cloud_audit_logs dataset.

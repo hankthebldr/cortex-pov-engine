@@ -1,0 +1,65 @@
+title: "IMDS Access Followed by Token Usage \u2014 IMDS Access followed by Token Usage"
+id: ttp-2026-0256-bioc-01
+status: experimental
+description: |
+  Detection of process accessing IMDS followed by usage of retrieved credentials
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '169.254.169.254'
+    | filter causality_actor_process_image_name != null
+    | filter action_remote_ip != null
+    | comp count() as cnt by causality_actor_process_image_name
+    | filter count() > 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566
+    - attack.t1078
+    - attack.t1550
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "IMDS Access Followed by Token Usage \u2014 Cloud IMDS Access followed by Remote Token Usage"
+id: ttp-2026-0256-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where process accesses IMDS and then attempts to use tokens to access remote systems
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '169.254.169.254'
+    | filter causality_actor_process_image_name != null
+    | filter action_remote_ip != null
+    | comp count() as cnt by causality_actor_process_image_name
+    | filter count() > 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566
+    - attack.t1078
+    - attack.t1550
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

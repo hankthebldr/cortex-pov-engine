@@ -1,0 +1,62 @@
+title: "Nginx Pod Command Execution via Malicious Script \u2014 Unusual Process Spawned by Nginx"
+id: ttp-2026-0485-bioc-01
+status: experimental
+description: |
+  Detection of a process started by the Nginx binary that is not typical for ingress-nginx
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'nginx'
+    | filter action_process_image_name != 'nginx'
+    | filter action_process_image_name != 'bash'
+    | filter action_process_image_name != 'sh'
+    | filter action_process_image_name != 'sleep'
+    | filter action_process_image_name != 'curl'
+    | filter action_process_image_name != 'wget'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Nginx Pod Command Execution via Malicious Script \u2014 Unusual Process Spawned by Nginx in Ingress Pod"
+id: ttp-2026-0485-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a non-standard process is spawned by Nginx in an ingress pod context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'nginx'
+    | filter causality_actor_process_image_name contains 'ingress-nginx'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

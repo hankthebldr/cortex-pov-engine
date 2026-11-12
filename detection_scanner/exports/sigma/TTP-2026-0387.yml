@@ -1,0 +1,58 @@
+title: "External RDP Login with Credential Harvesting \u2014 External RDP Login"
+id: ttp-2026-0387-bioc-01
+status: experimental
+description: |
+  Detection of RDP login from external IP address
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED
+    | filter action_remote_ip != 192.168.0.0/16 and dst_port = 3389
+    | filter causality_actor_process_image_name = 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "External RDP Login with Credential Harvesting \u2014 Suspicious RDP Credential Harvesting"
+id: ttp-2026-0387-abioc-02
+status: experimental
+description: |
+  External RDP login followed by credential extraction process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'C:\\temp\\mimikatz.exe'
+    | filter causality_actor_process_image_name = 'svchost.exe'
+    | filter action_remote_ip != 192.168.0.0/16 and dst_port = 3389
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1003.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

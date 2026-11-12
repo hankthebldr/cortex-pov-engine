@@ -1,0 +1,63 @@
+title: "SMB Scanning with Net.exe to Multiple Hosts \u2014 Abnormal SMB scanning activity to multiple hosts"
+id: ttp-2026-0246-bioc-01
+status: experimental
+description: |
+  Detection of multiple SMB share enumeration commands to distinct IP addresses
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'net.exe'
+    | filter action_file_path contains 'view'
+    | comp count() as cnt by action_remote_ip
+    | filter count() > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1069
+    - attack.t1018
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "SMB Scanning with Net.exe to Multiple Hosts \u2014 Multiple SMB share enumeration to distinct IPs"
+id: ttp-2026-0246-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when net.exe is used to enumerate SMB shares across multiple unique IP addresses
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102', '192.0.2.103')
+    | filter dst_port = 445
+    | comp count() as cnt by action_remote_ip
+    | filter count() > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1069
+    - attack.t1018
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

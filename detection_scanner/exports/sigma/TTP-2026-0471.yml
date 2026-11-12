@@ -1,0 +1,60 @@
+title: "Unsigned Process from Temporary Directory \u2014 Unsigned Process from Temp Directory"
+id: ttp-2026-0471-bioc-01
+status: experimental
+description: |
+  Detection of unsigned process execution from a temporary directory
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains '/tmp/' and actor_process_image_name not contains '.signed'
+    | filter actor_process_image_name not contains 'systemd'
+    | filter actor_process_image_name not contains 'bash'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1070.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned Process from Temporary Directory \u2014 Unsigned Process Execution from Temp Path"
+id: ttp-2026-0471-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where unsigned binary is executed from a temporary path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains '/tmp/'
+    | filter actor_process_image_name not contains '.signed'
+    | filter actor_process_image_name not contains 'systemd'
+    | filter actor_process_image_name not contains 'bash'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1070.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

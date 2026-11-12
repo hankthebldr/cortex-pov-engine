@@ -1,0 +1,62 @@
+title: "Dynamic DNS Domain Access via PowerShell \u2014 Recurring Rare Domain Access"
+id: ttp-2026-0357-bioc-01
+status: experimental
+description: |
+  Detection of repeated access to a dynamic DNS domain not seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.10'
+    | filter action_protocol = ENUM.TCP
+    | filter dst_port = 80
+    | comp count() by action_remote_ip, actor_process_image_name
+    | filter count > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Dynamic DNS Domain Access via PowerShell \u2014 PowerShell Download and Execute from Dynamic DNS"
+id: ttp-2026-0357-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of PowerShell downloading and executing from a dynamic DNS domain
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'powershell.exe'
+    | filter causality_actor_process_image_name like '%powershell.exe%'
+    | filter action_file_path like '%malware.exe%'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,60 @@
+title: "Mimikatz Command-Line Execution with Credential Dumping \u2014 Mimikatz Credential Dumping Process"
+id: ttp-2026-0302-bioc-01
+status: experimental
+description: |
+  Detection of Mimikatz process started with credential dumping arguments
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'mimikatz.exe'
+    | filter action_file_path contains 'sekurlsa::logonpasswords'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+    - attack.t1059
+    - attack.t1077
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Mimikatz Command-Line Execution with Credential Dumping \u2014 Suspicious Mimikatz Command-Line Usage"
+id: ttp-2026-0302-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when Mimikatz is executed with credential dumping arguments
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'mimikatz.exe'
+    | filter action_file_path contains 'sekurlsa::logonpasswords'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+    - attack.t1059
+    - attack.t1077
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

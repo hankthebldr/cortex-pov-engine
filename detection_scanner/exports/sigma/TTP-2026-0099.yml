@@ -1,5 +1,34 @@
+title: "Sign-In Behavioral Anomaly on a Learned Identity Baseline \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1110.004) \u2014 Sh/bash Spawns Network Tool (curl/nc/nmap) From Writable Path"
+id: ttp-2026-0099-bioc-01
+status: experimental
+description: |
+  A shell running under the actor process image spawns curl, nc, or nmap from /tmp or /var/tmp — a process-level indicator of a dropped dropper or inline network tool rather than a scripted call from /opt/cortex.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter actor_process_name in ('sh', 'bash')
+      and child_process_name in ('curl', 'nc', 'nmap')
+      and file_path in ('/tmp/*', '/var/tmp/*')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Sign-In Behavioral Anomaly on a Learned Identity Baseline \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1110.004) \u2014 ITDR-009 Sign-In Auth-Velocity and New-ASN Deviation from Learned Identity Baseline"
-id: ttp-2026-0099-abioc-01
+id: ttp-2026-0099-abioc-02
 status: experimental
 description: |
   A user whose learned Cortex sign-in profile is a narrow, stable set of source ASNs at a human auth cadence suddenly authenticates successfully from an autonomous system absent from the baseline, at a velocity the account never exhibits. Every credential is valid and no single IP is a known-bad IOC; the ABIOC fires on the ASN-and-velocity deviation from the account's learned behavior, anchored to the valid-account causality chain rather than to any static indicator.
@@ -31,7 +60,7 @@ falsepositives:
 level: high
 ---
 title: "Sign-In Behavioral Anomaly on a Learned Identity Baseline \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1110.004) \u2014 ITDR-009 Impossible-Travel Geo-Velocity Deviation from Learned Sign-In Baseline"
-id: ttp-2026-0099-abioc-02
+id: ttp-2026-0099-abioc-03
 status: experimental
 description: |
   The same user succeeds at two sign-ins from geographically distant locations inside a travel-impossibility window, deviating from the single-region geography Cortex learned for the account. The credentials are valid and each session in isolation is benign; the ABIOC fires on the geo-velocity deviation from the learned sign-in profile, anchored to the session pair spawned by the same stolen-credential intrusion.

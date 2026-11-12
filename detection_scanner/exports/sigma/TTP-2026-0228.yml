@@ -1,0 +1,57 @@
+title: "Windows Process Connecting to Rare External Host \u2014 Process Connected to Rare External Host"
+id: ttp-2026-0228-bioc-01
+status: experimental
+description: |
+  A process connects to an IP address that is rarely seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
+    | filter action_remote_ip in (select remote_ip from xdr_data where event_type = ENUM.NETWORK_CONNECTION group by remote_ip having count() < 5)
+    | filter causality_actor_process_image_name != ''
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Process Connecting to Rare External Host \u2014 Rare Network Connection Behavior"
+id: ttp-2026-0228-abioc-02
+status: experimental
+description: |
+  Detection of a process connecting to an IP address that is rarely seen in the environment, indicating potential C2 communication
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
+    | filter action_remote_ip in (select remote_ip from xdr_data where event_type = ENUM.NETWORK_CONNECTION group by remote_ip having count() < 5)
+    | filter causality_actor_process_image_name != ''
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

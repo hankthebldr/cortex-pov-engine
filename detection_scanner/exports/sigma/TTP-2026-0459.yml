@@ -1,0 +1,57 @@
+title: "Uncommon SQL-like Command Line Execution via PowerShell \u2014 Uncommon SQL-like Command Line Pattern"
+id: ttp-2026-0459-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell processes with command lines containing SQL-like syntax patterns
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon SQL-like Command Line Execution via PowerShell \u2014 SQL-like Command Line in PowerShell"
+id: ttp-2026-0459-abioc-02
+status: experimental
+description: |
+  Behavioral deviation showing PowerShell command lines with SQL-like syntax patterns
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,60 @@
+title: "Unsigned Process Accessing Rare Domains \u2014 Recurring Rare Domain Access from Unsigned Process"
+id: ttp-2026-0356-bioc-01
+status: experimental
+description: |
+  Detects unsigned processes accessing rare domains repeatedly
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name like '*/scratch/malware'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter action_file_path = '/etc/hosts'
+    | filter causality_actor_process_image_name not like '%signed%'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned Process Accessing Rare Domains \u2014 Unsigned Process Accessing Rare Domains"
+id: ttp-2026-0356-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where unsigned process accesses rare domains
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.10'
+    | filter actor_process_image_name like '*/scratch/malware'
+    | filter causality_actor_process_image_name not like '%signed%'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

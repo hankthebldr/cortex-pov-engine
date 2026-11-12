@@ -1,0 +1,61 @@
+title: "Recurring DNS queries to rare domain for C2 communication \u2014 Recurring DNS access to rare domain"
+id: ttp-2026-0354-bioc-01
+status: experimental
+description: |
+  Detects repeated DNS queries to a domain with low historical lookup count
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_DNS_QUERY
+    | filter action_remote_ip = '192.0.2.1'
+    | filter action_domain_name = 'rare-domain-123.com'
+    | comp count() as cnt by action_domain_name
+    | comp count() as cnt by agent_hostname > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Recurring DNS queries to rare domain for C2 communication \u2014 Recurring DNS access to rare domain"
+id: ttp-2026-0354-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating repeated DNS lookups to a domain with low historical access
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_DNS_QUERY
+    | filter action_remote_ip = '192.0.2.1'
+    | filter action_domain_name = 'rare-domain-123.com'
+    | comp count() as cnt by action_domain_name
+    | comp count() as cnt by agent_hostname > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

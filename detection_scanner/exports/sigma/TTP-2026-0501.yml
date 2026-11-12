@@ -1,0 +1,57 @@
+title: "Suspicious Container Orchestration Job Execution \u2014 Suspicious Orchestration Job Execution"
+id: ttp-2026-0501-bioc-01
+status: experimental
+description: |
+  Detection of a process starting with download and execution of a binary in a temporary directory
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wget' and action_process_image_name = '/tmp/extracted/malware'
+    | filter causality_actor_process_image_name = 'bash'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Suspicious Container Orchestration Job Execution \u2014 Suspicious Temp Directory Job Execution"
+id: ttp-2026-0501-abioc-02
+status: experimental
+description: |
+  Detection of process execution from a temporary directory with download and execution behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name contains '/tmp/' and actor_process_image_name = 'wget'
+    | filter causality_actor_process_image_name = 'bash'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,64 @@
+title: "Untrusted Process Contacting LLM API via PowerShell \u2014 Untrusted Process Contacting LLM API"
+id: ttp-2026-0472-bioc-01
+status: experimental
+description: |
+  Detects when a process not typically associated with LLM interaction contacts an LLM API endpoint
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.10'
+    | filter causality_actor_process_image_name != 'python3'
+    | filter causality_actor_process_image_name != 'node'
+    | filter causality_actor_process_image_name != 'java'
+    | filter causality_actor_process_image_name != 'curl'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Untrusted Process Contacting LLM API via PowerShell \u2014 Unusual PowerShell Process Contacting LLM API"
+id: ttp-2026-0472-abioc-02
+status: experimental
+description: |
+  Detects when a PowerShell process (uncommon for LLM interaction) contacts an LLM API endpoint
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.10'
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter causality_actor_process_image_name != 'python3'
+    | filter causality_actor_process_image_name != 'node'
+    | filter causality_actor_process_image_name != 'java'
+    | filter causality_actor_process_image_name != 'curl'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

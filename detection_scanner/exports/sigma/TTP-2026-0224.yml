@@ -1,0 +1,57 @@
+title: "Compromised Process Accessing Rare External Host \u2014 Compromised Process Accessed Rare External Host"
+id: ttp-2026-0224-bioc-01
+status: experimental
+description: |
+  A process that is not typically seen accessing a rare external IP
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and action_remote_ip = '192.0.2.100'
+    | filter causality_actor_process_image_name != 'svchost.exe'
+    | filter causality_actor_process_image_name != 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Compromised Process Accessing Rare External Host \u2014 Rare External Host Access by Process"
+id: ttp-2026-0224-abioc-02
+status: experimental
+description: |
+  A compromised process accessing a rare external host that is not typically seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and action_remote_ip = '192.0.2.100'
+    | filter causality_actor_process_image_name != 'svchost.exe'
+    | filter causality_actor_process_image_name != 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

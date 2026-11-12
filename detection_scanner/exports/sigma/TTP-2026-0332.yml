@@ -1,0 +1,62 @@
+title: "SMB File Transfer via PsExec with Remote Execution \u2014 Rare SMB File Transfer"
+id: ttp-2026-0332-bioc-01
+status: experimental
+description: |
+  Unusual file transfer behavior over SMB protocol
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 445
+    | filter action_remote_ip != '192.0.2.0/24'
+    | filter action_file_path != null
+    | filter actor_process_image_name != 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "SMB File Transfer via PsExec with Remote Execution \u2014 Unusual SMB File Transfer Behavior"
+id: ttp-2026-0332-abioc-02
+status: experimental
+description: |
+  Detection of rare file transfer over SMB protocol from non-system process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 445
+    | filter action_remote_ip != '192.0.2.0/24'
+    | filter action_file_path != null
+    | filter actor_process_image_name != 'svchost.exe'
+    | filter actor_process_image_name != 'lsass.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

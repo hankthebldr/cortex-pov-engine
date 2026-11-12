@@ -1,0 +1,28 @@
+title: "Linux Credential Theft via Browser Data Extraction \u2014 NonBrowserAccessToLoginData"
+id: ttp-2026-0196-bioc-01
+status: experimental
+description: |
+  Detects non-browser processes reading Chrome/Edge Login Data or Local State files
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS
+    | filter action_file_path contains 'Login Data' or action_file_path contains 'Local State'
+    | filter actor_process_image_name != 'chrome' and actor_process_image_name != 'firefox' and actor_process_image_name != 'edge'
+    | filter causality_actor_process_image_name != 'chrome' and causality_actor_process_image_name != 'firefox' and causality_actor_process_image_name != 'edge'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

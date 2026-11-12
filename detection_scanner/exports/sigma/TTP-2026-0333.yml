@@ -1,0 +1,60 @@
+title: "Rare LOLBIN Process Execution by User \u2014 Rare LOLBIN Process Execution by User"
+id: ttp-2026-0333-bioc-01
+status: experimental
+description: |
+  Detection of uncommon LOLBIN usage by a user process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('evil.exe')
+    | filter actor_process_image_name = 'explorer.exe'
+    | filter causality_actor_process_image_name = 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1218
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare LOLBIN Process Execution by User \u2014 Unusual LOLBIN Execution Chain"
+id: ttp-2026-0333-abioc-02
+status: experimental
+description: |
+  Behavioral deviation from normal process execution patterns involving rare LOLBINs
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('evil.exe')
+    | filter causality_actor_process_image_name = 'svchost.exe'
+    | filter actor_process_image_name = 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1218
+    - attack.t1070
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

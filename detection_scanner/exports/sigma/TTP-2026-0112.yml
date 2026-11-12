@@ -1,5 +1,69 @@
+title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 AWS CLI Process with AdministratorAccess Policy Attachment"
+id: ttp-2026-0112-bioc-01
+status: experimental
+description: |
+  Detection of aws cli process starting with CreateRole followed by AttachRolePolicy targeting AdministratorAccess policy
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains "aws"
+    | filter action_process_image_name contains "aws"
+    | filter action_file_path contains "CreateRole"
+    | filter action_file_path contains "AttachRolePolicy"
+    | filter action_file_path contains "AdministratorAccess"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+    - attack.t1078
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 Lambda Function Creation Across Multiple Regions"
+id: ttp-2026-0112-bioc-02
+status: experimental
+description: |
+  Detection of Lambda CreateFunction calls across multiple AWS regions following a denied EC2 RunInstances call
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains "aws"
+    | filter action_file_path contains "CreateFunction"
+    | filter action_file_path contains "region=us-"
+    | filter action_file_path contains "region=eu-"
+    | filter action_file_path contains "region=ap-"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1651/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1651
+    - attack.t1580
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 IAM Self-Escalation to AdministratorAccess by a Newly Observed Access Key"
-id: ttp-2026-0112-abioc-01
+id: ttp-2026-0112-abioc-03
 status: experimental
 description: |
   An access key whose learned Cortex profile is a narrow application identity that has never performed IAM writes suddenly issues iam:CreateRole immediately followed by iam:AttachRolePolicy attaching the managed AdministratorAccess policy. Every call is a legitimate AWS API; the ABIOC fires on the self-escalation deviation from the key's learned (non-admin) behavior and anchors it to the causality chain (leaked key -> CreateRole -> AttachRolePolicy AdministratorAccess) rather than to any known-bad signature.
@@ -32,7 +96,7 @@ falsepositives:
 level: critical
 ---
 title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 Denied EC2 Compute Attempt Immediately Followed by Cross-Region Lambda Deployment"
-id: ttp-2026-0112-abioc-02
+id: ttp-2026-0112-abioc-04
 status: experimental
 description: |
   The signature behavioral tell of this campaign: the same access key is denied on ec2:RunInstances (Client.UnauthorizedOperation) and then, within minutes, succeeds at deploying lambda:CreateFunction across multiple enabled regions. Cortex has learned this identity never spins up compute; the ABIOC anchors the denied-EC2-then-succeed-on-Lambda pivot and the cross-region fan-out to the key's causality chain, catching victim-funded compute abuse that no static rule keyed on a single API name would flag.

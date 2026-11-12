@@ -1,5 +1,61 @@
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 React2Shell RCE Shell Spawn"
+id: ttp-2026-0136-bioc-01
+status: experimental
+description: |
+  Detection of a shell process spawned by a node.js application, indicating potential RCE via CGO deserialization.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "node" and actor_process_image_name in ("sh", "bash", "dash")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1059
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 Service Account Token Read from Pod"
+id: ttp-2026-0136-bioc-02
+status: experimental
+description: |
+  Detection of a process reading the Kubernetes service account token file from within a pod, indicating potential privilege escalation or cloud pivot attempt.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS and event_sub_type = ENUM.FILE_READ
+    | filter action_file_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+    - attack.t1613
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 RSC Deserialization RCE App Container CGO Spawns an Interactive Shell"
-id: ttp-2026-0136-abioc-01
+id: ttp-2026-0136-abioc-03
 status: experimental
 description: |
   The internet-facing application process (node, next-server, java, python3, php-fpm, ruby) that owns the pod's causality chain spawns an interactive shell (sh, bash, dash, ash) — behaviour absent from its learned baseline. A web app that serves RSC responses never forks a shell in normal operation; the novelty gate (prior_shell_spawns = 0 from the baseline join) is the discriminator so a legitimate entrypoint/exec that routinely shells out does not fire. This is the endpoint root of the React2Shell chain: deserialization RCE turns the CGO app process into a shell parent. Anchored on causality_actor_process_image_name + causality_actor_process_instance_id so every downstream stage in the same pod lineage stitches back to this node.
@@ -39,7 +95,7 @@ falsepositives:
 level: high
 ---
 title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 Kubernetes Service Account Token Read by an Anomalous Descendant of the App Container CGO"
-id: ttp-2026-0136-abioc-02
+id: ttp-2026-0136-abioc-04
 status: experimental
 description: |
   A process whose causality group owner is the exposed app container reads the auto-mounted service-account token at /var/run/secrets/kubernetes.io/serviceaccount/token. A workload that legitimately uses its service account reads that file from its own runtime, not from a shell/curl/cat forked out of the web process after an RCE. The discriminator is the pairing of the sensitive SAT path with a CGO that is the web app AND a reader process in the shell family — the ABIOC keys on causality_actor_process_instance_id so it fuses to the same lineage as the RCE shell rather than alerting on every SAT access cluster-wide.
@@ -72,7 +128,7 @@ falsepositives:
 level: high
 ---
 title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 In-Pod Kubernetes API Secret Enumeration from an App-Rooted Process Lineage"
-id: ttp-2026-0136-abioc-03
+id: ttp-2026-0136-abioc-05
 status: experimental
 description: |
   A process descended from the exposed app CGO opens an outbound TLS session to the in-cluster Kubernetes API server (kubernetes.default.svc / the 10.x cluster-IP on 443) and pulls the secrets/RBAC surface with the stolen bearer token — the T1613 stage of the React2Shell chain. Application pods do talk to the API server via their SDK, so the discriminator is that the API reach originates from a shell/curl process (not the app runtime) whose CGO is the web app, and the container has no prior baseline of API calls from that process family. Anchored on the pod causality_id so the discovery node stitches to the token-read and IMDS nodes.
@@ -106,7 +162,7 @@ falsepositives:
 level: high
 ---
 title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 SSRF-Driven Instance Metadata Node IAM Role Theft from a Container Process"
-id: ttp-2026-0136-abioc-04
+id: ttp-2026-0136-abioc-06
 status: experimental
 description: |
   A container process descended from the exposed app CGO reaches the instance metadata service IP (169.254.169.254) for the FIRST time to pull the node's attached IAM role credentials — the container-to-cloud bridge in the React2Shell chain. The host/pod's learned baseline shows no prior IMDS contact; the novelty gate (prior_imds_requests = 0) means a workload that routinely mints instance-role credentials does NOT fire. Anchored on the pod causality chain AND the node identity so the endpoint IMDS reach can be stitched to the cloud-plane stage where the stolen role is used.
@@ -145,7 +201,7 @@ falsepositives:
 level: high
 ---
 title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 Stolen Node IAM Role Used in the Cloud Control Plane After Pod Compromise"
-id: ttp-2026-0136-abioc-05
+id: ttp-2026-0136-abioc-07
 status: experimental
 description: |
   The node's attached IAM role (an AssumedRole tied to the compromised instance) suddenly issues control-plane calls — sts:GetCallerIdentity followed by a broad set of distinct read/list operations against backend infrastructure (S3, Secrets Manager, RDS, DynamoDB) — from a session context that first appears right after the pod's IMDS reach. This is the cloud side of the React2Shell pivot and the shared entity that stitches the container plane to the cloud plane: the same node role that the pod stole. The discriminator is the burst of distinct backend operations by a node/instance role that normally only performs a narrow, stable set of workload calls, correlated in time with the endpoint IMDS theft.

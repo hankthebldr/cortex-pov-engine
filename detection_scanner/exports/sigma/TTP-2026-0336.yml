@@ -1,0 +1,60 @@
+title: "Rare NTLM Usage by User - Lateral Movement via SMB \u2014 Rare NTLM Usage by User"
+id: ttp-2026-0336-bioc-01
+status: experimental
+description: |
+  Detection of NTLM authentication attempts by a user outside of normal behavior patterns
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'ntlm_smb.exe'
+    | filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1071
+    - attack.t1566
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare NTLM Usage by User - Lateral Movement via SMB \u2014 Unusual SMB Authentication Pattern"
+id: ttp-2026-0336-abioc-02
+status: experimental
+description: |
+  Detection of NTLM authentication attempts from user account to multiple targets in short time window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102')
+    | filter dst_port = 445
+    | filter actor_process_image_name = 'ntlm_smb.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1071
+    - attack.t1566
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

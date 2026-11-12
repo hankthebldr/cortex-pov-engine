@@ -1,0 +1,82 @@
+title: "Windows Ransomware Precursor - Shadow Copy Deletion and Recovery Disable \u2014 VSSAdmin Shadow Copy Deletion"
+id: ttp-2026-0193-bioc-01
+status: experimental
+description: |
+  Detection of vssadmin.exe deleting shadow copies
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'vssadmin.exe' and action_command_line contains 'delete shadows'
+    | filter action_command_line contains '/all /quiet'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Ransomware Precursor - Shadow Copy Deletion and Recovery Disable \u2014 BCDEdit Recovery Disable"
+id: ttp-2026-0193-bioc-02
+status: experimental
+description: |
+  Detection of bcdedit.exe disabling system recovery
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'bcdedit.exe' and action_command_line contains 'recoveryenabled no'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Ransomware Precursor - Shadow Copy Deletion and Recovery Disable \u2014 WBAdmin Catalog Delete"
+id: ttp-2026-0193-bioc-03
+status: experimental
+description: |
+  Detection of wbadmin.exe deleting recovery catalog
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'wbadmin.exe' and action_command_line contains 'delete catalog'
+    | filter action_command_line contains '-quiet'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,60 @@
+title: "PowerShell Scripting Engine Connecting to Rare External Host \u2014 Scripting Engine Connected to Rare External Host"
+id: ttp-2026-0372-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell or WSH process connecting to an IP address that is not commonly seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip != null
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'host1' AND timestamp > now() - 1d)
+    | filter actor_process_image_name in ('powershell.exe', 'wscript.exe', 'cscript.exe')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PowerShell Scripting Engine Connecting to Rare External Host \u2014 Suspicious PowerShell Network Connection"
+id: ttp-2026-0372-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where PowerShell process connects to a rare external IP address not observed in recent network activity
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_remote_ip != null
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = agent_hostname AND timestamp > now() - 7d)
+    | filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

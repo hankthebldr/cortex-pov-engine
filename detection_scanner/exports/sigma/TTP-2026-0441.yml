@@ -1,0 +1,58 @@
+title: "Windows PowerShell-based C2 Communication with Rare External Host \u2014 Uncommon PowerShell Process Communication"
+id: ttp-2026-0441-bioc-01
+status: experimental
+description: |
+  PowerShell process spawning child processes and connecting to rare external IP
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_remote_ip in ('192.0.2.101')
+    | filter action_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows PowerShell-based C2 Communication with Rare External Host \u2014 Rare External Host Communication via PowerShell"
+id: ttp-2026-0441-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of PowerShell process communicating with rare external host
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip in ('192.0.2.101')
+    | filter actor_process_image_name = 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

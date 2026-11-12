@@ -1,0 +1,85 @@
+title: "Squidoor Backdoor DNS and ICMP Tunneling via LOLBAS \u2014 Squidoor DNS TXT Beacon"
+id: ttp-2026-0185-bioc-01
+status: experimental
+description: |
+  Detection of nslookup process making TXT record queries to C2 IP
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'nslookup'
+    | filter action_file_path contains 'TXT'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Squidoor Backdoor DNS and ICMP Tunneling via LOLBAS \u2014 Squidoor ICMP Tunneling"
+id: ttp-2026-0185-bioc-02
+status: experimental
+description: |
+  Detection of ping command with custom payload to C2 IP
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'ping'
+    | filter action_file_path contains '-p 41424344'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1095/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1095
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Squidoor Backdoor DNS and ICMP Tunneling via LOLBAS \u2014 LOLBAS Execution"
+id: ttp-2026-0185-bioc-03
+status: experimental
+description: |
+  Detection of LOLBAS binaries used for execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('nslookup', 'ping')
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1218/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1218
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

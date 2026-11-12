@@ -1,5 +1,73 @@
+title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 Kerberoast Weak-Ticket Burst Process Start"
+id: ttp-2026-0166-bioc-01
+status: experimental
+description: |
+  Detection of process execution initiating a burst of weakly-encrypted Kerberos ticket requests (RC4-HMAC) for the same account across multiple SPNs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "python3"
+    | filter action_process_image_name = "python3"
+    | filter action_file_path contains "scripts.eal_simulator.cli"
+    | filter action_file_path contains "sim-itdr-020-roast.yml"
+    | filter agent_hostname != ""
+    | comp count() as ticket_requests by agent_hostname, actor_effective_username
+    | filter ticket_requests >= 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558
+    - attack.t1550
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 Pass-the-Hash Network Logon Process Start"
+id: ttp-2026-0166-bioc-02
+status: experimental
+description: |
+  Detection of process execution initiating an NTLM Pass-the-Hash network logon event (LogonType 3) for the same account without prior Kerberos exchange.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "python3"
+    | filter action_process_image_name = "python3"
+    | filter action_file_path contains "scripts.eal_simulator.cli"
+    | filter action_file_path contains "sim-itdr-020-pth.yml"
+    | filter agent_hostname != ""
+    | comp count() as pth_attempts by agent_hostname, actor_effective_username
+    | filter pth_attempts >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558
+    - attack.t1550
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user received multiple weakly encrypted service tickets"
-id: ttp-2026-0166-abioc-01
+id: ttp-2026-0166-abioc-03
 status: experimental
 description: |
   A single account receives an unusual burst of Kerberos service tickets (4769) encrypted with legacy RC4-HMAC (TicketEncryptionType 0x17) across many distinct Service Principal Names, deviating from the AES-only service-ticket-encryption baseline Cortex learned for the identity. Every ticket request is a valid, well-formed Kerberos operation and no single 4769 is a known-bad IOC; the auto-tuned ABIOC fires on the weak-encryption-ticket-burst deviation from the account's learned baseline — the offline-crackable roast material — anchored to the requesting-identity causality chain rather than to any static indicator.
@@ -31,7 +99,7 @@ falsepositives:
 level: high
 ---
 title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user requested multiple service tickets"
-id: ttp-2026-0166-abioc-02
+id: ttp-2026-0166-abioc-04
 status: experimental
 description: |
   The same account requests Kerberos service tickets (4769) across an anomalously large set of distinct Service Principal Names in a short window — the enumeration-and-request volume of a Kerberoasting sweep — exceeding the low, human-cadence service-ticket request rate Cortex learned for the identity. The alert fires on ticket-request VOLUME (independent of encryption strength) via a statistical deviation from the learned baseline, anchored to the same requesting identity as the weak-ticket burst.
@@ -62,7 +130,7 @@ falsepositives:
 level: medium
 ---
 title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user authenticated with weak NTLM to multiple hosts"
-id: ttp-2026-0166-abioc-03
+id: ttp-2026-0166-abioc-05
 status: experimental
 description: |
   An account authenticates with legacy NTLM over an NTLM (type 3) network logon through the NtLmSsp logon process — presenting a password-derived secret directly, with no preceding Kerberos exchange — the Pass-the-Hash (T1550.002) lateral-movement shape — against an account whose learned authentication baseline is Kerberos interactive logon. Each NTLM logon is technically valid and benign in isolation; the auto-tuned ABIOC fires on the out-of-baseline weak-NTLM network authentication deviation, aggregating the distinct target hosts reached, anchored to the roasted identity whose service-ticket material was harvested moments earlier.

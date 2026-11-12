@@ -1,0 +1,57 @@
+title: "WMIC User Discovery and Lateral Movement \u2014 Discovery of host users via WMIC"
+id: ttp-2026-0261-bioc-01
+status: experimental
+description: |
+  Detection of WMIC execution with user enumeration arguments
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmic.exe'
+    | filter action_process_command_line contains 'useraccount get'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WMIC User Discovery and Lateral Movement \u2014 Suspicious WMIC command line with user enumeration"
+id: ttp-2026-0261-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when WMIC is launched with user account enumeration parameters
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmic.exe'
+    | filter action_process_command_line contains 'useraccount get'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

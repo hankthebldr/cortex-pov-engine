@@ -1,0 +1,64 @@
+title: "SMB Traffic from Non-Standard Process \u2014 SMB Traffic from Non-Standard Process"
+id: ttp-2026-0377-bioc-01
+status: experimental
+description: |
+  Detects SMB network connections originating from non-standard processes such as wget or custom binaries
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.50'
+    | filter dst_port = 445
+    | filter actor_process_image_name != 'svchost.exe' and actor_process_image_name != 'lsass.exe'
+    | filter actor_process_image_name != 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1077/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1077
+    - attack.t1021.002
+    - attack.t1046
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "SMB Traffic from Non-Standard Process \u2014 Unusual SMB Connection from Custom Binary"
+id: ttp-2026-0377-abioc-02
+status: experimental
+description: |
+  Detects SMB traffic initiated by a binary not typically associated with SMB operations
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.50'
+    | filter dst_port = 445
+    | filter actor_process_image_name != 'svchost.exe' and actor_process_image_name != 'lsass.exe'
+    | filter actor_process_image_name != 'explorer.exe'
+    | filter actor_process_image_name contains '/tmp/'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1077/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1077
+    - attack.t1021.002
+    - attack.t1046
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

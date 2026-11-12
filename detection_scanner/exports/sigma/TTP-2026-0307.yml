@@ -1,0 +1,63 @@
+title: "Multiple Discovery Commands on Windows Host by Same Process \u2014 Multiple Discovery Commands by Process"
+id: ttp-2026-0307-bioc-01
+status: experimental
+description: |
+  Detection of multiple discovery commands executed by the same process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('cmd.exe', 'whoami.exe', 'net.exe', 'ipconfig.exe')
+    | comp count() as cnt by actor_process_image_name
+    | comp count() as cmd_count
+    | filter cmd_count > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1082
+    - attack.t1069.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Multiple Discovery Commands on Windows Host by Same Process \u2014 Multiple Discovery Commands Behavior"
+id: ttp-2026-0307-abioc-02
+status: experimental
+description: |
+  Detects a single process executing multiple discovery commands in sequence
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ('cmd.exe', 'whoami.exe', 'net.exe', 'ipconfig.exe')
+    | comp count() as cnt by actor_process_image_name
+    | comp count() as cmd_count
+    | filter cmd_count > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1082
+    - attack.t1069.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

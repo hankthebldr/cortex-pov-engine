@@ -1,0 +1,59 @@
+title: "Privileged Container Escape via nsenter to Host Namespaces \u2014 K8s Privileged nsenter Escape"
+id: ttp-2026-0218-bioc-01
+status: experimental
+description: |
+  Detection of nsenter process launched with --target 1 inside a privileged container
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'nsenter'
+    | filter actor_process_image_name = 'containerd'
+    | filter action_command_line contains '--target 1'
+    | filter action_process_image_path = '/usr/bin/nsenter'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Privileged Container Escape via nsenter to Host Namespaces \u2014 Kubernetes nsenter container escape"
+id: ttp-2026-0218-abioc-02
+status: experimental
+description: |
+  Behavioral deviation modeled by ML detecting nsenter --target 1 in container context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'nsenter'
+    | filter action_command_line contains '--target 1'
+    | filter actor_process_image_name = 'containerd'
+    | filter causality_actor_process_image_name = 'kubelet'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

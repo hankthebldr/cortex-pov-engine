@@ -1,0 +1,61 @@
+title: "Rarely-Active Host Conducts Lateral RDP Sweep \u2014 Abnormal RDP Connection Behavior"
+id: ttp-2026-0200-bioc-01
+status: experimental
+description: |
+  Detection of RDP connections from a rarely-seen host to multiple internal hosts within a short time window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389
+    | filter actor_process_image_name = "rdesktop.exe"
+    | filter agent_hostname not in ("known-host-1", "known-host-2")
+    | comp count() as cnt by agent_hostname, dst_ip
+    | comp count() as connection_count
+    | filter connection_count > 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rarely-Active Host Conducts Lateral RDP Sweep \u2014 Abnormal RDP connections to multiple hosts from a rarely seen host"
+id: ttp-2026-0200-abioc-02
+status: experimental
+description: |
+  ML-based detection of RDP connections initiated by an infrequently active host to multiple internal IPs
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389
+    | filter agent_hostname not in ("known-host-1", "known-host-2")
+    | comp count() as cnt by agent_hostname
+    | comp count() as rdp_count
+    | filter rdp_count > 5
+    | filter agent_hostname in ("rarely-active-host")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

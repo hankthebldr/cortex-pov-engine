@@ -1,0 +1,61 @@
+title: "Signed Process Connecting to Uncommon External IP \u2014 Globally Uncommon IP Connection from Signed Process"
+id: ttp-2026-0277-bioc-01
+status: experimental
+description: |
+  Detection of a signed process initiating a network connection to an IP address that is not commonly seen in the organization's network traffic.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_process_image_name != null
+    | filter action_remote_ip != null
+    | filter action_process_image_name matches '.*signed.*'
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Signed Process Connecting to Uncommon External IP \u2014 Unusual Network Behavior from Trusted Process"
+id: ttp-2026-0277-abioc-02
+status: experimental
+description: |
+  Detects when a signed/legitimate process makes an outbound connection to an IP address not typically seen in the environment, indicating potential compromise or lateral movement.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_process_image_name != null
+    | filter action_remote_ip != null
+    | filter action_process_image_name matches '.*signed.*'
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

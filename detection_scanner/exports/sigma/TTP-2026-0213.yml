@@ -1,0 +1,53 @@
+title: "Setuid Privilege Escalation via chmod u+s on Shell Binary \u2014 Setuid Bit Manipulation"
+id: ttp-2026-0213-bioc-01
+status: experimental
+description: |
+  Detection of chmod command setting setuid bit on executable files
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'chmod' and action_file_path contains 'shell' and action_command_line contains 'u+s'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Setuid Privilege Escalation via chmod u+s on Shell Binary \u2014 Setuid and Setgid file bit manipulation"
+id: ttp-2026-0213-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when setuid/setgid bits are manipulated on files in writable paths
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_MODIFY
+    | filter action_file_path contains '/tmp/scratch/shell' and action_command_line contains 'u+s'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,61 @@
+title: "SSH Server Cloning with Shared Host Key \u2014 Multiple SSH Servers With Same Host Key"
+id: ttp-2026-0495-bioc-01
+status: experimental
+description: |
+  Detection of multiple SSH server processes using identical host key fingerprints
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = '/tmp/ssh_clone/ssh_server'
+    | filter action_remote_ip != NULL
+    | comp count() as cnt by action_remote_ip, action_file_path
+    | filter count() > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+    - attack.t1566
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "SSH Server Cloning with Shared Host Key \u2014 SSH Server Cloning Pattern"
+id: ttp-2026-0495-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of multiple SSH servers using same host key across different ports
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port IN (2222, 2223, 2224)
+    | filter action_file_path = '/tmp/ssh_clone/host_key'
+    | comp count() as cnt by action_file_path
+    | filter count() > 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+    - attack.t1566
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

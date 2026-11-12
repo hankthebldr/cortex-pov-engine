@@ -1,0 +1,58 @@
+title: "Windows Process Connecting to Rare External Host \u2014 Process Connected to Rare External Host"
+id: ttp-2026-0229-bioc-01
+status: experimental
+description: |
+  A process connects to an IP address that is not commonly seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip != null
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host')
+    | filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host' AND action_remote_ip != '192.0.2.100')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Process Connecting to Rare External Host \u2014 Rare External Host Connection"
+id: ttp-2026-0229-abioc-02
+status: experimental
+description: |
+  Detects when a process connects to an IP address that is not commonly seen in the environment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip != null
+    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

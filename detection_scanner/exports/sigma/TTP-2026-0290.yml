@@ -1,0 +1,62 @@
+title: "LDAP Traffic from Non-Standard Process \u2014 LDAP traffic from non-standard process"
+id: ttp-2026-0290-bioc-01
+status: experimental
+description: |
+  Detects LDAP traffic initiated by a process not typically associated with LDAP operations
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 389
+    | filter actor_process_image_name != 'lsass.exe' and actor_process_image_name != 'dllhost.exe'
+    | filter action_remote_ip != '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1046
+    - attack.t1059
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "LDAP Traffic from Non-Standard Process \u2014 Non-standard LDAP process behavior"
+id: ttp-2026-0290-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a non-standard process initiates LDAP traffic
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 389
+    | filter actor_process_image_name != 'lsass.exe'
+    | filter actor_process_image_name != 'dllhost.exe'
+    | filter actor_process_image_name != 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1046
+    - attack.t1059
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

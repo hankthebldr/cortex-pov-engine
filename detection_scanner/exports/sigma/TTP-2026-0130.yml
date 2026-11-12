@@ -1,5 +1,68 @@
+title: "AI SOC Triage Discrimination Under Decoy Noise \u2014 True-Positive Elevation + False-Positive Suppression (SIM-MP-015) \u2014 Impossible Travel Privileged Sign-in"
+id: ttp-2026-0130-bioc-01
+status: experimental
+description: |
+  Detection of two successful privileged sign-ins for the same principal from different geographies within a single login window.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.AUTHENTICATION
+    | filter action = ENUM.AUTH_SUCCESS
+    | filter is_privileged = true
+    | filter user_principal_name = "jdoe-admin@corp.local"
+    | comp count() as cnt by user_principal_name, location_country
+    | comp count_distinct(location_country) as country_count
+    | filter country_count >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI SOC Triage Discrimination Under Decoy Noise \u2014 True-Positive Elevation + False-Positive Suppression (SIM-MP-015) \u2014 Office Parent Spawning Encoded PowerShell"
+id: ttp-2026-0130-bioc-02
+status: experimental
+description: |
+  Detection of PowerShell spawned by Office applications with encoded command line arguments.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("winword.exe", "excel.exe", "wscript.exe")
+    | filter action_process_image_name = "powershell.exe"
+    | filter action_process_command_line contains "-enc"
+    | filter action_process_command_line contains "SQBFAEgA"
+    | filter actor_effective_username = "jdoe-admin@corp.local"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "AI SOC Triage Discrimination Under Decoy Noise \u2014 True-Positive Elevation + False-Positive Suppression (SIM-MP-015) \u2014 MP-015 Impossible-Travel Privileged Sign-In"
-id: ttp-2026-0130-abioc-01
+id: ttp-2026-0130-abioc-03
 status: experimental
 description: |
   A privileged principal authenticates successfully from two distinct geographies inside a single short login window — physically impossible travel. The ABIOC anchors the deviation to the account's learned sign-in-geography baseline, not to any single bad IP, so it fires on the first genuinely anomalous privileged session rather than on a static allow/deny list. This is malicious signal 1 of 3 in the identity-driven chain.
@@ -33,7 +96,7 @@ falsepositives:
 level: high
 ---
 title: "AI SOC Triage Discrimination Under Decoy Noise \u2014 True-Positive Elevation + False-Positive Suppression (SIM-MP-015) \u2014 MP-015 Abnormal PowerShell Execution Chain from Office Parent"
-id: ttp-2026-0130-abioc-02
+id: ttp-2026-0130-abioc-04
 status: experimental
 description: |
   An Office or scripting-host parent spawns PowerShell with encoded, no-profile, or download-cradle arguments — the parent-child lineage a benign PowerShell session never exhibits. The ABIOC fires on the abnormal process-chain shape under the compromised principal, not on the PowerShell binary itself (which is legitimate). This is malicious signal 2 of 3, anchored to the same principal as the impossible-travel sign-in.
@@ -66,7 +129,7 @@ falsepositives:
 level: high
 ---
 title: "AI SOC Triage Discrimination Under Decoy Noise \u2014 True-Positive Elevation + False-Positive Suppression (SIM-MP-015) \u2014 MP-015 Rapid Privilege Escalation Within Minutes of First Access"
-id: ttp-2026-0130-abioc-03
+id: ttp-2026-0130-abioc-05
 status: experimental
 description: |
   The same principal performs an escalation ACTION — adding itself to the local administrators group (net localgroup administrators ... /add, Add-LocalGroupMember) or a medium->high process-integrity TRANSITION — within minutes of the impossible-travel sign-in. The ABIOC keys on the escalation action (not on steady-state high-integrity/root processes, which are the admin/daemon norm on every host) and joins the endpoint event to the identity-plane sign-in on the shared normalized_user, asserting the access->elevation delta is <= 900s. Firing therefore requires the rapid, anomalous escalation the name claims — not a bare elevated process. This is malicious signal 3 of 3.

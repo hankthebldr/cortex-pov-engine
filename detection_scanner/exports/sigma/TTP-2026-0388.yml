@@ -1,0 +1,65 @@
+title: "Spring4Shell Exploitation via Malicious HTTP Request \u2014 Suspicious Failed HTTP Request"
+id: ttp-2026-0388-bioc-01
+status: experimental
+description: |
+  Detection of failed HTTP requests with suspicious headers indicating potential Spring4Shell exploitation attempts
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.50'
+    | filter action_protocol = 'HTTP'
+    | filter action_status = 'FAILED'
+    | filter action_request_headers contains 'Content-Type: application/x-www-form-urlencoded'
+    | filter action_request_headers contains 'User-Agent: Spring4Shell-Exploiter'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Spring4Shell Exploitation via Malicious HTTP Request \u2014 Spring4Shell Exploitation Behavior"
+id: ttp-2026-0388-abioc-02
+status: experimental
+description: |
+  Detection of process behavior indicating exploitation of Spring4Shell vulnerability via crafted HTTP requests
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.50'
+    | filter action_protocol = 'HTTP'
+    | filter action_status = 'FAILED'
+    | filter action_request_headers contains 'Content-Type: application/x-www-form-urlencoded'
+    | filter action_request_headers contains 'User-Agent: Spring4Shell-Exploiter'
+    | filter causality_actor_process_image_name = 'java'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

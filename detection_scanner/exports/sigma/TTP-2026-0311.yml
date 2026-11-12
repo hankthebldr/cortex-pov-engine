@@ -1,0 +1,65 @@
+title: "NTLM Brute Force on Service Account \u2014 NTLM Brute Force on Service Account"
+id: ttp-2026-0311-bioc-01
+status: experimental
+description: |
+  Multiple failed NTLM authentication attempts using a service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.100'
+    | filter dst_port = 445
+    | filter action_process_image_name = 'net.exe'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+    | comp count() as cnt by by actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1110
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "NTLM Brute Force on Service Account \u2014 NTLM Brute Force Pattern"
+id: ttp-2026-0311-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating repeated failed authentication attempts using service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = '192.0.2.100'
+    | filter dst_port = 445
+    | filter action_process_image_name = 'net.exe'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+    | comp count() as cnt by by actor_process_image_name
+    | filter count > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1110
+    - attack.t1059
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

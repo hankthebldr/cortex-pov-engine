@@ -1,0 +1,61 @@
+title: "AppleScript Defense-Evasion via Command Line \u2014 Uncommon AppleScript with Defense-Evasion Command"
+id: ttp-2026-0422-bioc-01
+status: experimental
+description: |
+  Detection of AppleScript process that executes a command with potential defense-evasion behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'osascript'
+    | filter action_process_image_name = 'sh'
+    | filter action_file_path contains 'do shell script'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1059.001
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AppleScript Defense-Evasion via Command Line \u2014 Uncommon AppleScript with Potential Defense-Evasion Command"
+id: ttp-2026-0422-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where AppleScript is used to execute shell commands potentially for defense evasion
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'osascript'
+    | filter action_process_image_name = 'sh'
+    | filter action_file_path contains 'do shell script'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1059.001
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

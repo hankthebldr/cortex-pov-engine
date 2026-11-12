@@ -1,0 +1,63 @@
+title: "Office Process Spawning Suspicious One-Liner \u2014 Microsoft Office Process Spawning PowerShell with Suspicious One-Liner"
+id: ttp-2026-0299-bioc-01
+status: experimental
+description: |
+  Detection of winword.exe or excel.exe spawning powershell.exe with a suspicious command-line pattern
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'winword.exe' or causality_actor_process_image_name = 'excel.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'IEX' or action_command_line contains 'DownloadString'
+    | filter action_command_line contains '192.0.2.50'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Office Process Spawning Suspicious One-Liner \u2014 Suspicious PowerShell Execution from Office Process"
+id: ttp-2026-0299-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a Microsoft Office process spawns PowerShell with suspicious command-line arguments indicating possible C2 communication
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'winword.exe' or causality_actor_process_image_name = 'excel.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'IEX' or action_command_line contains 'DownloadString'
+    | filter action_command_line contains '192.0.2.50'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

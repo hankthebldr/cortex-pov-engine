@@ -1,5 +1,63 @@
+title: "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly \u2192 SOAR Suspend + Session Revoke) \u2014 Process Execution from Suspicious Temp Directory"
+id: ttp-2026-0143-bioc-01
+status: experimental
+description: |
+  Detection of process execution from a temporary directory, often used by malicious scripts to avoid detection during payload delivery.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_path contains "\\temp\\" or actor_process_image_path contains "\\tmp\\"
+    | filter actor_process_image_name in ("powershell.exe", "cmd.exe", "wscript.exe", "cscript.exe")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1098
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly \u2192 SOAR Suspend + Session Revoke) \u2014 Execution of Script with Suspicious Arguments"
+id: ttp-2026-0143-bioc-02
+status: experimental
+description: |
+  Detection of script execution with arguments that indicate privilege escalation or account manipulation, such as those used in the payload.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("powershell.exe", "cmd.exe")
+    | filter actor_process_command_line contains "set -euo pipefail" or actor_process_command_line contains "user.lifecycle.suspend" or actor_process_command_line contains "user.session.clear"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1098
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly \u2192 SOAR Suspend + Session Revoke) \u2014 ITDR-016 Impossible-Travel Sign-In Deviation on Target Identity"
-id: ttp-2026-0143-abioc-01
+id: ttp-2026-0143-abioc-03
 status: experimental
 description: |
   The compromised identity succeeds at two sign-ins from geographically distant locations / distinct ASNs inside a travel-impossibility window, deviating from the single-region, stable-ASN sign-in profile Cortex learned for the account. The credentials are valid and each session in isolation is benign; the ABIOC fires on the geo/ASN-velocity deviation from the learned baseline, anchored to the session pair from one stolen-credential intrusion — the first of the two signals that trips the account-takeover correlation.
@@ -31,7 +89,7 @@ falsepositives:
 level: high
 ---
 title: "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly \u2192 SOAR Suspend + Session Revoke) \u2014 ITDR-016 Anomalous Privilege Grant and MFA Reset on the Compromised Identity"
-id: ttp-2026-0143-abioc-02
+id: ttp-2026-0143-abioc-04
 status: experimental
 description: |
   The same identity that just tripped the impossible-travel deviation is granted an anomalous privileged role (admin/privileged-role assignment) and/or has an MFA factor reset — the escalation-and-persistence move Muddled Libra uses after takeover. Every action uses a legitimate Okta administrative API; the ABIOC fires on the deviation from the identity's learned governance baseline, anchored to the impossible-travel sign-in that preceded it, and supplies the second signal the account-takeover correlation fuses.

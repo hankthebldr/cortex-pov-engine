@@ -1,0 +1,61 @@
+title: "Rare Process Execution Chain via PowerShell and WMI \u2014 Multiple Rare Process Executions in Organization"
+id: ttp-2026-0309-bioc-01
+status: experimental
+description: |
+  Detection of multiple rare processes being executed in a short time window within the organization
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' or actor_process_image_name = 'wmic.exe'
+    | comp count() as cnt by agent_hostname, action_process_image_name
+    | comp count() as cnt by
+    | filter count > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare Process Execution Chain via PowerShell and WMI \u2014 Unusual PowerShell and WMI Execution Sequence"
+id: ttp-2026-0309-abioc-02
+status: experimental
+description: |
+  Behavioral deviation indicating rare sequence of PowerShell followed by WMI process execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' and action_process_image_name = 'wmic.exe'
+    | comp count() as cnt by agent_hostname
+    | comp count() as cnt by
+    | filter count > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

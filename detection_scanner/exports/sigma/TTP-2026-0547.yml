@@ -1,0 +1,56 @@
+title: "Offensive Tooling: smbmap (adapter-deployed) \u2014 Smbmap Executed by a Service Account on the Endpoint"
+id: ttp-2026-0547-bioc-01
+status: experimental
+description: |
+  A non-interactive service account runs smbmap — an offensive TOOL-SMBMAP-wired tool not part of normal operations on this host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_path contains "smbmap" or action_process_command_line contains "smbmap"
+    | comp count() as runs by agent_hostname, actor_effective_username
+    | filter runs >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1135/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1135
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Offensive Tooling: smbmap (adapter-deployed) \u2014 First-Seen Execution of smbmap on This Host"
+id: ttp-2026-0547-abioc-02
+status: experimental
+description: |
+  A host that has never run smbmap executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_command_line contains "smbmap"
+    | comp count() as first_runs by agent_hostname
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1135/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1135
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

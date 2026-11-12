@@ -1,0 +1,60 @@
+title: "AppleScript Cryptocurrency Wallet Access via Command Line \u2014 Uncommon AppleScript Execution via Command Line"
+id: ttp-2026-0417-bioc-01
+status: experimental
+description: |
+  Detection of AppleScript execution initiated directly from command line without GUI interaction
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'osascript'
+    | filter actor_process_image_name != 'Terminal' and actor_process_image_name != 'iTerm2'
+    | filter action_file_path contains '/usr/bin/osascript'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AppleScript Cryptocurrency Wallet Access via Command Line \u2014 Unusual AppleScript Behavior for Wallet Data Access"
+id: ttp-2026-0417-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where AppleScript is used to access wallet application processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'osascript'
+    | filter action_file_path contains 'System Events'
+    | filter action_file_path contains 'WalletApp'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+    - attack.t1566.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,58 @@
+title: "Masquerading as crond process from non-standard path \u2014 Masquerading as crond process"
+id: ttp-2026-0212-bioc-01
+status: experimental
+description: |
+  Process starts with name 'crond' but from non-standard path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'crond'
+    | filter action_file_path != '/usr/sbin/crond' and action_file_path != '/sbin/crond'
+    | filter action_file_path != '/bin/crond'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Masquerading as crond process from non-standard path \u2014 Masquerading as Linux crond process"
+id: ttp-2026-0212-abioc-02
+status: experimental
+description: |
+  Detects process masquerading as crond from non-standard path using behavioral ML
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'crond'
+    | filter action_file_path != '/usr/sbin/crond' and action_file_path != '/sbin/crond'
+    | filter action_file_path != '/bin/crond'
+    | filter causality_actor_process_image_name != 'init'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

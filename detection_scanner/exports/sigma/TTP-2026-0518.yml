@@ -1,0 +1,56 @@
+title: "Offensive Tooling: suid3num (payload-shelf staged) \u2014 Suid3num Executed by a Service Account on the Endpoint"
+id: ttp-2026-0518-bioc-01
+status: experimental
+description: |
+  A non-interactive service account runs suid3num — an offensive TOOL-SUID3NUM-wired tool not part of normal operations on this host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_path contains "/tmp/suid3num.py" or action_process_command_line contains "suid3num"
+    | comp count() as runs by agent_hostname, actor_effective_username
+    | filter runs >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Offensive Tooling: suid3num (payload-shelf staged) \u2014 First-Seen Execution of suid3num on This Host"
+id: ttp-2026-0518-abioc-02
+status: experimental
+description: |
+  A host that has never run suid3num executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_command_line contains "suid3num"
+    | comp count() as first_runs by agent_hostname
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

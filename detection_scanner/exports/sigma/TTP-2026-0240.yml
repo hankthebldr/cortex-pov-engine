@@ -1,0 +1,62 @@
+title: "Abnormal HTTP Communication with Rare User Agent and Server Combination \u2014 Rare HTTP User-Agent and Server Header Combination"
+id: ttp-2026-0240-bioc-01
+status: experimental
+description: |
+  Detection of unusual combination of User-Agent and Server headers in HTTP traffic
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter dst_ip = '192.0.2.50'
+    | filter http_user_agent = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)'
+    | filter http_server = 'nginx/1.10.3 (Ubuntu)'
+    | filter http_request_method = 'GET'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Abnormal HTTP Communication with Rare User Agent and Server Combination \u2014 Abnormal Network Communication with Rare HTTP Headers"
+id: ttp-2026-0240-abioc-02
+status: experimental
+description: |
+  Behavioral deviation in HTTP communication characterized by rare User-Agent and Server header combinations
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter dst_ip = '192.0.2.50'
+    | filter http_user_agent = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)'
+    | filter http_server = 'nginx/1.10.3 (Ubuntu)'
+    | filter http_request_method = 'GET'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1059.001
+    - attack.t1090.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,28 @@
+title: "WMI Event Subscription Persistence via PowerShell \u2014 WMI Event Filter Creation"
+id: ttp-2026-0197-bioc-01
+status: experimental
+description: |
+  Detection of WMI event filter creation via PowerShell or WMIC
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' or action_process_image_name = 'wmic.exe'
+    | filter action_process_command_line contains 'New-EventLog' or action_process_command_line contains 'SWbemFilter'
+    | filter causality_actor_process_image_name = 'powershell.exe' or causality_actor_process_image_name = 'wmic.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1546/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1546.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

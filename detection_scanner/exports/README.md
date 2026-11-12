@@ -88,7 +88,7 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0083` | Kubernetes-Goat Container Escape Chain — Cortex Cloud CDR (T1611 / T1610) | [sigma](sigma/TTP-2026-0083.yml), [xql](xql/TTP-2026-0083.xql), [correlation](correlation/TTP-2026-0083.json) |
 | `TTP-2026-0084` | WildFire Test-Sample Retrieval in Container + Pod Misconfiguration — Cortex Cloud CDR (T1610 / T1204) | [sigma](sigma/TTP-2026-0084.yml), [xql](xql/TTP-2026-0084.xql), [correlation](correlation/TTP-2026-0084.json) |
 | `TTP-2026-0085` | Insecure Deployment Runtime Detonation — Busybox Pod Fetches Malware ELFs — Cortex Cloud CDR (T1610 / T1496) | [sigma](sigma/TTP-2026-0085.yml), [xql](xql/TTP-2026-0085.xql), [correlation](correlation/TTP-2026-0085.json) |
-| `TTP-2026-0086` | NGFW Container Egress to Endpoint Process Causality Stitch — Cortex XSIAM (T1071.001) | [xql](xql/TTP-2026-0086.xql), [correlation](correlation/TTP-2026-0086.json) |
+| `TTP-2026-0086` | NGFW Container Egress to Endpoint Process Causality Stitch — Cortex XSIAM (T1071.001) | [sigma](sigma/TTP-2026-0086.yml), [xql](xql/TTP-2026-0086.xql), [correlation](correlation/TTP-2026-0086.json) |
 | `TTP-2026-0087` | Malicious In-Cluster Multi-Stage TTP Chain — Cortex Analytics Behavioral IOC (ABIOC) (T1078 / T1071 / T1560 / T1496 / T1574) | [sigma](sigma/TTP-2026-0087.yml), [xql](xql/TTP-2026-0087.xql), [correlation](correlation/TTP-2026-0087.json) |
 | `TTP-2026-0090` | EMAIL — Phishing Credential-Harvest Link (Proofpoint TAP + Microsoft 365) | [sigma](sigma/TTP-2026-0090.yml), [xql](xql/TTP-2026-0090.xql), [correlation](correlation/TTP-2026-0090.json) |
 | `TTP-2026-0091` | EMAIL — Malicious Attachment (macro / ISO / HTML-smuggling) via Proofpoint TAP + Microsoft 365 | [sigma](sigma/TTP-2026-0091.yml), [xql](xql/TTP-2026-0091.xql), [correlation](correlation/TTP-2026-0091.json) |
@@ -183,4 +183,370 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0181` | Clipboard and Local Memory Harvesting of Protected Health Information (PHI) | [sigma](sigma/TTP-2026-0181.yml), [xql](xql/TTP-2026-0181.xql), [correlation](correlation/TTP-2026-0181.json) |
 | `TTP-2026-0182` | Iranian APT Screening Serpens: AppDomainManager Hijacking & Living-Off-The-Land Defense Evasion | [sigma](sigma/TTP-2026-0182.yml), [xql](xql/TTP-2026-0182.xql), [correlation](correlation/TTP-2026-0182.json) |
 | `TTP-2026-0183` | Screening Serpens: Edge Exploit to EDR AppDomain Hijack and AD Kerberoast Stitch | [sigma](sigma/TTP-2026-0183.yml), [xql](xql/TTP-2026-0183.xql), [correlation](correlation/TTP-2026-0183.json) |
+| `TTP-2026-0184` | SysGoRAT Implant with systemd Persistence and In-Memory Shell | [sigma](sigma/TTP-2026-0184.yml), [xql](xql/TTP-2026-0184.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0184.yml) |
+| `TTP-2026-0185` | Squidoor Backdoor DNS and ICMP Tunneling via LOLBAS | [sigma](sigma/TTP-2026-0185.yml), [xql](xql/TTP-2026-0185.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0185.yml) |
+| `TTP-2026-0186` | TinyRCT Backdoor Establishes VPN Tunnel and Dumps Credentials | [sigma](sigma/TTP-2026-0186.yml), [xql](xql/TTP-2026-0186.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0186.yml) |
+| `TTP-2026-0187` | AK47C2 Backdoor with X2ANYLOCK Ransomware Staging via DLL Side-Loading on Linux | [sigma](sigma/TTP-2026-0187.yml), [xql](xql/TTP-2026-0187.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0187.yml) |
+| `TTP-2026-0188` | Uncommon Command on ESXi Virtualization Host — Hypervisor CLI | [xql](xql/TTP-2026-0188.xql) |
+| `TTP-2026-0189` | Anomalous Outbound RDP Egress — Lateral Movement (ms-rdp) | [sigma](sigma/TTP-2026-0189.yml), [xql](xql/TTP-2026-0189.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0189.yml) |
+| `TTP-2026-0190` | UAC Bypass via fodhelper.exe Registry Hijack | [sigma](sigma/TTP-2026-0190.yml), [xql](xql/TTP-2026-0190.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0190.yml) |
+| `TTP-2026-0191` | PowerShell Attack with Defender Tampering and AMSI Patching | [sigma](sigma/TTP-2026-0191.yml), [xql](xql/TTP-2026-0191.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0191.yml) |
+| `TTP-2026-0192` | Process Hollowing via svchost.exe | [sigma](sigma/TTP-2026-0192.yml), [xql](xql/TTP-2026-0192.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0192.yml) |
+| `TTP-2026-0193` | Windows Ransomware Precursor - Shadow Copy Deletion and Recovery Disable | [sigma](sigma/TTP-2026-0193.yml), [xql](xql/TTP-2026-0193.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0193.yml) |
+| `TTP-2026-0194` | Windows regsvr32 Squiblydoo Proxy Execution via COM Scriptlet | [sigma](sigma/TTP-2026-0194.yml), [xql](xql/TTP-2026-0194.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0194.yml) |
+| `TTP-2026-0195` | BITS Job Abuse via bitsadmin for Persistent Payload Delivery | [sigma](sigma/TTP-2026-0195.yml), [xql](xql/TTP-2026-0195.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0195.yml) |
+| `TTP-2026-0196` | Linux Credential Theft via Browser Data Extraction | [sigma](sigma/TTP-2026-0196.yml), [xql](xql/TTP-2026-0196.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0196.yml) |
+| `TTP-2026-0197` | WMI Event Subscription Persistence via PowerShell | [sigma](sigma/TTP-2026-0197.yml), [xql](xql/TTP-2026-0197.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0197.yml) |
+| `TTP-2026-0198` | Masquerading Malware Dropping svchost.exe/lsass.exe in Non-System Path | [sigma](sigma/TTP-2026-0198.yml), [xql](xql/TTP-2026-0198.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0198.yml) |
+| `TTP-2026-0199` | Uncommon DLL Side-Loaded into Microsoft Process via Search-Order Hijack | [sigma](sigma/TTP-2026-0199.yml), [xql](xql/TTP-2026-0199.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0199.yml) |
+| `TTP-2026-0200` | Rarely-Active Host Conducts Lateral RDP Sweep | [sigma](sigma/TTP-2026-0200.yml), [xql](xql/TTP-2026-0200.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0200.yml) |
+| `TTP-2026-0201` | PsExec Lateral Movement via Remote Service Creation | [sigma](sigma/TTP-2026-0201.yml), [xql](xql/TTP-2026-0201.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0201.yml) |
+| `TTP-2026-0202` | WMIEXEC-style Command Execution via WMI | [sigma](sigma/TTP-2026-0202.yml), [xql](xql/TTP-2026-0202.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0202.yml) |
+| `TTP-2026-0203` | LSASS Memory Dump Extraction via Process Copy | [sigma](sigma/TTP-2026-0203.yml), [xql](xql/TTP-2026-0203.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0203.yml) |
+| `TTP-2026-0204` | Domain Credential Theft via ntdsutil Shadow Copy | [sigma](sigma/TTP-2026-0204.yml), [xql](xql/TTP-2026-0204.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0204.yml) |
+| `TTP-2026-0205` | Windows Service Creation with Rare Binary Path for Persistence | [sigma](sigma/TTP-2026-0205.yml), [xql](xql/TTP-2026-0205.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0205.yml) |
+| `TTP-2026-0206` | 64-bit PowerShell spawning 32-bit PowerShell for evasion | [sigma](sigma/TTP-2026-0206.yml), [xql](xql/TTP-2026-0206.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0206.yml) |
+| `TTP-2026-0207` | Windows Defender Exclusion Added for Payload Staging | [sigma](sigma/TTP-2026-0207.yml), [xql](xql/TTP-2026-0207.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0207.yml) |
+| `TTP-2026-0208` | Windows Endpoint: Hidden File Attribute Set via attrib Command | [sigma](sigma/TTP-2026-0208.yml), [xql](xql/TTP-2026-0208.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0208.yml) |
+| `TTP-2026-0209` | Rare Local Administrator Login on Windows Endpoint | [sigma](sigma/TTP-2026-0209.yml), [xql](xql/TTP-2026-0209.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0209.yml) |
+| `TTP-2026-0210` | Scheduled Task Executes mshta with Remote Payload | [sigma](sigma/TTP-2026-0210.yml), [xql](xql/TTP-2026-0210.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0210.yml) |
+| `TTP-2026-0211` | Repeated Failed Sudo Authentications Followed by Success | [sigma](sigma/TTP-2026-0211.yml), [xql](xql/TTP-2026-0211.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0211.yml) |
+| `TTP-2026-0212` | Masquerading as crond process from non-standard path | [sigma](sigma/TTP-2026-0212.yml), [xql](xql/TTP-2026-0212.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0212.yml) |
+| `TTP-2026-0213` | Setuid Privilege Escalation via chmod u+s on Shell Binary | [sigma](sigma/TTP-2026-0213.yml), [xql](xql/TTP-2026-0213.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0213.yml) |
+| `TTP-2026-0214` | Reading bash history to harvest credentials | [sigma](sigma/TTP-2026-0214.yml), [xql](xql/TTP-2026-0214.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0214.yml) |
+| `TTP-2026-0215` | ELF Padding with dd to Evade Hash/Size Detection | [sigma](sigma/TTP-2026-0215.yml), [xql](xql/TTP-2026-0215.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0215.yml) |
+| `TTP-2026-0216` | SSH Exfiltration of Compressed Data | [sigma](sigma/TTP-2026-0216.yml), [xql](xql/TTP-2026-0216.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0216.yml) |
+| `TTP-2026-0217` | Linux Endpoint: Adding Execution Privileges via chmod +x | [sigma](sigma/TTP-2026-0217.yml), [xql](xql/TTP-2026-0217.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0217.yml) |
+| `TTP-2026-0218` | Privileged Container Escape via nsenter to Host Namespaces | [sigma](sigma/TTP-2026-0218.yml), [xql](xql/TTP-2026-0218.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0218.yml) |
+| `TTP-2026-0219` | Privileged Container Recon with Interactive Shell | [sigma](sigma/TTP-2026-0219.yml), [xql](xql/TTP-2026-0219.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0219.yml) |
+| `TTP-2026-0220` | Suspicious curl beacon with empty User-Agent to rare C2 host | [sigma](sigma/TTP-2026-0220.yml), [xql](xql/TTP-2026-0220.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0220.yml) |
+| `TTP-2026-0221` | Abused Process Connecting to Rare Cloud Resource | [sigma](sigma/TTP-2026-0221.yml), [xql](xql/TTP-2026-0221.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0221.yml) |
+| `TTP-2026-0222` | Suspicious PowerShell Execution Connecting to Rare External IP | [sigma](sigma/TTP-2026-0222.yml), [xql](xql/TTP-2026-0222.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0222.yml) |
+| `TTP-2026-0223` | Compromised Process Accessing Rare Cloud Resource via PowerShell | [sigma](sigma/TTP-2026-0223.yml), [xql](xql/TTP-2026-0223.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0223.yml) |
+| `TTP-2026-0224` | Compromised Process Accessing Rare External Host | [sigma](sigma/TTP-2026-0224.yml), [xql](xql/TTP-2026-0224.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0224.yml) |
+| `TTP-2026-0225` | Execution of Contained Malware from Mounted Share initiating Outbound Connection | [sigma](sigma/TTP-2026-0225.yml), [xql](xql/TTP-2026-0225.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0225.yml) |
+| `TTP-2026-0226` | Unusual Process Executes Contained Executable | [sigma](sigma/TTP-2026-0226.yml), [xql](xql/TTP-2026-0226.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0226.yml) |
+| `TTP-2026-0227` | Windows Process Connecting to Rare Cloud Resource | [sigma](sigma/TTP-2026-0227.yml), [xql](xql/TTP-2026-0227.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0227.yml) |
+| `TTP-2026-0228` | Windows Process Connecting to Rare External Host | [sigma](sigma/TTP-2026-0228.yml), [xql](xql/TTP-2026-0228.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0228.yml) |
+| `TTP-2026-0229` | Windows Process Connecting to Rare External Host | [sigma](sigma/TTP-2026-0229.yml), [xql](xql/TTP-2026-0229.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0229.yml) |
+| `TTP-2026-0230` | Unicode Obfuscation via PowerShell for Lateral Movement | [sigma](sigma/TTP-2026-0230.yml), [xql](xql/TTP-2026-0230.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0230.yml) |
+| `TTP-2026-0231` | DLL Hijacking via Uncommon Vendor Signed DLL in Microsoft Process | [sigma](sigma/TTP-2026-0231.yml), [xql](xql/TTP-2026-0231.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0231.yml) |
+| `TTP-2026-0232` | Disabling Windows Security Services via Command Line | [sigma](sigma/TTP-2026-0232.yml), [xql](xql/TTP-2026-0232.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0232.yml) |
+| `TTP-2026-0233` | Certificate Enrollment via CertUtil for Persistence | [sigma](sigma/TTP-2026-0233.yml), [xql](xql/TTP-2026-0233.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0233.yml) |
+| `TTP-2026-0234` | Uncommon AppID Access via PowerShell Command Execution | [sigma](sigma/TTP-2026-0234.yml), [xql](xql/TTP-2026-0234.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0234.yml) |
+| `TTP-2026-0235` | Abnormal Login with Remote Command Execution | [sigma](sigma/TTP-2026-0235.yml), [xql](xql/TTP-2026-0235.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0235.yml) |
+| `TTP-2026-0236` | Windows Endpoint - Rare Domain Communication via PowerShell | [sigma](sigma/TTP-2026-0236.yml), [xql](xql/TTP-2026-0236.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0236.yml) |
+| `TTP-2026-0237` | Windows PowerShell with Rare TLS/HTTP User Agent Combination | [sigma](sigma/TTP-2026-0237.yml), [xql](xql/TTP-2026-0237.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0237.yml) |
+| `TTP-2026-0238` | Dormant Host Reconnaissance via Newly Seen Endpoint | [sigma](sigma/TTP-2026-0238.yml), [xql](xql/TTP-2026-0238.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0238.yml) |
+| `TTP-2026-0239` | TOR Network Communication via Uncommon Port | [sigma](sigma/TTP-2026-0239.yml), [xql](xql/TTP-2026-0239.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0239.yml) |
+| `TTP-2026-0240` | Abnormal HTTP Communication with Rare User Agent and Server Combination | [sigma](sigma/TTP-2026-0240.yml), [xql](xql/TTP-2026-0240.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0240.yml) |
+| `TTP-2026-0241` | Meterpreter Reverse Shell via PowerShell | [sigma](sigma/TTP-2026-0241.yml), [xql](xql/TTP-2026-0241.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0241.yml) |
+| `TTP-2026-0242` | RDP Brute Force and Lateral Movement | [sigma](sigma/TTP-2026-0242.yml), [xql](xql/TTP-2026-0242.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0242.yml) |
+| `TTP-2026-0243` | RDP Session from Rare Host with Credential Theft | [sigma](sigma/TTP-2026-0243.yml), [xql](xql/TTP-2026-0243.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0243.yml) |
+| `TTP-2026-0244` | Windows Endpoint: Abnormal Recurring Communications to Rare Domain | [sigma](sigma/TTP-2026-0244.yml), [xql](xql/TTP-2026-0244.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0244.yml) |
+| `TTP-2026-0245` | SMB Brute Force via WMI and PsExec to Multiple Hosts | [sigma](sigma/TTP-2026-0245.yml), [xql](xql/TTP-2026-0245.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0245.yml) |
+| `TTP-2026-0246` | SMB Scanning with Net.exe to Multiple Hosts | [sigma](sigma/TTP-2026-0246.yml), [xql](xql/TTP-2026-0246.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0246.yml) |
+| `TTP-2026-0247` | Abnormal User Login to Domain Controller via Kerberoasting | [sigma](sigma/TTP-2026-0247.yml), [xql](xql/TTP-2026-0247.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0247.yml) |
+| `TTP-2026-0248` | Uncommon RDP Session from Managed Host | [sigma](sigma/TTP-2026-0248.yml), [xql](xql/TTP-2026-0248.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0248.yml) |
+| `TTP-2026-0249` | Uncommon RDP Session via mstsc and PowerShell | [sigma](sigma/TTP-2026-0249.yml), [xql](xql/TTP-2026-0249.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0249.yml) |
+| `TTP-2026-0250` | Unsigned Process Creates Scheduled Task and Performs Injection | [sigma](sigma/TTP-2026-0250.yml), [xql](xql/TTP-2026-0250.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0250.yml) |
+| `TTP-2026-0251` | Exploitation of Internal Firewall Vulnerability via PowerShell Command Execution | [sigma](sigma/TTP-2026-0251.yml), [xql](xql/TTP-2026-0251.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0251.yml) |
+| `TTP-2026-0252` | AppleScript Interpreter Dynamic Library Loaded into Process | [sigma](sigma/TTP-2026-0252.yml), [xql](xql/TTP-2026-0252.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0252.yml) |
+| `TTP-2026-0253` | AppleScript Process with Rare Command Line Execution | [sigma](sigma/TTP-2026-0253.yml), [xql](xql/TTP-2026-0253.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0253.yml) |
+| `TTP-2026-0254` | Remote Command Execution via PsExec | [sigma](sigma/TTP-2026-0254.yml), [xql](xql/TTP-2026-0254.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0254.yml) |
+| `TTP-2026-0255` | Cached Credentials Discovery via cmdkey | [sigma](sigma/TTP-2026-0255.yml), [xql](xql/TTP-2026-0255.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0255.yml) |
+| `TTP-2026-0256` | IMDS Access Followed by Token Usage | [sigma](sigma/TTP-2026-0256.yml), [xql](xql/TTP-2026-0256.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0256.yml) |
+| `TTP-2026-0257` | Masquerading as Common Software with Suspicious Process Creation | [sigma](sigma/TTP-2026-0257.yml), [xql](xql/TTP-2026-0257.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0257.yml) |
+| `TTP-2026-0258` | Abusing WMI for Persistence via System Service | [sigma](sigma/TTP-2026-0258.yml), [xql](xql/TTP-2026-0258.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0258.yml) |
+| `TTP-2026-0259` | Conhost Spawning Suspicious Cmd Process | [sigma](sigma/TTP-2026-0259.yml), [xql](xql/TTP-2026-0259.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0259.yml) |
+| `TTP-2026-0260` | GitHub-based Command and Control with Rare URL Containment | [sigma](sigma/TTP-2026-0260.yml), [xql](xql/TTP-2026-0260.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0260.yml) |
+| `TTP-2026-0261` | WMIC User Discovery and Lateral Movement | [sigma](sigma/TTP-2026-0261.yml), [xql](xql/TTP-2026-0261.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0261.yml) |
+| `TTP-2026-0262` | Use of certutil to Decode and Execute Encoded Payload | [sigma](sigma/TTP-2026-0262.yml), [xql](xql/TTP-2026-0262.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0262.yml) |
+| `TTP-2026-0263` | Execution of Uncommon Process at Early Startup Stage | [sigma](sigma/TTP-2026-0263.yml), [xql](xql/TTP-2026-0263.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0263.yml) |
+| `TTP-2026-0264` | Persistence via WMI Event Consumer with mshta at Startup | [sigma](sigma/TTP-2026-0264.yml), [xql](xql/TTP-2026-0264.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0264.yml) |
+| `TTP-2026-0265` | Execution of Uncommon Process with User SID at Early Startup | [sigma](sigma/TTP-2026-0265.yml), [xql](xql/TTP-2026-0265.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0265.yml) |
+| `TTP-2026-0266` | Uncommon Process Execution by System Binary at Startup | [sigma](sigma/TTP-2026-0266.yml), [xql](xql/TTP-2026-0266.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0266.yml) |
+| `TTP-2026-0267` | Windows Endpoint Command Execution via Kubelet Credentials in Pod | [sigma](sigma/TTP-2026-0267.yml), [xql](xql/TTP-2026-0267.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0267.yml) |
+| `TTP-2026-0268` | DLLHost Execution with Empty Command Line | [sigma](sigma/TTP-2026-0268.yml), [xql](xql/TTP-2026-0268.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0268.yml) |
+| `TTP-2026-0269` | Masqueraded PowerShell Execution via WMI | [sigma](sigma/TTP-2026-0269.yml), [xql](xql/TTP-2026-0269.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0269.yml) |
+| `TTP-2026-0270` | Credential Extraction from Unix Files via Linux Shell | [sigma](sigma/TTP-2026-0270.yml), [xql](xql/TTP-2026-0270.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0270.yml) |
+| `TTP-2026-0271` | Fodhelper.exe UAC Bypass via Registry Modification | [sigma](sigma/TTP-2026-0271.yml), [xql](xql/TTP-2026-0271.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0271.yml) |
+| `TTP-2026-0272` | High Entropy Module Load via PowerShell with C2 Communication | [sigma](sigma/TTP-2026-0272.yml), [xql](xql/TTP-2026-0272.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0272.yml) |
+| `TTP-2026-0273` | High Entropy Process Execution via PowerShell | [sigma](sigma/TTP-2026-0273.yml), [xql](xql/TTP-2026-0273.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0273.yml) |
+| `TTP-2026-0274` | Signed Process Image Load with Uncommon Execution Path | [sigma](sigma/TTP-2026-0274.yml), [xql](xql/TTP-2026-0274.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0274.yml) |
+| `TTP-2026-0275` | Signed Process Injection via PowerShell | [sigma](sigma/TTP-2026-0275.yml), [xql](xql/TTP-2026-0275.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0275.yml) |
+| `TTP-2026-0276` | Suspicious Network Activity from Common Process Using Uncommon IP | [sigma](sigma/TTP-2026-0276.yml), [xql](xql/TTP-2026-0276.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0276.yml) |
+| `TTP-2026-0277` | Signed Process Connecting to Uncommon External IP | [sigma](sigma/TTP-2026-0277.yml), [xql](xql/TTP-2026-0277.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0277.yml) |
+| `TTP-2026-0278` | Signed Process Using Uncommon Root Domain for C2 | [sigma](sigma/TTP-2026-0278.yml), [xql](xql/TTP-2026-0278.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0278.yml) |
+| `TTP-2026-0279` | Uncommon Root-Domain Port Combination by Common Process | [sigma](sigma/TTP-2026-0279.yml), [xql](xql/TTP-2026-0279.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0279.yml) |
+| `TTP-2026-0280` | Signed Process Exploiting Uncommon Root-Domain Port Combination | [sigma](sigma/TTP-2026-0280.yml), [xql](xql/TTP-2026-0280.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0280.yml) |
+| `TTP-2026-0281` | Suspicious HTTP Request with Encoded Command Execution | [sigma](sigma/TTP-2026-0281.yml), [xql](xql/TTP-2026-0281.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0281.yml) |
+| `TTP-2026-0282` | Process Injection via rundll32.exe | [sigma](sigma/TTP-2026-0282.yml), [xql](xql/TTP-2026-0282.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0282.yml) |
+| `TTP-2026-0283` | Windows Service Installation via sc.exe | [sigma](sigma/TTP-2026-0283.yml), [xql](xql/TTP-2026-0283.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0283.yml) |
+| `TTP-2026-0284` | Interactive Login by Service Account | [sigma](sigma/TTP-2026-0284.yml), [xql](xql/TTP-2026-0284.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0284.yml) |
+| `TTP-2026-0285` | JavaScript Runtime Reading Git Authentication Tokens | [sigma](sigma/TTP-2026-0285.yml), [xql](xql/TTP-2026-0285.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0285.yml) |
+| `TTP-2026-0286` | Kerberos Pre-Auth Failures via AS-REP Roasting | [sigma](sigma/TTP-2026-0286.yml), [xql](xql/TTP-2026-0286.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0286.yml) |
+| `TTP-2026-0287` | Kerberos Pre-Auth Failures via Password Spraying | [sigma](sigma/TTP-2026-0287.yml), [xql](xql/TTP-2026-0287.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0287.yml) |
+| `TTP-2026-0288` | Kerberos Traffic from Non-Standard Process | [sigma](sigma/TTP-2026-0288.yml), [xql](xql/TTP-2026-0288.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0288.yml) |
+| `TTP-2026-0289` | Kerberos User Enumeration via AS-REQ Requests | [sigma](sigma/TTP-2026-0289.yml), [xql](xql/TTP-2026-0289.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0289.yml) |
+| `TTP-2026-0290` | LDAP Traffic from Non-Standard Process | [sigma](sigma/TTP-2026-0290.yml), [xql](xql/TTP-2026-0290.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0290.yml) |
+| `TTP-2026-0291` | Windows Endpoint Mimicking Linux GitHub URL Execution | [sigma](sigma/TTP-2026-0291.yml), [xql](xql/TTP-2026-0291.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0291.yml) |
+| `TTP-2026-0292` | LOLBAS executable injects into another process | [sigma](sigma/TTP-2026-0292.yml), [xql](xql/TTP-2026-0292.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0292.yml) |
+| `TTP-2026-0293` | LOLBIN Process Execution with High Integrity Level | [sigma](sigma/TTP-2026-0293.yml), [xql](xql/TTP-2026-0293.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0293.yml) |
+| `TTP-2026-0294` | Netsh Helper DLL Registry Key Manipulation | [sigma](sigma/TTP-2026-0294.yml), [xql](xql/TTP-2026-0294.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0294.yml) |
+| `TTP-2026-0295` | Massive Upload to Rare Storage Domain | [sigma](sigma/TTP-2026-0295.yml), [xql](xql/TTP-2026-0295.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0295.yml) |
+| `TTP-2026-0296` | Memory Dumping via comsvcs.dll | [sigma](sigma/TTP-2026-0296.yml), [xql](xql/TTP-2026-0296.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0296.yml) |
+| `TTP-2026-0297` | Malicious HTML Application Execution via CMD/PowerShell | [sigma](sigma/TTP-2026-0297.yml), [xql](xql/TTP-2026-0297.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0297.yml) |
+| `TTP-2026-0298` | Office Process Injection via PowerShell | [sigma](sigma/TTP-2026-0298.yml), [xql](xql/TTP-2026-0298.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0298.yml) |
+| `TTP-2026-0299` | Office Process Spawning Suspicious One-Liner | [sigma](sigma/TTP-2026-0299.yml), [xql](xql/TTP-2026-0299.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0299.yml) |
+| `TTP-2026-0300` | Office Process Spawning Abused Child Process | [sigma](sigma/TTP-2026-0300.yml), [xql](xql/TTP-2026-0300.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0300.yml) |
+| `TTP-2026-0301` | Office Process Spawning Conhost via Macro Execution | [sigma](sigma/TTP-2026-0301.yml), [xql](xql/TTP-2026-0301.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0301.yml) |
+| `TTP-2026-0302` | Mimikatz Command-Line Execution with Credential Dumping | [sigma](sigma/TTP-2026-0302.yml), [xql](xql/TTP-2026-0302.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0302.yml) |
+| `TTP-2026-0303` | Mshta.exe with Suspicious Arguments Launch | [sigma](sigma/TTP-2026-0303.yml), [xql](xql/TTP-2026-0303.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0303.yml) |
+| `TTP-2026-0304` | Mshta.exe Spawned From Browser Process | [sigma](sigma/TTP-2026-0304.yml), [xql](xql/TTP-2026-0304.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0304.yml) |
+| `TTP-2026-0305` | Msiexec executing remote executable via UNC path | [sigma](sigma/TTP-2026-0305.yml), [xql](xql/TTP-2026-0305.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0305.yml) |
+| `TTP-2026-0306` | Windows EDR Mimicking Linux Discovery Commands via PowerShell | [sigma](sigma/TTP-2026-0306.yml), [xql](xql/TTP-2026-0306.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0306.yml) |
+| `TTP-2026-0307` | Multiple Discovery Commands on Windows Host by Same Process | [sigma](sigma/TTP-2026-0307.yml), [xql](xql/TTP-2026-0307.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0307.yml) |
+| `TTP-2026-0308` | Multiple Rare LOLBIN Process Executions by User | [sigma](sigma/TTP-2026-0308.yml), [xql](xql/TTP-2026-0308.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0308.yml) |
+| `TTP-2026-0309` | Rare Process Execution Chain via PowerShell and WMI | [sigma](sigma/TTP-2026-0309.yml), [xql](xql/TTP-2026-0309.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0309.yml) |
+| `TTP-2026-0310` | Kerberoasting with Rubeus to Request Weakly-Encrypted Tickets | [sigma](sigma/TTP-2026-0310.yml), [xql](xql/TTP-2026-0310.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0310.yml) |
+| `TTP-2026-0311` | NTLM Brute Force on Service Account | [sigma](sigma/TTP-2026-0311.yml), [xql](xql/TTP-2026-0311.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0311.yml) |
+| `TTP-2026-0312` | Office Process Spawning Suspicious Command-Line Arguments | [sigma](sigma/TTP-2026-0312.yml), [xql](xql/TTP-2026-0312.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0312.yml) |
+| `TTP-2026-0313` | Phantom DLL Loading via Process Hollowing | [sigma](sigma/TTP-2026-0313.yml), [xql](xql/TTP-2026-0313.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0313.yml) |
+| `TTP-2026-0314` | Unusual Ping Execution from Unsigned Parent Process | [sigma](sigma/TTP-2026-0314.yml), [xql](xql/TTP-2026-0314.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0314.yml) |
+| `TTP-2026-0315` | DLL Hijack into Microsoft Process via Malicious DLL Loading | [sigma](sigma/TTP-2026-0315.yml), [xql](xql/TTP-2026-0315.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0315.yml) |
+| `TTP-2026-0316` | DLL Search Order Hijacking via Malicious DLL Placement | [sigma](sigma/TTP-2026-0316.yml), [xql](xql/TTP-2026-0316.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0316.yml) |
+| `TTP-2026-0317` | RDP Brute-Force via Windows Command Line Tools | [sigma](sigma/TTP-2026-0317.yml), [xql](xql/TTP-2026-0317.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0317.yml) |
+| `TTP-2026-0318` | Kerberos Relay Attack via SMB and LSASS Dumping | [sigma](sigma/TTP-2026-0318.yml), [xql](xql/TTP-2026-0318.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0318.yml) |
+| `TTP-2026-0319` | Malicious .NET Compilation via Commonly Abused Process | [sigma](sigma/TTP-2026-0319.yml), [xql](xql/TTP-2026-0319.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0319.yml) |
+| `TTP-2026-0320` | Network Service Discovery via Command-Line Tools | [sigma](sigma/TTP-2026-0320.yml), [xql](xql/TTP-2026-0320.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0320.yml) |
+| `TTP-2026-0321` | RDP Session Hijacking via tscon.exe | [sigma](sigma/TTP-2026-0321.yml), [xql](xql/TTP-2026-0321.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0321.yml) |
+| `TTP-2026-0322` | NAA Account Credential Extraction via SCCM | [sigma](sigma/TTP-2026-0322.yml), [xql](xql/TTP-2026-0322.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0322.yml) |
+| `TTP-2026-0323` | PowerShell Download and Execute via Command Line | [sigma](sigma/TTP-2026-0323.yml), [xql](xql/TTP-2026-0323.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0323.yml) |
+| `TTP-2026-0324` | PowerShell Script Execution from Temporary Directory | [sigma](sigma/TTP-2026-0324.yml), [xql](xql/TTP-2026-0324.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0324.yml) |
+| `TTP-2026-0325` | PowerShell Suspicious Flags Execution | [sigma](sigma/TTP-2026-0325.yml), [xql](xql/TTP-2026-0325.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0325.yml) |
+| `TTP-2026-0326` | PsExec with Suspicious Command Line Execution | [sigma](sigma/TTP-2026-0326.yml), [xql](xql/TTP-2026-0326.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0326.yml) |
+| `TTP-2026-0327` | Suspicious Access to Advertising Domains via PowerShell | [sigma](sigma/TTP-2026-0327.yml), [xql](xql/TTP-2026-0327.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0327.yml) |
+| `TTP-2026-0328` | Rare AppID usage to rare destination with PowerShell and C2 | [sigma](sigma/TTP-2026-0328.yml), [xql](xql/TTP-2026-0328.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0328.yml) |
+| `TTP-2026-0329` | Rare Binary Connecting to Rare Cloud Resource | [sigma](sigma/TTP-2026-0329.yml), [xql](xql/TTP-2026-0329.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0329.yml) |
+| `TTP-2026-0330` | Rare Binary Connecting to Rare External Host | [sigma](sigma/TTP-2026-0330.yml), [xql](xql/TTP-2026-0330.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0330.yml) |
+| `TTP-2026-0331` | Unsigned Process Communicating Over Email Ports to External Server | [sigma](sigma/TTP-2026-0331.yml), [xql](xql/TTP-2026-0331.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0331.yml) |
+| `TTP-2026-0332` | SMB File Transfer via PsExec with Remote Execution | [sigma](sigma/TTP-2026-0332.yml), [xql](xql/TTP-2026-0332.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0332.yml) |
+| `TTP-2026-0333` | Rare LOLBIN Process Execution by User | [sigma](sigma/TTP-2026-0333.yml), [xql](xql/TTP-2026-0333.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0333.yml) |
+| `TTP-2026-0334` | Windows Update Traffic Over HTTP | [sigma](sigma/TTP-2026-0334.yml), [xql](xql/TTP-2026-0334.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0334.yml) |
+| `TTP-2026-0335` | NTLM Relay Attack via SMB Client | [sigma](sigma/TTP-2026-0335.yml), [xql](xql/TTP-2026-0335.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0335.yml) |
+| `TTP-2026-0336` | Rare NTLM Usage by User - Lateral Movement via SMB | [sigma](sigma/TTP-2026-0336.yml), [xql](xql/TTP-2026-0336.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0336.yml) |
+| `TTP-2026-0337` | AppleScript Execution of Suspicious Process | [sigma](sigma/TTP-2026-0337.yml), [xql](xql/TTP-2026-0337.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0337.yml) |
+| `TTP-2026-0338` | Rare Process Execution by User - Suspicious PowerShell Usage | [sigma](sigma/TTP-2026-0338.yml), [xql](xql/TTP-2026-0338.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0338.yml) |
+| `TTP-2026-0339` | Rare Process Execution via WMI and PowerShell in Organization | [sigma](sigma/TTP-2026-0339.yml), [xql](xql/TTP-2026-0339.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0339.yml) |
+| `TTP-2026-0340` | Rare Process Spawned by srvany.exe | [sigma](sigma/TTP-2026-0340.yml), [xql](xql/TTP-2026-0340.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0340.yml) |
+| `TTP-2026-0341` | VNC Server Execution via PowerShell with Remote Access | [sigma](sigma/TTP-2026-0341.yml), [xql](xql/TTP-2026-0341.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0341.yml) |
+| `TTP-2026-0342` | RDP Session to Remote Host with Credential Theft | [sigma](sigma/TTP-2026-0342.yml), [xql](xql/TTP-2026-0342.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0342.yml) |
+| `TTP-2026-0343` | Execution of Signed Malware via Trusted Security Product | [sigma](sigma/TTP-2026-0343.yml), [xql](xql/TTP-2026-0343.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0343.yml) |
+| `TTP-2026-0344` | Signed Executable Delivery and Execution via PowerShell | [sigma](sigma/TTP-2026-0344.yml), [xql](xql/TTP-2026-0344.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0344.yml) |
+| `TTP-2026-0345` | SMB Session to Remote Host via PsExec | [sigma](sigma/TTP-2026-0345.yml), [xql](xql/TTP-2026-0345.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0345.yml) |
+| `TTP-2026-0346` | Rare SMTP/S Session via Windows PowerShell | [sigma](sigma/TTP-2026-0346.yml), [xql](xql/TTP-2026-0346.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0346.yml) |
+| `TTP-2026-0347` | Windows Attack Using Rare Process Behavior to Divide Files by Size | [sigma](sigma/TTP-2026-0347.yml), [xql](xql/TTP-2026-0347.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0347.yml) |
+| `TTP-2026-0348` | Unsigned Process Execution via Scheduled Task | [sigma](sigma/TTP-2026-0348.yml), [xql](xql/TTP-2026-0348.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0348.yml) |
+| `TTP-2026-0349` | Unsigned Process Spawned by Office Under Suspicious Directory | [sigma](sigma/TTP-2026-0349.yml), [xql](xql/TTP-2026-0349.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0349.yml) |
+| `TTP-2026-0350` | WinRM Remote Management Activity with PowerShell | [sigma](sigma/TTP-2026-0350.yml), [xql](xql/TTP-2026-0350.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0350.yml) |
+| `TTP-2026-0351` | WinRM Session via PowerShell with C2 Communication | [sigma](sigma/TTP-2026-0351.yml), [xql](xql/TTP-2026-0351.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0351.yml) |
+| `TTP-2026-0352` | RDP Connection to Localhost with Remote Command Execution | [sigma](sigma/TTP-2026-0352.yml), [xql](xql/TTP-2026-0352.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0352.yml) |
+| `TTP-2026-0353` | RDP from Unmanaged Endpoint in Managed Subnet | [sigma](sigma/TTP-2026-0353.yml), [xql](xql/TTP-2026-0353.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0353.yml) |
+| `TTP-2026-0354` | Recurring DNS queries to rare domain for C2 communication | [sigma](sigma/TTP-2026-0354.yml), [xql](xql/TTP-2026-0354.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0354.yml) |
+| `TTP-2026-0355` | Recurring Access to Rare IP via PowerShell Download and Execution | [sigma](sigma/TTP-2026-0355.yml), [xql](xql/TTP-2026-0355.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0355.yml) |
+| `TTP-2026-0356` | Unsigned Process Accessing Rare Domains | [sigma](sigma/TTP-2026-0356.yml), [xql](xql/TTP-2026-0356.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0356.yml) |
+| `TTP-2026-0357` | Dynamic DNS Domain Access via PowerShell | [sigma](sigma/TTP-2026-0357.yml), [xql](xql/TTP-2026-0357.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0357.yml) |
+| `TTP-2026-0358` | Uncommon .NET Service Registration via Regsvcs.exe | [sigma](sigma/TTP-2026-0358.yml), [xql](xql/TTP-2026-0358.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0358.yml) |
+| `TTP-2026-0359` | Registry Credentials Extraction via Reg.exe | [sigma](sigma/TTP-2026-0359.yml), [xql](xql/TTP-2026-0359.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0359.yml) |
+| `TTP-2026-0360` | Remote Command Execution via WMIC.exe | [sigma](sigma/TTP-2026-0360.yml), [xql](xql/TTP-2026-0360.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0360.yml) |
+| `TTP-2026-0361` | Remote PsExec-like command execution via SMB | [sigma](sigma/TTP-2026-0361.yml), [xql](xql/TTP-2026-0361.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0361.yml) |
+| `TTP-2026-0362` | Remote service command execution from uncommon source | [sigma](sigma/TTP-2026-0362.yml), [xql](xql/TTP-2026-0362.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0362.yml) |
+| `TTP-2026-0363` | Uncommon Remote Service Start via WMI | [sigma](sigma/TTP-2026-0363.yml), [xql](xql/TTP-2026-0363.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0363.yml) |
+| `TTP-2026-0364` | Remote WMI Process Execution via PowerShell | [sigma](sigma/TTP-2026-0364.yml), [xql](xql/TTP-2026-0364.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0364.yml) |
+| `TTP-2026-0365` | Kubelet Credential Retrieval via Windows PowerShell | [sigma](sigma/TTP-2026-0365.yml), [xql](xql/TTP-2026-0365.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0365.yml) |
+| `TTP-2026-0366` | Rundll32 Executes Rare Unsigned Module | [sigma](sigma/TTP-2026-0366.yml), [xql](xql/TTP-2026-0366.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0366.yml) |
+| `TTP-2026-0367` | Rundll32.exe with No Command-Line Arguments | [sigma](sigma/TTP-2026-0367.yml), [xql](xql/TTP-2026-0367.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0367.yml) |
+| `TTP-2026-0368` | Rundll32.exe spawns conhost.exe via malicious DLL | [sigma](sigma/TTP-2026-0368.yml), [xql](xql/TTP-2026-0368.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0368.yml) |
+| `TTP-2026-0369` | Scrcons.exe Rare Child Process Behavior | [sigma](sigma/TTP-2026-0369.yml), [xql](xql/TTP-2026-0369.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0369.yml) |
+| `TTP-2026-0370` | Screensaver Execution from Temporary Directory | [sigma](sigma/TTP-2026-0370.yml), [xql](xql/TTP-2026-0370.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0370.yml) |
+| `TTP-2026-0371` | Persistence via Startup Registry Key Modification | [sigma](sigma/TTP-2026-0371.yml), [xql](xql/TTP-2026-0371.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0371.yml) |
+| `TTP-2026-0372` | PowerShell Scripting Engine Connecting to Rare External Host | [sigma](sigma/TTP-2026-0372.yml), [xql](xql/TTP-2026-0372.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0372.yml) |
+| `TTP-2026-0373` | Service Execution via sc.exe | [sigma](sigma/TTP-2026-0373.yml), [xql](xql/TTP-2026-0373.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0373.yml) |
+| `TTP-2026-0374` | Signed Process Creates Scheduled Task via File Access | [sigma](sigma/TTP-2026-0374.yml), [xql](xql/TTP-2026-0374.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0374.yml) |
+| `TTP-2026-0375` | Signed Process DLL Injection via Rundll32 | [sigma](sigma/TTP-2026-0375.yml), [xql](xql/TTP-2026-0375.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0375.yml) |
+| `TTP-2026-0376` | Signed Process Performing Unpopular Injection | [sigma](sigma/TTP-2026-0376.yml), [xql](xql/TTP-2026-0376.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0376.yml) |
+| `TTP-2026-0377` | SMB Traffic from Non-Standard Process | [sigma](sigma/TTP-2026-0377.yml), [xql](xql/TTP-2026-0377.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0377.yml) |
+| `TTP-2026-0378` | CredWiz.exe Usage for Credential Export | [sigma](sigma/TTP-2026-0378.yml), [xql](xql/TTP-2026-0378.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0378.yml) |
+| `TTP-2026-0379` | MSBuild DLL Loading via Suspicious .NET Process | [sigma](sigma/TTP-2026-0379.yml), [xql](xql/TTP-2026-0379.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0379.yml) |
+| `TTP-2026-0380` | Suspicious Authentication Package Registration via Regsvr32 | [sigma](sigma/TTP-2026-0380.yml), [xql](xql/TTP-2026-0380.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0380.yml) |
+| `TTP-2026-0381` | Suspicious Certutil AD CS Contact | [sigma](sigma/TTP-2026-0381.yml), [xql](xql/TTP-2026-0381.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0381.yml) |
+| `TTP-2026-0382` | Suspicious certutil usage for C2 communication | [sigma](sigma/TTP-2026-0382.yml), [xql](xql/TTP-2026-0382.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0382.yml) |
+| `TTP-2026-0383` | Windows Endpoint: Suspicious Data Encryption via Ransomware-like Activity | [sigma](sigma/TTP-2026-0383.yml), [xql](xql/TTP-2026-0383.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0383.yml) |
+| `TTP-2026-0384` | Disable Windows Firewall via netsh | [sigma](sigma/TTP-2026-0384.yml), [xql](xql/TTP-2026-0384.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0384.yml) |
+| `TTP-2026-0385` | Suspicious DNS Query for C2 Communication | [sigma](sigma/TTP-2026-0385.yml), [xql](xql/TTP-2026-0385.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0385.yml) |
+| `TTP-2026-0386` | Suspicious Docker Image Download from Unusual Repository | [sigma](sigma/TTP-2026-0386.yml), [xql](xql/TTP-2026-0386.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0386.yml) |
+| `TTP-2026-0387` | External RDP Login with Credential Harvesting | [sigma](sigma/TTP-2026-0387.yml), [xql](xql/TTP-2026-0387.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0387.yml) |
+| `TTP-2026-0388` | Spring4Shell Exploitation via Malicious HTTP Request | [sigma](sigma/TTP-2026-0388.yml), [xql](xql/TTP-2026-0388.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0388.yml) |
+| `TTP-2026-0389` | Suspicious HTTP Parameters via PowerShell | [sigma](sigma/TTP-2026-0389.yml), [xql](xql/TTP-2026-0389.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0389.yml) |
+| `TTP-2026-0390` | ICMP-based Command and Control via Windows | [sigma](sigma/TTP-2026-0390.yml), [xql](xql/TTP-2026-0390.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0390.yml) |
+| `TTP-2026-0391` | Smurf Attack via ICMP Flooding | [sigma](sigma/TTP-2026-0391.yml), [xql](xql/TTP-2026-0391.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0391.yml) |
+| `TTP-2026-0392` | Direct Syscall Module Load via Reflective Injection | [sigma](sigma/TTP-2026-0392.yml), [xql](xql/TTP-2026-0392.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0392.yml) |
+| `TTP-2026-0393` | AWS SSM Agent Network Connection via PowerShell | [sigma](sigma/TTP-2026-0393.yml), [xql](xql/TTP-2026-0393.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0393.yml) |
+| `TTP-2026-0394` | NTLM Authentication with Machine Account | [sigma](sigma/TTP-2026-0394.yml), [xql](xql/TTP-2026-0394.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0394.yml) |
+| `TTP-2026-0395` | Suspicious PowerShell Command Line Execution | [sigma](sigma/TTP-2026-0395.yml), [xql](xql/TTP-2026-0395.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0395.yml) |
+| `TTP-2026-0396` | PowerShell Process Enumeration via Get-Process | [sigma](sigma/TTP-2026-0396.yml), [xql](xql/TTP-2026-0396.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0396.yml) |
+| `TTP-2026-0397` | Suspicious Process Accessing Google Masquerade | [sigma](sigma/TTP-2026-0397.yml), [xql](xql/TTP-2026-0397.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0397.yml) |
+| `TTP-2026-0398` | High Integrity Process Execution via Task Scheduler | [sigma](sigma/TTP-2026-0398.yml), [xql](xql/TTP-2026-0398.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0398.yml) |
+| `TTP-2026-0399` | Execution of Malicious Payload from Temp Directory | [sigma](sigma/TTP-2026-0399.yml), [xql](xql/TTP-2026-0399.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0399.yml) |
+| `TTP-2026-0400` | PowerShell Module Loading via Suspicious Process | [sigma](sigma/TTP-2026-0400.yml), [xql](xql/TTP-2026-0400.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0400.yml) |
+| `TTP-2026-0401` | Malicious PowerShell Execution via Adobe Reader | [sigma](sigma/TTP-2026-0401.yml), [xql](xql/TTP-2026-0401.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0401.yml) |
+| `TTP-2026-0402` | Suspicious Process Spawned by wininit.exe | [sigma](sigma/TTP-2026-0402.yml), [xql](xql/TTP-2026-0402.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0402.yml) |
+| `TTP-2026-0403` | Proxy Environment Variable Manipulation for Lateral Movement | [sigma](sigma/TTP-2026-0403.yml), [xql](xql/TTP-2026-0403.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0403.yml) |
+| `TTP-2026-0404` | RunOnce Parent Process Attack | [sigma](sigma/TTP-2026-0404.yml), [xql](xql/TTP-2026-0404.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0404.yml) |
+| `TTP-2026-0405` | Suspicious RunOnce.exe Parent Process Behavior | [sigma](sigma/TTP-2026-0405.yml), [xql](xql/TTP-2026-0405.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0405.yml) |
+| `TTP-2026-0406` | Suspicious SearchProtocolHost.exe Parent Process Behavior | [sigma](sigma/TTP-2026-0406.yml), [xql](xql/TTP-2026-0406.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0406.yml) |
+| `TTP-2026-0407` | Suspicious setspn.exe Execution via PowerShell | [sigma](sigma/TTP-2026-0407.yml), [xql](xql/TTP-2026-0407.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0407.yml) |
+| `TTP-2026-0408` | Domain Controller SMB Connection via DCSync | [sigma](sigma/TTP-2026-0408.yml), [xql](xql/TTP-2026-0408.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0408.yml) |
+| `TTP-2026-0409` | RDP Connection to Localhost with Credential Harvesting | [sigma](sigma/TTP-2026-0409.yml), [xql](xql/TTP-2026-0409.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0409.yml) |
+| `TTP-2026-0410` | Windows Scheduled Task Execution via schtasks | [sigma](sigma/TTP-2026-0410.yml), [xql](xql/TTP-2026-0410.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0410.yml) |
+| `TTP-2026-0411` | Time Provider Registration via Registry Modification | [sigma](sigma/TTP-2026-0411.yml), [xql](xql/TTP-2026-0411.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0411.yml) |
+| `TTP-2026-0412` | FSRVP Protocol Usage for Lateral Movement | [sigma](sigma/TTP-2026-0412.yml), [xql](xql/TTP-2026-0412.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0412.yml) |
+| `TTP-2026-0413` | Svchost.exe loads rare unsigned module via DllLoad | [sigma](sigma/TTP-2026-0413.yml), [xql](xql/TTP-2026-0413.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0413.yml) |
+| `TTP-2026-0414` | AppleScript Obfuscation via Script Editor | [sigma](sigma/TTP-2026-0414.yml), [xql](xql/TTP-2026-0414.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0414.yml) |
+| `TTP-2026-0415` | Persistence via AppleScript Command Execution | [sigma](sigma/TTP-2026-0415.yml), [xql](xql/TTP-2026-0415.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0415.yml) |
+| `TTP-2026-0416` | AppleScript Credential Access via Command Line | [sigma](sigma/TTP-2026-0416.yml), [xql](xql/TTP-2026-0416.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0416.yml) |
+| `TTP-2026-0417` | AppleScript Cryptocurrency Wallet Access via Command Line | [sigma](sigma/TTP-2026-0417.yml), [xql](xql/TTP-2026-0417.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0417.yml) |
+| `TTP-2026-0418` | AppleScript Execution to Access Sensitive Application Data via Command Line | [sigma](sigma/TTP-2026-0418.yml), [xql](xql/TTP-2026-0418.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0418.yml) |
+| `TTP-2026-0419` | AppleScript Clipboard and Screenshot Capture via Command Line | [sigma](sigma/TTP-2026-0419.yml), [xql](xql/TTP-2026-0419.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0419.yml) |
+| `TTP-2026-0420` | Uncommon AppleScript Credential Grabbing via Script Editor | [sigma](sigma/TTP-2026-0420.yml), [xql](xql/TTP-2026-0420.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0420.yml) |
+| `TTP-2026-0421` | Uncommon AppleScript Execution via Command Line to External Server | [sigma](sigma/TTP-2026-0421.yml), [xql](xql/TTP-2026-0421.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0421.yml) |
+| `TTP-2026-0422` | AppleScript Defense-Evasion via Command Line | [sigma](sigma/TTP-2026-0422.yml), [xql](xql/TTP-2026-0422.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0422.yml) |
+| `TTP-2026-0423` | Uncommon AppleScript with Discovery Command via Command Line | [sigma](sigma/TTP-2026-0423.yml), [xql](xql/TTP-2026-0423.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0423.yml) |
+| `TTP-2026-0424` | Uncommon ARP Cache Listing via arp.exe | [sigma](sigma/TTP-2026-0424.yml), [xql](xql/TTP-2026-0424.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0424.yml) |
+| `TTP-2026-0425` | Clearing Shell History via Windows Command Prompt | [sigma](sigma/TTP-2026-0425.yml), [xql](xql/TTP-2026-0425.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0425.yml) |
+| `TTP-2026-0426` | Uncommon Cloud CLI Tool Usage via AWS CLI | [sigma](sigma/TTP-2026-0426.yml), [xql](xql/TTP-2026-0426.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0426.yml) |
+| `TTP-2026-0427` | Windows Endpoint - Uncommon Communication to Instant Messaging Server | [sigma](sigma/TTP-2026-0427.yml), [xql](xql/TTP-2026-0427.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0427.yml) |
+| `TTP-2026-0428` | DLL Sideloading from ISO via PowerShell | [sigma](sigma/TTP-2026-0428.yml), [xql](xql/TTP-2026-0428.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0428.yml) |
+| `TTP-2026-0429` | Uncommon DotNet Module Load via PowerShell with C2 Communication | [sigma](sigma/TTP-2026-0429.yml), [xql](xql/TTP-2026-0429.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0429.yml) |
+| `TTP-2026-0430` | Uncommon Driver Loaded via PowerShell and Sysinternals | [sigma](sigma/TTP-2026-0430.yml), [xql](xql/TTP-2026-0430.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0430.yml) |
+| `TTP-2026-0431` | Uncommon ODBCConf Execution for Lateral Movement | [sigma](sigma/TTP-2026-0431.yml), [xql](xql/TTP-2026-0431.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0431.yml) |
+| `TTP-2026-0432` | Uncommon IP Configuration via ipconfig.exe | [sigma](sigma/TTP-2026-0432.yml), [xql](xql/TTP-2026-0432.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0432.yml) |
+| `TTP-2026-0433` | Uncommon Kernel Module Load via insmod | [sigma](sigma/TTP-2026-0433.yml), [xql](xql/TTP-2026-0433.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0433.yml) |
+| `TTP-2026-0434` | Persistence via Registry Run Key Modification | [sigma](sigma/TTP-2026-0434.yml), [xql](xql/TTP-2026-0434.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0434.yml) |
+| `TTP-2026-0435` | Persistence via Registry Run Key Modification | [sigma](sigma/TTP-2026-0435.yml), [xql](xql/TTP-2026-0435.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0435.yml) |
+| `TTP-2026-0436` | Windows Endpoint Mimicking Linux C2 Communication | [sigma](sigma/TTP-2026-0436.yml), [xql](xql/TTP-2026-0436.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0436.yml) |
+| `TTP-2026-0437` | Windows EDR Simulation of Uncommon Linux Remote Shell Command Execution | [sigma](sigma/TTP-2026-0437.yml), [xql](xql/TTP-2026-0437.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0437.yml) |
+| `TTP-2026-0438` | Linux Shell Command Execution via Uncommon Interpreter | [sigma](sigma/TTP-2026-0438.yml), [xql](xql/TTP-2026-0438.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0438.yml) |
+| `TTP-2026-0439` | Uncommon Local Scheduled Task Creation via schtasks.exe | [sigma](sigma/TTP-2026-0439.yml), [xql](xql/TTP-2026-0439.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0439.yml) |
+| `TTP-2026-0440` | Persistence via Registry Run Key Modification | [sigma](sigma/TTP-2026-0440.yml), [xql](xql/TTP-2026-0440.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0440.yml) |
+| `TTP-2026-0441` | Windows PowerShell-based C2 Communication with Rare External Host | [sigma](sigma/TTP-2026-0441.yml), [xql](xql/TTP-2026-0441.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0441.yml) |
+| `TTP-2026-0442` | Windows Command Execution via PowerShell with C2 Communication | [sigma](sigma/TTP-2026-0442.yml), [xql](xql/TTP-2026-0442.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0442.yml) |
+| `TTP-2026-0443` | MOF Compiler Usage for Persistence | [sigma](sigma/TTP-2026-0443.yml), [xql](xql/TTP-2026-0443.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0443.yml) |
+| `TTP-2026-0444` | Remote MSI Execution via msiexec | [sigma](sigma/TTP-2026-0444.yml), [xql](xql/TTP-2026-0444.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0444.yml) |
+| `TTP-2026-0445` | Uncommon Net Group Command Execution via Windows Endpoint | [sigma](sigma/TTP-2026-0445.yml), [xql](xql/TTP-2026-0445.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0445.yml) |
+| `TTP-2026-0446` | Uncommon net localgroup command execution on Windows endpoint | [sigma](sigma/TTP-2026-0446.yml), [xql](xql/TTP-2026-0446.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0446.yml) |
+| `TTP-2026-0447` | Uncommon Network Connection via Newly Created Actor | [sigma](sigma/TTP-2026-0447.yml), [xql](xql/TTP-2026-0447.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0447.yml) |
+| `TTP-2026-0448` | Uncommon Network Connection from Untrusted Causality Actor | [sigma](sigma/TTP-2026-0448.yml), [xql](xql/TTP-2026-0448.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0448.yml) |
+| `TTP-2026-0449` | Node.js Package Communication to External Host | [sigma](sigma/TTP-2026-0449.yml), [xql](xql/TTP-2026-0449.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0449.yml) |
+| `TTP-2026-0450` | Uncommon RDP Connection via mstsc.exe | [sigma](sigma/TTP-2026-0450.yml), [xql](xql/TTP-2026-0450.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0450.yml) |
+| `TTP-2026-0451` | Uncommon Recurring Rare External Host Access via PowerShell | [sigma](sigma/TTP-2026-0451.yml), [xql](xql/TTP-2026-0451.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0451.yml) |
+| `TTP-2026-0452` | Uncommon Remote Monitoring Tool Execution via PowerShell | [sigma](sigma/TTP-2026-0452.yml), [xql](xql/TTP-2026-0452.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0452.yml) |
+| `TTP-2026-0453` | Uncommon Remote Scheduled Task Creation via Schtasks | [sigma](sigma/TTP-2026-0453.yml), [xql](xql/TTP-2026-0453.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0453.yml) |
+| `TTP-2026-0454` | Uncommon Remote Service Start via sc.exe | [sigma](sigma/TTP-2026-0454.yml), [xql](xql/TTP-2026-0454.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0454.yml) |
+| `TTP-2026-0455` | Uncommon Routing Table Listing via route.exe | [sigma](sigma/TTP-2026-0455.yml), [xql](xql/TTP-2026-0455.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0455.yml) |
+| `TTP-2026-0456` | Uncommon Service Creation via sc.exe for Persistence | [sigma](sigma/TTP-2026-0456.yml), [xql](xql/TTP-2026-0456.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0456.yml) |
+| `TTP-2026-0457` | Uncommon Service Stop Operation via sc.exe | [sigma](sigma/TTP-2026-0457.yml), [xql](xql/TTP-2026-0457.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0457.yml) |
+| `TTP-2026-0458` | Uncommon Signed Process Execution via Scheduled Task | [sigma](sigma/TTP-2026-0458.yml), [xql](xql/TTP-2026-0458.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0458.yml) |
+| `TTP-2026-0459` | Uncommon SQL-like Command Line Execution via PowerShell | [sigma](sigma/TTP-2026-0459.yml), [xql](xql/TTP-2026-0459.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0459.yml) |
+| `TTP-2026-0460` | Uncommon User Management via net command | [sigma](sigma/TTP-2026-0460.yml), [xql](xql/TTP-2026-0460.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0460.yml) |
+| `TTP-2026-0461` | Uncommon VNC Server Communication via Windows Endpoint | [sigma](sigma/TTP-2026-0461.yml), [xql](xql/TTP-2026-0461.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0461.yml) |
+| `TTP-2026-0462` | Uncommon WPAD Query Execution via PowerShell | [sigma](sigma/TTP-2026-0462.yml), [xql](xql/TTP-2026-0462.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0462.yml) |
+| `TTP-2026-0463` | Unpopular rsync Process Execution via Scheduled Task | [sigma](sigma/TTP-2026-0463.yml), [xql](xql/TTP-2026-0463.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0463.yml) |
+| `TTP-2026-0464` | Unprivileged Process Opens Registry Hive for Persistence | [sigma](sigma/TTP-2026-0464.yml), [xql](xql/TTP-2026-0464.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0464.yml) |
+| `TTP-2026-0465` | Unsigned Unpopular Process Performs DLL Injection | [sigma](sigma/TTP-2026-0465.yml), [xql](xql/TTP-2026-0465.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0465.yml) |
+| `TTP-2026-0466` | Unsigned Process Injection via PowerShell | [sigma](sigma/TTP-2026-0466.yml), [xql](xql/TTP-2026-0466.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0466.yml) |
+| `TTP-2026-0467` | Unsigned DLL Hijack into Microsoft Process | [sigma](sigma/TTP-2026-0467.yml), [xql](xql/TTP-2026-0467.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0467.yml) |
+| `TTP-2026-0468` | Unsigned DLL Side-Loading via Malicious Process Execution | [sigma](sigma/TTP-2026-0468.yml), [xql](xql/TTP-2026-0468.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0468.yml) |
+| `TTP-2026-0469` | Unsigned Process Creates Scheduled Task via File Access | [sigma](sigma/TTP-2026-0469.yml), [xql](xql/TTP-2026-0469.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0469.yml) |
+| `TTP-2026-0470` | Unsigned Process Injecting into Windows System Binary | [sigma](sigma/TTP-2026-0470.yml), [xql](xql/TTP-2026-0470.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0470.yml) |
+| `TTP-2026-0471` | Unsigned Process from Temporary Directory | [sigma](sigma/TTP-2026-0471.yml), [xql](xql/TTP-2026-0471.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0471.yml) |
+| `TTP-2026-0472` | Untrusted Process Contacting LLM API via PowerShell | [sigma](sigma/TTP-2026-0472.yml), [xql](xql/TTP-2026-0472.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0472.yml) |
+| `TTP-2026-0473` | Unusual ADFS Remote Synchronization from Non-ADFS Server | [sigma](sigma/TTP-2026-0473.yml), [xql](xql/TTP-2026-0473.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0473.yml) |
+| `TTP-2026-0474` | Unusual AWS Credentials Creation via PowerShell | [sigma](sigma/TTP-2026-0474.yml), [xql](xql/TTP-2026-0474.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0474.yml) |
+| `TTP-2026-0475` | Unusual AWS User Added to Group via CLI | [sigma](sigma/TTP-2026-0475.yml), [xql](xql/TTP-2026-0475.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0475.yml) |
+| `TTP-2026-0476` | Azure AD Sync Module Load via Suspicious Process Injection | [sigma](sigma/TTP-2026-0476.yml), [xql](xql/TTP-2026-0476.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0476.yml) |
+| `TTP-2026-0477` | Unusual IMDS Access via PowerShell | [sigma](sigma/TTP-2026-0477.yml), [xql](xql/TTP-2026-0477.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0477.yml) |
+| `TTP-2026-0478` | Password-Protected Archive with Unusual Compression Pattern | [sigma](sigma/TTP-2026-0478.yml), [xql](xql/TTP-2026-0478.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0478.yml) |
+| `TTP-2026-0479` | Unusual DB Process Spawning a Shell | [sigma](sigma/TTP-2026-0479.yml), [xql](xql/TTP-2026-0479.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0479.yml) |
+| `TTP-2026-0480` | Unusual Internal Access to Network Device Management Interface | [sigma](sigma/TTP-2026-0480.yml), [xql](xql/TTP-2026-0480.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0480.yml) |
+| `TTP-2026-0481` | Kubernetes Pod Exfiltrates Data via wget to C2 | [sigma](sigma/TTP-2026-0481.yml), [xql](xql/TTP-2026-0481.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0481.yml) |
+| `TTP-2026-0482` | InstallUtil.exe Spawning Unusual Lolbins for Execution | [sigma](sigma/TTP-2026-0482.yml), [xql](xql/TTP-2026-0482.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0482.yml) |
+| `TTP-2026-0483` | PowerShell History File Access via Unusual Process | [sigma](sigma/TTP-2026-0483.yml), [xql](xql/TTP-2026-0483.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0483.yml) |
+| `TTP-2026-0484` | Unusual Process Execution via AWS Systems Manager | [sigma](sigma/TTP-2026-0484.yml), [xql](xql/TTP-2026-0484.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0484.yml) |
+| `TTP-2026-0485` | Nginx Pod Command Execution via Malicious Script | [sigma](sigma/TTP-2026-0485.yml), [xql](xql/TTP-2026-0485.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0485.yml) |
+| `TTP-2026-0486` | Weak Authentication via PowerShell with Credential Dumping | [sigma](sigma/TTP-2026-0486.yml), [xql](xql/TTP-2026-0486.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0486.yml) |
+| `TTP-2026-0487` | Weakly-Encrypted Kerberos TGT Response Attack | [sigma](sigma/TTP-2026-0487.yml), [xql](xql/TTP-2026-0487.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0487.yml) |
+| `TTP-2026-0488` | Kerberos Ticket Request with Weak Encryption | [sigma](sigma/TTP-2026-0488.yml), [xql](xql/TTP-2026-0488.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0488.yml) |
+| `TTP-2026-0489` | Web Server CGO Executes Uncommon Process via PowerShell | [sigma](sigma/TTP-2026-0489.yml), [xql](xql/TTP-2026-0489.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0489.yml) |
+| `TTP-2026-0490` | Windows CGO with Anomalous Actor Process Behavior | [sigma](sigma/TTP-2026-0490.yml), [xql](xql/TTP-2026-0490.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0490.yml) |
+| `TTP-2026-0491` | Windows LOLBIN connected to rare external host | [sigma](sigma/TTP-2026-0491.yml), [xql](xql/TTP-2026-0491.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0491.yml) |
+| `TTP-2026-0492` | WMI Execution via WmiPrvSe.exe with Rare Child Command Line | [sigma](sigma/TTP-2026-0492.yml), [xql](xql/TTP-2026-0492.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0492.yml) |
+| `TTP-2026-0493` | Wscript/Cscript loads .NET DLLs via PowerShell | [sigma](sigma/TTP-2026-0493.yml), [xql](xql/TTP-2026-0493.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0493.yml) |
+| `TTP-2026-0494` | Wsmprovhost.exe Rare Child Process Attack Chain | [sigma](sigma/TTP-2026-0494.yml), [xql](xql/TTP-2026-0494.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0494.yml) |
+| `TTP-2026-0495` | SSH Server Cloning with Shared Host Key | [sigma](sigma/TTP-2026-0495.yml), [xql](xql/TTP-2026-0495.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0495.yml) |
+| `TTP-2026-0496` | SSH Tunneling to Cloud Resource via Rare Process | [sigma](sigma/TTP-2026-0496.yml), [xql](xql/TTP-2026-0496.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0496.yml) |
+| `TTP-2026-0497` | Unusual SSH Tunneling to External Host | [sigma](sigma/TTP-2026-0497.yml), [xql](xql/TTP-2026-0497.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0497.yml) |
+| `TTP-2026-0498` | Rare SSH Session with C2 Communication | [sigma](sigma/TTP-2026-0498.yml), [xql](xql/TTP-2026-0498.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0498.yml) |
+| `TTP-2026-0499` | SSH Brute Force Attack via Hydra | [sigma](sigma/TTP-2026-0499.yml), [xql](xql/TTP-2026-0499.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0499.yml) |
+| `TTP-2026-0500` | Sudoedit Brute Force Attack via Automated Script | [sigma](sigma/TTP-2026-0500.yml), [xql](xql/TTP-2026-0500.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0500.yml) |
+| `TTP-2026-0501` | Suspicious Container Orchestration Job Execution | [sigma](sigma/TTP-2026-0501.yml), [xql](xql/TTP-2026-0501.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0501.yml) |
+| `TTP-2026-0502` | Kubernetes Pod Reconnaissance for Container Enumeration | [sigma](sigma/TTP-2026-0502.yml), [xql](xql/TTP-2026-0502.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0502.yml) |
+| `TTP-2026-0503` | Kubernetes Pod Container Runtime Connection via Local Socket | [sigma](sigma/TTP-2026-0503.yml), [xql](xql/TTP-2026-0503.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0503.yml) |
+| `TTP-2026-0504` | Suspicious sshpass Usage for Credential Theft | [sigma](sigma/TTP-2026-0504.yml), [xql](xql/TTP-2026-0504.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0504.yml) |
+| `TTP-2026-0505` | Uncommon Reverse SSH Tunnel to External IP | [sigma](sigma/TTP-2026-0505.yml), [xql](xql/TTP-2026-0505.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0505.yml) |
+| `TTP-2026-0506` | Uncommon SSH Session with Malware Delivery | [sigma](sigma/TTP-2026-0506.yml), [xql](xql/TTP-2026-0506.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0506.yml) |
+| `TTP-2026-0507` | Unusual SSH Activity via Automated Login and Command Execution | [sigma](sigma/TTP-2026-0507.yml), [xql](xql/TTP-2026-0507.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0507.yml) |
+| `TTP-2026-0508` | SSH Proxy Tunneling for Lateral Movement | [sigma](sigma/TTP-2026-0508.yml), [xql](xql/TTP-2026-0508.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0508.yml) |
+| `TTP-2026-0509` | SSH Brute Force on the Linux Syslog Auth Feed | [xql](xql/TTP-2026-0509.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0509.yml) |
+| `TTP-2026-0510` | Sudo Authentication Brute Force on the Linux Syslog Feed | [xql](xql/TTP-2026-0510.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0510.yml) |
+| `TTP-2026-0511` | Backdoor UID-0 Account Created on the Linux Syslog Feed | [xql](xql/TTP-2026-0511.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0511.yml) |
+| `TTP-2026-0512` | Cron Persistence on the Linux Syslog Feed | [xql](xql/TTP-2026-0512.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0512.yml) |
+| `TTP-2026-0513` | Service Account Escalating to Root via su on the Linux Syslog Feed | [xql](xql/TTP-2026-0513.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0513.yml) |
+| `TTP-2026-0514` | Setuid Rootshell Staged, Seen on the Linux Syslog Feed | [xql](xql/TTP-2026-0514.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0514.yml) |
+| `TTP-2026-0515` | Automated Linux Privilege Escalation via Staged Traitor Binary | [sigma](sigma/TTP-2026-0515.yml), [xql](xql/TTP-2026-0515.xql) |
+| `TTP-2026-0516` | Container Breakout Enumeration via Staged DEEPCE | [sigma](sigma/TTP-2026-0516.yml), [xql](xql/TTP-2026-0516.xql) |
+| `TTP-2026-0517` | Offensive Tooling: pspy (payload-shelf staged) | [sigma](sigma/TTP-2026-0517.yml), [xql](xql/TTP-2026-0517.xql) |
+| `TTP-2026-0518` | Offensive Tooling: suid3num (payload-shelf staged) | [sigma](sigma/TTP-2026-0518.yml), [xql](xql/TTP-2026-0518.xql) |
+| `TTP-2026-0519` | Offensive Tooling: amicontained (payload-shelf staged) | [sigma](sigma/TTP-2026-0519.yml), [xql](xql/TTP-2026-0519.xql) |
+| `TTP-2026-0520` | Offensive Tooling: lse (payload-shelf staged) | [sigma](sigma/TTP-2026-0520.yml), [xql](xql/TTP-2026-0520.xql) |
+| `TTP-2026-0521` | Offensive Tooling: linenum (payload-shelf staged) | [sigma](sigma/TTP-2026-0521.yml), [xql](xql/TTP-2026-0521.xql) |
+| `TTP-2026-0522` | Offensive Tooling: credking (adapter-deployed) | [sigma](sigma/TTP-2026-0522.yml), [xql](xql/TTP-2026-0522.xql) |
+| `TTP-2026-0523` | Offensive Tooling: impacket (adapter-deployed) | [sigma](sigma/TTP-2026-0523.yml), [xql](xql/TTP-2026-0523.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0523.yml) |
+| `TTP-2026-0524` | Offensive Tooling: mimikatz (adapter-deployed) | [sigma](sigma/TTP-2026-0524.yml), [xql](xql/TTP-2026-0524.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0524.yml) |
+| `TTP-2026-0525` | Offensive Tooling: pypykatz (adapter-deployed) | [sigma](sigma/TTP-2026-0525.yml), [xql](xql/TTP-2026-0525.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0525.yml) |
+| `TTP-2026-0526` | Offensive Tooling: netexec (adapter-deployed) | [sigma](sigma/TTP-2026-0526.yml), [xql](xql/TTP-2026-0526.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0526.yml) |
+| `TTP-2026-0527` | Offensive Tooling: evil-winrm (adapter-deployed) | [sigma](sigma/TTP-2026-0527.yml), [xql](xql/TTP-2026-0527.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0527.yml) |
+| `TTP-2026-0528` | Offensive Tooling: printspoofer (adapter-deployed) | [sigma](sigma/TTP-2026-0528.yml), [xql](xql/TTP-2026-0528.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0528.yml) |
+| `TTP-2026-0529` | Offensive Tooling: nmap (adapter-deployed) | [sigma](sigma/TTP-2026-0529.yml), [xql](xql/TTP-2026-0529.xql) |
+| `TTP-2026-0530` | Offensive Tooling: frp (adapter-deployed) | [sigma](sigma/TTP-2026-0530.yml), [xql](xql/TTP-2026-0530.xql) |
+| `TTP-2026-0531` | Offensive Tooling: sliver (adapter-deployed) | [sigma](sigma/TTP-2026-0531.yml), [xql](xql/TTP-2026-0531.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0531.yml) |
+| `TTP-2026-0532` | Offensive Tooling: havoc (adapter-deployed) | [sigma](sigma/TTP-2026-0532.yml), [xql](xql/TTP-2026-0532.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0532.yml) |
+| `TTP-2026-0533` | Offensive Tooling: empire (adapter-deployed) | [sigma](sigma/TTP-2026-0533.yml), [xql](xql/TTP-2026-0533.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0533.yml) |
+| `TTP-2026-0534` | Offensive Tooling: metasploit (adapter-deployed) | [sigma](sigma/TTP-2026-0534.yml), [xql](xql/TTP-2026-0534.xql) |
+| `TTP-2026-0535` | Offensive Tooling: starkiller (adapter-deployed) | [sigma](sigma/TTP-2026-0535.yml), [xql](xql/TTP-2026-0535.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0535.yml) |
+| `TTP-2026-0536` | Offensive Tooling: bloodhound (adapter-deployed) | [sigma](sigma/TTP-2026-0536.yml), [xql](xql/TTP-2026-0536.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0536.yml) |
+| `TTP-2026-0537` | Offensive Tooling: rubeus (adapter-deployed) | [sigma](sigma/TTP-2026-0537.yml), [xql](xql/TTP-2026-0537.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0537.yml) |
+| `TTP-2026-0538` | Offensive Tooling: bloodyad (adapter-deployed) | [sigma](sigma/TTP-2026-0538.yml), [xql](xql/TTP-2026-0538.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0538.yml) |
+| `TTP-2026-0539` | Offensive Tooling: krbrelayup (adapter-deployed) | [sigma](sigma/TTP-2026-0539.yml), [xql](xql/TTP-2026-0539.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0539.yml) |
+| `TTP-2026-0540` | Offensive Tooling: tokenvator (adapter-deployed) | [sigma](sigma/TTP-2026-0540.yml), [xql](xql/TTP-2026-0540.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0540.yml) |
+| `TTP-2026-0541` | Offensive Tooling: sqlmap (adapter-deployed) | [sigma](sigma/TTP-2026-0541.yml), [xql](xql/TTP-2026-0541.xql) |
+| `TTP-2026-0542` | Offensive Tooling: nuclei (adapter-deployed) | [sigma](sigma/TTP-2026-0542.yml), [xql](xql/TTP-2026-0542.xql) |
+| `TTP-2026-0543` | Offensive Tooling: ffuf (adapter-deployed) | [sigma](sigma/TTP-2026-0543.yml), [xql](xql/TTP-2026-0543.xql) |
+| `TTP-2026-0544` | Offensive Tooling: wpscan (adapter-deployed) | [sigma](sigma/TTP-2026-0544.yml), [xql](xql/TTP-2026-0544.xql) |
+| `TTP-2026-0545` | Offensive Tooling: commix (adapter-deployed) | [sigma](sigma/TTP-2026-0545.yml), [xql](xql/TTP-2026-0545.xql) |
+| `TTP-2026-0546` | Offensive Tooling: responder (adapter-deployed) | [sigma](sigma/TTP-2026-0546.yml), [xql](xql/TTP-2026-0546.xql) |
+| `TTP-2026-0547` | Offensive Tooling: smbmap (adapter-deployed) | [sigma](sigma/TTP-2026-0547.yml), [xql](xql/TTP-2026-0547.xql) |
+| `TTP-2026-0548` | Offensive Tooling: hashcat (adapter-deployed) | [sigma](sigma/TTP-2026-0548.yml), [xql](xql/TTP-2026-0548.xql) |
+| `TTP-2026-0549` | Offensive Tooling: theharvester (adapter-deployed) | [sigma](sigma/TTP-2026-0549.yml), [xql](xql/TTP-2026-0549.xql) |
 

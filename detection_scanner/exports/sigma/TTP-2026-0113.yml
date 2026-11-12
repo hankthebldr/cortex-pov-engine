@@ -1,5 +1,69 @@
+title: "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain \u2014 Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537) \u2014 Process Network Connection to Instance Metadata Service"
+id: ttp-2026-0113-bioc-01
+status: experimental
+description: |
+  Detection of a process connecting to the Google Cloud metadata service IP (169.254.169.254) to extract instance metadata token, indicative of SSRF attack.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = "169.254.169.254"
+    | filter actor_process_image_name in ("node", "python3", "curl")
+    | filter action_process_image_name in ("node", "python3", "curl")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1580/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1580
+    - attack.t1526
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain \u2014 Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537) \u2014 Suspicious Cloud API Enumeration Fan-out"
+id: ttp-2026-0113-bioc-02
+status: experimental
+description: |
+  Detection of a service account performing multiple distinct cloud API operations within a short time window, indicating cloud enumeration activity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.CLOUD
+    | filter action_file_path contains "gcloud" or action_file_path contains "google-cloud-sdk"
+    | filter actor_effective_username contains "service-account"
+    | filter causality_actor_process_image_name in ("python3", "node", "bash")
+    | comp by (actor_effective_username, causality_actor_process_image_name)
+    | comp count_distinct(action_file_path) as dc by agent_hostname
+    | filter dc >= 5 within 120s
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+    - attack.t1078
+    - attack.t1548
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain \u2014 Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537) \u2014 Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity"
-id: ttp-2026-0113-abioc-01
+id: ttp-2026-0113-abioc-03
 status: experimental
 description: |
   A newly-observed service-account identity (one with no operation history in the prior 24h — the token minted from the instance metadata service) performs an abnormally broad set of distinct high-risk GCP control-plane operations — infrastructure discovery, IAM enumeration, bucket creation, BigQuery export — within a sub-two-minute window. Known automation principals (terraform / cloudbuild / config-connector / deploymentmanager service accounts, which produce the same broad op-set on every IaC apply) are excluded, and the identity must be first-seen, so a normal Terraform/Config-Connector run does not fire. Every call is individually legitimate; the ABIOC anchors on the cadence-and-breadth deviation under one newly-derived identity, not on any single known-bad API. This is the core 'Zealot' signal: inter-stage latency and stage diversity under an identity that has no baseline history, not a signature.
@@ -41,7 +105,7 @@ falsepositives:
 level: high
 ---
 title: "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain \u2014 Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537) \u2014 Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft"
-id: ttp-2026-0113-abioc-02
+id: ttp-2026-0113-abioc-04
 status: experimental
 description: |
   The derived service-account identity grants roles/storage.objectAdmin to ITSELF (setIamPermissions / setIamPolicy where the added member equals the acting identity) — the exact work-around 'Zealot' used to defeat a BigQuery access denial by creating a bucket, self-granting object admin, exporting the table, and reading it back. The `granted_member = identity_name` predicate is the discriminator: a routine IaC-managed objectAdmin grant to a DIFFERENT principal (the normal google_storage_bucket_iam_member case) does not fire — only a true self-grant does. The ABIOC anchors the self-grant to the IMDS-minted identity's causality chain rather than to any single API, catching autonomous privilege escalation that a static rule keyed on a benign setIamPolicy would miss.
@@ -75,7 +139,7 @@ falsepositives:
 level: critical
 ---
 title: "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain \u2014 Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537) \u2014 SSRF-Driven Instance Metadata Token Theft from an Anomalous Workload Process"
-id: ttp-2026-0113-abioc-03
+id: ttp-2026-0113-abioc-05
 status: experimental
 description: |
   A workload process (node, python3, java, ruby, php-fpm, curl) on the exposed VM reaches the instance metadata service IP (169.254.169.254) for the FIRST time — the host's learned baseline shows no prior IMDS contact in the preceding day, then a sudden reach appears. The novelty gate (prior_imds_requests = 0 from the baseline join) is the discriminator: a GCP workload that routinely mints Application-Default-Credentials tokens has a non-zero IMDS baseline and does NOT fire, so the rule no longer alerts on the normal ADC credential flow — only on a first-ever metadata reach, the endpoint-side tell of the SSRF that 'Zealot' used to steal the attached service-account token. The deviation is anchored to the workload host+identity so the endpoint signal can be stitched to the cloud-plane stages that follow.

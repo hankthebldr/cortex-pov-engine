@@ -1,0 +1,57 @@
+title: "RDP Brute Force and Lateral Movement \u2014 Multiple RDP Connections to Different Hosts"
+id: ttp-2026-0242-bioc-01
+status: experimental
+description: |
+  Detection of multiple RDP connections to different hosts within a short time window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and action_remote_ip != null and dst_port = 3389
+    | comp count() as cnt by action_remote_ip
+    | comp count() as cnt by agent_hostname | filter count() > 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1110.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "RDP Brute Force and Lateral Movement \u2014 Abnormal RDP Connections to Multiple Hosts"
+id: ttp-2026-0242-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where RDP connections are made to multiple hosts in rapid succession, indicating lateral movement
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION and action_remote_ip != null and dst_port = 3389
+    | comp count() as cnt by action_remote_ip
+    | comp count() as cnt by agent_hostname | filter count() > 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1110.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

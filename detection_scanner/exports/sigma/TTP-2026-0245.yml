@@ -1,0 +1,63 @@
+title: "SMB Brute Force via WMI and PsExec to Multiple Hosts \u2014 Abnormal SMB activity to multiple hosts"
+id: ttp-2026-0245-bioc-01
+status: experimental
+description: |
+  Detection of multiple SMB connections to different hosts within a short time window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 445
+    | filter action_remote_ip in ('192.0.2.10', '192.0.2.11', '192.0.2.12')
+    | comp count() as cnt by action_remote_ip
+    | comp count() as cnt by agent_hostname > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1077
+    - attack.t1566
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "SMB Brute Force via WMI and PsExec to Multiple Hosts \u2014 Multiple SMB connections to different hosts"
+id: ttp-2026-0245-abioc-02
+status: experimental
+description: |
+  Behavioral deviation showing multiple distinct SMB connection attempts to different hosts in rapid succession
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_port = 445
+    | filter action_remote_ip in ('192.0.2.10', '192.0.2.11', '192.0.2.12')
+    | comp count() as cnt by agent_hostname, action_remote_ip
+    | comp count() as cnt by agent_hostname > 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1077
+    - attack.t1566
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

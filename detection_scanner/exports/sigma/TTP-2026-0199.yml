@@ -1,0 +1,59 @@
+title: "Uncommon DLL Side-Loaded into Microsoft Process via Search-Order Hijack \u2014 A rare DLL signed by an uncommon vendor was hijacked into a Microsoft process"
+id: ttp-2026-0199-bioc-01
+status: experimental
+description: |
+  Detection of a DLL with uncommon signing authority loaded into a Microsoft process via search-order hijack
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains 'Microsoft'
+    | filter action_file_path contains 'spool/drivers/color'
+    | filter action_file_path contains 'msvcr120.dll'
+    | filter action_file_path contains 'C:\\Windows\\System32\\spool\\drivers\\color\\msvcr120.dll'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon DLL Side-Loaded into Microsoft Process via Search-Order Hijack \u2014 A rare DLL signed by an uncommon vendor was hijacked into a Microsoft process"
+id: ttp-2026-0199-abioc-02
+status: experimental
+description: |
+  Machine learning model detecting unusual DLL loading behavior into Microsoft processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains 'Microsoft'
+    | filter action_file_path contains 'spool/drivers/color'
+    | filter action_file_path contains 'msvcr120.dll'
+    | filter action_file_path contains 'C:\\Windows\\System32\\spool\\drivers\\color\\msvcr120.dll'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

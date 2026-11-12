@@ -1,0 +1,87 @@
+title: "Exploitation of Internal Firewall Vulnerability via PowerShell Command Execution \u2014 Unusual PowerShell Execution with Bypass Flags"
+id: ttp-2026-0251-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell commands using -NoP, -NonI, -W Hidden, and -Exec Bypass flags
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains '-NoP' and action_process_command_line contains '-Exec Bypass'
+    | filter action_process_command_line contains '-W Hidden'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Exploitation of Internal Firewall Vulnerability via PowerShell Command Execution \u2014 WMI Remote Execution via PowerShell"
+id: ttp-2026-0251-bioc-02
+status: experimental
+description: |
+  PowerShell execution using WMI methods to perform remote command execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains 'Get-WmiObject' and action_process_command_line contains 'Win32_OperatingSystem'
+    | filter action_remote_ip in ['192.0.2.20']
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Exploitation of Internal Firewall Vulnerability via PowerShell Command Execution \u2014 Suspicious PowerShell Network Behavior"
+id: ttp-2026-0251-abioc-03
+status: experimental
+description: |
+  PowerShell processes initiating outbound connections to 192.0.2.0/24
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_remote_ip in ['192.0.2.10', '192.0.2.20', '192.0.2.30']
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

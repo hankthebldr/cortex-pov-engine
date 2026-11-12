@@ -1,0 +1,57 @@
+title: "Reading bash history to harvest credentials \u2014 Process Reading Bash History"
+id: ttp-2026-0214-bioc-01
+status: experimental
+description: |
+  Process accessing .bash_history file for credential harvesting
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS
+    | filter action_file_path = '/home/www-data/.bash_history'
+    | filter actor_process_image_name != 'bash'
+    | filter actor_process_image_name != 'sh'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Reading bash history to harvest credentials \u2014 Reading bash command history file"
+id: ttp-2026-0214-abioc-02
+status: experimental
+description: |
+  Detection of non-interactive process accessing .bash_history file
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE_ACCESS
+    | filter action_file_path = '/home/www-data/.bash_history'
+    | filter actor_process_image_name != 'bash'
+    | filter actor_process_image_name != 'sh'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

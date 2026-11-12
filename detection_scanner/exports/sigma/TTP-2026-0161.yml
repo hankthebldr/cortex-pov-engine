@@ -1,5 +1,67 @@
+title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 Azure Conditional Access Policy Modification via Python"
+id: ttp-2026-0161-bioc-01
+status: experimental
+description: |
+  Detection of python3 process executing with script path containing 'scripts.eal_simulator.cli' and argument 'run' targeting '/tmp/itdr-019.yml', indicative of Azure conditional access policy modification.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'python3'
+    | filter action_process_image_name = 'python3'
+    | filter action_file_path contains 'scripts.eal_simulator.cli'
+    | filter action_file_path contains 'itdr-019.yml'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556
+    - attack.t1114
+logsource:
+  product: azure
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 Creation of External Forwarding Inbox Rule via PowerShell"
+id: ttp-2026-0161-bioc-02
+status: experimental
+description: |
+  Detection of PowerShell process spawning with command line arguments indicating creation of an inbox rule with external ForwardTo or RedirectTo target.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_file_path contains 'New-InboxRule' or action_file_path contains 'Set-InboxRule'
+    | filter action_file_path contains 'ForwardTo' or action_file_path contains 'RedirectTo'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556
+    - attack.t1114
+logsource:
+  product: azure
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 Conditional-access policy weakened off the learned admin-change baseline"
-id: ttp-2026-0161-abioc-01
+id: ttp-2026-0161-abioc-03
 status: experimental
 description: |
   Auto-tuned ABIOC — an identity or service principal whose learned baseline is a low, stable cadence of conditional-access changes suddenly updates or deletes CA policies (relaxing MFA / device-compliance / location enforcement). Fires on the deviation from the per-actor CA-change baseline, anchored to the identity causality chain rather than any single known-bad operation.
@@ -32,7 +94,7 @@ falsepositives:
 level: high
 ---
 title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 External mailbox forwarding rule off the learned inbox-rule baseline"
-id: ttp-2026-0161-abioc-02
+id: ttp-2026-0161-abioc-04
 status: experimental
 description: |
   Auto-tuned ABIOC — a mailbox that has never (or rarely) created client-side inbox rules suddenly creates a New-InboxRule/Set-InboxRule (the external ForwardTo target is carried in the rule's Parameters array). Fires on the first-seen deviation from the per-mailbox inbox-rule baseline, part of the same persistence campaign as the preceding conditional-access weakening.

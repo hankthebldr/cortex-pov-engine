@@ -1,0 +1,60 @@
+title: "AppleScript Interpreter Dynamic Library Loaded into Process \u2014 AppleScript Interpreter Dynamic Library Loaded"
+id: ttp-2026-0252-bioc-01
+status: experimental
+description: |
+  Detection of dynamic library loading into osascript process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'osascript'
+    | filter action_process_image_name = 'osascript'
+    | filter action_file_path contains '.dylib'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1106
+    - attack.t1553.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AppleScript Interpreter Dynamic Library Loaded into Process \u2014 AppleScript Dynamic Library Loading Behavior"
+id: ttp-2026-0252-abioc-02
+status: experimental
+description: |
+  Detects when osascript loads a dynamic library, indicating potential code injection or malicious AppleScript execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'osascript'
+    | filter action_file_path contains '.dylib'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1106
+    - attack.t1553.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

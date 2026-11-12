@@ -1,0 +1,62 @@
+title: "Smurf Attack via ICMP Flooding \u2014 Suspicious ICMP Traffic"
+id: ttp-2026-0391-bioc-01
+status: experimental
+description: |
+  Detection of ICMP echo requests sent to broadcast address with large payload size
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.1'
+    | filter dst_port = 1
+    | filter action_protocol = ENUM.ICMP
+    | filter action_bytes > 1000
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1498/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1498
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Smurf Attack via ICMP Flooding \u2014 ICMP Broadcast Flooding"
+id: ttp-2026-0391-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when ICMP echo requests are sent to broadcast address with large payloads
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip like '255.255.255.255'
+    | filter action_protocol = ENUM.ICMP
+    | filter action_bytes > 1000
+    | filter action_process_image_name = 'ping.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1498/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1498
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,28 @@
+title: "AK47C2 Backdoor with X2ANYLOCK Ransomware Staging via DLL Side-Loading on Linux \u2014 DLL Side-Loading via LD_PRELOAD"
+id: ttp-2026-0187-bioc-01
+status: experimental
+description: |
+  Detection of process starting with LD_PRELOAD environment variable and loading of suspicious DLL
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter process_env_vars contains 'LD_PRELOAD'
+    | filter process_image_path contains 'python3'
+    | filter process_image_path contains 'libcurl.so'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

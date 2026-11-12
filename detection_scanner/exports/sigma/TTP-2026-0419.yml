@@ -1,0 +1,58 @@
+title: "AppleScript Clipboard and Screenshot Capture via Command Line \u2014 Uncommon AppleScript Execution via CLI"
+id: ttp-2026-0419-bioc-01
+status: experimental
+description: |
+  Detection of AppleScript execution initiated from command-line interface, which is unusual for typical user behavior.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'bash' and action_process_image_name = 'osascript'
+    | filter action_process_command_line contains 'osascript'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1113
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AppleScript Clipboard and Screenshot Capture via Command Line \u2014 Uncommon AppleScript Designed to Capture Screen or Clipboard Data"
+id: ttp-2026-0419-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when AppleScript is executed from command line to capture clipboard or screen data.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'bash' and action_process_image_name = 'osascript'
+    | filter action_process_command_line contains 'clipboard' or action_process_command_line contains 'screenshot'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1113
+    - attack.t1074
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

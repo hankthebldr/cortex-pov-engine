@@ -59,8 +59,14 @@ def test_the_corpus_is_the_expected_size(parsed):
 
     169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario.
     170 -> 177 on 2026-08-28: Cortex Data Security bundle (DDR & DLP scenarios).
+    177 -> 179 on 2026-10-06: Screening Serpens EDR (SIM-EDR-023) and Multi-Plane (SIM-MP-023).
+    179 -> 183 on 2026-11-11: Unit 42-seeded EDR malware scenarios SIM-EDR-024..027
+        (SysGoRAT, Squidoor, TinyRCT, AK47C2/X2ANYLOCK).
+    183 -> 184 on 2026-11-11: ESXi uncommon-command VMware-syslog analytics (SIM-CDR-029).
+    184 -> 185 on 2026-11-11: Outbound RDP traffic-level EAL (SIM-NDR-013, rdp_egress).
+    185 -> 193 on 2026-11-11: 8 Windows endpoint scenarios SIM-EDR-028..035 (UAC bypass,\n        Defender/AMSI tamper, process hollowing, inhibit-recovery, WMI persistence,\n        regsvr32 Squiblydoo, BITS jobs, browser credential theft).
     """
-    assert len(parsed) == 177
+    assert len(parsed) == 545
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

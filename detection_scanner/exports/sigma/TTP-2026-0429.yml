@@ -1,0 +1,61 @@
+title: "Uncommon DotNet Module Load via PowerShell with C2 Communication \u2014 Uncommon DotNet module load relationship"
+id: ttp-2026-0429-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell loading a .NET assembly from an uncommon or non-standard path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name contains '.NET'
+    | filter action_file_path not in ('C:\Windows\Microsoft.NET\', 'C:\Program Files\')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon DotNet Module Load via PowerShell with C2 Communication \u2014 PowerShell load of .NET module with C2"
+id: ttp-2026-0429-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where PowerShell loads a .NET module and initiates C2 communication
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_file_path contains '.NET'
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 8080
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,61 @@
+title: "Unsigned Unpopular Process Performs DLL Injection \u2014 Unsigned and Unpopular Process DLL Injection"
+id: ttp-2026-0465-bioc-01
+status: experimental
+description: |
+  A process that is not signed or well-known performs a DLL injection into another process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'python3'
+    | filter action_file_path contains '/tmp/malicious.dll'
+    | filter causality_actor_process_image_name = 'python3'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1070.006
+    - attack.t1055.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned Unpopular Process Performs DLL Injection \u2014 Suspicious DLL Injection by Unsigned Process"
+id: ttp-2026-0465-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when unsigned or unpopular process performs DLL injection
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'python3'
+    | filter action_file_path contains '/tmp/malicious.dll'
+    | filter causality_actor_process_image_name = 'python3'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1070.006
+    - attack.t1055.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

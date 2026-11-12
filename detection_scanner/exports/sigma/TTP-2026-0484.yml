@@ -1,0 +1,58 @@
+title: "Unusual Process Execution via AWS Systems Manager \u2014 Unusual Process Execution by SSM"
+id: ttp-2026-0484-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell or cmd.exe launched by SSM agent
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'ssm-agent.exe'
+    | filter action_process_image_name = 'powershell.exe' or action_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unusual Process Execution via AWS Systems Manager \u2014 SSM-Initiated PowerShell Execution"
+id: ttp-2026-0484-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where SSM agent triggers PowerShell execution
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'ssm-agent.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter causality_actor_process_image_name = 'ssm-agent.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,60 @@
+title: "PowerShell Process Enumeration via Get-Process \u2014 Suspicious PowerShell Enumeration of Running Processes"
+id: ttp-2026-0396-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell commands that enumerate running processes using Get-Process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'Get-Process'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1069.001
+    - attack.t1562.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PowerShell Process Enumeration via Get-Process \u2014 PowerShell Process Enumeration Behavior"
+id: ttp-2026-0396-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detected when PowerShell is used to enumerate running processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'Get-Process'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1069.001
+    - attack.t1562.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

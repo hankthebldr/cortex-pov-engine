@@ -1,0 +1,61 @@
+title: "Suspicious SearchProtocolHost.exe Parent Process Behavior \u2014 Suspicious SearchProtocolHost.exe parent process"
+id: ttp-2026-0406-bioc-01
+status: experimental
+description: |
+  Detection of a process launched by SearchProtocolHost.exe, which is unusual and typically associated with malicious activity
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'SearchProtocolHost.exe'
+    | filter action_process_image_name != 'SearchProtocolHost.exe'
+    | filter action_process_image_name != 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1086
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Suspicious SearchProtocolHost.exe Parent Process Behavior \u2014 Abnormal Parent-Child Process Chain"
+id: ttp-2026-0406-abioc-02
+status: experimental
+description: |
+  Detection of a process chain where a benign system process like SearchProtocolHost.exe is used as a parent of a suspicious executable
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = 'SearchProtocolHost.exe'
+    | filter action_process_image_name != 'SearchProtocolHost.exe'
+    | filter action_process_image_name != 'svchost.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1086
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

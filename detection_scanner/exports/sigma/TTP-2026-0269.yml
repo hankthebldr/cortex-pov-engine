@@ -1,0 +1,58 @@
+title: "Masqueraded PowerShell Execution via WMI \u2014 Masqueraded Third-Party Utility Execution"
+id: ttp-2026-0269-bioc-01
+status: experimental
+description: |
+  Detection of legitimate utility (wmi.exe) being used to execute malicious code
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmi.exe'
+    | filter action_process_image_name != 'wmi.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Masqueraded PowerShell Execution via WMI \u2014 Suspicious Masquerade Behavior"
+id: ttp-2026-0269-abioc-02
+status: experimental
+description: |
+  Detection of process execution where a legitimate utility is used to launch an unexpected child process
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'wmi.exe'
+    | filter action_process_image_name != 'wmi.exe'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1047/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1047
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

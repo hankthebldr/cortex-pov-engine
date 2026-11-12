@@ -1,0 +1,60 @@
+title: "Windows Endpoint: Abnormal Recurring Communications to Rare Domain \u2014 Process Start with Execution Policy Bypass"
+id: ttp-2026-0244-bioc-01
+status: experimental
+description: |
+  Detects PowerShell starting with -ExecutionPolicy Bypass
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains '-ExecutionPolicy Bypass'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Windows Endpoint: Abnormal Recurring Communications to Rare Domain \u2014 Abnormal Recurring Communications to Rare Domain"
+id: ttp-2026-0244-abioc-02
+status: experimental
+description: |
+  Detects recurring outbound network connections to a rare domain
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = '192.0.2.10'
+    | filter dst_port = 80
+    | filter action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains 'DownloadFile'
+    | comp by action_remote_ip, action_process_image_name, dst_port
+    | comp count() as cnt by > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

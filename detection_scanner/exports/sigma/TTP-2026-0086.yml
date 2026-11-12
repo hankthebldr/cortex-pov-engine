@@ -1,0 +1,31 @@
+title: "NGFW Container Egress to Endpoint Process Causality Stitch \u2014 Cortex XSIAM (T1071.001) \u2014 CDR-001 Privileged Container Exec Spawning curl"
+id: ttp-2026-0086-bioc-01
+status: experimental
+description: |
+  A container-origin shell (sh/bash) spawning curl — the canonical endpoint process detection layer on the command chain the PAYLOAD runs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter actor_process_image_name = "sh" or actor_process_image_name = "bash"
+    | filter parent_process_image_name = "curl"
+    | alter five_tuple = concat(action_local_ip, ":", to_string(action_local_port), "->", action_remote_ip, ":", to_string(action_remote_port), "/", action_network_protocol)
+    | comp count() as process_sessions by container_id, five_tuple
+    | filter process_sessions >= 1
+    | fields container_id, five_tuple, process_sessions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,30 @@
+title: "Process Hollowing via svchost.exe \u2014 Process Hollowing - Parent-Child Mismatch"
+id: ttp-2026-0192-bioc-01
+status: experimental
+description: |
+  Detects when a process is created with a parent process image name that does not match the child's actual image.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'svchost.exe'
+    | filter action_process_image_name != 'svchost.exe'
+    | filter action_file_path contains 'VirtualAllocEx'
+    | filter action_file_path contains 'WriteProcessMemory'
+    | filter action_file_path contains 'SetThreadContext'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1055/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1055.012
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

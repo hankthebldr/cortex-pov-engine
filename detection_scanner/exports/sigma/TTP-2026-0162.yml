@@ -1,5 +1,72 @@
+title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 Unusual Pod Exec Process Start"
+id: ttp-2026-0162-bioc-01
+status: experimental
+description: |
+  Detection of process execution involving kubectl or similar tooling performing a pod exec command, indicative of T1609 (Deploy Software via Kubernetes API).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("kubectl", "kubectl.exe", "oc")
+    | filter action_process_image_name = "kubectl"
+    | filter action_file_path contains "exec"
+    | filter causality_actor_process_image_name contains "pod"
+    | filter actor_effective_username != "root"
+    | filter agent_hostname != ""
+    | fields agent_hostname, actor_process_image_name, action_process_image_name, action_file_path, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1609/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1609
+    - attack.t1078
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 Unusual Service Account API Call via Kubernetes Audit Plugin"
+id: ttp-2026-0162-bioc-02
+status: experimental
+description: |
+  Detection of a process initiating an API call through k8s_audit_emitter with a service-account principal creating a clusterrolebinding, indicative of T1078 (Valid Accounts).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "python3"
+    | filter action_file_path contains "eal_simulator"
+    | filter action_file_path contains "k8s_audit_emitter"
+    | filter actor_effective_username contains "system:serviceaccount"
+    | filter agent_hostname != ""
+    | fields agent_hostname, action_process_image_name, action_file_path, actor_effective_username
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1609/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1609
+    - attack.t1078
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 Unusual exec into a Kubernetes Pod"
-id: ttp-2026-0162-abioc-01
+id: ttp-2026-0162-abioc-03
 status: experimental
 description: |
   PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per principal, the pods that identity normally execs into and raises when a create pods/exec subresource request deviates from that baseline (a principal execing into a pod it has never touched, or a service-account principal execing at all). Keyed on the kubernetes_audit_logs dataset.
@@ -28,7 +95,7 @@ falsepositives:
 level: high
 ---
 title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 A Kubernetes service account executed an unusual API call"
-id: ttp-2026-0162-abioc-02
+id: ttp-2026-0162-abioc-04
 status: experimental
 description: |
   PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per service account, the verb+resource pairs that account exercises in baseline and raises when a service-account principal issues an out-of-profile RBAC-write (creating a ClusterRoleBinding / ClusterRole it never touches). Keyed on the kubernetes_audit_logs dataset.

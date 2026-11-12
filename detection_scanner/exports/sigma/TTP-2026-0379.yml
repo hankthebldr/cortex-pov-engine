@@ -1,0 +1,58 @@
+title: "MSBuild DLL Loading via Suspicious .NET Process \u2014 Suspicious .NET Process Loads MSBuild DLL"
+id: ttp-2026-0379-bioc-01
+status: experimental
+description: |
+  A .NET process loads an MSBuild DLL from a non-standard path
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'malware.exe'
+    | filter action_file_path contains 'output.dll'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1127
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "MSBuild DLL Loading via Suspicious .NET Process \u2014 MSBuild DLL Loading from Non-Standard Path"
+id: ttp-2026-0379-abioc-02
+status: experimental
+description: |
+  Detects when a .NET process loads MSBuild DLL from unexpected directory
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'malware.exe'
+    | filter action_file_path contains 'output.dll'
+    | filter action_file_path not in ('C:\Windows\Microsoft.NET\', 'C:\Program Files\MSBuild\')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1127
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

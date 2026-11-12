@@ -1,0 +1,56 @@
+title: "Privileged Container Recon with Interactive Shell \u2014 Suspicious process execution in a privileged container"
+id: ttp-2026-0219-bioc-01
+status: experimental
+description: |
+  Process execution inside a privileged container with host-recon tools
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = '/tmp/recon-tool'
+    | filter causality_actor_process_image_name contains 'privileged'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1610/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1610
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Privileged Container Recon with Interactive Shell \u2014 Suspicious process execution in a privileged container"
+id: ttp-2026-0219-abioc-02
+status: experimental
+description: |
+  Behavioral deviation of process execution inside a privileged container context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = '/tmp/recon-tool'
+    | filter causality_actor_process_image_name contains 'privileged'
+    | filter action_remote_ip = '192.0.2.10'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1610/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1610
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

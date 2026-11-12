@@ -1,0 +1,62 @@
+title: "Uncommon .NET Service Registration via Regsvcs.exe \u2014 Uncommon .NET Service Registration"
+id: ttp-2026-0358-bioc-01
+status: experimental
+description: |
+  Detection of regsvcs.exe being used to register a .NET assembly as a service
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'regsvcs.exe'
+    | filter causality_actor_process_image_name = 'cmd.exe' or causality_actor_process_image_name = 'powershell.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_path contains 'temp'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1543.003
+    - attack.t1073.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon .NET Service Registration via Regsvcs.exe \u2014 Suspicious .NET Assembly Registration"
+id: ttp-2026-0358-abioc-02
+status: experimental
+description: |
+  Detection of a non-standard .NET assembly being registered via regsvcs.exe
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'regsvcs.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_path not in ('C:\Windows\Microsoft.NET\assembly\GAC_64\System.EnterpriseServices\', 'C:\Windows\Microsoft.NET\assembly\GAC_32\System.EnterpriseServices\')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1543.003
+    - attack.t1073.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

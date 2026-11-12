@@ -1,0 +1,58 @@
+title: "Web Server CGO Executes Uncommon Process via PowerShell \u2014 Uncommon PowerShell Execution from Web Server"
+id: ttp-2026-0489-bioc-01
+status: experimental
+description: |
+  Detection of PowerShell process started by a web server process (w3wp.exe)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'w3wp.exe' and action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains 'powershell.exe' and action_process_command_line contains '-EncodedCommand'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Web Server CGO Executes Uncommon Process via PowerShell \u2014 CGO Web Server Executes PowerShell with Encoded Command"
+id: ttp-2026-0489-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where a web server process spawns PowerShell with encoded command line arguments
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'w3wp.exe' and action_process_image_name = 'powershell.exe'
+    | filter action_process_command_line contains '-EncodedCommand' and action_process_command_line contains 'http://192.0.2.50'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1105
+    - attack.t1071.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

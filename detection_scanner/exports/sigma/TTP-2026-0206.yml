@@ -1,0 +1,55 @@
+title: "64-bit PowerShell spawning 32-bit PowerShell for evasion \u2014 PowerShell Process Spawning from SysWOW64"
+id: ttp-2026-0206-bioc-01
+status: experimental
+description: |
+  Detection of 64-bit PowerShell spawning 32-bit PowerShell from SysWOW64 directory
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe' and action_file_path contains 'SysWOW64'
+    | filter causality_actor_process_image_name != 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "64-bit PowerShell spawning 32-bit PowerShell for evasion \u2014 64-bit PowerShell spawning uncommon 32-bit PowerShell"
+id: ttp-2026-0206-abioc-02
+status: experimental
+description: |
+  Detection of 64-bit PowerShell process spawning 32-bit PowerShell from SysWOW64 to evade controls
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe' and action_file_path contains 'SysWOW64'
+    | filter causality_actor_process_image_name != 'powershell.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

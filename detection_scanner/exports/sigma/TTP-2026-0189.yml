@@ -1,0 +1,28 @@
+title: "Anomalous Outbound RDP Egress \u2014 Lateral Movement (ms-rdp) \u2014 NDR-013 Outbound RDP From a Non-Server Endpoint"
+id: ttp-2026-0189-bioc-01
+status: experimental
+description: |
+  A workstation-class host initiates an outbound RDP (ms-rdp / 3389) session — RDP from a host that normally only accepts it, consistent with interactive lateral movement.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ms-rdp" or dst_port = 3389
+    | filter action = "allow"
+    | comp count() as rdp_sessions by src_ip, dst_ip, dst_port
+    | filter rdp_sessions >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

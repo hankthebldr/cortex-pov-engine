@@ -1,0 +1,57 @@
+title: "Automated Linux Privilege Escalation via Staged Traitor Binary \u2014 Payload-Shelf Tool traitor-amd64 Executed From a Writable Path by a Service Account"
+id: ttp-2026-0515-bioc-01
+status: experimental
+description: |
+  A non-root service account executes traitor-amd64 from /tmp/traitor-amd64 — a privilege-escalation/container-breakout tool staged into a writable path, distinct from normal admin tooling.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_path contains "/tmp/traitor-amd64" or action_process_image_path contains "/tmp/traitor-amd64"
+    | filter actor_effective_username != "root"
+    | comp count() as execs by agent_hostname, actor_effective_username, actor_process_image_path
+    | filter execs >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Automated Linux Privilege Escalation via Staged Traitor Binary \u2014 First-Seen Execution of a Privesc/Escape Tool From /tmp on This Host"
+id: ttp-2026-0515-abioc-02
+status: experimental
+description: |
+  A host that has never run traitor-amd64 suddenly executes it from a writable path moments after the file is staged — the stage→chmod→exec chain of a deployed offensive tool.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("sh","bash") and action_process_image_path contains "traitor-amd64"
+    | comp count() as first_runs by agent_hostname, action_process_image_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1548/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1548.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

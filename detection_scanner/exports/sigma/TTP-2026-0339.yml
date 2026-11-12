@@ -1,0 +1,63 @@
+title: "Rare Process Execution via WMI and PowerShell in Organization \u2014 Rare Process Execution in Organization"
+id: ttp-2026-0339-bioc-01
+status: experimental
+description: |
+  Detection of a PowerShell process initiating a command-line execution that is not typical for the organization
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe' and action_process_image_name = 'cmd.exe'
+    | filter causality_actor_process_image_name != 'explorer.exe'
+    | filter action_file_path contains 'cmd.exe'
+    | filter action_command_line contains 'whoami'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Rare Process Execution via WMI and PowerShell in Organization \u2014 Unusual PowerShell Command-Line Usage"
+id: ttp-2026-0339-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where PowerShell is used to invoke WMI methods with command-line arguments not seen in normal usage patterns
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'powershell.exe'
+    | filter action_command_line contains 'Invoke-WmiMethod'
+    | filter action_command_line contains 'Win32_Process'
+    | filter action_command_line contains 'Create'
+    | filter causality_actor_process_image_name != 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+    - attack.t1086
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

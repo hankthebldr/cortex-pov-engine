@@ -1,0 +1,65 @@
+title: "Svchost.exe loads rare unsigned module via DllLoad \u2014 Svchost loads rare unsigned module"
+id: ttp-2026-0413-bioc-01
+status: experimental
+description: |
+  Detection of svchost.exe loading an unsigned module not typically seen in normal operations
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'svchost.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_path not in (SELECT file_path FROM trusted_dlls)
+    | filter action_file_signature_status = 'unsigned'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1106
+    - attack.t1073
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Svchost.exe loads rare unsigned module via DllLoad \u2014 Unusual svchost DLL load behavior"
+id: ttp-2026-0413-abioc-02
+status: experimental
+description: |
+  Behavioral deviation where svchost.exe loads an unsigned DLL not commonly seen in baseline
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'svchost.exe'
+    | filter action_file_path contains '.dll'
+    | filter action_file_signature_status = 'unsigned'
+    | filter action_file_path not in (SELECT file_path FROM trusted_dlls)
+    | comp count() as cnt by action_file_path
+    | filter count() > 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1106
+    - attack.t1073
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

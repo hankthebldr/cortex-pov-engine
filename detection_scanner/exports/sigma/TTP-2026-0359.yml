@@ -1,0 +1,62 @@
+title: "Registry Credentials Extraction via Reg.exe \u2014 Registry Credentials Extraction Process"
+id: ttp-2026-0359-bioc-01
+status: experimental
+description: |
+  Detection of reg.exe process execution with arguments that query sensitive registry paths
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'reg.exe'
+    | filter action_process_command_line contains 'query'
+    | filter action_process_command_line contains 'SAM'
+    | filter action_process_command_line contains 'SYSTEM'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Registry Credentials Extraction via Reg.exe \u2014 Registry Access for Credential Extraction"
+id: ttp-2026-0359-abioc-02
+status: experimental
+description: |
+  Behavioral deviation detecting registry queries for SAM and SYSTEM hives indicative of credential dumping
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'reg.exe'
+    | filter action_process_command_line contains 'query'
+    | filter action_process_command_line contains 'SAM'
+    | filter action_process_command_line contains 'SYSTEM'
+    | filter causality_actor_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.001
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

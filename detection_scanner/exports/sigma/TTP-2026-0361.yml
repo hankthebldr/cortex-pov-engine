@@ -1,0 +1,58 @@
+title: "Remote PsExec-like command execution via SMB \u2014 PsExec-like remote process execution"
+id: ttp-2026-0361-bioc-01
+status: experimental
+description: |
+  Detection of process execution using PsExec-like tools
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = 'psexec.exe' or action_process_image_name = 'wbemexec.exe'
+    | filter causality_actor_process_image_name = 'net.exe' or causality_actor_process_image_name = 'cmd.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Remote PsExec-like command execution via SMB \u2014 Remote SMB-based execution"
+id: ttp-2026-0361-abioc-02
+status: experimental
+description: |
+  Behavioral deviation from normal SMB usage to execute remote processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK_CONNECTION
+    | filter dst_ip = '192.0.2.10' and dst_port = 445
+    | filter action_remote_ip = '192.0.2.10'
+    | filter causality_actor_process_image_name = 'psexec.exe' or causality_actor_process_image_name = 'wbemexec.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

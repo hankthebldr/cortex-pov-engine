@@ -1,0 +1,63 @@
+title: "Unsigned Process Injecting into Windows System Binary \u2014 Unsigned Process Injecting Into System Binary"
+id: ttp-2026-0470-bioc-01
+status: experimental
+description: |
+  Detects unsigned process injecting into a Windows system binary with no command line
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name != null and action_process_image_name = 'svchost.exe'
+    | filter causality_actor_process_image_name = 'explorer.exe'
+    | filter actor_process_image_name contains 'malware.exe'
+    | filter action_command_line = ''
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1055/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1055
+    - attack.t1059
+    - attack.t1546
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsigned Process Injecting into Windows System Binary \u2014 Behavioral ABIOC for Unsigned Process Injection"
+id: ttp-2026-0470-abioc-02
+status: experimental
+description: |
+  Detects a pattern of unsigned process injecting into system binaries without command line
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name contains 'malware.exe'
+    | filter action_process_image_name = 'svchost.exe'
+    | filter action_command_line = ''
+    | filter causality_actor_process_image_name = 'explorer.exe'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1055/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1055
+    - attack.t1059
+    - attack.t1546
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

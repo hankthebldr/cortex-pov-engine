@@ -1,0 +1,63 @@
+title: "Uncommon Process Execution by System Binary at Startup \u2014 Uncommon Process with User SID at Early Startup"
+id: ttp-2026-0266-bioc-01
+status: experimental
+description: |
+  Detection of a process started by a system binary with a non-system user SID during early system startup
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'svchost.exe'
+    | filter action_process_image_name = '/tmp/scratch/malware.bin'
+    | filter process_user_sid contains 'S-1-5-21'
+    | filter process_start_time < '00:10:00'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1036.005
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Uncommon Process Execution by System Binary at Startup \u2014 Suspicious Process Start by System Binary"
+id: ttp-2026-0266-abioc-02
+status: experimental
+description: |
+  Detection of an uncommon process started by a system binary with a local user SID at early startup
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = 'svchost.exe'
+    | filter action_process_image_name = '/tmp/scratch/malware.bin'
+    | filter process_user_sid contains 'S-1-5-21'
+    | filter process_start_time < '00:10:00'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1036.005
+    - attack.t1547.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

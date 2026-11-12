@@ -1,5 +1,67 @@
+title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 Privileged Role Assignment by Non-Governance Identity"
+id: ttp-2026-0100-bioc-01
+status: experimental
+description: |
+  Detection of a process starting that performs a privileged directory-role assignment (Global Administrator or Privileged Role Administrator) by an identity not in the learned governance baseline.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username not in ("governance-user-1", "governance-user-2", "admin-user-1")
+    | filter action_process_image_name in ("powershell.exe", "cmd.exe", "sh.exe")
+    | filter action_file_path contains "directory-role-assignment"
+    | filter causality_actor_process_image_name contains "sync-automation.exe"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+    - attack.t1484
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 High-Risk OAuth Consent by Automation Identity"
+id: ttp-2026-0100-bioc-02
+status: experimental
+description: |
+  Detection of a process starting that initiates a high-risk OAuth consent or service-principal credential grant by a non-governance identity with tenant-wide scopes.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username not in ("governance-user-1", "governance-user-2", "admin-user-1")
+    | filter action_process_image_name in ("powershell.exe", "curl.exe", "wget.exe")
+    | filter action_file_path contains "oauth-consent"
+    | filter causality_actor_process_image_name contains "automation-sync.exe"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+    - attack.t1484
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
 title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 ITDR-010 Anomalous Privileged Directory Role Assignment by Non-Governance Identity"
-id: ttp-2026-0100-abioc-01
+id: ttp-2026-0100-abioc-03
 status: experimental
 description: |
   A directory-sync / identity-automation account whose learned Cortex behavioral profile is read-and-sync governance suddenly assigns a privileged directory role (Global Administrator / Privileged Role Administrator). ABIOC anchors the deviation to the causality chain (compromised sync account -> privileged role assignment) rather than to any known-bad principal or role id, catching hybrid-cloud identity abuse that a static rule keyed on a specific bad actor would miss.
@@ -32,7 +94,7 @@ falsepositives:
 level: high
 ---
 title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 ITDR-010 High-Risk OAuth Consent and App Credential Grant Deviating from Baseline"
-id: ttp-2026-0100-abioc-02
+id: ttp-2026-0100-abioc-04
 status: experimental
 description: |
   A sync/automation identity whose learned baseline never consents to tenant-wide application scopes grants a high-risk OAuth consent or adds service-principal credentials carrying Directory.ReadWrite.All-class scopes. Every action uses legitimate Entra ID application APIs; the ABIOC fires on the deviation from the account's learned consent behavior, anchored to the privileged-role grant that preceded it in the same identity causality chain.
