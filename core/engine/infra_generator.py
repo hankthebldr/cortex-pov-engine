@@ -96,6 +96,15 @@ def hcl_string(value: object) -> str:
     return f'"{body}"'
 
 
+def hcl_object(value: dict) -> str:
+    """Render a string map as one HCL object of :func:`hcl_string` keys and
+    values, sorted by key. ``tojson`` (which this replaces for ``tags``) escapes
+    quotes and newlines but leaves ``${`` / ``%{``, so HCL read a tag value as
+    a template. For plain ASCII text the output is what ``tojson`` wrote."""
+    items = ", ".join(f"{hcl_string(k)}: {hcl_string(v)}" for k, v in sorted(value.items()))
+    return "{" + items + "}"
+
+
 def _copy_ignore(_src: str, names: list[str]) -> set[str]:
     """shutil.copytree ignore callable — skips local terraform artifacts."""
     return {n for n in names if n in _COPY_IGNORE_NAMES}
@@ -125,6 +134,7 @@ class InfraGenerator:
         )
         # String values go into HCL literals only through this filter.
         self._env.filters["hcl_string"] = hcl_string
+        self._env.filters["hcl_object"] = hcl_object
 
     # ------------------------------------------------------------------
 

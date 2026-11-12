@@ -103,6 +103,23 @@ def test_values_outside_the_aws_shapes_are_422(api, field, value):
     assert client.post("/api/infra/generate", json=body).status_code == 422
 
 
+def test_tag_values_render_as_text_not_as_templates(api):
+    """``tags`` reached both .tf files through ``tojson``, which escapes quotes
+    and newlines but not HCL's ``${`` / ``%{`` template sequences. A tag value
+    holding either was read as a template, so Terraform refused the bundle
+    ("Function calls not allowed") instead of tagging with the text."""
+    client, blueprints = api
+    tags = {"Owner": '${pathexpand("~")}', "Note": "%{ if true }x%{ endif }"}
+    resp = client.post("/api/infra/generate", json=_body(params={"tags": tags}))
+    assert resp.status_code == 200, resp.text
+
+    literal = '{"Note": "%%{ if true }x%%{ endif }", "Owner": "$${pathexpand(\\"~\\")}"}'
+    (tfvars,) = _generated(blueprints, "terraform.tfvars")
+    (variables,) = _generated(blueprints, "variables.tf")
+    assert f"tags = {literal}\n" in tfvars
+    assert f"default     = {literal}\n" in variables
+
+
 def test_the_templates_render_any_value_as_one_string_literal(repo_root: Path, tmp_path: Path):
     """The request model is not the only caller of the generator, so the
     templates themselves must keep a value inside its literal."""
