@@ -307,6 +307,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div>Alert</div>
           <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
+          <div>Source</div>
           <div>Status</div>
         </div>
         <div className="scorecard-empty">
@@ -324,6 +325,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div>Alert</div>
         <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
+        <div>Source</div>
         <div>Status</div>
       </div>
       {rows.map((r, i) => (
@@ -372,6 +374,7 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         {row.mttd != null ? formatMttd(row.mttd) : '—'}
       </div>
       <div className="scorecard__id">{row.alertId || '—'}</div>
+      <div className="scorecard__source">{row.alertSource || '—'}</div>
       <div className="scorecard__status-cell">
         <span className={`scorecard__status scorecard__status--${status}`}>
           {statusLabel}

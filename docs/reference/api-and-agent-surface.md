@@ -713,10 +713,17 @@ is 0***: nothing on this path has delivered to a live tenant.
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
 | GET | `/api/results` | All results across all runs (newest first) | — | `{"results":[...],"total":N}` |
-| GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd}`; 404 if run missing |
+| GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd}`; each `results[]` row also carries `alert_id`, `alert_source`, `observation_count`; 404 if run missing |
 | PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND`; 409 `RESULT_STEP_NOT_RUN` / `RESULT_PREVENTED` / `ATTESTATION_NOT_A_WITNESS` / `NOT_AN_ATTESTATION` |
 | PUT | `/api/results/{result_id}/notes` | Update notes only | `NotesRequest`: `{notes}` | `<result.to_dict()>`; 404 |
 
+- Each `results[]` row of `GET /api/results/{run_id}` is joined to the run's tenant
+  observations: `alert_id` (the observation's external alert id) and `alert_source`
+  (the tenant's alert source, e.g. `XDR Analytics BIOC`) come from the **first recorded
+  observation** for that result (lowest observation id; the same rule the storyline
+  uses), and `observation_count` is how many observations are recorded for it. A row
+  with no observation has `alert_id: null`, `alert_source: null`, `observation_count: 0`.
+  Observations carrying no `result_id` belong to no row and are not counted.
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
   `observed_at - executed_at`); `observed=false` clears `observed_at`.
 - `validate` is an operator **attestation** and writes `outcome`: `observed=true` on a

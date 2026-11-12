@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from connectors.measures import denominator_exclusion, empty_exclusions
+from api.storyline import load_observations, observation_counts
 from database import get_db
 from engine.outcome import (
     EXCLUDED_FROM_DENOMINATOR,
@@ -131,10 +132,23 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
             "max_seconds": round(max(mttd_values), 1),
         }
 
+    # Tenant evidence per row: first recorded observation wins.
+    first_obs = await load_observations(db, run_id)
+    obs_counts = await observation_counts(db, run_id)
+    rows = []
+    for r in results:
+        obs = first_obs.get(r.id)
+        rows.append({
+            **r.to_dict(),
+            "alert_id": obs["alert_id"] if obs else None,
+            "alert_source": obs["alert_source"] if obs else None,
+            "observation_count": obs_counts.get(r.id, 0),
+        })
+
     logger.info("get_results run_id=%s count=%d coverage=%.1f%%", run_id, total, coverage_pct)
     return {
         "run_id": run_id,
-        "results": [r.to_dict() for r in results],
+        "results": rows,
         "total": total,
         "coverage": {
             "observed": observed_count,
