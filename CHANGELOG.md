@@ -729,73 +729,6 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
-### Security — no route runs a program or a template the caller chose
-
-v1.1.0 ships every defect below. Every route below is still unauthenticated,
-like the rest of SimCore.
-
-From `dev` (#212). Its tool-start fix is the SEC-02 fix recorded under
-*Security* above, landed on both lines independently. The merged code is
-`dev`'s, which also holds `mitre_id` to ASCII digits and `config_path` to a
-file strictly below `CORTEXSIM_BASE_DIR`. The installer keeps the beta's
-narrower formats (agent id 1-64 characters, token `cxs_` + 20-128) and adds
-`dev`'s quoting and own-URL rule; `SERVER_HOST_NOT_ALLOWED` is checked after
-`SERVER_NOT_THIS_SIMCORE`. For infra bundles both layers stand: `dev`'s
-request-model shapes answer `422` for a bad `region` or `jumpbox_size` before
-the beta's SEC-17 gate, which still answers `400 BAD_INFRA_PARAM` for `tags`
-and a zone-id `dc_ssh_cidr`, and the templates escape every string behind it.
-
-- **Tool start refuses caller-supplied argv.** The body's `params` were merged
-  over the registry's `binary` / `source_path` / `port` before
-  `run_template.format`, so `{"params": {"binary": "<any command line>"}}` ran
-  that command as SimCore's user (root in the image). Caller params now fill
-  only the placeholders a tool's `run_template` leaves open (`mitre_id` for
-  signalbench, `config_path` for ackbarx), each validated and quoted into one
-  argv token; anything else is `400 BAD_TOOL_PARAM` and nothing is spawned, and
-  a missing required placeholder is that 400 rather than a 500.
-  `POST /api/tools/{tool}/install` runs its build off the event loop, one at a
-  time; a concurrent install gets `409 INSTALL_IN_PROGRESS`.
-- **EAL campaigns no longer pick the executable.** `airs_prompt_attack` and
-  `browser_attack_runner` spawned whatever path a step's `params.binary` named,
-  and `POST /api/eal/campaigns` + `/launch` take the step params and the consent
-  gates from the same caller, so any program ran as SimCore's user. Both
-  plugins now run only their own CLI (`cortex-prompt-attacker`,
-  `cortex-browser-attacker`) from SimCore's PATH, and both routes refuse a step
-  that sets `params.binary` with `400 CALLER_EXECUTABLE_REFUSED`, including a
-  campaign stored before this release.
-- **The agent installer no longer runs its query string.** `GET
-  /api/agents/install` pasted `id`, `server` and `token` raw into the bash and
-  PowerShell scripts that are piped into `bash` / `iex`, so `?id=$(…)` ran on
-  the target. Each is now checked against its real format (agent id
-  `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
-  derived one included) and baked in as a single-quoted literal; a bad value is
-  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
-- **The agent installer names only this SimCore.** `?server=` chose the host
-  the script downloads the beacon and its digest from and the beacon takes
-  tasks from, and any well-formed URL was accepted. It must now be this
-  SimCore: the origin the install request arrived on, or an entry in the new
-  `CORTEXSIM_PUBLIC_URLS` setting (comma-separated http(s) origins for LAN or
-  NAT names; scheme and host case, default ports and trailing slashes are
-  normalised). Any other host is `400 SERVER_NOT_THIS_SIMCORE` with no script.
-  The console's one-liner sends no `?server=` and is unaffected; if you pass
-  `?server=` with an address the request did not arrive on, list it in
-  `CORTEXSIM_PUBLIC_URLS` (`docker-compose.yml` passes it through).
-- **Served k8s bundles carry only this SimCore's URL.** `POST
-  /api/scenarios/{id}/bundle` (`format: k8s`) wrote the body's `server` raw
-  into the manifest's header comment and its preflight command, so a newline
-  in it added YAML documents, such as a `Pod`, that the header and the consent
-  record did not describe. `server` is now held to the installer's rule:
-  `400 BAD_SERVER` / `SERVER_NOT_THIS_SIMCORE`, and no manifest.
-- **Infra bundles no longer take Terraform from the request.** `POST
-  /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
-  raw into Terraform string literals, so a quote and newlines could add a
-  `data "external"` block that `terraform plan` runs on the DC's machine.
-  `region` must now be an AWS region and `jumpbox_size` an AWS instance type
-  (422 otherwise), and the templates write string values, `tags` included, only
-  as escaped HCL literals. Bundles for valid input carry the same values, and
-  the same bytes unless a tag holds `'`, `<`, `>`, `&` or non-ASCII text
-  (which `tojson` wrote as `\uXXXX`).
-
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
@@ -851,6 +784,20 @@ with 409 `PUSH_NOT_SUPPORTED`.
   is removed; nothing in the run path reads the column; and
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
+
+### Security — how 1.1.1's fixes sit on top of the beta hardening
+
+The six fixes released in [1.1.1] (below) are on this line too. Its tool-start
+fix is the SEC-02 fix recorded under *Security* above, landed on both lines
+independently; the merged code is 1.1.1's, which also holds `mitre_id` to ASCII
+digits and `config_path` to a file strictly below `CORTEXSIM_BASE_DIR`. The
+installer keeps the beta's narrower formats (agent id 1-64 characters, token
+`cxs_` + 20-128) and adds 1.1.1's quoting and own-URL rule;
+`SERVER_HOST_NOT_ALLOWED` is checked after `SERVER_NOT_THIS_SIMCORE`. For infra
+bundles both layers stand: 1.1.1's request-model shapes answer `422` for a bad
+`region` or `jumpbox_size` before the beta's SEC-17 gate, which still answers
+`400 BAD_INFRA_PARAM` for `tags` and a zone-id `dc_ssh_cidr`, and the templates
+escape every string behind it.
 
 ### Added — grouping-key corpus gate (`make check-grouping`)
 
@@ -1625,6 +1572,68 @@ with 409 `PUSH_NOT_SUPPORTED`.
 - Reconcile counts the page a failed read died on as a query.
 - Pins: `uvicorn[standard]` 0.29.0 to 0.31.1 and `httpx` 0.27.0 to 0.27.2
   (forced by the MCP SDK).
+
+## [1.1.1] - 2026-11-12
+
+**Security hotfix for v1.1.0: unauthenticated routes let the caller choose a
+program SimCore runs, text that becomes code on the target or in a Terraform
+or Kubernetes bundle, or the server a target enrols with.** Each now refuses
+the input with a structured error.
+No scenario, card, emitter or scoring change; every route below is still
+unauthenticated, like the rest of SimCore.
+
+### Security
+
+- **Tool start refuses caller-supplied argv.** `POST /api/tools/{tool}/start`
+  merged the body's `params` over the registry's `binary` / `source_path` /
+  `port` before `run_template.format`, so `{"params": {"binary": "<any command
+  line>"}}` ran that command as SimCore's user (root in the image). Caller
+  params now fill only the placeholders a tool's `run_template` leaves open
+  (`mitre_id` for signalbench, `config_path` for ackbarx), each validated and
+  quoted into one argv token; anything else is `400 BAD_TOOL_PARAM` and nothing
+  is spawned, and a missing required placeholder is that 400 rather than a 500.
+  `POST /api/tools/{tool}/install` runs its build off the event loop, one at a
+  time; a concurrent install gets `409 INSTALL_IN_PROGRESS`.
+- **EAL campaigns no longer pick the executable.** `airs_prompt_attack` and
+  `browser_attack_runner` spawned whatever path a step's `params.binary` named,
+  and `POST /api/eal/campaigns` + `/launch` take the step params and the consent
+  gates from the same caller, so any program ran as SimCore's user. Both
+  plugins now run only their own CLI (`cortex-prompt-attacker`,
+  `cortex-browser-attacker`) from SimCore's PATH, and both routes refuse a step
+  that sets `params.binary` with `400 CALLER_EXECUTABLE_REFUSED`, including a
+  campaign stored before this release.
+- **The agent installer no longer runs its query string.** `GET
+  /api/agents/install` pasted `id`, `server` and `token` raw into the bash and
+  PowerShell scripts that are piped into `bash` / `iex`, so `?id=$(…)` ran on
+  the target. Each is now checked against its real format (agent id
+  `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
+  derived one included) and baked in as a single-quoted literal; a bad value is
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+- **The agent installer names only this SimCore.** `?server=` chose the host
+  the script downloads the beacon and its digest from and the beacon takes
+  tasks from, and any well-formed URL was accepted. It must now be this
+  SimCore: the origin the install request arrived on, or an entry in the new
+  `CORTEXSIM_PUBLIC_URLS` setting (comma-separated http(s) origins for LAN or
+  NAT names; scheme and host case, default ports and trailing slashes are
+  normalised). Any other host is `400 SERVER_NOT_THIS_SIMCORE` with no script.
+  The console's one-liner sends no `?server=` and is unaffected; if you pass
+  `?server=` with an address the request did not arrive on, list it in
+  `CORTEXSIM_PUBLIC_URLS` (`docker-compose.yml` passes it through).
+- **Served k8s bundles carry only this SimCore's URL.** `POST
+  /api/scenarios/{id}/bundle` (`format: k8s`) wrote the body's `server` raw
+  into the manifest's header comment and its preflight command, so a newline
+  in it added YAML documents, such as a `Pod`, that the header and the consent
+  record did not describe. `server` is now held to the installer's rule:
+  `400 BAD_SERVER` / `SERVER_NOT_THIS_SIMCORE`, and no manifest.
+- **Infra bundles no longer take Terraform from the request.** `POST
+  /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
+  raw into Terraform string literals, so a quote and newlines could add a
+  `data "external"` block that `terraform plan` runs on the DC's machine.
+  `region` must now be an AWS region and `jumpbox_size` an AWS instance type
+  (422 otherwise), and the templates write string values, `tags` included, only
+  as escaped HCL literals. Bundles for valid input carry the same values, and
+  the same bytes unless a tag holds `'`, `<`, `>`, `&` or non-ASCII text
+  (which `tojson` wrote as `\uXXXX`).
 
 ## [1.1.0] - 2026-11-02
 
@@ -2431,7 +2440,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1

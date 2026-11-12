@@ -208,8 +208,8 @@ language deps — nothing after that). No submodules touched, no toolchain
 installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
-CortexSim ships as tagged GitHub Releases — **v1.1.0** is the latest, cut
-2026-11-02 — and the release pipeline pushes a multi-arch image
+CortexSim ships as tagged GitHub Releases — **v1.1.1** is the latest, cut
+2026-11-12 — and the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
 image is **not publicly pullable today** (an anonymous pull-token request is
 denied), so don't `docker pull` it — see
@@ -1169,18 +1169,19 @@ make test-agent-cross   # beacon cross-compile gate
 ## Releases & Packaging
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
-  — **v1.0.0**, **v1.0.1**, **v1.0.2** and **v1.1.0** are published; **v1.1.0**
-  is the latest, cut 2026-11-02 (tagged by `tag-on-main.yml` from the first
-  `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges). Releases up
-  to v1.1.0 attached `install.sh`, `stage2-linux.tar.gz`, `stage2-windows.zip`
-  (which held one bash file, so it was never a Windows installer), `SHA256SUMS`
-  and `manifest.json`. **From the next release**, a stage2 asset ships only when
-  `installer/stage2/<os>/` exists, and today none does. The release also
-  attaches the five **unsigned** beacons, `cortexsim-agent-SHA256SUMS` and
-  `cortexsim-agent-buildinfo.txt`, and `manifest.json` gains an `agent` block
-  (`signed: false`). That `release.yml` has not run yet. Windows onboarding is
-  `/api/agents/install?os=windows` (pull) or `format=powershell` (push), never a
-  release archive. Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.
+  — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0** and **v1.1.1** are published;
+  **v1.1.1** (a security hotfix) is the latest, cut 2026-11-12 (tagged by
+  `tag-on-main.yml` from the first `## [x.y.z]` heading in `CHANGELOG.md` when the
+  release PR merges). Releases up to v1.1.1 attached `install.sh`,
+  `stage2-linux.tar.gz`, `stage2-windows.zip` (which held one bash file, so it was
+  never a Windows installer), `SHA256SUMS` and `manifest.json`. **From the next
+  release**, a stage2 asset ships only when `installer/stage2/<os>/` exists, and
+  today none does. The release also attaches the five **unsigned** beacons,
+  `cortexsim-agent-SHA256SUMS` and `cortexsim-agent-buildinfo.txt`, and
+  `manifest.json` gains an `agent` block (`signed: false`). That `release.yml` has
+  not run yet. Windows onboarding is `/api/agents/install?os=windows` (pull) or
+  `format=powershell` (push), never a release archive. Changelog:
+  **[`CHANGELOG.md`](CHANGELOG.md)**.
 - **Container image:** the tag-triggered pipeline
   ([`.github/workflows/release.yml`](.github/workflows/release.yml)) pushes
   `ghcr.io/hankthebldr/cortexsim:<tag>` plus `:latest` for linux/amd64 and
@@ -1188,7 +1189,7 @@ make test-agent-cross   # beacon cross-compile gate
   That image is **not publicly pullable** — an anonymous GHCR pull-token
   request returns 401 (checked 2026-10-19) — so don't `docker pull` it today.
   Build it locally instead (`./scripts/dev-up.sh`, or `docker build -f
-  core/Dockerfile -t cortexsim:v1.1.0 .` directly).
+  core/Dockerfile -t cortexsim:v1.1.1 .` directly).
 - **The release's `install.sh` is the full source bootstrap, not an image
   puller.** The pipeline copies in the tree's own `./install.sh` (v1.0.2's
   asset is byte-identical to it): it installs a Go/Rust/Node/Python toolchain
