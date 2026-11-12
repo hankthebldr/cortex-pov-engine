@@ -263,6 +263,8 @@ def scenario_legs(scn: dict[str, Any]) -> set[str]:
 
 def is_marker_only_step(step: dict[str, Any]) -> bool:
     """True when the step's command emits nothing a sensor could observe."""
+    if isinstance(step, dict) and step.get("channel") == "eal":
+        return False  # SimCore emits the records itself; the command is a descriptive no-op
     cmd = step.get("command") if isinstance(step, dict) else None
     if not isinstance(cmd, str) or not cmd.strip():
         return True

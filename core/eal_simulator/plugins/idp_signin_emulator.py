@@ -67,14 +67,15 @@ traffic.
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter
+from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter, body_time
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.idp_signin_emulator")
@@ -140,12 +141,13 @@ def _okta_event(
     sim_run_id: str,
     dataset: str = "okta_sso",
     extra: Optional[dict[str, Any]] = None,
+    when: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape an Okta System-Log event (subset of the /api/v1/logs schema)."""
     body: dict[str, Any] = {
         "dataset": dataset,
         "eventType": event_type,
-        "published": datetime.now(timezone.utc).isoformat(),
+        "published": when or datetime.now(timezone.utc).isoformat(),
         "outcome": {"result": outcome.upper()},
         "actor": {
             "alternateId": user_principal,
@@ -176,12 +178,13 @@ def _microsoft_event(
     sim_run_id: str,
     dataset: str = "msft_azure_ad_signin",
     extra: Optional[dict[str, Any]] = None,
+    when: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape a Microsoft Entra ID (AAD) signInLogs event (subset)."""
     body: dict[str, Any] = {
         "dataset": dataset,
         "id": secrets.token_hex(8),
-        "createdDateTime": datetime.now(timezone.utc).isoformat(),
+        "createdDateTime": when or datetime.now(timezone.utc).isoformat(),
         "userPrincipalName": user_principal,
         "userDisplayName": user_principal.split("@")[0],
         "appDisplayName": "CortexSim Canary App",
@@ -219,13 +222,14 @@ def _google_event(
     sim_run_id: str,
     dataset: str = "google_workspace_audit",
     extra: Optional[dict[str, Any]] = None,
+    when: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape a Google Workspace login activity event (subset)."""
     body: dict[str, Any] = {
         "dataset": dataset,
         "kind": "admin#reports#activity",
         "id": {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": when or datetime.now(timezone.utc).isoformat(),
             "uniqueQualifier": secrets.token_hex(8),
             "applicationName": "login",
         },
@@ -273,6 +277,7 @@ _EVENT_PATTERNS = (
     "azure_risky_login",
     "azure_ad_powershell_first_use",
     "entra_mfa_reported_suspicious",
+    "vishing_passkey_enrollment",
 )
 
 
@@ -303,11 +308,22 @@ class IdpSigninEmulatorParams(AnalyticsEmitterParams):
         description="Analytics / ABIOC alert to exercise: impossible_travel | "
                     "mfa_fatigue | credential_stuffing | token_replay | "
                     "brute_force_lockout | azure_risky_login | "
-                    "azure_ad_powershell_first_use | entra_mfa_reported_suspicious.",
+                    "azure_ad_powershell_first_use | entra_mfa_reported_suspicious | "
+                    "vishing_passkey_enrollment (provider microsoft only).",
     )
     target_user: str = Field(
         default="ada.lovelace@cortexsim-canary.invalid",
         description="User principal whose audit log gets the synthetic events.",
+    )
+    event_time_offset_seconds: int = Field(
+        default=0, ge=-86400, le=0,
+        description="Back-date every record's body timestamp by this many "
+                    "seconds (0 to -86400). Delivery time is unaffected.",
+    )
+    source_ip: Optional[str] = Field(
+        default=None,
+        description="Replace the IP of every attacker-side record (every "
+                    "location except the us-west home baseline).",
     )
 
     @property
@@ -335,6 +351,20 @@ class IdpSigninEmulatorParams(AnalyticsEmitterParams):
             )
         return v
 
+    @field_validator("source_ip")
+    @classmethod
+    def _source_ip_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return str(ipaddress.ip_address(v.strip()))
+
+    @model_validator(mode="after")
+    def _vishing_needs_microsoft(self) -> "IdpSigninEmulatorParams":
+        if self.event_pattern == "vishing_passkey_enrollment" \
+                and self.provider != "microsoft":
+            raise ValueError("vishing_passkey_enrollment needs provider microsoft")
+        return self
+
     @field_validator("target_user")
     @classmethod
     def _target_user_canary(cls, v: str) -> str:
@@ -351,13 +381,19 @@ class IdpSigninEmulatorParams(AnalyticsEmitterParams):
 class IdpSigninEmulator(AnalyticsLogEmitter):
     # Three provider shapes, one map — Okta nests the principal under actor,
     # Entra carries it flat, Google nests it under actor.email. Each record
-    # only has one of them, and the rest are skipped.
+    # only has one of them, and the rest are skipped. The Entra directory-audit
+    # record (vishing_passkey_enrollment's passkey registration) nests it under
+    # initiatedBy.user, so the sign-in and the registration carry ONE principal
+    # under a canary. Its targetResources[] list is not a dotted path and keeps
+    # target_user.
     CANARY_FIELDS = {
         "actor.alternateId": "{principal}",
         "actor.displayName": "{account}",
         "actor.email": "{principal}",
         "userPrincipalName": "{principal}",
         "userDisplayName": "{account}",
+        "initiatedBy.user.userPrincipalName": "{principal}",
+        "initiatedBy.user.displayName": "{account}",
     }
 
     class Meta:
@@ -415,7 +451,14 @@ class IdpSigninEmulator(AnalyticsLogEmitter):
         ua_default = params.user_agent or \
             "Mozilla/5.0 (X11; Linux x86_64) CortexSim/2.0"
 
+        offset = params.event_time_offset_seconds
+
         def _emit(**kwargs: Any) -> dict[str, Any]:
+            src = kwargs["source"]
+            if params.source_ip and src.ip != _LOCATIONS["us-west"].ip:
+                kwargs["source"] = dataclasses.replace(src, ip=params.source_ip)
+            if offset:
+                kwargs["when"] = body_time(offset)
             return builder(sim_run_id=sim_run_id, dataset=dataset, **kwargs)
 
         if params.event_pattern == "impossible_travel":
@@ -591,6 +634,76 @@ class IdpSigninEmulator(AnalyticsLogEmitter):
                 },
             ))
             return evs
+
+        if params.event_pattern == "vishing_passkey_enrollment":
+            # Pink chain: the attacker phones the user, who approves a
+            # number-matched push; the attacker then registers a passkey.
+            attacker = _LOCATIONS["anon-vpn"]
+            if params.source_ip:
+                attacker = dataclasses.replace(attacker, ip=params.source_ip)
+            signin_at = body_time(offset)
+            passkey_at = (
+                datetime.fromisoformat(signin_at) + timedelta(seconds=90)
+            ).isoformat()
+            signin = _emit(
+                event_type="user.session.start",
+                outcome="success",
+                user_principal=params.target_user,
+                source=_LOCATIONS["anon-vpn"],
+                user_agent=ua_default,
+                extra={
+                    "isInteractive": True,
+                    "vishing_passkey_marker": True,
+                    "authenticationRequirement": "multiFactorAuthentication",
+                    "authenticationDetails": [
+                        {
+                            "authenticationStepDateTime": signin_at,
+                            "authenticationMethod": "Password",
+                            "authenticationMethodDetail": "Password in the cloud",
+                            "succeeded": True,
+                            "authenticationStepResultDetail": "Correct password",
+                            "authenticationStepRequirement": "Primary authentication",
+                        },
+                        {
+                            "authenticationStepDateTime": signin_at,
+                            "authenticationMethod": "Mobile app notification",
+                            "authenticationMethodDetail": "Number matching push approved",
+                            "succeeded": True,
+                            "authenticationStepResultDetail":
+                                "MFA successfully completed (number matching)",
+                            "authenticationStepRequirement": "Multifactor authentication",
+                        },
+                    ],
+                },
+            )
+            signin["createdDateTime"] = signin_at
+            audit = {
+                "dataset": "msft_azure_audit",
+                "id": secrets.token_hex(8),
+                "activityDateTime": passkey_at,
+                "activityDisplayName": "User registered security info",
+                "category": "UserManagement",
+                "loggedByService": "Authentication Methods",
+                "operationType": "Add",
+                "result": "success",
+                "resultReason": "User registered passkey (FIDO2)",
+                "initiatedBy": {"user": {
+                    "userPrincipalName": params.target_user,
+                    "displayName": params.target_user.split("@")[0],
+                    "ipAddress": attacker.ip,
+                }},
+                "targetResources": [{
+                    "type": "User",
+                    "userPrincipalName": params.target_user,
+                    "displayName": params.target_user.split("@")[0],
+                }],
+                "additionalDetails": [
+                    {"key": "AuthenticationMethod", "value": "Passkey (FIDO2)"},
+                ],
+                "vishing_passkey_marker": True,
+                "cortexsim_run_id": sim_run_id,
+            }
+            return [signin, audit]
 
         raise ValueError(  # pragma: no cover — gated by the pydantic validator
             f"unknown event_pattern {params.event_pattern!r}"

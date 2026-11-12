@@ -387,6 +387,35 @@ def _indicator_pattern(typ: str, val: str) -> str:
     return behind + re.escape(val) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 
 
+def _scan_eal_params(step: dict, inds: list) -> list:
+    """Mirrors scenario_loader._scan_eal_params on dict-shaped input."""
+    eal = step.get("eal") if isinstance(step, dict) else None
+    if not isinstance(eal, dict) or eal.get("plugin") in COLLECTOR_POST_PLUGINS:
+        return []
+    probes = [p for p in _indicator_probes(inds) if p[0] in ("domain", "url", "ipv4", "ipv6")]
+    out = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(node, (list, tuple)):
+            for i, v in enumerate(node):
+                walk(v, f"{path}.{i}")
+        elif isinstance(node, str):
+            seen = set()
+            for typ, val, iid, _note in probes:
+                if repr(iid) in seen:
+                    continue
+                if re.search(_indicator_pattern(typ, val), node, re.IGNORECASE):
+                    seen.add(repr(iid))
+                    out.append(f"S-25: step {step.get('id')} {path}: {typ} {iid} in the params of "
+                               f"non-collector plugin {eal.get('plugin')}")
+
+    walk(eal.get("params") or {}, "eal.params")
+    return out
+
+
 def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None) -> list:
     """S-25 / S-26 on dict-shaped input; same contract as the loader's function."""
     out = []
@@ -394,6 +423,8 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
             and i["type"] in INDICATOR_TYPES and isinstance(i.get("value"), str) and i["value"]]
     probes = _indicator_probes(inds)
     probe_key = [repr(p[2]) for p in probes]  # one S-25 per indicator per line (ids may be malformed)
+    for st in steps:
+        out += _scan_eal_params(st, inds)
     for label, command in _indicator_units(steps, cleanup_commands):
         lines = command.split("\n")
         heredoc = None
@@ -674,7 +705,7 @@ def main() -> int:
             errors.extend(unsafe_indicator_lines(indicators, step_dicts, cl_cmds))
     errors.extend(campaign_id_errors(step_dicts))
     for st in step_dicts:
-        if is_marker_only(st.get("command")):
+        if st.get("channel") != "eal" and is_marker_only(st.get("command")):
             warnings.append(
                 f"marker-only step {st.get('id', '?')}: command only echoes/no-ops "
                 f"and emits no signal a detection could key on")

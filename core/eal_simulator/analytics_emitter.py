@@ -47,6 +47,7 @@ import json
 import logging
 import re
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -247,6 +248,19 @@ CANARY_RAW_FIELD = "cortexsim_canary"
 
 #: Reserved, non-resolving domain (RFC 2606 .invalid) for the canary principal.
 CANARY_DOMAIN = "cortexsim-canary.invalid"
+
+
+def body_time(offset_seconds: int = 0, *, plus_seconds: float = 0.0) -> str:
+    """ISO-8601 UTC timestamp for a record's *body* time field.
+
+    ``offset_seconds`` back-dates the record (a negative value) so a campaign
+    can place its records in the past; ``plus_seconds`` orders records within
+    one burst. The HTTP delivery time is unaffected; only the field a
+    detection reads moves.
+    """
+    return (
+        datetime.now(timezone.utc) + timedelta(seconds=offset_seconds + plus_seconds)
+    ).isoformat()
 
 
 def canary_bindings(token: str) -> dict[str, str]:

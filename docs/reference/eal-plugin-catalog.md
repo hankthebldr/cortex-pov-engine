@@ -370,7 +370,7 @@ Plugins fall into three implementation families:
 | 5 | `bulk_https_exfil` | NDR | Large outbound HTTPS upload (random bytes, streamed, up to 16 GiB ceiling) | `target_url` | T1041, T1567 | `plugins/bulk_https_exfil.py` |
 | 6 | `ftp_egress` | NDR | Cleartext FTP control session (banner→USER→PASS→SYST→NOOP→PASV→STOR→QUIT) + optional STOR data channel | `target_host:target_port` (default 21) | T1071, T1048.003 | `plugins/ftp_egress.py` |
 | 7 | `ssh_egress` | NDR | Outbound SSH banner (RFC-4253) + synthesised `SSH_MSG_KEXINIT` pseudo-frame; stops before key exchange | `target_host:target_port` (default 22) | T1021.004, T1572 | `plugins/ssh_egress.py` |
-| 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 5 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
+| 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 9 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
 | 9 | `oauth_grant_emulator` | Cloud App / CASB | Outbound OAuth 2.0 authorize GETs with planted risky scopes + bogus client_id | Okta/Microsoft/Google authorize endpoint | T1550.001, T1528, T1078.004, T1098 | `plugins/oauth_grant_emulator.py` |
 | 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini/DeepSeek/OpenRouter carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
 | 11 | `airs_prompt_attack` | AIRS | Shells out to `cortex-prompt-attacker`; Probe→Mutator→Target→Scorer pipeline against a vulnerable LLM; JSONL→ECS | `target_url` (the AIRS target) | T1656, T1059, T1499 | `plugins/airs_prompt_attack.py` |
@@ -603,7 +603,7 @@ Per-session event `ssh_session`.
 **Attack shape.** Builds shape-true IdP audit events (Okta system-log,
 Microsoft Entra signInLogs, Google Workspace login-activity subsets) and POSTs
 them as JSON to an **operator-supplied collector URL** — never a real tenant.
-Five behavioural presets, each producing a burst:
+Nine behavioural presets (`event_pattern`), each producing a burst:
 
 | `event_pattern` | What it emits |
 |-----------------|---------------|
@@ -612,10 +612,14 @@ Five behavioural presets, each producing a burst:
 | `credential_stuffing` | `burst_count` failed logins across `user000..N` from one source IP (sa-east) |
 | `token_replay` | a session-start + token reuse from a different geo/UA with shared `session_token_id` |
 | `brute_force_lockout` | `burst_count` failures + 1 `user.account.lock` event |
+| `azure_risky_login` | a baseline sign-in from us-west, then a successful sign-in from `anon-vpn` flagged risky (`riskLevelDuringSignIn: high`, `riskEventTypes` unfamiliarFeatures + anonymizedIPAddress); marker `risky_login_marker` |
+| `azure_ad_powershell_first_use` | one successful sign-in from eu-central through the Azure AD PowerShell first-party app (`appId` `1b730954-1685-4b74-9bfd-dac224a7b894`); markers `azure_ad_powershell_marker`, `first_operation` |
+| `entra_mfa_reported_suspicious` | `max(2, burst_count-1)` denied MFA pushes from `anon-vpn`, then one `user.mfa.reported_fraud` (`fraudReported: true`); marker `mfa_reported_suspicious_marker` |
+| `vishing_passkey_enrollment` | provider `microsoft` only: an interactive Entra sign-in (password plus approved number-matched push, from `anon-vpn`) then a "User registered security info" audit record (Passkey) from the same IP 90 s later; both carry `vishing_passkey_marker`. Under `canary_token` both carry the canary principal (`userPrincipalName` on the sign-in, `initiatedBy.user.userPrincipalName` on the audit record); the audit record's `targetResources[]` keeps `target_user` |
 
-Source locations are 5 canned `_SourceLocation` entries (us-west, eu-central,
-apac-east, africa-south, sa-east) using documentation-range IPs (203.0.113.x,
-198.51.100.x, 192.0.2.x). Default target user is `*.invalid` canary.
+Source locations are 6 canned `_SourceLocation` entries (us-west, eu-central,
+apac-east, africa-south, sa-east, anon-vpn) using documentation-range IPs
+(203.0.113.x, 198.51.100.x, 192.0.2.x). Default target user is `*.invalid` canary.
 
 **Safety gating.** `ctx.authorise(collector_url-host)` only. Each request gets a
 per-request `x-simulation-run-id`. Body carries `cortexsim_run_id`. `verify=False`.
@@ -624,8 +628,10 @@ per-request `x-simulation-run-id`. Body carries `cortexsim_run_id`. `verify=Fals
 |-------|----------------|--------|
 | `collector_url` | str (required) | http/https + hostname |
 | `provider` | str = "okta" | okta/microsoft/google |
-| `event_pattern` | str = "impossible_travel" | the 5 presets |
+| `event_pattern` | str = "impossible_travel" | the 9 presets |
 | `target_user` | str = `ada.lovelace@cortexsim-canary.invalid` | must contain `@` |
+| `event_time_offset_seconds` | int = 0 | -86400–0; back-dates every record's body timestamp (delivery time unchanged) |
+| `source_ip` | str? = None | valid IP; replaces the IP of every record not from the us-west home baseline |
 | `iterations` | int = 1 | 1–200 |
 | `sleep_seconds` | float = 0.0 | 0–600 |
 | `request_timeout` | float = 15.0 | 1–300 |
@@ -921,6 +927,19 @@ partial); their additions are recorded here. No plugin-count change (27).
   params: `public_ip` (default far documentation IP), `private_ip` (default random
   `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
   (`02:00:00:00:00:07`).
+
+- **`m365_activity_emitter`** (2026-11-11) — new optional params, all absent by
+  default (every existing record is unchanged): `source_ip` (valid IP, replaces
+  `ClientIP` on every record), `user_agents` (list, cycled into each record's
+  `UserAgent` body field; never the collector POST header), `storage_targets`
+  (`onedrive`/`sharepoint`, `storage_exfiltration` cycles records over them),
+  `event_time_offset_seconds` (-86400-0, back-dates `CreationTime`). New
+  `event_pattern` `internal_extortion_notice` (marker
+  `internal_extortion_notice_marker`): one Exchange `Send` (RecordType 2) whose
+  recipients are `recipientList` (`{Address, Name}`) + `recipientCount`, to
+  `burst_count` internal `colleague-NN@<target domain>` addresses, then one Teams
+  `MessageSent` (RecordType 25) per recipient. Names per the Office 365 Management
+  Activity API schema.
 
 #### `cloud_audit_emitter` (CDR / Analytics) — logging-service presets (v1.2.0, 2026-11-11)
 

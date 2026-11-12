@@ -776,6 +776,37 @@ def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -
     return out
 
 
+def _scan_eal_params(step: StepSchema, indicators: list[IndicatorSchema]) -> list[str]:
+    """S-25 over ``eal.params``: a non-collector plugin (c2_http_beacon, ...) turns a
+    param value into real traffic SimCore sends, so an indicator may not appear in
+    any string under it. Collector plugins only POST data, so they are exempt."""
+    eal = getattr(step, "eal", None)
+    if eal is None or eal.plugin in COLLECTOR_POST_PLUGINS:
+        return []
+    probes = [p for p in _indicator_probes(indicators) if p[0] in ("domain", "url", "ipv4", "ipv6")]
+    out: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(node, (list, tuple)):
+            for i, v in enumerate(node):
+                walk(v, f"{path}.{i}")
+        elif isinstance(node, str):
+            seen: set[str] = set()
+            for typ, val, iid, _note in probes:
+                if repr(iid) in seen:
+                    continue
+                if re.search(_probe_pattern(typ, val), node, re.IGNORECASE):
+                    seen.add(repr(iid))
+                    out.append(f"S-25: step {step.id} {path}: {typ} {iid} in the params of "
+                               f"non-collector plugin {eal.plugin}")
+
+    walk(eal.params or {}, "eal.params")
+    return out
+
+
 def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema],
                            cleanup: Optional["CleanupSchema"] = None) -> list[str]:
     """S-25 / S-26: where an indicator may and may not appear in an executed command.
@@ -795,6 +826,7 @@ def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSc
     out: list[str] = []
     for step in steps:
         out += _scan_command(f"step {step.id}", step.command, indicators)
+        out += _scan_eal_params(step, indicators)
         for os_name, cmd in (step.platform_variants or {}).items():
             out += _scan_command(f"step {step.id} platform_variants[{os_name}]", cmd, indicators)
     if cleanup is not None:

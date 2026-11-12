@@ -28,6 +28,9 @@ from eal_simulator.plugins.m365_activity_emitter import (
     _list_event_patterns,
     _m365_audit_event,
     _FILE_DOWNLOADED,
+    _ANOMALOUS_IP,
+    _ONEDRIVE_SITE,
+    _SHAREPOINT_SITE,
 )
 
 
@@ -201,9 +204,10 @@ class TestParamValidation:
 
 
 class TestRecordShape:
-    def test_six_event_patterns_registered(self):
+    def test_seven_event_patterns_registered(self):
         assert _list_event_patterns() == sorted(_EVENT_PATTERNS)
-        assert len(_EVENT_PATTERNS) == 6
+        assert len(_EVENT_PATTERNS) == 7
+        assert "internal_extortion_notice" in _EVENT_PATTERNS
 
     def test_audit_record_shape(self):
         evt = _m365_audit_event(
@@ -431,3 +435,179 @@ class TestRegistration:
         assert is_c2_plugin(
             "m365_activity_emitter", M365ActivityEmitter.Meta.mitre_techniques,
         ) is False
+
+
+# --------------------------------------------------------------------------
+# Pink shapes: source IP, record user agents, storage targets, extortion
+#
+# Schema (Office 365 Management Activity API, common + Exchange mailbox +
+# Teams): https://learn.microsoft.com/en-us/office/office-365-management-api/office-365-management-activity-api-schema
+#   RecordType 2  = ExchangeItem (mailbox audit, single item); 25 = MicrosoftTeams.
+#   Exchange mailbox schema carries the recipients of a sent message in
+#   ``recipientList`` (Collection(EmailAddress{Address, Name})) and
+#   ``recipientCount``. Operation ``Send`` and Teams ``MessageSent`` are the
+#   operation names listed at
+#   https://learn.microsoft.com/en-us/purview/audit-log-activities
+# Confirmed rows (fetched 2026-11-11):
+#   https://learn.microsoft.com/en-us/purview/audit-mailboxes, "Mailbox actions
+#   for user mailboxes": "Send | The user sends an email message, replies to an
+#   email message, or forwards an email message."
+#   https://learn.microsoft.com/purview/audit-log-activities#teams-activities:
+#   "Posted new message | MessageSent | A new message was posted to a chat or a
+#   channel."
+#   Schema page, "Exchange Mailbox schema": "recipientList |
+#   Collection(Self.EmailAddress) | Captures the list of mailbox recipients,
+#   maximum 1000" and "recipientCount | Edm.Int64".
+# --------------------------------------------------------------------------
+
+_PINK_IP = "172.93.100.252"
+_PINK_UAS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.17928; Pro)",
+    "OneDriveMiniSync/24.201.1006.0005 (Windows NT 10.0)",
+]
+_ALL_PATTERNS = sorted(_EVENT_PATTERNS)
+
+_BASE_KEYS = {
+    "ClientIP", "CreationTime", "Id", "ItemType", "ObjectId", "Operation",
+    "OrganizationId", "RecordType", "ResultStatus", "UserId", "UserKey",
+    "UserType", "Workload", "cortexsim_run_id", "dataset",
+}
+# Key sets each pre-existing pattern produced on the code before this change
+# (captured by running it, then hard-coded).
+_TODAYS_KEYS = {
+    "storage_exfiltration": [_BASE_KEYS | {
+        "SiteUrl", "SourceFileName", "SourceRelativeUrl",
+        "download_count_marker", "storage_exfiltration_marker"}],
+    "unusual_storage_access": [_BASE_KEYS | {
+        "SiteUrl", "SourceFileName", "anomalous_geo_marker",
+        "unusual_storage_access_marker"}],
+    "mailbox_enumeration_by_app": [_BASE_KEYS | {
+        "AppId", "AppName", "ClientAppId", "ClientInfoString", "LogonType",
+        "MailAccessType", "MailboxOwnerUPN", "OperationCount",
+        "mailbox_enumeration_marker"}],
+    "sharepoint_enumeration": [
+        _BASE_KEYS | {"SearchQueryText", "SiteUrl", "sharepoint_enumeration_marker"},
+        _BASE_KEYS | {"SiteUrl", "sharepoint_enumeration_marker"}],
+    "onedrive_enumeration": [_BASE_KEYS | {
+        "SiteUrl", "SourceFileName", "SourceRelativeUrl", "enumeration_marker",
+        "onedrive_enumeration_marker"}],
+    "mailbox_rule_creation": [_BASE_KEYS | {
+        "MailboxOwnerUPN", "Parameters", "RuleName", "forwarding_rule_marker",
+        "hide_rule_marker", "mailbox_rule_creation_marker"}],
+}
+
+
+def _build(pattern: str, **kw) -> list[dict[str, Any]]:
+    params = M365ActivityEmitterParams(
+        collector_url=_DEFAULT_COLLECTOR, event_pattern=pattern,
+        burst_count=kw.pop("burst_count", 6), **kw,
+    )
+    return M365ActivityEmitter().build_events(params, sim_run_id="r", iteration=1)
+
+
+class TestPinkShapes:
+    @pytest.mark.parametrize("pattern", sorted(_TODAYS_KEYS))
+    def test_default_records_keep_todays_shape(self, pattern):
+        recs = _build(pattern)
+        assert recs
+        assert all("UserAgent" not in r for r in recs)
+        assert all(r["ClientIP"] == _ANOMALOUS_IP for r in recs)
+        assert {frozenset(r) for r in recs} == {frozenset(k) for k in _TODAYS_KEYS[pattern]}
+        if pattern == "storage_exfiltration":
+            assert {r["Workload"] for r in recs} == {"OneDrive"}
+            assert {r["SiteUrl"] for r in recs} == {_ONEDRIVE_SITE}
+
+    @pytest.mark.parametrize("pattern", _ALL_PATTERNS)
+    def test_source_ip_stamps_every_record(self, pattern):
+        recs = _build(pattern, source_ip=_PINK_IP)
+        assert recs and all(r["ClientIP"] == _PINK_IP for r in recs)
+
+    def test_source_ip_validated(self):
+        with pytest.raises(ValueError):
+            M365ActivityEmitterParams(collector_url=_DEFAULT_COLLECTOR, source_ip="nope")
+
+    @pytest.mark.parametrize("pattern", _ALL_PATTERNS)
+    def test_offset_back_dates_creation_time(self, pattern):
+        from datetime import datetime, timezone
+        recs = _build(pattern, event_time_offset_seconds=-3600)
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(recs[0]["CreationTime"])
+        assert 3500 < age.total_seconds() < 3700
+
+    def test_user_agents_rotate_in_records_not_header(self, monkeypatch):
+        stub = _RecordingClient()
+        _orig_build = M365ActivityEmitter._build_client
+        monkeypatch.setattr(M365ActivityEmitter, "_build_client", lambda self, p: stub)
+        campaign = _campaign(
+            event_pattern="storage_exfiltration", burst_count=6,
+            user_agents=_PINK_UAS, user_agent="CortexSim-Test/1.0",
+        )
+        _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
+        bodies = _bodies(stub)
+        assert [b["UserAgent"] for b in bodies] == _PINK_UAS * 2
+        # The collector User-Agent header lives on the real client the base class
+        # builds (the recording stub bypasses it), so assert on that client.
+        params = M365ActivityEmitterParams(
+            collector_url=_DEFAULT_COLLECTOR, user_agents=_PINK_UAS,
+            user_agent="CortexSim-Test/1.0",
+        )
+        real = _orig_build(M365ActivityEmitter(), params)
+        ua = real.headers["user-agent"]
+        assert ua == "CortexSim-Test/1.0"
+        assert not any(u in ua for u in _PINK_UAS)
+        for req in stub.requests:
+            sent = {k.lower(): v for k, v in req["headers"].items()}.get("user-agent", "")
+            assert not any(u in sent for u in _PINK_UAS)
+
+    def test_storage_targets_both_workloads(self):
+        recs = _build("storage_exfiltration", storage_targets=["sharepoint", "onedrive"])
+        by = {r["Workload"]: r for r in recs}
+        assert set(by) == {"SharePoint", "OneDrive"}
+        assert by["SharePoint"]["SiteUrl"] == _SHAREPOINT_SITE
+        assert "Shared Documents/" in by["SharePoint"]["ObjectId"]
+        assert by["OneDrive"]["SiteUrl"] == _ONEDRIVE_SITE
+
+    def test_internal_extortion_notice_shapes(self):
+        recs = _build("internal_extortion_notice", burst_count=4,
+                      source_ip=_PINK_IP, user_agents=_PINK_UAS)
+        sends = [r for r in recs if r["Operation"] == "Send"]
+        teams = [r for r in recs if r["Operation"] == "MessageSent"]
+        assert len(sends) == 1 and len(teams) == 4 and len(recs) == 5
+        assert sends[0]["RecordType"] == 2 and sends[0]["Workload"] == "Exchange"
+        assert sends[0]["recipientCount"] == 4
+        addrs = [a["Address"] for a in sends[0]["recipientList"]]
+        assert addrs == [f"colleague-{i:02d}@cortexsim-canary.invalid" for i in range(1, 5)]
+        assert all(t["RecordType"] == 25 and t["Workload"] == "MicrosoftTeams" for t in teams)
+        assert all(r["ClientIP"] == _PINK_IP for r in recs)
+        assert all(r["internal_extortion_notice_marker"] is True for r in recs)
+        assert all(r["UserId"] == "ada.lovelace@cortexsim-canary.invalid" for r in recs)
+
+
+class _TickingDatetime:
+    """datetime stand-in whose now() advances one second per call."""
+
+    _n = 0
+
+    @classmethod
+    def now(cls, tz=None):
+        from datetime import datetime, timedelta, timezone
+        cls._n += 1
+        return datetime(2026, 11, 11, tzinfo=timezone.utc) + timedelta(seconds=cls._n)
+
+
+class TestPerRecordTimestamps:
+    def test_default_records_each_take_their_own_now(self, monkeypatch):
+        import eal_simulator.plugins.m365_activity_emitter as mod
+        _TickingDatetime._n = 0
+        monkeypatch.setattr(mod, "datetime", _TickingDatetime)
+        recs = _build("storage_exfiltration", burst_count=4)
+        assert len({r["CreationTime"] for r in recs}) == 4
+
+    def test_back_dated_extortion_keeps_send_before_teams(self):
+        from datetime import datetime
+        recs = _build("internal_extortion_notice", burst_count=4,
+                      event_time_offset_seconds=-3600)
+        send = next(r for r in recs if r["Operation"] == "Send")
+        teams = [r for r in recs if r["Operation"] == "MessageSent"]
+        t0 = datetime.fromisoformat(send["CreationTime"])
+        assert all(datetime.fromisoformat(t["CreationTime"]) > t0 for t in teams)

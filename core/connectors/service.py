@@ -41,6 +41,7 @@ from connectors.case_ledger import (
     ledger_from_dict,
 )
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
+from connectors.verify_window import PUSH_WINDOW_REASON
 from connectors.measures import (
     CORRELATION,
     build_measurement,
@@ -1644,6 +1645,8 @@ class TenantRunner:
     tenant: Optional[str] = None
     reason: Optional[str] = None
     remediation: Optional[str] = None
+    #: The tenant client, so a caller can build a per-run runner (own window).
+    client: Optional[Any] = None
 
     @property
     def ok(self) -> bool:
@@ -1762,7 +1765,25 @@ async def resolve_tenant_runner(
     return TenantRunner(
         runner=xsiam_query_runner(client, {"relativeTime": timeframe_seconds * 1000}),
         tenant=integ.name,
+        client=client,
     )
+
+
+async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str, int]:
+    """The absolute window for ``run``: its span plus its scenario's correlation
+    window (``CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS`` when unset or missing),
+    opened earlier by the most back-dated eal record body its steps declare."""
+    from connectors.verify_window import back_dating_seconds, run_timeframe  # noqa: PLC0415
+
+    scenario = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id)
+    )).scalar_one_or_none()
+    window = getattr(scenario, "correlation_window_seconds", None)
+    if window is None:
+        window = settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS
+    return run_timeframe(run.started_at, run.completed_at, int(window), now=now,
+                         lead_extra_seconds=back_dating_seconds(
+                             getattr(scenario, "steps", None)))
 
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
@@ -1888,6 +1909,8 @@ async def verify_run_now(
     tenant: Optional[str] = None,
     budget: Optional[dict[str, Any]] = None,
     source: str = "verify",
+    window: Optional[dict[str, int]] = None,
+    window_reason: Optional[str] = None,
 ) -> VerifyOutcome:
     """Verify one run's ``verification_xql`` results, then score it.
 
@@ -1949,12 +1972,22 @@ async def verify_run_now(
                 ),
             )
 
+    window_used: Optional[dict[str, int]] = window
     if runner is None:
         resolved = _as_tenant_runner(await resolve_tenant_runner(
             db, integration=integration,
             timeframe_seconds=timeframe_seconds or settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS,
         ))
         runner, tenant = resolved.runner, resolved.tenant
+        if runner is not None and timeframe_seconds is None and resolved.client is not None:
+            if run.mode == "push":
+                # No execution time to anchor on: keep the relative lookback.
+                window_reason = PUSH_WINDOW_REASON
+            else:
+                from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+                window = await _run_window(db, run, now=datetime.utcnow())
+                runner = xsiam_query_runner(resolved.client, window)
+                window_used = window
         if runner is None:
             # No usable credential -> pending, never pass. The seeded results
             # keep the `pending` kpi_verdict the orchestrator gave them,
@@ -1991,6 +2024,12 @@ async def verify_run_now(
         "counts": counts,
         "quota_tripped": bool(budget.get("tripped")),
     })
+    if window_used is not None:
+        book["window"] = window_used
+        book.pop("window_reason", None)
+    elif window_reason is not None:
+        book["window"] = None
+        book["window_reason"] = window_reason
     score = await score_run_for_run(db, run, source=source, results=results,
                                     extra_detail={"verification": book})
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
@@ -2020,8 +2059,10 @@ async def auto_verify_once(
                        else settings.CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS)
     max_queries = (max_queries if max_queries is not None
                    else settings.CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP)
+    override = timeframe_seconds is not None
     timeframe_seconds = (timeframe_seconds if timeframe_seconds is not None
                          else settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS)
+    client: Optional[Any] = None
 
     stats: dict[str, Any] = {"runs_considered": 0, "runs_verified": 0,
                              "queries_issued": 0, "quota_tripped": False,
@@ -2034,6 +2075,7 @@ async def auto_verify_once(
             logger.debug("auto-verify skipped: %s", e.code)
             return stats
         runner, tenant = resolved.runner, resolved.tenant
+        client = resolved.client if not override else None
         stats["tenant"] = tenant
         stats["reason"] = resolved.reason
     if runner is None:
@@ -2069,8 +2111,16 @@ async def auto_verify_once(
             continue
         stats["runs_considered"] += 1
         try:
-            outcome = await verify_run_now(db, run, runner=runner, tenant=tenant,
-                                           budget=budget, source="sweep")
+            run_runner, run_window, run_reason = runner, None, None
+            if client is not None and run.mode == "push":
+                run_reason = PUSH_WINDOW_REASON
+            elif client is not None:
+                from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+                run_window = await _run_window(db, run, now=now)
+                run_runner = xsiam_query_runner(client, run_window)
+            outcome = await verify_run_now(db, run, runner=run_runner, tenant=tenant,
+                                           budget=budget, source="sweep",
+                                           window=run_window, window_reason=run_reason)
         except Exception:  # noqa: BLE001 — one bad run must not kill the sweep
             logger.exception("auto-verify failed run=%s", run.run_id)
             continue
