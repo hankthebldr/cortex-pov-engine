@@ -140,6 +140,32 @@ def _target_refusal(resolutions: list[Any]) -> Optional[HTTPException]:
     return None
 
 
+# A campaign body is caller input, and the consent gates that make a launch
+# live ride in the same body. ``binary`` is the param airs_prompt_attack and
+# browser_attack_runner once read as the path of the CLI to spawn, which let a
+# caller run any program as SimCore's user. Those plugins now run only the CLI
+# on SimCore's PATH; a step still naming one is refused, so the caller learns
+# the key was not honoured instead of having it dropped without a word.
+_CALLER_EXECUTABLE_PARAMS = ("binary",)
+
+
+def _refuse_caller_executable(steps: list[dict[str, Any]]) -> None:
+    """Raise 400 CALLER_EXECUTABLE_REFUSED if any step's params name an executable."""
+    for step in steps:
+        params = step.get("params") or {}
+        for key in _CALLER_EXECUTABLE_PARAMS:
+            if key in params:
+                raise HTTPException(status_code=400, detail={
+                    "error": "Caller-supplied executable refused",
+                    "code": "CALLER_EXECUTABLE_REFUSED",
+                    "detail": (
+                        f"step '{step.get('step_id')}' sets params.{key}; a plugin runs "
+                        "only the CLI on SimCore's own PATH, never one a campaign "
+                        f"names. Remove params.{key}."
+                    ),
+                })
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -372,6 +398,7 @@ async def create_campaign(
     that its params validate against that plugin's params model.
     """
     reg = _get_executor().registry
+    _refuse_caller_executable([s.model_dump() for s in campaign.steps])
     # Validate against the RESOLVED params, so a step may leave collector_url
     # to the instance's collector targets. The spec stored below is the one the
     # operator sent: no target URL is baked in and no key is added.
@@ -473,6 +500,8 @@ async def launch_campaign(
         )
 
     spec = dict(row.spec or {})
+    # A campaign stored before params.binary was refused still carries it.
+    _refuse_caller_executable(spec.get("steps") or [])
     if body.dry_run is not None:
         spec["dry_run"] = bool(body.dry_run)
     # Launch-time C2 consent overrides the persisted campaign value so an

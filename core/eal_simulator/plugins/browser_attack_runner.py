@@ -22,7 +22,6 @@ import asyncio
 import dataclasses
 import json
 import logging
-import os
 import shlex
 import shutil
 from pathlib import Path
@@ -78,10 +77,8 @@ class BrowserAttackRunnerParams(BaseModel):
     )
     headless: bool = Field(default=True)
     timeout_seconds: float = Field(default=600.0, ge=1.0, le=7200.0)
-    binary: Optional[str] = Field(
-        default=None,
-        description="Override the cortex-browser-attacker binary path.",
-    )
+    # No ``binary`` param: campaign params are caller input, and the executable
+    # they named ran as SimCore's user. See ``_resolve_binary``.
 
     @field_validator("browser_channel")
     @classmethod
@@ -102,11 +99,10 @@ class BrowserAttackRunnerParams(BaseModel):
         return v
 
 
-def _resolve_binary(override: Optional[str]) -> Optional[str]:
-    if override:
-        if os.path.isabs(override):
-            return override if os.path.isfile(override) else None
-        return shutil.which(override)
+def _resolve_binary() -> Optional[str]:
+    """The CLI this plugin runs: ``cortex-browser-attacker`` on SimCore's own
+    PATH, where the TOOL-CORTEX-BROWSER-ATTACKER pack installs it. Never a
+    campaign param."""
     return shutil.which(_DEFAULT_BIN)
 
 
@@ -165,7 +161,7 @@ class BrowserAttackRunner(BaseSimulation):
                 error=f"campaign_path not found: {params.campaign_path}",
             )
 
-        binary = _resolve_binary(params.binary)
+        binary = _resolve_binary()
         if binary is None:
             return SimulationResult(
                 plugin=self.Meta.name,
@@ -175,7 +171,7 @@ class BrowserAttackRunner(BaseSimulation):
                 completed_at=self.utcnow(),
                 events_emitted=0,
                 error=(
-                    f"binary '{params.binary or _DEFAULT_BIN}' not found on PATH; "
+                    f"binary '{_DEFAULT_BIN}' not found on SimCore's PATH; "
                     "install cortex-browser-attacker[playwright] and run "
                     "'playwright install chromium'"
                 ),
