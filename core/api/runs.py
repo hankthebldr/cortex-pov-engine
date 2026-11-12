@@ -49,7 +49,7 @@ from engine.outcome import (
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
-from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, pair_merge
+from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, NO_CASE_YET_HINT, pair_merge
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, Scenario, StepOutcome
@@ -251,6 +251,8 @@ def _case_section(run: Run) -> list[str]:
     out.append(f"Read at {_md_cell(led.get('read_at') or '—')} from `{_md_cell(led.get('integration') or '—', code=True)}` "
                f"(basis: {_md_cell(led.get('basis') or '—')}).")
     out.append("")
+    if led["merge_class"] == "NO_CASE_YET":
+        out += [NO_CASE_YET_HINT, ""]
     if led["code"] != "CASE_LEDGER_OK":
         out += [f"> Ledger status: `{_md_cell(led['code'], code=True)}`", ""]
     ir = led.get("issue_read")

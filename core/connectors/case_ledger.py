@@ -37,6 +37,12 @@ MERGE_CLASSES = ("ONE_CASE", "SPLIT_SEALED", "SPLIT_NATIVE", "LOW_ONLY_NO_CASE",
 
 CASE_DISCLAIMER = "Tenant disposition is shown for context. It is not detection evidence."
 
+# NO_CASE_YET advances only on a reconcile: a refresh re-reads the cases a
+# ledger names, and this one names none. Mirrored in RunCasePanel.jsx.
+NO_CASE_YET_HINT = ("No case yet: the next reconcile re-reads these alerts and rebuilds the "
+                    "ledger once the tenant has grouped them into a case. A refresh re-reads "
+                    "cases only, and this ledger names none.")
+
 # Terminal and open case statuses, from secops-framework
 # Packs/soc-framework-nist-ir/Scripts/SOCFWCaseSelect/SOCFWCaseSelect.py:25-28
 # (TERMINAL_STATUSES, which also lists the bare "resolved"). Anything not in

@@ -273,19 +273,28 @@ async def reconcile_run(
 
     # The case ledger is built BEFORE scoring so ctx["merge_class"] is there for
     # the one guard that reads it; it is disposition CONTEXT and writes nothing
-    # onto a Result. Only when matched alerts carry case ids (basis below).
+    # onto a Result. EVERY reconcile rebuilds it, a zero-match one included,
+    # from the stored ledger's alerts plus this reconcile's matches: a late
+    # match is the case the ledger exists for (spec §4.2), and it is only a
+    # split if the earlier alerts are still in the population.
     case_queries = 0
     ledger: Optional[dict] = None
-    if any(ctx["alert_incidents"].values()) and hasattr(conn, "pull_cases"):
+    population, fresh = ledger_population(run.case_ledger, by_ext, matched_ext,
+                                          integration=cfg.integration_name,
+                                          source=connector_kind)
+    if population and hasattr(conn, "pull_cases"):
         ledger, case_queries = await build_and_store_case_ledger(
-            db, run, conn=conn, cfg=cfg,
-            alerts=[by_ext[e] for e in dict.fromkeys(matched_ext)],
-            basis="alert_incident_ids")
-        ctx["merge_class"] = ledger["merge_class"]
-        # What the ledger classified: the withhold applies only when it covers
-        # every cased alert the correlation KPI counts (measures.ledger_covers).
-        ctx["case_ledger_alerts"] = {a["external_id"]: a["case_id"]
-                                     for a in ledger["alerts"] if a.get("case_id")}
+            db, run, conn=conn, cfg=cfg, alerts=population, bridge_alerts=fresh,
+            basis="alert_incident_ids", keep_stored_on_read_failure=True)
+        if ledger.get("stored_ledger_kept"):
+            # A failed read never withholds: the stored claim is not re-proven.
+            ctx["merge_class"] = "PENDING"
+        else:
+            ctx["merge_class"] = ledger["merge_class"]
+            # What the ledger classified: the withhold applies only when it
+            # covers every cased alert the KPI counts (measures.ledger_covers).
+            ctx["case_ledger_alerts"] = {a["external_id"]: a["case_id"]
+                                         for a in ledger["alerts"] if a.get("case_id")}
 
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}",
@@ -296,7 +305,9 @@ async def reconcile_run(
     # counts its own pages when it was attempted (ok or not).
     summary["queries_issued"] = _pages_issued(pull.detail) + incidents_queries + case_queries
     if ledger is not None:
-        summary["case_ledger"] = {"merge_class": ledger["merge_class"], "code": ledger["code"]}
+        summary["case_ledger"] = {"merge_class": ctx["merge_class"], "code": ledger["code"]}
+        if ledger.get("stored_ledger_kept"):
+            summary["case_ledger"]["stored_ledger_kept"] = True
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
@@ -333,28 +344,77 @@ async def reconcile_run(
     return ReconcileOutcome(summary=summary, newly_matched=newly)
 
 
+def ledger_population(
+    stored: Optional[dict], by_ext: dict[str, ObservedAlert], matched_ext: list[str], *,
+    integration: str, source: str,
+) -> tuple[list[ObservedAlert], list[ObservedAlert]]:
+    """The alerts a reconcile builds the case ledger from: ``(population, fresh)``.
+
+    ``population`` is the stored ledger's alerts followed by this reconcile's
+    newly matched ones (de-duplicated by external id, stored order first). Each
+    is taken from this pull (``by_ext``) when the pull returned it, so a case id
+    the tenant stamped since the last reconcile is seen; otherwise it is rebuilt
+    from the stored entry. ``fresh`` is the subset taken from this pull: only
+    those carry a host, so only they can answer the bridge's mixed-key question.
+
+    The stored alerts are carried only when the stored ledger was read through
+    the same integration (or records none): case ids are tenant-local. A stored
+    ledger that cannot be read back is not carried; the rebuilt ledger replaces
+    it, and the read error is logged.
+    """
+    picked: dict[str, ObservedAlert] = {}
+    fresh: dict[str, ObservedAlert] = {}
+    if isinstance(stored, dict) and stored.get("integration") in (None, integration):
+        try:
+            entries = [(str(e["external_id"]), e) for e in stored["alerts"]]
+            for eid, e in entries:
+                if eid in by_ext:
+                    picked[eid] = fresh[eid] = by_ext[eid]
+                    continue
+                picked[eid] = ObservedAlert(
+                    source=source, observed_at=datetime.fromisoformat(e["observed_at"]),
+                    external_id=eid, severity=e["severity"], incident_id=e["case_id"])
+        except (*LEDGER_READ_ERRORS, ValueError) as e:
+            logger.warning("stored case ledger of run not carried (unreadable): %s", e)
+            picked, fresh = {}, {}
+    for eid in matched_ext:
+        if eid in by_ext and eid not in picked:
+            picked[eid] = fresh[eid] = by_ext[eid]
+    return list(picked.values()), list(fresh.values())
+
+
 async def build_and_store_case_ledger(
     db: AsyncSession, run: Run, *, conn: Any, cfg: ConnectorConfig,
     alerts: list[ObservedAlert], basis: str, now: Optional[datetime] = None,
-    commit: bool = False,
+    commit: bool = False, bridge_alerts: Optional[list[ObservedAlert]] = None,
+    keep_stored_on_read_failure: bool = False,
 ) -> tuple[dict, int]:
-    """Read the cases (and issue statuses) of ``alerts``, build the run's case
-    ledger and set it on ``run.case_ledger``. Returns ``(ledger, queries)``.
+    """Build the run's case ledger for ``alerts`` and set it on ``run.case_ledger``.
 
-    Transaction: by default this does NOT commit. On the reconcile path the
-    ledger rides ``apply_verdicts``'s commit, so it persists atomically with the
-    verdicts (a scoring failure rolls both back). A standalone caller (e.g. a
-    refresh) passes ``commit=True`` or commits itself.
+    Returns ``(ledger, queries)``. ``queries`` counts the pages of every tenant
+    read ATTEMPTED, success or failure: the by-id case read, the issue-status
+    read and, on a mixed-key native split, the one endpoint read of the bridge
+    diagnosis (:func:`_add_bridge`, which only reads ``bridge_alerts``, default
+    ``alerts``).
+
+    * No alert carries a case id: no tenant read at all. The ledger is built
+      from the alerts alone (``NO_CASE_YET`` for Medium+ alerts) with
+      ``issue_read = {"ok": None}``, and a later reconcile rebuilds it once the
+      tenant has grouped them. A refresh cannot: it re-reads cases only.
+    * Otherwise the cases are read by id, then the issue statuses.
 
     Never raises on a tenant failure (``asyncio.CancelledError`` and other
-    ``BaseException`` still propagate); ``queries`` counts the pages of every
-    read ATTEMPTED, success or failure. Degradation, always with the ledger set:
+    ``BaseException`` still propagate). Degradation:
 
-    * case read fails        -> ``code="CASE_READ_FAILED"``, ``merge_class="PENDING"``
-    * any unexpected exception from a read or from building -> logged with
-      traceback, same ``CASE_READ_FAILED`` / ``PENDING``
+    * case read fails, or any unexpected exception from a read or from
+      building (logged with traceback) -> ``code="CASE_READ_FAILED"``,
+      ``merge_class="PENDING"``. With ``keep_stored_on_read_failure`` and a
+      stored ledger on the run, the stored ledger is NOT replaced: the returned
+      ledger carries ``stored_ledger_kept: True`` and is not stored, so a
+      transient failure cannot erase a good ledger;
     * unrecognised case/issue shape (:class:`CaseShapeError`)
-                             -> ``code="CASE_STATUS_UNRECOGNIZED"``, ``PENDING``
+      -> ``code="CASE_STATUS_UNRECOGNIZED"``, ``PENDING``, stored (the old
+      merge claim can no longer be trusted);
     * issue read fails (the cases were read fine) -> the merge claim stands and
       ``code`` stays ``CASE_LEDGER_OK``, but every issue reads ``unread`` (never
       ``open``) and ``ledger["issue_read"] = {"ok": False, "code": <tenant
@@ -363,6 +423,11 @@ async def build_and_store_case_ledger(
 
     The issue read is skipped once the case read has failed: the tenant is
     already failing, and issue context cannot repair a PENDING merge.
+
+    Transaction: by default this does NOT commit. On the reconcile path the
+    ledger rides ``apply_verdicts``'s commit, so it persists atomically with the
+    verdicts (a scoring failure rolls both back). A standalone caller passes
+    ``commit=True`` or commits itself.
     """
     read_at = now or datetime.now(timezone.utc)
     queries = 0
@@ -385,6 +450,10 @@ async def build_and_store_case_ledger(
         try:
             case_ids = sorted({str(a.incident_id) for a in alerts
                                if a.incident_id not in (None, "")})
+            if not case_ids:
+                ledger = build_case_ledger(bare, {}, basis=basis, read_at=read_at)
+                ledger["issue_read"] = skipped
+                return ledger
             cpull = conn.pull_cases(cfg, case_ids)
             queries += _pages_issued(cpull.detail)
             if not cpull.ok:
@@ -430,10 +499,16 @@ async def build_and_store_case_ledger(
             return ledger
 
     ledger = compute()
-    queries += await _add_bridge(db, run, ledger, alerts, conn=conn, cfg=cfg)
     # Case ids are tenant-local: record WHICH integration read them so a refresh
     # asks the same tenant (a second tenant can return another case under the id).
     ledger["integration"] = cfg.integration_name
+    if (keep_stored_on_read_failure and ledger["code"] == "CASE_READ_FAILED"
+            and isinstance(run.case_ledger, dict)):
+        ledger["stored_ledger_kept"] = True
+        return ledger, queries
+    queries += await _add_bridge(db, run, ledger,
+                                 alerts if bridge_alerts is None else bridge_alerts,
+                                 conn=conn, cfg=cfg)
     run.case_ledger = ledger
     if commit:
         await db.commit()
@@ -539,7 +614,8 @@ async def refresh_case_ledger(
         return {"run_id": run.run_id, "refreshed": False, "queries_issued": 0,
                 "merge_class": stored.get("merge_class"), "code": stored.get("code"),
                 "read_at": stored.get("read_at"), "ledger": stored,
-                "reason": "the ledger names no case to re-read"}
+                "reason": ("the ledger names no case to re-read; the next reconcile "
+                           "rebuilds it once the tenant has grouped the alerts into a case")}
 
     recorded = stored.get("integration")
     if not recorded:

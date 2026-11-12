@@ -183,3 +183,16 @@ def test_code_span_values_carry_no_visible_backslashes(client, session_factory):
     _seed(session_factory, dict(LEDGER, integration="a|b", code="CASE_READ_FAILED"))
     text = _md(client)
     assert "`a|b`" in text and "\\|" not in text.split("| Case |")[0]
+
+
+def test_no_case_yet_says_the_next_reconcile_advances_it(client, session_factory):
+    led = {**LEDGER, "merge_class": "NO_CASE_YET", "cases": [], "shared_with_other_runs": False,
+           "merge_reason": "no Medium+ alert has been grouped into a case yet"}
+    _seed(session_factory, led)
+    text = _md(client)
+    assert "the next reconcile" in text
+    assert "A refresh re-reads cases only" in text
+    from connectors.case_ledger import NO_CASE_YET_HINT
+    assert NO_CASE_YET_HINT in text
+    assert NO_CASE_YET_HINT == ("No case yet: the next reconcile re-reads these alerts and rebuilds the"
+                                " ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.")  # mirrored verbatim in RunCasePanel.jsx

@@ -13,6 +13,15 @@ export const CASE_DISCLAIMER =
   'Tenant disposition is shown for context. It is not detection evidence.'
 
 /**
+ * NO_CASE_YET advances only on a reconcile: a refresh re-reads the cases a
+ * ledger names, and this one names none. Keep identical to `NO_CASE_YET_HINT`
+ * in core/connectors/case_ledger.py.
+ */
+export const NO_CASE_YET_HINT =
+  'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the ' +
+  'tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.'
+
+/**
  * xdr_url comes from the tenant: link only plain https on paloaltonetworks.com.
  * Mirrors the backend (core/api/runs.py::_safe_xdr_url): whitespace, control
  * characters, backslash, markup metacharacters, userinfo and a port all reject
@@ -80,6 +89,9 @@ export default function RunCasePanel({ ledger = null }) {
         read {ledger.read_at || '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
       </p>
 
+      {ledger.merge_class === 'NO_CASE_YET' && (
+        <p className="run-case__meta" data-testid="run-case-no-case-yet">{NO_CASE_YET_HINT}</p>
+      )}
       {ledger.code !== 'CASE_LEDGER_OK' && (
         <p className="run-case__warn" role="status">
           Ledger status: <span className="mono">{ledger.code}</span>

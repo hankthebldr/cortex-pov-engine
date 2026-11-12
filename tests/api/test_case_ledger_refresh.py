@@ -171,3 +171,18 @@ def test_pair_merge_wrong_typed_field_degrades_not_500(client, session_factory):
     assert r.status_code == 200, r.text
     m = r.json()["merge"]
     assert m["merge_class"] == "PENDING" and m["code"] == "CASE_LEDGER_UNREADABLE"
+
+
+def test_refresh_of_a_no_case_yet_ledger_points_at_the_next_reconcile(client, session_factory, inject):
+    from connectors.case_ledger import LedgerAlert, build_case_ledger
+    now = datetime.utcnow()
+    led = build_case_ledger([LedgerAlert("a", now, "high", None, None, None, None),
+                             LedgerAlert("b", now, "high", None, None, None, None)], {},
+                            basis="alert_incident_ids", read_at=now - timedelta(hours=2))
+    assert led["merge_class"] == "NO_CASE_YET"
+    seed(session_factory, [("r1", now, led)])
+    fetcher, calls = tenant()
+    inject(fetcher)
+    body = client.post("/api/runs/r1/case-ledger/refresh").json()
+    assert body["refreshed"] is False and calls["cases"] == 0
+    assert "reconcile" in body["reason"]

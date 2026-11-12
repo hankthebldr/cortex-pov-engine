@@ -8,7 +8,7 @@
 import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
-import RunCasePanel, { CASE_DISCLAIMER, safeXdrUrl } from '../RunCasePanel.jsx'
+import RunCasePanel, { CASE_DISCLAIMER, NO_CASE_YET_HINT, safeXdrUrl } from '../RunCasePanel.jsx'
 
 afterEach(cleanup)
 
@@ -113,6 +113,17 @@ describe('RunCasePanel', () => {
     expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()
     expect(screen.getByText(CASE_DISCLAIMER)).toBeTruthy()
     expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
+  })
+
+  it('NO_CASE_YET says the next reconcile advances it, not a refresh', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [],
+      shared_with_other_runs: false }} />)
+    const hint = screen.getByTestId('run-case-no-case-yet')
+    expect(hint.textContent).toMatch(/the next reconcile/)
+    expect(hint.textContent).toMatch(/A refresh re-reads cases only/)
+    // Identical to NO_CASE_YET_HINT in core/connectors/case_ledger.py.
+    expect(NO_CASE_YET_HINT).toBe(
+      'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
   })
 
   it('ledger with wrong-typed cases renders unreadable', () => {

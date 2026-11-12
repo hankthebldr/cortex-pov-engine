@@ -390,3 +390,147 @@ def test_reconcile_lets_correlation_fail_stand_on_a_native_split(session_factory
     assert run.case_ledger["merge_class"] == "SPLIT_NATIVE"
     assert run.tc_verdict == "fail"
     assert "withheld" not in run.tc_verdict_detail["measurement"]
+
+
+# ── Ruling 42: every reconcile rebuilds the ledger from stored ∪ new ───────
+
+def test_second_reconcile_keeps_earlier_alerts_and_sees_the_late_seal(session_factory):
+    """The spec §4.2 late-seal case: a, b matched first (one case), then c lands
+    in a new case after the first was sealed. The ledger must still hold a and
+    b, or the split it exists to explain is invisible."""
+    _seed(session_factory, results=3, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059", "T1105")))
+    a = _alert("a", technique="T1003.001", case="900", seconds=30)
+    b = _alert("b", technique="T1059", case="900", seconds=60)
+    f1, _ = _tenant([a, b], [_case("900", alert_count=2)])
+    _, run = asyncio.run(_reconcile(session_factory, f1))
+    assert run.case_ledger["merge_class"] == "ONE_CASE"
+
+    c = _alert("c", technique="T1105", case="901", seconds=300)
+    f2, calls = _tenant([a, b, c], [
+        _case("900", status="resolved_other", alert_count=2, resolved_timestamp=_sealed_ms(120)),
+        _case("901", alert_count=1)])
+    summary, run = asyncio.run(_reconcile(session_factory, f2))
+    led = run.case_ledger
+    assert [x["external_id"] for x in led["alerts"]] == ["a", "b", "c"]
+    assert sorted(x["case_id"] for x in led["cases"]) == ["900", "901"]
+    assert led["merge_class"] == "SPLIT_SEALED"
+    assert summary["case_ledger"]["merge_class"] == "SPLIT_SEALED"
+    assert calls["cases"] == 1
+
+
+def test_alerts_without_case_ids_store_no_case_yet_without_a_tenant_read(session_factory):
+    fetcher, calls = _tenant([_alert("a", technique="T1003.001", case=None),
+                              _alert("b", technique="T1059", case=None, seconds=60)], [])
+    summary, run = _go(session_factory, fetcher)
+    led = run.case_ledger
+    assert led is not None and led["merge_class"] == "NO_CASE_YET"
+    assert led["code"] == "CASE_LEDGER_OK" and led["issue_read"] == {"ok": None}
+    assert [x["external_id"] for x in led["alerts"]] == ["a", "b"]
+    assert (calls["cases"], calls["issues"]) == (0, 0)
+    assert summary["queries_issued"] == 1                     # the alert page only
+    assert summary["case_ledger"]["merge_class"] == "NO_CASE_YET"
+
+
+def test_reconcile_with_no_new_match_rebuilds_once_the_tenant_grouped_them(session_factory):
+    f1, _ = _tenant([_alert("a", technique="T1003.001", case=None),
+                     _alert("b", technique="T1059", case=None, seconds=60)], [])
+    _, run = _go(session_factory, f1)
+    assert run.case_ledger["merge_class"] == "NO_CASE_YET"
+
+    f2, calls = _tenant([_alert("a", technique="T1003.001", case="900"),
+                         _alert("b", technique="T1059", case="900", seconds=60)], [_case("900")])
+    summary, run = asyncio.run(_reconcile(session_factory, f2))
+    assert summary["newly_matched"] == 0                      # nothing newly matched
+    assert run.case_ledger["merge_class"] == "ONE_CASE"
+    assert calls["cases"] == 1
+    assert summary["queries_issued"] == 1 + 1 + 1             # alerts + cases + issues
+
+
+def test_later_case_read_failure_keeps_the_stored_ledger_and_never_withholds(
+        session_factory, monkeypatch):
+    from connectors.base import PullResult
+    from connectors.xsiam import XsiamConnector
+    _seed(session_factory, results=4, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059", "T1105", "T1021")))
+    a = _alert("a", technique="T1003.001", case="900", seconds=30)
+    b = _alert("b", technique="T1059", case="901", seconds=300)
+    f1, _ = _tenant([a, b], [_case("900", status="resolved_other",
+                                   resolved_timestamp=_sealed_ms(120)), _case("901")])
+    _, run = asyncio.run(_reconcile(session_factory, f1))
+    stored = run.case_ledger
+    assert stored["merge_class"] == "SPLIT_SEALED" and run.tc_verdict == "pending"
+
+    monkeypatch.setattr(
+        XsiamConnector, "pull_cases",
+        lambda self, cfg, ids: PullResult(ok=False, connector="xsiam", code="XSIAM_HTTP_ERROR",
+                                          error="boom", detail={"pages": 1}))
+    c = _alert("c", technique="T1105", case="902", seconds=400)
+    d = _alert("d", technique="T1021", case="903", seconds=500)
+    f2, _ = _tenant([a, b, c, d], [])
+    summary, run = asyncio.run(_reconcile(session_factory, f2))
+    assert run.case_ledger == stored                          # kept, not overwritten
+    assert summary["case_ledger"]["merge_class"] == "PENDING"
+    assert summary["case_ledger"]["code"] == "CASE_READ_FAILED"
+    assert summary["case_ledger"]["stored_ledger_kept"] is True
+    assert run.tc_verdict == "fail"                           # c, d split: the FAIL stands
+    assert "withheld" not in run.tc_verdict_detail["measurement"]
+
+
+def test_stored_alert_the_tenant_no_longer_returns_is_carried(session_factory):
+    _seed(session_factory, results=3, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059", "T1105")))
+    a = _alert("a", technique="T1003.001", case="900", seconds=30)
+    b = _alert("b", technique="T1059", case="900", seconds=60)
+    f1, _ = _tenant([a, b], [_case("900")])
+    _, run = asyncio.run(_reconcile(session_factory, f1))
+    a_stored = next(x for x in run.case_ledger["alerts"] if x["external_id"] == "a")
+
+    c = _alert("c", technique="T1105", case="900", seconds=90)
+    f2, _ = _tenant([b, c], [_case("900", alert_count=3)])      # `a` aged out of the pull
+    _, run = asyncio.run(_reconcile(session_factory, f2))
+    led = run.case_ledger
+    assert [x["external_id"] for x in led["alerts"]] == ["a", "b", "c"]
+    a_now = next(x for x in led["alerts"] if x["external_id"] == "a")
+    assert (a_now["observed_at"], a_now["case_id"], a_now["severity"]) == (
+        a_stored["observed_at"], "900", "high")
+    assert led["merge_class"] == "ONE_CASE"
+
+
+def test_bridge_reads_only_alerts_from_this_pull(session_factory, monkeypatch):
+    """A stored alert carries no host; it must not make the split look mixed-key."""
+    from connectors.xsiam import XsiamConnector
+    seen = []
+    monkeypatch.setattr(XsiamConnector, "pull_endpoint_ips",
+                        lambda self, cfg, hostname: seen.append(hostname) or ["10.0.1.20"])
+    _seed(session_factory, results=3, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059", "T1105")))
+    asyncio.run(_set_agent_ip(session_factory, "10.0.1.20"))
+    a = _alert("a", technique="T1003.001", case="900", seconds=30)
+    b = _alert("b", technique="T1059", case="901", seconds=60)
+    f1, _ = _tenant([a, b], [_case("900"), _case("901")])
+    _, run = asyncio.run(_reconcile(session_factory, f1))
+    assert run.case_ledger["merge_class"] == "SPLIT_NATIVE" and seen == []
+
+    c = _alert("c", technique="T1105", case="902", seconds=90)
+    f2, _ = _tenant([c], [_case("900"), _case("901"), _case("902")])   # a, b gone
+    _, run = asyncio.run(_reconcile(session_factory, f2))
+    assert run.case_ledger["merge_class"] == "SPLIT_NATIVE"
+    assert seen == [] and "bridge" not in run.case_ledger
+
+
+def test_unreadable_stored_ledger_is_rebuilt_from_this_pull(session_factory):
+    from models import Run
+    from sqlalchemy import select
+    _seed(session_factory, results=2, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+
+    async def corrupt():
+        async with session_factory() as db:
+            (await db.execute(select(Run))).scalars().first().case_ledger = {"alerts": "x"}
+            await db.commit()
+    asyncio.run(corrupt())
+    fetcher, _ = _tenant(_alerts(), [_case()])
+    _, run = asyncio.run(_reconcile(session_factory, fetcher))
+    assert run.case_ledger["merge_class"] == "ONE_CASE"
+    assert [x["external_id"] for x in run.case_ledger["alerts"]] == ["a", "b"]
