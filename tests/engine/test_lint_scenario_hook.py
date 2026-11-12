@@ -411,6 +411,29 @@ def test_hook_unsafe_lines_match_loader(name, inds, cmd, variants, cleanup):
     assert got == expected
 
 
+_EAL_VECTORS = [
+    ("flat", "c2_http_beacon", {"target_url": "http://172.93.100.252/"}),
+    ("nested", "c2_http_beacon", {"extra": {"hosts": ["passkeyadd.com"]}}),
+    ("collector", "m365_activity_emitter", {"source_ip": "172.93.100.252"}),
+]
+
+
+@pytest.mark.parametrize("name,plugin,params", _EAL_VECTORS, ids=[v[0] for v in _EAL_VECTORS])
+def test_hook_eal_params_match_loader(name, plugin, params):
+    from engine import scenario_loader as sl  # noqa: PLC0415
+    hook = _load_hook()
+    inds = [_ind(type="ipv4", value="172.93.100.252", safe_form="log_field"),
+            _ind(type="domain", value="passkeyadd.com", safe_form="dns_lookup", id="ind-02")]
+    l_inds = [sl.IndicatorSchema.model_construct(**i) for i in inds]
+    l_step = sl.StepSchema.model_construct(
+        id="S", command="true", channel="eal", eal=sl.EalStepSchema(plugin=plugin, params=params))
+    expected = sorted(sl.unsafe_indicator_lines(l_inds, [l_step]))
+    h_step = {"id": "S", "command": "true", "channel": "eal", "eal": {"plugin": plugin, "params": params}}
+    got = sorted(hook.unsafe_indicator_lines(inds, [h_step]))
+    assert got == expected
+    assert bool(got) == (plugin not in sl.COLLECTOR_POST_PLUGINS)
+
+
 def test_hook_pins_loader_tables():
     from engine import scenario_loader as sl  # noqa: PLC0415
     hook = _load_hook()
