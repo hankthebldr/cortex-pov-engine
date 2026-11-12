@@ -8,20 +8,43 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-### Security — `POST /api/tools/{tool}/start` no longer runs a command line from the request
+### Security — no route runs a program or a template the caller chose
+
+v1.1.0 ships all four defects. Every route below is still unauthenticated, like
+the rest of SimCore.
 
 - **Tool start refuses caller-supplied argv.** The body's `params` were merged
   over the registry's `binary` / `source_path` / `port` before
   `run_template.format`, so `{"params": {"binary": "<any command line>"}}` ran
-  that command as SimCore's user (root in the image) from an unauthenticated
-  route. v1.1.0 ships the defect. Caller params now fill only the placeholders a
-  tool's `run_template` leaves open (`mitre_id` for signalbench, `config_path`
-  for ackbarx), each validated and quoted into one argv token; anything else is
-  `400 BAD_TOOL_PARAM` and nothing is spawned, and a missing required
-  placeholder is that 400 rather than a 500. `POST /api/tools/{tool}/install`
-  runs its build off the event loop, one at a time; a concurrent install gets
-  `409 INSTALL_IN_PROGRESS`. Both routes are still unauthenticated, like the
-  rest of SimCore.
+  that command as SimCore's user (root in the image). Caller params now fill
+  only the placeholders a tool's `run_template` leaves open (`mitre_id` for
+  signalbench, `config_path` for ackbarx), each validated and quoted into one
+  argv token; anything else is `400 BAD_TOOL_PARAM` and nothing is spawned, and
+  a missing required placeholder is that 400 rather than a 500.
+  `POST /api/tools/{tool}/install` runs its build off the event loop, one at a
+  time; a concurrent install gets `409 INSTALL_IN_PROGRESS`.
+- **EAL campaigns no longer pick the executable.** `airs_prompt_attack` and
+  `browser_attack_runner` spawned whatever path a step's `params.binary` named,
+  and `POST /api/eal/campaigns` + `/launch` take the step params and the consent
+  gates from the same caller, so any program ran as SimCore's user. Both
+  plugins now run only their own CLI (`cortex-prompt-attacker`,
+  `cortex-browser-attacker`) from SimCore's PATH, and both routes refuse a step
+  that sets `params.binary` with `400 CALLER_EXECUTABLE_REFUSED`, including a
+  campaign stored before this release.
+- **The agent installer no longer runs its query string.** `GET
+  /api/agents/install` pasted `id`, `server` and `token` raw into the bash and
+  PowerShell scripts that are piped into `bash` / `iex`, so `?id=$(…)` ran on
+  the target. Each is now checked against its real format (agent id
+  `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
+  derived one included) and baked in as a single-quoted literal; a bad value is
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+- **Infra bundles no longer take Terraform from the request.** `POST
+  /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
+  raw into Terraform string literals, so a quote and newlines could add a
+  `data "external"` block that `terraform plan` runs on the DC's machine.
+  `region` must now be an AWS region and `jumpbox_size` an AWS instance type
+  (422 otherwise), and the templates write string values only as escaped HCL
+  literals. Bundles for valid input are byte-identical.
 
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
