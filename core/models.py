@@ -1154,3 +1154,39 @@ class CollectorTargetConfig(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class DoorEvent(Base):
+    """One state change of an ingestion door: an append-only timeline row.
+
+    A door's state at any moment is the last conclusive (open|closed) event at
+    or before it; ``unknown`` rows record a check that could not run and never
+    change the state. Nothing expires on a timer. Timestamps are naive UTC.
+    """
+
+    __tablename__ = "door_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    door_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    door_id: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False)  # open | closed | unknown
+    basis: Mapped[str] = mapped_column(String, nullable=False)  # verified | attested | check | configured
+    rung: Mapped[str] = mapped_column(String, nullable=False)  # authored | configured | reachable | verified
+    at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    attested_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    queries_issued: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "door_key": self.door_key,
+            "door_id": self.door_id,
+            "state": self.state,
+            "basis": self.basis,
+            "rung": self.rung,
+            "at": self.at.isoformat() if self.at else None,
+            "evidence": self.evidence,
+            "attested_by": self.attested_by,
+            "queries_issued": self.queries_issued,
+        }

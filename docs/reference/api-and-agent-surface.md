@@ -44,12 +44,12 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **161 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
-  below, after the NGFW connection was rebased onto dev `30b10cc`; not re-counted
-  against a built image). Routers under `/api`, plus the app-level `GET /api/health`
-  and a static file mount at `/`, plus 4 FastAPI-owned docs/openapi routes. Since the
-  153 that stood here: `collector-targets` 5 and `ngfw` 3 (§1.17). Per-prefix
-  breakdown: run the walker; a quoted breakdown went stale twice.
+- **165 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
+  below, on `feature/api-ingestion-doors`; not re-counted against a built image).
+  Routers under `/api`, plus the app-level `GET /api/health` and a static file mount
+  at `/`, plus 4 FastAPI-owned docs/openapi routes. The walker reads 162 on dev
+  `8c90739` (the 161 that stood here was 1 stale); the ingestion doors read API adds 3
+  (§1.16b). Per-prefix breakdown: run the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
 > here was two content passes stale, and the 133 after it was 20 stale. The
@@ -1036,6 +1036,45 @@ scenario table only, no outbound call; the scenario route carries
   unregistered card dataset only when `CORTEXSIM_STRICT_DATASETS=true`
   (default `false`).
 - Route count: this branch adds 3 routes.
+
+### 1.16b Ingestion doors (`core/api/doors.py`, mounted before the scenarios router)
+
+Added 2026-11-11. Read-only: local files and the database only, **zero outbound
+calls**; every response carries `tenant_verified: 0` and `outbound_calls: 0`.
+Errors use the top-level `{"error", "code", "detail"}` shape.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/doors` | Every ingestion door (one row per agent or target instance for scoped doors) with its state and the count of corpus detections that name it | — | `{doors[], registry_loaded, tenant_verified, outbound_calls}`; each row `{key, door_id, label, scope, state, basis, rung, last_conclusive_at, age_seconds, wizard, detections_needing}`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `DOOR_DERIVATION_FAILED` |
+| GET | `/api/doors/readiness` | Door readiness of every loaded scenario in one fetch (the library list itself is unchanged) | query: `agent_id` (keys agent-scoped doors; without it `agent_scoped_evaluated` is false) | `{scenarios{scenario_id: readiness}, agent_scoped_evaluated, registry_loaded, tenant_verified, outbound_calls}`; 500 as above |
+| GET | `/api/scenarios/{scenario_id}/doors` | One scenario's readiness plus each expected detection's requirement | query: `agent_id` | `{scenario_id, registry_loaded, readiness, detections[{step_id, detection_id, requirement}], tenant_verified, outbound_calls}`; 404 `SCENARIO_NOT_FOUND`, 500 as above |
+
+- A readiness object is `{scenario_id, state, scorable, total, underived, route_blocked,
+  unevaluated, not_open[{door_id, detections}], agent_scoped_evaluated}`. `state` is
+  `ready | partial | needs_doors | not_evaluated`. `route_blocked` counts detections whose
+  collector route cannot feed them (the library resolves no collector target, so every
+  collector-route detection counts here); `unevaluated` counts agent-scoped OR-sets with no
+  `agent_id` to key them. Both are passed through unchanged from the resolver.
+- `not_open` lists each door that is **not in the open set** and how many detections it
+  holds back, most first. It does **not** distinguish a door checked and found closed from
+  one nobody has checked; join each `door_id` against `GET /api/doors` for the door's real
+  `state`. A detection held back by two doors counts once under each, so the per-door counts
+  can sum to more than the detections held back.
+- A door row `state` is the last conclusive event (`open | closed`), else `unknown`; the
+  `rung` axis separately carries `configured` when a zero-call fact says so (else `authored`).
+  Phase 1 writes no events, so nothing reads `open` and no scenario reads `ready`.
+- `detections_needing` counts a detection once for each door in its OR-sets, so the per-door
+  counts can sum to more than the number of detections. Composer drafts (`status: draft`) are
+  excluded. Every collector-route detection counts under `http_collector`, including the
+  route-blocked ones its route cannot feed.
+- An agent-scoped door (`xdr_agent`, `xdr_agent_xth`, `ngfw_stitch`) reads rung `configured`
+  for a beacon only when the beacon is online **and** an `xsiam_tenant` credential with XQL
+  granted exists (`ngfw_stitch` also needs a registered firewall); an online beacon alone is
+  the CortexSim beacon, not the Cortex XDR agent.
+- An absent dataset requirement registry answers 200 with `registry_loaded: false`:
+  `detections_needing` is `null` and every scenario reads `not_evaluated` with
+  `reason: REGISTRY_ABSENT`; the per-scenario route returns `registry_loaded: false`,
+  `code`/`reason: REGISTRY_ABSENT`, `detections: []` and a `not_evaluated` readiness. A malformed one is a structured 500.
 
 ### 1.17 NGFW (PAN-OS) connection (`core/api/ngfw.py`, prefix `/ngfw`; preflight through `/connectors`)
 

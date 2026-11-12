@@ -8,6 +8,26 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
+
+- **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
+  `/api/scenarios/{id}/doors`): for each scenario, which of its detections can
+  fire given which data doors are open. Read-only, zero outbound calls.
+- **Library chip** on every scenario card: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
+  or `NOT CHECKED`, plus an opt-in **Runnable here** filter that is off by
+  default, so nothing is hidden.
+- **Data path** as a sixth launch preflight check. Advisory only: it warns, it
+  never blocks, and a missing or unreadable answer reads `unknown`, not `pass`.
+- Nothing is excluded from scoring yet, and no door can read `open` or `closed`
+  until phase 2 writes door events, so a fresh SimCore reads `NOT CHECKED` on
+  every chip. `tenant-verified` is still 0.
+- Until door checks land in phase 2, the Data path check reads "doors not checked yet":
+  a door nobody has checked is unknown, not closed. Only a door with a recorded
+  `closed` state produces a "will not be scored" warning; collector-route detections
+  read as on a route this console has not resolved.
+- The XDR agent doors read `configured` only when the beacon is online and an XQL
+  tenant credential exists: an online CortexSim beacon is not the Cortex XDR agent.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023

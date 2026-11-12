@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
+import { filterRunnable } from './doors/doorModel.js'
 
 /**
  * useScenarioFilter — unified filter state for the Operations grid.
@@ -41,6 +42,7 @@ const EMPTY_FILTER = () => ({
   plane:      null,
   technique:  null,
   query:      '',            // free-text search (name / id / technique / report)
+  runnable:   false,         // opt-in "Runnable here" (door readiness ready|partial); off = nothing hidden
   tactics:      new Set(),
   techniques:   new Set(),
   actors:       new Set(),
@@ -70,6 +72,11 @@ export default function useScenarioFilter() {
     setFilter((prev) => ({ ...prev, query: q || '' }))
   }, [])
 
+  // Opt-in door-readiness filter. Off by default: nothing is hidden unless asked.
+  const setRunnable = useCallback((on) => {
+    setFilter((prev) => ({ ...prev, runnable: !!on }))
+  }, [])
+
   // Toggle a value in one of the Set-shaped fields. No-ops for fields outside SET_FIELDS.
   const toggle = useCallback((field, value) => {
     if (!SET_FIELDS.includes(field)) return
@@ -89,6 +96,7 @@ export default function useScenarioFilter() {
       if (field === 'plane')     return { ...prev, plane: null }
       if (field === 'technique') return { ...prev, technique: null }
       if (field === 'query')     return { ...prev, query: '' }
+      if (field === 'runnable')  return { ...prev, runnable: false }
       if (SET_FIELDS.includes(field)) return { ...prev, [field]: new Set() }
       return prev
     })
@@ -99,6 +107,7 @@ export default function useScenarioFilter() {
     let n = 0
     if (filter.technique) n += 1
     if (filter.query && filter.query.trim()) n += 1
+    if (filter.runnable) n += 1
     for (const f of SET_FIELDS) n += filter[f].size > 0 ? 1 : 0
     return n
   }, [filter])
@@ -115,9 +124,10 @@ export default function useScenarioFilter() {
    * k is the number of active criteria; for a few hundred scenarios this is
    * effectively free.
    */
-  const applyTo = useCallback((scenarios) => {
+  const applyTo = useCallback((scenarios, doorReadiness = null) => {
     if (!Array.isArray(scenarios) || scenarios.length === 0) return []
-    return scenarios.filter((s) => scenarioMatches(s, filter))
+    const matched = scenarios.filter((s) => scenarioMatches(s, filter))
+    return filterRunnable(matched, doorReadiness, filter.runnable)
   }, [filter])
 
   return {
@@ -125,6 +135,7 @@ export default function useScenarioFilter() {
     setPlane,
     setTechnique,
     setQuery,
+    setRunnable,
     toggle,
     clearAll,
     clearOne,

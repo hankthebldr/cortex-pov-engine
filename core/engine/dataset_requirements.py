@@ -24,6 +24,13 @@ from functools import lru_cache
 import yaml
 
 from config import settings
+from engine.ingestion_doors import UnknownDoorError, get_door
+# The payload shelf's TA-16 rule, imported rather than copied so the two cannot drift: prose
+# that means "nobody decided" (a placeholder prefix) or is too short to explain anything is
+# not a reason. tools.adapter_loader imports only stdlib, yaml and pydantic at module level,
+# so this creates no import cycle.
+from tools.adapter_loader import _EXEMPT_REASON_MIN_CHARS as _MIN_REASON_CHARS
+from tools.adapter_loader import _EXEMPT_REASON_PLACEHOLDER_RE as _PLACEHOLDER_RE
 
 logger = logging.getLogger("cortexsim.dataset_requirements")
 
@@ -96,6 +103,10 @@ class DatasetRequirement:
     cortex_side: tuple[CortexSide, ...]
     source_side: tuple[SourceSide, ...]
     emulated_by: tuple[str, ...]
+    # Exactly one of these is set: the ingestion doors the dataset arrives through, or the
+    # reason no real tenant counterpart is known yet.
+    doors: tuple[str, ...] = ()
+    doors_unknown: str | None = None
 
     def to_dict(self) -> dict:
         def ver(v: Verified) -> dict:
@@ -114,6 +125,8 @@ class DatasetRequirement:
                 for s in self.source_side
             ],
             "emulated_by": list(self.emulated_by),
+            "doors": list(self.doors),
+            "doors_unknown": self.doors_unknown,
         }
 
 
@@ -154,6 +167,44 @@ def _text(val: object, where: str, path: str) -> str:
     return val
 
 
+def _doors_unknown_reason(reason: object, where: str, path: str) -> str:
+    """TA-16's rule applied to ``doors_unknown``: whitespace-normalised, not a placeholder,
+    at least ``_MIN_REASON_CHARS`` long. The authored string is kept as written."""
+    if not isinstance(reason, str):
+        raise _bad(path, where, f"must be a string that says what is unconfirmed, got {reason!r}")
+    raw = " ".join(reason.split())
+    if not raw:
+        raise _bad(path, where, "must be non-empty: say what is unconfirmed")
+    if _PLACEHOLDER_RE.match(raw):
+        raise _bad(path, where, f"{raw!r} is a placeholder, not a reason (the TA-16 rule)")
+    if len(raw) < _MIN_REASON_CHARS:
+        raise _bad(path, where, f"must be at least {_MIN_REASON_CHARS} characters, got {len(raw)} "
+                                f"({raw!r}); say what is unconfirmed (the TA-16 rule)")
+    return reason
+
+
+def _doors(e: dict, w: str, path: str) -> tuple[tuple[str, ...], str | None]:
+    """Parse the exactly-one-of ``doors`` / ``doors_unknown`` pair."""
+    if ("doors" in e) == ("doors_unknown" in e):
+        raise _bad(path, w, "exactly one of `doors` or `doors_unknown` must be present")
+    if "doors_unknown" in e:
+        return (), _doors_unknown_reason(e["doors_unknown"], f"{w}.doors_unknown", path)
+    raw = _list(e["doors"], f"{w}.doors", path)
+    if not raw:
+        raise _bad(path, f"{w}.doors", "must not be empty (use `doors_unknown` when no door is known)")
+    doors: list[str] = []
+    for i, d in enumerate(raw):
+        text = _text(d, f"{w}.doors[{i}]", path)
+        try:
+            get_door(text)
+        except UnknownDoorError as exc:
+            raise _bad(path, f"{w}.doors[{i}]", str(exc)) from exc
+        if text in doors:
+            raise _bad(path, f"{w}.doors[{i}]", f"door {text!r} is listed twice")
+        doors.append(text)
+    return tuple(doors), None
+
+
 def _verified(obj: object, where: str, path: str) -> Verified:
     d = _keys(obj, where, path, {"by", "on", "how"})
     for k in ("by", "on", "how"):
@@ -176,7 +227,13 @@ def parse_registry(data: object, path: str) -> dict[str, DatasetRequirement]:
     for name, entry in data.items():
         w = f"{name}"
         _text(name, "dataset name", path)
-        e = _keys(entry, w, path, {"produced_by", "cortex_side", "source_side", "emulated_by"})
+        if isinstance(entry, dict):
+            # doors / doors_unknown are optional keys of which exactly one must be present.
+            present = {"doors", "doors_unknown"} & set(entry)
+            required = {"produced_by", "cortex_side", "source_side", "emulated_by"} | present
+        else:
+            required = {"produced_by", "cortex_side", "source_side", "emulated_by"}
+        e = _keys(entry, w, path, required)
         produced_by = _text(e["produced_by"], f"{w}.produced_by", path)
         if produced_by not in PRODUCED_BY:
             raise _bad(path, f"{w}.produced_by", f"{produced_by!r} is not one of {sorted(PRODUCED_BY)}")
@@ -215,7 +272,9 @@ def parse_registry(data: object, path: str) -> dict[str, DatasetRequirement]:
             _text(x, f"{w}.emulated_by[{i}]", path)
             for i, x in enumerate(_list(e["emulated_by"], f"{w}.emulated_by", path))
         )
-        out[name] = DatasetRequirement(name, produced_by, tuple(cortex), tuple(source), emulated)
+        doors, doors_unknown = _doors(e, w, path)
+        out[name] = DatasetRequirement(name, produced_by, tuple(cortex), tuple(source), emulated,
+                                     doors, doors_unknown)
     return out
 
 

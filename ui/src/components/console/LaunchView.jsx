@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import LaunchGateNotice, { GATE_TOOL_ABSENT, GATE_POSTURE } from './LaunchGateNotice.jsx'
-import { getToolAdapters, listIntegrations } from '../../api/client.js'
+import { getToolAdapters, listIntegrations, getScenarioDoors, getDoors } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
 import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
@@ -135,6 +135,35 @@ export default function LaunchView({
     return () => { cancelled = true }
   }, [])
 
+  // Door readiness for THIS scenario against the selected agent. A failure is
+  // null readiness plus the error text, rendered UNKNOWN by the Data path check
+  // ("door readiness unavailable: …", as the library chip does), never a pass.
+  const [doorReadiness, setDoorReadiness] = useState(null)
+  const [doorRows, setDoorRows] = useState(null)
+  const [doorError, setDoorError] = useState(null)
+  const doorScenarioId = scenario ? (scenario.scenario_id || scenario.id) : null
+  const doorAgentId = selectedTarget?.kind === 'agent' ? selectedTarget.id : null
+  useEffect(() => {
+    setDoorReadiness(null)
+    setDoorRows(null)
+    setDoorError(null)
+    if (!doorScenarioId) return undefined
+    let cancelled = false
+    Promise.all([getScenarioDoors(doorScenarioId, doorAgentId), getDoors()])
+      .then(([data, doors]) => {
+        if (cancelled) return
+        setDoorReadiness(data.readiness)
+        setDoorRows(doors.doors)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDoorReadiness(null)
+        setDoorRows(null)
+        setDoorError((err && err.message) || 'door readiness failed')
+      })
+    return () => { cancelled = true }
+  }, [doorScenarioId, doorAgentId])
+
   const preflight = useMemo(() => preflightScenario({
     scenario,
     target: selectedTarget,
@@ -144,8 +173,12 @@ export default function LaunchView({
     integrations,
     identity: launch.identity,
     pushFormat: launch.pushFormat,
+    doorReadiness,
+    doorRows,
+    doorAgentId,
+    doorError,
   }), [scenario, selectedTarget, launch.agents, shelf.shelf, adapterIndex, integrations,
-       launch.identity, launch.pushFormat])
+       launch.identity, launch.pushFormat, doorReadiness, doorRows, doorAgentId, doorError])
 
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
@@ -238,6 +271,10 @@ export default function LaunchView({
           integrations={integrations}
           identity={launch.identity}
           pushFormat={launch.pushFormat}
+          doorReadiness={doorReadiness}
+          doorRows={doorRows}
+          doorAgentId={doorAgentId}
+          doorError={doorError}
           onNavigate={onNavigate}
         />
 

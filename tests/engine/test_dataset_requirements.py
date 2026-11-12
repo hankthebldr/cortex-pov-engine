@@ -133,3 +133,83 @@ def test_non_string_dataset_name_at_root_raises():
     data = {1: copy.deepcopy(GOOD["panw_ngfw_traffic_raw"])}
     with pytest.raises(DatasetRequirementsError, match="key 1 is not a string"):
         parse_registry(data, "p")
+
+
+# --- doors / doors_unknown -------------------------------------------------
+
+def _row(**extra):
+    row = copy.deepcopy(GOOD["panw_ngfw_traffic_raw"])
+    row.pop("doors")
+    row.update(extra)
+    return {"panw_ngfw_traffic_raw": row}
+
+
+def test_every_shipped_row_has_exactly_one_door_key():
+    reg = load()
+    assert reg
+    for name, row in reg.items():
+        assert bool(row.doors) != (row.doors_unknown is not None), name
+
+
+def test_doors_parse_and_to_dict_carries_them():
+    row = parse_registry(_row(doors=["ngfw_traffic"]), "p")["panw_ngfw_traffic_raw"]
+    assert row.doors == ("ngfw_traffic",) and row.doors_unknown is None
+    d = row.to_dict()
+    assert d["doors"] == ["ngfw_traffic"] and d["doors_unknown"] is None
+
+
+def test_to_dict_carries_doors_unknown():
+    row = parse_registry(_row(doors_unknown="Which product emits it is not confirmed."), "p")["panw_ngfw_traffic_raw"]
+    d = row.to_dict()
+    assert d["doors"] == [] and d["doors_unknown"].startswith("Which product")
+
+
+def test_unknown_door_id_rejected():
+    with pytest.raises(DatasetRequirementsError, match="no_such_door"):
+        parse_registry(_row(doors=["no_such_door"]), "p")
+
+
+def test_both_keys_rejected():
+    with pytest.raises(DatasetRequirementsError, match="exactly one"):
+        parse_registry(_row(doors=["ngfw_traffic"], doors_unknown="not confirmed which"), "p")
+
+
+def test_neither_key_rejected():
+    with pytest.raises(DatasetRequirementsError, match="exactly one"):
+        parse_registry(_row(), "p")
+
+
+@pytest.mark.parametrize("reason, match", [
+    ("tbd", "placeholder"), ("TBD", "placeholder"), (" Unknown ", "placeholder"),
+    ("n/a", "placeholder"), ("N/A", "placeholder"), ("na", "placeholder"),
+    ("TODO: find out which product emits this dataset and how", "placeholder"),
+    ("unknown which product emits this dataset or how it is onboarded", "placeholder"),
+    ("Not confirmed.", "at least 40 characters"),
+    ("", "non-empty"), ("   ", "non-empty"),
+    (None, "must be a string"), (3, "must be a string"),
+])
+def test_placeholder_doors_unknown_rejected(reason, match):
+    with pytest.raises(DatasetRequirementsError, match=match):
+        parse_registry(_row(doors_unknown=reason), "p")
+
+
+def test_doors_unknown_reuses_ta16_rule():
+    """Parity with the payload shelf's TA-16 is by import, not by a copy that can drift."""
+    from engine import dataset_requirements
+    from tools import adapter_loader
+
+    assert dataset_requirements._PLACEHOLDER_RE is adapter_loader._EXEMPT_REASON_PLACEHOLDER_RE
+    assert dataset_requirements._MIN_REASON_CHARS == adapter_loader._EXEMPT_REASON_MIN_CHARS
+
+
+@pytest.mark.parametrize("doors, match", [
+    ([], "must not be empty"),
+    ("ngfw_traffic", "expected a list"),
+    (None, "expected a list"),
+    ([3], "non-blank string"),
+    ([""], "non-blank string"),
+    (["ngfw_traffic", "ngfw_traffic"], "listed twice"),
+])
+def test_doors_must_be_nonempty_list(doors, match):
+    with pytest.raises(DatasetRequirementsError, match=match):
+        parse_registry(_row(doors=doors), "p")

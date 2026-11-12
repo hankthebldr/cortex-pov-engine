@@ -30,6 +30,7 @@
  */
 
 import { SUPPLY, supplyOf } from '../supplyState.js'
+import { readinessKind, classifyDoors, routeBlockedNote } from '../doors/doorModel.js'
 
 export const PF = { PASS: 'pass', WARN: 'warn', BLOCK: 'block', UNKNOWN: 'unknown' }
 
@@ -67,6 +68,10 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  * @param {Array|null}  input.integrations  /api/credentials/integrations rows
  * @param {string}      input.identity      the identity the operator selected
  * @param {string}      input.pushFormat    'bash' | 'k8s'
+ * @param {Array|null}  input.doorRows      GET /api/doors rows (real per-door state)
+ * @param {object|null} input.doorReadiness this scenario's door readiness (GET /api/scenarios/{id}/doors → readiness)
+ * @param {string|null} input.doorAgentId   the agent the readiness was judged for
+ * @param {string|null} input.doorError     why the door fetch failed, shown instead of "not reported"
  * @returns {{verdict, checks, blocking, warnings, unknowns}}
  */
 export function preflightScenario({
@@ -78,6 +83,10 @@ export function preflightScenario({
   integrations = null,
   identity = '',
   pushFormat = 'bash',
+  doorReadiness = null,
+  doorRows = null,
+  doorAgentId = null,
+  doorError = null,
 } = {}) {
   const checks = []
   if (!scenario) {
@@ -89,6 +98,7 @@ export function preflightScenario({
   checks.push(platformCheck(scenario, target, agents, pushFormat))
   checks.push(identityCheck(scenario, target, agents, identity))
   checks.push(measurementCheck(scenario, integrations))
+  checks.push(dataPathCheck(scenario, doorReadiness, doorRows, doorAgentId, doorError))
 
   const verdict = checks.reduce(
     (acc, c) => (SEVERITY[c.status] > SEVERITY[acc] ? c.status : acc),
@@ -468,6 +478,86 @@ function isMttdShaped(kpi, threshold) {
     || hay.includes('mean time to detect')
     || hay.includes('time to detect')
     || hay.includes('detection latency')
+}
+
+// ─── 6 · Data path (advisory) ────────────────────────────────────────────────
+
+const DOOR_CHECKS_LATER = 'Door checks land with the setup steps; until then this is advice, not a finding.'
+const ROUTE_REMEDIATION = 'On a collector route BIOC and IOC never fire, Analytics and ABIOC need an XDM rule, '
+  + 'and XQL and Correlation need the target to write the dataset they query.'
+const NOTHING_CONFIRMED = 'no detection here is confirmed able to fire yet'
+
+/**
+ * Which of this scenario's detections can fire, given which ingestion doors are
+ * open. ADVISORY ONLY: never `block` — a door check disapproves, it is not
+ * SimCore's guard, and a gate that stops legitimate work in front of a customer
+ * is worse than the gap it flags. Absent or unreadable input is `unknown`,
+ * never `pass`.
+ *
+ * Nothing is excluded from scoring today, so this check never says a detection
+ * "can be scored" or that a run "scores nothing". The one exception is a door
+ * whose state is conclusively `closed` (no check writes one yet): its
+ * detections "will not be scored", which is what exclusion will do.
+ */
+export function dataPathCheck(scenario, doorReadiness, doorRows = null, agentId = null, error = null) {
+  const label = 'Data path'
+  const kind = readinessKind(doorReadiness)
+  if (kind === 'absent') {
+    if (error) {
+      return mk('data-path', label, PF.UNKNOWN, 'unavailable', `door readiness unavailable: ${error}`)
+    }
+    return mk('data-path', label, PF.UNKNOWN, 'not reported', 'door readiness not reported')
+  }
+  if (kind === 'not_evaluated') {
+    return mk('data-path', label, PF.UNKNOWN, 'not judged', 'no detection could be judged')
+  }
+  if (kind === 'unrecognised') {
+    const shown = doorReadiness && typeof doorReadiness === 'object'
+      ? JSON.stringify(doorReadiness.state) : typeof doorReadiness
+    return mk('data-path', label, PF.UNKNOWN, 'unrecognised readiness',
+      `unrecognised door readiness state ${shown}`,
+      'This console and SimCore disagree on the readiness vocabulary; upgrade the older of the two.')
+  }
+  if (kind === 'ready') {
+    return mk('data-path', label, PF.PASS, 'all doors open',
+      'every door this scenario needs is open')
+  }
+  const { scorable, total, route_blocked: rb = 0, underived = 0, unevaluated = 0 } = doorReadiness
+  const { closed, unknown, closedDetections, allClosed } = classifyDoors(doorReadiness, doorRows, agentId)
+  const notJudged = underived + unevaluated
+  const judgedNote = notJudged > 0 ? `${notJudged} not judged` : ''
+  const summary = `${scorable} of ${total} detections can fire`
+
+  const parts = []
+  if (closed.length) {
+    const ids = closed.map((d) => d.door_id).join(', ')
+    // One closed door: its own count is exact. Two or more: a detection behind
+    // both is listed under each, so a sum would overcount; name the doors only.
+    parts.push(closedDetections !== null
+      ? `${closedDetections} of ${total} detections will not be scored: ${ids}`
+      : `detections behind closed doors will not be scored: ${ids}`)
+  }
+  if (rb > 0) parts.push(routeBlockedNote(rb, total))
+  const remediation = closed.length ? 'Open the closed doors, or accept a partial score.' : ROUTE_REMEDIATION
+
+  // Every detection is route-blocked or behind a closed door: none is confirmed
+  // able to fire. They are still scored as today unless a closed door says otherwise.
+  if (scorable === 0 && notJudged === 0 && unknown.length === 0 && allClosed && parts.length) {
+    const head = closed.length ? [NOTHING_CONFIRMED] : [NOTHING_CONFIRMED, 'each one is still scored as today']
+    return mk('data-path', label, PF.WARN, summary, [...head, ...parts].join('; '), remediation)
+  }
+
+  const unchecked = unknown.length
+    ? `doors not checked yet: ${unknown.map((d) => `${d.door_id} (${d.rung})`).join(', ')}`
+    : ''
+
+  if (parts.length) {
+    return mk('data-path', label, PF.WARN, summary,
+      [...parts, unchecked, judgedNote].filter(Boolean).join('; '), remediation)
+  }
+  return mk('data-path', label, PF.UNKNOWN, unknown.length ? 'doors not checked yet' : 'not judged',
+    [unchecked, judgedNote].filter(Boolean).join('; ') || 'no detection could be judged',
+    DOOR_CHECKS_LATER)
 }
 
 // ─── helper ──────────────────────────────────────────────────────────────────
