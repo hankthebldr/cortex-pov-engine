@@ -536,6 +536,7 @@ class TestPinkShapes:
 
     def test_user_agents_rotate_in_records_not_header(self, monkeypatch):
         stub = _RecordingClient()
+        _orig_build = M365ActivityEmitter._build_client
         monkeypatch.setattr(M365ActivityEmitter, "_build_client", lambda self, p: stub)
         campaign = _campaign(
             event_pattern="storage_exfiltration", burst_count=6,
@@ -544,10 +545,19 @@ class TestPinkShapes:
         _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
         bodies = _bodies(stub)
         assert [b["UserAgent"] for b in bodies] == _PINK_UAS * 2
+        # The collector User-Agent header lives on the real client the base class
+        # builds (the recording stub bypasses it), so assert on that client.
+        params = M365ActivityEmitterParams(
+            collector_url=_DEFAULT_COLLECTOR, user_agents=_PINK_UAS,
+            user_agent="CortexSim-Test/1.0",
+        )
+        real = _orig_build(M365ActivityEmitter(), params)
+        ua = real.headers["user-agent"]
+        assert ua == "CortexSim-Test/1.0"
+        assert not any(u in ua for u in _PINK_UAS)
         for req in stub.requests:
-            ua = {k.lower(): v for k, v in req["headers"].items()}.get("user-agent", "")
-            assert ua == "CortexSim-Test/1.0"  # header present, so the check below is not vacuous
-            assert not any(u in ua for u in _PINK_UAS)
+            sent = {k.lower(): v for k, v in req["headers"].items()}.get("user-agent", "")
+            assert not any(u in sent for u in _PINK_UAS)
 
     def test_storage_targets_both_workloads(self):
         recs = _build("storage_exfiltration", storage_targets=["sharepoint", "onedrive"])
