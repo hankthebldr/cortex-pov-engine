@@ -64,6 +64,27 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
 
+### Added — grouping-key corpus gate (`make check-grouping`)
+
+- **`core/engine/grouping_keys.py`** works out, for each expected detection,
+  the native XSIAM case-grouping key classes it populates (host, user, file,
+  IP) and its severity, and reports per scenario: **G-01** (WARN) Medium+
+  detections share no key, **G-02** (WARN) a stitched step carries only
+  below-Medium detections, **G-03** (ERROR) a correlation rule maps the
+  declared `stitching_key` to a custom destination, **G-04** (INFO)
+  `GROUPING_KEY_UNKNOWN`, **G-05** (INFO) `BRIDGEABLE_IP_HOST`. The native
+  field list is ported from the SOC Framework's
+  `tools/correlation_rule_grouping_check.py` (MIT, notice kept).
+- **`scripts/check_grouping_keys.py`** (`make check-grouping`, a step in CI's
+  `refs` job, part of `make validate`) exits 1 only on G-03. The ground truth
+  gains a `grouping` block.
+- **Measured:** 198 scenarios, 1411 step-detections: G-01 0, G-02 2
+  (SIM-EMAIL-003/004, informational BIOCs on a stitched step), G-03 0, G-04
+  **1042**, G-05 0. G-04 is the size of the later authoring program: no card
+  carries `alert_fields`, and only custom-BIOC severity is read from the
+  corpus. The analysis is by key class, never by value, so it is advisory.
+  `tenant-verified` is still 0.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
