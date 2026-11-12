@@ -460,3 +460,273 @@ def test_resolve_tenant_runner_rejects_an_unknown_named_integration(session_fact
     with pytest.raises(VerifyError) as exc:
         asyncio.run(_do())
     assert exc.value.code == "INTEGRATION_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 — the run's own absolute window (P-5)
+# ---------------------------------------------------------------------------
+
+
+class _WindowClient:
+    def __init__(self):
+        self.timeframes = []
+
+    async def run_xql(self, query, timeframe, **kw):
+        from tests.connectors.test_xql_envelope import _reply
+        self.timeframes.append(timeframe)
+        return _reply(1)
+
+
+def _wire_tenant(SessionLocal, monkeypatch):
+    from integrations.xsiam import loader
+    from security.credentials import CredentialStore
+
+    client = _WindowClient()
+
+    async def _fake_load(db, name):
+        return client
+    monkeypatch.setattr(loader, "load_xsiam_client", _fake_load)
+
+    async def _do():
+        async with SessionLocal() as db:
+            await CredentialStore(db).put_integration(
+                name="acme", kind="xsiam_tenant", plaintext_secret="K" * 40,
+                config={"base_url": "https://api-t.xdr.us.paloaltonetworks.com",
+                        "region": "us", "api_key_id": "1", "capabilities": ["xql"]})
+            await db.commit()
+    asyncio.run(_do())
+    return client
+
+
+def _set_run(SessionLocal, run_id, *, started, completed, window=None, mode=None,
+             status=None, steps=None):
+    from models import Run, Scenario
+    from sqlalchemy import select
+
+    async def _do():
+        async with SessionLocal() as db:
+            run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            run.started_at, run.completed_at = started, completed
+            if mode is not None:
+                run.mode = mode
+            if status is not None:
+                run.status = status
+            if window is not None or steps is not None:
+                sc = (await db.execute(select(Scenario).where(
+                    Scenario.scenario_id == run.scenario_id))).scalar_one()
+                if window is not None:
+                    sc.correlation_window_seconds = window
+                if steps is not None:
+                    sc.steps = steps
+            await db.commit()
+    asyncio.run(_do())
+
+
+def _verification_book(SessionLocal, run_id="run-1"):
+    from models import Run
+    from sqlalchemy import select
+
+    async def _do():
+        async with SessionLocal() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            return r.tc_verdict_detail["verification"]
+    return asyncio.run(_do())
+
+
+async def _verify_win(SessionLocal, run_id="run-1", **kw):
+    from connectors.service import verify_run_now
+    from models import Run
+    from sqlalchemy import select
+
+    async with SessionLocal() as db:
+        run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+        out = await verify_run_now(db, run, **kw)
+        await db.commit()
+        return out
+
+
+def test_late_verify_queries_the_runs_window_not_the_last_hour(session_factory, monkeypatch):
+    from connectors.verify_window import run_timeframe
+
+    started = datetime.utcnow() - timedelta(hours=2)
+    completed = started + timedelta(minutes=2)
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    _set_run(session_factory, "run-1", started=started, completed=completed, window=3600)
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    asyncio.run(_verify_win(session_factory))
+
+    assert client.timeframes
+    for tf in client.timeframes:
+        assert "relativeTime" not in tf
+        want = run_timeframe(started, completed, 3600, now=datetime.utcnow())
+        assert tf["from"] == want["from"]
+        assert abs(tf["to"] - want["to"]) < 5000  # `to` is clamped to now (here: not clamped)
+
+
+def test_explicit_timeframe_seconds_still_wins(session_factory, monkeypatch):
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    client = _wire_tenant(session_factory, monkeypatch)
+    asyncio.run(_verify_win(session_factory, timeframe_seconds=600))
+    assert client.timeframes == [{"relativeTime": 600000}]
+
+
+def test_sweep_queries_each_runs_window(session_factory, monkeypatch):
+    from connectors.service import auto_verify_once
+
+    now = datetime.utcnow()
+    s1, s2 = now - timedelta(hours=3), now - timedelta(hours=1)
+    _seed(session_factory, run_id="run-1", verification_xql="dataset = a | limit 1",
+          started_at=s1)
+    _seed(session_factory, run_id="run-2", scenario_id=None,
+          verification_xql="dataset = a | limit 1", started_at=s2)
+    _set_run(session_factory, "run-1", started=s1, completed=s1 + timedelta(minutes=1), window=3600)
+    _set_run(session_factory, "run-2", started=s2, completed=s2 + timedelta(minutes=1))
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    async def _do():
+        async with session_factory() as db:
+            return await auto_verify_once(db, lookback_seconds=86400)
+    asyncio.run(_do())
+
+    froms = {tf["from"] for tf in client.timeframes}
+    assert len(froms) == 2
+    from models import Run
+    from sqlalchemy import select
+
+    async def _win():
+        async with session_factory() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == "run-1"))).scalar_one()
+            return r.tc_verdict_detail["verification"]["window"]
+    assert asyncio.run(_win()) in client.timeframes
+    assert all("relativeTime" not in tf for tf in client.timeframes)
+
+
+def test_missing_scenario_falls_back_to_default_window(session_factory, monkeypatch):
+    from config import settings
+
+    started = datetime.utcnow() - timedelta(minutes=30)
+    _seed(session_factory, scenario_id=None, verification_xql="dataset = a | limit 1")
+    _set_run(session_factory, "run-1", started=started, completed=None)
+    client = _wire_tenant(session_factory, monkeypatch)
+    asyncio.run(_verify_win(session_factory))
+
+    tf = client.timeframes[0]
+    # completed None -> to = min(started + default window, now) = now (30 min in)
+    assert tf["to"] - tf["from"] <= (settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS + 300) * 1000
+    assert tf["to"] - tf["from"] >= (30 * 60 + 300) * 1000 - 5000
+
+
+# ---------------------------------------------------------------------------
+# Push runs: SimCore never learns when the bundle ran (C1)
+# ---------------------------------------------------------------------------
+
+
+def test_push_run_verified_late_keeps_the_relative_lookback(session_factory, monkeypatch):
+    """A push run reaches `staged` at bundle generation; the bundle runs offline
+    later. Querying [staging - 5 min, staging + window] finds nothing once the
+    bundle ran after it, so a push run keeps the relativeTime lookback and says why."""
+    from config import settings
+
+    staged = datetime.utcnow() - timedelta(hours=3)
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    _set_run(session_factory, "run-1", started=staged, completed=staged,
+             window=3600, mode="push", status="staged")
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    asyncio.run(_verify_win(session_factory))
+
+    want = {"relativeTime": settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS * 1000}
+    assert client.timeframes and all(tf == want for tf in client.timeframes)
+    book = _verification_book(session_factory)
+    assert book["window"] is None
+    assert book["window_reason"] == "push_execution_time_unknown"
+
+
+def test_pull_run_records_its_window_and_no_reason(session_factory, monkeypatch):
+    started = datetime.utcnow() - timedelta(hours=3)
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    _set_run(session_factory, "run-1", started=started,
+             completed=started + timedelta(minutes=2), window=3600)
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    asyncio.run(_verify_win(session_factory))
+
+    assert all("relativeTime" not in tf for tf in client.timeframes)
+    book = _verification_book(session_factory)
+    assert book["window"] in client.timeframes
+    assert "window_reason" not in book
+
+
+def test_sweep_keeps_the_relative_lookback_for_a_push_run(session_factory, monkeypatch):
+    from config import settings
+    from connectors.service import auto_verify_once
+
+    now = datetime.utcnow()
+    staged, started = now - timedelta(hours=3), now - timedelta(hours=2)
+    _seed(session_factory, run_id="run-push", verification_xql="dataset = a | limit 1",
+          started_at=staged)
+    _seed(session_factory, run_id="run-pull", scenario_id=None,
+          verification_xql="dataset = a | limit 1", started_at=started)
+    _set_run(session_factory, "run-push", started=staged, completed=staged,
+             window=3600, mode="push", status="staged")
+    _set_run(session_factory, "run-pull", started=started,
+             completed=started + timedelta(minutes=1))
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    async def _do():
+        async with session_factory() as db:
+            return await auto_verify_once(db, lookback_seconds=86400)
+    asyncio.run(_do())
+
+    relative = {"relativeTime": settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS * 1000}
+    assert relative in client.timeframes
+    push_book = _verification_book(session_factory, "run-push")
+    assert push_book["window"] is None
+    assert push_book["window_reason"] == "push_execution_time_unknown"
+    pull_book = _verification_book(session_factory, "run-pull")
+    assert pull_book["window"] in client.timeframes
+    assert "relativeTime" not in pull_book["window"]
+
+
+# ---------------------------------------------------------------------------
+# Back-dated record bodies widen the lead (I4)
+# ---------------------------------------------------------------------------
+
+
+def _eal_step(step_id, offset):
+    return {"step_id": step_id, "channel": "eal",
+            "eal": {"plugin": "idp_signin_emulator",
+                    "params": {"event_time_offset_seconds": offset}}}
+
+
+def test_back_dated_eal_bodies_open_the_window_earlier(session_factory):
+    """An eal step with event_time_offset_seconds back-dates its record body
+    times; a collector that takes `_time` from the body puts those rows before
+    `started_at`. The most negative offset widens the lead."""
+    from connectors.service import _run_window
+    from models import Run
+    from sqlalchemy import select
+
+    started = datetime(2026, 11, 11, 10, 0, 0)
+    now = datetime(2026, 11, 11, 14, 0, 0)
+    _seed(session_factory, run_id="run-plain", scenario_id="SIM-PLAIN")
+    _seed(session_factory, run_id="run-dated", scenario_id="SIM-DATED")
+    _set_run(session_factory, "run-plain", started=started, completed=started,
+             window=3600, steps=[{"step_id": "step-01", "command": "id"}])
+    _set_run(session_factory, "run-dated", started=started, completed=started,
+             window=3600, steps=[_eal_step("step-01", -1500), _eal_step("step-02", -300),
+                                 _eal_step("step-03", "-9000"),
+                                 {"step_id": "step-04", "command": "id"}])
+
+    async def _windows():
+        async with session_factory() as db:
+            out = {}
+            for rid in ("run-plain", "run-dated"):
+                run = (await db.execute(select(Run).where(Run.run_id == rid))).scalar_one()
+                out[rid] = await _run_window(db, run, now=now)
+            return out
+    w = asyncio.run(_windows())
+
+    assert w["run-plain"]["from"] - w["run-dated"]["from"] == 1500 * 1000
+    assert w["run-plain"]["to"] == w["run-dated"]["to"]
