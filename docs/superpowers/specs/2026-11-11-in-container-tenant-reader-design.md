@@ -1,6 +1,6 @@
 # In-container tenant reader and the Results page — design
 
-Status: **design** (awaiting review) · 2026-11-11
+Status: **design** (revised after the builder check, awaiting review) · 2026-11-11
 Author: Henry + Claude
 Branch: `docs/docs-in-container-tenant-reader` (cut from `dev` @ `b1ee28fa`)
 Depends on: the SOC Framework Part B branch `feature/api-run-case-ledger` (read at
@@ -54,6 +54,16 @@ Henry, 2026-11-11 ~20:05, choosing the recommended option:
 D1 reverses the MCP spec's non-goal N1 ("not an authentication layer") for `/mcp` over HTTP.
 §7.1 states the amendment.
 
+Henry decided (2026-11-11, ~21:00 CST), after the builder check, answering Q2 and Q1:
+
+- **D4.** "Once SimCore matches it" (D2) means **all 12** `cortex-mcp` tools. Track R (§9),
+  the six named reads plus the playbook and script ZIP replies and `OP-SCRIPTS-GET`, is on
+  the retirement critical path. `~/cortex-mcp` stays registered, supervised as D3 describes,
+  until all 12 have SimCore equivalents (§8).
+- **D5.** Phase 1 **may** add a **Reconcile** button to the Results page, behind a confirm
+  that says it reads the tenant and may change the run's verdict. Part B's "reconcile the
+  run" hint, in its empty state and under `NO_CASE_YET`, points at that button (§7.5).
+
 ## 3 · Current state (verified for this document)
 
 Repo claims were read from `origin/dev` @ `b1ee28fa`, unless marked *branch*, which means
@@ -100,7 +110,13 @@ Part B assumes the legacy alert id equals the issue id: it filters `issue/search
 alert's `external_id`. Its spec records one id-filtered read of issue 1500462 on deathstar
 that returned the status fields. It does not record that 1500462 came from the alerts API, so
 id equality is **unverified**. If the assumption is wrong, the issue reads as `unread`, which
-fails safe.
+fails safe. §7.3 now measures it directly, run by run.
+
+A second gap bears on any join between the two readers. The lab ledger records that alerts
+pulled from deathstar on 2026-11-04 carried none of the four rule-identifier keys the
+connector reads, and that matching fell back to technique plus name
+(`docs/product-mechanics/LEDGER.md`, ALR, *Known*). A join keyed on rule id would therefore
+join nothing on that tenant.
 
 ### 3.3 `~/cortex-mcp` today
 
@@ -147,6 +163,11 @@ fails safe.
 | A dropped remote server is retried up to five times, with exponential backoff starting at 1 s. Credential-like env names expand empty in remote url and headers | same |
 | Claude Desktop custom connectors connect "from Anthropic's cloud infrastructure, rather than from your local device". Local servers go in `claude_desktop_config.json` | [Custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) |
 
+The host row conflicts with the oracle memory note (`reference_cortex_mcp_oracle.md`), which
+says an issue's host is in `asset_names`. Neither source has been checked against a live
+reply, and the vendor page does not say whether `include_fields` adds fields to the default
+response or limits the response to the fields named. The phase-1 spike (§9) settles both.
+
 ## 4 · Goals, non-goals, anti-goals
 
 **Goals**
@@ -161,13 +182,15 @@ fails safe.
 - **G2.** The scorecard's Alert ID column and the matched alert's source are populated.
 - **G3.** One tenant reader inside SimCore serves the console over REST and Claude over
   `/mcp` (HTTP), plus stdio for Desktop.
-- **G4.** `/mcp` over HTTP needs a bearer token and is read-only by default. One user-scope
-  registration serves every Claude Code session on the host.
+- **G4.** `/mcp` over HTTP needs a bearer token, accepts loopback clients only in phase 1,
+  and is read-only by default. One user-scope registration serves every Claude Code session
+  on the host.
 - **G5.** One per-tenant request budget covers every SimCore path that calls the tenant.
-- **G6.** Parity with the 12 tools of `cortex-mcp` 1.0.5, then retirement of
-  `~/cortex-mcp`.
+- **G6.** Parity with all 12 tools of `cortex-mcp` 1.0.5, then retirement of
+  `~/cortex-mcp`. Every one of the 12 gates retirement (D4).
 - **G7.** Phase 1 collects, as a by-product of normal use, the evidence phase 2 needs:
-  whether alert ids and issue ids are one id space.
+  whether alert ids and issue ids are one id space, measured directly by reading each matched
+  alert's id back from `issue/search` (§7.3).
 
 **Non-goals**
 
@@ -179,6 +202,8 @@ fails safe.
 - Issues in the Health, Posture, Hunting, IT or custom domains. Posture is the assertions'
   job.
 - Claude Desktop over HTTP, or remote connectors.
+- A remote client of `/mcp`, such as Claude on a DC jumpbox. That needs a per-instance token
+  and TLS, and is a later phase. Phase 1 refuses non-loopback clients (§7.1).
 - A new container, sidecar or listener.
 - Any change to Part B's ledger semantics (`merge_class` and the disposition vocabulary).
 - XQL in the reader. XQL stays on `xsiam.xql.query`.
@@ -209,8 +234,9 @@ infrastructure gap must never read as a claim about the customer's coverage.
 ## 5 · Constraints
 
 - **One container, one process.** SimCore is one container on `0.0.0.0:8888`. The beacons
-  need LAN reach, so binding `/mcp` to loopback is not an option. One uvicorn process serves
-  the console, the beacons, SSE and `/mcp`.
+  need LAN reach, so `/mcp` cannot get a loopback-only bind; phase 1 refuses non-loopback
+  peers at the route instead (§7.1). One uvicorn process serves the console, the beacons, SSE
+  and `/mcp`.
 - **Shared tenant limit.** The tenant's rate limit is shared with the customer's analysts,
   so every read is explicit, cached and counted.
 - **Stack.** Python 3.11, `mcp==1.30.0`, stdlib for ZIP. No new runtime dependency.
@@ -218,8 +244,14 @@ infrastructure gap must never read as a claim about the customer's coverage.
   needs a `_migrate_*` helper and a prod `ALTER TABLE`.
 - **Time.** Stored timestamps are naive UTC and the UI labels them "UTC". Request bounds use
   `_epoch_ms_utc`, never `naive.timestamp()`, and the non-UTC suite enforces it.
-- **Fixtures.** Synthetic and built from the vendor pages, with a `PROVENANCE.md` as Part B
-  has under `tests/fixtures/socfw/`. No tenant data and no `cortex-mcp` code.
+- **Fixtures.** No tenant data and no `cortex-mcp` code, with a `PROVENANCE.md` as Part B has
+  under `tests/fixtures/socfw/`. **Claude's call:** issue fixtures are recorded from the real
+  reply shape the phase-1 spike returns (§9), redacted: field names, nesting and the envelope
+  are kept, and every value is replaced with a synthetic one of the same type. The repo is
+  public, so `PROVENANCE.md` records the date, the tenant alias, the request body and the
+  redaction, never a tenant value. Reason: a fixture built only from the vendor page cannot
+  catch the host-field disagreement in §3.4. Case and endpoint fixtures stay synthetic,
+  built from the vendor pages.
 - **Repo rules.** Topic branches from `dev`, one task per branch, `git add <path>`, no PR
   unless asked, and Gate A evidence that includes a guard seen failing.
 - **Outside the repo.** Changes to `~/.claude.json`, dot-files or `~/cortex-mcp` need
@@ -232,13 +264,17 @@ infrastructure gap must never read as a claim about the customer's coverage.
                    SimCore container  (one process, :8888 on 0.0.0.0)
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │ console  ── GET/POST /api/runs/{id}/tenant-evidence ──┐                     │
- │ Claude Code ── POST /mcp  (Bearer) ── mcp_server ─────┤ in-process REST     │
+ │ Claude Code ── POST /mcp (loopback+Bearer) mcp_server ┤ in-process REST     │
  │ Claude Desktop ── docker exec -i … python -m mcp_server (stdio) ─ loopback ─┤
  │                                                       ▼                     │
- │            api/ routes ── connectors/tenant_reader.py (pure shaping)        │
- │                                 │                                           │
- │            XsiamConnector._harvest(request_for=…)  ← Part B's by-id reads   │
- │              search_issues · search_cases · get_endpoints                    │
+ │          api/ routes ── connectors/tenant_reader.py (pure shaping:          │
+ │          one strict envelope rule, one allowlisted projection)              │
+ │           │ run-scoped read                 │ general routes + MCP tools    │
+ │           │ (either credential kind)        │ (xsiam_tenant only)           │
+ │   XsiamConnector._harvest(request_for=…)  XsiamClient.request (catalog)     │
+ │   search_issues · search_cases ·          OP-ISSUE-SEARCH · OP-CASE-SEARCH  │
+ │   get_endpoints  ← Part B's by-id reads   · OP-ENDPOINTS-GET-ENDPOINT       │
+ │           └── one issue/search body builder, one get_endpoint ──┘           │
  │                                 │                                           │
  │   integrations/xsiam/ledger.py: per-tenant request bucket + XQL ledger      │
  │                                 + breaker (one per tenant, every path)      │
@@ -262,11 +298,25 @@ boundary. D1 reverses that **for `/mcp` over HTTP only**:
   constant-time (`hmac.compare_digest` on bytes), and the header is never logged.
 - A missing or wrong token gets a `401` with `WWW-Authenticate: Bearer` and the structured
   body `{"error","code":"MCP_UNAUTHORIZED","detail"}`.
-- If `CORTEXSIM_MCP_HTTP=1` and the token is missing or shorter than 32 random bytes,
-  `/mcp` is **not mounted**. The `mcp` component of `/api/health` then reports `degraded`
-  with `MCP_TOKEN_MISSING` or `MCP_TOKEN_WEAK`: the operator asked for the mount and did not
-  get it, which is degraded, not ok. With the flag off, the component stays `ok` /
-  `MCP_DISABLED`.
+- If `CORTEXSIM_MCP_HTTP=1` and the token is missing (unset or empty), `/mcp` is **not
+  mounted**. The `mcp` component of `/api/health` then reports `degraded` with
+  `MCP_TOKEN_MISSING`: the operator asked for the mount and did not get it, which is
+  degraded, not ok. With the flag off, the component stays `ok` / `MCP_DISABLED`.
+  **Claude's call:** no token-strength check (the earlier `MCP_TOKEN_WEAK` heuristic is
+  dropped). Reason: Henry's standing feedback is functional fixes without extra guards, and
+  §7.10 generates the token with `secrets.token_urlsafe(32)` anyway.
+- **Loopback only in phase 1.** **Claude's call:** `/mcp` refuses any request whose TCP peer
+  is not a loopback address, with `403` and `MCP_LOOPBACK_ONLY`, before the token is
+  checked. Reason: phase 1's only HTTP client is Claude Code on the same host. A remote DC
+  jumpbox client needs a per-instance token and TLS, and is a later phase (§4 non-goals).
+  - The bind stays `0.0.0.0:8888` for the beacons (§5); this is a per-request check on the
+    one route.
+  - **Builder check first.** Under Docker port publishing, a request from the host's own
+    loopback may reach the container from the bridge gateway rather than `127.0.0.1`, and on
+    Docker Desktop a LAN client may arrive from that same address. Both are unverified. The
+    builder records what peer address a host-loopback `/mcp` request shows on this Mac before
+    relying on the check. If loopback and LAN cannot be told apart, the builder stops and
+    reports; it does not allowlist the gateway, because that would admit the LAN.
 - The Host/Origin allowlist stays, so the spec's MUST on `Origin` is still met.
 - REST stays unauthenticated. Stdio needs no token because it calls REST.
 
@@ -313,14 +363,29 @@ issue, case and endpoint reads.
 - `core/connectors/tenant_reader.py` (new, pure, no I/O) does projection, attribution,
   grouping and the agreement join.
 - Part B's `pull_issue_status` and `pull_endpoint_ips` are re-expressed over
-  `search_issues` and `get_endpoints`, with byte-identical request bodies pinned by a test.
-  After that, one function builds an `issue/search` body and one builds a `get_endpoint`
-  body. A drift guard asserts both, following the repo's "one substrate" pattern.
+  `search_issues` and `get_endpoints`. Part B's own tests are what show the delegation kept
+  their behaviour.
+- **Claude's call:** one function builds an `issue/search` request body, and the reader,
+  Part B's by-id read and the general route's catalog op (`OP-ISSUE-SEARCH`, §7.4) all call
+  it. One function likewise builds a `get_endpoint` body. They live in the substrate that
+  both XSIAM code paths already import, beside `queries.py::result_rows`. Reason: two call
+  shapes over one substrate is the repo's rule, and a second body builder is how the two
+  paths would drift. No drift-guard test pins it (§10.1).
 - `pull_cases` stays on `get_incidents` until phase 2 (§9, P2-3).
 
-**Credential and gate.** The credential resolves through
-`resolve_connector_integrations(store, "xsiam")`, so either credential kind serves. The
-capability gate is the one reconcile already applies.
+**Credential and gate.** **Claude's call:** the credential kind follows the shape of the
+read.
+
+- **General tenant routes and their MCP tools** (`…/issues/search`, `…/cases/search`,
+  `…/endpoints/get`; `xsiam.issue.search`, `xsiam.case.search`, `xsiam.endpoint.get`)
+  accept **only** the `xsiam_tenant` credential, and run on the catalog executor. Reason:
+  configuring reconcile's `xsiam` kind must not authorise tenant-wide search, just as it
+  does not authorise XQL. That is the repo's two-credential rule.
+- **The run-scoped read** (`read_run_evidence`, §7.4's `…/tenant-evidence`) keeps
+  reconcile's resolution, `resolve_connector_integrations(store, "xsiam")`, so either kind
+  serves, under the capability gate reconcile already applies. Reason: it takes no
+  caller-supplied filter, and it reads the run's window and host as reconcile's own pull and
+  Part B's by-id reads already do.
 
 **Threading.** **Claude's call:** reader calls run in `asyncio.to_thread`. The connector's
 fetcher is synchronous, with a 30 s timeout per request, and SimCore's event loop also
@@ -357,30 +422,37 @@ the loop the same way; §14 notes it but does not fix it.
 2. **Issues.** `issue/search` with:
    - filters `_insert_time` `gte` / `lte` over the window, and `issue_domain`
      `in ["Security"]`;
-   - `include_fields: ["normalized_fields"]`;
+   - `include_fields` as the phase-1 spike settles it (§9): `["normalized_fields"]` if that
+     adds to the default fields, or the full projection list (§7.7) if it limits the reply to
+     the fields named;
    - sort `observation_time` `asc`, in pages of 100;
    - **Claude's call:** at most `CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES` = 5 pages.
 
    A row whose `domain` is not `Security` is excluded and counted, in case the tenant ignored
    the filter.
-3. **Attribution.** An issue's host is `xdm.source.host.hostname`, else
-   `xdm.target.host.hostname`. It is compared with `resolve_run_host(...)` through the
-   matcher's `_short_host`. Each issue lands in one of three buckets:
+3. **Attribution.** An issue's host comes from the field the phase-1 spike shows carries it:
+   `asset_names`, as the oracle note says, or `xdm.source.host.hostname`, else
+   `xdm.target.host.hostname`, as the vendor page says (§3.4). Attribution is not built
+   until the spike has answered. The host is compared with `resolve_run_host(...)` through
+   the matcher's `_short_host`. Each issue lands in one of three buckets:
    - `attributed`;
    - `other_host`, which is counted but not shown;
    - `without_host`, which is shown separately as **unattributed, not credited** (A4).
 
    With no run host, every issue is unattributed and the snapshot code is `UNSCOPED`.
-4. **Cases.** `case/search` with `case_id` `in` the `case_ids` of the attributed issues: one
+4. **Id probe.** Part B's by-id `issue/search`, filtered by `id` `in` the `external_id` of
+   every `Observation` on the run, in chunks of 100 (see *Agreement* below). Its requests
+   count in `queries_issued`.
+5. **Cases.** `case/search` with `case_id` `in` the `case_ids` of the attributed issues: one
    request, at most 100 ids. It feeds grouping with `issue_count`, `issue_ids`, `hosts`,
    `case_domain` and `xdr_url`. Disposition stays the Part B ledger's job (§7.8).
-5. **Endpoint.** `get_endpoint` by the run host, labelled **as of `read_at`**, not "at run
+6. **Endpoint.** `get_endpoint` by the run host, labelled **as of `read_at`**, not "at run
    time".
    - One matching record is shown.
    - More than one is `AMBIGUOUS_ENDPOINT_RECORDS`: each record's id and `last_seen` are
      listed, and no single record is claimed.
    - None is `ENDPOINT_NOT_FOUND`, which is degraded.
-6. **Codes.** Each sub-read reports its own code, so a failed case read leaves the issues
+7. **Codes.** Each sub-read reports its own code, so a failed case read leaves the issues
    visible. This is the preflight pattern, where every stage is reported.
 
 **Grouped** (**Claude's call**, making Henry's definition concrete). A case is *grouped*
@@ -393,22 +465,31 @@ distinct `detection.method` values**.
 - It is context, shown with `CASE_DISCLAIMER` beside it. It feeds no KPI, the Cross-Source
   Correlation Rate included (A3).
 
-**Agreement with the matcher** (**Claude's call**, the join named in Henry's list).
+**Agreement with the matcher** (**Claude's call**, revised after the builder check, the join
+named in Henry's list). Reason for the revision: the first draft joined on rule id, and the
+lab ledger shows deathstar's alerts carry no rule id (§3.2), so that join would have yielded
+0 pairs there.
 
-- **Matcher row.** An `Observation` linked to a `Result`. Its rule id comes from the stored
-  `raw` alert through the connector's own `_normalize_alert(raw).detection_id`, so there is
-  no second parser.
-- **Join rule.** A matcher row joins an issue when all of these hold:
-  - `issue.detection.rule_id` equals that rule id;
+- **Matcher row.** An `Observation` linked to a `Result`, with its `external_id` and `name`.
+- **Class `id`: measured directly.** The id probe (step 4) reads each matcher row's
+  `external_id` back from `issue/search`. A hit proves that this alert id and this issue id
+  are equal. The pair joins in class `id` when the issue is also attributed to the run host.
+  A hit on an issue that is not attributed counts in `id_space` only, never in `both` (A4).
+- **Class `name_host_window`: the weaker fallback.** A matcher row whose id the probe did not
+  find joins an attributed issue when all of these hold:
+  - the issue's `name` equals `Observation.name` under the matcher's own `_norm`;
   - both are attributed to the run host;
   - `|issue.observation_time − observation.observed_at| ≤ CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS`
     (default 300).
-- **Outcomes.**
-  - `both`, `matcher_only`, and `reader_only` (an attributed issue with no matcher row);
-  - `unjoinable`: no rule id on either side;
-  - `ambiguous`: more than one candidate, never resolved silently;
-  - `id_space {pairs, id_equal, id_differs}`: for each joined pair, whether `issue.id`
-    equals `observation.external_id`. This is the evidence phase 2 needs (G7).
+- **A miss proves nothing about ids.** An id the probe did not find may belong to an issue
+  outside the window, the domain or retention. It is reported as `no_hit`, never as "ids
+  differ".
+- **Outcomes**, each class counted separately and never summed into one number:
+  - `both {id, name_host_window}`;
+  - `matcher_only`, and `reader_only` (an attributed issue with no matcher row);
+  - `unjoinable`: no `external_id` and no name on the matcher row;
+  - `ambiguous`: more than one `name_host_window` candidate, never resolved silently;
+  - `id_space {probed, hit, no_hit}`. This is the evidence phase 2 needs (G7).
 
 **Lag, not MTTD.** **Claude's call:** each attributed issue shows
 `observation_time − step executed_at` as "observed after step", and `_insert_time` as
@@ -445,8 +526,9 @@ Payload contract:
              "methods_seen": ["ANALYTICS_BIOC", "FW"], "issues_seen": 3,
              "issue_count": 4, "...": "..." } ]},
   "endpoint": {"code": "OK", "record": { "...": "..." }},
-  "agreement": {"both": 3, "matcher_only": 1, "reader_only": 2, "unjoinable": 0,
-                "ambiguous": 0, "id_space": {"pairs": 3, "id_equal": 3, "id_differs": 0}},
+  "agreement": {"both": {"id": 2, "name_host_window": 1}, "matcher_only": 1,
+                "reader_only": 2, "unjoinable": 0, "ambiguous": 0,
+                "id_space": {"probed": 4, "hit": 2, "no_hit": 2}},
   "tenant_verified": 0,
   "statement": "Two reads of the same tenant; agreement is not tenant verification."
 }
@@ -461,9 +543,9 @@ Routes:
 |---|---|---|
 | `POST /api/runs/{id}/tenant-evidence[?force&integration]` | yes, metered | Explicit read; stores a snapshot. Mirrors Part B's refresh contract (see below) |
 | `GET /api/runs/{id}/tenant-evidence` | **none** | Latest snapshot, `history[]` (last 10: `id`, `read_at`, `code`) and `case_ledger` (Part B's column). Never read → `snapshot: null`, `TENANT_EVIDENCE_NOT_READ` |
-| `POST /api/xsiam/tenants/{name}/issues/search` | yes | General query for MCP parity: window, ids, methods, severities, `limit ≤ 200`, `offset`; same projection |
-| `POST /api/xsiam/tenants/{name}/cases/search` | yes | By id or by window |
-| `POST /api/xsiam/tenants/{name}/endpoints/get` | yes | By hostname(s) |
+| `POST /api/xsiam/tenants/{name}/issues/search` | yes | General query for MCP parity: window, ids, methods, severities, `limit ≤ 200`, `offset`. Runs `OP-ISSUE-SEARCH` on the catalog executor with the shared body builder, the same strict envelope and the same projection. `xsiam_tenant` credential only |
+| `POST /api/xsiam/tenants/{name}/cases/search` | yes | By id or by window, over `OP-CASE-SEARCH`; `xsiam_tenant` only |
+| `POST /api/xsiam/tenants/{name}/endpoints/get` | yes | By hostname(s), over `OP-ENDPOINTS-GET-ENDPOINT`; `xsiam_tenant` only |
 | `GET /api/results/{run_id}` (changed) | none | Each result gains `alert_id`, `alert_source` and `observation_count` through `storyline.load_observations`, so the two surfaces cannot disagree |
 
 The POST route's responses:
@@ -472,6 +554,10 @@ The POST route's responses:
 - A read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS` (default 60): `200` with
   `read: false`, `TENANT_EVIDENCE_READ_RECENTLY` and the latest snapshot, unless `force` is
   set.
+
+A general route called for a tenant that has only reconcile's `xsiam` kind answers the same
+`200` / `pending` / `NO_TENANT_CONFIGURED` shape, and its detail names the `xsiam_tenant`
+credential it needs.
 
 **Claude's call:** a zero is degraded. A successful read with no attributed issues returns
 `NO_ATTRIBUTED_ISSUES`. Its detail names the infrastructure causes to check first:
@@ -485,7 +571,8 @@ below the scorecard, fed by `useTenantEvidence(runId)`.
 
 - The hook issues a GET when the run changes and after an action. It has **no interval**
   (A7).
-- On Results, the panel embeds Part B's `RunCasePanel` unchanged.
+- On Results, the panel embeds Part B's `RunCasePanel`, unchanged except that its "reconcile
+  the run" hint points at the Reconcile button (D5).
 - `RunDetailView` already renders `RunCasePanel` above its sub-tabs. It passes
   `showCaseLedger={false}` to `EvidenceView` so the panel does not appear twice.
 
@@ -495,7 +582,8 @@ Results › Report
  Scorecard: … · Alert ID (now populated) · Source (alert_source) · …
  ── Tenant evidence ─────────────── read 20:31 UTC · deathstar · 4 queries · tenant-verified: 0
   [Read from tenant]  [Reconcile…]   Two reads of the same tenant; agreement is not tenant verification.
-  Agreement   both 3 · matcher only 1 · reader only 2 · unjoinable 0 · ambiguous 0 · ids equal 3/3
+  Agreement   both: by id 2 · by name+host+window 1 · matcher only 1 · reader only 2
+              unjoinable 0 · ambiguous 0 · id probe: 2 of 4 found (a miss is not "ids differ")
   Issues      host pov-target-01 · window … · attributed 5 · other host 12 · no host 2 (not credited)
               id · method · rule id · severity · case · observed after step · status
   Cases       1500  GROUPED  ANALYTICS_BIOC + FW · 3 of 4 issues seen · open in XSIAM
@@ -504,12 +592,14 @@ Results › Report
 ```
 
 - **Read from tenant** calls the POST route and never changes a score.
-- **Reconcile…** (**Claude's call**; see open question Q1) calls the existing
-  `POST /api/runs/{id}/reconcile?connector=xsiam` after this confirm line: "Reconcile reads
-  the tenant's alerts and may mark detections detected or missed. Tenant evidence never
-  does." Part B's empty state and its `NO_CASE_YET` hint both tell the DC to "reconcile the
-  run", and today the console cannot. No scoring *rule* changes; an existing path gains a
-  button.
+- **Reconcile…** Henry decided (2026-11-11): phase 1 may add it (D5). It calls the existing
+  `POST /api/runs/{id}/reconcile?connector=xsiam`, only after a confirm that says it reads
+  the tenant and may change the run's verdict: "Reconcile reads the tenant and may change
+  this run's verdict, marking detections detected or missed. Read from tenant never does."
+  - Part B's empty state and its `NO_CASE_YET` hint both tell the DC to "reconcile the run",
+    and today the console cannot. Both hints now point at this button, wherever
+    `RunCasePanel` renders.
+  - No scoring *rule* changes; an existing path gains a button.
 - **Label fix** (**Claude's call**). The "XSIAM Stitch" tile becomes "Analytics plane", with
   the same computation. It never measured case grouping, and "grouped" now lives next to its
   disclaimer.
@@ -540,6 +630,10 @@ classes:
 | `xsiam.endpoint.get` | read / tenant, `alert.read` | `…/endpoints/get` |
 | `cortexsim.run.tenant_evidence.get` | read / simcore | `GET /api/runs/{id}/tenant-evidence` |
 | `cortexsim.run.tenant_evidence.read` | read / tenant (its only write is the snapshot) | `POST /api/runs/{id}/tenant-evidence` |
+
+- The three `xsiam.*` tools inherit their routes' rule: `xsiam_tenant` credential only
+  (§7.3). The two `cortexsim.run.tenant_evidence.*` tools take whatever the run-scoped route
+  takes.
 
 - `xsiam.alert.list` and `xsiam.incident.list` keep working, because the matcher still
   depends on the alerts API. Their descriptions and envelope degradations gain a `LEGACY`
@@ -587,7 +681,7 @@ poisoned tool replies.
 | Part B piece | How this design reuses it |
 |---|---|
 | `_harvest(request_for=…)`, `_chunked`, the `IssueReadError` pattern | Every reader request goes through it, so there is no second HTTP path |
-| `pull_issue_status`, `pull_endpoint_ips` | Re-expressed over the reader with identical bodies (§7.3) |
+| `pull_issue_status`, `pull_endpoint_ips` | Re-expressed over the reader through the shared body builders (§7.3); `pull_issue_status`'s by-id read is also the id probe |
 | `pull_cases` + `CASE_STATUS_MAP` | Untouched in phase 1; disposition stays the ledger's |
 | `runs.case_ledger`, `RunCasePanel`, `CASE_DISCLAIMER` | Embedded in the Results panel and returned by `GET …/tenant-evidence` |
 | `bridge_diagnosis` | The endpoint card shows the stored bridge code when the ledger has one |
@@ -605,8 +699,8 @@ under its own heading and source line.
 
 - **The bucket.** `integrations/xsiam/ledger.py` gains a per-tenant request bucket, keyed by
   `tenant_ledger_key`.
-  - It is built on `TokenBucket`, which moves out of `mcp_server/ratelimit.py`. An AST guard
-    keeps exactly one definition.
+  - It is built on `TokenBucket`, which moves out of `mcp_server/ratelimit.py`, leaving one
+    definition. No AST guard pins that (§10.1).
   - Default `CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE` = 60. PANW publishes no number, and the
     limit is shared with the customer.
 - **Charged at both egress points.**
@@ -660,8 +754,9 @@ custom connectors connect from Anthropic's cloud. It gets a stdio entry instead.
 - dot-files `claude/mcp.toml` gains `[servers.cortexsim]` targeting `desktop`, applied with
   `claw agent mcp-sync --only desktop --server cortexsim`.
 
-`cortex-mcp` stays registered alongside both until retirement (§8), as the oracle for the
-side-by-side check.
+`cortex-mcp` stays registered alongside both, supervised (D3), until retirement (§8), as the
+oracle for the side-by-side check. Retirement needs all 12 parity rows closed (D4), so it
+outlives phase 1.
 
 ## 8 · Parity and retirement of `~/cortex-mcp`
 
@@ -669,6 +764,11 @@ side-by-side check.
 
 "SimCore today" means `origin/dev`. In "Closed by", P1 is phase 1 and R is the retirement
 track (§9).
+
+**Every row gates retirement** (D4). Henry decided (2026-11-11) that "once SimCore matches
+it" means all 12 tools, so R's eight rows (six named reads, the playbook ZIP read and the
+script ZIP read) are on the critical path, not a tail. Until the last row closes,
+`~/cortex-mcp` stays registered and runs under `supervise.py` (D3).
 
 | cortex-mcp tool | Upstream | SimCore today | Status | Closed by |
 |---|---|---|---|---|
@@ -687,8 +787,9 @@ track (§9).
 
 R's named tools use the existing `named()` / `_Shape` mechanism in `tools/xsiam.py`, with
 allowlisted fields. They are tenant-wide reads, not run evidence, so they stay on the catalog
-executor, which §7.9 now meters. **Claude's call:** SimCore does not send `X-IS-MCP`. The
-header is undocumented, and its effect on quota accounting is unknown.
+executor, which §7.9 now meters, and they take only the `xsiam_tenant` credential (§7.3).
+**Claude's call:** SimCore does not send `X-IS-MCP`. The header is undocumented, and its
+effect on quota accounting is unknown.
 
 **Licence.** **Claude's call:** re-implement from PANW's public API pages. Copy or vendor no
 `cortex-mcp` code.
@@ -706,7 +807,8 @@ header is undocumented, and its effect on quota accounting is unknown.
 These steps run on Henry's go-ahead, since they are outside the repo.
 
 0. **Preconditions.**
-   - Every parity row is closed, or Henry has waived it (Q2).
+   - All 12 parity rows are closed (D4): phase 1's three, the existing correlation-rule
+     tool, and track R's eight.
    - `cortexsim` is connected in Claude Code over HTTP and in Desktop over stdio.
    - The side-by-side oracle check (§10.4) has passed on deathstar.
 1. **Back up** to `~/.dotfiles-backups/<timestamp>/` and show the diffs:
@@ -751,34 +853,60 @@ building starts, cut the reader branch from Part B's tip and rebase once it merg
 Part B by path and name, not by SHA, because SHAs change on rebase.
 
 **Phase 1, display-only.** **Claude's call:** "display-only" means the reader writes nothing
-that scoring reads. One task per branch, in this order:
+that scoring reads. The Reconcile button (D5) does not breach that: it exposes the existing
+scoring path, and the reader still writes nothing scoring reads.
+
+**Claude's call:** phase 1 starts with a spike, before any attribution code. Reason: the host
+field and `include_fields` behaviour decide how attribution is built, and the two sources in
+§3.4 disagree.
+
+- **#0, the spike.** ONE read-only `issue/search` on deathstar, over a window that holds
+  known issues, sent with `include_fields: ["normalized_fields"]`. It goes through SimCore's
+  existing `OP-ISSUE-SEARCH` raw read, and its request body is recorded.
+  - It settles which field carries the host: `asset_names`, per the oracle note, or the
+    normalized `xdm` host fields, per the vendor page.
+  - It settles whether `include_fields` adds to the default fields or limits the reply to
+    the fields named. One reply answers this: either the default fields come back beside
+    `normalized_fields`, or they do not.
+  - Issue fixtures are then recorded from that real shape, redacted (§5).
+  - No branch, no tenant write, no scoring. Its findings go into branch #3's PR body and
+    into §3.4 of this spec.
+
+Then one task per branch, in this order:
 
 | # | Branch | Delivers | Needs |
 |---|---|---|---|
 | 1 | `fix/api-results-observation-join` | `alert_id`, `alert_source` and `observation_count` on `/api/results`; Alert ID and Source columns | — (independent of Part B) |
 | 2 | `feature/api-tenant-request-bucket` | §7.9 at both egress points; the breaker on a connector 429 | — |
-| 3 | `feature/api-tenant-reader` | §7.3–7.4: the reader, the strict envelope, the snapshots table and five routes; Part B's by-id helpers delegate | Phase 0, #2 |
-| 4 | `feature/ui-results-tenant-evidence` | §7.5: the panel, the Read and Reconcile buttons and the tile label | #1, #3 |
-| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer, refuse-to-mount, health codes and the host-action gate | — |
+| 3 | `feature/api-tenant-reader` | §7.3–7.4: the reader, the shared body builders, the strict envelope, the id probe and two-class agreement, the snapshots table and five routes (general ones `xsiam_tenant` only); Part B's by-id helpers delegate | Phase 0, #0, #2 |
+| 4 | `feature/ui-results-tenant-evidence` | §7.5: the panel, the Read button, the Reconcile button behind its confirm (D5), the `RunCasePanel` hint pointing at it, and the tile label | #1, #3 |
+| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer, loopback-only, refuse-to-mount, health codes and the host-action gate | — |
 | 6 | `feature/api-mcp-tenant-reader-tools` | §7.6 tools, the legacy lines and §7.7 framing | #3, #5 |
 | 7 | `chore/infra-mcp-desktop-launcher` | `scripts/mcp-stdio-docker.sh`. The dot-files and `~/.claude.json` edits are host-side and wait for go-ahead | #5 |
 
-**Track R, parity tail and retirement.** It needs no live run beyond the oracle check:
+**Track R, on the retirement critical path** (D4). `~/cortex-mcp` stays registered and
+supervised until every step below is done. It needs no live run beyond the oracle check:
 
-1. `feature/api-mcp-parity-reads`: the six named reads.
+1. `feature/api-mcp-parity-reads`: the six named reads (`get_tenant_info`,
+   `get_audit_management_log`, `get_assets`, `get_asset_by_id`, `get_vulnerabilities`,
+   `get_assessment_profile_results`).
 2. `fix/api-xsiam-zip-replies`: the playbook and script ZIP reads, plus `OP-SCRIPTS-GET`.
-3. The §8.2 steps.
+3. The §8.2 steps, once all 12 parity rows are closed.
 
 **Phase 2, after a live run.** This is the scoring change, and it carries its own Gate A
 evidence.
 
 - **P2-1. The live run.** A run on deathstar / `pov-target-01` produces a snapshot with at
   least 5 joined pairs across at least 2 detection methods. **Claude's call** on the
-  threshold.
+  threshold, revised after the builder check: a pair in either match class counts, and the
+  snapshot reports the `id` and `name_host_window` counts separately. Reason: deathstar's
+  alerts carry no rule id (§3.2), so a threshold resting on a rule-id join could never be
+  met there.
 - **P2-2. Matcher migration.** The matcher's default read moves from
   `get_alerts_multi_events` to `issue/search`.
-  - It joins on id if `id_space.id_differs == 0` over the recorded pairs, and on rule + host
-    + window otherwise.
+  - It joins on id if every recorded id probe hit (`id_space.no_hit == 0` over the recorded
+    pairs), and on name + host + window otherwise. A `no_hit` is not proof the ids differ
+    (§7.3); it only means id alone cannot be relied on.
   - Gate A evidence: the verdicts on the recorded run before and after, plus proof that the
     new window filter (`_insert_time`, not `creation_time`) is exercised.
 - **P2-3. Case read migration.** Part B's `pull_cases` moves to `case/search` only after a
@@ -807,13 +935,28 @@ assumption with good syntax".
 | `GET …/tenant-evidence` makes **zero** outbound calls (an injected fetcher counts 0) | new route |
 | Vitest: mounting Results issues no POST, and the hook has no interval | new hook |
 | An unknown `detection.method` is kept verbatim in `unrecognised_values` | new rule |
+| A by-id probe hit joins its pair in class `id`; a probe miss falls back to name + host + window and is counted in its own class; a miss is reported as `no_hit`, never as "ids differ"; an id hit on an unattributed issue never enters `both` | there is no join |
+| A general route with only reconcile's `xsiam` credential configured answers `pending` / `NO_TENANT_CONFIGURED` naming `xsiam_tenant`, and makes no outbound call | new route |
 | Bearer: no header → 401; wrong token → 401; right token → 200; flag on with no token → not mounted, health `MCP_TOKEN_MISSING` | `/mcp` answers 200 unauthenticated when mounted |
+| A non-loopback peer gets `403` / `MCP_LOOPBACK_ONLY` even with the right token | `/mcp` answers any peer |
 | Over HTTP, `run.launch` and `run.abort` refuse with `MCP_HOST_ACTION_DISABLED` unless the flag is on | they execute |
 | A non-XQL catalog read charges the per-tenant bucket; a connector page charges it; a 429 on the connector path trips the breaker | these calls are unmetered |
 | KOI fixture: an issue name holding "Ignore previous instructions…" (5,000 chars, with bidi and zero-width characters) comes back capped and stripped, under `tenant_text`, with `data_notice` | there is no projection |
 | Scoring invariance: coverage, MTTD, outcomes and `score_run` are byte-identical before and after a tenant-evidence read | this is the guard for A2 |
-| Drift guard: one `issue/search` body builder, one `get_endpoint` builder, one `TokenBucket` | new guard |
-| After delegation, Part B's `pull_issue_status` and `pull_endpoint_ips` send byte-identical bodies | pins the refactor |
+
+**Claude's call:** guard-only tests are left out, per Henry's standing feedback (functional
+fixes, no extra guards). Reason: they pin structure, not behaviour. Dropped from the first
+draft:
+
+- the AST one-definition guards (one `issue/search` body builder, one `get_endpoint`
+  builder, one `TokenBucket`), which stay design and are checked in review;
+- the byte-identical body pins on Part B's delegated helpers, whose own tests show the
+  behaviour held;
+- the weak-token heuristic (§7.1).
+
+Kept, because they are behaviour: the strict envelope raise on an unrecognised issue reply
+(the repo's "tolerance hides bugs" rule), and "`/mcp` does not mount without a token", which
+is the feature.
 
 ### 10.2 Gates
 
@@ -851,7 +994,7 @@ On deathstar, with the XDR agent on `pov-target-01`:
 3. Call `cortex-mcp`'s `get_issues` by hand for the same window.
 4. Expect both readers to return the same attributed issue ids, with the same
    `detection.method`, `rule_id` and `case_ids`.
-5. Record `id_space` and `queries_issued`.
+5. Record `id_space`, the count in each match class, and `queries_issued`.
 
 A pass says the two readers agree on that run. It does not say that either is right about
 coverage.
@@ -862,7 +1005,14 @@ coverage.
 - The exact caps (pages, text, lists) and the tolerance, in the spirit of the stated
   defaults.
 - Whether the delegation of Part B's helpers lands in branch #3 or in a small follow-up, as
-  long as the byte-identical pin exists.
+  long as Part B's own tests stay green.
+- The module that holds the shared body builders, within the substrate both XSIAM paths
+  import.
+- What peer address a host-loopback `/mcp` request shows under Docker on this Mac, recorded
+  before the loopback check is relied on (§7.1).
+
+Not left to the builder: the host field and `include_fields` behaviour. The spike (§9, #0)
+settles them, and attribution waits for it.
 - The 1Password item name, and the helper script's path in dot-files.
 - Code names beyond those named here, in the existing `UPPER_SNAKE` vocabulary.
 - Which assets path the tenant accepts (with or without the trailing slash), confirmed with
@@ -880,16 +1030,24 @@ coverage.
 - **Finishing `supervise.py` as the end state.** It still runs one container per session, so
   it stays only as the stopgap (D3).
 - **A loopback-only second listener for `/mcp`.** It needs a second listener in one process
-  and a compose change. A bearer token meets the spec's SHOULD more simply.
+  and a compose change. Phase 1 gets the same reach limit by refusing non-loopback peers at
+  the route (§7.1), with no second listener, and the bearer token meets the spec's SHOULD.
 - **Switching the matcher to `issue/search` now.** That is a scoring change with no
   live-tenant agreement data behind it, so it waits for phase 2.
 
 ## 13 · Risks
 
 - **Prompt injection** (§7.7). Mitigated, not solved.
-- **Host attribution.** Issues carry a host only in their normalized fields, and NGFW and
-  identity issues may carry an IP or a user instead (unverified). The reader will therefore
+- **Host attribution.** The vendor page puts an issue's host in its normalized fields and the
+  oracle note puts it in `asset_names`; the spike settles which (§9). NGFW and identity
+  issues may carry an IP or a user instead (unverified). The reader will therefore
   under-attribute. That shows as unattributed, never as a miss.
+- **Loopback check under Docker.** If the container sees host-loopback and LAN clients from
+  the same gateway address, the phase-1 loopback check cannot be built as written (§7.1).
+  The builder stops and reports rather than widen it.
+- **The weaker match class.** `name_host_window` can pair an alert with a different issue
+  that has the same name on the same host within the tolerance. It is reported as its own
+  class for that reason, and never merged with `id`.
 - **Vendor contract version.** The pages carry 3.5, 3.6 and 4.0 notes, and deathstar's
   version stays unknown until R's `get_tenant_info` exists. The filter and response
   vocabularies for `detection.method` differ by design.
@@ -920,12 +1078,13 @@ coverage.
 ## 15 · Index of Claude's calls
 
 1. A static bearer middleware on the `/mcp` route, not the SDK's OAuth mode (§7.1).
-2. `/mcp` is not mounted when the token is missing or weak, and health reports degraded
-   (§7.1).
+2. `/mcp` is not mounted when the token is missing, and health reports degraded; there is no
+   token-strength check (§7.1). *Revised after the builder check.*
 3. The host-action gate: `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS`, tools registered but refusing,
    both transports, tenant-class tools unaffected (§7.2).
 4. The reader on the connector path; Part B's helpers delegate to it; one body builder per
-   endpoint (§7.3).
+   endpoint, shared by the reader, Part B's by-id read and the catalog op (§7.3). *Revised
+   after the builder check.*
 5. `asyncio.to_thread` for reader I/O (§7.3).
 6. A strict `DATA` envelope for issues and cases, with `null` counts and truncation (§7.3).
 7. Unknown enum values kept verbatim, not raised (§7.3).
@@ -933,12 +1092,16 @@ coverage.
    only, verified per row (§7.3).
 9. "Grouped" means ≥ 2 distinct methods among the attributed issues of one case, and is
    context only (§7.3).
-10. The agreement join is rule id + host + ≤ 300 s, recording `id_space` (§7.3).
+10. The agreement join: an id probe of each `Observation.external_id`, where a hit proves the
+    ids equal (class `id`); otherwise name + host + ≤ 300 s as the weaker class
+    `name_host_window`; each class reported separately, and a miss reported as `no_hit`,
+    never "ids differ" (§7.3). *Revised after the builder check: deathstar's alerts carry no
+    rule id, so the first draft's rule-id join would have joined 0.*
 11. Lag is shown but never called MTTD (§7.3).
 12. The `tenant_evidence_reads` table, the route set, the minimum-interval contract, and
     `NO_ATTRIBUTED_ISSUES` as degraded (§7.4).
 13. Panel placement, `showCaseLedger`, no polling (§7.5).
-14. The Reconcile button (§7.5, Q1).
+14. *Superseded:* the Reconcile button is now Henry's decision D5 (§2, §7.5).
 15. "XSIAM Stitch" renamed to "Analytics plane" (§7.5).
 16. No report section in phase 1 (§7.5).
 17. MCP tool names and classes (§7.6).
@@ -950,20 +1113,31 @@ coverage.
 22. Re-implement from the public docs, copy no `cortex-mcp` code, send no `X-IS-MCP`
     (§8.1).
 23. The retirement procedure and archive location (§8.2).
-24. What "display-only" means in phase 1, the branch split, and the phase-2 threshold of
-    ≥ 5 pairs across ≥ 2 methods (§9).
+24. What "display-only" means in phase 1 (the D5 Reconcile button does not breach it), the
+    branch split, and the phase-2 threshold of ≥ 5 pairs across ≥ 2 methods, counting
+    either match class with each class reported separately (§9). *Revised after the
+    builder check.*
 25. The phase-2 case read waits until the "Auto Resolved" reason has been observed live (§9).
+26. Phase 1 opens with ONE read-only `issue/search` spike on deathstar, before attribution is
+    built, to settle the host field (`asset_names` or the normalized `xdm` host fields) and
+    whether `include_fields` adds or limits; issue fixtures are then recorded from that real
+    shape, redacted (§5, §9).
+27. The credential kind follows the read's shape: the general tenant routes and their MCP
+    tools take only `xsiam_tenant`; the run-scoped read keeps reconcile's resolution
+    (§7.3).
+28. `/mcp` is loopback-only in phase 1 (`403` / `MCP_LOOPBACK_ONLY`), the builder first
+    records the peer address Docker shows, and a remote DC jumpbox client is a later phase
+    (§4, §7.1).
+29. Guard-only tests are dropped per Henry's standing feedback; the envelope raise and "no
+    mount without a token" stay (§10.1).
 
 ## 16 · Open questions for Henry
 
-These are only the questions whose answer changes what gets built.
+None. Both questions were answered on 2026-11-11 and now stand as decisions in §2:
 
-- **Q1.** May phase 1 add a **Reconcile** button to the Results page? It exposes the
-  existing scoring path, which can mark detections detected or missed, and Part B's panel
-  already tells the DC to "reconcile the run". The alternative is that phase 1 adds no
-  control that can change a score. A "no" drops the button, and the empty-state copy needs
-  rewording.
-- **Q2.** Does "once SimCore matches it" mean all 12 `cortex-mcp` tools, or only the
-  run-evidence reads (issues, cases, endpoints) plus correlation rules? On the narrow
-  reading, `~/cortex-mcp` retires after phase 1, and track R's six named reads and the ZIP
-  work drop out of the retirement gate.
+- **Q1** (a Reconcile button on Results) → **D5.** Yes, behind a confirm that says it reads
+  the tenant and may change the run's verdict; Part B's "reconcile the run" hints point at
+  it (§7.5).
+- **Q2** (what "once SimCore matches it" means) → **D4.** All 12 tools. Track R is on the
+  retirement critical path, and `~/cortex-mcp` stays registered and supervised until all 12
+  have SimCore equivalents (§8, §9).
