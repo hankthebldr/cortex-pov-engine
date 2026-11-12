@@ -37,14 +37,21 @@ the rest of SimCore.
   the target. Each is now checked against its real format (agent id
   `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
   derived one included) and baked in as a single-quoted literal; a bad value is
-  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script. **Not
+  closed:** a well-formed `?server=` may name any host, and the script
+  downloads the beacon from that host, checks it against a digest from that
+  same host, and the beacon then runs that host's tasks. A crafted install URL
+  on a real SimCore can still enrol the machine that runs it into someone
+  else's server, so pipe only an install URL you built yourself.
 - **Infra bundles no longer take Terraform from the request.** `POST
   /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
   raw into Terraform string literals, so a quote and newlines could add a
   `data "external"` block that `terraform plan` runs on the DC's machine.
   `region` must now be an AWS region and `jumpbox_size` an AWS instance type
-  (422 otherwise), and the templates write string values only as escaped HCL
-  literals. Bundles for valid input are byte-identical.
+  (422 otherwise), and the templates write string values, `tags` included, only
+  as escaped HCL literals. Bundles for valid input carry the same values, and
+  the same bytes unless a tag holds `'`, `<`, `>`, `&` or non-ASCII text
+  (which `tojson` wrote as `\uXXXX`).
 
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
