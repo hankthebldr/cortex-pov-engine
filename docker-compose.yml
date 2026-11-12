@@ -9,8 +9,8 @@ services:
     # 1.0.2). Keeps the engine's namespace distinct from the SEPARATE
     # cortex-pov-agent project. The engine's own beacon, if ever containerized,
     # is reserved the name cortex-pov-engine-agent-v<version> — never pov-agent.
-    image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.1.0}
-    container_name: cortex-pov-engine-simcore-v${CORTEXSIM_VERSION:-1.1.0}
+    image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.1.1}
+    container_name: cortex-pov-engine-simcore-v${CORTEXSIM_VERSION:-1.1.1}
     build:
       context: .
       dockerfile: core/Dockerfile
@@ -46,6 +46,10 @@ services:
       # booting with "changeme". `scripts/dev-up.sh` generates this for you;
       # otherwise see .env.example for one-liners to generate a secret.
       - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
+      # The only URLs the agent installer's ?server= and a served k8s bundle's
+      # `server` may name, besides the address a request arrives on. Empty is
+      # the request's own origin only; see .env.example.
+      - CORTEXSIM_PUBLIC_URLS=${CORTEXSIM_PUBLIC_URLS:-}
     restart: unless-stopped
 
 volumes:

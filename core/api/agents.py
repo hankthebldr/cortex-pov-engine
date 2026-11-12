@@ -382,11 +382,13 @@ _POSIX_INSTALLER = r"""#!/usr/bin/env bash
 #   CORTEXSIM_TELEMETRY=0               suppress the install-status POST
 set -euo pipefail
 
-SERVER="${CORTEXSIM_SERVER:-@@SERVER@@}"; SERVER="${SERVER%/}"
-AGENT_ID="${CORTEXSIM_AGENT_ID:-@@AGENT_ID@@}"
+# The baked defaults are single-quoted shell words (see _sh_quote): nothing in
+# them is expanded. The env var, when set, wins.
+SERVER=@@SERVER@@; SERVER="${CORTEXSIM_SERVER:-$SERVER}"; SERVER="${SERVER%/}"
+AGENT_ID=@@AGENT_ID@@; AGENT_ID="${CORTEXSIM_AGENT_ID:-$AGENT_ID}"
 INTERVAL="${CORTEXSIM_INTERVAL:-@@INTERVAL@@}"
 MODE="${CORTEXSIM_MODE:-@@MODE@@}"
-TOKEN="${CORTEXSIM_TOKEN:-@@TOKEN@@}"
+TOKEN=@@TOKEN@@; TOKEN="${CORTEXSIM_TOKEN:-$TOKEN}"
 HOSTN="$(hostname 2>/dev/null || echo unknown)"
 # Non-empty only when the baked SERVER is a loopback address. Appended to the
 # unreachable-server remediation: on the SimCore host loopback is correct and
@@ -972,18 +974,115 @@ _WINDOWS_PREFLIGHT_UNAVAILABLE = (
 
 def _render(template: str, **subs: str) -> str:
     """Substitute @@NAME@@ placeholders. Deliberately not str.format — the
-    templates are shell/PowerShell and are full of literal braces."""
-    out = template
-    for key, value in subs.items():
-        out = out.replace(f"@@{key}@@", value)
-    return out
+    templates are shell/PowerShell and are full of literal braces. One pass, so
+    a value that happens to contain ``@@OTHER@@`` is not expanded again."""
+    return _PLACEHOLDER_RE.sub(lambda m: subs.get(m.group(1), m.group(0)), template)
+
+
+_PLACEHOLDER_RE = re.compile(r"@@([A-Z_]+)@@")
+
+# What the installer bakes in, in their real formats. The script is piped into
+# bash or iex, and these values also land in a systemd unit (ExecStart splits on
+# spaces and expands %-specifiers) and a launchd plist (XML). Anything outside
+# these is a 400, never a script.
+#   agent id: the server-assigned ``<slug>-<hex>`` or a legacy hostname-like id;
+#             first character alphanumeric so it never reads as a flag.
+#   token   : ``cxs_`` + token_urlsafe, as mint_enrollment_token issues it.
+#   server  : http(s)://host[:port][/path], host a DNS name, IPv4 or [IPv6],
+#             and one of this SimCore's own URLs (see _own_server).
+_AGENT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}")
+_TOKEN_RE = re.compile(r"cxs_[A-Za-z0-9_-]{1,128}")
+_SERVER_RE = re.compile(
+    r"(?i:https?)://"
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])"
+    r"(?::[0-9]{1,5})?"
+    r"(?:/[A-Za-z0-9._~-]*)*"
+)
+
+
+def _install_400(code: str, error: str, detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail={"error": error, "code": code, "detail": detail})
+
+
+def _canonical_url(url: str) -> Optional[str]:
+    """One spelling of an http(s) URL: lower-case scheme and host, no default
+    port, no trailing slash. None for anything that is not http(s)://host."""
+    try:
+        parsed = urlparse(url.strip())
+        port = parsed.port
+    except ValueError:
+        return None
+    scheme, host = parsed.scheme.lower(), parsed.hostname
+    if (scheme not in ("http", "https") or not host or parsed.username is not None
+            or parsed.query or parsed.fragment):
+        return None
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None and port != (443 if scheme == "https" else 80):
+        netloc += f":{port}"
+    return f"{scheme}://{netloc}{parsed.path.rstrip('/')}"
+
+
+def _this_simcore_urls(request: Request) -> set[str]:
+    """The URLs this SimCore answers on: the one this request arrived on, plus
+    the operator's CORTEXSIM_PUBLIC_URLS (LAN / NAT names a request cannot show)."""
+    from config import settings  # noqa: PLC0415 — avoid an import cycle at module load
+
+    urls = {_canonical_url(str(request.base_url))}
+    urls.update(_canonical_url(u) for u in settings.CORTEXSIM_PUBLIC_URLS.split(",") if u.strip())
+    urls.discard(None)
+    return urls
+
+
+def _own_server(request: Request, override: Optional[str]) -> str:
+    """The server URL a script or manifest SimCore hands to a target may carry.
+
+    The target downloads its beacon or payload from this URL, checks it against
+    a digest it also gets from there, and takes that server's tasks. So the URL
+    must name THIS SimCore: an override is accepted only when it is the origin
+    this request reached SimCore on or one of CORTEXSIM_PUBLIC_URLS, and it is
+    returned in canonical form. With no override the request's own origin is
+    used, as before.
+    """
+    resolved = _resolve_server(request, override)
+    if not _SERVER_RE.fullmatch(resolved):
+        raise _install_400(
+            "BAD_SERVER", "Invalid server URL",
+            "server must be http(s)://host[:port][/path] — host a DNS name, IPv4 or "
+            "[IPv6], path of A-Z a-z 0-9 . _ ~ - / — with no query, credentials or quotes"
+            + ("" if override else " (it was derived from this request's Host header)"))
+    if not override:
+        return resolved
+    canonical = _canonical_url(resolved)
+    if canonical is None or canonical not in _this_simcore_urls(request):
+        origin = _canonical_url(str(request.base_url)) or str(request.base_url)
+        raise HTTPException(status_code=400, detail={
+            "error": "Server is not this SimCore",
+            "code": "SERVER_NOT_THIS_SIMCORE",
+            "detail": (f"server {resolved} is not the address this request reached SimCore "
+                       f"on ({origin}) and is not listed in CORTEXSIM_PUBLIC_URLS"),
+            "remedy": ("If this SimCore is reachable at that URL, add it to CORTEXSIM_PUBLIC_URLS "
+                       "(comma-separated http(s) origins) and restart SimCore, or request this "
+                       "URL from that address without ?server=."),
+        })
+    return canonical
+
+
+def _sh_quote(value: str) -> str:
+    """One single-quoted bash word: nothing inside is expanded."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _ps_quote_body(value: str) -> str:
+    """The body of a PowerShell single-quoted string. PowerShell also reads the
+    typographic single quotes as quote characters, so all of them double."""
+    return re.sub(r"(['‘’‚‛])", r"\1\1", value)
 
 
 _LOOPBACK_HINT = (
     " -- NOTE: SERVER is a loopback address, so on THIS host it means this host. "
     "If you copied the one-liner from a console open at localhost, re-fetch it "
     "from the control plane's routable address: "
-    "'<control-plane>/api/agents/install?server=http://<control-plane-ip>:8888'"
+    "'http://<control-plane-ip>:8888/api/agents/install'"
 )
 
 
@@ -996,8 +1095,8 @@ def _posix_installer(server: str, agent_id: str, interval: int,
                      token: Optional[str], mode: str) -> str:
     return _render(
         _POSIX_INSTALLER,
-        SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
-        TOKEN=token or "", MODE=mode,
+        SERVER=_sh_quote(server), AGENT_ID=_sh_quote(agent_id), INTERVAL=str(interval),
+        TOKEN=_sh_quote(token or ""), MODE=mode,
         LOOPBACK_HINT=_loopback_hint(server),
     )
 
@@ -1007,8 +1106,8 @@ def _windows_installer(server: str, agent_id: str, interval: int,
     preflight = "" if _binary_path("windows", "amd64").is_file() else _WINDOWS_PREFLIGHT_UNAVAILABLE
     return _render(
         _WINDOWS_INSTALLER,
-        SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
-        TOKEN=token or "", PREFLIGHT=preflight,
+        SERVER=_ps_quote_body(server), AGENT_ID=_ps_quote_body(agent_id),
+        INTERVAL=str(interval), TOKEN=_ps_quote_body(token or ""), PREFLIGHT=preflight,
     )
 
 
@@ -1065,7 +1164,17 @@ async def agent_installer(
             headers={"Content-Disposition": 'attachment; filename="uninstall-cortexsim-agent.sh"'},
         )
 
-    resolved = _resolve_server(request, server)
+    if not _AGENT_ID_RE.fullmatch(id or ""):
+        raise _install_400(
+            "BAD_AGENT_ID", "Invalid agent id",
+            "id must be 1-120 of A-Z a-z 0-9 . _ -, starting with a letter or digit "
+            "(prefer ?token= so SimCore assigns the id)")
+    if token and not _TOKEN_RE.fullmatch(token):
+        raise _install_400(
+            "BAD_TOKEN", "Invalid enrollment token",
+            "token must be an enrollment token as minted by POST /api/agents/enroll/tokens "
+            "(cxs_ followed by A-Z a-z 0-9 _ -)")
+    resolved = _own_server(request, server)
     if os_norm == "windows":
         body = _windows_installer(resolved, id, interval, token)
         media, fname = "text/plain; charset=utf-8", "install-cortexsim-agent.ps1"

@@ -716,11 +716,55 @@ def test_a_served_manifest_never_claims_to_be_self_contained(
     assert get.headers["X-CortexSim-Bundle-Selfcontained"] == "false"
 
     post = client.post(f"/api/scenarios/{SID}/bundle", json={
-        "format": "k8s", "server": "http://simcore.example:8888",
+        "format": "k8s", "server": "http://testserver",
     })
     assert post.status_code == 200, post.text
     assert post.headers["X-CortexSim-Bundle-Selfcontained"] == "false"
     assert post.headers["X-CortexSim-Bundle-Delivery"] == "served"
+
+
+#: Ends in "#" so the rest of each line the URL lands on reads as a comment and
+#: the manifest still parses, with one more document than its header describes.
+_EXTRA_POD = (
+    "http://simcore.example:8888\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: extra\n"
+    "  labels: {cortexsim.io/managed-by: push-generator}\n#"
+)
+
+
+@pytest.mark.parametrize("server,code", [
+    (_EXTRA_POD, "BAD_SERVER"),
+    ("http://c2.attacker.example:8888", "SERVER_NOT_THIS_SIMCORE"),
+])
+def test_a_served_manifest_refuses_a_server_that_is_not_this_simcore(
+    client, session_factory, posture, server, code,
+):
+    """The server lands in the header comment, a copy-paste preflight line, an
+    annotation and the init container's env. It must name this SimCore, in a
+    form that cannot end a line."""
+    _seed(session_factory)
+    posture({"app_identity": {"name": "ci-runner"}, "payloads": ["linpeas.sh"]})
+    r = client.post(f"/api/scenarios/{SID}/bundle", json={"format": "k8s", "server": server})
+    assert r.status_code == 400, r.text
+    assert "kind: Pod" not in r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == code
+    assert {"error", "code", "detail"} <= set(detail)
+
+
+def test_a_served_manifest_carries_this_simcores_url(
+    client, session_factory, posture, monkeypatch,
+):
+    import config
+    monkeypatch.setattr(config.settings, "CORTEXSIM_PUBLIC_URLS", "http://simcore.example:8888")
+    _seed(session_factory)
+    posture({"app_identity": {"name": "ci-runner"}, "payloads": ["linpeas.sh"]})
+    for server in ("http://testserver", "http://simcore.example:8888"):
+        r = client.post(f"/api/scenarios/{SID}/bundle", json={"format": "k8s", "server": server})
+        assert r.status_code == 200, r.text
+        assert f"#     {server}\n" in r.text
+        assert f"wget -q -T5 -O- {server}/api/k8s/payloads\n" in r.text
+        kinds = [d["kind"] for d in yaml.safe_load_all(r.text) if d]
+        assert "Pod" not in kinds
 
 
 def test_embedded_and_script_bundles_do_claim_self_containment(client, session_factory):

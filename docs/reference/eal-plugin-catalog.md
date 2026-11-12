@@ -660,9 +660,11 @@ The plugin translates JSONL→ECS via `cortex_prompt_attacker.events`
 (`run_meta_to_ecs`, `attempt_to_ecs`) when that package is importable, else a
 `_fallback_event` wrapping the raw record.
 
-**Safety gating.** `ctx.authorise(target_url-host)`. If the binary is not found
-on PATH, returns `status=error` (does not crash). Subprocess killed on
-`timeout_seconds`.
+**Safety gating.** `ctx.authorise(target_url-host)`. The executable is always
+`cortex-prompt-attacker` on SimCore's own PATH; there is no `binary` param, and
+`POST /api/eal/campaigns` and `/launch` refuse a step that sets one with 400
+`CALLER_EXECUTABLE_REFUSED`. If the CLI is not on PATH, returns `status=error`
+(does not crash). Subprocess killed on `timeout_seconds`.
 
 | Param | Type / default | Bounds |
 |-------|----------------|--------|
@@ -675,7 +677,6 @@ on PATH, returns `status=error` (does not crash). Subprocess killed on
 | `request_timeout` | float = 30.0 | 1–300 |
 | `extra_headers` | dict = {} | passed as `--header k=v` |
 | `insecure_tls` | bool = False | adds `--insecure` |
-| `binary` | str? = None | override binary path |
 
 **Output.** `detail`: `binary`, `exit_code`, `attempts_run`, `vuln_count`,
 `clean_count`, `error_count`, `summary` (parsed from stderr's last JSON line),
@@ -697,8 +698,10 @@ screenshot). CLI invoked `<bin> run --campaign <yaml> --browser-channel <ch>
 --out - [--headless|--no-headless] --live`. Customer's Prisma Browser tenant
 forwards its own telemetry to XSIAM; this plugin only **produces the activity**.
 
-**Safety gating.** `ctx.authorise(allowlist_host)`. Fails fast (status=error) if
-`campaign_path` doesn't exist or binary not on PATH. `campaign_path` validator
+**Safety gating.** `ctx.authorise(allowlist_host)`. The executable is always
+`cortex-browser-attacker` on SimCore's own PATH (no `binary` param; a step that
+sets one is refused with 400 `CALLER_EXECUTABLE_REFUSED`). Fails fast
+(status=error) if `campaign_path` doesn't exist or the CLI is not on PATH. `campaign_path` validator
 rejects null bytes. The browser action campaign YAML is **double-gated** — its
 own Pydantic validator refuses `--live` without an authorisation block.
 `browser_channel=stub` exists for hermetic unit tests (StubDriver, no real
@@ -711,7 +714,6 @@ browser).
 | `browser_channel` | str = "chromium" | prisma/chromium/stub |
 | `headless` | bool = True | — |
 | `timeout_seconds` | float = 600.0 | 1–7200 |
-| `binary` | str? = None | override binary path |
 
 **Output.** `detail`: `binary`, `exit_code`, `actions_run`, `success_count`,
 `blocked_count`, `failure_count`, `summary`, `campaign_path`, `browser_channel`.

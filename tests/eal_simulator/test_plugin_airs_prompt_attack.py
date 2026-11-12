@@ -1,8 +1,9 @@
 """Tests for the airs_prompt_attack EAL plugin.
 
-The plugin shells out to the cortex-prompt-attacker CLI; we test it by
-substituting a stub binary that emits canned JSONL on stdout, so the
-test suite does not depend on the attacker package being installed.
+The plugin shells out to the cortex-prompt-attacker CLI it finds on SimCore's
+PATH; we test it by putting a stub of that name first on PATH that emits canned
+JSONL on stdout, so the test suite does not depend on the attacker package
+being installed.
 """
 from __future__ import annotations
 
@@ -32,7 +33,12 @@ def _make_stub_attacker(tmp_path: Path, jsonl_lines: list[dict]) -> Path:
     return bin_path
 
 
-def _campaign(*, target_url: str, probes_dir: str, binary: str) -> Campaign:
+def _on_path(monkeypatch, directory: Path) -> None:
+    """Put ``directory`` first on SimCore's PATH, where the plugin looks."""
+    monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+def _campaign(*, target_url: str, probes_dir: str) -> Campaign:
     return Campaign.model_validate({
         "campaign_id": "CMP-AIRS-INTEG-001",
         "name": "airs plugin test",
@@ -46,7 +52,6 @@ def _campaign(*, target_url: str, probes_dir: str, binary: str) -> Campaign:
             "params": {
                 "target_url": target_url,
                 "probes_dir": probes_dir,
-                "binary": binary,
                 "iterations": 1,
                 "timeout_seconds": 30.0,
             },
@@ -58,8 +63,7 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
-def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path):
-    # No binary on PATH; dry_run should still succeed.
+def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path, monkeypatch):
     campaign = Campaign.model_validate({
         "campaign_id": "CMP-AIRS-DRY-001",
         "name": "dry",
@@ -70,15 +74,14 @@ def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path):
             "params": {
                 "target_url": "http://canary.invalid/owasp/llm01/chat",
                 "probes_dir": str(tmp_path),
-                "binary": str(tmp_path / "cortex-prompt-attacker"),  # doesn't exist
                 "iterations": 1,
             },
         }],
     })
-    # In dry-run the plugin still resolves the binary first; create a stub
-    # so resolution succeeds.
-    stub = _make_stub_attacker(tmp_path, [{"entry_type": "run_meta"}])
-    campaign.steps[0].params["binary"] = str(stub)
+    # In dry-run the plugin still resolves the binary first; put a stub on
+    # PATH so resolution succeeds.
+    _make_stub_attacker(tmp_path, [{"entry_type": "run_meta"}])
+    _on_path(monkeypatch, tmp_path)
 
     executor = CampaignExecutor(audit=AuditLogger(file_path=None))
     state = _run_async(executor.execute(campaign))
@@ -87,7 +90,8 @@ def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path):
     assert sr.detail["dry_run"] is True
 
 
-def test_plugin_missing_binary_returns_error(tmp_path: Path):
+def test_plugin_missing_binary_returns_error(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing-installed-here"))
     campaign = Campaign.model_validate({
         "campaign_id": "CMP-AIRS-NOBIN-001",
         "name": "missing binary",
@@ -101,7 +105,6 @@ def test_plugin_missing_binary_returns_error(tmp_path: Path):
             "params": {
                 "target_url": "http://canary.invalid/owasp/llm01/chat",
                 "probes_dir": str(tmp_path),
-                "binary": str(tmp_path / "absolutely-not-on-path"),
                 "iterations": 1,
             },
         }],
@@ -111,7 +114,7 @@ def test_plugin_missing_binary_returns_error(tmp_path: Path):
     assert "not found" in (state.step_results[0].error or "")
 
 
-def test_plugin_consumes_jsonl_and_increments_counts(tmp_path: Path):
+def test_plugin_consumes_jsonl_and_increments_counts(tmp_path: Path, monkeypatch):
     jsonl = [
         {"entry_type": "run_meta", "@timestamp": "2026-05-07T00:00:00Z",
          "probes_total": 2, "target_url": "http://canary.invalid/owasp/llm01/chat",
@@ -125,11 +128,11 @@ def test_plugin_consumes_jsonl_and_increments_counts(tmp_path: Path):
          "outcome": "clean", "detector_results": {"vulnerable_flag": False},
          "targets": ["http://canary.invalid/owasp/llm01/chat"]},
     ]
-    stub = _make_stub_attacker(tmp_path, jsonl)
+    _make_stub_attacker(tmp_path, jsonl)
+    _on_path(monkeypatch, tmp_path)
     campaign = _campaign(
         target_url="http://canary.invalid/owasp/llm01/chat",
         probes_dir=str(tmp_path),
-        binary=str(stub),
     )
     state = _run_async(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
     sr = state.step_results[0]
@@ -140,8 +143,9 @@ def test_plugin_consumes_jsonl_and_increments_counts(tmp_path: Path):
     assert sr.detail["clean_count"] == 1
 
 
-def test_plugin_safety_violation_when_target_not_in_allowlist(tmp_path: Path):
-    stub = _make_stub_attacker(tmp_path, [{"entry_type": "run_meta"}])
+def test_plugin_safety_violation_when_target_not_in_allowlist(tmp_path: Path, monkeypatch):
+    _make_stub_attacker(tmp_path, [{"entry_type": "run_meta"}])
+    _on_path(monkeypatch, tmp_path)
     campaign = Campaign.model_validate({
         "campaign_id": "CMP-AIRS-SAFETY-001",
         "name": "safety",
@@ -155,7 +159,6 @@ def test_plugin_safety_violation_when_target_not_in_allowlist(tmp_path: Path):
             "params": {
                 "target_url": "http://other.invalid/owasp/llm01/chat",
                 "probes_dir": str(tmp_path),
-                "binary": str(stub),
                 "iterations": 1,
             },
         }],
@@ -163,6 +166,29 @@ def test_plugin_safety_violation_when_target_not_in_allowlist(tmp_path: Path):
     state = _run_async(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
     assert state.step_results[0].status == "error"
     assert "safety_violation" in (state.step_results[0].error or "")
+
+
+def test_params_binary_is_never_the_executable(tmp_path: Path, monkeypatch):
+    """The CLI comes from SimCore's PATH. A ``binary`` key in the step params is
+    caller input and must not choose the program that runs."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = _make_stub_attacker(bin_dir, [{"entry_type": "run_meta"}])
+    _on_path(monkeypatch, bin_dir)
+    marker = tmp_path / "caller-binary-ran"
+    planted = tmp_path / "caller-chosen"
+    planted.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+    planted.chmod(0o755)
+
+    campaign = _campaign(
+        target_url="http://canary.invalid/owasp/llm01/chat",
+        probes_dir=str(tmp_path),
+    )
+    campaign.steps[0].params["binary"] = str(planted)
+    state = _run_async(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
+
+    assert not marker.exists(), "the plugin ran the executable named in params.binary"
+    assert state.step_results[0].detail["binary"] == str(stub)
 
 
 def test_plugin_metadata_lists_eal_targets():

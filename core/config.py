@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     CORTEXSIM_ENV: str = "production"
     CORTEXSIM_SECRET: str = "changeme"
     # Declared because `.env.example` tells operators to set it and
-    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.1.0}` drives both
+    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.1.1}` drives both
     # the image tag and container_name). Nothing in the app branches on the
     # value — it is deployment metadata — but pydantic-settings defaults
     # BaseSettings to `extra='forbid'` and this class reads `.env`, so leaving
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     #
     # Defaults to "unknown" rather than a pinned version: no workflow reads this
     # variable (release.yml derives the image tag from the git tag),
-    # docker-compose.yml carries its own `:-1.1.0` fallback, and core/main.py
+    # docker-compose.yml carries its own `:-1.1.1` fallback, and core/main.py
     # already hardcodes FastAPI's own `version`. A plausible-looking default here
     # would let a deploy that was never told its version report a specific one
     # anyway — degraded should read as degraded.
@@ -130,6 +130,14 @@ class Settings(BaseSettings):
     # CORTEXSIM_XSIAM_ALLOW_WRITE's two-key posture — so a single mis-set
     # request body can never mutate a customer endpoint on its own.
     CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL: bool = False
+
+    # Comma-separated http(s) origins this SimCore is also reachable at, for
+    # names a request cannot show (a LAN IP behind NAT, a DNS name the cluster
+    # uses). The agent installer's ?server= and a served k8s bundle's `server`
+    # must be the origin the request arrived on or one of these; anything else
+    # is 400 SERVER_NOT_THIS_SIMCORE. Scheme and host case, default ports and
+    # trailing slashes are normalised. Empty = only the request's own origin.
+    CORTEXSIM_PUBLIC_URLS: str = ""
 
     # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
     # which meant a dev boot log carried every aiosqlite statement TWICE (once
