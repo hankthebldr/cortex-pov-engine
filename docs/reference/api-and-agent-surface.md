@@ -560,8 +560,8 @@ get it.
 | GET | `/api/tools` | List built-in tools + live+DB-merged runtime status | — | `{"tools":[{tool_name,status,pid,port,install_path,description,plane,type,last_health_check}],"total":N}` |
 | GET | `/api/tools/adapters` | Tool-adapter catalog (slim cards) | query: `plane`, `tier`, `safety_class`, `category` (compose AND) | `{"adapters":[<summary>],"total":N}` |
 | GET | `/api/tools/adapters/{adapter_id}` | Full adapter pack | — | `adapter.model_dump()`; 404 `ADAPTER_NOT_FOUND` |
-| POST | `/api/tools/{tool_name}/install` | Build tool from submodule source | — | `{"status":"installed",...}`; 404 `TOOL_NOT_FOUND`; 500 `INSTALL_FAILED` |
-| POST | `/api/tools/{tool_name}/start` | Start managed process | `StartParams`: `{params:{}}` | `{"status":"running","pid",...}`; 404; 500 `START_FAILED` |
+| POST | `/api/tools/{tool_name}/install` | Build tool from submodule source | — | `{"status":"installed",...}`; 404 `TOOL_NOT_FOUND`; 409 `INSTALL_IN_PROGRESS` (installs run one at a time, off the event loop); 500 `INSTALL_FAILED` |
+| POST | `/api/tools/{tool_name}/start` | Start managed process | `StartParams`: `{params:{}}` — only the `run_template` placeholders the registry leaves open (`mitre_id`, `config_path`) | `{"status":"running","pid",...}`; 400 `BAD_TOOL_PARAM` (a registry key, an unreferenced key, a missing placeholder or a malformed value; nothing is spawned); 404; 500 `START_FAILED` |
 | POST | `/api/tools/{tool_name}/stop` | Stop process | — | `{"status":"stopped",...}`; 404; 500 `STOP_FAILED` |
 | GET | `/api/tools/{tool_name}/status` | Live health check + status | — | `{tool_name,status,pid,port,healthy,description,plane}`; 404 |
 
@@ -576,7 +576,7 @@ get it.
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); the baked `server`/`id`/`token` are single-quoted literals in both; 400 `BAD_OS`/`BAD_MODE`; 400 `BAD_AGENT_ID` (not 1-120 of `A-Za-z0-9._-`, letter/digit first), `BAD_TOKEN` (not `cxs_` + `A-Za-z0-9_-`), `BAD_SERVER` (not `http(s)://host[:port][/path]`, including one derived from the Host header); 400 `SERVER_NOT_THIS_SIMCORE` (`server` is neither the origin the request arrived on nor an entry in `CORTEXSIM_PUBLIC_URLS`; a matching `server` is baked in canonical form) |
 | GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
 | GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
 | GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
@@ -706,7 +706,7 @@ get it.
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
 | GET | `/api/infra/modules` | List Terraform modules | query: `provider=aws` (default) | `{"modules":[<metadata>],"total":N}` |
-| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic) | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 `GENERATION_FAILED` |
+| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic): `region` must be an AWS region (`us-east-1`, `us-gov-west-1`), `params.jumpbox_size` an AWS instance type (`t3.medium`, `m7i-flex.large`, ≤32 chars); string values reach the `.tf`/`.tfvars` only as escaped HCL literals | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 request validation (incl. a bad `region`/`jumpbox_size`); 422 `GENERATION_FAILED` |
 | GET | `/api/infra/bundles` | List previously generated bundles | — | `{"bundles":[<summary>],"total":N}` |
 | GET | `/api/infra/bundles/{bundle_id}/download` | Download tar.gz | — | `FileResponse` gzip; 404 `BUNDLE_NOT_FOUND` |
 
@@ -719,10 +719,10 @@ get it.
 |--------|-----------|---------|---------|----------|
 | GET | `/api/eal/plugins` | List registered simulator plugins | — | `{"plugins":[...],"total":N}`; each plugin carries `family` (`analytics_log_streamer` \| `network_eal`) and `delivery` (`collector` \| `wire`), the signal-path class the Composer lanes read (`core/engine/signal_path.py`) |
 | GET | `/api/eal/plugins/{name}` | Plugin metadata + JSON schema | — | `plugin.metadata()`; 404 `PLUGIN_NOT_FOUND` |
-| POST | `/api/eal/campaigns` | Persist a campaign def (validates each step's plugin+params) | `Campaign` (Pydantic) | `<EalCampaign.to_dict()>` (201); 422 `PLUGIN_NOT_FOUND`/`PARAMS_INVALID`; 409 `DUPLICATE_CAMPAIGN` |
+| POST | `/api/eal/campaigns` | Persist a campaign def (validates each step's plugin+params) | `Campaign` (Pydantic) | `<EalCampaign.to_dict()>` (201); 400 `CALLER_EXECUTABLE_REFUSED` (a step sets `params.binary`; a plugin runs only the CLI on SimCore's PATH); 422 `PLUGIN_NOT_FOUND`/`PARAMS_INVALID`; 409 `DUPLICATE_CAMPAIGN` |
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
-| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default); collector steps resolve against the instance's collector targets | `LaunchRequest`: `{dry_run?, operator?, c2_authorized?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run, degraded[]}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION`; **live only:** 422 `COLLECTOR_TARGET_NOT_CONFIGURED`/`COLLECTOR_TARGET_UNKNOWN`, 409 `COLLECTOR_TARGET_FAILING` |
+| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default); collector steps resolve against the instance's collector targets | `LaunchRequest`: `{dry_run?, operator?, c2_authorized?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run, degraded[]}`; 404; 400 `CALLER_EXECUTABLE_REFUSED` (a stored step sets `params.binary`); 422 `SPEC_INVALID`/`SAFETY_VIOLATION`; **live only:** 422 `COLLECTOR_TARGET_NOT_CONFIGURED`/`COLLECTOR_TARGET_UNKNOWN`, 409 `COLLECTOR_TARGET_FAILING` |
 | GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,has_auth_token,collector_target,resolution_source}],destinations:[…],warnings:[…],resolutions:[…],blocking:[…],failing:[…],degraded:[…]}` |
 | POST | `/api/eal/campaigns/{campaign_id}/collectors/preflight` | Canary-POST one discard-safe record per collector | — | per-collector verdict in the delivery taxonomy; non-allowlisted hosts are `target_not_authorised` and **never contacted** |
 | POST | `/api/eal/campaigns/{campaign_id}/detector-readiness` | Can this campaign's analytics detectors fire at all? Judges route, then soakless, then onboarding date. **Zero outbound calls** | `{source_onboarded_at?: {<source_key>: <ISO-8601 with tz>}, soakless_attested?, attested_by?, xdm_modeled_sources?: [<source_key>]}` | `{routes{<plugin>: <pipe>}, detectors[] (readiness.armed_basis, readiness.route), counts{armed,not_armed,unknown,not_armable,undocumented}, ready, soakless_attested, attested_by, tenant_verified: 0, gate_basis, banner}`; codes `DETECTOR_ROUTE_NO_ANALYTICS` / `DETECTOR_ROUTE_REQUIRES_XDM` / `DETECTOR_ROUTE_UNRESOLVED` / `DETECTOR_ARMED_SOAKLESS`; 422 `NO_ANALYTICS_DETECTOR` / `ONBOARDING_TIMESTAMP_NAIVE` / `UNKNOWN_DATA_SOURCE` |

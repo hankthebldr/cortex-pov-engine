@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import stat
 import textwrap
 from pathlib import Path
@@ -228,8 +229,10 @@ def test_dns_tunnel_dry_run_emits_event(executor: CampaignExecutor):
 # regression coverage in this central file so all 13 built-in plugins are
 # exercised here (closes EAL-G04).
 
-def _make_stub_cli(tmp_path: Path, name: str) -> Path:
-    """Write a tiny executable that emits one JSONL run-meta line on stdout."""
+def _make_stub_cli(tmp_path: Path, name: str, monkeypatch) -> Path:
+    """Write a tiny executable that emits one JSONL run-meta line on stdout,
+    first on PATH: the plugins run only the CLI SimCore's PATH resolves."""
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
     bin_path = tmp_path / name
     bin_path.write_text(
         "#!/usr/bin/env bash\n"
@@ -242,9 +245,10 @@ def _make_stub_cli(tmp_path: Path, name: str) -> Path:
     return bin_path
 
 
-def test_airs_prompt_attack_dry_run_completes(executor: CampaignExecutor, tmp_path: Path):
+def test_airs_prompt_attack_dry_run_completes(executor: CampaignExecutor, tmp_path: Path,
+                                              monkeypatch):
     # The plugin resolves the binary even in dry-run, so provide a stub.
-    stub = _make_stub_cli(tmp_path, "cortex-prompt-attacker")
+    _make_stub_cli(tmp_path, "cortex-prompt-attacker", monkeypatch)
     campaign = Campaign.model_validate({
         "campaign_id": "CMP-AIRS-001",
         "name": "dry-run airs",
@@ -255,7 +259,6 @@ def test_airs_prompt_attack_dry_run_completes(executor: CampaignExecutor, tmp_pa
             "params": {
                 "target_url": "http://canary.invalid/owasp/llm01/chat",
                 "probes_dir": str(tmp_path),
-                "binary": str(stub),
                 "iterations": 1,
             },
         }],
@@ -267,8 +270,9 @@ def test_airs_prompt_attack_dry_run_completes(executor: CampaignExecutor, tmp_pa
     assert sr.detail.get("dry_run") is True
 
 
-def test_browser_attack_runner_dry_run_completes(executor: CampaignExecutor, tmp_path: Path):
-    stub = _make_stub_cli(tmp_path, "cortex-browser-attacker")
+def test_browser_attack_runner_dry_run_completes(executor: CampaignExecutor, tmp_path: Path,
+                                                 monkeypatch):
+    _make_stub_cli(tmp_path, "cortex-browser-attacker", monkeypatch)
     campaign_file = tmp_path / "campaign.yml"
     campaign_file.write_text(textwrap.dedent("""
         campaign_id: BC-BROWSER-100
@@ -289,7 +293,6 @@ def test_browser_attack_runner_dry_run_completes(executor: CampaignExecutor, tmp
             "params": {
                 "campaign_path": str(campaign_file),
                 "allowlist_host": "allowed.invalid",
-                "binary": str(stub),
                 "browser_channel": "stub",
                 "headless": True,
                 "timeout_seconds": 30.0,

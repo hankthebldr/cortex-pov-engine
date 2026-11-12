@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
+import string
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 import httpx
 import psutil
@@ -25,6 +28,151 @@ import psutil
 from tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger("cortexsim.tools")
+
+
+# ---------------------------------------------------------------------------
+# Caller-supplied start params (SEC-02 / OPS-02)
+# ---------------------------------------------------------------------------
+#
+# start() used to seed binary/source_path/port from the registry and then run
+# ``sub_context.update(params)`` — the request body OVERRODE the registry — so
+# ``POST /api/tools/xdrtop/start {"params": {"binary": "<anything>"}}`` ran an
+# arbitrary command line as SimCore's user (root in the image) from an
+# unauthenticated route. The registry is the only source of what runs; the
+# caller may fill exactly the placeholders the template leaves open, and each
+# value must be one argv token of a known shape.
+
+#: Placeholders the registry itself fills. Never the caller's to set.
+_REGISTRY_SUPPLIED = frozenset({"source_path", "binary", "port"})
+
+# [0-9], not \d: \d also matches Arabic-Indic, fullwidth and other Unicode digits.
+_MITRE_ID_RE = re.compile(r"^T[0-9]{4}(\.[0-9]{3})?$")
+#: Generic placeholder value: one plain token. Deliberately narrow — no
+#: whitespace, quotes, backslashes, shell metacharacters or format braces.
+_GENERIC_VALUE_RE = re.compile(r"^[A-Za-z0-9_.:/@+,=-]{1,256}$")
+#: Characters no path value may carry, whatever the OS: whitespace, control
+#: characters, quotes and format braces would each change how the template
+#: formats or how shlex splits it.
+_PATH_FORBIDDEN_RE = re.compile(r"[\s\x00-\x1f\x7f\"'`{}]")
+
+
+class ToolParamError(ValueError):
+    """A caller-supplied start param was refused. Maps to 400 BAD_TOOL_PARAM."""
+
+    code = "BAD_TOOL_PARAM"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+def _template_fields(template: str) -> set[str]:
+    """Placeholder names a ``str.format`` template references."""
+    names: set[str] = set()
+    for _literal, field_name, _spec, _conv in string.Formatter().parse(template):
+        if field_name is None:
+            continue
+        # "{a.b}" / "{a[0]}" — attribute/index access on a param is never a
+        # legitimate tool template; keep the root name so it is still refused.
+        root = re.split(r"[.\[]", field_name, maxsplit=1)[0]
+        names.add(root)
+    return names
+
+
+def _validate_value(name: str, value: Any, base_dir: str) -> str:
+    """Return the validated string value for placeholder ``name`` or raise."""
+    if not isinstance(value, str):
+        raise ToolParamError(
+            f"param '{name}' must be a string, got {type(value).__name__}"
+        )
+    if not value:
+        raise ToolParamError(f"param '{name}' must not be empty")
+    if value.startswith("-"):
+        raise ToolParamError(
+            f"param '{name}' may not start with '-' (it would be read as an "
+            f"option by the tool): {value!r}"
+        )
+    if name == "mitre_id":
+        if not _MITRE_ID_RE.fullmatch(value):
+            raise ToolParamError(
+                f"param 'mitre_id' must be one ATT&CK technique id like T1082 or "
+                f"T1059.004, got {value!r}"
+            )
+        return value
+    if name.endswith("_path"):
+        if _PATH_FORBIDDEN_RE.search(value):
+            raise ToolParamError(
+                f"param '{name}' contains whitespace, a control character, a "
+                f"quote or a brace: {value!r}"
+            )
+        base = Path(base_dir).resolve()
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = base / candidate
+        resolved = candidate.resolve()
+        # Strictly under: the base dir itself is a directory, never a file a
+        # tool can be pointed at.
+        if base not in resolved.parents:
+            raise ToolParamError(
+                f"param '{name}' must resolve to a path under CORTEXSIM_BASE_DIR "
+                f"({base}); {value!r} resolves to {resolved}"
+            )
+        return str(resolved)
+    if not _GENERIC_VALUE_RE.fullmatch(value):
+        raise ToolParamError(
+            f"param '{name}' must be a single plain token "
+            f"([A-Za-z0-9_.:/@+,=-], at most 256 chars), got {value!r}"
+        )
+    return value
+
+
+def validate_start_params(
+    tool_name: str, entry: dict, params: Any, base_dir: str,
+) -> dict[str, str]:
+    """Validate caller params against a registry entry; return the accepted set.
+
+    Raises :class:`ToolParamError` naming the first problem. Pure — never
+    spawns anything — so the API can call it before any side effect.
+    """
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise ToolParamError(f"params must be an object, got {type(params).__name__}")
+
+    template = entry.get("run_template")
+    if not isinstance(template, str) or not template:
+        raise ToolParamError(
+            f"tool '{tool_name}' has no run_template, so it cannot be started "
+            f"through this endpoint"
+        )
+
+    # A template field the registry supplies is closed even when this entry
+    # does not define it: a missing {port} is a registry defect for format() to
+    # report, never an opening for the caller to fill.
+    open_fields = _template_fields(template) - _REGISTRY_SUPPLIED
+
+    for key in sorted(params):
+        if not isinstance(key, str):
+            raise ToolParamError(f"param names must be strings, got {key!r}")
+        if key in _REGISTRY_SUPPLIED or key in entry:
+            raise ToolParamError(
+                f"param '{key}' is defined by the tool registry for '{tool_name}' "
+                f"and cannot be overridden by the request"
+            )
+        if key not in open_fields:
+            accepted = ", ".join(sorted(open_fields)) or "none"
+            raise ToolParamError(
+                f"param '{key}' is not a placeholder of the '{tool_name}' "
+                f"run_template (accepted: {accepted})"
+            )
+
+    missing = sorted(open_fields - set(params))
+    if missing:
+        raise ToolParamError(
+            f"tool '{tool_name}' requires param(s) {', '.join(missing)}"
+        )
+
+    return {k: _validate_value(k, params[k], base_dir) for k in sorted(params)}
 
 
 # ---------------------------------------------------------------------------
@@ -168,12 +316,25 @@ class ToolInstantiator:
     # start
     # ------------------------------------------------------------------
 
+    def validate_start_params(self, tool_name: str, params: Any) -> dict[str, str]:
+        """Refuse-or-accept caller params for ``tool_name`` without side effects.
+
+        Raises :class:`ToolParamError` (400 BAD_TOOL_PARAM at the API).
+        """
+        return validate_start_params(
+            tool_name, TOOL_REGISTRY[tool_name], params, self._base_dir,
+        )
+
     def start(self, tool_name: str, params: dict) -> StartResult:
         """
         Start the tool using its run_template, formatted with params.
 
         The formatted string is split by shlex and passed directly to
         subprocess.Popen — NO translation, NO wrappers.
+
+        Caller params fill ONLY the placeholders the registry leaves open and
+        are validated first (:func:`validate_start_params`); a refused param
+        raises :class:`ToolParamError` and nothing is spawned.
         """
         if tool_name not in TOOL_REGISTRY:
             return StartResult(
@@ -183,15 +344,19 @@ class ToolInstantiator:
             )
 
         entry = TOOL_REGISTRY[tool_name]
+        accepted = self.validate_start_params(tool_name, params)
 
-        # Build the template substitution context
+        # Build the template substitution context. Registry values first, then
+        # the caller's — which validate_start_params has already proven cannot
+        # name a registry key, so nothing here can be overridden.
         sub_context: dict = {"source_path": os.path.join(self._base_dir, entry["source_path"])}
         if "binary" in entry:
             sub_context["binary"] = os.path.join(self._base_dir, entry["binary"])
         if "port" in entry:
             sub_context["port"] = entry["port"]
-        # Caller-supplied params override registry defaults
-        sub_context.update(params)
+        # Each caller value is quoted so shlex.split yields it back as exactly
+        # one argv token (a Windows path's backslashes survive too).
+        sub_context.update({k: shlex.quote(v) for k, v in accepted.items()})
 
         try:
             cmd_str = entry["run_template"].format(**sub_context)

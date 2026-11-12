@@ -19,7 +19,6 @@ import asyncio
 import dataclasses
 import json
 import logging
-import os
 import shlex
 import shutil
 import subprocess
@@ -76,10 +75,8 @@ class AirsPromptAttackParams(BaseModel):
     request_timeout: float = Field(default=30.0, ge=1.0, le=300.0)
     extra_headers: dict[str, str] = Field(default_factory=dict)
     insecure_tls: bool = Field(default=False)
-    binary: Optional[str] = Field(
-        default=None,
-        description="Override the cortex-prompt-attacker binary path.",
-    )
+    # No ``binary`` param: campaign params are caller input, and the executable
+    # they named ran as SimCore's user. See ``_resolve_binary``.
 
     @field_validator("target_url")
     @classmethod
@@ -92,11 +89,10 @@ class AirsPromptAttackParams(BaseModel):
         return v
 
 
-def _resolve_binary(override: Optional[str]) -> Optional[str]:
-    if override:
-        if os.path.isabs(override):
-            return override if os.path.isfile(override) else None
-        return shutil.which(override)
+def _resolve_binary() -> Optional[str]:
+    """The CLI this plugin runs: ``cortex-prompt-attacker`` on SimCore's own
+    PATH, where the TOOL-CORTEX-PROMPT-ATTACKER pack's ``pip install -e .``
+    puts it. Never a campaign param."""
     return shutil.which(_DEFAULT_BIN)
 
 
@@ -144,7 +140,7 @@ class AirsPromptAttack(BaseSimulation):
         host = urlparse(params.target_url).hostname or ""
         getattr(ctx, "authorise")(host)
 
-        binary = _resolve_binary(params.binary)
+        binary = _resolve_binary()
         if binary is None:
             return SimulationResult(
                 plugin=self.Meta.name,
@@ -154,7 +150,7 @@ class AirsPromptAttack(BaseSimulation):
                 completed_at=self.utcnow(),
                 events_emitted=0,
                 error=(
-                    f"binary '{params.binary or _DEFAULT_BIN}' not found on PATH; "
+                    f"binary '{_DEFAULT_BIN}' not found on SimCore's PATH; "
                     "install cortex-prompt-attacker (sources/cortex-prompt-attacker)"
                 ),
             )

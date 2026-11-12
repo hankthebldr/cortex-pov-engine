@@ -1,14 +1,14 @@
-region           = "{{ region }}"
-project_name     = "{{ project_name }}"
-dc_ssh_cidr      = "{{ dc_ssh_cidr }}"
-jumpbox_size     = "{{ jumpbox_size }}"
+region           = {{ region | hcl_string }}
+project_name     = {{ project_name | hcl_string }}
+dc_ssh_cidr      = {{ dc_ssh_cidr | hcl_string }}
+jumpbox_size     = {{ jumpbox_size | hcl_string }}
 k8s_node_count   = {{ k8s_node_count }}
 edr_target_count = {{ edr_target_count }}
 # ttl_hours: Torque environment time-to-live hint (GAP-IAC-009). Surfaced both
 # as a tfvar and folded into the resource tags below so an external Torque/
 # cleanup process can reap the environment after this many hours.
 ttl_hours        = {{ ttl_hours }}
-tags = {{ tags | tojson }}
+tags = {{ tags | hcl_object }}
 {% if "itdr" in modules %}
 itdr_workstation_count = 1
 {% endif %}
