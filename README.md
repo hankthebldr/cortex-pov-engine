@@ -159,9 +159,11 @@ only a missing CORTEXSIM_ALLOWED_HOSTS.`, and the previous file is kept under
 unpersisted value. Add any other name you use (a CNAME, an `/etc/hosts`
 alias, a Tailscale name) by hand. *These paths were driven with stubbed
 `docker`, `curl` and `hostname`, not on a jumpbox.* Back up the database
-volume before you upgrade an existing install: rolling back to 1.1.0 against a
-database this release has touched fails every launch
-([runbook §8.5](docs/release/mvp-launch-runbook.md)).
+volume before you upgrade an existing install and roll back only by restoring
+it: 1.0.2 or older code fails every launch against a database 1.1.0 or later
+code created (OPS-17). A 2026-11-12 probe through each version's own ORM, not
+through a launch, found 1.1.1 still writes to a database 1.2.0 created or
+upgraded ([runbook §8.5](docs/release/mvp-launch-runbook.md)).
 
 **A `degraded` status on first boot is normal, not broken** — it almost
 always just means no agent has enrolled yet:
