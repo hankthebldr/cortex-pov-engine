@@ -1,0 +1,33 @@
+"""The absolute time window a run's Tier-2 verification queries.
+
+Verification used to ask for "the last hour from now". A run verified two hours
+after it executed then queried a window that no longer contained its events, got
+zero rows, and resolved ``fail`` -- an infrastructure delay reported as a claim
+about the customer's coverage. The window now belongs to the run.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from connectors.base import coerce_utc
+
+#: Slack before ``started_at`` for clock skew and ingestion-time stamping.
+LEAD_SECONDS = 300
+
+
+def _epoch_ms(naive_utc: datetime) -> int:
+    # Naive UTC -> epoch. ``naive.timestamp()`` would read it as host-local.
+    return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def run_timeframe(started_at: datetime, completed_at: Optional[datetime],
+                  window_seconds: int, *, now: datetime) -> dict[str, int]:
+    """``{"from": ms, "to": ms}`` covering the run plus its correlation window."""
+    started = coerce_utc(started_at)
+    end_anchor = coerce_utc(completed_at) or started
+    now_utc = coerce_utc(now)
+    start = started - timedelta(seconds=LEAD_SECONDS)
+    end = min(end_anchor + timedelta(seconds=int(window_seconds)), now_utc)
+    end = max(end, start)
+    return {"from": _epoch_ms(start), "to": _epoch_ms(end)}

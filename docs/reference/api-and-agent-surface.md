@@ -241,6 +241,8 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
 | GET | `/api/runs/{run_id}/events` | SSE stream scoped to one run (+ global) | — | `text/event-stream` |
 
+**Verification window.** Unless `timeframe_seconds` is passed (on `POST /verify` or to the sweep), each run's `verification_xql` is queried over that run's own absolute window, `{"from": ms, "to": ms}` (UTC epoch ms): `started_at - 300 s` to `min((completed_at or started_at) + the scenario's correlation_window_seconds, now)`, falling back to `CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS` when the scenario sets none. An explicit `timeframe_seconds` keeps the old `{"relativeTime": s*1000}`. The window used is recorded at `tc_verdict_detail.verification.window`. This removes the late-verify false `fail` (a run verified hours later used to query the last hour and find nothing) for the 15 existing `verification_xql` scenarios. ***tenant-verified stays 0.***
+
 > The single-run SSE route lives in the dedicated `events` router (`core/api/events.py`)
 > but its path falls under `/api/runs/{run_id}/...`; the global stream is
 > `GET /api/events`. See §1.12.
