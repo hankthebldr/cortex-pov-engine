@@ -925,6 +925,19 @@ partial); their additions are recorded here. No plugin-count change (27).
   `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
   (`02:00:00:00:00:07`).
 
+- **`m365_activity_emitter`** (2026-11-11) — new optional params, all absent by
+  default (every existing record is unchanged): `source_ip` (valid IP, replaces
+  `ClientIP` on every record), `user_agents` (list, cycled into each record's
+  `UserAgent` body field; never the collector POST header), `storage_targets`
+  (`onedrive`/`sharepoint`, `storage_exfiltration` cycles records over them),
+  `event_time_offset_seconds` (-86400-0, back-dates `CreationTime`). New
+  `event_pattern` `internal_extortion_notice` (marker
+  `internal_extortion_notice_marker`): one Exchange `Send` (RecordType 2) whose
+  recipients are `recipientList` (`{Address, Name}`) + `recipientCount`, to
+  `burst_count` internal `colleague-NN@<target domain>` addresses, then one Teams
+  `MessageSent` (RecordType 25) per recipient. Names per the Office 365 Management
+  Activity API schema.
+
 #### `cloud_audit_emitter` (CDR / Analytics) — logging-service presets (v1.2.0, 2026-11-11)
 
 `cloud_audit_emitter` has no row in §2.1 (the table is partial); this is its
