@@ -10,8 +10,8 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ### Security — no route runs a program or a template the caller chose
 
-v1.1.0 ships all four defects. Every route below is still unauthenticated, like
-the rest of SimCore.
+v1.1.0 ships every defect below. Every route below is still unauthenticated,
+like the rest of SimCore.
 
 - **Tool start refuses caller-supplied argv.** The body's `params` were merged
   over the registry's `binary` / `source_path` / `port` before
@@ -37,12 +37,23 @@ the rest of SimCore.
   the target. Each is now checked against its real format (agent id
   `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
   derived one included) and baked in as a single-quoted literal; a bad value is
-  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script. **Not
-  closed:** a well-formed `?server=` may name any host, and the script
-  downloads the beacon from that host, checks it against a digest from that
-  same host, and the beacon then runs that host's tasks. A crafted install URL
-  on a real SimCore can still enrol the machine that runs it into someone
-  else's server, so pipe only an install URL you built yourself.
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+- **The agent installer names only this SimCore.** `?server=` chose the host
+  the script downloads the beacon and its digest from and the beacon takes
+  tasks from, and any well-formed URL was accepted. It must now be this
+  SimCore: the origin the install request arrived on, or an entry in the new
+  `CORTEXSIM_PUBLIC_URLS` setting (comma-separated http(s) origins for LAN or
+  NAT names; scheme and host case, default ports and trailing slashes are
+  normalised). Any other host is `400 SERVER_NOT_THIS_SIMCORE` with no script.
+  The console's one-liner sends no `?server=` and is unaffected; if you pass
+  `?server=` with an address the request did not arrive on, list it in
+  `CORTEXSIM_PUBLIC_URLS` (`docker-compose.yml` passes it through).
+- **Served k8s bundles carry only this SimCore's URL.** `POST
+  /api/scenarios/{id}/bundle` (`format: k8s`) wrote the body's `server` raw
+  into the manifest's header comment and its preflight command, so a newline
+  in it added YAML documents, such as a `Pod`, that the header and the consent
+  record did not describe. `server` is now held to the installer's rule:
+  `400 BAD_SERVER` / `SERVER_NOT_THIS_SIMCORE`, and no manifest.
 - **Infra bundles no longer take Terraform from the request.** `POST
   /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
   raw into Terraform string literals, so a quote and newlines could add a
