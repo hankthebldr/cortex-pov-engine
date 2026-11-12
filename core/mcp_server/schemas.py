@@ -143,6 +143,7 @@ MCP_LAUNCH_EXCLUDED: dict[str, str] = {
     "soakless_attested": "operator attestation about the agent profile; a human states it, an agent does not",
     "attested_by": "operator attestation about the agent profile; a human states it, an agent does not",
     "module_modes": "operator attestation about the agent profile; a human states it, an agent does not",
+    "authorized_by": "names the operator who authorised a live in-process EAL send to a customer collector; live delivery is reachable only through POST /api/runs/launch by a human, never through MCP",
     "allow_missing_tools": "accepts a run whose steps call tools the pod lacks (TOOL_ABSENT); an operator decides to run degraded, an agent does not",
 }
 
