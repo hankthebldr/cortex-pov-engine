@@ -165,13 +165,15 @@ async def ingest_observations(
     from connectors.matcher import scope_to_host
     from connectors.service import (NEVER_DELIVERED_WARNING, apply_verdicts,
                                     host_source, match_window_ends,
-                                    reconcile_candidates, resolve_run_host,
-                                    window_by_type)
+                                    reconcile_candidates, reported_step_ids,
+                                    resolve_run_host, window_by_type)
 
     run, results = await _load_run_results(db, run_id)
     # OPS-01 defence in depth: a pull run no beacon ever collected ran nothing,
-    # so none of its beacon-step rows may be credited a pasted alert.
-    candidates, never_delivered = reconcile_candidates(run, results)
+    # so none of its beacon-step rows may be credited a pasted alert; an
+    # aborted one only on the steps its host reported (RG-RUNS-01).
+    candidates, never_delivered = reconcile_candidates(
+        run, results, reported_steps=await reported_step_ids(db, run_id))
     submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
     override = _host_override(body.host)
     scope_host = override if override is not None else await resolve_run_host(db, run)

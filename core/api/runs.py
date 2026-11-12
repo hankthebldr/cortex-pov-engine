@@ -2046,8 +2046,8 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
     # to say, and the beacon says it on the /complete that follows this abort
     # (kept by `_record_late_abort_evidence`, RG-RUNS-01). Until that arrives —
     # and for good if the beacon is gone or predates steps[] — the rows stay
-    # unjudged, and an alert on that host can still be credited to a step
-    # that never ran.
+    # unjudged, and `reconcile_candidates` credits an alert only to a step the
+    # host reported (RG-RUNS-01 residual).
     if aborted is not None and aborted.mode == "pull" and aborted.delivered_at is None:
         from engine.orchestrator import (  # noqa: PLC0415
             REASON_ABORTED_BEFORE_DELIVERY,

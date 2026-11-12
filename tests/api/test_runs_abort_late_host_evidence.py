@@ -224,3 +224,83 @@ def test_the_aborted_steps_started_row_takes_the_hosts_termination(client, sessi
     row = asyncio.run(_go())
     assert (row.termination, row.exit_code) == ("aborted", 130), (row.termination, row.exit_code)
     assert row.started_at is not None
+
+
+# ---------------------------------------------------------------------------
+# RG-RUNS-01, residual: the host never gives its account
+# ---------------------------------------------------------------------------
+#
+# The fix above needs the beacon's late /complete steps[]. If the beacon died
+# after the abort, or predates steps[], nothing ever said which steps ran, and
+# an alert on that host inside the window was still credited, with an MTTD, to
+# a step that never executed. On an aborted, delivered pull run an alert is now
+# credited only to a step the host reported (a step record from /output or
+# /complete). The others stay pending: never credited, never missed.
+
+def test_a_dead_beacon_leaves_its_unreported_steps_uncreditable(client, session_factory):
+    run_id = _abort_mid_step_two(client, session_factory)
+    # No late /complete: the beacon is gone.
+
+    o = flow.observe(client, run_id, [
+        flow.alert("al-rg01-d3", "Ransomware file encryption", "T1486", "d-3", HOST)])
+    assert o.status_code == 200, o.text
+    assert o.json()["observed"] == 0, o.json()
+
+    step3 = flow.rows(client, run_id)["step-03"]
+    assert step3["observed"] is False, step3
+    assert step3["outcome"] not in ("detected", "prevented"), step3
+    assert step3["mttd_seconds"] is None, step3
+    assert flow.results_body(client, run_id)["mttd"] is None
+
+
+def test_a_dead_beacon_leaves_the_in_flight_step_uncreditable_too(client, session_factory):
+    """step-02 was running at the abort, but no host record says so: its alert
+    is not evidence until the host speaks, and nothing calls the row missed."""
+    run_id = _abort_mid_step_two(client, session_factory)
+
+    o = flow.observe(client, run_id, [
+        flow.alert("al-rg01-d2", "Suspicious shell spawn", "T1059", "d-2", HOST)])
+    assert o.status_code == 200, o.text
+    step2 = flow.rows(client, run_id)["step-02"]
+    assert step2["observed"] is False and step2["outcome"] != "missed", step2
+    assert step2["mttd_seconds"] is None, step2
+
+
+def test_a_step_the_host_reported_stays_creditable(client, session_factory):
+    """step-01 posted /output before the abort: it ran, and its alert counts."""
+    run_id = _abort_mid_step_two(client, session_factory)
+
+    o = flow.observe(client, run_id, [
+        flow.alert("al-rg01-d1", "Shadow file read", "T1003", "d-1", HOST)])
+    assert o.status_code == 200, o.text
+    got = flow.rows(client, run_id)
+    assert flow.view(got["step-01"])[:2] == (True, "detected"), got["step-01"]
+
+
+def test_a_beacon_that_predates_steps_is_treated_like_a_dead_one(client, session_factory):
+    """A late /complete with no steps[] gives no account of which steps ran."""
+    run_id = _abort_mid_step_two(client, session_factory)
+    late = client.post(f"/api/runs/{run_id}/complete",
+                       json={"exit_code": 130, "summary": "aborted by operator"})
+    assert late.status_code == 409, late.text
+    assert late.json()["detail"]["detail"]["host_evidence_recorded"] == 0
+
+    o = flow.observe(client, run_id, [
+        flow.alert("al-rg01-o3", "Ransomware file encryption", "T1486", "d-3", HOST)])
+    assert o.status_code == 200, o.text
+    assert o.json()["observed"] == 0, o.json()
+    assert flow.rows(client, run_id)["step-03"]["mttd_seconds"] is None
+
+
+def test_the_in_flight_step_is_credited_once_the_host_reports_it(client, session_factory):
+    run_id = _abort_mid_step_two(client, session_factory)
+    first = flow.observe(client, run_id, [
+        flow.alert("al-rg01-l2", "Suspicious shell spawn", "T1059", "d-2", HOST)])
+    assert first.json()["observed"] == 0, first.json()
+
+    client.post(f"/api/runs/{run_id}/complete", json=BEACON_COMPLETE_AFTER_ABORT)
+    again = flow.observe(client, run_id, [
+        flow.alert("al-rg01-l2", "Suspicious shell spawn", "T1059", "d-2", HOST)])
+    assert again.status_code == 200, again.text
+    got = flow.rows(client, run_id)
+    assert flow.view(got["step-02"])[:2] == (True, "detected"), got["step-02"]

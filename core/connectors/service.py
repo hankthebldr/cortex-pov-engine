@@ -179,7 +179,8 @@ async def reconcile_run(
 
     cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
 
-    candidates, never_delivered = reconcile_candidates(run, results)
+    candidates, never_delivered = reconcile_candidates(
+        run, results, reported_steps=await reported_step_ids(db, run.run_id))
     if never_delivered and not candidates:
         # Nothing on this run can be credited, so spending a metered tenant
         # query on it would only buy the chance to credit the wrong alert.
@@ -322,6 +323,18 @@ NEVER_DELIVERED_WARNING = (
 #: launch notes) match neither.
 _BEACON_TRACE_RE = re.compile(r"=== STEP \d+/\d+ · |^--- COMPLETION SUMMARY ---",
                               re.MULTILINE)
+#: The same per-step frame, capturing its step id.
+_STEP_FRAME_RE = re.compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
+
+
+async def reported_step_ids(db: AsyncSession, run_id: str) -> set[str]:
+    """Steps the host gave an account of having reached: a ``StepOutcome`` row
+    (written by the step's ``/output`` or the ``/complete`` steps[]) other than
+    ``not_run``. What :func:`reconcile_candidates` needs for an aborted run."""
+    rows = (await db.execute(
+        select(StepOutcome.step_id, StepOutcome.termination)
+        .where(StepOutcome.run_id == run_id))).all()
+    return {sid for sid, term in rows if term != "not_run"}
 
 
 def beacon_reported(run: Any) -> bool:
@@ -335,7 +348,8 @@ def beacon_reported(run: Any) -> bool:
     return bool(output) and _BEACON_TRACE_RE.search(output) is not None
 
 
-def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
+def reconcile_candidates(run: Any, results: list, *,
+                         reported_steps: Any = ()) -> tuple[list, bool]:
     """``(candidates, never_delivered)`` — the rows an alert may be credited to.
 
     A pull run whose task no beacon ever collected (``delivered_at`` NULL) did
@@ -361,13 +375,30 @@ def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
     false. Status alone cannot decide that — a legacy ``failed`` row may as
     well be a pre-delivery orphan — but a step frame or a completion summary in
     the run's output can only have been posted by a beacon that had the task.
+
+    An ``aborted`` pull run that WAS delivered is narrowed to the steps the host
+    reported (RG-RUNS-01, residual): ``reported_steps`` (the caller's
+    :func:`reported_step_ids`), a step frame in the run's own output, or an
+    in-process step. The abort wins the race with the beacon by design, so
+    which steps ran is the host's to say, on its late ``/complete`` steps[]. A
+    beacon that died after the abort, or predates steps[], never says it, and
+    an alert on that host was credited, with an MTTD, to a step that never ran.
+    Its other rows are not candidates: never credited, and the silent-row
+    judgement leaves them ``pending`` (no host record), never ``missed``. The
+    default ``()`` errs that way too: a caller that passes nothing credits only
+    what the output itself shows ran.
     """
-    if (getattr(run, "mode", None) != "pull"
-            or getattr(run, "delivered_at", None) is not None
-            or getattr(run, "status", None) == "complete"
-            or beacon_reported(run)):
-        return list(results), False
     from engine.orchestrator import in_process_steps  # noqa: PLC0415
+
+    mode, status = getattr(run, "mode", None), getattr(run, "status", None)
+    delivered = getattr(run, "delivered_at", None) is not None or beacon_reported(run)
+    if mode == "pull" and status == "aborted" and delivered:
+        ran = (set(reported_steps or ())
+               | set(_STEP_FRAME_RE.findall(getattr(run, "output", None) or ""))
+               | set(in_process_steps(run)))
+        return [r for r in results if r.step_id in ran], False
+    if mode != "pull" or delivered or status == "complete":
+        return list(results), False
 
     ran_here = in_process_steps(run)
     return [r for r in results if r.step_id in ran_here], True
@@ -1596,7 +1627,8 @@ async def auto_reconcile_once(
         )).scalars().all())
         if not any((not r.observed) and r.executed_at for r in results):
             continue
-        candidates, never_delivered = reconcile_candidates(run, results)
+        candidates, never_delivered = reconcile_candidates(
+            run, results, reported_steps=await reported_step_ids(db, run.run_id))
         if never_delivered and not any(
                 (not r.observed) and r.executed_at for r in candidates):
             # Counted, not silent: a sweep that skips a queued or orphaned run
