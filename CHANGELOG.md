@@ -99,8 +99,9 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `WEB_CONCURRENCY` in the environment could start several SimCores sharing
   one database. *Authored; no container ran.*
 - **Settings under compose.** `.env.example` now documents all 29 settings the
-  beta pass covered, split at a marked heading; the merge with `dev` appends
-  six more after them (two NGFW, four MCP). The container never reads `.env`: compose passes
+  beta pass covered, split at a marked heading; the merge with `dev` adds the
+  seven dev declared (two NGFW, four MCP, `CORTEXSIM_STRICT_DATASETS`), 36 in
+  all. The container never reads `.env`: compose passes
   only `CORTEXSIM_ENV`, `_SECRET`, `_BIND`, `_ALLOWED_HOSTS`, `_CORS_ORIGINS`
   and `_TRUSTED_PROXIES`, so any other setting keeps its default in a compose
   deployment.

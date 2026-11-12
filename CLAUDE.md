@@ -74,8 +74,8 @@ cp .env.example .env        # set CORTEXSIM_SECRET etc.
 ./scripts/dev-up.sh         # one-shot: builds the image + brings up SimCore via docker compose
 ```
 `scripts/dev-up.sh` is the canonical easy-deploy entry point (`[--dev] [--apply]`; an
-unknown argument exits 2). `.env.example` documents all 29 `Settings` fields (counted
-2026-11-10; `tests/test_env_example_coverage.py` fails on a field it lacks), including
+unknown argument exits 2). `.env.example` documents all 36 `Settings` fields (counted
+2026-11-11 on the beta-readiness merge with dev; `tests/test_env_example_coverage.py` fails on a field it lacks), including
 the master-key guard the compose stack enforces. **Under docker compose the container
 never reads `.env`:** `docker-compose.yml` passes only `CORTEXSIM_ENV`, `_SECRET`,
 `_BIND`, `_ALLOWED_HOSTS`, `_CORS_ORIGINS` and `_TRUSTED_PROXIES` (`_PORT` and `_VERSION`
