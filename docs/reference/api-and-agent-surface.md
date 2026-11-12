@@ -1579,9 +1579,13 @@ Go 1.21+, **stdlib only**.
   round 2 the stop is bound to the client (`BindShutdown`) before `Register`:
   `Register` and the idle poll (including the long-poll clone) are cancelled
   at once, and the `/output` / `/complete` retry ladder yields (below). A
-  handled signal exits 0. `Control()` is deliberately **not** bound to the
-  stop, so a shutdown never reads as `CONTROL_CHANNEL_LOST`; a stop can still
-  wait up to the 30 s client timeout on a `/control` that never answers.
+  handled signal exits 0. `Control()` is bound to the stop too (RG-AGENT-04
+  residual): a stop that lands while a `/control` poll is blocked cancels it at
+  once instead of after the 30 s client timeout, which outlived launchd's 20 s.
+  A poll the stop cut short reads `Shutdown`, not `Lost`, so the run records
+  `--- STOPPED: agent shutdown (NOT an operator abort) ---` and
+  "agent shutdown — task interrupted", never `CONTROL_CHANNEL_LOST`; a stop
+  before a step leaves that step `not_run`.
 - `--proxy <http|https|socks5 URL | direct>` (env `CORTEXSIM_AGENT_PROXY`;
   round 2) routes the API client, its long-poll clone and the artifact client.
   Empty keeps the default transport. The startup log names the route to

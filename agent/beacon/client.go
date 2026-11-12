@@ -260,6 +260,11 @@ type ControlState struct {
 	// must not then say a person stopped the run.
 	Lost       bool   `json:"-"`
 	LostDetail string `json:"-"`
+
+	// Shutdown is local only: the poll was cut short because this beacon was
+	// told to stop (BindShutdown), not because the channel failed or anyone
+	// aborted the run. Abort is true so every caller stops where it stands.
+	Shutdown bool `json:"-"`
 }
 
 // ReasonControlChannelLost is the stable literal carried in the /complete
@@ -270,6 +275,9 @@ const ReasonControlChannelLost = "CONTROL_CHANNEL_LOST"
 
 // stopLine is the /output line written when the run stops before a step.
 func (s ControlState) stopLine() string {
+	if s.Shutdown {
+		return "--- STOPPED: agent shutdown (NOT an operator abort) ---"
+	}
 	if s.Lost {
 		return "--- STOPPED: control channel lost (NOT an operator abort) [" + ReasonControlChannelLost + "] ---"
 	}
@@ -278,6 +286,9 @@ func (s ControlState) stopLine() string {
 
 // stopBeforeSummary is the /complete summary for a run stopped before stepID.
 func (s ControlState) stopBeforeSummary(stepID string) string {
+	if s.Shutdown {
+		return fmt.Sprintf("agent shutdown — task interrupted before step %s", stepID)
+	}
 	if s.Lost {
 		return fmt.Sprintf("control channel lost — run stopped before step %s (NOT an operator abort) | reason=%s%s",
 			stepID, ReasonControlChannelLost, s.lostDetail())
@@ -288,6 +299,10 @@ func (s ControlState) stopBeforeSummary(stepID string) string {
 // stopDuringSummary is the /complete summary for a run whose in-flight step was
 // terminated.
 func (s ControlState) stopDuringSummary(stepID string) string {
+	if s.Shutdown {
+		// The literal every other shutdown path posts (executeTask & co.).
+		return "agent shutdown — task interrupted"
+	}
 	if s.Lost {
 		return fmt.Sprintf("control channel lost — step terminated (NOT an operator abort) | step=%s reason=%s%s",
 			stepID, ReasonControlChannelLost, s.lostDetail())
@@ -304,6 +319,10 @@ func (s ControlState) lostDetail() string {
 
 func controlLost(runID, detail string) ControlState {
 	return ControlState{Abort: true, RunID: runID, Status: "unknown", Lost: true, LostDetail: detail}
+}
+
+func controlShutdown(runID string) ControlState {
+	return ControlState{Abort: true, RunID: runID, Status: "unknown", Shutdown: true}
 }
 
 // abortExitCode is the conventional exit code reported when a run is aborted by
@@ -752,11 +771,25 @@ func (c *BeaconClient) PollTasksWait(waitSec int) (*Task, error) {
 // explicit `abort:true` body is an operator abort. (SimCore itself answers a
 // vanished run with 200 abort:true, so a 404 here is a proxy or a different
 // server, not SimCore saying "stop".)
+//
+// The GET is bound to the shutdown context (RG-AGENT-04): a stop that lands
+// while it is blocked on an unresponsive SimCore cancels it at once instead of
+// after the 30 s client timeout, which outlived launchd's 20 s stop window.
+// A request the stop cut short is reported as Shutdown, not Lost: the channel
+// did not fail, the beacon was told to stop.
 func (c *BeaconClient) Control(runID string) (ControlState, error) {
 	url := fmt.Sprintf("%s/api/runs/%s/control", c.ServerURL, runID)
 
-	resp, err := c.http.Get(url)
+	stop := c.stopCtx()
+	req, err := http.NewRequestWithContext(stop, http.MethodGet, url, nil)
 	if err != nil {
+		return controlLost(runID, "transport error"), fmt.Errorf("control GET: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if stop.Err() != nil {
+			return controlShutdown(runID), fmt.Errorf("control GET: %w", err)
+		}
 		return controlLost(runID, "transport error"), fmt.Errorf("control GET: %w", err)
 	}
 	defer resp.Body.Close()
