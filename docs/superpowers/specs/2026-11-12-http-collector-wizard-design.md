@@ -19,8 +19,9 @@ the address and key, sends one test record, sends a few tagged example events
 from the matching simulators, and searches the tenant read-only to confirm
 they arrived. It reports what arrived as a fact ("3 of 3 example records found
 in duo_auth_raw"), never as proof that a detection works. It is built on what
-CortexSim already has, so it needs no tenant write access. Recommended action:
-approve the design, then build it as one console change.
+CortexSim already has plus four small additions, and it needs no tenant write
+access. Recommended action: approve the design and answer its two open
+questions, then build it as one change.
 
 ## Technical detail
 
