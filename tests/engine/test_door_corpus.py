@@ -39,8 +39,8 @@ Re-pinned 2026-11-13 for SIM-MP-038 (TTP-2026-0551), the first scenario with
 ``channel: eal`` steps: 10 expected detections take the total to 1,430. The 8
 on its three eal steps take the collector route (collector 208 -> 216: XQL
 71 -> 77, Correlation 22 -> 24). Step-01 is an agent step: its xdr_data XQL
-needs the agent alone (xdr_agent 504 -> 505, 104 -> 105 scenarios;
-XDR_AGENT_SOLE 503 -> 504) and its panw_ngfw_threat_raw XQL needs ngfw_threat
+needs the agent alone (xdr_agent 505 -> 506, 104 -> 105 scenarios;
+XDR_AGENT_SOLE 504 -> 505) and its panw_ngfw_threat_raw XQL needs ngfw_threat
 (6 -> 7, 2 -> 3 scenarios). No underived count moves. With every door open
 the scenario reads ``partial`` (2 scorable, 8 route-blocked; partial 30 -> 31);
 with none it reads ``needs_doors`` (192 -> 193).

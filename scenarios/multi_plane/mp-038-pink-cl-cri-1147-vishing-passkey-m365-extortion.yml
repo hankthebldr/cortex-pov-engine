@@ -16,6 +16,8 @@
 #     infrastructure. LAB_RESOLVER is a public resolver reached THROUGH the PA-440 (not
 #     Pi-hole, which would hide the source and may block these names), so the query crosses
 #     the firewall from a known host. It has no default: the step stops if it is unset.
+#     The lookups are 40 s apart (bare `sleep 40` lines): back-to-back steps lost telemetry
+#     in the 2026-11-11 lab run (docs/lab/2026-11-11-persistence-grouping-lab-run.md).
 #   step-02..04 (channel eal) run inside SimCore at launch, never on the beacon. They POST
 #     shape-true Entra sign-in and passkey-registration, M365 download, Exchange Send and
 #     Teams records to the operator's HTTP log collector (Vendor cortexsim, Product saas,
@@ -50,8 +52,10 @@
 # requests.
 #
 # Known limits. Queries scope on the fixed canary (cortexsim_canary =
-# cortexsim-mp-038-pink, principal cortexsim-mp-038-pink@cortexsim-canary.invalid), so two
-# runs of this scenario with overlapping windows can satisfy each other's rows. Collector
+# cortexsim-mp-038-pink, principal cortexsim-mp-038-pink@cortexsim-canary.invalid; every
+# eal step's target_user is that same principal), so two runs of this scenario with
+# overlapping windows can satisfy each other's rows. CR-MP-0038-EXTORT measures from the
+# first download, so a second run in the window cannot push its gap below zero. Collector
 # field names come from the emitters' records on dev, not from a stored collector row (lab
 # prerequisite L-1 is not done).
 scenario_id: SIM-MP-038
@@ -119,8 +123,9 @@ success_criteria: |
   resolving a Pink lure domain), D5 and D6 (Entra sign-in for the canary from the Pink
   access IP, and a passkey registered from that IP within ten minutes), D7 and D8 (a
   SharePoint and OneDrive download burst from that IP, through the Graph SDK and
-  python-requests user agents), D9 and D10 (an internal fan-out Send and Teams messages
-  from the extortion IP), and the two chain queries CR-MP-0038 and CR-MP-0038-EXTORT.
+  python-requests user agents), D9 and D10 (an Exchange Send with a recipientCount of at
+  least five, and Teams messages, from the extortion IP), and the two chain queries
+  CR-MP-0038 and CR-MP-0038-EXTORT.
   A hit on a collector row proves the record landed and the query finds it; it does not
   prove a Cortex detector fired. Any missing row scores fail; all rows found reads
   not_applicable (evidence, not a scored pass). The hunts D2, D4 and CR-3 are run by hand
@@ -219,8 +224,11 @@ steps:
     command: |
       : "${LAB_RESOLVER:?set LAB_RESOLVER to a public resolver reached through the lab firewall}"
       dig @${LAB_RESOLVER} passkeyadd.com A +short
+      sleep 40
       dig @${LAB_RESOLVER} passkeydeploy.com A +short
+      sleep 40
       dig @${LAB_RESOLVER} deploypasskey.com A +short
+      sleep 40
       dig @${LAB_RESOLVER} test-phishing.testpanw.com A +short
     identity: direct
     mitre_technique: "T1566.004"
@@ -259,7 +267,7 @@ steps:
         event_pattern: vishing_passkey_enrollment
         source_ip: "172.93.100.252"
         event_time_offset_seconds: -1500
-        target_user: "cortexsim.pink.canary@cortexsim-canary.invalid"
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
         canary_token: "cortexsim-mp-038-pink"
     identity: direct
     mitre_technique: "T1078.004"
@@ -313,7 +321,7 @@ steps:
           - sharepoint
           - onedrive
         event_time_offset_seconds: -1200
-        target_user: "cortexsim.pink.canary@cortexsim-canary.invalid"
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
         canary_token: "cortexsim-mp-038-pink"
     identity: direct
     mitre_technique: "T1530"
@@ -358,7 +366,7 @@ steps:
           | alter audit_principal = json_extract_scalar(initiatedBy, "$.user.userPrincipalName"), audit_ip = json_extract_scalar(initiatedBy, "$.user.ipAddress")
           | alter principal = coalesce(userPrincipalName, audit_principal, UserId), source_ip = coalesce(ipAddress, audit_ip, ClientIP)
           | filter principal = "cortexsim-mp-038-pink@cortexsim-canary.invalid"
-          | alter stage = if(createdDateTime != null and authenticationRequirement = "multiFactorAuthentication", "signin", if(activityDisplayName = "User registered security info", "passkey", if(Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull"), "download", "other")))
+          | alter stage = if(createdDateTime != null and authenticationRequirement = "multiFactorAuthentication", "signin", if(activityDisplayName = "User registered security info" and resultReason contains "passkey", "passkey", if(Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull"), "download", "other")))
           | filter stage != "other"
           | alter stage_at = parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", coalesce(createdDateTime, activityDateTime, CreationTime))
           | alter signin_at = if(stage = "signin", stage_at, null), passkey_at = if(stage = "passkey", stage_at, null), download_at = if(stage = "download", stage_at, null)
@@ -378,7 +386,7 @@ steps:
         event_pattern: internal_extortion_notice
         source_ip: "96.232.20.66"
         event_time_offset_seconds: -300
-        target_user: "cortexsim.pink.canary@cortexsim-canary.invalid"
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
         canary_token: "cortexsim-mp-038-pink"
     identity: direct
     mitre_technique: "T1657"
@@ -388,7 +396,7 @@ steps:
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
-        description: "An Exchange Send from the canary's mailbox to at least five internal recipients from 96.232.20.66 landed in cortexsim_saas_raw. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
+        description: "An Exchange Send by the canary (UserId) from 96.232.20.66 with a recipientCount of at least five landed in cortexsim_saas_raw. The query reads the count, not the recipients, so it does not prove they are internal. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
         ttp_ref: "TTP-2026-0551"
         detection_id: "xql-mp-038-internal-fan-out-send-from-the-extortion-ip"
         verification_xql: |
@@ -413,7 +421,7 @@ steps:
           | filter messages >= 2
       - plane: ANALYTICS
         type: Correlation
-        description: "Correlation CR-MP-0038-EXTORT (operator-installed, Medium, scheduled every 10 min over 1 h, UserId mapped to User Name, untested): on one principal, the last SharePoint or OneDrive download, then the first internal Exchange Send or Teams message, inside 3600 s by body time. Verified here by the rule's own XQL; it does not prove XSIAM grouped anything into a case"
+        description: "Correlation CR-MP-0038-EXTORT (operator-installed, Medium, scheduled every 10 min over 1 h, UserId mapped to User Name, untested): on one principal, the first SharePoint or OneDrive download, then the first Exchange Send or Teams message, inside 3600 s by body time (the first download, so a second run in the same window cannot push the gap below zero). Verified here by the rule's own XQL; it does not prove XSIAM grouped anything into a case"
         ttp_ref: "TTP-2026-0551"
         detection_id: "CR-MP-0038-EXTORT"
         verification_xql: |
@@ -424,9 +432,9 @@ steps:
           | filter stage != "other"
           | alter stage_at = parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", CreationTime)
           | alter download_at = if(stage = "download", stage_at, null), extortion_at = if(stage in ("extortion_mail", "extortion_teams"), stage_at, null)
-          | comp max(download_at) as last_download_at, min(extortion_at) as first_extortion_at, count_distinct(stage) as stages, count_distinct(ClientIP) as source_ips by UserId
-          | filter last_download_at != null and first_extortion_at != null
-          | alter extortion_after_download_seconds = timestamp_diff(first_extortion_at, last_download_at, "SECOND")
+          | comp min(download_at) as first_download_at, min(extortion_at) as first_extortion_at, count_distinct(stage) as stages, count_distinct(ClientIP) as source_ips by UserId
+          | filter first_download_at != null and first_extortion_at != null
+          | alter extortion_after_download_seconds = timestamp_diff(first_extortion_at, first_download_at, "SECOND")
           | filter extortion_after_download_seconds >= 0 and extortion_after_download_seconds <= 3600
 
 cleanup:

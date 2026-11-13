@@ -32,7 +32,7 @@ CARD = (REPO_ROOT / "detection_scanner" / "ttps"
 INDEX_DIR = REPO_ROOT / "docs" / "uc_tc_mapping" / "_v2.2-source"
 TTP = "TTP-2026-0551"
 
-CANARY_USER = "cortexsim.pink.canary@cortexsim-canary.invalid"
+CANARY_USER = "cortexsim-mp-038-pink@cortexsim-canary.invalid"  # = the canary-planted principal
 CANARY_TOKEN = "cortexsim-mp-038-pink"
 PUBLISHED_UAS = ["Microsoft.Graph.Client/5.62.0", "python-requests/2.28.1", "python-requests/2.33.1"]
 LURES = ["passkeyadd.com", "passkeydeploy.com", "deploypasskey.com"]
@@ -127,8 +127,15 @@ def test_four_steps_one_agent_three_eal(scenario):
     s1 = by_id["step-01"]
     assert s1.get("channel", "agent") == "agent" and "eal" not in s1
     assert s1["identity"] == "direct"
-    lookups = [ln.strip() for ln in s1["command"].splitlines() if ln.strip().startswith("dig ")]
-    assert lookups == [f"dig @${{LAB_RESOLVER}} {d} A +short" for d in [*LURES, CONTROL]]
+    lines = [ln.strip() for ln in s1["command"].splitlines() if ln.strip()]
+    assert lines[0].startswith(': "${LAB_RESOLVER:?')
+    # Each lookup is a bare line, 40 s after the one before: back-to-back steps
+    # lost telemetry in the 2026-11-11 persistence-grouping lab run.
+    want_lines: list[str] = []
+    for d in [*LURES, CONTROL]:
+        want_lines += ["sleep 40"] if want_lines else []
+        want_lines.append(f"dig @${{LAB_RESOLVER}} {d} A +short")
+    assert lines[1:] == want_lines
 
     want = {
         "step-02": ("idp_signin_emulator", {

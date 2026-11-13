@@ -33,7 +33,7 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK
-| filter dns_query_name in ("passkeyadd.com", "passkeydeploy.com", "deploypasskey.com")
+| filter dns_query_name contains "passkeyadd.com" or dns_query_name contains "passkeydeploy.com" or dns_query_name contains "deploypasskey.com"
 | comp count() as dns_events, values(dns_query_name) as domains by agent_hostname, actor_process_image_name
 
 ## VALIDATION — MP-038 Entra Sign-in for the Canary from the Pink Access IP
