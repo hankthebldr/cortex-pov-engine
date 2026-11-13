@@ -20,8 +20,9 @@ from the matching simulators, and searches the tenant read-only to confirm
 they arrived. It reports what arrived as a fact ("3 of 3 example records found
 in duo_auth_raw"), never as proof that a detection works. It is built on what
 CortexSim already has plus four small additions, and it needs no tenant write
-access. Recommended action: approve the design and answer its two open
-questions, then build it as one change.
+access. Datasets the customer's own firewall already fills are set up only
+on the lab tenant. Recommended action: approve the design and answer its one
+open question, then build it as one change.
 
 ## Technical detail
 
@@ -147,15 +148,29 @@ dataset is on that list reads `name_disputed`: "These detections query
 `<vendor>_<product>_raw`; whether the detections see them depends on D-2."
 **Claude's call:** the wizard states the conflict and does not pick a side.
 
-A fifth case is for Henry (open question 1): the card dataset is one a native
-tenant pipe already fills, such as `panw_ngfw_traffic_raw`,
-`panw_ngfw_threat_raw` and `panw_ngfw_globalprotect_raw`. They pass the
-`matches` rule, but naming a custom collector into them writes synthetic
-records into the firewall's own dataset. The proposed verdict is
-`native_dataset`.
+A fifth case: the card dataset is one a native tenant pipe already fills, such
+as `panw_ngfw_traffic_raw`, `panw_ngfw_threat_raw` and
+`panw_ngfw_globalprotect_raw`. They pass the `matches` rule, but naming a
+custom collector into them writes synthetic records into the firewall's own
+dataset. These read `native_dataset`.
 
-**Claude's call:** every verdict except `native_dataset` goes on to the next
-steps. `cannot_feed` and `name_disputed` continue as a **delivery test**: the
+**Henry decided (2026-11-13): `native_dataset` is allowed on the lab tenant
+only.** On any other tenant the wizard stops at 5.2 with: "`<dataset>` is
+filled by the tenant's own firewall pipe. A custom collector named into it
+would mix synthetic records into the customer's real firewall data, so the
+wizard does not set one up outside the lab tenant." On the lab tenant every
+later step carries the banner "writes into the native `<dataset>`".
+
+How the lab tenant is recognised (**Claude's call**): a setting listing the
+lab tenants' API hosts, the same `CORTEXSIM_DOOR_PROBE_TENANTS` the #227 plan
+introduces for door probes, set in the lab `.env` only; this build adds it if
+#227 has not. The collector URL's host must equal one of them. Whether a
+tenant's HTTP collector host equals its API host is unverified (#227 spec
+§14), so any mismatch reads **not the lab tenant**, and the step stops. A
+wrong guess blocks the lab; it never lets synthetic records into a customer's
+dataset.
+
+**Claude's call:** every other verdict goes on to the next steps. `cannot_feed` and `name_disputed` continue as a **delivery test**: the
 verdict is shown again on every later step, and the arrival result reads
 "delivery only: these detections will not see `<dataset>`". Measured on the
 catalogue (builder check, 2026-11-12): of the 20 sources with a collector
@@ -326,7 +341,9 @@ Gate A: each test below is observed failing before its code exists.
   endpoint returns `pending` (not 0) for a PENDING reply, `not_checked` for
   each refusal, and reports `queries_issued`; `email_emitter` records carry
   `cortexsim_canary`.
-- `native_dataset`, once Henry has answered open question 1.
+- `native_dataset`: stops at 5.2 when the collector host is not in
+  `CORTEXSIM_DOOR_PROBE_TENANTS`, when the setting is empty, and when the host
+  differs only by case or port; continues with the banner when it matches.
 - 5.5 campaign body: one step per ticked emitter, the minted token on each,
   `target_allowlist` = the collector host, consent fields set.
 - 5.6 every row of the result table, including each **not checked** cause,
@@ -336,16 +353,9 @@ Gate A: each test below is observed failing before its code exists.
 
 ### 9. Open questions for Henry
 
-1. **Native datasets** (§5.1). For a source whose card dataset a native pipe
-   already fills (`panw_ngfw_traffic_raw`, `_threat_raw`,
-   `_globalprotect_raw`), should the wizard block it, allow it on the lab
-   tenant only, or allow it everywhere with a warning? Allowing it on a
-   customer tenant puts synthetic records in the customer's real firewall
-   dataset, if the tenant accepts a custom collector with that name at all.
-   **Claude's default:** lab tenant only, recognised by the collector URL's
-   host matching the lab integration's; elsewhere the step stops with the
-   reason.
-2. **Customer tenants for every other source.** Should "Send example events"
+Settled: **native datasets** are lab tenant only (Henry, 2026-11-13; §5.1).
+
+1. **Customer tenants for every other source.** Should "Send example events"
    and "Confirm arrival" be offered on a customer tenant? They are an
    ordinary campaign plus a read-only search, which the product already allows
    everywhere. **Claude's default:** yes, labelled as above, because a
@@ -369,6 +379,8 @@ wizard reports `name_disputed` for the 9 affected sources (§5.1).
 - `provider` set from the declared source (§5.5).
 - One automatic check at 90 s, then on demand; no tenant-wide search on a
   miss (§5.6).
+- The lab tenant is recognised by `CORTEXSIM_DOOR_PROBE_TENANTS` and an exact
+  host match; any doubt reads "not the lab tenant" (§5.1).
 - Four backend additions: `declaration` column, a detections-by-source read,
   the arrival endpoint, `canary_token` on `email_emitter` (§6).
 - Follow-up, not in this build: per-source routing for an emitter that feeds
