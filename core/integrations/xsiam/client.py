@@ -27,6 +27,12 @@ from .exceptions import (
 
 logger = logging.getLogger("cortexsim.xsiam")
 
+#: Rows asked for per ``get_query_results`` page. A caller that measures from a
+#: page passes this explicitly and checks the page against the same number
+#: (``queries.complete_rows``): a page that comes back this full may be a slice
+#: of a larger answer. The largest limit the API accepts is open (PM-XQL-03).
+XQL_PAGE_LIMIT = 100
+
 
 # ---------------------------------------------------------------------------
 # XQL write-stage refusal (SEC-05) — the ONE guard
@@ -451,7 +457,8 @@ class XsiamClient:
             raise XsiamQueryError("XSIAM did not return a query id")
         return str(reply)
 
-    async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
+    async def get_query_results(self, query_id: str, *,
+                                limit: int = XQL_PAGE_LIMIT) -> dict[str, Any]:
         # Public (operator-supplied id): CortexSim cannot know the query was
         # started on this tenant, so a local refusal never claims it was.
         return await self._get_query_results(query_id, limit=limit, started=False)
@@ -475,7 +482,7 @@ class XsiamClient:
 
     async def run_xql(
         self, query: str, timeframe: dict[str, Any],
-        *, max_wait: float = 30.0, interval: float = 1.5, limit: int = 100,
+        *, max_wait: float = 30.0, interval: float = 1.5, limit: int = XQL_PAGE_LIMIT,
     ) -> dict[str, Any]:
         """Start a query and poll until SUCCESS or timeout.
 

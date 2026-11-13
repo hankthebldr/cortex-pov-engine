@@ -131,6 +131,9 @@ PENDING_CODES = frozenset({
     "PROBE_AUTH_FAILED",
     "PROBE_QUOTA_EXHAUSTED",
     "PROBE_QUERY_FAILED",
+    # A full page the reply does not confirm is the whole answer. A count read
+    # off a slice is not the tenant's count, in either direction.
+    "PROBE_RESULT_TRUNCATED",
     "PRECURSOR_MISSING",
     "POPULATION_EMPTY",
     "DRY_RUN",
@@ -165,6 +168,8 @@ REMEDIATION: dict[str, str] = {
         "XQL quota or concurrency exhausted. Wait for the tenant's query slots to free and re-run; this is not a capability failure.",
     "PROBE_QUERY_FAILED":
         "The query did not execute — usually an unknown dataset or a field name this tenant does not carry. Confirm the schema and correct the assertion's query.",
+    "PROBE_RESULT_TRUNCATED":
+        "The query returned a full page and the tenant did not confirm the total, so the count is unknown. Push the count into XQL (`| comp count()`, `| dedup <field>`) or narrow the query so the answer fits one page — this is not a capability failure.",
     "PRECURSOR_MISSING":
         "The trigger condition was never raised in the tenant, so the automation had nothing to act on. Fix the DETECTION first; this is not an automation failure.",
     "POPULATION_EMPTY":
@@ -1591,6 +1596,8 @@ def _classify_exception(exc: BaseException) -> str:
         return "PROBE_AUTH_FAILED"
     if name == "XsiamQuotaError":
         return "PROBE_QUOTA_EXHAUSTED"
+    if name == "XqlResultTruncated":
+        return "PROBE_RESULT_TRUNCATED"
     if name in ("XsiamQueryError", "XsiamConfigError"):
         return "PROBE_QUERY_FAILED"
     if isinstance(exc, AssertionRenderError):

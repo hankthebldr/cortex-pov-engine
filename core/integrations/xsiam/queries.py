@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .exceptions import XsiamQueryError
+from .exceptions import XqlResultTruncated, XsiamQueryError
 
 # ── CONTRIBUTION POINT (Henry) ──────────────────────────────────────────────
 # Finalize against your tenant's metrics schema; verify with the smoke test
@@ -53,6 +53,15 @@ def result_rows(reply: Any) -> list[dict[str, Any]]:
     customer's detection for CortexSim's bug. Raising lands on `pending` via the
     probe/verifier exception paths, which is the truth — we did not measure.
     """
+    return [r for r in _page(reply) if isinstance(r, dict)]
+
+
+def _page(reply: Any) -> list[Any]:
+    """The raw ``data`` array of a reply, before non-object entries are dropped.
+
+    Its length is what the API compared against ``limit``, so it is the length
+    :func:`complete_rows` must compare too.
+    """
     if not isinstance(reply, dict):
         raise XsiamQueryError(
             f"unrecognised XQL reply: expected an object, got {type(reply).__name__}"
@@ -75,7 +84,36 @@ def result_rows(reply: Any) -> list[dict[str, Any]]:
         raise XsiamQueryError(
             f"unrecognised XQL results.data: expected array, got {type(rows).__name__}"
         )
-    return [r for r in rows if isinstance(r, dict)]
+    return rows
+
+
+def complete_rows(reply: Any, *, limit: int) -> list[dict[str, Any]]:
+    """The rows of a reply that is provably the whole answer, for measuring.
+
+    A page fetched at ``limit`` that comes back shorter than ``limit`` is the
+    whole result set. A page that comes back full may be the first slice of a
+    larger one: a row count, a distinct count or a ratio read off it measures
+    the page, not the tenant, so it raises :class:`XqlResultTruncated` and the
+    caller resolves ``pending``. The one exception is a reply whose
+    ``number_of_results`` says the set is exactly this page.
+
+    A ``number_of_results`` larger than the page is not taken as the count.
+    No tenant has confirmed what the field counts (PM-XQL-03), and scoring an
+    unconfirmed number is the same mistake as scoring a partial page.
+
+    A count pushed into XQL (``| comp count()``) comes back as one row and is
+    never affected.
+    """
+    page = _page(reply)                # raises on an envelope we do not know
+    if len(page) >= limit:
+        total = reply.get("number_of_results")
+        if isinstance(total, bool) or total != len(page):
+            raise XqlResultTruncated(
+                f"XQL returned {len(page)} row(s) at limit {limit} and "
+                f"number_of_results={total!r}; the page may hold only part of "
+                f"the answer, so it is not a measurement"
+            )
+    return [r for r in page if isinstance(r, dict)]
 
 
 def row_count(reply: Any) -> int:

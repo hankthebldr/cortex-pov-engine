@@ -716,3 +716,143 @@ def test_the_docs_diagnostic_table_lists_every_code_the_loader_can_emit(repo_roo
     documented = set(re.findall(r"`(A-\d{2})`", doc))
     emitted = set(_STRUCTURAL) | set(_STRICT_GATED) | {"A-23"}
     assert emitted - documented == set()
+
+
+# ---------------------------------------------------------------------------
+# Truncated pages — a count read off one page is not the tenant's count
+#
+# The production runner fetches one page of results. A page that comes back
+# exactly full may be the whole answer or the first slice of a larger one, and
+# nothing in the reply settles which until PM-XQL-03 confirms what
+# ``number_of_results`` means. These drive the PRODUCTION runner over a tenant
+# stand-in that pages the way the API does, through the real evaluator.
+# ---------------------------------------------------------------------------
+
+
+class _PagedTenant:
+    """An XSIAM client stand-in that honours ``limit`` the way the API does: a
+    query matching N rows returns its first min(N, limit) rows. ``report_total``
+    adds ``number_of_results`` = N, the field PM-XQL-03 asks about."""
+
+    def __init__(self, tables, *, report_total=False):
+        self.tables = tables            # query fragment -> every row the tenant holds
+        self.report_total = report_total
+
+    async def run_xql(self, query, timeframe, *, limit=100, **_kw):
+        rows = next(rows for frag, rows in self.tables.items() if frag in query)
+        reply = {"status": "SUCCESS", "results": {"data": rows[:limit]}}
+        if self.report_total:
+            reply["number_of_results"] = len(rows)
+        return reply
+
+
+def _sources(n):
+    """n rows spread over three datasets, so any page of 3+ rows shows all three."""
+    return [{"_dataset": f"src-{i % 3}", "i": i} for i in range(n)]
+
+
+def _tenant_runner(tables, **kw):
+    from engine.verifier import xsiam_rows_runner  # noqa: PLC0415
+
+    return xsiam_rows_runner(_PagedTenant(tables, **kw), {"relativeTime": 3_600_000})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("matched, report_total, verdict, code, measured", [
+    # A page one row short of the limit is provably the whole answer.
+    (99, False, "pass", "MEASURED", 3.0),
+    # A full page with no confirming total may hide rows: not a measurement.
+    (100, False, "pending", "PROBE_RESULT_TRUNCATED", None),
+    # The tenant says the set is exactly this page: the count is known.
+    (100, True, "pass", "MEASURED", 3.0),
+    # The tenant claims more rows than it sent. Until PM-XQL-03 confirms the
+    # field, a claimed total is not a count we may score.
+    (300, True, "pending", "PROBE_RESULT_TRUNCATED", None),
+])
+async def test_a_full_page_is_not_scored_as_the_tenants_count(
+        matched, report_total, verdict, code, measured):
+    from engine.assertions import run_assertion  # noqa: PLC0415
+
+    runner = _tenant_runner({"dataset in": _sources(matched)}, report_total=report_total)
+    out = await run_assertion(parse(), runner=runner, context={"nonce": "abc"},
+                              scoreable=True)
+    assert out.verdict == verdict
+    assert out.checks[0].outcome.code == code
+    assert out.checks[0].outcome.measured_value == measured
+    if verdict == "pending":
+        assert out.reason == "probe_result_truncated"
+
+
+def _ratio_spec():
+    return parse(checks=[{
+        "check_id": "chk-01",
+        "title": "Alerts auto-dispositioned",
+        "probe": "xql_ratio",
+        "primary": True,
+        "params": {
+            "numerator_query": 'dataset = alerts | filter disposition = "auto" '
+                               '| filter x contains "{{nonce}}"',
+            "population_query": 'dataset = alerts | filter x contains "{{nonce}}"',
+            "min_population": 10,
+        },
+        "threshold": {"kpi": "auto-disposition rate", "op": ">=", "value": 90,
+                      "unit": "%", "source": "authored_sharpening",
+                      "rationale": "the platform's own disposition is countable"},
+        "negative_control": {"description": "half the alerts auto-dispositioned",
+                             "measured_value": 50},
+    }])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("population, numerator, verdict, measured", [
+    # 150 of 300 is 50%. Read off two 100-row pages it was "100 of 100 = 100%",
+    # a PASS against a 90% bar for a platform that dispositioned half.
+    (300, 150, "pending", None),
+    # Under the limit the ratio still measures, and can still go red.
+    (60, 30, "fail", 50.0),
+])
+async def test_a_ratio_over_truncated_pages_is_pending_not_a_false_pass(
+        population, numerator, verdict, measured):
+    from engine.assertions import run_assertion  # noqa: PLC0415
+
+    runner = _tenant_runner({
+        "disposition": [{"i": i} for i in range(numerator)],
+        "dataset = alerts": [{"i": i} for i in range(population)],
+    })
+    out = await run_assertion(_ratio_spec(), runner=runner, context={"nonce": "abc"},
+                              scoreable=True)
+    assert out.verdict == verdict
+    assert out.checks[0].outcome.measured_value == measured
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_outcome_page_is_pending_not_outcome_absent():
+    """OUTCOME_ABSENT is a hard fail. A page of 100 stale outcome records says
+    nothing about the 101st, which here is the containment that followed the
+    trigger — failing it would be false red on a loop that closed."""
+    from engine.assertions import run_assertion  # noqa: PLC0415
+
+    trigger = 1_700_000_000
+    stale = [{"contained_ts": trigger - 1_000 - i} for i in range(100)]
+    runner = _tenant_runner({
+        "dataset = alerts": [{"alert_ts": trigger}],
+        "dataset = actions": stale + [{"contained_ts": trigger + 120}],
+    })
+    spec = parse(kind="outcome", settle={"expect_by_seconds": 300,
+                                         "max_wait_seconds": 600},
+                 checks=[{
+        "check_id": "chk-01",
+        "title": "Contained inside the budget",
+        "probe": "xql_latency",
+        "primary": True,
+        "params": {"precursor_query": 'dataset = alerts | filter x contains "{{nonce}}"',
+                   "outcome_query": 'dataset = actions | filter x contains "{{nonce}}"',
+                   "precursor_ts_field": "alert_ts", "outcome_ts_field": "contained_ts"},
+        "threshold": {"kpi": "time to contain", "op": "<=", "value": 300, "unit": "s",
+                      "source": "authored_sharpening", "rationale": "the SLA is in seconds"},
+        "negative_control": {"description": "contained at 412 s", "measured_value": 412},
+    }])
+    out = await run_assertion(spec, runner=runner, context={"nonce": "abc"},
+                              scoreable=True)
+    assert out.verdict == "pending"
+    assert out.checks[0].outcome.code == "PROBE_RESULT_TRUNCATED"

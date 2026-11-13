@@ -1019,6 +1019,25 @@ escape every string behind it.
 - **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
   Broker VM targets, which wait on confirmation of the applets in use.
 
+### Fixed — assertion probes no longer measure a page the API may have truncated
+
+- **A full page of XQL results was scored as the tenant's whole answer.** The
+  assertion runner fetches one page at a limit of 100 rows, and every probe
+  counts, dedups, divides or takes the earliest of what comes back. With 300
+  alerts in the population and 150 in the numerator, `xql_ratio` read
+  "100 of 100 = 100 %", a pass against a 90 % bar. `xql_rows` and
+  `xql_distinct` could never clear a bar above what one page shows, and
+  `xql_latency` could report `OUTCOME_ABSENT` (a hard fail) when the outcome
+  that followed the trigger sat past row 100. A page that comes back full now
+  resolves `PROBE_RESULT_TRUNCATED` → `pending`, unless the reply's
+  `number_of_results` equals the page. A larger `number_of_results` is not
+  taken as the count while PM-XQL-03 asks what the field counts. A count
+  pushed into XQL (`| comp count()`) is one row and is unaffected. Scenario
+  Tier-2 verification (`xsiam_query_runner`) is unchanged. Guard: the
+  truncated-page cases in `tests/engine/test_assertions.py`, which drive the
+  production runner over a tenant stand-in that pages like the API; 4 of 7
+  failed before the change.
+
 ### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
 
 - **The tab drew its board before the scenario request came back.** The
