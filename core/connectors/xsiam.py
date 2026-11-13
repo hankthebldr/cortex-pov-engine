@@ -566,8 +566,10 @@ class XsiamConnector(Connector):
 
         Exactly one request (the tenant returns at most 100 records), in the
         lowercase ``reply.endpoints`` / ``total_count`` / ``result_count``
-        envelope; ``truncated`` is ``total_count > returned``. Raw endpoint
-        records land on ``.observations``. No hostnames, no request.
+        envelope; ``truncated`` is ``total_count > returned``, and null (unknown,
+        never False) when the tenant sent no ``total_count`` and the page came
+        back full. Raw endpoint records land on ``.observations``. No
+        hostnames, no request.
         """
         conf = cfg.config or {}
         path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
@@ -581,9 +583,15 @@ class XsiamConnector(Connector):
         def body(search_from: int, page_size: int) -> dict:
             return endpoint_get_body(names, search_from=0, search_to=page_size)
 
-        return self._harvest(cfg, path, since=None, until=None,
-                             filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
-                             normalize=_raw_row, kind="endpoints", request_for=body)
+        res = self._harvest(cfg, path, since=None, until=None,
+                            filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
+                            normalize=_raw_row, kind="endpoints", request_for=body)
+        if (res.ok and res.detail.get("total_count") is None
+                and not res.detail.get("total_count_capped")
+                and res.detail.get("returned", 0) >= res.detail.get("page_size", self._PAGE_SIZE_MAX)):
+            # A full page with no count: records may have been left behind.
+            res.detail["truncated"] = None
+        return res
 
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:
@@ -684,6 +692,15 @@ class XsiamConnector(Connector):
             raise ConnectorError(
                 f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
                 f"{type(doc).__name__}. Refusing to read it as zero alerts."
+            )
+        if strict and "reply" not in doc:
+            # The issue/case envelope is `{"reply": {"DATA": ...}}`. A bare
+            # document is some other envelope (a proxy, a changed contract);
+            # reading it as these rows is a guess.
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no 'reply' wrapper "
+                f"(keys: {sorted(str(k) for k in doc)[:20]}). This is NOT an absence "
+                f"of rows — no observation was made."
             )
         reply = doc.get("reply", doc)
         if not isinstance(reply, dict):

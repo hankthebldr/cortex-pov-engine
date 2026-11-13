@@ -121,10 +121,10 @@ def test_recorded_issue_fixture_parses_strictly():
 
 def test_tenant_wide_total_count_is_not_read_as_truncation():
     """TOTAL_COUNT counts the whole tenant; only FILTER_COUNT speaks for the window."""
-    tenant = FakeTenant(issues=[_issue(i) for i in range(3)], tenant_total=37023)
+    tenant = FakeTenant(issues=[_issue(i) for i in range(3)], tenant_total=91234)
     res = _conn(tenant).search_issues(CFG, body_for=_window_body, max_pages=5)
     assert res.ok and len(res.observations) == 3
-    assert res.detail["total_count"] == 37023 and res.detail["truncated"] is False
+    assert res.detail["total_count"] == 91234 and res.detail["truncated"] is False
 
 
 def test_window_paging_stops_at_filter_count():
@@ -191,6 +191,52 @@ def test_get_endpoints_is_one_request_in_the_lowercase_envelope():
     assert tenant.calls["endpoints"] == [queries.endpoint_get_body(["target-01"])["request_data"]]
     assert [e["endpoint_id"] for e in res.observations] == ["synthetic-endpoint-1"]
     assert res.detail["pages"] == 1 and res.detail["truncated"] is False
+
+
+def test_strict_reply_without_the_reply_wrapper_is_envelope_unrecognised():
+    """A bare ``{"DATA": ...}`` is not the documented envelope; reading it is a guess."""
+    bare = {"DATA": [_issue(1)], "TOTAL_COUNT": 1, "FILTER_COUNT": 1}
+    res = _conn(FakeTenant(replies={"issues": bare})).search_issues(CFG, body_for=_window_body)
+    assert res.ok is False and res.code == codes.XSIAM_PARSE_ERROR
+    assert "XSIAM_ENVELOPE_UNRECOGNISED" in res.error
+    assert res.observations == []
+
+
+def test_alert_read_without_the_reply_wrapper_is_unchanged():
+    """The non-strict alerts path keeps reading a bare document."""
+    from datetime import datetime
+
+    alert = {"alert_id": "a1", "detection_timestamp": 1762000000000, "name": "x"}
+
+    def fetcher(method, url, headers, body, timeout):
+        import json
+        return 200, json.dumps({"alerts": [alert], "total_count": 1})
+
+    res = XsiamConnector(fetcher=fetcher).pull(
+        CFG, since=datetime(2025, 11, 1), until=datetime(2025, 11, 2))
+    assert res.ok, res.error
+    assert [a.external_id for a in res.observations] == ["a1"]
+
+
+def _endpoint(i: int) -> dict:
+    return {"endpoint_id": f"e{i}", "endpoint_name": f"host-{i}"}
+
+
+def test_full_endpoint_page_without_counts_is_truncation_unknown():
+    """Without total_count a full page may have left records behind: null, never False."""
+    rows = [_endpoint(i) for i in range(100)]
+    tenant = FakeTenant(replies={"endpoints": {"reply": {"endpoints": rows}}})
+    res = _conn(tenant).get_endpoints(CFG, [f"host-{i}" for i in range(100)])
+    assert res.ok, res.error
+    assert res.detail["total_count"] is None
+    assert res.detail["truncated"] is None
+
+
+def test_short_endpoint_page_without_counts_is_complete():
+    tenant = FakeTenant(replies={"endpoints": {"reply": {"endpoints": [_endpoint(1)]}}})
+    res = _conn(tenant).get_endpoints(CFG, ["host-1"])
+    assert res.ok, res.error
+    assert res.detail["truncated"] is False
 
 
 def test_endpoint_body_shape():
