@@ -164,27 +164,32 @@ test('a step card that grows after the fit still leaves the rule clear of + Add 
   }, { message: 'the canvas must refit when the rule is pushed down', timeout: 8_000 }).toBe(true)
 })
 
-test('the canvas refits when the readiness strip lands after the fit at 1024x768', async ({ page }) => {
-  // The readiness strip ("SIMCORE DEGRADED") sits above the Composer and
-  // appears only once /api/health answers. On a cold load it lands AFTER the
-  // canvas has fitted: the pane loses its height under a viewport fitted to the
-  // taller one, and "+ Add step" (pinned to the pane bottom) rises into the
-  // rule card. CI hit this intermittently. Hold /api/health until the canvas
-  // has fitted, then let it answer, so the order is the cold-load one every
-  // time.
-  let release: () => void = () => {}
-  const answered = new Promise<void>((resolve) => { release = resolve })
-  await page.route('**/api/health', async (route) => { await answered; await route.continue() })
-
-  await openComposer(page, 1024, 768)
+test('the canvas refits when its pane shrinks after the fit', async ({ page }) => {
+  // Anything that takes height from the Composer after the canvas has fitted
+  // (a strip landing above it on a cold load, the window being resized) shrinks
+  // the pane under a viewport fitted to the taller one, and "+ Add step"
+  // (pinned to the pane bottom) rises into the rule card. CI hit this
+  // intermittently at 1024x768. Shrink the window after the fit so that order
+  // happens on every run. It starts at 900 rather than 768 because a stage of
+  // 380px or less moves "+ Add step" to the corner (the cmstage container
+  // query), and 1024x768 is only 10px above that.
+  await openComposer(page, 1024, 900)
   await expect.poll(async () => {
     const b = await boxes(page)
     return !!b.rule && !!b.stage && b.rule.bottom <= b.stage.bottom
   }, { timeout: 8_000 }).toBe(true)
-  await expect(page.getByTestId('readiness-banner'), 'the strip must not be there before the fit').toHaveCount(0)
+  // Let the canvas finish its own fits (the rule arrives after the first one
+  // and gets a refit of its own) before taking height away; a refit still in
+  // flight would run at the new size and hide the bug.
+  const transform = () => page.evaluate(
+    () => (document.querySelector('.react-flow__viewport') as HTMLElement | null)?.style.transform || '')
+  await expect.poll(async () => {
+    const before = await transform()
+    await page.waitForTimeout(600)
+    return before === await transform()
+  }, { message: 'the canvas must settle before the window shrinks', timeout: 8_000 }).toBe(true)
 
-  release()
-  await expect(page.getByTestId('readiness-banner')).toBeVisible()
+  await page.setViewportSize({ width: 1024, height: 840 })
   await expect.poll(async () => {
     const b = await boxes(page)
     return !!b.rule && !!b.addStep
