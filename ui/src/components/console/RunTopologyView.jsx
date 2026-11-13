@@ -17,6 +17,7 @@ import { getResultsForRun, getScenario } from '../../api/client.js'
 import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
 import { buildTopologyModel, toLaneStep } from './runTopology.js'
 import { isRunUnproven } from './runStatus.js'
+import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
 
 const EVIDENCE_SENTENCE =
   'Lanes are the signal paths read from each step’s command; status is the host’s record; tones are this SimCore’s Result rows. Authored is not proven.'
@@ -197,10 +198,13 @@ export default function RunTopologyView({
           <div className="run-topo__engine-verdict">
             <span className="run-topo__k">Run verdict</span>
             <span className={`chip run-topo__verdict-chip run-topo__verdict-chip--${verdictKey}`} data-testid="topo-verdict">{verdict}</span>
+            <VerdictReason detail={model.engine.tcVerdictDetail} testId="topo-verdict-reason" />
           </div>
-          {model.engine.tcVerdictDetail?.reason && (
-            <div className="run-topo__engine-detail mono">{String(model.engine.tcVerdictDetail.reason)}</div>
-          )}
+          <VerdictReasonSentence
+            detail={model.engine.tcVerdictDetail}
+            testId="topo-verdict-reason-sentence"
+            className="run-topo__engine-detail"
+          />
           <div className="run-topo__engine-count mono">
             {model.engine.empty ? 'no Correlation / Analytics / ABIOC row on this run' : `${model.engine.hits}/${model.engine.denominator} engine rows detected`}
           </div>

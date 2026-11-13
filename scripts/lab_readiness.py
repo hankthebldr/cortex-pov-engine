@@ -49,6 +49,11 @@ The "no-signal" step definition matches and extends the one documented in
 comment. All other clauses (cat, find, curl, python3, nmap, runuser, an EAL
 plugin invocation, ...) count as real signal.
 
+A `channel: eal` step is judged by its channel, not its command (a descriptive
+no-op): SimCore POSTs its records in-process at launch, so it counts as real
+signal, makes the scenario EAL-delivered, and is a launch consent gate (live
+only with consent, an authorized_by and a keyed collector target).
+
 USAGE
 -----
   python3 scripts/lab_readiness.py            # human summary to stdout
@@ -229,7 +234,9 @@ def classify(doc: dict, packs: dict) -> dict:
     for s in steps:
         cmd = s.get("command") or ""
         has_det = bool(s.get("expected_detections"))
-        produces = _step_produces_signal(cmd)
+        # A `channel: eal` step's records are POSTed by SimCore itself; its
+        # command is a descriptive no-op, so the command text says nothing.
+        produces = s.get("channel") == "eal" or _step_produces_signal(cmd)
         if produces:
             steps_real_signal += 1
         if has_det:
@@ -272,11 +279,17 @@ def classify(doc: dict, packs: dict) -> dict:
                 egress_tools.append(ref)  # installs from internet on target
 
     consent = doc.get("consent") or {}
-    consent_gated = bool(consent.get("simulation_authorized") or consent.get("c2_authorized")) or bool(c2_tools)
+    declared_consent = bool(consent.get("simulation_authorized") or consent.get("c2_authorized")) or bool(c2_tools)
+    # `channel: eal` steps run inside SimCore at launch and go live only with
+    # launch consent, an authorized_by and a keyed collector target for every
+    # eal step (orchestrator._dispatch_eal_in_process); otherwise they run dry
+    # and deliver nothing. That is a launch consent gate.
+    in_process_eal = any(s.get("channel") == "eal" for s in steps)
+    consent_gated = declared_consent or in_process_eal
 
     # is signal delivered off-command by an EAL plugin? (real network/log signal
     # even though the shell step may look thin)
-    eal_driven = any(
+    eal_driven = in_process_eal or any(
         "eal_simulator" in (s.get("command") or "") or "--live" in (s.get("command") or "")
         for s in steps
     )
@@ -296,8 +309,11 @@ def classify(doc: dict, packs: dict) -> dict:
         bits = []
         if needs_egress:
             bits.append("needs target egress for a tool (pre-stage or allow egress)")
-        if consent_gated:
+        if declared_consent:
             bits.append("launch consent required")
+        if in_process_eal:
+            bits.append("channel: eal steps POST from SimCore at launch: live only with launch "
+                        "consent, an authorized_by and a keyed collector target, otherwise dry-run")
         reason = "; ".join(bits)
     else:
         tier = "GREEN"

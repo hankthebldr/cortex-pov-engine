@@ -24,6 +24,9 @@
  *               'ran' or 'did_not_run'; a step absent from `states` reads Waiting.
  *   onSelect    (stepId) => void — a card becomes a button (e.g. a Broken step
  *               opens its troubleshooting sheet). Omit for a read-only stage.
+ *   canSelect   optional (stepId, state) => boolean — which live cards are
+ *               buttons. Without it every card is; with it, a card that would
+ *               do nothing stays a plain card (no button without an action).
  *   onOpenLane  (laneKey) => void — each lane header becomes a button that opens
  *               the component page behind it (ENDPOINT → Agents, …).
  *   cgo, plane  the trigger's label and the tint fallback (`draft.cgo`, `.plane`)
@@ -100,6 +103,7 @@ export default function ChainStage({
   states = {},
   selectedId = null,
   onSelect = null,
+  canSelect = null,
   onSelectRule = null,
   onOpenLane = null,
   zoom = 1,
@@ -247,6 +251,7 @@ export default function ChainStage({
               }
               const body = <StepCardBody card={c} mode={m} state={state} />
               const clickable = (m === 'editable' || m === 'live') && typeof onSelect === 'function'
+                && (m !== 'live' || typeof canSelect !== 'function' || canSelect(c.id, state))
               if (clickable || m === 'editable') {
                 const name = [c.id, c.step.name, state ? LIVE_STATES[state].word : null].filter(Boolean).join(' · ')
                 return (

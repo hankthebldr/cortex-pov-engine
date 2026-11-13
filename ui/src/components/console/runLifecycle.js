@@ -6,7 +6,8 @@
  * and the phase that decides what a DC can do with it:
  *
  *   running   it is executing (or queued for its agent)   → Open
- *   nothing   it ended before any step ran                → —
+ *   nothing   it ended before any step ran, or no step    → — (Run, on its page)
+ *             that carries a detection ran
  *   unread    it ended; the tenant has not been read      → Read back
  *   reading   a read back is in flight                    → "Reading…"
  *   ready     SimCore scored it from a tenant read        → Open results
@@ -30,6 +31,7 @@
  * back — the safe direction to be wrong in.
  */
 import { isRunComplete, isRunTerminal } from './runStatus.js'
+import { VERDICT_REASONS } from './verdictReason.js'
 
 export const STAGE_LABELS = Object.freeze(['Launched', 'Running', 'Finished', 'Read back', 'Results'])
 
@@ -39,6 +41,21 @@ export const PHASE = Object.freeze({
   UNREAD: 'unread',
   READING: 'reading',
   READY: 'ready',
+})
+
+/** Why a run in phase `nothing` has nothing to read back. */
+export const NOTHING = Object.freeze({
+  UNDELIVERED: 'undelivered',     // no step reached its agent
+  NOT_EXECUTED: 'not_executed',   // no step that carries a detection ran
+})
+
+/** What a DC is told about a run where no step that carries a detection ran. */
+export const NOT_EXECUTED_COPY = Object.freeze({
+  result: VERDICT_REASONS.not_executed.label,
+  title: 'no step that carries a detection ran — nothing to read back',
+  step: 'no detection step ran',
+  message: 'No step that carries a detection ran, so nothing was tested and there is nothing '
+    + 'to read back. Run the scenario again.',
 })
 
 /** What the run was read back from, or null when the tenant was never read for it. */
@@ -88,24 +105,43 @@ function ranNothing(run) {
   return !STEP_FRAME.test(text)
 }
 
+/**
+ * Why a settled run that was never read back has nothing to read back, or null.
+ *
+ * `not_executed` is SimCore's verdict reason for a run where no step that
+ * carries a detection ran (`verifier.score_run`, set at completion). Reconcile
+ * and verify skip rows the host says never ran, so reading the tenant cannot
+ * change that verdict; only a re-run can. `soak_pending` is different: a row
+ * that ran is soaking, and a read back after its window closes can score it.
+ */
+function nothingToReadBack(run) {
+  if (ranNothing(run)) return NOTHING.UNDELIVERED
+  const d = run.tc_verdict_detail
+  if (d && typeof d === 'object' && d.reason === NOTHING.NOT_EXECUTED) return NOTHING.NOT_EXECUTED
+  return null
+}
+
 const STATE_WORD = { done: 'done', current: 'now', failed: 'failed', todo: 'not yet' }
 
 /**
  * @param {Object} run          a run row (the summary shape is enough)
  * @param {{reading?: boolean}} [opts]  a read back is in flight for this run
  * @returns {{ phase: string, ended: string|null, readBack: Object|null,
+ *             nothing: string|null,
  *             stages: Array<{label: string, state: string, word: string}> }}
+ *   `nothing` is a NOTHING value in phase `nothing`, else null.
  */
 export function runLifecycle(run, { reading = false } = {}) {
   const status = String(run?.status || '').toLowerCase()
   const ended = endedLabel(status)
   const settled = isRunTerminal(status) || status === 'staged'
   const readBack = readBackOf(run)
+  const nothing = settled && !readBack ? nothingToReadBack(run || {}) : null
 
   let phase
   if (!settled) phase = PHASE.RUNNING
   else if (readBack) phase = PHASE.READY
-  else if (ranNothing(run || {})) phase = PHASE.NOTHING
+  else if (nothing) phase = PHASE.NOTHING
   else if (reading) phase = PHASE.READING
   else phase = PHASE.UNREAD
   // A read back of a run that was already read back shows as reading too.
@@ -129,5 +165,5 @@ export function runLifecycle(run, { reading = false } = {}) {
     return { label: name, state, word: STATE_WORD[state] }
   })
 
-  return { phase, ended, readBack, stages }
+  return { phase, ended, readBack, stages, nothing: phase === PHASE.NOTHING ? nothing : null }
 }

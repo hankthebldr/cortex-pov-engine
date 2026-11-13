@@ -9,7 +9,7 @@
  * back read nothing, its reason is stated here too.
  */
 import React from 'react'
-import { PHASE } from './runLifecycle.js'
+import { PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import { Button } from './kit/index.js'
 import '../../styles/destinations/run-lifecycle.css'
 
@@ -25,10 +25,11 @@ const COPY = {
 export default function ReadBackNotice({ lifecycle, outcome = null, onReadBack = () => {} }) {
   if (!lifecycle || lifecycle.phase === PHASE.READY) return null
   const why = outcome && !outcome.ok && lifecycle.phase === PHASE.UNREAD ? outcome.message : null
+  const text = lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.message : COPY[lifecycle.phase]
   return (
     <div className="readback-notice" data-testid="readback-notice" data-phase={lifecycle.phase}>
       <div className="readback-notice__text">
-        <p>{COPY[lifecycle.phase]}</p>
+        <p>{text}</p>
         {why && <p className="readback-notice__why" role="status">{why}</p>}
       </div>
       {lifecycle.phase === PHASE.UNREAD && (

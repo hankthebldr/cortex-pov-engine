@@ -85,6 +85,17 @@ describe('Results › Result of', () => {
     expect(screen.queryByText(/coverage/i)).toBeNull()
   })
 
+  it('a run where nothing executed says why and offers no Read back', async () => {
+    const NOT_EXECUTED = {
+      ...UNREAD, run_id: 'run-dry-4', tc_verdict: 'pending',
+      tc_verdict_detail: { source: 'complete', reason: 'not_executed' },
+    }
+    mount({ runs: [NOT_EXECUTED, READ_NEWER], params: { run: 'run-dry-4' } })
+    await screen.findByRole('region', { name: /result of/i })
+    expect(screen.getByTestId('readback-notice')).toHaveTextContent(/no step that carries a detection ran/i)
+    expect(screen.queryByRole('button', { name: 'Read back' })).toBeNull()
+  })
+
   it('with runs but none read back, explains that and links to Runs', async () => {
     mount({ runs: [UNREAD] })
     expect(await screen.findByText(/must be read back/i)).toBeInTheDocument()

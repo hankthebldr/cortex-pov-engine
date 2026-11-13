@@ -66,6 +66,25 @@ describe('RunTechniquesView', () => {
     expect(screen.getByTestId('technique-totals')).toHaveTextContent('tenant-verified: 0')
   })
 
+  it('a pending run where nothing executed says so beside the verdict, with what to do', async () => {
+    const neverRan = RESULTS.results.map((r) => ({ ...r, outcome: 'not_executed', outcome_reason: 'TOOL_ABSENT', observed: false }))
+    routes('complete', { 'GET /api/results/r1': { results: neverRan, total: neverRan.length } })
+    const run = { run_id: 'r1', status: 'complete', tc_verdict: 'pending',
+      tc_verdict_detail: { reason: 'not_executed', detail: 'nothing scored' } }
+    render(<RunTechniquesView runId="r1" run={run} />)
+    await waitFor(() => expect(screen.getByTestId('technique-verdict')).toHaveTextContent('pending'))
+    const reason = screen.getByTestId('technique-verdict-reason')
+    expect(reason).toHaveAttribute('data-reason', 'not_executed')
+    expect(reason).toHaveTextContent('nothing executed')
+    expect(reason.className).toContain('verdict-reason--warn')
+    expect(screen.getByTestId('technique-verdict-reason-sentence')).toHaveTextContent(/re-run/i)
+    expect(reason.parentElement).not.toHaveTextContent('not_executed')
+    // `not_executed` rows are not "not reached" (that is an upstream sever):
+    // the count names what both excluded outcomes share.
+    expect(screen.getByTestId('technique-totals')).toHaveTextContent('3 never ran')
+    expect(screen.getByTestId('run-techniques')).not.toHaveTextContent('not reached')
+  })
+
   it('on a FAILED run no technique and no stage reads miss, and the page says why', async () => {
     routes()
     render(<RunTechniquesView runId="r1" run={{ run_id: 'r1', status: 'failed' }} />)

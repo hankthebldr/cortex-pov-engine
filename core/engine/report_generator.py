@@ -337,6 +337,22 @@ _VERDICT_LABEL = {
     "not_applicable": "NOT SCOREABLE — the test case carries no measurable threshold",
 }
 
+#: A ``pending`` verdict whose ``tc_verdict_detail.reason`` says no row reached
+#: the scoring denominator. Verifying again will not move these: the first needs
+#: a re-run, the second needs its soak window to close.
+_PENDING_REASON_LABEL = {
+    "not_executed": "PENDING — nothing executed; the test case is still owed",
+    "soak_pending": "PENDING — detectors are still soaking",
+}
+
+
+def verdict_label(verdict: str, detail: Any = None) -> str:
+    """The one report label for a test-case verdict, reason-aware for ``pending``."""
+    reason = detail.get("reason") if isinstance(detail, dict) else None
+    if verdict == "pending" and reason in _PENDING_REASON_LABEL:
+        return _PENDING_REASON_LABEL[reason]
+    return _VERDICT_LABEL.get(verdict, verdict)
+
 
 def _measurement_lines(run_dict: dict[str, Any], s: dict[str, Any]) -> list[str]:
     """Render the measurement contract: which test case this run was scored
@@ -364,7 +380,7 @@ def _measurement_lines(run_dict: dict[str, Any], s: dict[str, Any]) -> list[str]
 
     verdict = run_dict.get("tc_verdict")
     if verdict:
-        label = _VERDICT_LABEL.get(verdict, verdict)
+        label = verdict_label(verdict, run_dict.get("tc_verdict_detail"))
         detail = (run_dict.get("tc_verdict_detail") or {}).get("detail")
         out.append(f"- **Test-case verdict:** **{label}**"
                    + (f" — {detail}." if detail else "."))

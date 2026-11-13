@@ -438,6 +438,27 @@ describe('UcTcIndexView', () => {
     expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'r-42', tab: 'evidence' })
   })
 
+  it('splits pending runs where nothing executed out of the run rollup', async () => {
+    happyRoutes({
+      'GET /api/uctc/test-cases/:id': {
+        ...detailEdr03,
+        runs: {
+          total: 3,
+          verdicts: { pass: 1, fail: 0, pending: 2, not_applicable: 0 },
+          pending_reasons: { not_executed: 1 },
+          latest: { run_id: 'r-43', scenario_id: 'SIM-EDR-001', status: 'complete',
+            tc_verdict: 'pending', reason: 'not_executed', started_at: '2026-07-31T10:00:00Z' },
+        },
+      },
+    })
+    render(<Harness initialParams={{ tc: 'TC-EDR-03' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-detail')).toHaveTextContent('3 runs'))
+    const reason = screen.getByTestId('uctc-pending-reason-not_executed')
+    expect(reason).toHaveTextContent('1 nothing executed')
+    expect(reason.className).toContain('verdict-reason--warn')
+    expect(screen.getByTestId('uctc-open-run')).toHaveTextContent('nothing executed')
+  })
+
   it('deep-links straight to a test case via params.tc', async () => {
     happyRoutes()
     render(<Harness initialParams={{ tc: 'TC-EDR-03' }} />)

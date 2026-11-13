@@ -182,3 +182,84 @@ describe('Run detail — the chain, live (ChainStage)', () => {
     expect(onNavigate).toHaveBeenCalledWith('component-agents', undefined)
   })
 })
+
+describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
+  const SCENARIO = {
+    scenario_id: 'SIM-EDR-001',
+    name: 'Credential dumping',
+    plane: 'EDR',
+    steps: [
+      { id: 'step-01', name: 'Read the shadow file', command: 'cat /etc/shadow', mitre_technique: 'T1003' },
+      { id: 'step-02', name: 'Dump the process', command: 'gcore 1', mitre_technique: 'T1003.007' },
+    ],
+  }
+  // step-02 was killed by a signal POVengine did not send, and the read back
+  // found nothing for it: Broken.
+  const OUTCOMES = [
+    { step_id: 'step-01', termination: 'exited', rc: 0 },
+    { step_id: 'step-02', termination: 'signaled', rc: 137, signal: 9 },
+  ]
+  const read = { ...base, detected_count: 1, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }
+
+  function mountBroken(run, props = {}) {
+    installRoutes({
+      'GET /api/runs/:id': { ...run, output: '', step_outcomes: OUTCOMES },
+      'GET /api/scenarios/:id': SCENARIO,
+      'GET /api/results/:id': { results: [
+        { id: 1, step_id: 'step-01', outcome: 'detected' },
+        { id: 2, step_id: 'step-02', outcome: 'missed' },
+      ] },
+    })
+    return render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
+        <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
+      </EnvironmentContext.Provider>,
+    )
+  }
+
+  it('only the Broken card is a button; it opens the causes in the order to check', async () => {
+    mountBroken(read)
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'broken'))
+    // A card with nowhere to go is not a button.
+    expect(screen.getByTestId('stage-card-step-01').tagName).toBe('DIV')
+    fireEvent.click(screen.getByRole('button', { name: /step-02 · Dump the process · Broken/ }))
+
+    const sheet = screen.getByRole('dialog', { name: /step-02/ })
+    // The host's record the causes were read from.
+    expect(sheet).toHaveTextContent('exit code137')
+    expect(sheet).toHaveTextContent('signal9')
+    const causes = within(sheet).getAllByRole('button').filter((b) => b.dataset.cause)
+    expect(causes.map((b) => b.dataset.cause)).toEqual(['killed', 'output'])
+    expect(causes[0]).toHaveTextContent('Something other than POVengine killed the step (signal 9)')
+    expect(causes[0]).toHaveTextContent('Results ›')
+    // Focus lands on the first cause.
+    expect(causes[0]).toHaveFocus()
+  })
+
+  it('a cause opens the place that fixes it and closes the sheet', async () => {
+    const onNavigate = vi.fn()
+    mountBroken(read, { onNavigate })
+    fireEvent.click(await screen.findByRole('button', { name: /step-02 · Dump the process · Broken/ }))
+    const sheet = screen.getByRole('dialog', { name: /step-02/ })
+    fireEvent.click(within(sheet).getByRole('button', { name: /Read what the step printed/ }))
+    expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'run-1', tab: 'live' })
+    expect(screen.queryByRole('dialog', { name: /step-02/ })).toBeNull()
+  })
+
+  it('Escape closes the sheet and returns focus to the card', async () => {
+    mountBroken(read)
+    const card = await screen.findByRole('button', { name: /step-02 · Dump the process · Broken/ })
+    card.focus()
+    fireEvent.click(card)
+    expect(screen.getByRole('dialog', { name: /step-02/ })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: /step-02/ })).toBeNull()
+    expect(card).toHaveFocus()
+  })
+
+  it('before the read back no card is a button: nothing can be Broken yet', async () => {
+    mountBroken(base)
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'ran'))
+    expect(screen.getByTestId('stage-card-step-02').tagName).toBe('DIV')
+  })
+})
