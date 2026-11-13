@@ -38,7 +38,7 @@ as closed paths in this pass unless a source is added.
 | 3 | Service-account identities | **ready** (§3.2 run 22:28Z on Henry's OK) | After: run `7bdd3f09` (22:28:36Z) shows all 12 with `/bin/bash`, a home dir (`nobody` keeps `/nonexistent`, as Tier-D) and `runuser=RUNUSER_OK`; uids 1001–1010. Before (run `1ac4cc89`): `www-data` and `nobody` had `/usr/sbin/nologin` ("This account is currently not available"); `svc-backup`, `node`, `postgres`, `mysql`, `python3`, `app`, `developer`, `runner`, `vertex-agent`, `user` were **ABSENT**. Corpus on dev: ~273 POSIX steps in 78 scenarios run as one of these (text heuristic: `www-data` 116, `svc-backup` 112, `runner` 14, `node` 11, `developer` 9, `app` 6, `vertex-agent` 4, `nobody` 1) | None |
 | 4 | VM free of CortexSim leftovers | **ready** (§3.1 run 22:28Z on Henry's OK) | After: run `7bdd3f09` lists no leftovers (only the beacon's `/opt/cortexsim` cache and the empty `/home/henry/.cortexsim`), no `cortexsim_testuser`, `/etc/cron.d` = `e2scrub_all`, `sysstat`; no decoy unit; archive in `/var/backups/cortexsim/20261113-lab-targets/`. Cron stopped: last `CORTEXSIM-PERSISTENCE` process event in `xdr_data` at 22:28:01Z; at 22:30:11Z no proof file and 0 cron journal lines naming cortexsim since 22:28:20 (22:29 and 22:30 ticks). Before (runs `1ac4cc89` + `4ac6543f`): live root cron `/etc/cron.d/cortexsim-sim` (SIM-CDR-003, written 2026-11-11 18:40Z) appends to `/tmp/cortexsim_escape_proof.txt` every minute, 3,090 lines so far. In `xdr_data` that is 1,436 `sh` process events in 24 h. Also user `cortexsim_testuser` (uid 1001, in group `sudo`), SIM-EDR-003 files in `/tmp` incl. `/tmp/.cortexsim_ssh_test/id_ed25519`, `/var/tmp/.cortexsim-akira` (SIM-EDR-025, 52 files), `/var/tmp/.cortexsim-ice` (SIM-EDR-023), `/etc/systemd/system/cortexsim-decoy.service` (disabled, inactive) | Re-run probe 1 between scenarios that persist artefacts (§3.1) |
 | 5 | XDR Collector on `pov-target-01` | **blocked on Henry** (support decision + console) | No collector units on the VM, no `/etc/panw/collector.conf`. `metrics_view` over 7 d: no row with an XDR Collector or `_collector_hostname`. Vendor support list, read today: Ubuntu Server up to 22, the VM is 24.04.5. Tarball sha256 `2fc62451…29a5a` matches the plan | §4 |
-| 6 | Broker VM `bvm-01` on ms-01 | **not started** (needs Henry's OK to create the VM) | ms-01: 16 threads, 62 GiB RAM (55 GiB available), libvirt runs only `pov-target-01`. Image `deathstar-bvm-image.qcow2` sha256 `9d87bf8a…cbd71`, qcow2 v3, virtual size 480 GiB | §5 |
+| 6 | Broker VM `bvm-01` on ms-01 | **blocked on Henry** (pairing, §5.3) | Created 22:47Z on Henry's "Yes, create it". `virsh list`: `bvm-01 running`, autostart on, disk `/mnt/data0/libvirt/bvm-01.qcow2` (sha256 `9d87bf8a…cbd71` verified on ms-01), NIC e1000 `52:54:00:cb:01:01`. Lease 192.168.122.10 (reserved). `https://192.168.122.10:4443/` → 200 from ms-01 and via the Mac tunnel. Not yet registered with the tenant | §5.3 |
 | 6a | Applet: Syslog Collector | **not started** | No broker of ours in the tenant. The only broker in `metrics_view` is `5X7S0G08` at 10.60.0.3 (§7) | §5.4 |
 | 6b | Applet: Windows Event Collector | **not started; no source** | The lab has no Windows Server 2012 R2+ forwarder | §5.5 |
 | 6c | Applet: Files and Folders Collector | **not started; no source** | No SMB or NFS share exists in the lab | §5.5 |
@@ -209,7 +209,11 @@ from the VM's real address and nothing listens on the LAN. Two consequences: the
 except through an SSH tunnel, and a LAN or Windows source cannot reach it either. Change this only if §5.5 adds a
 LAN source.
 
-#### 5.2 Deploy (Claude can run all of this from the Mac after Henry's OK; no sudo)
+#### 5.2 Deploy (done 2026-11-13 22:31–22:48Z from the Mac, no sudo)
+
+The image copy took 15 min (about 10 MB/s Mac → ms-01). The network config before the reservations is saved at
+`/tmp/libvirt-default-net-before-20261113.xml` on ms-01. virt-install with `--osinfo generic` picked an IDE disk and an
+e1000 NIC, the same defaults as the vendor's virt-manager wizard.
 
 ```bash
 # Stage and verify the image
@@ -235,7 +239,8 @@ ssh henry@192.168.1.110 'virt-install --connect qemu:///system --import --name b
    (Broker VM 19.x and later serve the console on 4443).
 2. Log in with the vendor's documented default and set a new password. Set NTP only if the defaults are unreachable.
 3. **Henry, now:** Settings › Configurations › Data Broker › Broker VMs › Add Broker › Generate Token. Paste it in the
-   bvm-01 console and register. The token expires after 24 hours, so do steps 1–3 in one sitting.
+   bvm-01 console and register. The token expires after 24 hours, so do steps 1–3 in one sitting. (Henry generated
+   one at 22:42Z. Tokens are typed by Henry, never by Claude.)
 4. In the tenant, rename the broker to `bvm-01`. The existing broker reports as `5X7S0G08`, so names are not
    set automatically.
 
