@@ -907,15 +907,22 @@ def parse_reply(doc: Any, list_key: str,
     # false negative in its most damaging form: it is the number that goes in
     # the report. Raise instead, so the caller degrades to pending.
     if isinstance(doc, dict):
-        err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
-        if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
-            raise ConnectorError(
-                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
-                f"200 response (err_code={err.get('err_code')}, "
-                f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
-                f"absence of alerts — no observation was made, so the run "
-                f"stays pending rather than being scored."
-            )
+        # An error object at the top level OR under `reply`: a document that
+        # carries both is not a success, whichever half holds the error.
+        inner = doc.get("reply") if isinstance(doc.get("reply"), dict) else None
+        for err in (inner, doc):
+            if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
+                # The tenant's text is neutralised and capped by the one
+                # formatter the catalog client uses; nothing else is echoed.
+                from integrations.xsiam.client import _app_error_text  # noqa: PLC0415
+
+                text, _quota = _app_error_text(err)
+                raise ConnectorError(
+                    f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                    f"200 response ({text}). This is NOT an "
+                    f"absence of alerts — no observation was made, so the run "
+                    f"stays pending rather than being scored."
+                )
     if not isinstance(doc, dict):
         raise ConnectorError(
             f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "

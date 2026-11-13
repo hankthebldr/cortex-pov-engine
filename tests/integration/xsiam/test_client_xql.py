@@ -112,3 +112,18 @@ async def test_start_xql_app_error_detail_is_bounded_and_never_the_whole_reply()
     with pytest.raises(XsiamQueryError) as exc:
         await client.start_xql_query("dataset=x", {"relativeTime": 1000})
     assert "secret-row" not in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_error_beside_a_reply_key_is_an_error_not_a_success():
+    """`{"err_code":..,"reply":{..}}`: the unwrap used to drop the top-level error
+    and hand back the inner reply as if the call had succeeded."""
+    from integrations.xsiam.client import XsiamClient
+    from integrations.xsiam.exceptions import XsiamQueryError
+
+    doc = {"err_code": "XQL_9", "err_msg": "denied", "reply": {"status": "SUCCESS"}}
+    client = XsiamClient(CFG, "key", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json=doc)))
+    with pytest.raises(XsiamQueryError) as exc:
+        await client.request("POST", "/public_api/v1/endpoints/get_endpoints", json={})
+    assert "XQL_9" in exc.value.detail
