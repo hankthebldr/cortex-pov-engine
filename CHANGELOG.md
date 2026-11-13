@@ -123,6 +123,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   "behaviour change you may veto" items under *Changed* below say exactly
   which routes.
 
+- **`/mcp` now needs `CORTEXSIM_MCP_TOKEN`.** If you run with
+  `CORTEXSIM_MCP_HTTP=true`, set `CORTEXSIM_MCP_TOKEN` (generate one with
+  `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) or `/mcp` is not
+  mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Clients send
+  `Authorization: Bearer <token>`. MCP `run.launch` / `run.abort` now refuse
+  unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`.
+- **Tenant reads are metered per tenant.** REST catalog reads now spend the
+  per-tenant request budget (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default
+  60) and can be refused with 429 `XSIAM_QUOTA_ERROR`. Raise the setting if a
+  workflow legitimately needs more.
+- **New table `tenant_evidence_reads`** is created at boot; no migration step.
+
 ### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
 
 - **A Broken card on a run's chain is now a button** that opens a sheet of
@@ -762,6 +774,92 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 - **A refused agent delete shows why (round 2).** See `AGENT_HAS_OPEN_RUNS`
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
+
+### Added — tenant evidence on request (in-container tenant reader, phase 1)
+
+- `POST /api/runs/{run_id}/tenant-evidence` reads the tenant once, on an
+  explicit operator action. It reads the run's issues (`issue/search`, Security
+  domain), their cases (`case/search`) and the run host's endpoint record
+  (`get_endpoint`), and stores the result as a snapshot in the new
+  `tenant_evidence_reads` table (created at boot). `GET` returns the latest
+  snapshot and makes **zero** outbound calls. Nothing polls the tenant.
+- Issues are attributed to the run only through the issue's own host
+  (`normalized_fields` XDM hostnames, any value in either field, compared with
+  the matcher's short-host rule). An issue with no host is never credited.
+- An id probe reads each matched alert back from `issue/search`. The snapshot
+  then reports agreement with the matcher in two classes, `id` and
+  `name_host_window`, counting distinct alerts. Two reads of one tenant
+  agreeing is not tenant verification, and the snapshot says so.
+- Read-only and display-only. The read never changes `Result` scoring, MTTD,
+  outcome or `tc_verdict`, and never marks a credential verified.
+- Counts that were not measured are `null`. A window cut by the request budget
+  or by truncation reads `complete: false`. Refusals by CortexSim's own budget
+  are worded as such, never as the tenant's.
+- Tenant-authored text is an allowlisted projection under `tenant_text`, with
+  controls and invisible or bidirectional characters stripped and each field
+  capped at 200 characters. Every reply carries `data_notice`.
+- Two tabs or a double click send one metered read. A minimum interval per
+  tenant (default 60 s) refuses a repeat unless `?force=true`.
+- Push-mode runs and runs with no executed step answer `NO_RUN_WINDOW` with no
+  call.
+- General per-tenant reads for the `xsiam_tenant` credential:
+  `POST /api/xsiam/tenants/{name}/issues/search`, `…/cases/search` and
+  `…/endpoints/get`. A reconcile-only `xsiam` credential answers `pending` /
+  `NO_TENANT_CONFIGURED`.
+- New settings: `CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES` (5),
+  `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS` (60) and
+  `CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS` (300).
+- Strict envelopes on these reads: a lowercase `data` issue reply, or a reply
+  with no `reply` wrapper, raises `XSIAM_PARSE_ERROR`
+  (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
+  issue read now raises on a lowercase `data` reply where it used to return
+  `{}`.
+
+### Changed — one per-tenant request budget; any 429 trips once
+
+- Every SimCore request to a tenant now spends one per-tenant request bucket
+  (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default 60). That covers catalog
+  REST reads, XQL starts and polls, healthcheck, the clock probe and every
+  measurement-loop connector page. **REST catalog reads were unmetered before**
+  and can now be refused with 429 `XSIAM_QUOTA_ERROR` and
+  `retry_after_seconds`. Reconcile answers 502 `CONNECTOR_PULL_FAILED` with
+  `detail.code` and `detail.refused_locally`.
+- Any tenant 429 opens the shared breaker exactly once. This includes the
+  connector path and the clock probe, which previously never tripped it.
+- A refusal by CortexSim's own budget is a local refusal. It never trips the
+  breaker, never counts as a query issued, never marks the credential
+  unverified, and never becomes a verify or reconcile attempt. A run therefore
+  cannot reach the attempt cap ("…without the detection appearing in the
+  tenant") through requests that never left. Preflights report such a refusal
+  as not probed (`PF_NOT_PROBED`, or `PF_RESPONSE_LAYER_UNREAD` for the response
+  layer), never as an unreachable tenant. Sweep summaries report
+  `refused_locally` separately from `quota_tripped`.
+
+### Security — `/mcp` requires a bearer token; host actions refuse by default
+
+- With `CORTEXSIM_MCP_HTTP` on, `/mcp` requires
+  `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, compared in constant time; a
+  missing or wrong token gets 401 `MCP_UNAUTHORIZED`. Without a token, `/mcp`
+  is not mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Compose passes
+  both variables through.
+- The token only admits a client to `/mcp`. It is not a tenant credential, and
+  `/api` stays unauthenticated. The MCP tenant tools hold no key: they reach the
+  tenant through SimCore's routes, using the integration credential from tenant
+  onboarding and the same per-tenant budget.
+- `/mcp` is bearer-only, not loopback-only. Under Docker Desktop a host-loopback
+  request reaches the container as the bridge gateway (`172.17.0.1`), so a
+  peer-address check cannot tell the host from anything Docker forwards.
+- MCP host actions (`cortexsim.run.launch`, `cortexsim.run.abort`) now refuse
+  with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
+  `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
+  HTTP.
+
+### Fixed — Results shows each result's alert id and source
+
+- `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
+  `observation_count`, using the first recorded observation per result. The
+  scorecard's Alert ID column had always shown `—`. It now shows the alert id,
+  with a new Source column beside it.
 
 ### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
 

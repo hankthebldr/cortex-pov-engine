@@ -596,6 +596,7 @@ from api.events import router as events_router          # noqa: E402
 from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
 from api.storyline import router as storyline_router    # noqa: E402
+from api.tenant_evidence import router as tenant_evidence_router  # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
@@ -643,6 +644,9 @@ app.include_router(runs_reconcile_router, prefix="/api")
 # Detection Proof Layer — per-run storyline snapshot (mounts a second router
 # under the /runs prefix, same pattern as runs_reconcile_router above).
 app.include_router(storyline_router, prefix="/api")
+# Run tenant evidence — an explicit, read-only tenant read for one run (POST)
+# and its stored snapshots (GET, no outbound call); same /runs-prefixed pattern.
+app.include_router(tenant_evidence_router, prefix="/api")
 # Causality-Graph — per-run typed DAG (endpoint+network), extends the storyline
 # spine; same /runs-prefixed second-router pattern.
 app.include_router(causality_router, prefix="/api")
