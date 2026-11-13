@@ -98,6 +98,7 @@ export default function CommandPalette({
           <input
             ref={inputRef}
             type="text"
+            aria-label="Search commands"
             placeholder={placeholder}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActiveIndex(0) }}
@@ -115,14 +116,16 @@ export default function CommandPalette({
             <div key={section}>
               <div className="cmd-section-label">{section}</div>
               {list.map((it) => {
-                runningIndex += 1
-                const isActive = runningIndex === activeIndex
+                // A const per row: the hover handler must capture THIS row's
+                // index, not the shared counter, which ends on the last row.
+                const rowIndex = ++runningIndex
+                const isActive = rowIndex === activeIndex
                 return (
                   <button
                     key={it.id || it.title}
                     type="button"
                     className={'cmd-result' + (isActive ? ' cmd-result--active' : '')}
-                    onMouseEnter={() => setActiveIndex(runningIndex)}
+                    onMouseEnter={() => setActiveIndex(rowIndex)}
                     onClick={() => {
                       if (it.onSelect) it.onSelect()
                       onClose()
