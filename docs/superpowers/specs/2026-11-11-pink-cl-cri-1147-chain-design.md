@@ -1,7 +1,10 @@
 # Pink (CL-CRI-1147) chain, testable on today's lab: design
 
 **Date:** 2026-11-11 · **Branch:** `docs/scenarios-pink-extortion-chain-spec` (from `dev` b1ee28f)
-**Status:** v2, approved by Henry 2026-11-11; build plan `docs/superpowers/plans/2026-11-11-pink-cl-cri-1147-chain.md`. Henry asked to skip the questions ("go
+**Status:** v2, approved by Henry 2026-11-11.
+- Build plan: `docs/superpowers/plans/2026-11-11-pink-cl-cri-1147-chain.md`.
+- Built and merged into `dev` 2026-11-13 (#230–#234, #266), as card `TTP-2026-0551` and scenario SIM-MP-038.
+- The §8 lab run (plan Task 9) is still open, so `tenant-verified` is 0. Henry asked to skip the questions ("go
 straight to the spec, prefer ones that we can test immediately e.g. have syslog/http
 event and agent / ngfw based scenarios"), so calls marked **[my call]** are mine and
 open to veto. Four decisions only Henry can make are in §12.

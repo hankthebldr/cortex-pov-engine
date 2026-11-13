@@ -16,14 +16,35 @@ The card, the dataset registration and the scenario land last, on one branch reb
 
 **Tech Stack:** Python 3.11, FastAPI, SQLAlchemy async (SQLite), pydantic v2, pytest. XQL lives in TTP card JSON. Scenario YAML follows `scenarios/_schema.yml`.
 
-**Status (2026-11-12):** Tasks 1–6 are built, task-reviewed and through a final whole-branch review with one fix wave. Their heads, all local and unpushed:
-- `fix/api-verify-run-window` f7fc715b
-- `feature/api-eal-live-in-process` b7f301d4
-- `fix/scenarios-s25-eal-params` b81cb093
-- `fix/scenarios-eal-step-not-marker-only` 4d118eaa
-- `feature/api-emitters-pink-shapes` 6e92513d
+**Status (2026-11-13): Tasks 1–8 merged into `dev`; Task 9 (the lab run) open.**
 
-Tasks 7–9 wait for those to merge into `dev`.
+| Task(s) | PR | Merge commit |
+|---|---|---|
+| 1 | #230 | — |
+| 2 | #231 | — |
+| 3 | #232 | — |
+| 4 | #233 | — |
+| 5–6 | #234 | — |
+| 7–8 | #266 | b3fd56dc |
+
+Each task had its own review, and each PR group got a final whole-branch review with one fix wave.
+
+What shipped differs from the text below in four places:
+- **Card id:** `TTP-2026-0551`, because `feature/detection-library-buildout` claims 0204–0549 and `dev` used 0550.
+- **Indicators:** 8 are in band; spec §3's "seven" miscounted.
+- **step-01:** a bare `sleep 40` sits between the `dig` lines (`docs/lab/2026-11-11-persistence-grouping-lab-run.md`).
+- **`target_user`:** it is the canary principal `cortexsim-mp-038-pink@cortexsim-canary.invalid`.
+
+The final reviews also fixed:
+- push-run verify, which falls back to the relative lookback;
+- the live gate rejecting steps whose params fail validation;
+- undelivered eal steps, which are now seeded `not_executed`;
+- CR-2's overlapping-run false fail;
+- CR-1's passkey filter.
+
+The scorer follow-up (#267–#269) makes a run where nothing ran score `pending`.
+
+Task 9 needs L-1, L-2, L-4, L-5, L-6 and `dig` on `pov-target-01`. `tenant-verified` is 0.
 
 **Spec:** `docs/superpowers/specs/2026-11-11-pink-cl-cri-1147-chain-design.md` (draft v2, approved 2026-11-11). Section references (§N) below point into it.
 
