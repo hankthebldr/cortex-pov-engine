@@ -5,15 +5,18 @@ import { test, expect } from './_fixtures'
  *
  * The hub and the component pages each style a class named `.cmp-row` (a grid
  * card on the hub, a flex row on a page). Stylesheets stay loaded once their
- * page has been visited, so opening the hub and then a component page drew
- * the page's rows with the hub's grid: the status word sat on top of the
- * title. jsdom loads no layout, so only a browser can see it.
+ * page has been visited, and the one loaded LAST won: after a component page,
+ * then the hub, going back to a component page drew its rows with the hub's
+ * grid, and the status word sat on top of the title. jsdom loads no layout,
+ * so only a browser can see it.
  */
 test('a component page row keeps its own layout after the Components hub was open', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/#/components')
+  // Page first, then the hub, then back: the hub's stylesheet loads last.
+  await page.goto('/#/component-pov')
+  await page.waitForSelector('.cmp-page .cmp-row')
+  await page.evaluate(() => { window.location.hash = '#/components' })
   await page.waitForSelector('.cmp-hub .cmp-row')
-  // In-app navigation: both stylesheets are now loaded.
   await page.evaluate(() => { window.location.hash = '#/component-pov' })
   await page.waitForSelector('.cmp-page .cmp-row')
 
