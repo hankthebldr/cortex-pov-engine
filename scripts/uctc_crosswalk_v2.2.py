@@ -193,6 +193,12 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "DynamoDB NoSQL table scan and exfiltration via an over-permissioned IAM role — "
         "same TC-DSPM-04 binding as SIM-CDR-027, a second data-store shape (NoSQL vs. "
         "relational) proving the same DDR claim, not new index coverage."),
+    "SIM-CDR-030": (["TC-CITH-04"], REMAP,
+        "Cloud log tampering and the victim-side leg of a log-bucket hijack, emitted as "
+        "audit records to an HTTP collector (two Unit 42 posts), authored only. "
+        "TC-CITH-04 is already evidenced by 13 scenarios, so this is a second record "
+        "shape, not index breadth; the row describes ML analytics while the scored rows "
+        "are XQL and one operator-installed correlation."),
 
     # ── NDR ────────────────────────────────────────────────────────────────
     # TC-NDR-03 is the EAL case specifically — these scenarios exist to prove

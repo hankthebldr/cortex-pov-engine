@@ -19,9 +19,11 @@ import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
 import useComponentStatus from './components/console/useComponentStatus.js'
 import { componentKeyForRoute } from './app/componentRoutes.js'
-import { downloadReportBundle, getToolAdapters } from './api/client.js'
+import { downloadReportBundle, getToolAdapters, getTtps } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
+import { instanceStatus } from './components/console/instanceStatus.js'
+import { buildSearchItems, componentDestination } from './components/console/searchIndex.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -145,44 +147,95 @@ function ConsoleShell() {
     [badges, componentStatus.statuses],
   )
 
-  // ── Command palette items (destinations + context switches + scenario jumps) ─
+  // ── Header: this instance's status, uptime and live KPIs (v26 §4.5) ───────
+  const instance = useMemo(() => instanceStatus({
+    healthModel: env.healthModel,
+    runs: env.runs,
+    agents: env.agents,
+    loading: env.loading,
+    errors: env.errors,
+  }), [env.healthModel, env.runs, env.agents, env.loading, env.errors])
+  // The instance status opens the POVengine component wherever the rail opens
+  // it: componentRoutes.js is the one table, read by the rail, the Components
+  // page, this header and ⌘K, so they move together. The Launch gate is only
+  // the fallback for a build that has no such page.
+  const instanceRoute = useMemo(
+    () => componentDestination('pov', isValidDestination) || { destination: 'preflight' },
+    [],
+  )
+  const instanceTargetLabel = getDestination(instanceRoute.destination)?.label || 'Launch gate'
+  const routerNavigate = router.navigate
+  const openInstance = useCallback(
+    () => routerNavigate(instanceRoute.destination, instanceRoute.params),
+    [routerNavigate, instanceRoute],
+  )
+
+  // TTP cards for ⌘K, fetched the first time search opens — never on load.
+  // A failed fetch leaves search without cards and tries again next time.
+  const [ttpCards, setTtpCards] = useState(null)
+  const ttpLoadRef = useRef(false)
+  const loadSearchCards = useCallback(() => {
+    if (ttpLoadRef.current || ttpCards) return
+    ttpLoadRef.current = true
+    getTtps()
+      .then((d) => setTtpCards(Array.isArray(d?.ttps) ? d.ttps : []))
+      .catch(() => {})
+      .finally(() => { ttpLoadRef.current = false })
+  }, [ttpCards])
+
+  // ── ⌘K: pages, components, scenarios, TTP cards, then actions ────────────
   const paletteItems = useMemo(() => {
-    const pinnedLaunch = env.pinnedIds
+    const found = buildSearchItems({
+      destinations: DESTINATIONS,
+      isValid: isValidDestination,
+      scenarios: env.scenarios,
+      ttps: ttpCards || [],
+      navigate: router.navigate,
+    })
+
+    const pinnedRuns = env.pinnedIds
       .map((pid) => {
         const s = env.scenarios.find((x) => (x.scenario_id || x.id) === pid)
         if (!s) return null
         return {
-          section: 'Pinned · launch',
-          id: `launch-${pid}`,
-          title: `Arm ${s.name || pid}`,
-          meta: `${pid} · ${s.plane || '?'}`,
-          icon: '◼',
+          id: `run-pinned-${pid}`,
+          title: `Run ${pid}${s.name ? ` · ${s.name}` : ''}`,
+          kind: 'Pinned',
+          icon: getDestination('preflight')?.icon || null,
           shortcut: ['⌘', 'L'],
           onSelect: () => router.navigate('guided', { arm: pid }),
         }
       })
       .filter(Boolean)
 
-    const scenarios = env.scenarios.map((s) => {
-      const id = s.scenario_id || s.id
-      return {
-        section: 'Scenarios',
-        id: `scn-${id}`,
-        title: s.name || '(unnamed)',
-        meta: `${id} · ${s.plane || '?'}${s.steps ? ' · ' + s.steps.length + ' steps' : ''}`,
-        icon: '▸',
-        onSelect: () => router.navigate('library', { open: id }),
-      }
-    })
+    const actions = [
+      {
+        id: 'stage-tool',
+        title: 'Stage a tool payload',
+        meta: 'pull a public tool onto this SimCore',
+        kind: 'Action',
+        icon: getDestination('adapters')?.icon || null,
+        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
+      },
+      {
+        id: 'global-export',
+        title: 'Export POV report',
+        meta: 'active or most recent run',
+        kind: 'Action',
+        icon: getDestination('proof')?.icon || null,
+        shortcut: ['⌘', 'E'],
+        onSelect: handleExportPOV,
+      },
+    ]
 
     const tenantSwitches = env.tenants.map((t) => {
       const id = t.name || t.id
       return {
-        section: 'Switch tenant',
         id: `tenant-${id}`,
         title: `Point at ${id}`,
         meta: t.config?.region || t.region || 'XSIAM tenant',
-        icon: '⬡',
+        kind: 'Tenant',
+        icon: getDestination('tenants')?.icon || null,
         onSelect: () => { env.setTenant(id); surfaceToast(`Tenant: ${id}`, 'success', 2000) },
       }
     })
@@ -190,64 +243,26 @@ function ConsoleShell() {
     const agentSwitches = env.agents.map((a) => {
       const id = agentIdOf(a)
       return {
-        section: 'Switch agent',
         id: `agent-${id}`,
         title: `Use ${a.hostname || id}`,
         meta: [a.os, a.status].filter(Boolean).join(' · ') || 'beacon',
-        icon: '◉',
+        kind: 'Agent',
+        icon: getDestination('agents')?.icon || null,
         onSelect: () => { env.setAgent(id); surfaceToast(`Agent: ${a.hostname || id}`, 'success', 2000) },
       }
     })
 
-    // Every page, rail or not — ⌘K is how an off-rail page stays one step away.
-    const destinationActions = DESTINATIONS
-      .filter((d) => d.id !== 'readiness' && !d.redirect)
-      .map((d) => ({
-        section: 'Go to',
-        id: `go-${d.id}`,
-        title: `Go to ${d.label}`,
-        meta: d.navParent ? getDestination(d.navParent)?.label : d.group,
-        icon: d.icon || 'apps-grid',
-        onSelect: () => router.navigate(d.id),
-      }))
-
-    const utility = [
-      {
-        section: 'Actions',
-        id: 'new-pov',
-        title: 'New POV run',
-        meta: 'guided target → launch flow',
-        icon: '▸',
-        onSelect: () => router.navigate('guided'),
-      },
-      {
-        section: 'Actions',
-        id: 'stage-tool',
-        title: 'Stage a tool payload',
-        meta: 'pull a public tool onto this SimCore',
-        icon: '⇩',
-        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
-      },
-      {
-        section: 'Actions',
-        id: 'global-export',
-        title: 'Export POV report',
-        meta: 'active or most recent run',
-        icon: '↗',
-        shortcut: ['⌘', 'E'],
-        onSelect: handleExportPOV,
-      },
-    ]
-
     return [
-      ...pinnedLaunch,
-      ...destinationActions,
-      ...scenarios,
-      ...tenantSwitches,
+      ...found.pages,
+      ...found.components,
+      ...pinnedRuns,
+      ...actions,
+      ...found.scenarios,
+      ...found.ttps,
       ...agentSwitches,
-      ...utility,
+      ...tenantSwitches,
     ]
-  }, [env, router, handleExportPOV, surfaceToast])
+  }, [env, router, handleExportPOV, surfaceToast, ttpCards])
 
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
@@ -279,7 +294,6 @@ function ConsoleShell() {
         onNavigate={router.navigate}
         navGroups={groups}
         activeRun={env.activeRun}
-        lastRun={env.lastRun}
         health={env.health}
         tenant={env.tenant}
         agent={env.agent}
@@ -294,6 +308,10 @@ function ConsoleShell() {
         onAbortRun={() => setAbortConfirmOpen(true)}
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
+        onPaletteOpen={loadSearchCards}
+        instance={instance}
+        onOpenInstance={openInstance}
+        instanceTargetLabel={instanceTargetLabel}
         // SimCore answered, but is not whole. The two deployments that break
         // hardest — booted without tools/ or without scenarios/ — both report
         // `status: "ok"`, so the first signal a DC gets today is an empty

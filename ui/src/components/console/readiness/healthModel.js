@@ -324,6 +324,8 @@ export function buildHealthModel(body, { error = null } = {}) {
       overall: HS.ERROR,
       version: null,
       commit: null,
+      uptimeSeconds: null,
+      startedAt: null,
       components: [],
       degraded: [],
       gaps: [],
@@ -398,6 +400,10 @@ export function buildHealthModel(body, { error = null } = {}) {
     overall,
     version: body.version || null,
     commit: body.commit || null,
+    // How long THIS SimCore process has been up, by its own clock. An older
+    // build does not send it, and then it is unknown — never a zero.
+    uptimeSeconds: Number.isFinite(body.uptime_seconds) && body.uptime_seconds >= 0 ? body.uptime_seconds : null,
+    startedAt: typeof body.started_at === 'string' ? body.started_at : null,
     components,
     degraded: degradedUnion,
     gaps,

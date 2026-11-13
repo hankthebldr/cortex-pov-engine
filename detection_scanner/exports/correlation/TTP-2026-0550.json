@@ -1,0 +1,20 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1562.008",
+    "T1485",
+    "T1565.001",
+    "T1537"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name EXACTLY as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; NO MITRE tag (a tagged issue would also be credited to this scenario's validation rows, because every row of a step shares the step's technique); proposed alert field mapping: principal_id -> User Name (untested). It reads the collector records only, so it needs the HTTP log collector created with Vendor cortexsim and Product cloud_audit. UNTESTED: this XQL has not been run in any tenant, and how a collector exposes these JSON keys to a query is unverified. Its alter, comp, then filter shape follows CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11 against endpoint data. It is built only from records SIM-CDR-030 emits and only from flat string keys the emitter writes on every record of these presets. It fires for one caller that performed at least four distinct log-tampering operations AND deleted the log store itself. Only step-08 writes those two bucket-delete operations, so the issue stands for the whole chain. SIM-CDR-030 gives the aws caller 7 of the listed operations and the gcp caller 8, so a floor of four tolerates lost records. Reads of a log object are left out on purpose: a read is not tampering. Expect one issue per provider identity, two per run of the rule, and again on every scheduled run while the records stay inside the time frame; alert suppression is the operator's choice. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = cortexsim_cloud_audit_raw\n| filter api_operation in (\"CreateTrail\", \"UpdateTrail\", \"StopLogging\", \"DeleteTrail\", \"PutObject\", \"DeleteObject\", \"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.CreateSink\", \"google.logging.v2.ConfigServiceV2.UpdateSink\", \"google.logging.v2.ConfigServiceV2.DeleteSink\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\", \"storage.objects.create\", \"storage.objects.delete\", \"storage.buckets.delete\")\n| alter chain_stage = if(api_operation in (\"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\"), \"log_store_deleted\", \"earlier_tampering\")\n| comp count_distinct(api_operation) as distinct_operations, count_distinct(chain_stage) as chain_stages, count() as records, min(_time) as first_seen, max(_time) as last_seen by principal_id, audit_provider\n| filter distinct_operations >= 4 and chain_stages = 2",
+      "name": "CDR-030 Watchmen Blinded Sabotage Sequence",
+      "rule_id": "CR-CDR-0030"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0550"
+}

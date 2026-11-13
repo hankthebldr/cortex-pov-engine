@@ -115,6 +115,31 @@ def code_for_status(status: int) -> str:
     return XSIAM_API_ERROR
 
 
+LOCAL_REFUSAL_REMEDIATION = (
+    "CortexSim's own per-tenant request budget refused this call before it was "
+    "sent to the tenant. This says nothing about the tenant. Nothing from this call "
+    "was measured, so affected verdicts stay `pending`; retry after the interval "
+    "given."
+)
+
+
+LOCAL_POLL_REFUSAL_REMEDIATION = (
+    "The XQL query WAS started on the tenant; CortexSim's own per-tenant request "
+    "budget refused fetching its results. This says nothing about the tenant, its "
+    "role or its datasets. Nothing was measured, so affected verdicts stay "
+    "`pending`; retry after the interval given."
+)
+
+
+LOCAL_DAILY_BUDGET_REMEDIATION = (
+    "CortexSim's own rolling-day XQL query budget for this tenant "
+    "(CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY) is spent, so this query was refused "
+    "before it was sent to the tenant. This says nothing about the tenant. Nothing "
+    "was measured, so affected verdicts stay `pending`; wait for the 24-hour window "
+    "to roll or raise the ceiling."
+)
+
+
 def remediation_for(code: Optional[str]) -> Optional[str]:
     """Remediation text for a code, or None when the code is unknown."""
     return REMEDIATION.get(code or "")

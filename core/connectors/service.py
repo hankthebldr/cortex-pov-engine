@@ -67,7 +67,7 @@ from engine.outcome import (
 )
 from events import event_bus
 from connectors.xsiam import IssueReadError
-from integrations.xsiam.codes import remediation_for
+from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION, remediation_for
 from integrations.xsiam.ledger import tenant_ledger_key
 from integrations.xsiam.tenant_url import normalize_tenant_base_url
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
@@ -243,11 +243,14 @@ async def reconcile_run(
         # which GET /api/credentials/integrations returns. The connector already
         # keeps the tenant's response BODY out of that string (log only); this is
         # the second half of that boundary.
-        await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
-        await db.commit()
+        local = bool((pull.detail or {}).get("refused_locally"))
+        if not local:  # our own budget refusing says nothing about the credential
+            await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
+            await db.commit()
         detail = dict(pull.detail or {})
         detail["code"] = pull.code
-        detail["remediation"] = remediation_for(pull.code)
+        detail["remediation"] = (LOCAL_REFUSAL_REMEDIATION if local
+                                 else remediation_for(pull.code))
         raise ReconcileError("CONNECTOR_PULL_FAILED", pull.error or "pull failed",
                              detail=detail)
 
@@ -294,7 +297,7 @@ async def reconcile_run(
             ctx["incidents_truncated"] = bool((ipull.detail or {}).get("truncated"))
         else:
             ctx["incidents_error"] = {"code": ipull.code, "error": ipull.error,
-                                      "remediation": remediation_for(ipull.code)}
+                                      "remediation": _remediation_for_pull(ipull)}
 
     # The case ledger is built BEFORE scoring so ctx["merge_class"] is there for
     # the one guard that reads it; it is disposition CONTEXT and writes nothing
@@ -631,7 +634,7 @@ async def build_and_store_case_ledger(
                                   f"the case read failed ({cpull.code}); no merge claim is made",
                                   skipped)
                 ledger["case_read"] = {"code": cpull.code,
-                                       "remediation": remediation_for(cpull.code)}
+                                       "remediation": _remediation_for_pull(cpull)}
                 return ledger
             try:
                 cases = cases_from_reply(cpull.incidents, case_ids)
@@ -649,7 +652,9 @@ async def build_and_store_case_ledger(
                 pages = _pages_issued(e.detail)
                 queries += pages
                 issue_read = {"ok": False, "code": e.code, "pages": pages,
-                              "remediation": remediation_for(e.code)}
+                              "remediation": (LOCAL_REFUSAL_REMEDIATION
+                                              if e.detail.get("refused_locally")
+                                              else remediation_for(e.code))}
             try:
                 ledger = build_case_ledger(
                     [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
@@ -723,6 +728,13 @@ async def _add_bridge(db: AsyncSession, run: Run, ledger: dict,
     ledger["bridge"] = diag
     ledger["merge_reason"] = f"{ledger['merge_reason']}; ip-to-host bridge: {diag['code']}"
     return spent
+
+
+def _remediation_for_pull(pull: Any) -> Optional[str]:
+    """The remediation for a failed pull; a local refusal never blames the tenant."""
+    if (pull.detail or {}).get("refused_locally"):
+        return LOCAL_REFUSAL_REMEDIATION
+    return remediation_for(pull.code)
 
 
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
@@ -846,7 +858,7 @@ async def refresh_case_ledger(
     pages = _pages_issued(cpull.detail)
     if not cpull.ok:
         detail = dict(cpull.detail or {})
-        detail.update({"code": cpull.code, "remediation": remediation_for(cpull.code),
+        detail.update({"code": cpull.code, "remediation": _remediation_for_pull(cpull),
                        "queries_issued": pages})
         raise ReconcileError("CONNECTOR_PULL_FAILED", cpull.error or "case read failed",
                              detail=detail)
@@ -946,8 +958,9 @@ async def refresh_case_ledgers_once(
     malformed ledger stays eligible so the refresh reports it. Eligible runs are ordered least-recently-read first, so a window larger than
     ``max_runs`` rotates instead of starving older runs. At most ``max_runs``
     are attempted per sweep; every tenant page is counted in ``queries_issued``;
-    a quota error (HTTP 429) stops the whole sweep. Returns
-    ``{"refreshed", "skipped", "queries_issued", "quota_tripped"}``.
+    a quota error (HTTP 429) stops the whole sweep, and so does a refusal by
+    CortexSim's own request budget, reported apart. Returns
+    ``{"refreshed", "skipped", "queries_issued", "quota_tripped", "refused_locally"}``.
     """
     if min_interval_minutes is None:
         min_interval_minutes = settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
@@ -970,6 +983,7 @@ async def refresh_case_ledgers_once(
     eligible.sort()
     refreshed = skipped = queries = 0
     tripped = False
+    refused_locally = False
     for _read_at, run_id in eligible[:max_runs]:
         try:
             run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
@@ -980,9 +994,14 @@ async def refresh_case_ledgers_once(
             detail = e.detail if isinstance(e.detail, dict) else {}
             queries += int(detail.get("queries_issued") or 0)
             if _is_quota_error(e):
-                tripped = True
-                logger.warning("case-ledger refresh: tenant reported quota exhaustion (%s) "
-                               "- sweep circuit-broken", e.code)
+                if detail.get("refused_locally"):
+                    refused_locally = True
+                    logger.warning("case-ledger refresh: CortexSim's own request budget "
+                                   "refused the read (%s) - sweep stopped", e.code)
+                else:
+                    tripped = True
+                    logger.warning("case-ledger refresh: tenant reported quota exhaustion "
+                                   "(%s) - sweep circuit-broken", e.code)
                 break
             logger.debug("case-ledger refresh skip run=%s: %s", run_id, e.code)
             continue
@@ -1000,7 +1019,8 @@ async def refresh_case_ledgers_once(
         else:
             skipped += 1
     return {"refreshed": refreshed, "skipped": skipped, "queries_issued": queries,
-            "quota_tripped": int(tripped)}
+            "quota_tripped": int(tripped),
+            "refused_locally": int(refused_locally)}
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -1787,7 +1807,11 @@ async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str,
 
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
-    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False}
+    # `tripped`: the tenant reported its quota. `refused_locally`: CortexSim's own
+    # request budget / breaker / daily ceiling refused; the tenant said nothing.
+    # `refusal`: what to tell the DC about that refusal (remediation, retry).
+    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False,
+            "refused_locally": False, "refusal": None}
 
 
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
@@ -1806,25 +1830,59 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
     as ``pending``. A budget CortexSim spent is not evidence about the customer.
     """
     from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
-    from integrations.xsiam.ledger import QuotaBreakerOpen  # noqa: PLC0415
+    from integrations.xsiam.ledger import (  # noqa: PLC0415
+        DailyBudgetExhausted, QuotaBreakerOpen,
+    )
 
     async def _run(query: str) -> int:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             raise _BudgetExhausted("verification query budget exhausted")
         budget["remaining"] -= 1
         budget["issued"] += 1
         try:
             return await runner(query)
-        except (XsiamQuotaError, QuotaBreakerOpen):
+        except (XsiamQuotaError, QuotaBreakerOpen, DailyBudgetExhausted) as exc:
             # The customer's analysts share this quota. Stop issuing queries for
             # the rest of THIS sweep. The cross-cycle half — the per-tenant
             # ledger and its breaker — is charged inside the runner itself
             # (`verifier._tenant_budget`) so that assertion runs, which build a
             # runner directly and never reach this wrapper, are bounded too.
-            budget["tripped"] = True
+            if not (isinstance(exc, (QuotaBreakerOpen, DailyBudgetExhausted))
+                    or getattr(exc, "local", False)):
+                budget["tripped"] = True
+                raise
+            # Our own budget refused: stop the sweep, but record no tenant quota
+            # event that never happened. The verdict stays pending.
+            budget["refused_locally"] = True
+            budget["refusal"] = _local_refusal_note(exc)
+            if not getattr(exc, "query_started", None):
+                # Refused before the start left: no query was issued. (A refused
+                # results poll keeps its count: the start reached the tenant.)
+                budget["remaining"] += 1
+                budget["issued"] -= 1
             raise
 
     return _run
+
+
+def _local_refusal_note(exc: BaseException) -> dict[str, Any]:
+    """What a caller tells the DC about a local refusal: remediation + retry."""
+    from integrations.xsiam.codes import (  # noqa: PLC0415
+        LOCAL_DAILY_BUDGET_REMEDIATION, LOCAL_POLL_REFUSAL_REMEDIATION,
+        LOCAL_REFUSAL_REMEDIATION,
+    )
+    from integrations.xsiam.ledger import DailyBudgetExhausted  # noqa: PLC0415
+
+    if isinstance(exc, DailyBudgetExhausted):
+        # A rolling day names no single interval: no retry_after_seconds.
+        return {"remediation": LOCAL_DAILY_BUDGET_REMEDIATION, "retry_after_seconds": None}
+    retry = getattr(exc, "retry_after_seconds", None)
+    return {
+        "remediation": (LOCAL_POLL_REFUSAL_REMEDIATION
+                        if getattr(exc, "query_started", None)
+                        else LOCAL_REFUSAL_REMEDIATION),
+        "retry_after_seconds": max(1, int(retry)) if retry is not None else None,
+    }
 
 
 def _bookkeeping(run: Run) -> dict[str, Any]:
@@ -2014,15 +2072,25 @@ async def verify_run_now(
         agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
         module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
+    # An attempt is a verify in which the tenant was asked and nothing was
+    # refused locally. A verify with ANY local refusal (before the start left,
+    # or a started query whose results fetch was refused) is not an attempt,
+    # even if other queries in it were answered: the attempt cap claims
+    # "verified N times without the detection appearing", and a refused query
+    # was never tested. A sweep stops at its first local refusal, so a budget
+    # already refused before this verify left `issued` at 0 here anyway.
+    answered = bool(issued) and not budget.get("refused_locally")
 
     book = _bookkeeping(run)
     book.update({
-        "attempts": int(book.get("attempts") or 0) + (1 if issued else 0),
-        "last_attempt_at": datetime.utcnow().isoformat() if issued else book.get("last_attempt_at"),
+        "attempts": int(book.get("attempts") or 0) + (1 if answered else 0),
+        "last_attempt_at": (datetime.utcnow().isoformat() if answered
+                            else book.get("last_attempt_at")),
         "tenant": tenant,
         "queries_issued": issued,
         "counts": counts,
         "quota_tripped": bool(budget.get("tripped")),
+        "refused_locally": bool(budget.get("refused_locally")),
     })
     if window_used is not None:
         book["window"] = window_used
@@ -2032,9 +2100,14 @@ async def verify_run_now(
         book["window_reason"] = window_reason
     score = await score_run_for_run(db, run, source=source, results=results,
                                     extra_detail={"verification": book})
+    refusal = (budget.get("refusal") or {}) if budget.get("refused_locally") else {}
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
                          tenant=tenant, queries_issued=issued,
-                         reason="quota_exhausted" if budget.get("tripped") else None)
+                         reason=("quota_exhausted" if budget.get("tripped")
+                                 else "refused_locally" if budget.get("refused_locally")
+                                 else None),
+                         remediation=refusal.get("remediation"),
+                         retry_after_seconds=refusal.get("retry_after_seconds"))
 
 
 async def auto_verify_once(
@@ -2102,7 +2175,7 @@ async def auto_verify_once(
     budget = _new_budget(max_queries)
     budget["tenant"] = tenant
     for run in candidates:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             break
         skip = _verify_eligible(run, max_attempts=max_attempts,
                                 backoff_seconds=backoff_seconds, now=now)
@@ -2110,6 +2183,7 @@ async def auto_verify_once(
             logger.debug("auto-verify skip run=%s: %s", run.run_id, skip)
             continue
         stats["runs_considered"] += 1
+        attempts_before = int(_bookkeeping(run).get("attempts") or 0)
         try:
             run_runner, run_window, run_reason = runner, None, None
             if client is not None and run.mode == "push":
@@ -2118,17 +2192,20 @@ async def auto_verify_once(
                 from engine.verifier import xsiam_query_runner  # noqa: PLC0415
                 run_window = await _run_window(db, run, now=now)
                 run_runner = xsiam_query_runner(client, run_window)
-            outcome = await verify_run_now(db, run, runner=run_runner, tenant=tenant,
-                                           budget=budget, source="sweep",
-                                           window=run_window, window_reason=run_reason)
+            await verify_run_now(db, run, runner=run_runner, tenant=tenant,
+                                 budget=budget, source="sweep",
+                                 window=run_window, window_reason=run_reason)
         except Exception:  # noqa: BLE001 — one bad run must not kill the sweep
             logger.exception("auto-verify failed run=%s", run.run_id)
             continue
-        if outcome.queries_issued:
+        if int(_bookkeeping(run).get("attempts") or 0) > attempts_before:
+            # Counted only when the tenant answered: a locally refused query is
+            # not a verification, whatever it cost.
             stats["runs_verified"] += 1
 
     stats["queries_issued"] = budget["issued"]
     stats["quota_tripped"] = bool(budget["tripped"])
+    stats["refused_locally"] = bool(budget["refused_locally"])
     return stats
 
 
@@ -2252,12 +2329,13 @@ async def auto_reconcile_once(
     # production that is a completely silent zero-coverage reconcile.
     skipped: dict[str, int] = {}
     breaker_tripped = False
+    local_refused = False  # CortexSim's own request budget, not a tenant event
 
     def _note(code: str) -> None:
         skipped[code] = skipped.get(code, 0) + 1
 
     for run in runs:
-        if pulls_issued >= max_pulls or breaker_tripped:
+        if pulls_issued >= max_pulls or breaker_tripped or local_refused:
             _note("sweep_budget_spent")
             continue
         results = list((await db.execute(
@@ -2292,8 +2370,9 @@ async def auto_reconcile_once(
         runs_considered += 1
         matched_here = 0
         pulled_here = 0
+        refused_here = False  # a pull for this run was refused by our own budget
         for kind in active_kinds:
-            if pulls_issued >= max_pulls or breaker_tripped:
+            if pulls_issued >= max_pulls or breaker_tripped or local_refused:
                 _note("sweep_budget_spent")
                 break
             pulls_issued += 1
@@ -2307,11 +2386,18 @@ async def auto_reconcile_once(
                 # A 429 is the customer's shared quota talking. Stop the whole
                 # sweep rather than walking the remaining runs into the same wall.
                 if _is_quota_error(e):
-                    breaker_tripped = True
+                    local = bool((e.detail or {}).get("refused_locally")) \
+                        if isinstance(e.detail, dict) else False
+                    if local:
+                        local_refused = refused_here = True
+                    else:
+                        breaker_tripped = True
                     logger.warning(
-                        "auto-reconcile: tenant reported quota exhaustion (%s) — "
-                        "sweep circuit-broken. %s", e.code,
-                        codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
+                        "auto-reconcile: %s (%s) — sweep circuit-broken. %s",
+                        "CortexSim's own request budget refused the pull"
+                        if local else "tenant reported quota exhaustion", e.code,
+                        LOCAL_REFUSAL_REMEDIATION if local
+                        else codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
                 else:
                     logger.debug("auto-reconcile skip run=%s kind=%s: %s",
                                  run.run_id, kind, e.code)
@@ -2322,7 +2408,11 @@ async def auto_reconcile_once(
         if matched_here:
             runs_reconciled += 1
             newly_total += matched_here
-        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here)
+        # A pull CortexSim's own budget refused never asked the tenant, so it is
+        # not an attempt: otherwise the cap would read "no matching alert
+        # appeared in the tenant" about a tenant that was never queried.
+        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here,
+                                        increment=not refused_here)
 
     stats: dict[str, Any] = {
         "runs_considered": runs_considered,
@@ -2332,6 +2422,8 @@ async def auto_reconcile_once(
         "skipped": skipped,
         "pulls_issued": pulls_issued,
         "quota_tripped": breaker_tripped,
+        # CortexSim's own request budget stopped the sweep; the tenant said nothing.
+        "refused_locally": local_refused,
     }
     if runs_considered and not newly_total:
         # A sweep that looked at runs and matched nothing is a SIGNAL, not a
@@ -2410,7 +2502,7 @@ async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                 if stats["newly_matched"]:
                     logger.info("auto-reconcile: %d detection(s) validated across %d run(s) via %s",
                                 stats["newly_matched"], stats["runs_reconciled"], stats["kinds"])
-                if not stats.get("quota_tripped"):
+                if not (stats.get("quota_tripped") or stats.get("refused_locally")):
                     # Same flag (this loop only runs with it on), same breaker:
                     # a quota error in the reconcile sweep skips the refresh.
                     await _refresh_ledgers_phase()
