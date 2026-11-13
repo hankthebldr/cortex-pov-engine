@@ -157,8 +157,9 @@ class RunScore:
     #: Results the host says never ran (``not_reached`` / ``not_executed``):
     #: their kpi_verdict is ignored, and they are listed so a report can say so.
     excluded: list[str] = field(default_factory=list)
-    #: Set only when every Result left the denominator: ``not_executed`` (a step
-    #: never ran) or ``soak_pending`` (every row is still soaking).
+    #: Set only when every Result left the denominator: ``soak_pending`` (a row
+    #: is still soaking, so its window closing can still score the run) or else
+    #: ``not_executed`` (no row ran, so only a re-run can).
     reason: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -206,8 +207,10 @@ def score_run(
 
     Ahead of all of that: when EVERY result left the denominator (its step never
     ran, or it is soak-pending) and the caller measured nothing, the run is
-    ``pending`` with ``reason`` ``not_executed`` / ``soak_pending``. No result
-    was tested, so the test case is still owed. ``not_applicable`` would claim
+    ``pending``. Its ``reason`` is ``soak_pending`` when any row is soaking
+    (that row ran; a read back after its window closes can score it) and
+    ``not_executed`` otherwise (only a re-run can). No result was tested, so
+    the test case is still owed. ``not_applicable`` would claim
     the test case has no measurable threshold, which a dry-run eal run does not
     show.
 
@@ -319,7 +322,7 @@ def _nothing_ran(exclusions: Counter[tuple[str, str]], threshold: Any,
                  counts: dict[str, int], unscoreable: list[str],
                  excluded: list[str]) -> RunScore:
     """The ``pending`` score for a run whose every result left the denominator."""
-    soaking = all(kind == REASON_SOAK_PENDING for kind, _ in exclusions)
+    soaking = any(kind == REASON_SOAK_PENDING for kind, _ in exclusions)
     groups = ", ".join(f"{kind} {why} ×{n}"
                        for (kind, why), n in sorted(exclusions.items()))
     detail = (f"nothing scored: all {len(excluded)} detection(s) are outside the "

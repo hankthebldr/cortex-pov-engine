@@ -519,6 +519,20 @@ def test_run_with_only_soak_pending_rows_is_pending_soak_pending():
     assert "measurable threshold" not in s.detail
 
 
+def test_a_soaking_row_beside_rows_that_never_ran_is_still_soak_pending():
+    """The soaking row ran, and its window closing can still score the run, so
+    "re-run, verifying again will not change this" would be false."""
+    from engine.verifier import PENDING, score_run  # noqa: PLC0415
+
+    rows = _never_ran(2) + _never_ran(1, outcome="pending", reason="DEDUP_WINDOW")
+    s = score_run(rows)
+
+    assert s.verdict == PENDING
+    assert s.reason == "soak_pending"
+    assert "EAL_DRY_RUN_NO_CONSENT" in s.detail
+    assert "DEDUP_WINDOW" in s.detail
+
+
 def test_run_scored_on_what_ran_carries_no_reason():
     from engine.verifier import PASS, score_run  # noqa: PLC0415
 
