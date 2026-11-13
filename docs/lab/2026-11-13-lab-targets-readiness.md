@@ -13,17 +13,17 @@ Every check below is read-only. Nothing on the VM, ms-01, SimCore or the tenant 
 ## Executive summary
 
 The test machine and its endpoint protection are working and reporting. Four of the six data paths are not
-ready yet. Two problems sit on the test machine itself. First, a leftover from an earlier simulation still fires every
-minute: about a fifth of the machine's process activity in the last day was this one leftover, and it could be
-matched to a new test by mistake. Second, none of the twelve service accounts the scenarios impersonate is usable
-(ten are missing, two are locked), so about 270 Linux steps in 78 scenarios would fail before they do anything, and
-that failure looks like a missed detection in a report. Both have a short fix waiting on approval. The log collector on the test
+ready yet. Two problems sat on the test machine itself and were fixed on approval the same evening. First, a
+leftover from an earlier simulation fired every minute: about a fifth of the machine's process activity that day was
+this one leftover, and it could have been matched to a new test by mistake. Second, none of the twelve service
+accounts the scenarios impersonate was usable (ten missing, two locked), so about 270 Linux steps in 78 scenarios
+would have failed before doing anything, and that failure looks like a missed detection in a report. The log collector on the test
 machine has not been installed: the vendor does not list this operating system version, so a failure there is a host
 problem, not a product gap. The on-premises log broker has not been deployed. The host has ample spare capacity and
 fast spare disks, but only one of the four planned collection types has a data source in the lab today. The cloud HTTP
 collector is receiving data, but the local simulator is not pointed at it yet, and the simulator's built-in
-connection test would wrongly report this collector as refusing data. **Recommended action:** approve
-the cleanup and the account setup now, deploy the broker this week, and run the testing pass only after the
+connection test would wrongly report this collector as refusing data. **Recommended action:** deploy the
+broker this week, and run the testing pass only after the
 local simulator rebuild adds the HTTP collector target. Treat Windows event, file share and database collection
 as closed paths in this pass unless a source is added.
 
@@ -35,8 +35,8 @@ as closed paths in this pass unless a source is added.
 |---|---|---|---|---|
 | 1 | VM beacon `pov-target-01-4dcdce` | **ready** | SimCore `GET /api/agents`: `status online`, `last_seen_age_seconds 3.3`. On the VM (run `1ac4cc89`): `cortexsim-agent active`, unit carries `--server http://192.168.1.105:8888 --id pov-target-01-4dcdce`. Mac `en0` = 192.168.1.105 | Reserve 192.168.1.105 for the Mac in Pi-hole DHCP (not verified; the Mac already moved .106 → .105 once) |
 | 2 | XDR agent 9.4.0.470 | **ready** | `get_filtered_endpoints hostname=pov-target-01`: `CONNECTED`, `operational_status PROTECTED`, details `[]`, content `UP_TO_DATE`, policy `SEBC-FY25-LAB-LinuxServerPolicy`, last_seen 22:05:29Z. `xdr_data` last 24 h: PROCESS_START 7,249, FILE_OPEN 16,734, NETWORK, LOAD_IMAGE, NAMESPACE and STORY events, newest seconds old. `cned`/`piud` STOPPED (see §2.2) | None |
-| 3 | Service-account identities | **blocked on Henry** (OK to run §3.2) | Run `1ac4cc89`: `www-data` and `nobody` have `/usr/sbin/nologin`, `runuser -l` → "This account is currently not available". `svc-backup`, `node`, `postgres`, `mysql`, `python3`, `app`, `developer`, `runner`, `vertex-agent`, `user`: **ABSENT**. Corpus on dev: ~273 POSIX steps in 78 scenarios run as one of these (text heuristic: `www-data` 116, `svc-backup` 112, `runner` 14, `node` 11, `developer` 9, `app` 6, `vertex-agent` 4, `nobody` 1) | OK the provisioning script in §3.2 |
-| 4 | VM free of CortexSim leftovers | **blocked on Henry** (OK to run §3.1) | Runs `1ac4cc89` + `4ac6543f`: live root cron `/etc/cron.d/cortexsim-sim` (SIM-CDR-003, written 2026-11-11 18:40Z) appends to `/tmp/cortexsim_escape_proof.txt` every minute, 3,090 lines so far. In `xdr_data` that is 1,436 `sh` process events in 24 h. Also user `cortexsim_testuser` (uid 1001, in group `sudo`), SIM-EDR-003 files in `/tmp` incl. `/tmp/.cortexsim_ssh_test/id_ed25519`, `/var/tmp/.cortexsim-akira` (SIM-EDR-025, 52 files), `/var/tmp/.cortexsim-ice` (SIM-EDR-023), `/etc/systemd/system/cortexsim-decoy.service` (disabled, inactive) | OK the cleanup script in §3.1 |
+| 3 | Service-account identities | **ready** (§3.2 run 22:28Z on Henry's OK) | After: run `7bdd3f09` (22:28:36Z) shows all 12 with `/bin/bash`, a home dir (`nobody` keeps `/nonexistent`, as Tier-D) and `runuser=RUNUSER_OK`; uids 1001–1010. Before (run `1ac4cc89`): `www-data` and `nobody` had `/usr/sbin/nologin` ("This account is currently not available"); `svc-backup`, `node`, `postgres`, `mysql`, `python3`, `app`, `developer`, `runner`, `vertex-agent`, `user` were **ABSENT**. Corpus on dev: ~273 POSIX steps in 78 scenarios run as one of these (text heuristic: `www-data` 116, `svc-backup` 112, `runner` 14, `node` 11, `developer` 9, `app` 6, `vertex-agent` 4, `nobody` 1) | None |
+| 4 | VM free of CortexSim leftovers | **ready** (§3.1 run 22:28Z on Henry's OK) | After: run `7bdd3f09` lists no leftovers (only the beacon's `/opt/cortexsim` cache and the empty `/home/henry/.cortexsim`), no `cortexsim_testuser`, `/etc/cron.d` = `e2scrub_all`, `sysstat`; no decoy unit; archive in `/var/backups/cortexsim/20261113-lab-targets/`. Cron stopped: last `CORTEXSIM-PERSISTENCE` process event in `xdr_data` at 22:28:01Z; at 22:30:11Z no proof file and 0 cron journal lines naming cortexsim since 22:28:20 (22:29 and 22:30 ticks). Before (runs `1ac4cc89` + `4ac6543f`): live root cron `/etc/cron.d/cortexsim-sim` (SIM-CDR-003, written 2026-11-11 18:40Z) appends to `/tmp/cortexsim_escape_proof.txt` every minute, 3,090 lines so far. In `xdr_data` that is 1,436 `sh` process events in 24 h. Also user `cortexsim_testuser` (uid 1001, in group `sudo`), SIM-EDR-003 files in `/tmp` incl. `/tmp/.cortexsim_ssh_test/id_ed25519`, `/var/tmp/.cortexsim-akira` (SIM-EDR-025, 52 files), `/var/tmp/.cortexsim-ice` (SIM-EDR-023), `/etc/systemd/system/cortexsim-decoy.service` (disabled, inactive) | Re-run probe 1 between scenarios that persist artefacts (§3.1) |
 | 5 | XDR Collector on `pov-target-01` | **blocked on Henry** (support decision + console) | No collector units on the VM, no `/etc/panw/collector.conf`. `metrics_view` over 7 d: no row with an XDR Collector or `_collector_hostname`. Vendor support list, read today: Ubuntu Server up to 22, the VM is 24.04.5. Tarball sha256 `2fc62451…29a5a` matches the plan | §4 |
 | 6 | Broker VM `bvm-01` on ms-01 | **not started** (needs Henry's OK to create the VM) | ms-01: 16 threads, 62 GiB RAM (55 GiB available), libvirt runs only `pov-target-01`. Image `deathstar-bvm-image.qcow2` sha256 `9d87bf8a…cbd71`, qcow2 v3, virtual size 480 GiB | §5 |
 | 6a | Applet: Syslog Collector | **not started** | No broker of ours in the tenant. The only broker in `metrics_view` is `5X7S0G08` at 10.60.0.3 (§7) | §5.4 |
@@ -82,10 +82,13 @@ arriving. If a scenario later depends on a component that is not in that list, r
 | Collectors, 7 and 30 d | same route, `preset = metrics_view \| comp … by _collector_type, _collector_name, _vendor, _product, _broker_device_*` | rows 5–7 above, §7 |
 | Agent installation packages | SimCore op `OP-DISTRIBUTIONS-GET-DISTRIBUTIONS` (`access_class: read`) | 40 agent packages incl. `hr-linux-installer-nov`. Collector installers are not in this API, so the collector package's existence is a console check (§4 step 1) |
 
-### 3. Fixes on `pov-target-01` (each waits for Henry's OK)
+### 3. Fixes on `pov-target-01` (done 2026-11-13 22:28Z on Henry's "Yes, run both")
 
-Both run as a one-step `identity: root` draft through the beacon, the same way as the probes. Nothing is
-deleted outright: files move to `/var/backups/cortexsim/20261113-lab-targets/`.
+Both ran as steps of one `identity: root` draft through the beacon,
+`SIM-DRAFT-lab-maintenance-pov-target-01-cleanup-and-identities-20261113`, run
+`0fb97bf7-e912-4bcd-8fb6-c8c7aaa1b0e5`, both steps rc 0. Nothing was deleted outright except the test account:
+files moved to `/var/backups/cortexsim/20261113-lab-targets/`. `postgres` took uid 1001, which `cortexsim_testuser`
+held. A scan as `henry` found no file outside `/home/postgres` owned by uid 1001.
 
 #### 3.1 Cleanup
 
