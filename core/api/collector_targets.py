@@ -30,11 +30,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from eal_simulator import get_default_registry
+from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
+from eal_simulator.collector_declaration import TEST_CHANNEL, dataset_for, route_verdict
+from eal_simulator.ingestion_routes import tenant_datasets
 from eal_simulator.target_preflight import preflight_target
 from eal_simulator.targets import NAME_RE, TargetSpec, TargetSpecError, collector_plugin_names
 from engine import collector_targets as store
+from engine.dataset_requirements import card_dataset_index
+from engine.lab_tenants import host_of, is_lab_tenant_host
+from engine.ttp_catalog import catalog
 
 router = APIRouter(prefix="/collector-targets", tags=["collector-targets"])
+
+
+class DeclarationIn(BaseModel):
+    """Which data source the collector carries. The verdict is never taken from
+    the client; extra keys are ignored and the server computes it."""
+    source_key: str
+    vendor: str = Field(min_length=1, max_length=64)
+    product: str = Field(min_length=1, max_length=64)
 
 
 class TargetPut(BaseModel):
@@ -47,6 +61,7 @@ class TargetPut(BaseModel):
     is_default: bool = False
     token: Optional[SecretStr] = None
     clear_token: bool = False
+    declaration: Optional[DeclarationIn] = None
 
 
 class PreflightBody(BaseModel):
@@ -81,6 +96,40 @@ def _public(row) -> dict[str, Any]:
     out = row.to_dict()
     out["warnings"] = store.to_spec(row).warnings()
     return out
+
+
+def _declare(decl: DeclarationIn, url: str, body_dataset: Optional[str]) -> tuple[str, dict]:
+    """``(dataset, stored declaration)`` for a declared collector, or an HTTP error."""
+    if decl.source_key == TEST_CHANNEL:
+        card_dataset, tenant, kinds = None, set(), set()
+    else:
+        try:
+            card_dataset = get_source(decl.source_key).dataset
+        except UnknownDataSourceError as exc:
+            raise _err(422, "DECLARATION_SOURCE_UNKNOWN", "Unknown data source",
+                       str(exc)) from exc
+        tenant = tenant_datasets(decl.source_key)
+        by_card = card_dataset_index(catalog.all_raw()).get(card_dataset or "", {})
+        kinds = set().union(*by_card.values()) if by_card else set()
+    dataset = dataset_for(decl.vendor, decl.product)
+    if body_dataset and body_dataset.lower() != dataset.lower():
+        raise _err(422, "TARGET_DATASET_DECLARATION_MISMATCH",
+                   "Dataset disagrees with the declaration",
+                   f"dataset {body_dataset!r} is not {dataset!r}, which the declared "
+                   f"vendor/product write; send one or make them agree")
+    verdict = route_verdict(decl.source_key, decl.vendor, decl.product,
+                            card_dataset=card_dataset, tenant_datasets=tenant,
+                            reading_kinds=kinds)
+    host = host_of(url)
+    lab = is_lab_tenant_host(host)
+    if verdict.verdict == "native_dataset" and not lab:
+        raise _err(409, "NATIVE_DATASET_NOT_LAB_TENANT", "Native dataset on a non-lab tenant",
+                   f"{dataset!r} is a native firewall dataset and host {host!r} is not in "
+                   f"CORTEXSIM_DOOR_PROBE_TENANTS; synthetic records would mix into real "
+                   f"firewall data. Name a custom vendor/product or add the lab host.")
+    return dataset, {"source_key": decl.source_key, "vendor": decl.vendor,
+                     "product": decl.product, "verdict": verdict.verdict,
+                     "card_dataset": card_dataset, "lab_tenant": lab}
 
 
 @router.get("")
@@ -121,11 +170,15 @@ async def put_target(name: str, body: TargetPut,
     if token is not None and not token.strip():
         raise _err(422, "TARGET_INVALID", "Invalid collector target", "token is empty")
 
+    dataset, declaration = body.dataset, None
+    if body.declaration is not None:
+        dataset, declaration = _declare(body.declaration, body.url, body.dataset)
+
     existing = await store.get_row(db, name)
     will_have_key = token is not None or (
         existing is not None and existing.secret_name is not None and not body.clear_token)
     try:  # validates kind + URL with the same rules the resolver reads them by
-        TargetSpec(name=name, kind=body.kind, url=body.url, dataset=body.dataset,
+        TargetSpec(name=name, kind=body.kind, url=body.url, dataset=dataset,
                    auth_header=body.auth_header, auth_scheme=body.auth_scheme,
                    plugins=tuple(body.plugins), is_default=body.is_default,
                    has_token=will_have_key)
@@ -144,10 +197,10 @@ async def put_target(name: str, body: TargetPut,
                        f"{clash} already go to target '{other.name}'; unbind them there first")
 
     row, previous_default = await store.upsert(
-        db, name, kind=body.kind, url=body.url, dataset=body.dataset,
+        db, name, kind=body.kind, url=body.url, dataset=dataset,
         auth_header=body.auth_header, auth_scheme=body.auth_scheme,
         plugins=list(dict.fromkeys(body.plugins)), is_default=body.is_default,
-        token=token, clear_token=body.clear_token,
+        token=token, clear_token=body.clear_token, declaration=declaration,
     )
     out = _public(row)
     out["previous_default"] = previous_default

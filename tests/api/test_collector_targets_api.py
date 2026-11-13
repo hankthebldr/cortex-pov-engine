@@ -305,3 +305,100 @@ def test_changing_the_url_clears_last_arrival(db_file):
         body = c.get("/api/collector-targets/okta-hec").json()
     assert body["last_arrival"] is None
     assert body["last_check"] is None
+
+
+# --- data declaration -------------------------------------------------------
+
+LAB_URL = "https://api-lab.example.test/logs/v1/event"
+
+
+def _declared(source_key, vendor, product, **extra):
+    return {"source_key": source_key, "vendor": vendor, "product": product, **extra}
+
+
+def _put_declared(client, declaration, name="dec", **over):
+    body = {"plugins": [], "dataset": None}
+    body.update(over)
+    return _put(client, name=name, declaration=declaration, **body)
+
+
+def test_declared_put_stores_the_server_verdict_and_dataset(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", "duo", "auth"))
+        again = c.get("/api/collector-targets/dec")
+    assert r.status_code == 200, r.text
+    assert r.json()["dataset"] == "duo_auth_raw"
+    dec = r.json()["declaration"]
+    assert dec["verdict"] == "matches"
+    assert (dec["source_key"], dec["vendor"], dec["product"]) == ("duo", "duo", "auth")
+    assert dec["card_dataset"] == "duo_auth_raw" and dec["lab_tenant"] is False
+    assert again.json()["declaration"] == dec
+    assert KEY not in r.text
+
+
+def test_client_verdict_is_ignored(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("okta", "okta", "sso", verdict="matches",
+                                       lab_tenant=True))
+    assert r.status_code == 200, r.text
+    assert r.json()["declaration"]["verdict"] == "name_disputed"
+    assert r.json()["declaration"]["lab_tenant"] is False
+
+
+def test_native_off_lab_is_refused_with_the_host(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "lab.example.test")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic"))
+        listed = c.get("/api/collector-targets").json()
+    assert r.status_code == 409
+    d = r.json()["detail"]
+    assert d["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert "api-acme.example.test" in d["detail"]
+    assert "CORTEXSIM_DOOR_PROBE_TENANTS" in d["detail"]
+    assert listed["count"] == 0
+
+
+def test_native_on_lab_is_stored_with_lab_flag(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "api-lab.example.test")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic"),
+                          url=LAB_URL)
+    assert r.status_code == 200, r.text
+    assert r.json()["declaration"]["verdict"] == "native_dataset"
+    assert r.json()["declaration"]["lab_tenant"] is True
+    assert r.json()["dataset"] == "panw_ngfw_traffic_raw"
+
+
+def test_typed_native_name_on_another_source_is_refused_off_lab(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", "panw", "ngfw_traffic"))
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+
+
+def test_unknown_source_and_dataset_mismatch_are_422(db_file):
+    with _app(db_file) as (c, _, _s):
+        unknown = _put_declared(c, _declared("no_such_source", "a", "b"))
+        mismatch = _put_declared(c, _declared("duo", "duo", "auth"), dataset="other_raw")
+        same_case = _put_declared(c, _declared("duo", "duo", "auth"), dataset="DUO_AUTH_RAW")
+        test_channel = _put_declared(c, _declared("test_channel", "cortexsim", "door_http"))
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "DECLARATION_SOURCE_UNKNOWN"
+    assert mismatch.status_code == 422
+    assert mismatch.json()["detail"]["code"] == "TARGET_DATASET_DECLARATION_MISMATCH"
+    assert same_case.status_code == 200, same_case.text
+    assert test_channel.status_code == 200, test_channel.text
+    assert test_channel.json()["declaration"]["verdict"] == "test_channel"
+
+
+def test_put_without_declaration_behaves_as_before(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put(c)
+    assert r.status_code == 200, r.text
+    assert r.json()["dataset"] == "okta_sso_raw"
+    assert r.json()["declaration"] is None
+    assert r.json()["last_arrival"] is None
