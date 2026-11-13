@@ -85,6 +85,7 @@ pastes into a POV report as tenant evidence when no tenant answered.
 - **N1 — Not an authentication layer for SimCore.** SimCore has none today;
   the MCP surface inherits that trust boundary and does not widen it (§4.4).
   Adding auth to SimCore is its own spec.
+  2026-11-11: for `/mcp` over HTTP see the tenant-reader spec §7.1.
 - **N2 — Not the cortex-bot pack harvest.** The 24 cortex-bot-only paths
   (option A) are catalog work; when those packs land, the projection picks
   them up with no MCP change.
@@ -217,6 +218,8 @@ This design explicitly does not invent an auth scheme for one route (non-goal
 N1). What it does instead is make the one thing an agent could newly do —
 mutate a tenant — impossible through this surface (§6), so the inherited
 boundary gets no new consequence.
+
+2026-11-11: for `/mcp` over HTTP see the tenant-reader spec §7.1.
 
 ### 4.5 Health
 
