@@ -20,12 +20,15 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  * Props:
  *   activeRun  — { runId, scenarioId, ... }
  *   lastRun    — fallback run when no live run
+ *   intro      — node shown under the page head (Results passes its
+ *                "Result of" bar, design v26 §4.6)
  *   onError    — (msg) => void
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
+  intro = null,
   onError = () => {},
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
@@ -165,6 +168,8 @@ export default function EvidenceView({
           )}
         </div>
       </div>
+
+      {viewMode === 'this-run' && intro}
 
       {viewMode === 'compare' ? (
         <MultiRunCompare />

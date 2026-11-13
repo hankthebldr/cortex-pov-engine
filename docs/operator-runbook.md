@@ -107,9 +107,33 @@ a node on a horizontal track:
 Hit **Screenshot** in the footer to download a PNG at 2× pixel
 ratio for the deck.
 
-### 5. Validate (Evidence tab)
+### 5. Read back, then validate (Results)
 
-When the run completes, the scorecard fills in. For each expected
+Every run shows the same five stages, on its Runs row and on its own
+page: **Launched → Running → Finished / Failed / Aborted → Read back →
+Results**. A run that has ended has executed steps, not detections, so
+until it is read back the console makes no detection claim: the Runs
+row says *not read back* and offers **Read back**.
+
+**Read back** asks POVengine to read the tenant for that run
+(`POST /api/runs/{id}/reconcile?connector=xsiam`): it pulls the alerts
+in the run's window, matches them to what the run expected and scores
+it. It is read-only toward Cortex. While it is in flight the row reads
+*Reading…*. With no tenant credential configured nothing is read: the
+run stays *not read back* and the row says why. Once a run is read back
+its row offers **Open results**.
+
+Results always opens with a **Result of** bar naming the run, with a
+switcher across the runs that have been read back. A run that has not
+been read back shows its bar and Read back, not a scorecard. Without a
+tenant credential, importing the tenant's alerts by hand
+(`POST /api/runs/{id}/observations`) also counts as a read back.
+
+To stop a live run, use **Abort run** on its page and confirm with
+**Abort now**; the run reads Aborted everywhere and the header's
+RUNNING pill goes away.
+
+Once a run is read back, the scorecard fills in. For each expected
 detection:
 
 - ✓ Detected (green) — found the alert in Cortex console, copy the

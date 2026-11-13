@@ -55,11 +55,17 @@ describe('Abort on the Runs surface', () => {
     expect(onAbortRun).toHaveBeenCalledTimes(1)
   })
 
-  it('the live run’s own page offers Abort and asks the shell to confirm it', async () => {
+  it('the live run’s own page confirms inline, then sends the abort to the shell', async () => {
+    // Design v26 §4.6: on the run's page the confirm is inline ("Stop this run
+    // on the agent?" · Keep running · Abort now) rather than the shell's modal,
+    // so the shell receives an already-confirmed request for THIS run.
     const onAbortRun = vi.fn()
     mount({ run: 'run-live-1' }, onAbortRun)
     fireEvent.click(await screen.findByRole('button', { name: /abort run/i }))
+    expect(onAbortRun).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Abort now' }))
     expect(onAbortRun).toHaveBeenCalledTimes(1)
+    expect(onAbortRun).toHaveBeenCalledWith({ runId: 'run-live-1', confirmed: true })
   })
 
   it('a finished run’s page offers no Abort', async () => {
