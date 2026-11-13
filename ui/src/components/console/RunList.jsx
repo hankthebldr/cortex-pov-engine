@@ -31,7 +31,7 @@ import {
   relativeTime, absoluteTime, runDuration, detectionCell, runAgent,
   filterRuns, groupRuns, pageOf, statusKey, PAGE_SIZE,
 } from './runRows.js'
-import { runLifecycle, PHASE } from './runLifecycle.js'
+import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import { Button } from './kit/index.js'
 import '../../styles/destinations/run-lifecycle.css'
@@ -60,7 +60,9 @@ export function resultCell(run, lifecycle) {
     case PHASE.RUNNING:
       return { text: 'results after it finishes', tone: 'none', title: 'the run is still executing' }
     case PHASE.NOTHING:
-      return { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to read back' }
+      return lifecycle.nothing === NOTHING.NOT_EXECUTED
+        ? { text: NOT_EXECUTED_COPY.result, tone: 'none', title: NOT_EXECUTED_COPY.title }
+        : { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to read back' }
     case PHASE.READING:
       return { text: 'reading back…', tone: 'live', title: 'reading this run back from the tenant' }
     case PHASE.UNREAD:
@@ -90,7 +92,10 @@ function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
     case PHASE.READY:
       return <Button variant="secondary" className="run-list__act" onClick={() => onOpenResults(id)}>Open results</Button>
     default:
-      return <span className="run-list__noact" title="nothing ran, so there is nothing to read back">—</span>
+      return (
+        <span className="run-list__noact" title={lifecycle.nothing === NOTHING.NOT_EXECUTED
+          ? NOT_EXECUTED_COPY.title : 'nothing ran, so there is nothing to read back'}>—</span>
+      )
   }
 }
 

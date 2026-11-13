@@ -58,6 +58,28 @@ describe('runLifecycle', () => {
   it('a pull run that ended before the agent took its task ran nothing', () => {
     const lc = runLifecycle(run({ status: 'aborted', delivered_at: null, output_bytes: 0 }))
     expect(lc.phase).toBe('nothing')
+    expect(lc.nothing).toBe('undelivered')
+  })
+
+  it('a run where no step that carries a detection ran has nothing to read back', () => {
+    // SimCore scored it `pending` / `not_executed` at completion. A read back
+    // cannot change that: reconcile and verify skip rows the host says never ran.
+    const lc = runLifecycle(run({ tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }))
+    expect(lc.phase).toBe('nothing')
+    expect(lc.nothing).toBe('not_executed')
+    expect(states(lc)).toEqual(['done', 'done', 'current', 'todo', 'todo'])
+  })
+
+  it('a run whose detectors are soaking can still be read back', () => {
+    const lc = runLifecycle(run({ tc_verdict_detail: { source: 'complete', reason: 'soak_pending' } }))
+    expect(lc.phase).toBe('unread')
+    expect(lc.nothing).toBeNull()
+  })
+
+  it('a run read back from the tenant stays ready even when nothing executed', () => {
+    const lc = runLifecycle(run({ tc_verdict_detail: { source: 'reconcile:xsiam:lab', reason: 'not_executed' } }))
+    expect(lc.phase).toBe('ready')
+    expect(lc.nothing).toBeNull()
   })
 
   it('launch warnings in the output are not a step having run', () => {

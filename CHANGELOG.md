@@ -750,6 +750,10 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `pending`, with a sentence that says to re-run or wait. Before this it was a
   raw `not_executed` token. The Techniques tab now counts excluded rows as
   "never ran" instead of "not reached".
+- The run lifecycle stops offering Read back for a run whose reason is
+  `not_executed`. The Runs list reads "nothing executed", and the run's page
+  and Report say why and offer Run. A read back could not change that verdict,
+  because reconcile and verify skip rows that never ran.
 
 ### Added — HTTP collector backend (declaration, detections list, arrival check)
 
