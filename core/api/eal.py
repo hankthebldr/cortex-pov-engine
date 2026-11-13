@@ -369,6 +369,110 @@ async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     }
 
 
+@router.get("/data-streams/{source_key}/detections")
+async def data_stream_detections(
+    source_key: str,
+    vendor: Optional[str] = Query(None),
+    product: Optional[str] = Query(None),
+    collector_host: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Which active-scenario detections read a catalogue source's dataset, the suggested
+    vendor/product, and the route verdict for the names given. Read-only, no tenant contact.
+
+    ``vendor`` / ``product`` are stripped as the collector-targets PUT strips them, so the
+    verdict shown is the one that would be stored. ``lab_tenant`` is null without a host.
+    A source no scenario detection reads is ``degraded``, never ``ok``.
+    """
+    from eal_simulator.analytics_catalogue import (  # noqa: PLC0415
+        UnknownDataSourceError,
+        get_source,
+    )
+    from eal_simulator.collector_declaration import (  # noqa: PLC0415
+        TEST_CHANNEL,
+        TEST_CHANNEL_PRODUCT,
+        TEST_CHANNEL_VENDOR,
+        prefill,
+        route_verdict,
+    )
+    from eal_simulator.ingestion_routes import tenant_datasets  # noqa: PLC0415
+    from engine.dataset_requirements import card_dataset_index  # noqa: PLC0415
+    from engine.lab_tenants import is_lab_tenant_host  # noqa: PLC0415
+    from engine.ttp_catalog import catalog  # noqa: PLC0415
+    from models import Scenario  # noqa: PLC0415
+
+    name = source_key
+    card_dataset: Optional[str] = None
+    tenant: set[str] = set()
+    if source_key != TEST_CHANNEL:
+        try:
+            source = get_source(source_key)
+        except UnknownDataSourceError as exc:
+            raise HTTPException(status_code=404, detail={
+                "error": "Unknown data source",
+                "code": "DATA_SOURCE_UNKNOWN",
+                "detail": str(exc),
+            }) from exc
+        name, card_dataset = source.name, source.dataset
+        tenant = tenant_datasets(source_key)
+
+    by_card = card_dataset_index(catalog.all_raw()).get(card_dataset or "", {})
+    reading_kinds = sorted(set().union(*by_card.values())) if by_card else []
+
+    detections: list[dict[str, Any]] = []
+    if by_card:
+        rows = (await db.execute(
+            select(Scenario).where(Scenario.status == "active").order_by(Scenario.scenario_id)
+        )).scalars().all()
+        for scenario in rows:
+            for step in scenario.to_dict().get("steps") or []:
+                for det in step.get("expected_detections") or []:
+                    if det.get("ttp_ref") in by_card:
+                        detections.append({
+                            "scenario_id": scenario.scenario_id,
+                            "step_id": step.get("id"),
+                            "detection_id": det.get("detection_id"),
+                            "type": det.get("type"),
+                            "ttp_ref": det.get("ttp_ref"),
+                        })
+
+    if source_key == TEST_CHANNEL:
+        vendor_default, product_default = TEST_CHANNEL_VENDOR, TEST_CHANNEL_PRODUCT
+    else:
+        vendor_default, product_default = prefill(source_key, card_dataset)
+    vendor = vendor.strip() if vendor is not None else vendor_default
+    product = product.strip() if product is not None else product_default
+    verdict = route_verdict(
+        source_key, vendor, product,
+        card_dataset=card_dataset, tenant_datasets=tenant, reading_kinds=reading_kinds,
+    )
+
+    if source_key == TEST_CHANNEL:
+        status, code = "not_applicable", "TEST_CHANNEL"
+    elif card_dataset is None:
+        status, code = "degraded", "SOURCE_HAS_NO_DATASET"
+    elif not detections:
+        status, code = "degraded", "NO_DETECTION_READS_DATASET"
+    else:
+        status, code = "ok", None
+
+    return {
+        "source_key": source_key,
+        "name": name,
+        "card_dataset": card_dataset,
+        "tenant_datasets": sorted(tenant),
+        "reading_kinds": reading_kinds,
+        "cards": [{"card_id": cid, "kinds": sorted(kinds)} for cid, kinds in sorted(by_card.items())],
+        "detections": detections,
+        "count": len(detections),
+        "prefill": {"vendor": vendor_default, "product": product_default},
+        "verdict": verdict.to_dict(),
+        "lab_tenant": is_lab_tenant_host(collector_host) if collector_host else None,
+        "status": status,
+        "code": code,
+    }
+
+
 @router.get("/plugins/{name}")
 async def get_plugin(name: str) -> dict[str, Any]:
     reg = _get_executor().registry
