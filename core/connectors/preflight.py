@@ -931,17 +931,28 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     core = packs is not None and _socfw.CORE_PACK_ID in packs
     if core and names is not None and all(n in names for n in _socfw.CONFIG_LISTS) \
             and shape_error is None:
-        # 3. list content, both documents or neither
+        # 3. list content, both documents or neither. Each list keeps its own
+        # outcome: a tenant 403 on one and a local refusal on the other are two
+        # facts, and neither may hide the other.
         docs = []
         refusals: list[str] = []
         try:
             for list_name in _socfw.CONFIG_LISTS:
                 report.queries_issued += 1
-                doc, refusal = await _read_list(client, list_name)
+                try:
+                    doc, refusal = await _read_list(client, list_name)
+                except _socfw.ResponseLayerShapeError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — transport, or a local refusal
+                    _uncount_local(report, exc)
+                    _note_local(local_fixes, exc)
+                    docs.append(None)
+                    refusals.append(f"list {list_name}: read failed: {exc}")
+                    break  # as before: no further list read after a failed one
                 docs.append(doc)
                 if refusal:
                     refusals.append(refusal)
-            if all(d is not None for d in docs):
+            if len(docs) == len(_socfw.CONFIG_LISTS) and all(d is not None for d in docs):
                 tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
                 sources.append("list_content")
             if tenant_config is None and shape_error is None:
@@ -950,10 +961,6 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                     + (": " + "; ".join(refusals) if refusals else ""))
         except _socfw.ResponseLayerShapeError as exc:
             shape_error = str(exc)
-        except Exception as exc:  # noqa: BLE001 — transport mid-read
-            _uncount_local(report, exc)
-            _note_local(local_fixes, exc)
-            problems.append(f"list content read failed: {exc}")
 
     if core and shape_error is None:
         # 4. execution evidence

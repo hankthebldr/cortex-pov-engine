@@ -958,8 +958,9 @@ async def refresh_case_ledgers_once(
     malformed ledger stays eligible so the refresh reports it. Eligible runs are ordered least-recently-read first, so a window larger than
     ``max_runs`` rotates instead of starving older runs. At most ``max_runs``
     are attempted per sweep; every tenant page is counted in ``queries_issued``;
-    a quota error (HTTP 429) stops the whole sweep. Returns
-    ``{"refreshed", "skipped", "queries_issued", "quota_tripped"}``.
+    a quota error (HTTP 429) stops the whole sweep, and so does a refusal by
+    CortexSim's own request budget, reported apart. Returns
+    ``{"refreshed", "skipped", "queries_issued", "quota_tripped", "refused_locally"}``.
     """
     if min_interval_minutes is None:
         min_interval_minutes = settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
@@ -1808,11 +1809,9 @@ async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str,
 def _new_budget(max_queries: int) -> dict[str, Any]:
     # `tripped`: the tenant reported its quota. `refused_locally`: CortexSim's own
     # request budget / breaker / daily ceiling refused; the tenant said nothing.
-    # `unanswered`: queries that WERE started on the tenant but whose results
-    # fetch was refused locally (issued, never answered). `refusal`: what to tell
-    # the DC about the local refusal (remediation, retry_after_seconds).
+    # `refusal`: what to tell the DC about that refusal (remediation, retry).
     return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False,
-            "refused_locally": False, "unanswered": 0, "refusal": None}
+            "refused_locally": False, "refusal": None}
 
 
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
@@ -1856,12 +1855,9 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
             # event that never happened. The verdict stays pending.
             budget["refused_locally"] = True
             budget["refusal"] = _local_refusal_note(exc)
-            if getattr(exc, "query_started", None):
-                # The start reached the tenant (it stays issued); only the fetch
-                # of its results was refused, so no answer came back.
-                budget["unanswered"] = budget.get("unanswered", 0) + 1
-            else:
-                # Refused before the start left: no query was issued.
+            if not getattr(exc, "query_started", None):
+                # Refused before the start left: no query was issued. (A refused
+                # results poll keeps its count: the start reached the tenant.)
                 budget["remaining"] += 1
                 budget["issued"] -= 1
             raise
@@ -2071,18 +2067,19 @@ async def verify_run_now(
     budget.setdefault("tenant", tenant)
 
     before = budget["issued"]
-    unanswered_before = budget.get("unanswered", 0)
     counts = await verifier.verify_results(
         results, _budgeted(runner, budget),
         agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
         module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
-    # An attempt is a verify the tenant answered (rows, an error, its own 429).
-    # A query refused locally before it left is not issued at all; one started
-    # but whose results fetch was refused is issued and unanswered. Neither
-    # advances `attempts` / `last_attempt_at`: the attempt cap claims "verified
-    # N times without the detection appearing", which a refusal never tested.
-    answered = issued - (budget.get("unanswered", 0) - unanswered_before)
+    # An attempt is a verify in which the tenant was asked and nothing was
+    # refused locally. A verify with ANY local refusal (before the start left,
+    # or a started query whose results fetch was refused) is not an attempt,
+    # even if other queries in it were answered: the attempt cap claims
+    # "verified N times without the detection appearing", and a refused query
+    # was never tested. A sweep stops at its first local refusal, so a budget
+    # already refused before this verify left `issued` at 0 here anyway.
+    answered = bool(issued) and not budget.get("refused_locally")
 
     book = _bookkeeping(run)
     book.update({
@@ -2373,6 +2370,7 @@ async def auto_reconcile_once(
         runs_considered += 1
         matched_here = 0
         pulled_here = 0
+        refused_here = False  # a pull for this run was refused by our own budget
         for kind in active_kinds:
             if pulls_issued >= max_pulls or breaker_tripped or local_refused:
                 _note("sweep_budget_spent")
@@ -2391,7 +2389,7 @@ async def auto_reconcile_once(
                     local = bool((e.detail or {}).get("refused_locally")) \
                         if isinstance(e.detail, dict) else False
                     if local:
-                        local_refused = True
+                        local_refused = refused_here = True
                     else:
                         breaker_tripped = True
                     logger.warning(
@@ -2410,7 +2408,11 @@ async def auto_reconcile_once(
         if matched_here:
             runs_reconciled += 1
             newly_total += matched_here
-        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here)
+        # A pull CortexSim's own budget refused never asked the tenant, so it is
+        # not an attempt: otherwise the cap would read "no matching alert
+        # appeared in the tenant" about a tenant that was never queried.
+        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here,
+                                        increment=not refused_here)
 
     stats: dict[str, Any] = {
         "runs_considered": runs_considered,

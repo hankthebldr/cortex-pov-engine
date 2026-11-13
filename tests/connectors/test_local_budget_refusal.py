@@ -691,3 +691,115 @@ def test_response_layer_names_each_read_when_local_and_tenant_failures_mix(monke
     assert LOCAL_REFUSAL_REMEDIATION in stage.remediation
     assert "list-names read" in stage.remediation
     assert "installed-packs read was refused or failed" not in stage.remediation
+
+
+# ── round 5: a partly refused verify / reconcile, and the list-content mix ──
+
+
+def test_a_verify_with_any_local_refusal_is_not_an_attempt(session_factory, monkeypatch):
+    """q1 is answered, q2 is refused before it left. The attempt cap would claim
+    'verified N times without the detection appearing' about q2, never asked."""
+    from config import settings
+    from connectors.service import verify_run_now
+    from integrations.xsiam.exceptions import XsiamQuotaError
+    from models import Result, Run
+    from sqlalchemy import select
+    from tests.connectors.test_auto_verify import _seed_run
+
+    monkeypatch.setattr(settings, "CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(settings, "CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS", 0)
+    _seed_run(session_factory, run_id="run-mix")
+
+    async def add_second():
+        async with session_factory() as db:
+            r = (await db.execute(select(Result))).scalars().first()
+            db.add(Result(run_id="run-mix", step_id="step-02", plane=r.plane,
+                          signal_type=r.signal_type, expected_detection="d2",
+                          observed=False, executed_at=r.executed_at,
+                          verification_xql="dataset = second", kpi_verdict="pending"))
+            await db.commit()
+    asyncio.run(add_second())
+
+    async def runner(query: str) -> int:
+        if "second" in query:
+            raise XsiamQuotaError("refused before it was sent", local=True,
+                                  retry_after_seconds=5)
+        return 1
+
+    async def go():
+        outs = []
+        async with session_factory() as db:
+            run = (await db.execute(select(Run))).scalar_one()
+            for _ in range(4):
+                o = await verify_run_now(db, run, runner=runner, tenant="acme-prod")
+                outs.append((o, dict(_book(run)), run.tc_verdict))
+        return outs
+
+    for out, book, verdict in asyncio.run(go()):
+        assert out.reason == "refused_locally"          # never attempt_cap
+        assert out.queries_issued == 1                  # q1 was asked
+        assert int(book.get("attempts") or 0) == 0 and not book.get("last_attempt_at")
+        assert verdict == "pending"
+
+
+def test_a_locally_refused_reconcile_pull_is_not_an_attempt(session_factory):
+    from connectors.service import auto_reconcile_once
+    from models import Run
+    from security.credentials import CredentialStore
+    from sqlalchemy import select
+    from tests.connectors.test_honesty_invariant import _seed
+
+    _seed(session_factory, xql=None)
+    pulls: list = []
+
+    def fetcher(*a):
+        pulls.append(a)
+        return 200, "{}"
+
+    async def go():
+        out = []
+        async with session_factory() as db:
+            await CredentialStore(db).put_integration(
+                name="acme", kind="xsiam", plaintext_secret="k" * 40,
+                config={"fqdn": HOST, "api_key_id": "1"})
+            await db.commit()
+            for _ in range(4):
+                ledger.trip(tenant_ledger_key(HOST), cooldown_seconds=600)
+                stats = await auto_reconcile_once(
+                    db, lookback_seconds=3600, window_seconds=600, fetcher=fetcher,
+                    max_attempts=3, backoff_seconds=0)
+                run = (await db.execute(select(Run))).scalar_one()
+                await db.refresh(run)
+                out.append((stats, dict((run.tc_verdict_detail or {})
+                                        .get("reconciliation") or {})))
+        return out
+
+    for stats, book in asyncio.run(go()):
+        assert stats["refused_locally"] is True and stats["quota_tripped"] is False
+        assert "attempt_cap" not in stats["skipped"]
+        assert int(book.get("attempts") or 0) == 0
+        assert "no matching alert appeared" not in (book.get("stopped_reason") or "")
+    assert pulls == []
+
+
+def test_list_content_names_each_lists_own_outcome(monkeypatch):
+    """List 1 refused by the tenant (403), list 2 refused by our own bucket."""
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "3")  # packs, names, list 1
+    seen: list = []
+    inner = _socfw_tenant(seen)
+
+    def handler(request):
+        if request.url.path.endswith("SOCFWTenantConfig"):
+            seen.append(request.url.path)
+            return httpx.Response(403, json={})
+        return inner(request)
+
+    report = pf.PreflightReport(tenant="t", kind="xsiam_tenant")
+    stage = asyncio.run(pf._probe_response_layer(_client(handler), report,
+                                                 datetime(2026, 11, 11, 12)))
+    assert len(seen) == 3 and report.queries_issued == 3
+    assert "SOCFWTenantConfig: HTTP 403" in stage.detail
+    assert "SOCFWConfigModes" in stage.detail and "before it was sent" in stage.detail
+    assert LOCAL_REFUSAL_REMEDIATION in stage.remediation
