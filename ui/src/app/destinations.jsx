@@ -363,6 +363,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 
       <Suspense fallback={<DestinationLoading />}>
         <TargetsView
+          embedded
           selectedTarget={selectedTarget}
           onSelectTarget={setSelectedTarget}
           onGoToLab={() => onNavigate('environments')}

@@ -99,7 +99,7 @@ export default function EvidenceView({
     <div className="evidence">
       <div className="view-head">
         <div>
-          <h1>Evidence</h1>
+          <h1>Report</h1>
           <div className="view-head__meta">
             {viewMode === 'this-run' ? (
               <>

@@ -92,6 +92,8 @@ const LIVENESS_CLASS = {
  *   selectedTarget  — { kind, id } | null   guided-flow launch target
  *   onSelectTarget  — (target) => void       lift the guided launch target
  *   onGoToLab       — () => void             open the Environments/IaC generator
+ *   embedded        — boolean                mounted inside another page, which
+ *                                            owns the h1; the title steps down to h2
  */
 
 // Profile · node · failed prepare, or '' when every member is missing.
@@ -103,7 +105,8 @@ function containerFactsLine(f) {
   ].filter(Boolean).join(' · ')
 }
 
-export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
+export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {}, embedded = false }) {
+  const Title = embedded ? 'h2' : 'h1'
   // ── Global scope from the provider (agents + active agent are ambient) ─────
   const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors, healthModel } = useEnvironment()
   const agentsError = errors?.agents || null
@@ -318,7 +321,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     <div className="targets">
       <header className="view-head">
         <div>
-          <h1>Agents &amp; targets</h1>
+          <Title>Agents &amp; targets</Title>
           <p className="view-head__meta">
             Manage where the simulation runs and pick the <strong>active agent</strong>. The active
             agent is shared with the header switcher — switch here or there, every surface follows.
