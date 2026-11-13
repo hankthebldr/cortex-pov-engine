@@ -66,6 +66,49 @@ const LIVENESS_CLASS = {
   [LIVENESS.UNKNOWN]: 'unknown',
 }
 
+/**
+ * What a pull agent can do, as it registered, and whether it runs steps under
+ * the service accounts a scenario declares. `capabilities` is the beacon's own
+ * roster from GET /api/agents. Windows never honours a step identity — the
+ * executor collapses every non-direct identity to `direct` — so a Windows row
+ * reads "not honoured" even if it lists identity-harness (enroll defaults an
+ * empty roster to ["shell","identity-harness"]). A row with no roster makes no
+ * identity claim either way.
+ */
+function AgentCapabilities({ agent }) {
+  const caps = Array.isArray(agent.capabilities)
+    ? [...new Set(agent.capabilities.map((c) => String(c).trim()).filter(Boolean))]
+    : []
+  const windows = installerOS(agent.os || agent.platform) === 'windows'
+  const harness = caps.some((c) => c.toLowerCase() === 'identity-harness')
+  let identity = null
+  if (harness && !windows) {
+    identity = (
+      <p className="target-card__identity" data-testid="agent-identity">
+        Runs steps as their declared service accounts
+      </p>
+    )
+  } else if (caps.length > 0 || windows) {
+    identity = (
+      <p className="target-card__identity target-card__identity--warn" data-testid="agent-identity">
+        Identity not honoured — steps run as the agent&apos;s own user
+      </p>
+    )
+  }
+  return (
+    <div className="target-card__caps" data-testid="agent-capabilities">
+      {caps.length > 0 ? (
+        <ul className="target-card__chips" aria-label="Capabilities">
+          {caps.map((c) => <li key={c} className="target-card__chip mono">{c}</li>)}
+        </ul>
+      ) : (
+        <p className="target-card__caps-none">Capabilities not reported</p>
+      )}
+      {identity}
+    </div>
+  )
+}
+
 
 /**
  * TargetsView — the Agents destination AND the guided-flow target picker.
@@ -432,6 +475,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     <span className="target-card__selected">✓ active agent</span>
                   )}
                 </button>
+
+                <AgentCapabilities agent={a} />
 
                 {confirming ? (
                   <>
