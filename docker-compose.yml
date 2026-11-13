@@ -87,6 +87,9 @@ services:
       # CIDRs whose X-Forwarded-For is believed for an agent's last_ip. Empty =
       # ignore XFF and record the socket peer (see .env.example).
       - CORTEXSIM_TRUSTED_PROXIES=${CORTEXSIM_TRUSTED_PROXIES:-}
+      # Lab tenants' API hosts; collector setup writes native firewall datasets
+      # only on these. Empty = none (see .env.example).
+      - CORTEXSIM_DOOR_PROBE_TENANTS=${CORTEXSIM_DOOR_PROBE_TENANTS:-}
       # The only URLs the agent installer's ?server= and a served k8s bundle's
       # `server` may name, besides the address a request arrives on. Empty is
       # the request's own origin only; see .env.example.

@@ -455,3 +455,8 @@ def test_dockerfile_healthcheck_host_is_admitted_with_an_empty_allowlist():
                                 hostname_fn=lambda: "3f2a9c1d7b6e",
                                 fqdn_fn=lambda: "3f2a9c1d7b6e")
     assert asyncio.run(guard.is_allowed(urlsplit(url).netloc))
+
+
+def test_compose_passes_the_lab_tenant_setting(simcore):
+    env = simcore["environment"]
+    assert "CORTEXSIM_DOOR_PROBE_TENANTS=${CORTEXSIM_DOOR_PROBE_TENANTS:-}" in env
