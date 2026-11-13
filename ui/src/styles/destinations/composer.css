@@ -421,7 +421,7 @@
 .theme-console .chain-node__glyph--start { color: var(--ac-ink); }
 /* The dot grid: between the hairline and the quiet-text token, so it reads as
    depth without competing with a card's border. */
-.theme-console .composer-canvas__flow { --canvas-dot: color-mix(in srgb, var(--tx3) 45%, var(--bd2)); }
+.theme-console .composer { --canvas-dot: color-mix(in srgb, var(--tx3) 45%, var(--bd2)); }
 .theme-console .chain-node__title {
   font-size: 12px; font-weight: 700; margin-top: 7px; color: var(--tx);
 }
@@ -1548,7 +1548,7 @@
      var(--xy-background-pattern-color-props, var(--xy-background-pattern-color,
      …-dots-color-default)) }`); `--xy-background-pattern-dots-color` is not
      read anywhere and left the grid on the library's #91919a. */
-  --xy-background-pattern-color: var(--bd2);
+  --xy-background-pattern-color: var(--canvas-dot);
   --xy-edge-stroke: var(--tx3);
   --xy-edge-stroke-selected: var(--ac-str);
   --xy-edge-stroke-width: 1.5;
