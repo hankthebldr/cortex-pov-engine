@@ -1,7 +1,8 @@
 /**
  * The Library → Composer link. The inspector's actions were Continue to
  * Launch · Pull · Push · bash · Close — no way to take the scenario you had
- * just read into the Composer and edit it. The only path was typing
+ * just read into the Composer and edit it. Design v26 names that verb
+ * Customize (§4.4). The only path was typing
  * `#/composer?from=<id>` by hand (`ScenarioTable.jsx` carried an "Open in
  * Simulation Composer" shortcut, but nothing mounts that component), so for a
  * DC the Composer could open 24 scenarios: the ones its palette listed.
@@ -11,7 +12,7 @@
  */
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import ScenarioInspector from '../console/ScenarioInspector.jsx'
 import OperationsView from '../console/OperationsView.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
@@ -32,17 +33,17 @@ const scenario = {
   execution_identity: { default: 'www-data', options: ['www-data'] },
 }
 
-describe('ScenarioInspector — Edit in Composer', () => {
-  it('offers "Edit in Composer" when the parent wires it, and calls it', () => {
-    const onOpenInComposer = vi.fn()
-    render(<ScenarioInspector scenario={scenario} open launch={stubLaunch} onOpenInComposer={onOpenInComposer} />)
-    fireEvent.click(screen.getByRole('button', { name: /edit in composer/i }))
-    expect(onOpenInComposer).toHaveBeenCalledTimes(1)
+describe('ScenarioInspector — Customize (Build a chain with this chain)', () => {
+  it('offers Customize when the parent wires it, and calls it', () => {
+    const onCustomize = vi.fn()
+    render(<ScenarioInspector scenario={scenario} open launch={stubLaunch} onCustomize={onCustomize} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }))
+    expect(onCustomize).toHaveBeenCalledTimes(1)
   })
 
   it('renders no such action when nothing is wired (isolated drawer)', () => {
     render(<ScenarioInspector scenario={scenario} open launch={stubLaunch} />)
-    expect(screen.queryByRole('button', { name: /edit in composer/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Customize' })).toBeNull()
   })
 })
 
@@ -57,8 +58,9 @@ describe('Library — the selected scenario opens in the Composer', () => {
     })
     render(<OperationsView onNavigate={onNavigate} />)
     fireEvent.click(await screen.findByText('Credential Dumping'))
-    const btn = await waitFor(() => screen.getByRole('button', { name: /edit in composer/i }))
-    fireEvent.click(btn)
+    // The sheet's own Customize (the card's footer carries one too).
+    const actions = await waitFor(() => screen.getByTestId('scenario-sheet-actions'))
+    fireEvent.click(within(actions).getByRole('button', { name: 'Customize' }))
     expect(onNavigate).toHaveBeenCalledWith('composer', { open: 'SIM-EDR-001' })
   })
 })

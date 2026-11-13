@@ -8,6 +8,7 @@ import ReadinessView from '../console/ReadinessView.jsx'
 import ReadinessBanner from '../console/ReadinessBanner.jsx'
 import { EnvironmentContext } from '../../context/EnvironmentContext.jsx'
 import { buildHealthModel } from '../console/readiness/healthModel.js'
+import { getDestination } from '../../app/destinations.jsx'
 
 const HEALTH_OK = {
   status: 'ok', version: '1.0.0', commit: 'abc1234',
@@ -166,6 +167,20 @@ describe('ReadinessView', () => {
     expect(empty).toHaveTextContent(/still owed/)
     await userEvent.click(screen.getByRole('button', { name: /Register a tenant/i }))
     expect(onNavigate).toHaveBeenCalledWith('tenants')
+  })
+
+  it('names the payload-shelf link after the page it opens', async () => {
+    installRoutes(ROUTES({
+      'GET /api/health': {
+        ...HEALTH_OK,
+        components: { ...HEALTH_OK.components, payload_shelf: { status: 'ok', declared: 8, staged: 8, unpinned: 0 } },
+      },
+    }))
+    const onNavigate = vi.fn()
+    renderView({}, { onNavigate })
+    await screen.findByTestId('health-payload_shelf')
+    await userEvent.click(screen.getByRole('button', { name: `${getDestination('adapters').label} ▸` }))
+    expect(onNavigate).toHaveBeenCalledWith('adapters')
   })
 })
 

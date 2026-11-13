@@ -41,6 +41,16 @@ dataset = xdr_data
 | filter action_file_path = "/etc/shadow"
 | filter actor_process_image_name in ("cat", "less", "more", "head", "tail", "cp", "dd", "python3", "perl")
 
+## ABIOC — Suspicious data encryption (behavioral-ML, causality-anchored)
+# severity: low
+# causality_anchor: The openssl process encrypting local files and its causality chain (in the lab, the root operator shell under the CortexSim beacon).
+# PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 in report mode (SIM-EDR-025 run 46f4394b, rule_id 30df8779-1e1e-4c5a-a9de-40cb94d837e7) one second after the openssl burst, described by the tenant as 'The process openssl used to encrypt data on the local file system' and mapped to T1486 and T1027.013, with case_ids empty. The name is the built-in alert name verbatim so the matcher keys on it. Severity is the rule's, not the policy's, so it is Low in block mode too. The logic below approximates the trigger for hunting; it is not the built-in's code.
+
+dataset = xdr_data
+| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+| filter action_process_image_name = "openssl"
+| filter action_process_image_command_line contains " enc "
+
 ## VALIDATION — EDR-025 Mass Akira-Extension Encryption By One Causality Chain
 # purpose: hunt
 # dataset: xdr_data

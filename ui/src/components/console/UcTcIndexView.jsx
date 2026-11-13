@@ -23,6 +23,8 @@ import {
   proofScope,
   readPath,
 } from './uctcMechanisms.js'
+import VerdictReason from './VerdictReason.jsx'
+import { verdictReason } from './verdictReason.js'
 import './UcTcIndexView.css'
 import '../../styles/destinations/uctc.css'
 
@@ -470,7 +472,7 @@ export default function UcTcIndexView({
         <div className="uctc__pagehead-bar" aria-hidden="true" />
         {/* Masthead eyebrow: the nav group alone, matching every other
             redesigned destination (M-4) — not group+destination-name. */}
-        <h1 className="uctc__pagehead-title">UC / TC Index</h1>
+        <h1 className="uctc__pagehead-title">UC / TC index</h1>
       </div>
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
@@ -1306,6 +1308,11 @@ function TestCaseDetail({
                 {v} {k}
               </span>
             ))}
+            {/* Of the pending runs, the ones with nothing to score: they need a
+                re-run or a closed soak window, not more verification. */}
+            {Object.entries(runs.pending_reasons || {}).map(([k, v]) => (
+              <VerdictReason key={k} reason={k} count={v} testId={`uctc-pending-reason-${k}`} />
+            ))}
             {runs.latest?.run_id && (
               <button
                 type="button"
@@ -1313,7 +1320,8 @@ function TestCaseDetail({
                 data-testid="uctc-open-run"
                 onClick={() => onNavigate('runs', { run: runs.latest.run_id, tab: 'evidence' })}
               >
-                latest {runs.latest.run_id} →
+                latest {runs.latest.run_id}
+                {runs.latest.reason ? ` · ${verdictReason({ reason: runs.latest.reason }).label}` : ''} →
               </button>
             )}
           </div>

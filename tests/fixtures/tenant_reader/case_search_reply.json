@@ -1,0 +1,42 @@
+{
+  "reply": {
+    "DATA": [
+      {
+        "case_id": 501,
+        "case_name": "synthetic-case-1",
+        "case_domain": "Security",
+        "severity": "HIGH",
+        "status_progress": "In Progress",
+        "resolve_reason": null,
+        "resolve_comment": null,
+        "resolved_timestamp": null,
+        "creation_time": 1762000002000,
+        "modification_time": 1762000040000,
+        "issue_ids": [1001, 1002],
+        "issue_count": 2,
+        "hosts": ["target-01:synthetic-endpoint-1"],
+        "host_count": 1,
+        "xdr_url": "https://synthetic-01.xdr.us.paloaltonetworks.com/case-view/501"
+      },
+      {
+        "case_id": 502,
+        "case_name": "synthetic-case-2",
+        "case_domain": "Security",
+        "severity": "CRITICAL",
+        "status_progress": "Resolved",
+        "resolve_reason": "Resolved - True Positive",
+        "resolve_comment": "synthetic-comment-1",
+        "resolved_timestamp": 1762000099000,
+        "creation_time": 1762000072000,
+        "modification_time": 1762000099000,
+        "issue_ids": [1003],
+        "issue_count": 1,
+        "hosts": [],
+        "host_count": 0,
+        "xdr_url": "https://synthetic-01.xdr.us.paloaltonetworks.com/case-view/502"
+      }
+    ],
+    "TOTAL_COUNT": 900,
+    "FILTER_COUNT": 2
+  }
+}

@@ -7,6 +7,8 @@ import PayloadShelfBanner from './PayloadShelfBanner.jsx'
 import StagePayloadDialog from './StagePayloadDialog.jsx'
 import PayloadComposer from './PayloadComposer.jsx'
 import ProvenanceBlock from './ProvenanceBlock.jsx'
+import Button from './kit/Button.jsx'
+import { useChainTray, packageTrayItem } from '../../context/ChainTrayContext.jsx'
 
 /**
  * ToolAdapterCatalog — "Tools & Payloads".
@@ -34,6 +36,7 @@ import ProvenanceBlock from './ProvenanceBlock.jsx'
  * a colleague "the twelve tools this POV needs, three of them unstaged".
  */
 export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+  const tray = useChainTray()
   const [adapters, setAdapters] = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -235,6 +238,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
               isSelected={a.adapter_id === selectedId}
               onSelect={() => setParams({ tool: a.adapter_id, panel: null })}
               onStage={() => setParams({ tool: a.adapter_id, panel: 'stage' })}
+              onAdd={() => tray.add(packageTrayItem(a))}
             />
           ))}
         </div>
@@ -250,6 +254,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
           onCompose={() => setParams({ panel: 'compose' })}
           onNavigateAdapter={(id) => setParams({ tool: id, panel: null })}
           onNavigateTtp={(ttpId) => onNavigate('ttps', { ttp: ttpId })}
+          onAddToChain={() => tray.add(packageTrayItem(selectedDetail))}
         />
       )}
 
@@ -358,7 +363,7 @@ function FilterRow({ label, active, options, onChange, formatOption }) {
 
 /* ─── Card ────────────────────────────────────────────────────────── */
 
-function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
+function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage, onAdd = null }) {
   const tids    = adapter.expected_techniques || []
   const planes  = adapter.planes || []
   const safety  = adapter.safety_class || ''
@@ -405,6 +410,18 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
             Stage ▸
           </button>
         )}
+        {/* Catalog is never a dead end (v26 §4.4): every package can be added
+            to the chain tray, and from there to Build a chain. */}
+        {onAdd && (
+          <Button
+            variant="secondary"
+            className="adapter-card__add"
+            onClick={(e) => { e.stopPropagation(); onAdd() }}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            Add to chain
+          </Button>
+        )}
       </div>
       <div className="adapter-card__egress mono">{supply?.egressLabel}</div>
 
@@ -450,7 +467,7 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
 /* ─── Detail panel ───────────────────────────────────────────────── */
 
 function ToolAdapterDetail({
-  detail, supply, shelf, onClose, onStage, onCompose, onNavigateAdapter, onNavigateTtp,
+  detail, supply, shelf, onClose, onStage, onCompose, onNavigateAdapter, onNavigateTtp, onAddToChain = null,
 }) {
   if (detail._error) {
     return (
@@ -484,7 +501,10 @@ function ToolAdapterDetail({
           </div>
           <h3 className="competitive__detail-title">{detail.name}</h3>
         </div>
-        <button type="button" className="btn" onClick={onClose}>Close</button>
+        <span className="adapter-detail__actions">
+          {onAddToChain && <Button variant="primary" onClick={onAddToChain}>Add to chain</Button>}
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </span>
       </div>
 
       {/* SUPPLY FIRST. "Will this tool be there, and who has to reach the

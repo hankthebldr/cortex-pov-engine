@@ -16,7 +16,10 @@ import {
   getScenarioTenantContent,
   postDraftTenantContent,
   getToolAdapters,
+  getEalDataStreams,
 } from '../../api/client.js'
+import { useChainTray, ttpTrayItem, packageTrayItem, streamTrayItem } from '../../context/ChainTrayContext.jsx'
+import { appendTrayItems } from './chainTrayDraft.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
@@ -135,15 +138,15 @@ const WS_TABS = [
   ['history', 'History'],
 ]
 
-// NICE-organized palette tabs (Build · Network · Identity · Cloud · Endpoint).
-// Each group the container assembles carries a `tab`; the palette filters to the
-// active one. No preserved test asserts palette content, so these are additive.
+// The palette's tabs are what a chain is assembled from (design v26 §4.4):
+// Scenarios · TTP cards · Data streams · Packages. Each group the container
+// assembles carries a `tab`; a group with none (the step kinds, the launch
+// targets) shows on every tab.
 const PALETTE_TABS = [
-  { id: 'build', label: 'Build' },
-  { id: 'network', label: 'Network' },
-  { id: 'identity', label: 'Identity' },
-  { id: 'cloud', label: 'Cloud' },
-  { id: 'endpoint', label: 'Endpoint' },
+  { id: 'scenarios', label: 'Scenarios' },
+  { id: 'ttps', label: 'TTP cards' },
+  { id: 'streams', label: 'Data streams' },
+  { id: 'packages', label: 'Packages' },
 ]
 
 export default function ComposerView({
@@ -182,7 +185,7 @@ export default function ComposerView({
   // else one picked in History, else (null) the provider's own activeRun.
   const [followRunId, setFollowRunId] = useState(null)
   const [benchQuery, setBenchQuery] = useState('')
-  const [paletteTab, setPaletteTab] = useState('build')
+  const [paletteTab, setPaletteTab] = useState('scenarios')
   const [notice, setNotice] = useState(null)
   // Design-lens stitch overlay is off by default (intent, not outcome).
   const [showStitch, setShowStitch] = useState(false)
@@ -222,6 +225,9 @@ export default function ComposerView({
   // A selected RULE node. View state only: a rule is never part of the draft.
   const [selectedRuleKey, setSelectedRuleKey] = useState(null)
   const [adapters, setAdapters] = useState([])
+  // Data-stream emitters (EAL plugins), for the palette's Data streams tab.
+  const [emitters, setEmitters] = useState([])
+  const tray = useChainTray()
 
   const say = useCallback((msg) => {
     setNotice(msg)
@@ -233,14 +239,23 @@ export default function ComposerView({
   // ── Load the origin scenario ───────────────────────────────────────────────
   // Detail shape, not the list shape: only `GET /api/scenarios/:id` carries the
   // per-step `command` and `causality` the inspector exists to show.
+  // The scenario the chain was last loaded from, so closing it (an `open` param
+  // that goes away) resets the canvas — and a mount that never had one does
+  // not. Resetting on mount wiped steps the chain tray had just added, on
+  // StrictMode's second effect pass.
+  const loadedFromRef = React.useRef(null)
   useEffect(() => {
     if (!fromId) {
-      setOrigin(null); setOriginDetail(null); setOriginError(null); setSteps([])
-      setDraftMeta({}); setSelectedId(null); setMetaOpen(false)
-      setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
-      setSavedLaunchable(null)
+      if (loadedFromRef.current) {
+        setOrigin(null); setOriginDetail(null); setOriginError(null); setSteps([])
+        setDraftMeta({}); setSelectedId(null); setMetaOpen(false)
+        setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
+        setSavedLaunchable(null)
+      }
+      loadedFromRef.current = null
       return undefined
     }
+    loadedFromRef.current = fromId
     let cancelled = false
     setLoadingOrigin(true)
     setOriginError(null)
@@ -285,6 +300,9 @@ export default function ComposerView({
     getToolAdapters()
       .then((d) => { if (!cancelled) setAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
       .catch(() => { if (!cancelled) setAdapters([]) })
+    getEalDataStreams()
+      .then((d) => { if (!cancelled) setEmitters(Array.isArray(d?.emitters) ? d.emitters : []) })
+      .catch(() => { if (!cancelled) setEmitters([]) })
     return () => { cancelled = true }
   }, [])
 
@@ -668,6 +686,10 @@ export default function ComposerView({
   // overwrite the first.
   const stepsRef = React.useRef(steps)
   stepsRef.current = steps
+  const draftMetaRef = React.useRef(draftMeta)
+  draftMetaRef.current = draftMeta
+  const originRef = React.useRef(origin)
+  originRef.current = origin
   // Every step id used this session, plus every id the origin had. A deleted
   // id is never minted again, so a new step cannot inherit the deleted one's
   // stored position, lane override or — in the Run lens — its recorded state.
@@ -906,6 +928,43 @@ export default function ComposerView({
     addBlankAt('New command step', position, parentId)
   }, [addBlankAt])
 
+  // Append catalog items (a TTP card, a data stream, a package) as real steps
+  // — the one path the palette and the chain tray share (`chainTrayDraft`).
+  // A package also lands in `externalTools`, which the consent gate reads.
+  const addItems = useCallback((items) => {
+    if (!items || !items.length) return 0
+    const { steps: next, externalTools, added } = appendTrayItems(
+      stepsRef.current, items, freshId,
+      draftMetaRef.current.externalTools !== undefined
+        ? draftMetaRef.current.externalTools
+        : (originRef.current?.externalTools || []),
+    )
+    if (!added) return 0
+    stepsRef.current = next
+    setSteps(next)
+    setSelectedId(next[next.length - 1].id)
+    if (items.some((i) => i.kind === 'package')) {
+      setDraftMeta((m) => ({ ...m, externalTools }))
+    }
+    return added
+  }, [freshId])
+
+  // ── The chain tray: "Add to chain" from anywhere lands here ─────────────────
+  // Arriving with `?tray=1` (the tray's Customize), every item the DC added
+  // elsewhere becomes a step, after the origin scenario (if any) has loaded —
+  // appending before it arrives would be overwritten by the origin's steps.
+  // The tray is emptied as it is read, and the param dropped, so a reload or a
+  // second render never adds the same items twice.
+  const trayRequested = params.tray === '1'
+  const originSettled = !fromId || !!origin || !!originError
+  useEffect(() => {
+    if (!trayRequested || !originSettled || loadingOrigin) return
+    const items = tray.take()
+    setParams({ tray: null }, { replace: true })
+    const added = addItems(items)
+    if (added) say(`Added ${added} item${added === 1 ? '' : 's'} from your chain`)
+  }, [trayRequested, originSettled, loadingOrigin, tray.items.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Palette groups (every group API-sourced, never hardcoded content) ────────
   const paletteGroups = useMemo(() => {
     const groups = []
@@ -913,7 +972,6 @@ export default function ComposerView({
     groups.push({
       label: 'Step kinds',
       tone: 'action',
-      tab: 'build',
       items: [
         { key: 'k-command', name: 'Command', meta: 'shell · identity-scoped',
           add: () => addBlank('New command step') },
@@ -925,7 +983,7 @@ export default function ComposerView({
     groups.push({
       label: 'Scenario library',
       tone: 'detected',
-      tab: 'build',
+      tab: 'scenarios',
       items: env.scenarios.map((s) => {
         const id = s.scenario_id || s.id
         return {
@@ -942,7 +1000,7 @@ export default function ComposerView({
     groups.push({
       label: 'TTP cards',
       tone: 'signal',
-      tab: 'build',
+      tab: 'ttps',
       items: ttps.map((t) => {
         const id = t.ttp_id || t.id
         return {
@@ -965,17 +1023,32 @@ export default function ComposerView({
       }),
     })
 
+    // A data stream is an emitter (an EAL plugin): adding one appends a step
+    // on the EAL channel that runs it.
     groups.push({
-      label: 'Tool adapters',
+      label: 'Data streams',
+      tone: 'signal',
+      tab: 'streams',
+      items: emitters.map((e) => ({
+        key: `st-${e.name}`,
+        name: e.name,
+        meta: (e.datasets || []).join(', ') || (e.sources || []).map((s) => s.name).join(', ') || 'emitter',
+        add: () => addItems([streamTrayItem(e)]),
+      })),
+    })
+
+    // A package is a tool adapter: adding one appends a step that runs it.
+    groups.push({
+      label: 'Packages',
       tone: 'pending',
-      tab: 'build',
+      tab: 'packages',
       items: adapters.map((a) => {
         const id = a.adapter_id || a.id
         return {
           key: `ad-${id}`,
           name: id,
-          meta: [a.plane, a.tier ? `tier ${a.tier}` : null].filter(Boolean).join(' · ') || 'adapter',
-          add: () => onNavigate('adapters', { open: id }),
+          meta: [a.name, a.tier ? `tier ${a.tier}` : null].filter(Boolean).join(' · ') || 'adapter',
+          add: () => addItems([packageTrayItem(a)]),
         }
       }),
     })
@@ -983,7 +1056,6 @@ export default function ComposerView({
     groups.push({
       label: 'Targets',
       tone: 'signal',
-      tab: 'endpoint',
       items: env.agents.map((a) => {
         const id = agentIdOf(a)
         return {
@@ -998,7 +1070,7 @@ export default function ComposerView({
     groups.push({
       label: 'Staged payloads',
       tone: 'pending',
-      tab: 'build',
+      tab: 'packages',
       items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
         key: `p-${p.name}`,
         name: p.name,
@@ -1008,7 +1080,7 @@ export default function ComposerView({
     })
 
     return groups
-  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, shelf.shelf, addBlank, freshId, onNavigate, say])
+  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, emitters, shelf.shelf, addBlank, addItems, freshId, onNavigate, say])
 
   // A dropped palette item resolves by its key prefix. Step- and TTP-creating
   // items place a node at the drop point; the rest reuse their click action
@@ -1039,7 +1111,15 @@ export default function ComposerView({
       }
       return undefined
     }
-    if (key.startsWith('ad-')) return onNavigate('adapters', { open: key.slice(3) })
+    if (key.startsWith('ad-')) {
+      const a = adapters.find((x) => (x.adapter_id || x.id) === key.slice(3))
+      addItems([a ? packageTrayItem(a) : { kind: 'package', id: key.slice(3), label: key.slice(3) }])
+      return undefined
+    }
+    if (key.startsWith('st-')) {
+      addItems([streamTrayItem({ name: key.slice(3) })])
+      return undefined
+    }
     if (key.startsWith('a-')) {
       const id = key.slice(2)
       const a = env.agents.find((x) => agentIdOf(x) === id)
@@ -1048,7 +1128,7 @@ export default function ComposerView({
     }
     if (key.startsWith('p-')) return onNavigate('adapters')
     return undefined
-  }, [addBlankAt, ttps, freshId, origin, onNavigate, env.agents, env.setAgent, say])
+  }, [addBlankAt, addItems, adapters, ttps, freshId, origin, onNavigate, env.agents, env.setAgent, say])
 
   // ── Launch button state ──────────────────────────────────────────────────────
   // The client validation gates a saved-row launch as well as the server's
@@ -1189,8 +1269,8 @@ export default function ComposerView({
   // the palette IN PLACE. They used to navigate to the Library / Catalog — an
   // exit from the Composer with no way back carrying a selection — so the only
   // in-Composer picker was this palette, and it listed 24 of 193.
-  const startFromPalette = useCallback(() => {
-    setPaletteTab('build')
+  const startFromPalette = useCallback((tab = 'scenarios') => {
+    setPaletteTab(tab)
     setBenchQuery('')
     openPalette()
   }, [openPalette])
@@ -1418,8 +1498,8 @@ export default function ComposerView({
           onDropCreate={onDropCreate}
           onCanvasDrop={onCanvasDrop}
           onAddStep={() => addBlank('New command step')}
-          onStartLibrary={startFromPalette}
-          onStartTtp={startFromPalette}
+          onStartLibrary={() => startFromPalette('scenarios')}
+          onStartTtp={() => startFromPalette('ttps')}
           onStartBlank={() => addBlank('New command step')}
           onNavigate={onNavigate}
           stitchModel={draft.stitchContext}

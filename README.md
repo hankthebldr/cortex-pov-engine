@@ -265,7 +265,7 @@ flowchart LR
         IDX["UC/TC index v2.2<br/>266 test cases"]
     end
 
-    subgraph CORE["SimCore — FastAPI :8888 · 166 routes"]
+    subgraph CORE["SimCore — FastAPI :8888 · 173 routes"]
         LOAD["scenario_loader<br/>S-01..S-30"]
         ORCH["orchestrator<br/>durable queue"]
         SHELF["payload_shelf<br/>digest-pinned"]
@@ -466,7 +466,7 @@ erDiagram
 
 ### API surface
 
-**156 route decorators across 28 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **166 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (156, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
+**163 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **173 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (163, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -476,22 +476,22 @@ erDiagram
 |---|---:|---|
 | `agents` | 16 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix, preflight |
 | `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
-| `eal` | 15 | campaigns, collectors, preflight, offline bundle |
+| `eal` | 16 | campaigns, collectors, preflight, offline bundle |
+| `xsiam` | 11 | 151-op gated operation catalog (writes preview) + Tier-2 XQL + issue, case and endpoint reads |
 | `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
-| `xsiam` | 8 | 151-op gated operation catalog (writes preview) + Tier-2 XQL |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
-| `payloads` · `drafts` | 7 each | the shelf, mounted at `/shelf` and `/k8s` · Composer drafts |
+| `drafts` · `payloads` | 7 each | Composer drafts · the shelf, mounted at `/shelf` and `/k8s` |
 | `assertions` · `scenarios` | 6 each | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) · corpus, bundle download |
-| `collector_targets` | 5 | the tenant's ingestion doors for this POV, per-target preflight |
+| `collector_targets` | 6 | the collector targets the EAL emitters POST to, with preflight |
 | `results` · `infra` · `connectors` | 4 each | detection validation → MTTD · IaC bundle generation · preflight / reconcile / observations |
 | `tools_dist` · `pov` · `doors` · `ngfw` · `prerequisites` | 3 each | binaries · entitlement scoping · ingestion doors (read-only) · read-only PAN-OS connection · dataset requirements and query library |
-| `mitre` · `events` | 2 each | coverage heatmap, SSE |
-| `storyline` · `health` · `causality` · `readiness` | 1 each | run narrative, diagnostics, causality graph, connector ladder |
+| `mitre` · `events` · `tenant_evidence` | 2 each | coverage heatmap · SSE · run tenant evidence |
+| `storyline` · `health` · `causality` · `readiness` | 1 each | run narrative · diagnostics · causality graph · connector ladder |
 
-Counted 2026-11-12 by `@router.*` decorator per file with the generator's own
-pattern; only the total (156) is regenerated into the ground truth.
+Counted 2026-11-13 by `@router.*` decorator per file with the generator's own
+pattern; only the total (163) is regenerated into the ground truth.
 
 </details>
 
@@ -1070,8 +1070,8 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    28 router files · 156 route decorators · 166 served routes
-│   ├── engine/                 40 modules — loader · orchestrator · verifier
+│   ├── api/                    29 router files · 163 route decorators · 173 served routes
+│   ├── engine/                 41 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop

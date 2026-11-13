@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 199  (GREEN 167 · YELLOW 27 · RED 5)
-- **Steps:** 823 total · 142 detection-bearing steps produce no real signal
+- **Scenarios:** 201  (GREEN 168 · YELLOW 28 · RED 5)
+- **Steps:** 835 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
-- **Consent-gated:** 4 scenarios
-- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 70 scenarios
+- **Consent-gated:** 5 scenarios
+- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 72 scenarios
 - **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 167 scenarios
+## GREEN — 168 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -54,6 +54,7 @@
 | SIM-CDR-025 | CDR | ABIOC/XQL/Correlation | 2/2 | eal |  |
 | SIM-CDR-027 | CDR | BIOC/Analytics | 1/1 | agent |  |
 | SIM-CDR-028 | CDR | BIOC/Analytics | 1/1 | agent |  |
+| SIM-CDR-030 | CDR | XQL/Correlation | 8/8 | eal |  |
 | SIM-CLOUD-001 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |
 | SIM-CLOUD-002 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |
 | SIM-CLOUD-003 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |
@@ -76,7 +77,7 @@
 | SIM-EDR-021 | EDR | BIOC/XQL | 3/3 | agent |  |
 | SIM-EDR-023 | EDR | ABIOC/Prevention/BIOC/XQL/Correlation | 4/4 | agent |  |
 | SIM-EDR-024 | EDR | ABIOC/BIOC/Correlation | 4/4 | agent |  |
-| SIM-EDR-025 | EDR | ABIOC/Prevention/XQL | 6/6 | agent |  |
+| SIM-EDR-025 | EDR | ABIOC/XQL | 6/6 | agent |  |
 | SIM-EMAIL-001 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-002 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-003 | EMAIL | BIOC/XQL/Correlation | 3/3 | eal |  |
@@ -200,7 +201,7 @@
 | SIM-EDR-020 | EDR | BIOC/ABIOC/XQL/Correlation | 1/6 | agent |  |
 | SIM-ITDR-017 | ITDR | ABIOC/BIOC/XQL/Correlation | 1/6 | agent |  |
 
-## YELLOW — 27 scenarios
+## YELLOW — 28 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -225,6 +226,7 @@
 | SIM-MP-004 | ANALYTICS | BIOC/XQL/IOC | 5/5 | agent | egress: TOOL-PACU |
 | SIM-MP-019 | ANALYTICS | XQL/BIOC/ABIOC/IOC/Correlation | 5/5 | agent | egress: TOOL-DNSRECON, TOOL-FFUF, TOOL-GOBUSTER, TOOL-HYDRA, TOOL-IMPACKET, TOOL-MASSCAN, TOOL-METASPLOIT, TOOL-NETEXEC, TOOL-NIKTO, TOOL-NMAP, TOOL-SQLMAP, TOOL-WHATWEB; consent |
 | SIM-MP-036 | ANALYTICS | BIOC/ABIOC/XQL/IOC/Correlation | 9/9 | eal | egress: TOOL-IMPACKET |
+| SIM-MP-038 | ANALYTICS | XQL/Correlation | 4/4 | eal | consent |
 | SIM-NDR-004 | NDR | BIOC/XQL | 2/2 | eal | egress: TOOL-MASSCAN, TOOL-NMAP |
 | SIM-ITDR-007 | ITDR | BIOC/XQL/Correlation | 5/6 | agent | egress: TOOL-PYPYKATZ |
 | SIM-CSPM-003 | CSPM | XQL/Correlation | 4/5 | agent | egress: TOOL-PROWLER |

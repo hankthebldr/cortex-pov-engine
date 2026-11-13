@@ -25,6 +25,9 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   health        — { hostname, version, sensors, tenantHealth }
  *   onAbortRun    — () => void
  *   paletteItems  — items for ⌘K
+ *   onPaletteOpen — () => void, called each time ⌘K opens (lazy loads ride it)
+ *   instance      — this POVengine's header status, from instanceStatus()
+ *   onOpenInstance / instanceTargetLabel — where the instance status leads
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
  *   immersive     — boolean (default false). The open destination is immersive
  *                   (see destinations.jsx): the header, the safety gate and the
@@ -41,7 +44,6 @@ export default function AppShell({
   onNavigate = () => {},
   navGroups = [],
   activeRun = null,
-  lastRun = null,
   health = {},
   tenant = null,
   agent = null,
@@ -49,8 +51,14 @@ export default function AppShell({
   povName = undefined,
   // The rail item that owns the open page (a tab's parent task).
   activeNav = null,
+  // The component the open page belongs to, marked in the Components submenu.
+  activeChild = null,
   onAbortRun = () => {},
   paletteItems = [],
+  onPaletteOpen = null,
+  instance = null,
+  onOpenInstance = () => {},
+  instanceTargetLabel = 'Launch gate',
   onExportPOV = null,
   // Shell-level notice row (the SimCore health/degraded banner). It is a slot
   // rather than a child on purpose: rendered as a child it lands INSIDE
@@ -75,6 +83,13 @@ export default function AppShell({
     paletteOpenRef.current = paletteOpen
     helpOpenRef.current = helpOpen
   }, [paletteOpen, helpOpen])
+  // Tell the caller each time ⌘K opens, so what only search needs (the TTP
+  // card list) is fetched when someone searches, not on every console load.
+  const onPaletteOpenRef = useRef(onPaletteOpen)
+  useEffect(() => { onPaletteOpenRef.current = onPaletteOpen }, [onPaletteOpen])
+  useEffect(() => {
+    if (paletteOpen && onPaletteOpenRef.current) onPaletteOpenRef.current()
+  }, [paletteOpen])
   // Rail collapse — persisted so a DC's preference survives reloads.
   const [railCollapsed, setRailCollapsed] = useState(() => {
     try { return window.localStorage.getItem('cortexsim.railCollapsed') === 'true' } catch { return false }
@@ -205,6 +220,15 @@ export default function AppShell({
     markFirstRunSeen()
   }, [])
 
+  // The console routes on the URL hash, so letting the skip link follow its
+  // `#cortexsim-main` fragment rewrote the route to a destination that does
+  // not exist and dropped the user on Get started. Move focus instead.
+  const mainRef = useRef(null)
+  const skipToWorkspace = useCallback((e) => {
+    e.preventDefault()
+    if (mainRef.current) mainRef.current.focus()
+  }, [])
+
   // Header / workspace, with the safety gate above while it is shown.
   const shellClass = 'pov-shell shell shell--no-phasebar' + (immersive ? ' pov-shell--immersive' : '')
 
@@ -217,7 +241,8 @@ export default function AppShell({
       id: 'toggle-theater',
       title: theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly',
       meta: 'larger type, hides the rail',
-      icon: '▭',
+      kind: 'View',
+      icon: 'apps-grid',
       onSelect: toggleTheater,
     },
   ]
@@ -235,7 +260,7 @@ export default function AppShell({
     >
       {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
           main workspace. Invisible until focused. */}
-      <a href="#cortexsim-main" className="skip-link">
+      <a href="#cortexsim-main" className="skip-link" onClick={skipToWorkspace}>
         Skip to workspace
       </a>
 
@@ -247,10 +272,12 @@ export default function AppShell({
 
       <ConsoleHeader
         health={health}
+        instance={instance}
+        onOpenInstance={onOpenInstance}
+        instanceTargetLabel={instanceTargetLabel}
         tenant={tenant}
         agent={agent}
         activeRun={activeRun}
-        lastRun={lastRun}
         povName={povName}
         onOpenPalette={() => setPaletteOpen(true)}
         onNavigate={onNavigate}
@@ -277,13 +304,20 @@ export default function AppShell({
           <DestinationNav
             groups={navGroups}
             active={activeNav || destination}
+            activeChild={activeChild}
             onNavigate={onNavigate}
             collapsed={railCollapsed}
             onToggleCollapse={toggleRail}
           />
         )}
 
-        <main className="pov-main main" id="cortexsim-main" aria-label="POVengine workspace">
+        <main
+          ref={mainRef}
+          className="pov-main main"
+          id="cortexsim-main"
+          tabIndex={-1}
+          aria-label="POVengine workspace"
+        >
           <div className="view" key={destination}>
             {children}
           </div>

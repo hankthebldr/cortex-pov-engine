@@ -1,0 +1,291 @@
+64-bit PowerShell spawning an uncommon 32-bit PowerShell	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/64-bit-powershell-spawning-an-uncommon-32-bit-powershell
+A commonly abused process connected to a rare cloud resource	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-commonly-abused-process-connected-to-a-rare-cloud-resource
+A commonly abused process connected to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-commonly-abused-process-connected-to-a-rare-external-host
+A compromised process accessed a rare cloud resource	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compromised-process-accessed-a-rare-cloud-resource
+A compromised process accessed a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compromised-process-accessed-a-rare-external-host
+A contained executable from a mounted share initiated a suspicious outbound network connection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-contained-executable-from-a-mounted-share-initiated-a-suspicious-outbound-network-connection
+A contained executable was executed by an unusual process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-contained-executable-was-executed-by-an-unusual-process
+A process connected to a rare cloud resource	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-process-connected-to-a-rare-cloud-resource
+A process connected to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-process-connected-to-a-rare-external-host
+A process connected to rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-process-connected-to-rare-external-host
+A process is masquerading as a common Microsoft product	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-process-is-masquerading-as-a-common-microsoft-product
+A process was executed with a command line obfuscated by Unicode character substitution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-process-was-executed-with-a-command-line-obfuscated-by-unicode-character-substitution
+A rare DLL, signed by an uncommon vendor, was hijacked into a Microsoft process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-rare-dll-signed-by-an-uncommon-vendor-was-hijacked-into-a-microsoft-process
+A rare local administrator login	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-rare-local-administrator-login
+A service was disabled	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-service-was-disabled
+A suspicious process enrolled for a certificate	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-suspicious-process-enrolled-for-a-certificate
+A user accessed an uncommon AppID	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-user-accessed-an-uncommon-appid
+A user logged in from an abnormal country or ASN	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-user-logged-in-from-an-abnormal-country-or-asn
+Abnormal Communication to a Rare Domain	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-communication-to-a-rare-domain
+Abnormal communication with a rare combination of TLS and HTTP User Agent	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-communication-with-a-rare-combination-of-tls-and-http-user-agent
+Abnormal connections to a dormant host from a newly seen endpoint	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-connections-to-a-dormant-host-from-a-newly-seen-endpoint
+Abnormal ICMP echo (PING) to multiple hosts	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-icmp-echo-ping-to-multiple-hosts
+Abnormal network communication through TOR using an uncommon port	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-network-communication-through-tor-using-an-uncommon-port
+Abnormal network communication with a rare combination of HTTP User Agent and HTTP Server	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-network-communication-with-a-rare-combination-of-http-user-agent-and-http-server
+Abnormal process connection to default Meterpreter port	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-process-connection-to-default-meterpreter-port
+Abnormal RDP connections to multiple hosts	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-rdp-connections-to-multiple-hosts
+Abnormal RDP connections to multiple hosts from a rarely seen host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-rdp-connections-to-multiple-hosts-from-a-rarely-seen-host
+Abnormal RDP session to a remote host from a rarely seen host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-rdp-session-to-a-remote-host-from-a-rarely-seen-host
+Abnormal Recurring Communications to a Rare Domain	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-recurring-communications-to-a-rare-domain
+Abnormal SMB activity to multiple hosts	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-smb-activity-to-multiple-hosts
+Abnormal SMB scanning activity to multiple hosts	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-smb-scanning-activity-to-multiple-hosts
+Abnormal User Login to Domain Controller	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-user-login-to-domain-controller
+An uncommon lolbin execution by scheduled task	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-uncommon-lolbin-execution-by-scheduled-task
+An uncommon RDP session from a managed host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-uncommon-rdp-session-from-a-managed-host
+An uncommon RDP session was established	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-uncommon-rdp-session-was-established
+An uncommon service was started	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-uncommon-service-was-started
+An unsigned process created scheduled task and performed an injection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-unsigned-process-created-scheduled-task-and-performed-an-injection
+Analytics enhanced NGFW - Rare Internal Firewall Vulnerability Threat Alert	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/analytics-enhanced-ngfw-rare-internal-firewall-vulnerability-threat-alert
+AppleScript interpreter dynamic library loaded into a process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/applescript-interpreter-dynamic-library-loaded-into-a-process
+AppleScript process executed with a rare command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/applescript-process-executed-with-a-rare-command-line
+Attempt to execute a command on a remote host using PsExec.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/attempt-to-execute-a-command-on-a-remote-host-using-psexec-exe
+Cached credentials discovery with cmdkey	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/cached-credentials-discovery-with-cmdkey
+Cloud IMDS access followed by remote token usage	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/cloud-imds-access-followed-by-remote-token-usage
+Command execution via wmiexec	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/command-execution-via-wmiexec
+Common third-party software name masquerading	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/common-third-party-software-name-masquerading
+Commonly abused process launched as a system service	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/commonly-abused-process-launched-as-a-system-service
+Conhost.exe spawned a suspicious cmd process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/conhost-exe-spawned-a-suspicious-cmd-process
+Contained process execution with a rare GitHub URL	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/contained-process-execution-with-a-rare-github-url
+Copy a process memory file	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/copy-a-process-memory-file
+Discovery of host users via WMIC	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/discovery-of-host-users-via-wmic
+Encoded information using Windows certificate management tool	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/encoded-information-using-windows-certificate-management-tool
+Execution of an uncommon process at an early startup stage	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-at-an-early-startup-stage
+Execution of an uncommon process at an early startup stage by Windows system binary	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-at-an-early-startup-stage-by-windows-system-binary
+Execution of an uncommon process with a local/domain user SID at an early startup stage	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-with-a-local-domain-user-sid-at-an-early-startup-stage
+Execution of an uncommon process with a local/domain user SID at early startup by a system binary	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-with-a-local-domain-user-sid-at-early-startup-by-a-system-binary
+Execution of command from within a Kubernetes pod using kubelet credentials	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-command-from-within-a-kubernetes-pod-using-kubelet-credentials
+Execution of dllhost.exe with an empty command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-dllhost-exe-with-an-empty-command-line
+Execution of masqueraded third-party utility	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-masqueraded-third-party-utility
+Extracting credentials from Unix files	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/extracting-credentials-from-unix-files
+File transfer from unusual IP using known tools	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/file-transfer-from-unusual-ip-using-known-tools
+Fodhelper.exe UAC bypass	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/fodhelper-exe-uac-bypass
+Globally uncommon high entropy module was loaded	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-high-entropy-module-was-loaded
+Globally uncommon high entropy process was executed	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-high-entropy-process-was-executed
+Globally uncommon image load from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-image-load-from-a-signed-process
+Globally uncommon injection from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-injection-from-a-signed-process
+Globally uncommon IP address by a common process (sha256)	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-ip-address-by-a-common-process-sha256
+Globally uncommon IP address connection from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-ip-address-connection-from-a-signed-process
+Globally uncommon process execution from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-process-execution-from-a-signed-process
+Globally uncommon root domain from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-root-domain-from-a-signed-process
+Globally uncommon root-domain port combination by a common process (sha256)	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-root-domain-port-combination-by-a-common-process-sha256
+Globally uncommon root-domain port combination from a signed process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/globally-uncommon-root-domain-port-combination-from-a-signed-process
+HTTP with suspicious characteristics	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/http-with-suspicious-characteristics
+Injection into rundll32.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/injection-into-rundll32-exe
+Installation of a new System-V service	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/installation-of-a-new-system-v-service
+Interactive login by a service account	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/interactive-login-by-a-service-account
+JS runtime attempted to read Git authentication tokens	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/js-runtime-attempted-to-read-git-authentication-tokens
+Kerberos Pre-Auth Failures by Host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-pre-auth-failures-by-host
+Kerberos Pre-Auth Failures by User and Host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-pre-auth-failures-by-user-and-host
+Kerberos Traffic from Non-Standard Process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-traffic-from-non-standard-process
+Kerberos User Enumeration	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kerberos-user-enumeration
+LDAP traffic from non-standard process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ldap-traffic-from-non-standard-process
+Linux process execution with a rare GitHub URL	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/linux-process-execution-with-a-rare-github-url
+LOLBAS executable injects into another process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/lolbas-executable-injects-into-another-process
+LOLBIN process executed with a high integrity level	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/lolbin-process-executed-with-a-high-integrity-level
+Manipulation of netsh helper DLLs Registry keys	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/manipulation-of-netsh-helper-dlls-registry-keys
+Massive upload to a rare storage or mail domain	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/massive-upload-to-a-rare-storage-or-mail-domain
+Memory dumping with comsvcs.dll	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/memory-dumping-with-comsvcs-dll
+Microsoft HTML Application Host spawns from CMD or PowerShell	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-html-application-host-spawns-from-cmd-or-powershell
+Microsoft Office injects code into a process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-injects-code-into-a-process
+Microsoft Office Process Spawning a Suspicious One-Liner	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-process-spawning-a-suspicious-one-liner
+Microsoft Office process spawns a commonly abused process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-process-spawns-a-commonly-abused-process
+Microsoft Office process spawns conhost.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-process-spawns-conhost-exe
+Mimikatz command-line arguments	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/mimikatz-command-line-arguments
+Mshta.exe launched with suspicious arguments	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/mshta-exe-launched-with-suspicious-arguments
+Mshta.exe spawns from a browser process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/mshta-exe-spawns-from-a-browser-process
+Msiexec execution of an executable from an uncommon remote location	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/msiexec-execution-of-an-executable-from-an-uncommon-remote-location
+Multiple discovery commands on a Linux host by the same process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-linux-host-by-the-same-process
+Multiple discovery commands on a Windows host by the same process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-windows-host-by-the-same-process
+Multiple Rare LOLBIN Process Executions by User	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-rare-lolbin-process-executions-by-user
+Multiple Rare Process Executions in Organization	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-rare-process-executions-in-organization
+Multiple Weakly-Encrypted Kerberos Tickets Received	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-weakly-encrypted-kerberos-tickets-received
+New addition to Windows Defender exclusion list	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/new-addition-to-windows-defender-exclusion-list
+NTLM Brute Force on a Service Account	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ntlm-brute-force-on-a-service-account
+Office process spawned with suspicious command-line arguments	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/office-process-spawned-with-suspicious-command-line-arguments
+Phantom DLL Loading	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/phantom-dll-loading
+Ping to localhost from an uncommon, unsigned parent process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ping-to-localhost-from-an-uncommon-unsigned-parent-process
+Possible DLL Hijack into a Microsoft process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-dll-hijack-into-a-microsoft-process
+Possible DLL Search Order Hijacking	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-dll-search-order-hijacking
+Possible external RDP Brute-Force	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-external-rdp-brute-force
+Possible Kerberos relay attack	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-kerberos-relay-attack
+Possible malicious .NET compilation started by a commonly abused process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-malicious-net-compilation-started-by-a-commonly-abused-process
+Possible network service discovery via command-line tool	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-network-service-discovery-via-command-line-tool
+Possible RDP session hijacking using tscon.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-rdp-session-hijacking-using-tscon-exe
+Potential extraction of NAA Account Credentials in Microsoft Configuration Manager	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/potential-extraction-of-naa-account-credentials-in-microsoft-configuration-manager
+PowerShell running with download in the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/powershell-running-with-download-in-the-command-line
+PowerShell runs suspicious base64-encoded commands	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/powershell-runs-suspicious-base64-encoded-commands
+PowerShell script executed from a temporary directory	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/powershell-script-executed-from-a-temporary-directory
+PowerShell suspicious flags	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/powershell-suspicious-flags
+PsExec was executed with a suspicious command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/psexec-was-executed-with-a-suspicious-command-line
+Rare access to known advertising domains	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-access-to-known-advertising-domains
+Rare AppID usage to a rare destination	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-appid-usage-to-a-rare-destination
+Rare binary connected to a rare cloud resource	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-binary-connected-to-a-rare-cloud-resource
+Rare binary connected to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-binary-connected-to-a-rare-external-host
+Rare communication over email ports to external email server by unsigned process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-communication-over-email-ports-to-external-email-server-by-unsigned-process
+Rare file transfer over SMB protocol	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-file-transfer-over-smb-protocol
+Rare LOLBIN Process Execution by User	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-lolbin-process-execution-by-user
+Rare MS-Update traffic over HTTP	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ms-update-traffic-over-http
+Rare NTLM Access By User To Host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ntlm-access-by-user-to-host
+Rare NTLM Usage by User	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ntlm-usage-by-user
+Rare process executed by an AppleScript	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-executed-by-an-applescript
+Rare process execution by user	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-execution-by-user
+Rare process execution in organization	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-execution-in-organization
+Rare process spawned by srvany.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-spawned-by-srvany-exe
+Rare process with VNC server capabilities started	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-with-vnc-server-capabilities-started
+Rare RDP session to a remote host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-rdp-session-to-a-remote-host
+Rare security product signed executable executed in the network	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-security-product-signed-executable-executed-in-the-network
+Rare signature signed executable executed in the network	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-signature-signed-executable-executed-in-the-network
+Rare SMB session to a remote host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-smb-session-to-a-remote-host
+Rare SMTP/S Session	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-smtp-s-session
+Rare Unix process divided files by size	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-unix-process-divided-files-by-size
+Rare unsigned process execution by scheduled task	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-unsigned-process-execution-by-scheduled-task
+Rare Unsigned Process Spawned by Office Process Under Suspicious Directory	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-unsigned-process-spawned-by-office-process-under-suspicious-directory
+Rare Windows Remote Management (WinRM) HTTP Activity	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-windows-remote-management-winrm-http-activity
+Rare WinRM Session	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-winrm-session
+RDP Connection to localhost	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rdp-connection-to-localhost
+RDP from an unmanaged endpoint in a typically managed subnet	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rdp-from-an-unmanaged-endpoint-in-a-typically-managed-subnet
+Recurring access to rare domain	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/recurring-access-to-rare-domain
+Recurring access to rare IP	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/recurring-access-to-rare-ip
+Recurring rare domain access from an unsigned process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/recurring-rare-domain-access-from-an-unsigned-process
+Recurring rare domain access to dynamic DNS domain	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/recurring-rare-domain-access-to-dynamic-dns-domain
+Registration of Uncommon .NET Services and/or Assemblies	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/registration-of-uncommon-net-services-and-or-assemblies
+Registry credentials extraction	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/registry-credentials-extraction
+Remote command execution via wmic.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/remote-command-execution-via-wmic-exe
+Remote PsExec-like command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/remote-psexec-like-command-execution
+Remote service command execution from an uncommon source	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/remote-service-command-execution-from-an-uncommon-source
+Remote service start from an uncommon source	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/remote-service-start-from-an-uncommon-source
+Remote WMI process execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/remote-wmi-process-execution
+Retrieval of kubelet credentials	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/retrieval-of-kubelet-credentials
+Rundll32.exe executes a rare unsigned module	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rundll32-exe-executes-a-rare-unsigned-module
+Rundll32.exe running with no command-line arguments	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rundll32-exe-running-with-no-command-line-arguments
+Rundll32.exe spawns conhost.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rundll32-exe-spawns-conhost-exe
+Scrcons.exe Rare Child Process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/scrcons-exe-rare-child-process
+Screensaver process executed from Users or temporary folder	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/screensaver-process-executed-from-users-or-temporary-folder
+Script file added to startup-related Registry keys	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/script-file-added-to-startup-related-registry-keys
+Scripting engine connected to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/scripting-engine-connected-to-a-rare-external-host
+Service execution via sc.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/service-execution-via-sc-exe
+Signed process creates a scheduled task via file access	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/signed-process-creates-a-scheduled-task-via-file-access
+Signed process performed an unpopular DLL injection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/signed-process-performed-an-unpopular-dll-injection
+Signed process performed an unpopular injection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/signed-process-performed-an-unpopular-injection
+SMB Traffic from Non-Standard Process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/smb-traffic-from-non-standard-process
+Stored credentials exported using credwiz.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/stored-credentials-exported-using-credwiz-exe
+Suspicious .NET process loads an MSBuild DLL	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-net-process-loads-an-msbuild-dll
+Suspicious authentication package registered	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-authentication-package-registered
+Suspicious Certutil AD CS contact	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-certutil-ad-cs-contact
+Suspicious certutil command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-certutil-command-line
+Suspicious curl user agent	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-curl-user-agent
+Suspicious data encryption	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-data-encryption
+Suspicious disablement of the Windows Firewall	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-disablement-of-the-windows-firewall
+Suspicious DNS traffic	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-dns-traffic
+Suspicious docker image download from an unusual repository	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-docker-image-download-from-an-unusual-repository
+Suspicious dump of ntds.dit using Shadow Copy with ntdsutil/vssadmin	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-dump-of-ntds-dit-using-shadow-copy-with-ntdsutil-vssadmin
+Suspicious External RDP Login	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-external-rdp-login
+Suspicious failed HTTP request - potential Spring4Shell exploit	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-failed-http-request-potential-spring4shell-exploit
+Suspicious HTTP parameters detected	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-http-parameters-detected
+Suspicious ICMP packet	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-icmp-packet
+Suspicious ICMP traffic that resembles smurf attack	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-icmp-traffic-that-resembles-smurf-attack
+Suspicious module load using direct syscall	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-module-load-using-direct-syscall
+Suspicious Network Connection Originating from AWS SSM Agent	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-network-connection-originating-from-aws-ssm-agent
+Suspicious NTLM authentication with machine account	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-ntlm-authentication-with-machine-account
+Suspicious PowerShell Command Line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-powershell-command-line
+Suspicious PowerShell Enumeration of Running Processes	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-powershell-enumeration-of-running-processes
+Suspicious print processor registered	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-print-processor-registered
+Suspicious process accessed a site masquerading as Google	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-accessed-a-site-masquerading-as-google
+Suspicious process executed with a high integrity level	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-executed-with-a-high-integrity-level
+Suspicious process execution from tmp folder	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-execution-from-tmp-folder
+Suspicious process loads a known PowerShell module	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-loads-a-known-powershell-module
+Suspicious Process Spawned by Adobe Reader	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-spawned-by-adobe-reader
+Suspicious Process Spawned by wininit.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-spawned-by-wininit-exe
+Suspicious proxy environment variable setting	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-proxy-environment-variable-setting
+Suspicious RunOnce Parent Process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-runonce-parent-process
+Suspicious runonce.exe parent process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-runonce-exe-parent-process
+Suspicious SearchProtocolHost.exe parent process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-searchprotocolhost-exe-parent-process
+Suspicious setspn.exe execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-setspn-exe-execution
+Suspicious SMB connection from domain controller	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-smb-connection-from-domain-controller
+Suspicious successful RDP connection to localhost	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-successful-rdp-connection-to-localhost
+Suspicious systemd timer activity	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-systemd-timer-activity
+Suspicious time provider registered	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-time-provider-registered
+Suspicious usage of File Server Remote VSS Protocol (FSRVP)	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-usage-of-file-server-remote-vss-protocol-fsrvp
+Svchost.exe loads a rare unsigned module	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/svchost-exe-loads-a-rare-unsigned-module
+Uncommon AppleScript containing a potential obfuscation technique was executed	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-containing-a-potential-obfuscation-technique-was-executed
+Uncommon AppleScript containing a potential persistence command was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-containing-a-potential-persistence-command-was-executed-via-the-command-line
+Uncommon AppleScript designed to access credential files was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-designed-to-access-credential-files-was-executed-via-the-command-line
+Uncommon AppleScript designed to access cryptocurrency wallet data was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-designed-to-access-cryptocurrency-wallet-data-was-executed-via-the-command-line
+Uncommon AppleScript designed to access sensitive application data was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-designed-to-access-sensitive-application-data-was-executed-via-the-command-line
+Uncommon AppleScript designed to capture screen or clipboard data was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-designed-to-capture-screen-or-clipboard-data-was-executed-via-the-command-line
+Uncommon AppleScript potentially utilizes credential-grabbing techniques to steal user passwords	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-potentially-utilizes-credential-grabbing-techniques-to-steal-user-passwords
+Uncommon AppleScript was executed via the command line to contact an external server	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-was-executed-via-the-command-line-to-contact-an-external-server
+Uncommon AppleScript with a potential defense-evasion command was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-with-a-potential-defense-evasion-command-was-executed-via-the-command-line
+Uncommon AppleScript with a potential discovery command was executed via the command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-applescript-with-a-potential-discovery-command-was-executed-via-the-command-line
+Uncommon ARP cache listing via arp.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-arp-cache-listing-via-arp-exe
+Uncommon attempt to clear shell history	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-attempt-to-clear-shell-history
+Uncommon cloud CLI tool usage	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-cloud-cli-tool-usage
+Uncommon communication to an instant messaging server	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-communication-to-an-instant-messaging-server
+Uncommon DLL-sideloading from a logical CD-ROM (ISO) device	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-dll-sideloading-from-a-logical-cd-rom-iso-device
+Uncommon DotNet module load relationship	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-dotnet-module-load-relationship
+Uncommon driver loaded	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-driver-loaded
+Uncommon execution of ODBCConf	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-execution-of-odbcconf
+Uncommon IP Configuration Listing via ipconfig.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-ip-configuration-listing-via-ipconfig-exe
+Uncommon kernel module load	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-kernel-module-load
+Uncommon Launch Agent persistency was registered or modified	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-launch-agent-persistency-was-registered-or-modified
+Uncommon Launch Daemon persistency was registered or modified	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-launch-daemon-persistency-was-registered-or-modified
+Uncommon Linux process communication to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-linux-process-communication-to-a-rare-external-host
+Uncommon Linux remote shell command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-linux-remote-shell-command-execution
+Uncommon Linux shell command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-linux-shell-command-execution
+Uncommon local scheduled task creation via schtasks.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-local-scheduled-task-creation-via-schtasks-exe
+Uncommon login item persistency was registered or modified	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-login-item-persistency-was-registered-or-modified
+Uncommon macOS process communication to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-macos-process-communication-to-a-rare-external-host
+Uncommon macOS shell command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-macos-shell-command-execution
+Uncommon Managed Object Format (MOF) compiler usage	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-managed-object-format-mof-compiler-usage
+Uncommon msiexec execution of an arbitrary file from a remote location	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-msiexec-execution-of-an-arbitrary-file-from-a-remote-location
+Uncommon net group command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-net-group-command-execution
+Uncommon net localgroup command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-net-localgroup-command-execution
+Uncommon network connection under an untrusted and newly created causality actor	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-network-connection-under-an-untrusted-and-newly-created-causality-actor
+Uncommon network connection under an untrusted causality actor	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-network-connection-under-an-untrusted-causality-actor
+Uncommon Node.js package initiated communication to an external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-node-js-package-initiated-communication-to-an-external-host
+Uncommon RDP connection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-rdp-connection
+Uncommon recurring rare external host access	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-recurring-rare-external-host-access
+Uncommon remote monitoring and management tool	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-monitoring-and-management-tool
+Uncommon remote scheduled task creation	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-scheduled-task-creation
+Uncommon remote service start via sc.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-service-start-via-sc-exe
+Uncommon routing table listing via route.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-routing-table-listing-via-route-exe
+Uncommon Service Create/Config	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-service-create-config
+Uncommon service stop operation	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-service-stop-operation
+Uncommon signed process execution by scheduled task	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-signed-process-execution-by-scheduled-task
+Uncommon SQL like command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-sql-like-command-line
+Uncommon user management via net command	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-user-management-via-net-command
+Uncommon VNC server communication	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-vnc-server-communication
+Uncommon WPAD queries	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-wpad-queries
+Unpopular rsync process execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unpopular-rsync-process-execution
+Unprivileged process opened a registry hive	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unprivileged-process-opened-a-registry-hive
+Unsigned and unpopular process performed a DLL injection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-and-unpopular-process-performed-a-dll-injection
+Unsigned and unpopular process performed an injection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-and-unpopular-process-performed-an-injection
+Unsigned DLL Hijack into a Microsoft process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-dll-hijack-into-a-microsoft-process
+Unsigned DLL Side-Loading	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-dll-side-loading
+Unsigned process creates a scheduled task via file access	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-process-creates-a-scheduled-task-via-file-access
+Unsigned process injecting into a Windows system binary with no command line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-process-injecting-into-a-windows-system-binary-with-no-command-line
+Unsigned process running from a temporary directory	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-process-running-from-a-temporary-directory
+Untrusted process contacted LLM API	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/untrusted-process-contacted-llm-api
+Unusual ADFS Remote Synchronization network connections from non-ADFS server	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-adfs-remote-synchronization-network-connections-from-non-adfs-server
+Unusual AWS credentials creation	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-aws-credentials-creation
+Unusual AWS user added to group	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-aws-user-added-to-group
+Unusual Azure AD sync module load	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-azure-ad-sync-module-load
+Unusual cloud Instance Metadata Service (IMDS) access	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-cloud-instance-metadata-service-imds-access
+Unusual compressed file password protection	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-compressed-file-password-protection
+Unusual DB process spawning a shell	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-db-process-spawning-a-shell
+Unusual internal access to network device management interface	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-internal-access-to-network-device-management-interface
+Unusual Kubernetes dashboard communication from a pod	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-kubernetes-dashboard-communication-from-a-pod
+Unusual Lolbins Process Spawned by InstallUtil.exe	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-lolbins-process-spawned-by-installutil-exe
+Unusual process accessed the PowerShell history file	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-process-accessed-the-powershell-history-file
+Unusual process executed by AWS Systems Manager	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-process-executed-by-aws-systems-manager
+Unusual Process Spawned by Nginx in Ingress-Nginx pod	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-process-spawned-by-nginx-in-ingress-nginx-pod
+Unusual weak authentication by user	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-weak-authentication-by-user
+Weakly-Encrypted Kerberos TGT Response	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/weakly-encrypted-kerberos-tgt-response
+Weakly-Encrypted Kerberos Ticket Requested	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/weakly-encrypted-kerberos-ticket-requested
+Web server CGO executed an uncommon process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/web-server-cgo-executed-an-uncommon-process
+Windows CGO, actor and action processes with anomalous characteristics	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/windows-cgo-actor-and-action-processes-with-anomalous-characteristics
+Windows CGO, actor process and action module with anomalous characteristics	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/windows-cgo-actor-process-and-action-module-with-anomalous-characteristics
+Windows LOLBIN executable connected to a rare external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/windows-lolbin-executable-connected-to-a-rare-external-host
+WmiPrvSe.exe Rare Child Command Line	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/wmiprvse-exe-rare-child-command-line
+Wscript/Cscript loads .NET DLLs	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/wscript-cscript-loads-net-dlls
+Wsmprovhost.exe Rare Child Process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/wsmprovhost-exe-rare-child-process

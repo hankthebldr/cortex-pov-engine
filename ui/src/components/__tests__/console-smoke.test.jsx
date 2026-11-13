@@ -97,10 +97,9 @@ describe('console-view smoke renders', () => {
   })
 
 
-  it('CommandPalette mounts closed (no overlay visible)', () => {
+  it('CommandPalette mounts closed (no overlay rendered)', () => {
     render(<CommandPalette open={false} items={[]} />)
-    // dialog is in DOM but hidden via display:none; just confirm no throw + role exists
-    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { hidden: true })).not.toBeInTheDocument()
   })
 
   it('CommandPalette renders items when open', () => {
@@ -208,7 +207,7 @@ describe('console-view smoke renders', () => {
     }
     render(<ScenarioInspector scenario={scenario} open launch={launch} pinned={false} />)
     expect(screen.getByText(/APT29 Cloud Credential Theft/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /launch/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
   it('NarrativeTimeline renders nothing with empty frames', () => {

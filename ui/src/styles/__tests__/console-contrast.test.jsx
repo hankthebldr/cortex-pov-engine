@@ -119,12 +119,12 @@ const TITLE_FIXTURES = [
     titleSelector: 'h1',
   },
   {
-    name: 'UC / TC Index — UcTcIndexView.jsx h1.uctc__pagehead-title',
+    name: 'UC / TC index — UcTcIndexView.jsx h1.uctc__pagehead-title',
     html: `<div class="adapter-registry uctc" data-testid="uctc-index">
       <div class="uctc__pagehead">
         <div class="uctc__pagehead-bar" aria-hidden="true"></div>
         <div class="uctc__pagehead-eyebrow mono">Analyze · UC / TC Index</div>
-        <h1 class="uctc__pagehead-title">UC / TC Index</h1>
+        <h1 class="uctc__pagehead-title">UC / TC index</h1>
       </div>
     </div>`,
     bgSelector: '.uctc',
@@ -147,12 +147,12 @@ const TITLE_FIXTURES = [
     titleSelector: '.readiness h1',
   },
   {
-    name: 'EAL Traffic Simulator — EalConsole.jsx h2.eal-console__title',
+    name: 'Traffic / EAL — EalConsole.jsx h1.eal-console__title',
     html: `<section class="eal-console">
       <header class="eal-console__head">
         <div class="eal-console__hero">
           <div class="eal-console__heading">
-            <h2 class="eal-console__title"><span class="eal-console__title-accent">EAL</span> Traffic Simulator</h2>
+            <h1 class="eal-console__title">Traffic / EAL</h1>
           </div>
         </div>
       </header>
@@ -366,7 +366,9 @@ const AA_LIGHT_REPAIR_FIXTURES = [
 
 /**
  * D-1 repair (2026-08-31) — the seven `color: var(--orange)` sites in
- * destinations/adapters.css, now `color: var(--orange-ink)`. These are
+ * destinations/adapters.css, then `color: var(--orange-ink)`, and since
+ * design v26 (2026-11-13, yellow is the only warning colour) `var(--warn)`,
+ * which is text-safe in both themes (light #7D5E11, 5.15:1+). These are
  * not decorative: `.launch-blockers__item` and `.payload-compose__warn`
  * render PAYLOAD_NOT_STAGED / compose-not-airgapped — the exact strings
  * telling a consultant "this tool never reached the target, the step
@@ -492,7 +494,7 @@ const DESTINATION_CANARIES = {
   adapters: {
     html: `<div class="tools-destination"><div class="adapter-schema"><div class="adapter-schema__row"><div class="adapter-schema__type mono">string</div></div></div></div>`,
     selector: '.adapter-schema__type',
-    expectedVar: '--orange-ink',
+    expectedVar: '--tx2',
   },
 }
 
@@ -696,7 +698,7 @@ describe.each([
   )
 
   it.each(ADAPTERS_ORANGE_WARN_FIXTURES.map((f) => [f.name, f]))(
-    'payload-blocker warning contrast clears AA (D-1, --orange-ink): %s',
+    'payload-blocker warning contrast clears AA (D-1, --warn): %s',
     (_n, fixture) => {
       const { $ } = mountShell(fixture.html, { dark })
       const textEl = $(fixture.textSelector)

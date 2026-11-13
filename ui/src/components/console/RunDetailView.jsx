@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InflightView, { runCaveatLines } from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
@@ -13,6 +13,15 @@ import { getRun } from '../../api/client.js'
 import { hasAttestations, attestationLines } from '../../outcomes.js'
 import { parseStepTranscript } from './useRunStepTail.js'
 import { launchWarningsFor } from './launchWarnings.js'
+import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
+import RunLifecycleStrip from './RunLifecycleStrip.jsx'
+import ReadBackNotice from './ReadBackNotice.jsx'
+import RunChain from './RunChain.jsx'
+import useReadBack from './useReadBack.jsx'
+import { resultCell } from './RunList.jsx'
+import { absoluteTime, runAgent } from './runRows.js'
+import { trapTabKey } from './focusTrap.js'
+import { Button } from './kit/index.js'
 import '../../styles/destinations/run-detail.css'
 
 // Launch/host markers that change what a missing detection MEANS. Both carry
@@ -121,7 +130,18 @@ function tailOutput(output, lines = 8) {
  *   subTab     — 'live' | 'evidence' | 'storyline' | 'techniques' | 'topology' | 'causality'
  *   onSubTab   — (tab) => void   switch sub-tab (writes ?tab=)
  *   onBack     — () => void      return to the run list
+ *   onAbort    — ({ runId, confirmed: true }) => void   abort THIS run. The
+ *                                confirm is inline on this page ("Stop this run
+ *                                on the agent?" · Keep running · Abort now), so
+ *                                the shell receives an already-confirmed request.
+ *   onNavigate — (destination, params?) => void   Open results / Run
  *   onError    — (msg) => void
+ *
+ * Where the run is (design v26 §4.6) leads the page: the five-stage strip, one
+ * line saying what it means, and the one action for the phase — Read back on a
+ * finished run nobody has read back, Open results once it has been. Before the
+ * read back there is no detection claim on this page: the Evidence tab shows
+ * why there are no results and offers Read back instead of a scorecard.
  */
 
 /**
@@ -226,6 +246,92 @@ function RunDegradationBanners({ degraded, launchWarnings = [], partial = false 
   )
 }
 
+/** One line under each of the five stages on the run's page. */
+function stageSubs(run, lifecycle, { activeRun, isThisActive, detail }) {
+  const reported = Array.isArray(detail?.step_outcomes) ? detail.step_outcomes.length : null
+  const running = lifecycle.phase === PHASE.RUNNING
+  const res = resultCell(run, lifecycle)
+  return [
+    absoluteTime(run?.started_at) || 'start unknown',
+    running
+      ? (isThisActive && activeRun?.totalSteps ? `step ${activeRun.step} of ${activeRun.totalSteps}` : 'in progress')
+      : lifecycle.phase === PHASE.NOTHING
+        ? (lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.step : 'no step ran')
+        : reported ? `${reported} step${reported === 1 ? '' : 's'} reported` : 'ran',
+    lifecycle.ended ? (absoluteTime(run?.completed_at) || lifecycle.ended.toLowerCase()) : 'not yet',
+    lifecycle.phase === PHASE.READY ? `from ${lifecycle.readBack.from}`
+      : lifecycle.phase === PHASE.READING ? 'reading…' : 'not yet',
+    lifecycle.phase === PHASE.READY ? res.text : 'none yet',
+  ]
+}
+
+/** What the phase means, in one sentence. */
+function lifecycleMessage(run, lifecycle) {
+  const agent = runAgent(run)
+  switch (lifecycle.phase) {
+    case PHASE.RUNNING:
+      return `Running on ${agent}. It can be read back from the tenant once it finishes.`
+    case PHASE.NOTHING:
+      return lifecycle.nothing === NOTHING.NOT_EXECUTED
+        ? NOT_EXECUTED_COPY.message
+        : 'No step reached its agent, so there is nothing to read back. Check the agent and run it again.'
+    case PHASE.READING:
+      return 'Reading alerts back from the tenant and matching them to what this run expected…'
+    case PHASE.UNREAD:
+      return `${lifecycle.ended || 'Ended'}. Nothing has been read back from the tenant yet, so there are no results.`
+    default: {
+      const res = resultCell(run, lifecycle)
+      if (res.tone === 'unproven') {
+        return `The run did not complete, so what was read back from ${lifecycle.readBack.from} is not a measurement of the tenant.`
+      }
+      const expected = run?.expected_detections
+      if (typeof expected === 'number' && expected > 0 && typeof run.detected_count === 'number') {
+        return `${run.detected_count} of ${expected} expected detections were seen in the tenant (read back from ${lifecycle.readBack.from}).`
+      }
+      return `Read back from ${lifecycle.readBack.from}.`
+    }
+  }
+}
+
+/**
+ * Abort run, confirmed in place (design v26 §4.6, §8): the button becomes the
+ * question and its two answers. The safe answer takes focus, Tab stays between
+ * the two, and Escape backs out.
+ */
+function AbortControl({ runId, onAbort }) {
+  const [asking, setAsking] = useState(false)
+  const groupRef = useRef(null)
+  useEffect(() => {
+    if (!asking || !groupRef.current) return
+    const keep = groupRef.current.querySelector('[data-abort-keep]')
+    if (keep) keep.focus()
+  }, [asking])
+  if (!asking) {
+    return <Button variant="secondary" className="run-abort" onClick={() => setAsking(true)}>Abort run</Button>
+  }
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setAsking(false)
+    } else if (e.key === 'Tab') {
+      trapTabKey(e, groupRef.current)
+    }
+  }
+  return (
+    <div className="run-abort-confirm" role="group" aria-label="Abort this run" ref={groupRef} onKeyDown={onKeyDown}>
+      <span className="run-abort-confirm__q">Stop this run on the agent?</span>
+      <Button variant="secondary" data-abort-keep="" onClick={() => setAsking(false)}>Keep running</Button>
+      <Button
+        variant="destructive"
+        onClick={() => { setAsking(false); onAbort({ runId, confirmed: true }) }}
+      >
+        Abort now
+      </Button>
+    </div>
+  )
+}
+
 export const RUN_SUBTABS = [
   { id: 'live',      label: 'Live'      },
   { id: 'evidence',  label: 'Evidence'  },
@@ -248,10 +354,13 @@ export default function RunDetailView({
   subTab = 'live',
   onSubTab = () => {},
   onBack = () => {},
+  onAbort = () => {},
+  onNavigate = () => {},
   onError = () => {},
 }) {
   const tab = RUN_SUBTABS.some((t) => t.id === subTab) ? subTab : 'live'
   const { scenarios } = useEnvironment()
+  const { reading, outcomes, readBack } = useReadBack()
 
   const descriptor = useMemo(() => ({
     runId,
@@ -321,6 +430,14 @@ export default function RunDetailView({
 
   const isThisActive = !!(activeRun && activeRun.runId === runId)
   const statusToken = runStatusToken(run?.status)
+  // The polled row, filled in from the fetched record (delivery stamp, output)
+  // where the row is thin, so the phase is read from everything SimCore said.
+  const lcRun = useMemo(() => (run ? { ...(detail || {}), ...run } : detail), [run, detail])
+  const lifecycle = useMemo(
+    () => (lcRun ? runLifecycle(lcRun, { reading: reading.has(runId) }) : null),
+    [lcRun, reading, runId],
+  )
+  const canAbort = isThisActive || statusToken === 'running'
   const failed = isRunUnproven(run?.status)
   const failureTail = failed ? tailOutput(output) : null
   const attest = hasAttestations(run) ? attestationLines(run) : null
@@ -382,7 +499,48 @@ export default function RunDetailView({
             {run?.target && <> · <span className="mono">{run.target}</span></>}
           </div>
         </div>
+        {/* The run's own page is where a DC watches it go wrong, so it is
+            where they stop it — confirmed in place, then handed to the shell's
+            abort path. Beside it, the one action for the run's phase. */}
+        <div className="run-detail__actions">
+          {canAbort && <AbortControl runId={runId} onAbort={onAbort} />}
+          {lifecycle?.phase === PHASE.UNREAD && (
+            <Button variant="primary" onClick={() => readBack(runId)}>Read back</Button>
+          )}
+          {lifecycle?.phase === PHASE.READING && (
+            <Button variant="secondary" disabled>Reading…</Button>
+          )}
+          {lifecycle?.phase === PHASE.READY && (
+            <Button variant="primary" onClick={() => onNavigate('proof', { run: runId })}>Open results</Button>
+          )}
+          {lifecycle?.phase === PHASE.NOTHING && descriptor.scenarioId && (
+            <Button variant="primary" onClick={() => onNavigate('guided', { arm: descriptor.scenarioId })}>Run</Button>
+          )}
+        </div>
       </div>
+
+      {lifecycle && (
+        <div className="run-lifecycle" data-testid="run-lifecycle">
+          <RunLifecycleStrip
+            lifecycle={lifecycle}
+            variant="full"
+            subs={stageSubs(lcRun, lifecycle, { activeRun, isThisActive, detail })}
+          />
+          <p className="run-lifecycle__msg" data-testid="run-lifecycle-message">
+            {lifecycleMessage(lcRun, lifecycle)}
+          </p>
+          {lifecycle.phase === PHASE.UNREAD && outcomes.get(runId) && !outcomes.get(runId).ok && (
+            <p className="run-lifecycle__why" role="status">{outcomes.get(runId).message}</p>
+          )}
+        </div>
+      )}
+
+      {/* The chain leads the page (design v26 §9.3): ChainStage, live, fed by
+          this run's steps, the host's record and — once read back — its
+          results. */}
+      {lifecycle && (
+        <RunChain runId={runId} run={lcRun} lifecycle={lifecycle} onNavigate={onNavigate} />
+      )}
 
       {/* The run died and the console knew — say it here, once, at the top,
           before any proof surface invites a coverage reading. */}
@@ -458,14 +616,20 @@ export default function RunDetailView({
             onError={onError}
           />
         )}
-        {tab === 'evidence' && (
+        {tab === 'evidence' && (lifecycle && lifecycle.phase !== PHASE.READY ? (
+          <ReadBackNotice
+            lifecycle={lifecycle}
+            outcome={outcomes.get(runId)}
+            onReadBack={() => readBack(runId)}
+          />
+        ) : (
           <EvidenceView
             activeRun={isThisActive ? activeRun : null}
             lastRun={isThisActive ? null : descriptor}
             pinnedRun={descriptor}
             onError={onError}
           />
-        )}
+        ))}
         {tab === 'storyline' && (
           <DetectionStoryline
             runId={runId}

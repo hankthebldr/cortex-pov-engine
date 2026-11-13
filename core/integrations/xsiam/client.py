@@ -27,6 +27,12 @@ from .exceptions import (
 
 logger = logging.getLogger("cortexsim.xsiam")
 
+#: Rows asked for per ``get_query_results`` page. A caller that measures from a
+#: page passes this explicitly and checks the page against the same number
+#: (``queries.complete_rows``): a page that comes back this full may be a slice
+#: of a larger answer. The largest limit the API accepts is open (PM-XQL-03).
+XQL_PAGE_LIMIT = 100
+
 
 # ---------------------------------------------------------------------------
 # XQL write-stage refusal (SEC-05) — the ONE guard
@@ -218,6 +224,46 @@ def inspect_operation_body(path: str, body: Any) -> None:
     )
 
 
+#: Characters of a tenant's ``err_code`` quoted in an error; ``err_msg`` is
+#: capped at the tenant reader's ``TEXT_CAP`` (200).
+_ERR_CODE_CAP = 64
+
+
+def _app_error_text(reply: dict) -> tuple[str, bool]:
+    """``(text, is_quota)`` for an application error a tenant sent inside a 200.
+
+    ``err_code`` and ``err_msg`` come from the tenant (or whatever answered in
+    its place), and the text becomes an ``XsiamError.detail`` that SimCore
+    returns. So each is neutralised as tenant text is
+    (``connectors.tenant_reader.neutralise_text``: control, bidi, zero-width
+    and other invisible characters stripped; the message capped at 200
+    characters, the code at 64), and nothing else in the reply is ever echoed:
+    a reply with no ``err_msg`` is named by its code alone, because the rest of
+    it can carry whole rows. ``is_quota`` reads the raw values: code
+    ``XQL_0003``, or "quota" in the message.
+    """
+    from connectors.tenant_reader import neutralise_text  # noqa: PLC0415
+
+    raw_code, raw_msg = reply.get("err_code"), reply.get("err_msg")
+    code = neutralise_text(raw_code)[0] if raw_code not in (None, "") else None
+    if code is not None:
+        code = code[:_ERR_CODE_CAP]
+    msg, cut = (neutralise_text(raw_msg) if raw_msg not in (None, "")
+                else (None, False))
+    if msg is not None and cut:
+        msg += " [cut at 200 characters]"
+    if code and msg:
+        text = f"{code}: {msg}"
+    elif code:
+        text = f"{code} (the tenant sent no error message)"
+    elif msg:
+        text = msg
+    else:
+        text = "the tenant replied with an error object carrying no err_code and no err_msg"
+    quota = raw_code == "XQL_0003" or "quota" in str(raw_msg or "").lower()
+    return text, quota
+
+
 class XsiamClient:
     def __init__(
         self,
@@ -250,13 +296,54 @@ class XsiamClient:
             return advanced_auth_headers(self._api_key, self._api_key_id)
         return standard_auth_headers(self._api_key, self._api_key_id)
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, *, query_id: Optional[str] = None) -> httpx.AsyncClient:
+        # Every use of this client is ONE HTTP request (`async with
+        # self._client() as c: resp = await c.<verb>(...)`), so charging here is
+        # one token per request to the tenant, XQL polls included.
+        self._charge_request(query_id=query_id)
         return httpx.AsyncClient(
             base_url=self._base,
             headers=self._build_headers(),
             transport=self._transport,
             timeout=self._timeout,
         )
+
+    def _charge_request(self, *, query_id: Optional[str] = None) -> None:
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import (  # noqa: PLC0415
+            QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+        )
+        try:
+            ledger.acquire_request(
+                tenant_ledger_key(self._base),
+                per_minute=tuning.xsiam_max_requests_per_minute())
+        except (QuotaBreakerOpen, RequestBudgetExhausted) as exc:
+            n = max(1, int(exc.retry_after_seconds))
+            if query_id:
+                raise XsiamQuotaError(
+                    "CortexSim's own per-tenant request budget refused fetching the "
+                    f"results of XQL query {query_id}, which WAS started on the "
+                    f"tenant; retry in {n}s ({exc})",
+                    retry_after_seconds=n, local=True, query_started=query_id,
+                ) from exc
+            raise XsiamQuotaError(
+                "CortexSim's own per-tenant request budget refused this request "
+                f"before it was sent to the tenant; retry in {n}s ({exc})",
+                retry_after_seconds=n, local=True,
+            ) from exc
+
+    def _tenant_429(self) -> XsiamQuotaError:
+        """Open the shared breaker for a tenant 429; the error is marked tripped."""
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import ledger, tenant_ledger_key  # noqa: PLC0415
+        ledger.trip(tenant_ledger_key(self._base),
+                    cooldown_seconds=tuning.xsiam_breaker_cooldown())
+        err = XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)",
+                              upstream_status=429)
+        err.tripped = True
+        return err
 
     async def healthcheck(self) -> dict[str, Any]:
         async with self._client() as c:
@@ -278,6 +365,8 @@ class XsiamClient:
         """
         async with self._client() as c:
             resp = await c.get("/public_api/v1/healthcheck")
+        if resp.status_code == 429:
+            raise self._tenant_429()
         raw = resp.headers.get("date")
         if not raw:
             return None
@@ -309,7 +398,7 @@ class XsiamClient:
         if resp.status_code == 401:
             raise XsiamAuthError("XSIAM rejected the API key (HTTP 401)")
         if resp.status_code == 429:
-            raise XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)")
+            raise self._tenant_429()
         if resp.status_code >= 400:
             raise XsiamApiError(
                 f"XSIAM API error (HTTP {resp.status_code})",
@@ -334,10 +423,8 @@ class XsiamClient:
             and ("err_code" in reply or "err_msg" in reply)
             and "reply" not in reply
         ):
-            err_code = reply.get("err_code", "")
-            err_msg = reply.get("err_msg") or str(reply)
-            err = f"{err_code}: {err_msg}" if err_code else err_msg
-            if err_code == "XQL_0003" or "quota" in str(err_msg).lower():
+            err, quota = _app_error_text(reply)
+            if quota:
                 raise XsiamQuotaError(f"XSIAM quota exceeded: {err}")
             raise XsiamQueryError(f"XSIAM API error: {err}")
         return reply
@@ -398,22 +485,27 @@ class XsiamClient:
         # for application-level failures (quota exceeded, bad syntax, etc.).
         # A real query id is always a plain string — a dict reply is always an error.
         if isinstance(reply, dict):
-            err_code = reply.get("err_code", "")
-            err_msg  = reply.get("err_msg") or str(reply)
-            err = f"{err_code}: {err_msg}" if err_code else err_msg
-            if err_code == "XQL_0003" or "quota" in err_msg.lower():
+            err, quota = _app_error_text(reply)
+            if quota:
                 raise XsiamQuotaError(f"XQL quota exceeded: {err}")
             raise XsiamQueryError(f"XSIAM XQL error: {err}")
         if not reply:
             raise XsiamQueryError("XSIAM did not return a query id")
         return str(reply)
 
-    async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
+    async def get_query_results(self, query_id: str, *,
+                                limit: int = XQL_PAGE_LIMIT) -> dict[str, Any]:
+        # Public (operator-supplied id): CortexSim cannot know the query was
+        # started on this tenant, so a local refusal never claims it was.
+        return await self._get_query_results(query_id, limit=limit, started=False)
+
+    async def _get_query_results(self, query_id: str, *, limit: int,
+                                 started: bool) -> dict[str, Any]:
         body = {"request_data": {
             "query_id": query_id, "pending_flag": True,
             "limit": limit, "format": "json",
         }}
-        async with self._client() as c:
+        async with self._client(query_id=query_id if started else None) as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else {}
@@ -426,7 +518,7 @@ class XsiamClient:
 
     async def run_xql(
         self, query: str, timeframe: dict[str, Any],
-        *, max_wait: float = 30.0, interval: float = 1.5, limit: int = 100,
+        *, max_wait: float = 30.0, interval: float = 1.5, limit: int = XQL_PAGE_LIMIT,
     ) -> dict[str, Any]:
         """Start a query and poll until SUCCESS or timeout.
 
@@ -439,7 +531,7 @@ class XsiamClient:
         # advances, so a permanently-PENDING tenant spun forever.
         deadline = asyncio.get_running_loop().time() + max(0.0, max_wait)
         while True:
-            reply = await self.get_query_results(query_id, limit=limit)
+            reply = await self._get_query_results(query_id, limit=limit, started=True)
             status = (reply or {}).get("status")
             if status == "SUCCESS":
                 return reply

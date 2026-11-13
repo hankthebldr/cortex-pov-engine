@@ -8,10 +8,17 @@ import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
-import RunList from '../components/console/RunList.jsx'
-import { absoluteTime, detectionCell, runAgent } from '../components/console/runRows.js'
+import RunList, { resultCell } from '../components/console/RunList.jsx'
+import { absoluteTime, runAgent } from '../components/console/runRows.js'
+import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecycle.js'
+import useReadBack from '../components/console/useReadBack.jsx'
+import ResultOfBar from '../components/console/ResultOfBar.jsx'
+import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
+import { Button } from '../components/console/kit/index.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
+import { COMPONENTS } from '../components/console/componentModel.js'
+import { componentRoute } from './componentRoutes.js'
 
 /**
  * A surface's last reported failure, visible and dismissable.
@@ -144,8 +151,6 @@ const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBr
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
 const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
-const TenantView = makeLazySurface(() => import('../components/console/TenantView.jsx'), 'Tenant')
-const FirewallView = makeLazySurface(() => import('../components/console/FirewallView.jsx'), 'Firewall')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -157,12 +162,31 @@ const EvidenceView = makeLazySurface(() => import('../components/console/Evidenc
 // was a thing the console already implied and never gave you a place to do.
 const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
 const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
+// The hub for the eight components (design v26 §9.2), rebuilt on real state.
+const ComponentsView = makeLazySurface(() => import('../components/console/ComponentsView.jsx'), 'Components')
+// One page shape per component (v26 §4.2): Overview · Setup · management tab.
+const AgentsComponent = makeLazySurface(() => import('../components/console/component/AgentsComponent.jsx'), 'Agents')
+const TenantComponent = makeLazySurface(() => import('../components/console/component/TenantComponent.jsx'), 'Tenant')
+const FirewallComponent = makeLazySurface(() => import('../components/console/component/FirewallComponent.jsx'), 'Firewall')
+const PovengineComponent = makeLazySurface(() => import('../components/console/component/PovengineComponent.jsx'), 'POVengine')
+const HttpCollectorComponent = makeLazySurface(() => import('../components/console/component/HttpCollectorComponent.jsx'), 'HTTP collector')
+// The three SimCore cannot see share one module; each is its own page.
+const confirmedPage = (name) => () => import('../components/console/component/ConfirmedComponents.jsx').then((m) => ({ default: m[name] }))
+const BrokerVmComponent = makeLazySurface(confirmedPage('BrokerVmComponent'), 'Broker VM')
+const XdrCollectorComponent = makeLazySurface(confirmedPage('XdrCollectorComponent'), 'XDR Collector')
+const CortexEngineComponent = makeLazySurface(confirmedPage('CortexEngineComponent'), 'Cortex Engine')
 
-/** A surface that only forwards to another destination (replacing the
- *  history entry), for ids whose page was retired. */
-function redirectTo(target) {
-  return function Redirect({ onNavigate = () => {} }) {
-    useEffect(() => { onNavigate(target) }, [onNavigate])
+/** A surface that only forwards to another destination, for ids whose page
+ *  was retired. `extra` params are merged over the ones the old link carried,
+ *  so `#/agents?open=x` lands on the Agents component's Fleet tab with `open`
+ *  intact. */
+function redirectTo(target, extra = null) {
+  return function Redirect({ params = {}, onNavigate = () => {} }) {
+    useEffect(() => {
+      const next = { ...(params || {}), ...(extra || {}) }
+      if (Object.keys(next).length) onNavigate(target, next)
+      else onNavigate(target)
+    }, [onNavigate]) // eslint-disable-line react-hooks/exhaustive-deps
     return null
   }
 }
@@ -222,8 +246,8 @@ export function useDecodedPlan(encoded) {
  *   - onExit      — OPTIONAL. () => void, passed only to immersive
  *                   destinations (`immersive: true` below); returns to the
  *                   previous non-immersive destination, with the params it
- *                   had (fallback: the destination's `navParent`, for a cold
- *                   deep link that has no previous page). Undefined for every
+ *                   had (fallback: the destination's `exitTo`, else its
+ *                   `navParent`, for a cold deep link with no previous page). Undefined for every
  *                   other surface, so a surface can render its Exit control
  *                   only when it is actually in a mode there is a way out of.
  *
@@ -283,6 +307,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           onNavigate={onNavigate}
           selectedPlane={selectedPlane}
           onClearPlane={() => setSelectedPlane(null)}
+          onSelectPlane={(code) => setSelectedPlane(code || null)}
           techniqueFilter={techniqueFilter}
           onClearTechniqueFilter={() => setTechniqueFilter(null)}
           requestOpenScenarioId={openParam(params)}
@@ -290,7 +315,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           isPinned={isPinned}
           togglePin={togglePin}
           onArmScenario={(sid) => { armedRef.current = sid }}
-          onContinueToLaunch={() => onNavigate('guided', { arm: armedRef.current })}
+          onContinueToLaunch={(id) => onNavigate('guided', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
             onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
           onRunComplete={(run) =>
@@ -354,7 +379,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Simulate</button> to begin.</>}
+              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
           </div>
         </div>
       </div>
@@ -363,6 +388,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 
       <Suspense fallback={<DestinationLoading />}>
         <TargetsView
+          embedded
           selectedTarget={selectedTarget}
           onSelectTarget={setSelectedTarget}
           onGoToLab={() => onNavigate('environments')}
@@ -398,8 +424,10 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 // Run history list → single Run Detail surface keyed by runId with
 // Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
-function RunsSurface({ params = {}, setParams = () => {} }) {
+function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
+  // One Read back for the list and the run's page (design v26 §4.6).
+  const { reading, outcomes, readBack } = useReadBack()
   // The live-run telemetry used to be a permanent shell row above every
   // destination. It is a property of the RUN, so it belongs on the run's own
   // surface — the header pill already answers "is something in flight" from
@@ -441,7 +469,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           </div>
           <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
         </div>
-        {activeRun && <TelemetryStrip run={activeRun} />}
+        {activeRun && <TelemetryStrip run={activeRun} onAbort={onAbortRun} />}
         {/* "What ran last" leads the page: the first question on this surface
             is never "list every run", it is "what is happening / what just
             happened". The run list stays below, unchanged. */}
@@ -454,6 +482,10 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           params={params}
           setParams={setParams}
           onOpen={(id) => setParams({ run: id, tab: 'live', scenario: null, status: null, page: null }, { replace: true })}
+          onReadBack={readBack}
+          onOpenResults={(id) => onNavigate('proof', { run: id })}
+          reading={reading}
+          outcomes={outcomes}
         />
       </div>
     )
@@ -468,6 +500,8 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
         subTab={subTab}
         onSubTab={(tab) => setParams({ tab })}
         onBack={() => setParams({ run: null, tab: null }, { replace: true })}
+        onAbort={onAbortRun}
+        onNavigate={onNavigate}
         onError={() => {}}
       />
     </Suspense>
@@ -496,8 +530,8 @@ function LastRunCard({ onOpen = () => {} }) {
   if (!shown) {
     return (
       <div className="last-run last-run--empty" data-testid="last-run-card">
-        No run has completed on this SimCore yet. Compose a chain, or open a scenario
-        from Simulate and launch it.
+        No run has completed on this SimCore yet. Build a chain, or open a scenario
+        from Scenarios and launch it.
       </div>
     )
   }
@@ -506,9 +540,9 @@ function LastRunCard({ onOpen = () => {} }) {
   const isLive = !!running
   const stats = [
     ['Status', shown.status || 'unknown'],
-    // `detectionCell` carries the truthfulness rule: a failed run with no hit
-    // reads `unproven`, a run with no Result rows reads a dash.
-    ['Detections', detectionCell(shown).text],
+    // The same result cell as the run list: no detection count until the run
+    // has been read back, `unproven` for a failed run with no hit.
+    ['Result', resultCell(shown, runLifecycle(shown)).text],
     ['Started', absoluteTime(shown.started_at) || '—'],
     // The agent is the run's `target` column — this card used to read two
     // field names that no response ever carried.
@@ -528,7 +562,7 @@ function LastRunCard({ onOpen = () => {} }) {
         <span className="mono last-run__id">{id}</span>
         <span className="last-run__spacer" />
         <span className="mono last-run__cta">
-          {isLive ? 'Follow the live run →' : 'Open the evidence →'}
+          {isLive ? 'Follow the live run →' : 'Open the run →'}
         </span>
       </div>
       <div className="last-run__title">
@@ -635,33 +669,85 @@ const EnvironmentsSurface = withSuspense(LabView)
 // NOT the default destination — a health page that greets you every morning
 // stops being read.
 const ReadinessSurface = withSuspense(ReadinessView)
-const AgentsSurface = withSuspense(TargetsView)
-// One tenant per instance, in four tabs. The registration wizard is not gone
-// — it is the Binding tab inside TenantView, because binding a tenant is a real
-// operation that has to happen once, it just stopped being the whole page.
-const TenantsSurface = withSuspense(TenantView)
-// PAN-OS NGFW: register, read-only preflight, per-agent stitch readiness
-// (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md §6).
-const FirewallSurface = withSuspense(FirewallView)
-// Proof & Export is its own destination now. It used to be a sub-tab of a run,
-// which meant the artefact a POV actually delivers was two clicks inside the
-// thing that produced it. EvidenceView takes its run as props rather than
-// reading the provider, so this wrapper supplies the same active/last run the
-// header pill and the telemetry read — the three cannot disagree — and lets a
-// `?run=` deep link pin a specific one.
-function ProofSurface({ params = {} }) {
-  const { runs, activeRun, lastRun } = useEnvironment()
+// Agents, Tenant and Firewall are component pages now (component/*.jsx); their
+// former surfaces live on as those pages' management tabs: TargetsView is
+// Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
+// Read-back & integrations, and the firewall steps are Firewall's Setup and
+// Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
+// Results (design v26 §4.6). Always about ONE run, named in the "Result of"
+// bar, with a switcher across the runs that have been read back. The run is
+// `?run=` when the URL names one, otherwise the newest read-back run — never
+// the live run or the last run to end, because neither has results until the
+// tenant has been read for it. A run that has not been read back gets its bar,
+// the reason and Read back instead of a scorecard, and with no run read back
+// at all the page says so and points at Runs. Results never appear without a
+// run.
+function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+  const { runs, scenarios } = useEnvironment()
+  const { reading, outcomes, readBack } = useReadBack()
   const runParam = openParam(params, 'run')
-  const pinnedRun = useMemo(() => {
-    if (!runParam) return null
-    return runs.find((r) => idMatches(runIdOf(r), runParam)) || null
-  }, [runs, runParam])
+  // `runs` is newest first, so this list is too.
+  const readBackRuns = useMemo(() => runs.filter((r) => r && readBackOf(r)), [runs])
+  const selected = useMemo(() => {
+    if (runParam) return runs.find((r) => idMatches(runIdOf(r), runParam)) || null
+    return readBackRuns[0] || null
+  }, [runs, runParam, readBackRuns])
+
+  if (!selected) {
+    return (
+      <div className="evidence results-empty" data-testid="results-empty">
+        <div className="view-head"><div><h1>Report</h1></div></div>
+        {runs.length === 0 ? (
+          <div className="results-empty__body">
+            <p>No runs yet. Results come from a run that has finished and been read back from the tenant.</p>
+            <Button variant="primary" onClick={() => onNavigate('library')}>Run</Button>
+          </div>
+        ) : runParam ? (
+          <div className="results-empty__body">
+            <p>Run <span className="mono">{runParam}</span> is not on this POVengine.</p>
+            <p>Pick a run on <a href="#/runs">Runs</a>.</p>
+          </div>
+        ) : (
+          <div className="results-empty__body">
+            <p>
+              No run has been read back yet. A run must be read back from the tenant before it has
+              results: Read back a finished run on <a href="#/runs">Runs</a>.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const id = runIdOf(selected)
+  const lifecycle = runLifecycle(selected, { reading: reading.has(id) })
+  const scenarioName = scenarios.find((x) => (x.scenario_id || x.id) === selected.scenario_id)?.name || null
+  const bar = (
+    <ResultOfBar
+      run={selected}
+      lifecycle={lifecycle}
+      scenarioName={scenarioName}
+      readBackRuns={readBackRuns}
+      onSwitch={(next) => setParams({ run: next })}
+      onOpenRun={() => onNavigate('runs', { run: id, tab: 'live' })}
+    />
+  )
+
+  if (lifecycle.phase !== PHASE.READY) {
+    return (
+      <div className="evidence">
+        <div className="view-head"><div><h1>Report</h1></div></div>
+        {bar}
+        <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
+      </div>
+    )
+  }
+
   return (
     <Suspense fallback={<DestinationLoading />}>
       <EvidenceView
-        activeRun={activeRun}
-        lastRun={lastRun}
-        pinnedRun={pinnedRun ? { runId: runIdOf(pinnedRun), scenarioId: pinnedRun.scenario_id, status: pinnedRun.status } : null}
+        pinnedRun={{ runId: id, scenarioId: selected.scenario_id, status: selected.status }}
+        intro={bar}
         onError={() => {}}
       />
     </Suspense>
@@ -670,47 +756,75 @@ function ProofSurface({ params = {} }) {
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 //
-// THE RAIL IS A TASK LIST, NOT A MAP OF THE PRODUCT.
+// THE RAIL IS THE THREE JOBS A DC DOES, IN ORDER (design v26 §1).
 //
-// The previous rail carried 17 destinations grouped by POV phase. Every one of
-// them was real, and together they answered "what does this console contain"
-// instead of "what do I do next" — which is the only question a DC opening it
-// cold actually has. So the rail is now five tasks plus two management pages:
+//   1  Onboard & connect    Get started · Components ▸ (the eight components)
+//   2  Compose & simulate   Scenarios · Build a chain · Launch gate
+//   3  Run & observe        Runs · Results
+//      Reference            Catalog
 //
-//   Get started   the setup checklist, built on real state (default home)
-//   Simulate      pick or build a chain, check it, launch it
-//   Runs          what is executing and what just finished
-//   Results       the report, the coverage it adds up to, tenant read-back
-//   Catalog       reference content: TTP cards, packages, CLI, streams, UC/TC
-//   ── Manage ──  Agents · Tenant · Firewall
+// Every page belongs to exactly one rail item. Simulate's three tabs became
+// rail items of their own, and the Manage group became Components: an
+// expandable submenu of all eight components, each with its status.
 //
 // NOTHING WAS DELETED. Every former destination is still routable (deep links,
-// bookmarks and ⌘K resolve) and the ones that belong to a task are reachable
-// as tabs inside it. `navParent` says which rail item lights up while a hidden
-// route is open, and `SECTIONS` below is the one place the tab strips are
-// defined — the rail, the tab strip and the router all read this file.
+// bookmarks and ⌘K resolve), retired ids forward to the page that replaced
+// them, and `navParent` says which rail item lights up while an off-rail page
+// is open. `SECTIONS` below is the one place the tab strips are defined — the
+// rail, the tab strip and the router all read this file.
 //
 // `icon` is a real PANW line icon under /icons — never a Unicode glyph.
-export const DESTINATIONS = [
-  // ── The five tasks ──
-  { id: 'start',    label: 'Get started',  group: 'Tasks',  icon: 'keyboard',        Component: GetStartedView, badge: 'setupLeft' },
-  // Library keeps its id: it is the route, the data-testid and the e2e key.
-  { id: 'library',  label: 'Simulate',     group: 'Tasks',  icon: 'line-chart',      Component: LibrarySurface },
-  { id: 'runs',     label: 'Runs',         group: 'Tasks',  icon: 'donut-chart',     Component: RunsSurface,    badge: 'live' },
-  { id: 'proof',    label: 'Results',      group: 'Tasks',  icon: 'bar-chart',       Component: ProofSurface },
-  { id: 'ttps',     label: 'Catalog',      group: 'Tasks',  icon: 'threat-warning',  Component: TtpsSurface },
+export const JOURNEYS = [
+  { id: 'onboard',   num: '1', label: 'Onboard & connect' },
+  { id: 'compose',   num: '2', label: 'Compose & simulate' },
+  { id: 'observe',   num: '3', label: 'Run & observe' },
+  // Not a step in the journey: what the scenarios are made of.
+  { id: 'reference', num: '',  label: 'Reference' },
+]
 
-  // ── Manage ──
-  { id: 'agents',   label: 'Agents',       group: 'Manage', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
-  { id: 'tenants',  label: 'Tenant',       group: 'Manage', icon: 'people',          Component: TenantsSurface },
+export const DESTINATIONS = [
+  // ── 1 · Onboard & connect ──
+  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedView, badge: 'setupLeft' },
+  // `children: 'components'` makes this rail item expand into the eight
+  // components (componentModel.js), each with its live status.
+  { id: 'components', label: 'Components',    group: 'onboard',   icon: 'settings-edit',  Component: ComponentsView, badge: 'componentIssues', children: 'components' },
+
+  // ── 2 · Compose & simulate ──
+  // Library keeps its id: it is the route, the data-testid and the e2e key.
+  { id: 'library',    label: 'Scenarios',     group: 'compose',   icon: 'line-chart',     Component: LibrarySurface },
+  // Immersive: the Composer is a full-screen node-graph editor, not a page
+  // inside the rail (docs/superpowers/specs/2026-10-21-composer-mode-design.md).
+  // The rail is not drawn while it is open; a cold deep link's Exit lands on
+  // Scenarios (`exitTo`), where the chains it forks from live.
+  { id: 'composer',   label: 'Build a chain', group: 'compose',   icon: 'apps-grid',      Component: ComposerView, immersive: true, exitTo: 'library' },
+  { id: 'preflight',  label: 'Launch gate',   group: 'compose',   icon: 'user-lock',      Component: ReadinessSurface },
+
+  // ── 3 · Run & observe ──
+  { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
+  { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
+
+  // ── Reference ──
+  { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
+
+  // ── The components' own pages, reached from the Components submenu ──
+  // One page shape each (v26 §4.2), in the submenu's order. The label is the
+  // h1 and the submenu name.
+  { id: 'component-pov',      label: 'POVengine',      hidden: true, navParent: 'components', icon: 'settings-edit',    Component: PovengineComponent },
+  { id: 'component-agents',   label: 'Agents',         hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsComponent },
+  { id: 'component-tenant',   label: 'Tenant',         hidden: true, navParent: 'components', icon: 'people',           Component: TenantComponent },
+  { id: 'component-http',     label: 'HTTP collector', hidden: true, navParent: 'components', icon: 'doc-search',       Component: HttpCollectorComponent },
+  { id: 'component-bvm',      label: 'Broker VM',      hidden: true, navParent: 'components', icon: 'building',         Component: BrokerVmComponent },
   // No shield icon ships under /icons; threat-network is the existing network glyph.
-  { id: 'firewall', label: 'Firewall',     group: 'Manage', icon: 'threat-network',  Component: FirewallSurface },
+  { id: 'component-firewall', label: 'Firewall',       hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallComponent },
+  { id: 'component-xdrc',     label: 'XDR Collector',  hidden: true, navParent: 'components', icon: 'apps-grid',        Component: XdrCollectorComponent },
+  { id: 'component-engine',   label: 'Cortex Engine',  hidden: true, navParent: 'components', icon: 'keyboard',         Component: CortexEngineComponent },
+  // The Manage pages they replace (v26 §5). A bookmark lands on the
+  // management tab the old page was, keeping its own params.
+  { id: 'agents',    label: 'Agents',   hidden: true, redirect: true, navParent: 'components', icon: 'fingerprint-scan', Component: redirectTo('component-agents', { tab: 'fleet' }) },
+  { id: 'tenants',   label: 'Tenant',   hidden: true, redirect: true, navParent: 'components', icon: 'people',           Component: redirectTo('component-tenant', { tab: 'readback' }) },
+  { id: 'firewall',  label: 'Firewall', hidden: true, redirect: true, navParent: 'components', icon: 'threat-network',   Component: redirectTo('component-firewall', { tab: 'sources' }) },
 
   // ── Off-rail, reached as tabs or links ──
-  // Immersive: the Composer is a full-screen node-graph editor, not a page
-  // inside the rail + tab strip (docs/superpowers/specs/2026-10-21-composer-mode-design.md).
-  { id: 'composer',  label: 'Build a chain',     hidden: true, navParent: 'library', icon: 'apps-grid',      Component: ComposerView, immersive: true },
-  { id: 'preflight', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
   { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },
   { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
   // id stays 'adapters' deliberately — it is the route; only the label moved.
@@ -724,19 +838,18 @@ export const DESTINATIONS = [
   { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
   { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
   { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
-  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'agents',  icon: 'building',       Component: EnvironmentsSurface },
-  { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library', icon: 'threat-network', Component: EalSurface },
+  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
+  { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
-  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
+  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'preflight', icon: 'user-lock',      Component: ReadinessSurface },
 ]
 
 /**
- * The tab strip each task shows across the top of its pages. A tab IS a
+ * The tab strip a rail item shows across the top of its pages. A tab IS a
  * destination, so the strip navigates and holds no state of its own — the rail
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  library: [['library', 'Scenarios'], ['composer', 'Build a chain'], ['preflight', 'Launch gate']],
   proof: [['proof', 'Report'], ['coverage', 'Coverage']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
@@ -748,12 +861,12 @@ export function navOwner(id) {
   return d.navParent || d.id
 }
 
-/** The tab set for a destination, or null when its task has no tabs. */
+/** The tab set for a destination, or null when its rail item has no tabs. */
 export function sectionFor(id) {
-  const owner = id === 'readiness' ? 'library' : navOwner(id)
+  const owner = navOwner(id)
   const tabs = SECTIONS[owner]
   if (!tabs) return null
-  return { owner, tabs, active: id === 'readiness' ? 'preflight' : id }
+  return { owner, tabs, active: id }
 }
 
 export const DEFAULT_DESTINATION = 'start'
@@ -779,28 +892,45 @@ export function isValidDestination(id) {
   return BY_ID.has(id)
 }
 
-/** Grouped, nav-visible destinations in registry order. */
-export function navGroups(badges = {}) {
-  const order = []
-  const byLabel = new Map()
+/**
+ * The rail: one group per journey, in journey order, each holding its
+ * nav-visible destinations in registry order.
+ *
+ * @param {Object} badges       badge key → string | { text, variant: 'live' }
+ * @param {Object} [opts]
+ * @param {Object} [opts.components]  componentModel statuses by key; a child
+ *                                    with none reads Unknown, never a guess
+ */
+export function navGroups(badges = {}, { components = null } = {}) {
+  const byGroup = new Map()
   for (const d of DESTINATIONS) {
     if (d.hidden || !d.group) continue
-    if (!byLabel.has(d.group)) {
-      byLabel.set(d.group, { items: [] })
-      order.push(d.group)
-    }
+    if (!byGroup.has(d.group)) byGroup.set(d.group, [])
     const badgeVal = d.badge ? badges[d.badge] : null
     const isLive = badgeVal && typeof badgeVal === 'object' && badgeVal.variant === 'live'
-    byLabel.get(d.group).items.push({
+    const item = {
       id: d.id,
       label: d.label,
       icon: d.icon,
       iconUrl: iconUrl(d.icon),
       badge: isLive ? badgeVal.text : badgeVal,
       badgeVariant: isLive ? 'live' : undefined,
-    })
+    }
+    if (d.children === 'components') {
+      item.children = COMPONENTS.map((c) => {
+        const route = componentRoute(c.key)
+        return {
+          key: c.key,
+          label: c.name,
+          destination: route.destination,
+          params: route.params,
+          status: components?.[c.key] || null,
+        }
+      })
+    }
+    byGroup.get(d.group).push(item)
   }
-  // The task group is the rail's body and carries no heading; only the
-  // secondary group is labelled, which is what makes it read as secondary.
-  return order.map((label) => ({ label: label === 'Tasks' ? '' : label, items: byLabel.get(label).items }))
+  return JOURNEYS
+    .filter((j) => byGroup.has(j.id))
+    .map((j) => ({ num: j.num, label: j.label, items: byGroup.get(j.id) }))
 }

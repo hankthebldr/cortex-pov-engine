@@ -3,7 +3,15 @@
    Palo Alto Networks | DC2 GTM NAM Cortex
    ============================================================ */
 
-:root {
+/* Declared on :root AND on every [data-theme] element. A custom property's
+   own var() is computed where it is declared, and descendants inherit the
+   computed value: declared on :root only, `--cortex-white: var(--s1)` was
+   computed against :root's LIGHT --s1, and the dark shell
+   (.theme-console[data-theme="dark"], where the theme actually lives)
+   inherited #FFFFFF. Re-declaring the aliases on the themed element makes
+   them compute against that element's tokens, in either theme. */
+:root,
+[data-theme] {
   /* ----------------------------------------------------------
      Core palette — ALIASED onto ui/src/styles/cortex-tokens.css
      (the PANW redesign's token contract), not replaced. The 12
@@ -14,10 +22,9 @@
 
      cortex-tokens.css must be imported before this file (see
      main.jsx) so --ac/--tx/--s1/etc. are defined when these
-     aliases are evaluated. Because CSS custom properties are
-     late-bound, a single alias below (e.g. --cortex-teal: var(--ac))
-     automatically follows [data-theme="dark"] at the point of
-     use — no separate dark-theme alias block is needed here.
+     aliases are evaluated. Custom properties are NOT late-bound
+     across inheritance (see the note above this block), which is
+     why the selector names [data-theme] as well as :root.
      ---------------------------------------------------------- */
 
   /* --cortex-navy was the app's "always-dark chrome" color: the

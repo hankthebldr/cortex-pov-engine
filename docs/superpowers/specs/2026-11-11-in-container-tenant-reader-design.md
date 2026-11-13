@@ -168,6 +168,36 @@ says an issue's host is in `asset_names`. Neither source has been checked agains
 reply, and the vendor page does not say whether `include_fields` adds fields to the default
 response or limits the response to the fields named. The phase-1 spike (§9) settles both.
 
+**2026-11-12 spike (settled).** ONE read-only `issue/search` on deathstar through SimCore's
+catalog read (`OP-ISSUE-SEARCH`), over a lab run's window (first step −300 s to +3600 s), with
+`include_fields: ["normalized_fields"]`, sorted `observation_time` `asc`, `search_to` 5. One
+request; three rows (two `TRAPS`, one `FW`). The redacted reply is
+`tests/fixtures/tenant_reader/issue_search_reply.json` (provenance beside it).
+
+- **`include_fields` adds.** Every default field (`id`, `severity`, `detection.method`,
+  `_insert_time`, `domain`, `case_ids`, `name`, …) came back beside `normalized_fields`, so the
+  reader sends `include_fields: ["normalized_fields"]`, not the full projection list.
+- **The host is in `normalized_fields`.** Its keys are FLAT dotted XDM names
+  (`row["normalized_fields"]["xdm.source.host.hostname"]`), not nested objects. Read
+  `xdm.source.host.hostname`, else `xdm.target.host.hostname`; the value was a string on both
+  endpoint rows, while other normalized values are lists, so accept either. `asset_names` was
+  `[]` on all three rows: the oracle note's claim does not hold for these issues. The `FW` row
+  carried no hostname (`xdm.source.host.os_family` `NO_HOST`, an IP only), so it is
+  unattributed (A4).
+  *Amended 2026-11-13:* not "source, else target". Attribution reads every host value in
+  EITHER field, and an issue is attributed when the run host matches ANY of them; the
+  displayed `host` is the first value, source first.
+- **Key style is flat.** Top-level keys are flat dotted (`detection.method`,
+  `detection.rule_id`, `status.progress`, `status.resolution_reason`), as Part B saw.
+- **Envelope.** `DATA` (list), `TOTAL_COUNT` and `FILTER_COUNT` (ints). `TOTAL_COUNT` is
+  tenant-wide, far larger than the window; `FILTER_COUNT` is the window's match count. So
+  `truncated` is `FILTER_COUNT > returned`, and `TOTAL_COUNT` never reads as the window's size.
+- **Other values.** `detection.rule_id` was null on every row; `case_ids` are lists of ints
+  (the two `TRAPS` rows share one case); `id`, `_insert_time` and `observation_time` are ints
+  (epoch ms); `external_id` is a 32-hex string, not the issue id. The first issue's `id`
+  equalled the alert id recorded on the run's `Observation`: one pair where alert id ==
+  issue id on this tenant.
+
 ## 4 · Goals, non-goals, anti-goals
 
 **Goals**
@@ -182,8 +212,8 @@ response or limits the response to the fields named. The phase-1 spike (§9) set
 - **G2.** The scorecard's Alert ID column and the matched alert's source are populated.
 - **G3.** One tenant reader inside SimCore serves the console over REST and Claude over
   `/mcp` (HTTP), plus stdio for Desktop.
-- **G4.** `/mcp` over HTTP needs a bearer token, accepts loopback clients only in phase 1,
-  and is read-only by default. One user-scope registration serves every Claude Code session
+- **G4.** `/mcp` over HTTP needs a bearer token, accepts loopback clients only in phase 1
+  (not built; bearer-only, see the 2026-11-13 note in §7.1), and is read-only by default. One user-scope registration serves every Claude Code session
   on the host.
 - **G5.** One per-tenant request budget covers every SimCore path that calls the tenant.
 - **G6.** Parity with all 12 tools of `cortex-mcp` 1.0.5, then retirement of
@@ -203,7 +233,7 @@ response or limits the response to the fields named. The phase-1 spike (§9) set
   job.
 - Claude Desktop over HTTP, or remote connectors.
 - A remote client of `/mcp`, such as Claude on a DC jumpbox. That needs a per-instance token
-  and TLS, and is a later phase. Phase 1 refuses non-loopback clients (§7.1).
+  and TLS, and is a later phase. Phase 1 refuses non-loopback clients (§7.1) (not built: bearer-only; see the §7.1 note of 2026-11-13).
 - A new container, sidecar or listener.
 - Any change to Part B's ledger semantics (`merge_class` and the disposition vocabulary).
 - XQL in the reader. XQL stays on `xsiam.xql.query`.
@@ -235,7 +265,7 @@ infrastructure gap must never read as a claim about the customer's coverage.
 
 - **One container, one process.** SimCore is one container on `0.0.0.0:8888`. The beacons
   need LAN reach, so `/mcp` cannot get a loopback-only bind; phase 1 refuses non-loopback
-  peers at the route instead (§7.1). One uvicorn process serves the console, the beacons, SSE
+  peers at the route instead (§7.1) (not built: bearer-only; see the §7.1 note of 2026-11-13). One uvicorn process serves the console, the beacons, SSE
   and `/mcp`.
 - **Shared tenant limit.** The tenant's rate limit is shared with the customer's analysts,
   so every read is explicit, cached and counted.
@@ -264,7 +294,7 @@ infrastructure gap must never read as a claim about the customer's coverage.
                    SimCore container  (one process, :8888 on 0.0.0.0)
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │ console  ── GET/POST /api/runs/{id}/tenant-evidence ──┐                     │
- │ Claude Code ── POST /mcp (loopback+Bearer) mcp_server ┤ in-process REST     │
+ │ Claude Code ── POST /mcp (Bearer only) mcp_server ┤ in-process REST     │
  │ Claude Desktop ── docker exec -i … python -m mcp_server (stdio) ─ loopback ─┤
  │                                                       ▼                     │
  │          api/ routes ── connectors/tenant_reader.py (pure shaping:          │
@@ -305,7 +335,16 @@ boundary. D1 reverses that **for `/mcp` over HTTP only**:
   **Claude's call:** no token-strength check (the earlier `MCP_TOKEN_WEAK` heuristic is
   dropped). Reason: Henry's standing feedback is functional fixes without extra guards, and
   §7.10 generates the token with `secrets.token_urlsafe(32)` anyway.
-- **Loopback only in phase 1.** **Claude's call:** `/mcp` refuses any request whose TCP peer
+- **Note, 2026-11-13: the loopback check below was NOT built.** The builder check this
+  bullet asked for found that, under Docker Desktop on this Mac, a host-loopback request
+  (`curl http://127.0.0.1:<published port>/`) reaches the container with peer `172.17.0.1`
+  (the Docker bridge gateway), not `127.0.0.1` or `::1`. A peer-address check therefore
+  cannot tell the host from anything Docker forwards, and the gateway may not be
+  allowlisted (plan decision PD5, Task 13 stopped). `/mcp` is **bearer-only in phase 1**,
+  `McpGate.loopback_only` stays `False`, and the `403` / `MCP_LOOPBACK_ONLY` behaviour and
+  every other "loopback only" statement in this spec describe the intent, not the shipped
+  behaviour. A loopback-only `/mcp` needs a different mechanism; Henry decides.
+- **Loopback only in phase 1 (not built, see the note above).** **Claude's call:** `/mcp` refuses any request whose TCP peer
   is not a loopback address, with `403` and `MCP_LOOPBACK_ONLY`, before the token is
   checked. Reason: phase 1's only HTTP client is Claude Code on the same host. A remote DC
   jumpbox client needs a per-instance token and TLS, and is a later phase (§4 non-goals).
@@ -365,6 +404,9 @@ issue, case and endpoint reads.
 - Part B's `pull_issue_status` and `pull_endpoint_ips` are re-expressed over
   `search_issues` and `get_endpoints`. Part B's own tests are what show the delegation kept
   their behaviour.
+  *Amended 2026-11-13:* `pull_issue_status` is re-expressed over `issues_by_id` (the by-id
+  `issue/search`, chunks of 100), not over `search_issues`; `pull_endpoint_ips` is over
+  `get_endpoints` as written.
 - **Claude's call:** one function builds an `issue/search` request body, and the reader,
   Part B's by-id read and the general route's catalog op (`OP-ISSUE-SEARCH`, §7.4) all call
   it. One function likewise builds a `get_endpoint` body. They live in the substrate that
@@ -430,6 +472,9 @@ the loop the same way; §14 notes it but does not fix it.
 
    A row whose `domain` is not `Security` is excluded and counted, in case the tenant ignored
    the filter.
+
+   *Settled 2026-11-13:* the 2026-11-12 spike (§3.4) answered this: `include_fields` adds to
+   the default fields, so the reader sends `["normalized_fields"]`.
 3. **Attribution.** An issue's host comes from the field the phase-1 spike shows carries it:
    `asset_names`, as the oracle note says, or `xdm.source.host.hostname`, else
    `xdm.target.host.hostname`, as the vendor page says (§3.4). Attribution is not built
@@ -440,9 +485,25 @@ the loop the same way; §14 notes it but does not fix it.
    - `without_host`, which is shown separately as **unattributed, not credited** (A4).
 
    With no run host, every issue is unattributed and the snapshot code is `UNSCOPED`.
+
+   *Settled 2026-11-13:* the 2026-11-12 spike (§3.4) answered this: the host is in
+   `normalized_fields`, and `asset_names` was empty on every row, so attribution is built on
+   the two `normalized_fields` host fields.
+
+   *Amended 2026-11-13:* the host is not "`xdm.source.host.hostname`, else
+   `xdm.target.host.hostname`": attribution matches the run host against ANY value in
+   EITHER field. `attribute()` also returns `unattributed`, the issues to show as
+   unattributed, not credited: the `without_host` issues, or every issue under `UNSCOPED`.
+   `without_host` holds only issues that carry no host, and `other_host` is `null` under
+   `UNSCOPED`, where there is no run host to compare with.
 4. **Id probe.** Part B's by-id `issue/search`, filtered by `id` `in` the `external_id` of
    every `Observation` on the run, in chunks of 100 (see *Agreement* below). Its requests
    count in `queries_issued`.
+   *Amended 2026-11-13:* the probe reads the `external_id` of every `Observation` on the run
+   that is linked to a `Result` (`result_id` set), not every `Observation`: those are the
+   matcher rows the agreement counts, so an unlinked observation is neither probed nor
+   counted in `id_space`. It also sends `include_fields: ["normalized_fields"]`, so a hit
+   outside the window carries its own hosts.
 5. **Cases.** `case/search` with `case_id` `in` the `case_ids` of the attributed issues: one
    request, at most 100 ids. It feeds grouping with `issue_count`, `issue_ids`, `hosts`,
    `case_domain` and `xdr_url`. Disposition stays the Part B ledger's job (§7.8).
@@ -490,6 +551,17 @@ lab ledger shows deathstar's alerts carry no rule id (§3.2), so that join would
   - `unjoinable`: no `external_id` and no name on the matcher row;
   - `ambiguous`: more than one `name_host_window` candidate, never resolved silently;
   - `id_space {probed, hit, no_hit}`. This is the evidence phase 2 needs (G7).
+- *Amended 2026-11-13 (units):* the unit of agreement is the distinct **alert**, not the
+  `Observation` row. The matcher writes one `Observation` per (result, alert) and does not
+  consume technique or name matches, so one alert linked to several Results is the normal
+  case. An alert is keyed by `external_id`, else by (name as the projection stores it,
+  `observed_at`, short host), and its rows share one outcome. `both.id`,
+  `both.name_host_window`, `matcher_only`, `unjoinable` and `ambiguous` count distinct
+  alerts; `ambiguous` means one alert with more than one candidate issue, or one candidate
+  issue claimed by more than one distinct alert. `id_space` counts distinct ids;
+  `reader_only` counts issues; `pairs` keeps one entry per (`result_id`, `issue_id`) so each
+  Result shows its link. P2-1's "at least 5 joined pairs" therefore means 5 distinct
+  alert↔issue joins, never Results fanned out from fewer alerts.
 
 **Lag, not MTTD.** **Claude's call:** each attributed issue shows
 `observation_time − step executed_at` as "observed after step", and `_insert_time` as
@@ -655,15 +727,23 @@ poisoned tool replies.
   - **Issue:** `id`, `detection.method`, `detection.rule_id`, `severity`, `domain`,
     `status.progress`, `case_ids`, `_insert_time`, `observation_time`, the derived `host`,
     and `tenant_text.name`.
+    *Amended 2026-11-13:* also `hosts`, one value per short host name from both host fields
+    (keyed on the neutralised first DNS label, case-folded, so spellings differing only by
+    case, domain or a stripped character take one slot; the first spelling is kept),
+    de-duplicated before the 50-item list cap; `host` is its first value, for display.
   - **Case:** `case_id`, `status_progress`, `resolve_reason`, `severity`, `issue_ids`,
     `issue_count`, `host_count`, hostnames from `hosts`, `case_domain`, `creation_time`,
     `modification_time`, `xdr_url` (validated or withheld), and the case name, if present,
     under `tenant_text`.
+    *Amended 2026-11-13:* `xdr_url` is validated as https on a `paloaltonetworks.com` host,
+    printable ASCII only (no bidi, tag or look-alike character, no lone surrogate), at most
+    200 characters, with no userinfo or port; anything else is withheld.
   - **Endpoint:** the fields in §3.4, with `assigned_prevention_policy` under `tenant_text`.
   - Descriptions are not projected in phase 1.
 - **Neutralised.**
   - Stripped: C0/C1 controls, zero-width characters (U+200B–U+200F, U+2060, U+FEFF) and bidi
     controls (U+202A–U+202E, U+2066–U+2069).
+  - *Amended 2026-11-13:* also stripped are the Unicode tag block U+E0000–U+E007F ("ASCII smuggling"), U+061C (Arabic letter mark) and lone surrogates U+D800–U+DFFF, which cannot be encoded as UTF-8 and would turn one tenant string into a 500; and the other invisible format characters U+00AD (soft hyphen), U+2061–U+2064 (invisible operators), U+180E (Mongolian vowel separator) and U+206A–U+206F (deprecated format characters), plus the variation selectors U+FE00–U+FE0F and U+E0100–U+E01EF.
   - Each text field is capped at 200 characters and marked `text_truncated: true` when cut.
     Lists are capped at 50.
 - **Framed.**
@@ -880,7 +960,7 @@ Then one task per branch, in this order:
 | 2 | `feature/api-tenant-request-bucket` | §7.9 at both egress points; the breaker on a connector 429 | — |
 | 3 | `feature/api-tenant-reader` | §7.3–7.4: the reader, the shared body builders, the strict envelope, the id probe and two-class agreement, the snapshots table and five routes (general ones `xsiam_tenant` only); Part B's by-id helpers delegate | Phase 0, #0, #2 |
 | 4 | `feature/ui-results-tenant-evidence` | §7.5: the panel, the Read button, the Reconcile button behind its confirm (D5), the `RunCasePanel` hint pointing at it, and the tile label | #1, #3 |
-| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer, loopback-only, refuse-to-mount, health codes and the host-action gate | — |
+| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer (loopback-only not built, see §7.1 note of 2026-11-13), refuse-to-mount, health codes and the host-action gate | — |
 | 6 | `feature/api-mcp-tenant-reader-tools` | §7.6 tools, the legacy lines and §7.7 framing | #3, #5 |
 | 7 | `chore/infra-mcp-desktop-launcher` | `scripts/mcp-stdio-docker.sh`. The dot-files and `~/.claude.json` edits are host-side and wait for go-ahead | #5 |
 
@@ -902,6 +982,9 @@ evidence.
   snapshot reports the `id` and `name_host_window` counts separately. Reason: deathstar's
   alerts carry no rule id (§3.2), so a threshold resting on a rule-id join could never be
   met there.
+  *Cross-reference 2026-11-13:* "joined pairs" is counted as §7.3's units line defines it,
+  `both.id + both.name_host_window` (distinct alerts), not `len(pairs)`, which has one entry
+  per (`result_id`, `issue_id`).
 - **P2-2. Matcher migration.** The matcher's default read moves from
   `get_alerts_multi_events` to `issue/search`.
   - It joins on id if every recorded id probe hit (`id_space.no_hit == 0` over the recorded
@@ -938,7 +1021,7 @@ assumption with good syntax".
 | A by-id probe hit joins its pair in class `id`; a probe miss falls back to name + host + window and is counted in its own class; a miss is reported as `no_hit`, never as "ids differ"; an id hit on an unattributed issue never enters `both` | there is no join |
 | A general route with only reconcile's `xsiam` credential configured answers `pending` / `NO_TENANT_CONFIGURED` naming `xsiam_tenant`, and makes no outbound call | new route |
 | Bearer: no header → 401; wrong token → 401; right token → 200; flag on with no token → not mounted, health `MCP_TOKEN_MISSING` | `/mcp` answers 200 unauthenticated when mounted |
-| A non-loopback peer gets `403` / `MCP_LOOPBACK_ONLY` even with the right token | `/mcp` answers any peer |
+| A non-loopback peer gets `403` / `MCP_LOOPBACK_ONLY` even with the right token (not built: Task 13 stopped, see the §7.1 note of 2026-11-13) | `/mcp` answers any peer |
 | Over HTTP, `run.launch` and `run.abort` refuse with `MCP_HOST_ACTION_DISABLED` unless the flag is on | they execute |
 | A non-XQL catalog read charges the per-tenant bucket; a connector page charges it; a 429 on the connector path trips the breaker | these calls are unmetered |
 | KOI fixture: an issue name holding "Ignore previous instructions…" (5,000 chars, with bidi and zero-width characters) comes back capped and stripped, under `tenant_text`, with `data_notice` | there is no projection |
@@ -1031,7 +1114,7 @@ settles them, and attribution waits for it.
   it stays only as the stopgap (D3).
 - **A loopback-only second listener for `/mcp`.** It needs a second listener in one process
   and a compose change. Phase 1 gets the same reach limit by refusing non-loopback peers at
-  the route (§7.1), with no second listener, and the bearer token meets the spec's SHOULD.
+  the route (§7.1), with no second listener, and the bearer token meets the spec's SHOULD. *2026-11-13: that reason no longer holds (the route check was not built); a loopback-only listener is now a candidate for Henry's open decision.*
 - **Switching the matcher to `issue/search` now.** That is a scoring change with no
   live-tenant agreement data behind it, so it waits for phase 2.
 
@@ -1043,7 +1126,7 @@ settles them, and attribution waits for it.
   issues may carry an IP or a user instead (unverified). The reader will therefore
   under-attribute. That shows as unattributed, never as a miss.
 - **Loopback check under Docker.** If the container sees host-loopback and LAN clients from
-  the same gateway address, the phase-1 loopback check cannot be built as written (§7.1).
+  the same gateway address, the phase-1 loopback check cannot be built as written (§7.1). *2026-11-13: this risk materialised; Docker Desktop shows the bridge gateway for host-loopback, so the check was not built.*
   The builder stops and reports rather than widen it.
 - **The weaker match class.** `name_host_window` can pair an alert with a different issue
   that has the same name on the same host within the tolerance. It is reported as its own
@@ -1125,7 +1208,7 @@ settles them, and attribution waits for it.
 27. The credential kind follows the read's shape: the general tenant routes and their MCP
     tools take only `xsiam_tenant`; the run-scoped read keeps reconcile's resolution
     (§7.3).
-28. `/mcp` is loopback-only in phase 1 (`403` / `MCP_LOOPBACK_ONLY`), the builder first
+28. *(Not built, 2026-11-13: bearer-only; see the §7.1 note.)* `/mcp` is loopback-only in phase 1 (`403` / `MCP_LOOPBACK_ONLY`), the builder first
     records the peer address Docker shows, and a remote DC jumpbox client is a later phase
     (§4, §7.1).
 29. Guard-only tests are dropped per Henry's standing feedback; the envelope raise and "no

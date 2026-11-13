@@ -7,6 +7,8 @@ import { tokeniserFor } from './syntaxHighlight.js'
 import { runIdOf } from '../../api/ids.js'
 import { serverDate } from '../../api/time.js'
 import useCatalogBindings from './useCatalogBindings.js'
+import Button from './kit/Button.jsx'
+import { useChainTray, ttpTrayItem } from '../../context/ChainTrayContext.jsx'
 import {
   BINDING_STATUS, GROUP_OPTIONS, SORT_OPTIONS, MEMBERSHIP_OPTIONS,
   parseOrganize, organizeUrlPatch, organizeCards, bindingSearchText, detectionTotal,
@@ -51,6 +53,7 @@ const DETECTION_KIND_CHIP = {
 export default function TtpBrowserView({
   initialTtpId = null, onNavigate = () => {}, params = {}, setParams,
 }) {
+  const tray = useChainTray()
   const [ttps, setTtps]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -351,6 +354,7 @@ export default function TtpBrowserView({
             runs={selectedRuns}
             onClose={clearSelection}
             onEdit={() => setEditorMode(selectedDetail.id)}
+            onAddToChain={() => tray.add(ttpTrayItem(selectedDetail))}
             bindings={bindingsReady ? (bindings.byCard.get(selectedDetail.id) || []) : null}
             onNavigate={onNavigate}
           />
@@ -374,6 +378,7 @@ export default function TtpBrowserView({
                         ttp={t}
                         isSelected={t.id === selectedId}
                         onSelect={() => handleSelect(t.id)}
+                        onAdd={() => tray.add(ttpTrayItem(t))}
                         showBindings={bindingsReady}
                         bindings={bindings.byCard.get(t.id)}
                         placedBy={g.via[t.id]?.[0]}
@@ -404,6 +409,7 @@ export default function TtpBrowserView({
                     ttp={t}
                     isSelected={t.id === selectedId}
                     onSelect={() => handleSelect(t.id)}
+                    onAdd={() => tray.add(ttpTrayItem(t))}
                     showBindings={bindingsReady}
                     bindings={bindings.byCard.get(t.id)}
                   />
@@ -710,7 +716,12 @@ function CardIndexRow({ id, bindings, placedBy }) {
   )
 }
 
-function TtpCard({ ttp, isSelected, onSelect, showBindings = false, bindings, placedBy }) {
+/**
+ * A TTP card — the v26 card anatomy (§4.1): header (id, technique), title, tag
+ * row, footer with the verb. The body is a button that opens the card's detail;
+ * the footer's Add to chain drops the card into the chain tray.
+ */
+function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false, bindings, placedBy }) {
   const techniques = ttp.technique_ids || []
   const tactics    = ttp.tactic_ids    || []
   const platforms  = ttp.platforms     || []
@@ -718,24 +729,21 @@ function TtpCard({ ttp, isSelected, onSelect, showBindings = false, bindings, pl
   const totalDetections = detectionTotal(ttp)
 
   return (
-    <article
-      className={'ttpb-row' + (isSelected ? ' ttpb-row--selected' : '')}
-      role="button"
-      tabIndex={0}
-      data-testid={`ttp-card-${ttp.id}`}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() }
-      }}
-    >
-      <div className="ttpb-row__head">
+    <article className={'ttpb-row ttpb-card' + (isSelected ? ' ttpb-row--selected' : '')}>
+      <button
+        type="button"
+        className="ttpb-card__body"
+        data-testid={`ttp-card-${ttp.id}`}
+        aria-label={`Open ${ttp.id} · ${ttp.name}`}
+        aria-pressed={isSelected}
+        onClick={onSelect}
+      >
+      <div className="ttpb-row__head" data-testid="ttpb-card-head">
         <span className="ttpb-row__id mono">{ttp.id}</span>
+        {techniques[0] && <span className="ttpb-chip--tag mono ttpb-card__technique">{techniques[0]}</span>}
         <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
-        <span className="ttpb-row__name">{ttp.name}</span>
-        <span className="ttpb-row__count mono">
-          {totalDetections} det{totalDetections === 1 ? '' : 's'}
-        </span>
       </div>
+      <div className="ttpb-row__name ttpb-card__title">{ttp.name}</div>
       <div className="ttpb-row__cat mono">
         {ttp.simulation_class || 'other'} · {ttp.kill_chain_phase || '—'}
       </div>
@@ -785,13 +793,21 @@ function TtpCard({ ttp, isSelected, onSelect, showBindings = false, bindings, pl
           </div>
         )}
       </div>
+      </button>
+      <div className="ttpb-card__foot" data-testid="ttpb-card-foot">
+        <span className="ttpb-card__count mono">
+          {totalDetections} detection{totalDetections === 1 ? '' : 's'}
+        </span>
+        <span className="ttpb-card__spacer" />
+        {onAdd && <Button variant="primary" onClick={onAdd}>Add to chain</Button>}
+      </div>
     </article>
   )
 }
 
 /* ─── TTP detail rail ───────────────────────────────────────────────── */
 
-function TtpDetail({ detail, runs, onClose, onEdit, bindings = null, onNavigate = () => {} }) {
+function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, bindings = null, onNavigate = () => {} }) {
   if (detail._error) {
     return (
       <aside className="ttpb-detail" data-testid="ttp-detail">
@@ -891,6 +907,7 @@ function TtpDetail({ detail, runs, onClose, onEdit, bindings = null, onNavigate 
       </div>
 
       <div className="ttpb-detail__actions">
+        {onAddToChain && <Button variant="primary" onClick={onAddToChain}>Add to chain</Button>}
         <button
           type="button"
           className="btn ttpb-btn--sm ttpb-btn--accent"

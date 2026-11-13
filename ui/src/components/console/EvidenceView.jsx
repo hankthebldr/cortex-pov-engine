@@ -20,12 +20,15 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  * Props:
  *   activeRun  — { runId, scenarioId, ... }
  *   lastRun    — fallback run when no live run
+ *   intro      — node shown under the page head (Results passes its
+ *                "Result of" bar, design v26 §4.6)
  *   onError    — (msg) => void
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
+  intro = null,
   onError = () => {},
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
@@ -99,7 +102,7 @@ export default function EvidenceView({
     <div className="evidence">
       <div className="view-head">
         <div>
-          <h1>Evidence</h1>
+          <h1>Report</h1>
           <div className="view-head__meta">
             {viewMode === 'this-run' ? (
               <>
@@ -165,6 +168,8 @@ export default function EvidenceView({
           )}
         </div>
       </div>
+
+      {viewMode === 'this-run' && intro}
 
       {viewMode === 'compare' ? (
         <MultiRunCompare />
@@ -307,6 +312,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div>Alert</div>
           <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
+          <div>Source</div>
           <div>Status</div>
         </div>
         <div className="scorecard-empty">
@@ -324,6 +330,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div>Alert</div>
         <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
+        <div>Source</div>
         <div>Status</div>
       </div>
       {rows.map((r, i) => (
@@ -372,6 +379,7 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         {row.mttd != null ? formatMttd(row.mttd) : '—'}
       </div>
       <div className="scorecard__id">{row.alertId || '—'}</div>
+      <div className="scorecard__source">{row.alertSource || '—'}</div>
       <div className="scorecard__status-cell">
         <span className={`scorecard__status scorecard__status--${status}`}>
           {statusLabel}

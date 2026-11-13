@@ -156,6 +156,52 @@ both.
   "behaviour change you may veto" items under *Changed* below say exactly
   which routes.
 
+- **`/mcp` now needs `CORTEXSIM_MCP_TOKEN`.** If you run with
+  `CORTEXSIM_MCP_HTTP=true`, set `CORTEXSIM_MCP_TOKEN` (generate one with
+  `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) or `/mcp` is not
+  mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Clients send
+  `Authorization: Bearer <token>`. MCP `run.launch` / `run.abort` now refuse
+  unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`.
+- **Tenant reads are metered per tenant.** REST catalog reads now spend the
+  per-tenant request budget (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default
+  60) and can be refused with 429 `XSIAM_QUOTA_ERROR`. Raise the setting if a
+  workflow legitimately needs more.
+- **New table `tenant_evidence_reads`** is created at boot; no migration step.
+
+### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
+
+- **A Broken card on a run's chain is now a button** that opens a sheet of
+  likely causes, in the order to check, each opening the page that fixes it.
+  The causes are read from the host's record of the step (how it ended, its
+  exit code, its signal, and the identity and runtime notes in its frame),
+  which the sheet shows above them; none is guessed. A step killed by a signal
+  POVengine did not send is described as the host half of a prevention and
+  opens that run's Results, not as a fault. Exit 127 opens Packages filtered to
+  unstaged tools; a timeout opens Build a chain; an agent that stopped
+  reporting opens Agents › Fleet; every step ends with its own output.
+- **Only a Broken card is a button.** ChainStage takes an optional
+  `canSelect(stepId, state)`, so the other live cards stay plain cards rather
+  than buttons that do nothing.
+
+### Fixed — four new scenarios set Detection Accuracy bars their rows could not reach
+
+- **SIM-EDR-023, SIM-EDR-025, SIM-KOI-010 and SIM-KOI-011 read FAIL on a healthy
+  tenant.** Detection Accuracy counts only rows an alert matched, and their
+  Tier-2-verify XQL rows never become a match: verify sets only the row's KPI
+  verdict, and reconcile writes an unmatched row as missed. Their bars (80% and
+  90%) were above what their alert-backed rows can reach (75%, 33%, 43%, 67%),
+  while their text said the opposite. Each bar now counts only alert-backed
+  rows, as SIM-KOI-012's already did, and the text states the ceiling: 62.5%
+  (EDR-023, with its installed BIOCs and correlation rule, allowing the
+  rarity-based ABIOC one miss), 16.7% (EDR-025), 14.3% (KOI-010) and 16.7%
+  (KOI-011), each one built-in ABIOC. The same flaw in 43 older scenarios is
+  issue #272.
+- **SIM-EDR-025 step-03's verify query could not fail.** It matched any
+  `findmnt`, `df` or `find` on the host within the hour. It now matches `df` and
+  `find` run against the `.cortexsim-akira` staging tree. Its four XQL rows no
+  longer name card TTP-2026-0200 without a detection on it, which logged an
+  unresolved-card warning at every boot.
+
 ### Security
 
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
@@ -762,6 +808,146 @@ both.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — tenant evidence on request (in-container tenant reader, phase 1)
+
+- `POST /api/runs/{run_id}/tenant-evidence` reads the tenant once, on an
+  explicit operator action. It reads the run's issues (`issue/search`, Security
+  domain), their cases (`case/search`) and the run host's endpoint record
+  (`get_endpoint`), and stores the result as a snapshot in the new
+  `tenant_evidence_reads` table (created at boot). `GET` returns the latest
+  snapshot and makes **zero** outbound calls. Nothing polls the tenant.
+- Issues are attributed to the run only through the issue's own host
+  (`normalized_fields` XDM hostnames, any value in either field, compared with
+  the matcher's short-host rule). An issue with no host is never credited.
+- An id probe reads each matched alert back from `issue/search`. The snapshot
+  then reports agreement with the matcher in two classes, `id` and
+  `name_host_window`, counting distinct alerts. Two reads of one tenant
+  agreeing is not tenant verification, and the snapshot says so.
+- Read-only and display-only. The read never changes `Result` scoring, MTTD,
+  outcome or `tc_verdict`, and never marks a credential verified.
+- Counts that were not measured are `null`. A window cut by the request budget
+  or by truncation reads `complete: false`. Refusals by CortexSim's own budget
+  are worded as such, never as the tenant's.
+- Tenant-authored text is an allowlisted projection under `tenant_text`, with
+  controls and invisible or bidirectional characters stripped and each field
+  capped at 200 characters. Every reply carries `data_notice`.
+- Two tabs or a double click send one metered read. A minimum interval per
+  tenant (default 60 s) refuses a repeat unless `?force=true`.
+- Push-mode runs and runs with no executed step answer `NO_RUN_WINDOW` with no
+  call.
+- General per-tenant reads for the `xsiam_tenant` credential:
+  `POST /api/xsiam/tenants/{name}/issues/search`, `…/cases/search` and
+  `…/endpoints/get`. A reconcile-only `xsiam` credential answers `pending` /
+  `NO_TENANT_CONFIGURED`.
+- New settings: `CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES` (5),
+  `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS` (60) and
+  `CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS` (300).
+- Strict envelopes on these reads: a lowercase `data` issue reply, or a reply
+  with no `reply` wrapper, raises `XSIAM_PARSE_ERROR`
+  (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
+  issue read now raises on a lowercase `data` reply where it used to return
+  `{}`.
+
+### Changed — one per-tenant request budget; any 429 trips once
+
+- Every SimCore request to a tenant now spends one per-tenant request bucket
+  (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default 60). That covers catalog
+  REST reads, XQL starts and polls, healthcheck, the clock probe and every
+  measurement-loop connector page. **REST catalog reads were unmetered before**
+  and can now be refused with 429 `XSIAM_QUOTA_ERROR` and
+  `retry_after_seconds`. Reconcile answers 502 `CONNECTOR_PULL_FAILED` with
+  `detail.code` and `detail.refused_locally`.
+- Any tenant 429 opens the shared breaker exactly once. This includes the
+  connector path and the clock probe, which previously never tripped it.
+- A refusal by CortexSim's own budget is a local refusal. It never trips the
+  breaker, never counts as a query issued, never marks the credential
+  unverified, and never becomes a verify or reconcile attempt. A run therefore
+  cannot reach the attempt cap ("…without the detection appearing in the
+  tenant") through requests that never left. Preflights report such a refusal
+  as not probed (`PF_NOT_PROBED`, or `PF_RESPONSE_LAYER_UNREAD` for the response
+  layer), never as an unreachable tenant. Sweep summaries report
+  `refused_locally` separately from `quota_tripped`.
+
+### Security — `/mcp` requires a bearer token; host actions refuse by default
+
+- With `CORTEXSIM_MCP_HTTP` on, `/mcp` requires
+  `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, compared in constant time; a
+  missing or wrong token gets 401 `MCP_UNAUTHORIZED`. Without a token, `/mcp`
+  is not mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Compose passes
+  both variables through.
+- The token only admits a client to `/mcp`. It is not a tenant credential, and
+  `/api` stays unauthenticated. The MCP tenant tools hold no key: they reach the
+  tenant through SimCore's routes, using the integration credential from tenant
+  onboarding and the same per-tenant budget.
+- `/mcp` is bearer-only, not loopback-only. Under Docker Desktop a host-loopback
+  request reaches the container as the bridge gateway (`172.17.0.1`), so a
+  peer-address check cannot tell the host from anything Docker forwards.
+- MCP host actions (`cortexsim.run.launch`, `cortexsim.run.abort`) now refuse
+  with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
+  `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
+  HTTP.
+
+### Added — MCP tools for the tenant reader
+
+- Five tools project the tenant-reader routes, taking the MCP server from 41
+  to 46 tools (27 `cortexsim.*`, 19 `xsiam.*`): `xsiam.issue.search`,
+  `xsiam.case.search` and `xsiam.endpoint.get` (`xsiam_tenant` credential only;
+  a reconcile-only vault answers `NO_TENANT_CONFIGURED` with no call), and
+  `cortexsim.run.tenant_evidence.get` (stored snapshot, zero tenant queries) and
+  `.read` (one metered read; `queries_issued` is the snapshot's when the reply
+  says `read: true`, else 0). They hold no tenant key; SimCore reads with the
+  credential stored at tenant onboarding.
+- Tenant rows are framed as data. These five tools, plus `xsiam.alert.list`,
+  `xsiam.incident.list` and `xsiam.correlation_rule.list`, return
+  `data.data_notice`, and their descriptions repeat it. Tenant text never
+  enters `statement`, `error` or `remediation`.
+- `xsiam.alert.list` and `xsiam.incident.list` carry a `LEGACY` line, in their
+  descriptions and in `data.degradations`, naming PANW's deprecation map and
+  pointing to `xsiam.issue.search` and `xsiam.case.search`. Their field layout
+  is unchanged. `make check-mcp-boot` now fails below 46 tools.
+
+### Fixed — Results shows each result's alert id and source
+
+- `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
+  `observation_count`, using the first recorded observation per result. The
+  scorecard's Alert ID column had always shown `—`. It now shows the alert id,
+  with a new Source column beside it.
+
+### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
+
+- When every Result left the scoring denominator (`not_reached`, `not_executed` or
+  soak-pending) and no KPI was measured, the test-case verdict was `not_applicable`
+  with "0 detection(s) carry no measurable threshold". The run report then labelled
+  it "NOT SCOREABLE" and the console greyed it out, as if the test case could not be
+  scored. In fact nothing had been tested. Such a run now scores `pending`, with
+  `tc_verdict_detail.reason` set to `not_executed` (or `soak_pending` when any row
+  is still soaking, because that row can still be scored), and its
+  `detail` names each `outcome_reason`. `not_applicable` keeps its one meaning: the
+  rows that ran carry no measurable threshold.
+- The run report labels such a run "PENDING — nothing executed" (or "detectors
+  are still soaking") rather than "verification outstanding".
+  `GET /api/uctc/test-cases/{id}` adds `runs.pending_reasons` and
+  `runs.latest.reason`.
+- The console shows the reason as one element everywhere a run verdict
+  appears: the Techniques tab, the Topology Engine terminal and the UC / TC run
+  rollup. It is a dashed "nothing executed" (or "detectors soaking") chip beside
+  `pending`, with a sentence that says to re-run or wait. Before this it was a
+  raw `not_executed` token. The Techniques tab now counts excluded rows as
+  "never ran" instead of "not reached".
+- The run lifecycle stops offering Read back for a run whose reason is
+  `not_executed`. The Runs list reads "nothing executed", and the run's page
+  and Report say why and offer Run. A read back could not change that verdict,
+  because reconcile and verify skip rows that never ran.
+
+### Added — HTTP collector backend (declaration, detections list, arrival check)
+
+- `GET /api/eal/data-streams/{source_key}/detections` lists the detections behind a data source.
+- `POST /api/collector-targets/{name}/arrival` checks that a collector's example records arrived.
+- `PUT /api/collector-targets/{name}` takes a `declaration` field; refusals: `DECLARATION_SOURCE_UNKNOWN`, `NATIVE_DATASET_NOT_LAB_TENANT`, `TARGET_DATASET_DECLARATION_MISMATCH`.
+- New setting `CORTEXSIM_DOOR_PROBE_TENANTS` (lab `.env` only; compose passes it through).
+- `collector_targets` gains `declaration` and `last_arrival` columns, added at boot.
+- The email emitter carries a `canary_token` on its records.
+
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
@@ -817,6 +1003,26 @@ with 409 `PUSH_NOT_SUPPORTED`.
   is removed; nothing in the run path reads the column; and
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
+
+### Fixed — SIM-EDR-025 expects the encryption detection the lab saw fire
+
+`SIM-EDR-025` step-05 declared the agent's Behavioral Threat Protection
+verdict on its mass encryption (`prevention-anti-ransomware-mass-encryption`,
+module `btp`) as `outcome: detect`. On `pov-target-01` (2026-11-11, report
+mode) openssl encrypting about 40 files under `/var/tmp` raised only the
+built-in Low Analytics BIOC "Suspicious data encryption" and no behavioral
+threat issue, so a working tenant scored a miss (CONT-04/10).
+
+- **Step-05 now expects "Suspicious data encryption"** (`type: ABIOC`,
+  `abioc-suspicious-data-encryption`, new on card `TTP-2026-0200`), keyed on
+  the built-in alert name verbatim. It is Low, so it creates or joins no case:
+  the scenario's text now says the chain yields signals, not an incident.
+- **The BTP row stays on the card, undeclared.** What makes Linux BTP act on
+  mass encryption is open (PM-PRV-07). Declaring it only for the block half of
+  a paired run is not expressible: every row is seeded into every run, and a
+  report-mode run scores even an `outcome: prevent` row as a detect.
+- Counts: Prevention step-detections 3 → 2, ABIOC 163 → 164, catalog
+  detection objects 2260 → 2261; step-detections unchanged at 1411.
 
 ### Security — how 1.1.1's fixes sit on top of the beta hardening
 
@@ -968,6 +1174,64 @@ escape every string behind it.
   share 10.1% (141). `tenant-verified` is still 0; nothing here has run
   against the tenant.
 
+### Added — Unit 42 backlog: a triage, two scenarios and eight log-tampering presets
+
+- **Triage of the 20 Unit 42 posts that no card or scenario cited**
+  (`docs/reference/unit42-backlog-triage.md`). Each post was read in full and
+  given a verdict: 16 are not scenario material (reports, briefs and reference
+  pages with no reproducible behaviour), one was built, one was built as
+  authored-only with a second post as one of its legs, and one is deferred
+  until the lab has a Windows host.
+- **SIM-KOI-012**, with card TTP-2026-0203: the Axios npm supply-chain
+  compromise on a Linux developer endpoint, from the postinstall dropper to the
+  Python remote access tool. Seven steps. Its network leg fails closed: every
+  beacon goes to a `.invalid` name, and if a resolver ever answers for that
+  name the payload sends nothing. Not yet run on the lab endpoint; the run plan
+  is `docs/lab/2026-11-11-unit42-backlog-lab-run-plan.md`.
+- **Eight `cloud_audit_emitter` presets for cloud log tampering** against AWS
+  CloudTrail and Google Cloud Logging: `log_stop`, `log_destination_delete`,
+  `log_router_delete`, `log_key_swap`, `log_object_overwrite`,
+  `log_router_create`, `log_router_redirect` and `stream_bucket_delete`. They
+  emit the victim account's audit records only, with the request parameters
+  each call carries.
+- **SIM-CDR-030**, with card TTP-2026-0550: cloud logging re-routed, poisoned,
+  stopped and destroyed, with a log-bucket hijack leg. Eight steps emit 56
+  audit records through those presets to an HTTP collector. It declares eight
+  XQL rows and one correlation rule the operator installs. Authored only: its
+  steps read the collector address from the environment, which a stock pull
+  install does not pass to a step, so it has not been delivered to a tenant.
+- **Dataset registry row `cortexsim_cloud_audit_raw`**, the dataset an XSIAM
+  HTTP collector writes those records to. The registry now lists 33 datasets.
+- **Counts:** 200 scenarios, 198 cards, 1420 step-detections, Correlation
+  share 10.1% (143), from `docs/reference/ground-truth.md`.
+
+### Added — a staged draft detection library, and a packager that clones nothing
+
+- **`drafts/detection-library/`** holds 366 generated scenario and card pairs
+  (310 Windows, 56 Linux) that are **not corpus content**. They carry
+  provisional ids (`SIM-DRAFT-NNN`, `TTP-0000-NNNN`) and `status: draft`. SimCore
+  does not load them, the console does not show them, no count includes them
+  and the image does not ship them. A pair enters the corpus by promotion, one
+  reviewed pair at a time; the directory's README gives the path.
+- **Why they are staged.** The pairs came from a local-model pipeline whose
+  packager cloned a live scenario and card and replaced only part of each. Every
+  pair therefore carried that exemplar's source citation, UC/TC refs and cleanup
+  line, and 320 cards carried one invented SHA-256 marked malicious. The pairs
+  were rebuilt from the model's own output and the Cortex analytics alert each
+  was written for: 306 cite that alert, 60 have no recorded source and say so,
+  and 331 hash indicators with no source were dropped.
+- **`INDEX.md` and `MANIFEST.json`** list what each draft's content still
+  shows, generated by `scripts/detdev/manifest.py`. 78 drafts name a host a
+  command would really reach, 75 have a step that is a placeholder, and the 310
+  Windows drafts cannot be lab-run without a Windows host. No draft has been
+  reviewed or run.
+- **The pipeline (`scripts/detdev/`)** now builds a pair from the model fragment
+  and its recorded source only. `package.py` previews by default and writes into
+  the staging directory with `--apply`, never into `scenarios/` or
+  `detection_scanner/ttps/`. `genfrag.py` takes the target platform and alert,
+  reads the gateway key from the environment, and no longer asks the model for
+  an invented hash. The new prompt has not been run against a model.
+
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 
 - **A DC enters the tenant-side collectors once and every in-process consumer
@@ -993,6 +1257,42 @@ escape every string behind it.
   helper) and a new `collector_targets` table.
 - **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
   Broker VM targets, which wait on confirmation of the applets in use.
+
+### Fixed — assertion probes no longer measure a page the API may have truncated
+
+- **A full page of XQL results was scored as the tenant's whole answer.** The
+  assertion runner fetches one page at a limit of 100 rows, and every probe
+  counts, dedups, divides or takes the earliest of what comes back. With 300
+  alerts in the population and 150 in the numerator, `xql_ratio` read
+  "100 of 100 = 100 %", a pass against a 90 % bar. `xql_rows` and
+  `xql_distinct` could never clear a bar above what one page shows, and
+  `xql_latency` could report `OUTCOME_ABSENT` (a hard fail) when the outcome
+  that followed the trigger sat past row 100. A page that comes back full now
+  resolves `PROBE_RESULT_TRUNCATED` → `pending`, unless the reply's
+  `number_of_results` equals the page. A larger `number_of_results` is not
+  taken as the count while PM-XQL-03 asks what the field counts. A count
+  pushed into XQL (`| comp count()`) is one row and is unaffected. Scenario
+  Tier-2 verification (`xsiam_query_runner`) is unchanged. Guard: the
+  truncated-page cases in `tests/engine/test_assertions.py`, which drive the
+  production runner over a tenant stand-in that pages like the API; 4 of 7
+  failed before the change.
+- **A query the runner refused was reported as an unreachable tenant.** The
+  probe failure classifier matched exception class names exactly, so a
+  subclass fell through to `TENANT_UNREACHABLE`. An assertion whose query
+  carries a `| target` write stage is refused before it is sent, yet its
+  remediation told the DC to check network egress. It now reads
+  `PROBE_QUERY_FAILED`; the verdict was and stays `pending`. Guard:
+  `test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_outage`,
+  which failed before the change.
+- **A spent CortexSim query budget was also reported as an unreachable
+  tenant.** The per-tenant ledger around the assertion runner raises its own
+  errors when its breaker is open or its daily cap
+  (`CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY`) is spent; they are not XSIAM errors,
+  so they fell through to `TENANT_UNREACHABLE`. They now read
+  `PROBE_QUOTA_EXHAUSTED`, whose remediation names CortexSim's budget as well
+  as the tenant's. Verdict unchanged (`pending`). Guard:
+  `test_a_spent_query_budget_reads_as_quota_not_as_an_unreachable_tenant`
+  (breaker open, daily cap spent), both failed before the change.
 
 ### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
 

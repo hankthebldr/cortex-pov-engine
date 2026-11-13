@@ -267,7 +267,9 @@ export default function LaunchView({
     <div className="launch">
       <header className="view-head">
         <div>
-          <h1>Launch</h1>
+          {/* h2: Launch is a step of the guided "New POV run" page, which owns
+              the page's one h1. */}
+          <h2>Launch</h2>
           <p className="view-head__meta">
             Arm <strong className="mono">{sid}</strong> against a target, then fire the simulation.
           </p>

@@ -323,7 +323,7 @@ check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (n
 # it imports. It fails closed: if --list-tools errors, n is empty and `test`
 # exits non-zero (measured against the pre-MCP 1.1.0 image).
 check-mcp-boot: ## assert the BUILT IMAGE boots the MCP server with every tool (needs `make build`)
-	docker run --rm --entrypoint sh $(IMAGE) -c 'cd /app/core && n=$$(python -m mcp_server --list-tools | tail -1 | cut -d" " -f1); test "$$n" -ge 41 && echo "mcp boot OK: $$n tools"'
+	docker run --rm --entrypoint sh $(IMAGE) -c 'cd /app/core && n=$$(python -m mcp_server --list-tools | tail -1 | cut -d" " -f1); test "$$n" -ge 46 && echo "mcp boot OK: $$n tools"'
 
 check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
 	scripts/build-rust-dist.sh --check-recipe

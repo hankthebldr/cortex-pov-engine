@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from tests._core_reimport import CORE_DIR, is_core_module, reimport_core
+from tests.mcp_server.conftest import mcp_client
 
 # One pre-existing warning, ignored by exact category; any other warning is an
 # error under -W error:
@@ -34,39 +34,7 @@ INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                    "clientInfo": {"name": "pytest", "version": "0"}}}
 
 
-@pytest.fixture
-def boot_main(tmp_path, monkeypatch, restore_core_modules):
-    """``boot_main(http=bool)`` -> a freshly imported ``main`` module."""
-    static = tmp_path / "static"
-    static.mkdir()
-    (static / "index.html").write_text("<!doctype html><title>console</title>")
-    root = logging.getLogger()
-    handlers_before = list(root.handlers)
-
-    def _boot(*, http: bool, allowed_hosts: str = "", guard_hosts: str = ""):
-        monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
-        monkeypatch.setenv("CORTEXSIM_STATIC_DIR", str(static))
-        monkeypatch.setenv("CORTEXSIM_ENV", "development")
-        monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
-        monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
-        monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
-        # The app-wide Host guard runs before the /mcp mount's own list.
-        monkeypatch.setenv("CORTEXSIM_ALLOWED_HOSTS", guard_hosts)
-        # Another suite (tests/scripts/test_lab_readiness.py) puts scripts/ at
-        # sys.path[0] during collection, and scripts/eal_simulator/ is a package
-        # of the same name as core/eal_simulator/. The fresh import below must
-        # resolve core/ first; monkeypatch restores sys.path at teardown.
-        monkeypatch.syspath_prepend(str(CORE_DIR))
-        reimport_core("main", *[n for n, m in list(sys.modules.items()) if is_core_module(m)])
-        import main  # noqa: PLC0415
-
-        return main
-
-    yield _boot
-    # main._configure_logging() attaches a stream + file handler per import.
-    for h in [h for h in root.handlers if h not in handlers_before]:
-        root.removeHandler(h)
-        h.close()
+TOKEN = "t-" + "x" * 40
 
 
 def _rpc(client, body, headers=MCP_HEADERS):
@@ -81,13 +49,11 @@ def _mcp_route_index(app) -> int | None:
 
 
 def test_mount_off_registers_nothing_and_health_says_disabled(boot_main):
-    from starlette.testclient import TestClient
-
     main = boot_main(http=False)
     assert not [r for r in main.app.router.routes if str(getattr(r, "path", "")).startswith("/mcp")]
     assert getattr(main.app.state, "mcp", None) is None
     assert "mcp_server.server" not in sys.modules, "flag off must not even import the MCP server"
-    with TestClient(main.app, base_url=LOCAL) as client:
+    with mcp_client(main.app, token=TOKEN) as client:
         comp = client.get("/api/health").json()["components"]["mcp"]
     assert comp["mounted"] is False
     assert comp["code"] == "MCP_DISABLED"
@@ -95,12 +61,10 @@ def test_mount_off_registers_nothing_and_health_says_disabled(boot_main):
 
 
 def test_mount_on_initialize_then_tools_list_over_asgi(boot_main):
-    from starlette.testclient import TestClient
-
-    main = boot_main(http=True)
+    main = boot_main(http=True, token=TOKEN)
     from mcp_server.naming import CANONICAL_IDS, wire_name
 
-    with TestClient(main.app, base_url=LOCAL) as client:
+    with mcp_client(main.app, token=TOKEN) as client:
         init = _rpc(client, INIT)
         assert init.status_code == 200, init.text
         assert init.json()["result"]["serverInfo"]["name"] == "cortexsim"
@@ -126,7 +90,7 @@ def test_mount_on_initialize_then_tools_list_over_asgi(boot_main):
 
 
 def test_mcp_mount_precedes_the_static_catch_all(boot_main):
-    main = boot_main(http=True)
+    main = boot_main(http=True, token=TOKEN)
     routes = main.app.router.routes
     mcp_idx = _mcp_route_index(main.app)
     ui_idx = next(i for i, r in enumerate(routes) if getattr(r, "name", None) == "ui")
@@ -142,10 +106,8 @@ def test_unlisted_host_header_is_refused(boot_main):
     rebound) but is refused 421 by the mount unless CORTEXSIM_MCP_ALLOWED_HOSTS
     lists it. A name reaches the MCP server only when both lists carry it.
     """
-    from starlette.testclient import TestClient
-
-    main = boot_main(http=True, allowed_hosts="lab.example, ,", guard_hosts="lab.example")
-    with TestClient(main.app, base_url=LOCAL) as client:
+    main = boot_main(http=True, token=TOKEN, allowed_hosts="lab.example, ,", guard_hosts="lab.example")
+    with mcp_client(main.app, token=TOKEN) as client:
         evil = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "evil.example"})
         unlisted_ip = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "10.9.8.7:8888"})
         listed = _rpc(client, INIT, headers={**MCP_HEADERS, "Host": "lab.example:8888"})
@@ -158,14 +120,12 @@ def test_unlisted_host_header_is_refused(boot_main):
 
 
 def test_flag_on_with_the_sdk_unimportable_health_is_degraded_not_mounted(boot_main, monkeypatch):
-    from starlette.testclient import TestClient
-
     # A None entry makes `import mcp_server.server` raise ImportError, which is
     # what a missing/broken SDK does; monkeypatch puts sys.modules back.
     monkeypatch.setitem(sys.modules, "mcp_server.server", None)
-    main = boot_main(http=True)
+    main = boot_main(http=True, token=TOKEN)
     assert _mcp_route_index(main.app) is None
-    with TestClient(main.app, base_url=LOCAL) as client:
+    with mcp_client(main.app, token=TOKEN) as client:
         body = client.get("/api/health").json()
     comp = body["components"]["mcp"]
     assert comp["mounted"] is False
@@ -175,22 +135,18 @@ def test_flag_on_with_the_sdk_unimportable_health_is_degraded_not_mounted(boot_m
 
 
 def test_lifespan_closes_the_in_process_client(boot_main):
-    from starlette.testclient import TestClient
-
-    main = boot_main(http=True)
+    main = boot_main(http=True, token=TOKEN)
     client = main.app.state.mcp_client
-    with TestClient(main.app, base_url=LOCAL):
+    with mcp_client(main.app, token=TOKEN):
         assert client._http.is_closed is False
     assert client._http.is_closed is True
 
 
 def test_lifespan_runs_the_session_manager_only_when_mounted(boot_main):
-    from starlette.testclient import TestClient
-
-    main = boot_main(http=True)
+    main = boot_main(http=True, token=TOKEN)
     sm = main.app.state.mcp.session_manager
     assert sm._has_started is False
-    with TestClient(main.app, base_url=LOCAL):
+    with mcp_client(main.app, token=TOKEN):
         assert sm._has_started is True
 
 

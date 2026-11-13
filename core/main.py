@@ -456,12 +456,17 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     """XSIAM integration failures → structured {error, code, detail} envelope.
     API key values never appear in XsiamError.detail (only HTTP status text)."""
     logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
+    content = {"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
+               "upstream_status": exc.upstream_status}
+    # Additive, and only when the refusal knows when to come back.
+    retry_after = getattr(exc, "retry_after_seconds", None)
+    if retry_after is not None:
+        content["retry_after_seconds"] = retry_after
     return JSONResponse(
         status_code=exc.http_status,
         # upstream_status is additive: the tenant's HTTP status (e.g. 403 on the
         # license-gated healthcheck), so a caller never reads it out of `detail`.
-        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
-                 "upstream_status": exc.upstream_status},
+        content=content,
     )
 
 
@@ -591,6 +596,7 @@ from api.events import router as events_router          # noqa: E402
 from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
 from api.storyline import router as storyline_router    # noqa: E402
+from api.tenant_evidence import router as tenant_evidence_router  # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
@@ -638,6 +644,9 @@ app.include_router(runs_reconcile_router, prefix="/api")
 # Detection Proof Layer — per-run storyline snapshot (mounts a second router
 # under the /runs prefix, same pattern as runs_reconcile_router above).
 app.include_router(storyline_router, prefix="/api")
+# Run tenant evidence — an explicit, read-only tenant read for one run (POST)
+# and its stored snapshots (GET, no outbound call); same /runs-prefixed pattern.
+app.include_router(tenant_evidence_router, prefix="/api")
 # Causality-Graph — per-run typed DAG (endpoint+network), extends the storyline
 # spine; same /runs-prefixed second-router pattern.
 app.include_router(causality_router, prefix="/api")

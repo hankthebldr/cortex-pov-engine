@@ -57,6 +57,17 @@ function routes(status = 'complete', extra = {}) {
 }
 
 describe('RunTopologyView', () => {
+  it('the Engine terminal names a pending run where nothing executed', async () => {
+    routes('complete', { 'GET /api/runs/r1': runRecord('complete', {
+      tc_verdict: 'pending', tc_verdict_detail: { reason: 'not_executed' } }) })
+    render(<RunTopologyView runId="r1" run={{ run_id: 'r1', scenario_id: 'SIM-MP-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByTestId('topo-verdict')).toHaveTextContent('pending'))
+    const reason = screen.getByTestId('topo-verdict-reason')
+    expect(reason).toHaveAttribute('data-reason', 'not_executed')
+    expect(reason).toHaveTextContent('nothing executed')
+    expect(screen.getByTestId('topo-verdict-reason-sentence')).toHaveTextContent(/re-run/i)
+  })
+
   it('draws the five signal paths in order, places cells by laneOf, dims the empty lanes, pins the Engine', async () => {
     routes()
     render(<RunTopologyView runId="r1" run={{ run_id: 'r1', scenario_id: 'SIM-MP-001', status: 'complete' }} />)

@@ -193,6 +193,12 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "DynamoDB NoSQL table scan and exfiltration via an over-permissioned IAM role — "
         "same TC-DSPM-04 binding as SIM-CDR-027, a second data-store shape (NoSQL vs. "
         "relational) proving the same DDR claim, not new index coverage."),
+    "SIM-CDR-030": (["TC-CITH-04"], REMAP,
+        "Cloud log tampering and the victim-side leg of a log-bucket hijack, emitted as "
+        "audit records to an HTTP collector (two Unit 42 posts), authored only. "
+        "TC-CITH-04 is already evidenced by 13 scenarios, so this is a second record "
+        "shape, not index breadth; the row describes ML analytics while the scored rows "
+        "are XQL and one operator-installed correlation."),
 
     # ── NDR ────────────────────────────────────────────────────────────────
     # TC-NDR-03 is the EAL case specifically — these scenarios exist to prove
@@ -375,6 +381,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "PAN-OS CVE-2026-0257 VPN foothold to VMDK credential theft (Unit 42, Spikey / Tarnished Scorpius) — EDR, NGFW and identity legs"),
     "SIM-MP-037": (["TC-TH-01", "TC-NDR-01", "TC-EDR-05"], REMAP,
         "PHP2Shell (CVE-2026-109618/-109619) PHP-worker post-exploitation, validated by Unit 42 hunts — endpoint plus NGFW legs"),
+    "SIM-MP-038": (["TC-ITDR-03", "TC-ITDR-02"], REMAP,
+        "Pink (CL-CRI-1147): vishing, attacker-registered passkey, SharePoint/OneDrive exfiltration and internal extortion — "
+        "identity and SaaS legs as collector records (Tier-2 verified), plus endpoint and NGFW DNS legs. Both rows carry no "
+        "measurable threshold, so a full green reads not_applicable (evidence, not a scored pass)"),
     "SIM-APB-001": (["TC-APB-06", "TC-SOAR-02"], REMAP,
         "Governed-autonomy audit reconstruction across three structurally "
         "different action classes. TC-APB-06 is NET-NEW and is the ONLY "

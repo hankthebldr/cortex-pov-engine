@@ -1,0 +1,195 @@
+{
+  "id": "TTP-0000-0191",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Signed Process Creates Scheduled Task via File Access",
+    "summary": "An attacker uses a legitimate signed process to create a scheduled task by writing to the Windows Task Scheduler directory. Cortex detects this behavior as suspicious due to the combination of signed ",
+    "description": "An attacker uses a legitimate signed process to create a scheduled task by writing to the Windows Task Scheduler directory. Cortex detects this behavior as suspicious due to the combination of signed process execution and unauthorized task creation."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "name": "Data Staged",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir C:\\Windows\\Temp\\task\n\necho \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-16\\\"?>\n<Task version=\\\"1.3\\\" xmlns=\\\"http://schemas.microsoft.com/windows/2004/02/mit/task\\\">\n  <RegistrationInfo>\n    <Date>2023-01-01T00:00:00</Date>\n    <Author>System</Author>\n  </RegistrationInfo>\n  <Triggers>\n    <LogonTrigger>\n      <StartBoundary>2023-01-01T00:00:00</StartBoundary>\n    </LogonTrigger>\n  </Triggers>\n  <Actions Context=\\\"LocalSystem\\\">\n    <Exec>\n      <Command>cmd.exe</Command>\n      <Arguments>/c powershell.exe -EncodedCommand VwBhAHIAbwBuAGUAIAB0AGgAZQAgAHMAaABhAHIAZAAgAHQAcgBhAHAA</Arguments>\n    </Exec>\n  </Actions>\n</Task>\" > C:\\Windows\\Temp\\task\\malicious_task.xml\n\nschtasks /create /xml C:\\Windows\\Temp\\task\\malicious_task.xml /tn \"MaliciousTask\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Scheduled task XML file created in Temp directory",
+        "expected_value": "action_file_path = 'C:\\\\Windows\\\\Temp\\\\task\\\\malicious_task.xml'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Scheduled task creation process",
+        "expected_value": "action_process_image_name = 'schtasks.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 connection from malicious task",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Signed Process Creates Scheduled Task",
+        "description": "Detects when a signed process creates a scheduled task via file access",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'schtasks.exe'\n| filter action_file_path contains 'Temp'\n| filter action_file_path contains '.xml'\n| filter causality_actor_process_image_name = 'signed_process'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1053.005"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Signed Process Creates Scheduled Task via File Access",
+        "description": "Behavioral deviation where a signed process creates a scheduled task through file access",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'schtasks.exe'\n| filter action_file_path contains 'Temp'\n| filter action_file_path contains '.xml'\n| filter causality_actor_process_image_name = 'signed_process'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'schtasks.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1053.005"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Scheduled Task Creation by Signed Process",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'schtasks.exe'\n| filter action_file_path contains 'Temp'\n| filter action_file_path contains '.xml'\n| filter causality_actor_process_image_name = 'signed_process'\n| fields actor_process_image_name, action_file_path, causality_actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Signed process creates a scheduled task via file access; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/signed-process-creates-a-scheduled-task-via-file-access"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Signed process creates a scheduled task via file access",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/signed-process-creates-a-scheduled-task-via-file-access",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1074",
+      "url": "https://attack.mitre.org/techniques/T1074/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1053.005",
+      "url": "https://attack.mitre.org/techniques/T1053/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -27,14 +27,20 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Sequence
 
 from integrations.xsiam import codes
 from integrations.xsiam.auth import advanced_auth_headers, standard_auth_headers
 from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.ledger import (
+    QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+)
+from integrations.xsiam.queries import endpoint_get_body, issue_search_body
 from integrations.xsiam.tenant_url import normalize_tenant_base_url
 
+from . import tuning
 from .base import (
     Connector,
     ConnectorConfig,
@@ -115,6 +121,9 @@ class XsiamConnector(Connector):
     #: Issue search (read-only POST). Observed on the lab tenant 2026-11-10: the
     #: envelope is ``reply.DATA`` and the status fields are flat dotted keys.
     _ISSUES_SEARCH_PATH = "/public_api/v1/issue/search/"
+    #: Case search (read-only POST), the ``reply.DATA`` envelope; overridable via
+    #: ``config["cases_path"]``.
+    _CASES_SEARCH_PATH = "/public_api/v1/case/search/"
     #: Endpoint detail (read-only POST); overridable via ``config["endpoints_path"]``.
     _ENDPOINT_PATH = "/public_api/v1/endpoints/get_endpoint"
     #: Ids per request body for the by-id reads (the tenant's page ceiling).
@@ -168,10 +177,24 @@ class XsiamConnector(Connector):
         until: Optional[datetime], filters: dict[str, Any], list_key: str,
         normalize: Any, kind: str,
         request_for: Optional[Callable[[int, int], dict]] = None,
+        strict: bool = False,
+        keep_partial: bool = False,
     ) -> PullResult:
-        # `request_for(search_from, page_size)` replaces the time-window body for
-        # the by-id reads; everything else (auth, URL validation, error mapping,
-        # envelope parsing) is this one path.
+        # `request_for(search_from, page_size)` replaces the alert time-window body
+        # for the by-id and tenant-reader reads; everything else (auth, URL
+        # validation, the request bucket, error mapping, envelope parsing) is
+        # this one path.
+        #
+        # `strict` is the issue/case `reply.DATA` envelope (spec §7.3): no `data`
+        # fallback, and the window is measured by FILTER_COUNT (the filter's
+        # match count). TOTAL_COUNT there is tenant-wide, so it never decides
+        # truncation; a missing FILTER_COUNT leaves `truncated` null, never False.
+        #
+        # `keep_partial` (the tenant reader's window read only): a failure after
+        # one or more pages still fails the read, but the failed PullResult
+        # carries the rows already fetched and `detail["rows_kept"]`, so a caller
+        # that reports a floor (spec §7.9) can keep them. Every other caller
+        # gets the old contract: a failed read carries no rows.
         conf = cfg.config or {}
         # `base_url` first so ONE registration (the xsiam_tenant spelling) can
         # serve both call paths; `fqdn`/`tenant_url` stay for back-compat with
@@ -215,8 +238,18 @@ class XsiamConnector(Connector):
         items: list[Any] = []
         dropped = 0
         pages = 0
+
+        def failed(res: PullResult) -> PullResult:
+            if keep_partial and items:
+                (res.incidents if kind in ("incidents", "cases")
+                 else res.observations).extend(items)
+                res.detail = {**res.detail, "rows_kept": len(items)}
+            return res
+
         total_count: Optional[int] = None
         total_capped = False
+        filter_count: Optional[int] = None
+        filter_capped = False
         search_from = 0
         while pages < max_pages:
             payload = (request_for(search_from, page_size) if request_for
@@ -224,13 +257,30 @@ class XsiamConnector(Connector):
                                                 search_from=search_from,
                                                 page_size=page_size))
             body = json.dumps(payload).encode("utf-8")
+            # One token per page, from the same per-tenant bucket (and the same
+            # key) the tenant client spends: two egress points, one budget.
+            try:
+                ledger.acquire_request(
+                    tenant_ledger_key(base),
+                    per_minute=tuning.xsiam_max_requests_per_minute())
+            except (QuotaBreakerOpen, RequestBudgetExhausted) as e:
+                n = max(1, int(e.retry_after_seconds))
+                return failed(PullResult(
+                    ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
+                    error=("CortexSim's own per-tenant request budget refused "
+                           + (f"page {pages + 1}; pages 1..{pages} were already "
+                              f"fetched from the tenant" if pages else
+                              "this request before it was sent to the tenant")
+                           + f"; retry in {n}s"),
+                    detail={"pages": pages, "path": path, "refused_locally": True,
+                            "retry_after_seconds": n}))
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
                 logger.warning("xsiam %s pull transport error: %s", kind, e)
-                return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
-                                  detail={"page": pages + 1, "path": path})
+                return failed(PullResult(ok=False, connector=self.kind,
+                                         code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
+                                         detail={"page": pages + 1, "path": path}))
 
             if status != 200:
                 # The tenant's response body is attacker-influenceable and
@@ -240,23 +290,29 @@ class XsiamConnector(Connector):
                 # the server log; ship only a status and a digest the operator
                 # can correlate with it. A failure on page N>1 fails the WHOLE
                 # pull: page 1 alone would read as "the tenant held this many".
+                if status == 429:
+                    ledger.trip(tenant_ledger_key(base),
+                                cooldown_seconds=tuning.xsiam_breaker_cooldown())
                 logger.warning("xsiam %s pull HTTP %s from %s (page %d); body=%s",
                                kind, status, _host_only(url), pages + 1, text[:500])
-                return PullResult(
+                return failed(PullResult(
                     ok=False, connector=self.kind, code=codes.code_for_status(status),
                     error=f"tenant returned HTTP {status}" + (
                         f" on page {pages + 1}" if pages else ""),
                     detail={"status": status, "page": pages + 1, "path": path,
                             "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
-                )
+                ))
 
             try:
-                page_items, page_dropped, meta = self._parse_page(text, list_key, normalize)
+                page_items, page_dropped, meta = self._parse_page(text, list_key, normalize,
+                                                                  strict=strict)
             except Exception as e:  # noqa: BLE001
-                return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_PARSE_ERROR,
-                                  error=f"failed to parse tenant response: {e}",
-                                  detail={"path": path})
+                # `page`: the page that was sent and could not be read, so a
+                # caller counting requests counts it (and every page before it).
+                return failed(PullResult(ok=False, connector=self.kind,
+                                         code=codes.XSIAM_PARSE_ERROR,
+                                         error=f"failed to parse tenant response: {e}",
+                                         detail={"page": pages + 1, "path": path}))
 
             pages += 1
             items.extend(page_items)
@@ -264,11 +320,18 @@ class XsiamConnector(Connector):
             if meta.get("total_count") is not None:
                 total_count = meta["total_count"]
             total_capped = total_capped or bool(meta.get("total_count_capped"))
+            if meta.get("filter_count") is not None:
+                filter_count = meta["filter_count"]
+            filter_capped = filter_capped or bool(meta.get("filter_count_capped"))
             page_rows = meta.get("result_count") or (len(page_items) + page_dropped)
             search_from += page_rows
             if page_rows < page_size:
                 break                                   # short page: the end
-            if total_count is not None and not total_capped and search_from >= total_count:
+            # The count that speaks for this read: FILTER_COUNT on the strict
+            # envelope (TOTAL_COUNT there is the whole tenant), else total_count.
+            known, capped = ((filter_count, filter_capped) if strict
+                             else (total_count, total_capped))
+            if known is not None and not capped and search_from >= known:
                 break                                   # everything accounted for
 
         returned = len(items) + dropped
@@ -285,14 +348,28 @@ class XsiamConnector(Connector):
         # Truncated means: the tenant told us it holds more than we fetched
         # (or capped its own count, which is the same admission). The number
         # downstream is then a FLOOR on coverage, and every consumer says so.
-        truncated = bool(total_capped or (total_count is not None and total_count > returned))
+        truncated: Optional[bool]
+        if strict:
+            # FILTER_COUNT is the only count that describes this read. Without
+            # it nobody knows whether rows were left behind: null, never False.
+            detail["filter_count"] = filter_count
+            if filter_capped:
+                detail["filter_count_capped"] = True
+            truncated = (True if filter_capped
+                         else None if filter_count is None
+                         else filter_count > returned)
+        else:
+            truncated = bool(total_capped or (total_count is not None
+                                              and total_count > returned))
         detail["truncated"] = truncated
         if total_capped:
             detail["total_count_capped"] = True
         if truncated:
+            count_key, count, capped = (("filter_count", filter_count, filter_capped)
+                                        if strict else
+                                        ("total_count", total_count, total_capped))
             detail["truncation"] = {
-                "total_count": ("9,999+" if total_capped and total_count is None
-                                else total_count),
+                count_key: "9,999+" if capped and count is None else count,
                 "returned": returned,
                 "pages": pages,
                 "max_pages": max_pages,
@@ -350,34 +427,18 @@ class XsiamConnector(Connector):
         """Issue id (string) -> ``{"status", "reason", "comment"}``.
 
         Read from ``status.progress`` / ``status.resolution_reason`` /
-        ``status.resolution_comment`` of ``POST /public_api/v1/issue/search/``
-        filtered by ``id`` (ints when the id is numeric), chunks of 100. An id
+        ``status.resolution_comment`` of :meth:`issues_by_id` (``issue/search``
+        filtered by ``id``, ints when the id is numeric, chunks of 100). An id
         the tenant does not return is ABSENT from the map.
 
         Failure contract: a failed read RAISES :class:`IssueReadError` carrying
         the ``codes.py`` code (``.code``), the message and the harvest detail. It
         never returns ``{}`` for a failure, because ``{}`` reads as "the tenant
-        returned no issues". A row whose id or ``status.progress`` is missing is
-        an unrecognised shape and also raises.
+        returned no issues". A reply without ``reply.DATA`` (a lowercase
+        ``data`` included) and a row whose id or ``status.progress`` is missing
+        are unrecognised shapes and also raise.
         """
-        conf = cfg.config or {}
-        path = str(conf.get("issues_path") or self._ISSUES_SEARCH_PATH)
-        ids = _clean_ids(issue_ids)
-
-        def _one(chunk: list[str]) -> PullResult:
-            values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
-
-            # One page per chunk (explicit `limit`), so `search_from` is ignored.
-            def body(search_from: int, page_size: int) -> dict:
-                return {"request_data": {
-                    "filters": [{"field": "id", "operator": "in", "value": values}],
-                    "search_from": 0, "search_to": len(chunk)}}
-            return self._harvest(cfg, path, since=None, until=None,
-                                 filters={"limit": len(chunk)}, list_key="DATA",
-                                 normalize=self._normalize_issue_status, kind="issues",
-                                 request_for=body)
-
-        res = self._chunked(ids, _one, path)
+        res = self.issues_by_id(cfg, issue_ids, normalize=self._normalize_issue_status)
         if not res.ok:
             raise IssueReadError(res.code or codes.XSIAM_API_ERROR,
                                  res.error or "issue read failed", res.detail)
@@ -393,41 +454,25 @@ class XsiamConnector(Connector):
     def pull_endpoint_ips(self, cfg: ConnectorConfig, hostname: str) -> Optional[list[str]]:
         """IPs on the tenant's endpoint record for ``hostname``, or None.
 
-        ``POST /public_api/v1/endpoints/get_endpoint`` with a ``hostname``
-        ``in`` filter; the reply is ``reply.endpoints[]`` and each record's
-        ``ip`` is a list of strings (field table and sample reply in
+        :meth:`get_endpoints` for ``[hostname]``; the reply is
+        ``reply.endpoints[]`` and each record's ``ip`` is a list of strings
+        (field table and sample reply in
         ``docs/reference/xsiam-platform-apis/05-endpoints-api.md``, itself taken
         from the vendor's Get Endpoint page,
         https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nxq2mf3ia6wrd-get-endpoint
         -- unverified against a live tenant).
 
-        Exactly ONE request (an explicit ``limit`` is a single page), so the
-        caller counts one query per call whatever the outcome. ``None`` means
-        "do not claim anything": the read failed, no record's ``endpoint_name``
-        matched the host, more than one record matched it (a stale reinstall
-        record cannot be told from the live one, so the two are never unioned
-        into a BRIDGED claim), the result was truncated, or a matching record had
-        no ``ip`` list. It is never ``[]`` for a failure.
+        Exactly ONE request, so the caller counts one query per call whatever
+        the outcome. ``None`` means "do not claim anything": the read failed, no
+        record's ``endpoint_name`` matched the host, more than one record matched
+        it (a stale reinstall record cannot be told from the live one, so the two
+        are never unioned into a BRIDGED claim), the result was truncated, or a
+        matching record had no ``ip`` list. It is never ``[]`` for a failure.
         """
         want = (hostname or "").strip().lower()
         if not want:
             return None
-        conf = cfg.config or {}
-        path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
-
-        # Exactly one page (explicit `limit`), so `search_from` is ignored; a
-        # truncated reply reads as None below rather than as a partial record set.
-        def body(search_from: int, page_size: int) -> dict:
-            return {"request_data": {
-                "filters": [{"field": "hostname", "operator": "in", "value": [hostname]}],
-                "search_from": 0, "search_to": page_size}}
-
-        def norm(e: dict[str, Any]) -> Optional[dict]:
-            return e
-
-        res = self._harvest(cfg, path, since=None, until=None,
-                            filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
-                            normalize=norm, kind="endpoints", request_for=body)
+        res = self.get_endpoints(cfg, [hostname])
         if not res.ok or res.detail.get("truncated"):
             return None
         records = [rec for rec in res.observations
@@ -439,6 +484,154 @@ class XsiamConnector(Connector):
             return None                             # unrecognised record shape
         return list(dict.fromkeys(raw))
 
+    # ── tenant reader reads (read-only; spec §7.3) ──────────────────────
+    #
+    # Each is a `request_for` body over `_harvest`, so auth, URL validation, the
+    # per-tenant request bucket (one token per page), error mapping and envelope
+    # parsing are the one path every other read uses. Rows are the tenant's raw
+    # dicts unless a `normalize` is given; projection is `connectors.tenant_reader`'s
+    # job, not this one's.
+
+    def search_issues(
+        self,
+        cfg: ConnectorConfig,
+        *,
+        body_for: Callable[[int, int], dict],
+        limit: Optional[int] = None,
+        max_pages: int = 1,
+        normalize: Optional[Callable[[dict], Any]] = None,
+        keep_partial: bool = False,
+    ) -> PullResult:
+        """``POST /public_api/v1/issue/search/``, strict ``reply.DATA``.
+
+        ``body_for(search_from, page_size)`` returns each page's body (build it
+        with :func:`integrations.xsiam.queries.issue_search_body`, with
+        ``search_to = search_from + page_size``). Without ``limit`` the read pages
+        by 100 up to ``max_pages``; an explicit ``limit`` is exactly one page of
+        that size (1..100), as everywhere else on this connector.
+
+        Rows land on ``.observations``. ``detail`` carries ``total_count``
+        (``TOTAL_COUNT``, tenant-wide), ``filter_count`` (``FILTER_COUNT``) and
+        ``truncated`` (``filter_count > returned``, or None when ``FILTER_COUNT``
+        is missing). A reply without ``DATA`` is ``XSIAM_PARSE_ERROR`` naming
+        ``XSIAM_ENVELOPE_UNRECOGNISED``, never zero rows. ``keep_partial``: a
+        failure after some pages still fails, and carries the rows already
+        fetched (``detail["rows_kept"]``); see :meth:`_harvest`.
+        """
+        return self._harvest(cfg, self._issues_path(cfg), since=None, until=None,
+                             filters=_paging(limit, max_pages), list_key="DATA",
+                             normalize=normalize or _raw_row, kind="issues",
+                             request_for=body_for, strict=True, keep_partial=keep_partial)
+
+    def issues_by_id(
+        self,
+        cfg: ConnectorConfig,
+        issue_ids: Sequence[str],
+        *,
+        normalize: Optional[Callable[[dict], Any]] = None,
+        include_fields: Optional[Sequence[str]] = None,
+    ) -> PullResult:
+        """``issue/search`` filtered by ``id`` ``in``, strict ``reply.DATA``.
+
+        Ids are stripped and de-duplicated; ids that are ASCII digits are sent
+        as ints. One request per chunk of 100 (``detail["pages"]`` sums them);
+        a failed chunk fails the whole read, since a partial id set would read
+        as "those issues do not exist". Rows land on ``.observations``. An id the
+        tenant does not return is simply absent. No ids, no request.
+        ``include_fields`` (the tenant reader's id probe passes
+        ``["normalized_fields"]``) adds fields to each row; left None, the body
+        is exactly the filters and the page window.
+        """
+        path = self._issues_path(cfg)
+        ids = _clean_ids(issue_ids)
+        extra = list(include_fields) if include_fields is not None else None
+
+        def _one(chunk: list[str]) -> PullResult:
+            values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
+
+            # One page per chunk (explicit `limit`), so `search_from` is ignored.
+            def body(search_from: int, page_size: int) -> dict:
+                return issue_search_body(
+                    filters=[{"field": "id", "operator": "in", "value": values}],
+                    search_from=0, search_to=len(chunk), include_fields=extra)
+            return self._harvest(cfg, path, since=None, until=None,
+                                 filters={"limit": len(chunk)}, list_key="DATA",
+                                 normalize=normalize or _raw_row, kind="issues",
+                                 request_for=body, strict=True)
+
+        return self._chunked(ids, _one, path)
+
+    def search_cases(
+        self,
+        cfg: ConnectorConfig,
+        *,
+        body_for: Callable[[int, int], dict],
+        limit: Optional[int] = None,
+        max_pages: int = 1,
+    ) -> PullResult:
+        """``POST /public_api/v1/case/search/``, strict ``reply.DATA``.
+
+        ``body_for`` and the paging rules are :meth:`search_issues`'; build the
+        body with :func:`integrations.xsiam.queries.case_search_body`. Rows are
+        the raw case dicts and land on ``.incidents``, the case slot every case
+        read on this connector uses. ``detail`` carries ``total_count``,
+        ``filter_count`` and ``truncated`` as :meth:`search_issues` does.
+        """
+        return self._harvest(cfg, self._cases_path(cfg), since=None, until=None,
+                             filters=_paging(limit, max_pages), list_key="DATA",
+                             normalize=_raw_row, kind="cases",
+                             request_for=body_for, strict=True)
+
+    def get_endpoints(self, cfg: ConnectorConfig, hostnames: Sequence[str]) -> PullResult:
+        """``POST /public_api/v1/endpoints/get_endpoint`` by ``hostname`` ``in``.
+
+        Exactly one request (the tenant returns at most 100 records), in the
+        lowercase ``reply.endpoints`` / ``total_count`` / ``result_count``
+        envelope; ``truncated`` is ``total_count > returned``, and null (unknown,
+        never False) when the tenant sent no ``total_count`` and the page came
+        back full. Raw endpoint records land on ``.observations``. No
+        hostnames, no request.
+        """
+        path = self._endpoints_path(cfg)
+        names = list(hostnames)
+        if not names:
+            return PullResult(ok=True, connector=self.kind,
+                              detail={"path": path, "pages": 0, "requested": 0})
+
+        # Exactly one page (explicit `limit`), so `search_from` is ignored; a
+        # truncated reply is reported in `detail`, never as a full record set.
+        def body(search_from: int, page_size: int) -> dict:
+            return endpoint_get_body(names, search_from=0, search_to=page_size)
+
+        res = self._harvest(cfg, path, since=None, until=None,
+                            filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
+                            normalize=_raw_row, kind="endpoints", request_for=body)
+        if (res.ok and res.detail.get("total_count") is None
+                and not res.detail.get("total_count_capped")
+                and res.detail.get("returned", 0) >= res.detail.get("page_size", self._PAGE_SIZE_MAX)):
+            # A full page with no count: records may have been left behind.
+            res.detail["truncated"] = None
+        return res
+
+    # ── the reader's paths, per credential ────────────────────────────────
+
+    def _issues_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("issues_path") or self._ISSUES_SEARCH_PATH)
+
+    def _cases_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("cases_path") or self._CASES_SEARCH_PATH)
+
+    def _endpoints_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("endpoints_path") or self._ENDPOINT_PATH)
+
+    def reader_paths(self, cfg: ConnectorConfig) -> dict[str, str]:
+        """The vendor routes the tenant reader reads for this credential: the
+        class defaults unless the integration overrides ``issues_path`` /
+        ``cases_path`` / ``endpoints_path`` (spec §7.4 ``reader``)."""
+        return {"issues": f"POST {self._issues_path(cfg)}",
+                "cases": f"POST {self._cases_path(cfg)}",
+                "endpoint": f"POST {self._endpoints_path(cfg)}"}
+
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:
         """Run ``one`` per chunk of ids; first failure wins; pages are summed."""
@@ -447,7 +640,9 @@ class XsiamConnector(Connector):
         for start in range(0, len(ids), self._ID_CHUNK):
             r = one(ids[start:start + self._ID_CHUNK])
             if not r.ok:
-                r.detail = {**r.detail, "pages": merged.detail["pages"] + 1}
+                # A locally refused chunk sent no request; a failed one sent one.
+                sent = 0 if r.detail.get("refused_locally") else 1
+                r.detail = {**r.detail, "pages": merged.detail["pages"] + sent}
                 return r
             merged.incidents.extend(r.incidents)
             merged.observations.extend(r.observations)
@@ -498,86 +693,16 @@ class XsiamConnector(Connector):
         """Alert-page parser; see :meth:`_parse_page`."""
         return self._parse_page(text, "alerts", self._normalize_alert)
 
-    def _parse_page(self, text: str, list_key: str, normalize: Any,
+    def _parse_page(self, text: str, list_key: str, normalize: Any, *,
+                    strict: bool = False,
                     ) -> "tuple[list[Any], int, dict[str, Any]]":
         """Return ``(rows, dropped, meta)`` for one page of ``list_key``.
 
-        ``dropped`` counts unreadable timestamps; ``meta`` carries the tenant's
-        own ``total_count`` / ``result_count`` so the caller can tell a complete
-        harvest from a truncated one. Cortex caps ``total_count`` at the string
-        ``"9,999+"``, which is read as *capped* — an admission of more, not a
-        number.
+        ``dropped`` counts unreadable timestamps. The envelope rules (counts,
+        ``strict``) are :func:`parse_reply`'s, which this calls on the parsed
+        page.
         """
-        doc = json.loads(text)
-        # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
-        # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
-        # expired key arrives looking exactly like a successful query that
-        # observed nothing. Reading that as zero alerts turns an auth failure
-        # into "the customer's stack detected nothing", which is the manufactured
-        # false negative in its most damaging form: it is the number that goes in
-        # the report. Raise instead, so the caller degrades to pending.
-        if isinstance(doc, dict):
-            err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
-            if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
-                raise ConnectorError(
-                    f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
-                    f"200 response (err_code={err.get('err_code')}, "
-                    f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
-                    f"absence of alerts — no observation was made, so the run "
-                    f"stays pending rather than being scored."
-                )
-        if not isinstance(doc, dict):
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
-                f"{type(doc).__name__}. Refusing to read it as zero alerts."
-            )
-        reply = doc.get("reply", doc)
-        if not isinstance(reply, dict):
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
-                f"{type(reply).__name__}, not an object. Refusing to read it as "
-                f"zero {list_key}."
-            )
-        # A reply that names NEITHER list key is not "no rows" — the tenant
-        # always sends `alerts` / `incidents` (possibly empty). Defaulting the
-        # missing key to [] turned a login wall, a proxy's JSON, or an API
-        # change into a successful pull that observed nothing and reported
-        # 0 % coverage.
-        if list_key in reply:
-            alerts = reply[list_key]
-        elif "data" in reply:
-            alerts = reply["data"]
-        else:
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither '{list_key}' "
-                f"nor 'data' (keys: {sorted(str(k) for k in reply)[:20]}). This is "
-                f"NOT an absence of {list_key} — no observation was made."
-            )
-        if not isinstance(alerts, list):
-            # A dict where a list belongs means the envelope is not what we
-            # think it is. Guessing is how `len({"data": []}) == 1` happened.
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of {list_key}, got "
-                f"{type(alerts).__name__}. Refusing to infer a count from "
-                f"an envelope this connector does not recognise."
-            )
-        out: list[Any] = []
-        dropped = 0
-        for a in alerts:
-            if not isinstance(a, dict):
-                continue
-            alert = normalize(a)
-            if alert is None:
-                dropped += 1
-                continue
-            out.append(alert)
-        meta: dict[str, Any] = {}
-        total, capped = _count_or_capped(reply.get("total_count"))
-        meta["total_count"] = total
-        meta["total_count_capped"] = capped
-        rc = reply.get("result_count")
-        meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
-        return out, dropped, meta
+        return parse_reply(json.loads(text), list_key, normalize, strict=strict)
 
     def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
         """One alert → :class:`ObservedAlert`, or None if its time is unreadable.
@@ -601,9 +726,6 @@ class XsiamConnector(Connector):
         techs = self._extract_techniques(a)
         sev_raw = str(a.get("severity", ""))
         severity = _SEVERITY_MAP.get(sev_raw, sev_raw.lower() or None)
-        hosts = a.get("hosts")
-        host = (a.get("host_name") or a.get("endpoint_name")
-                or (hosts[0] if isinstance(hosts, list) and hosts else None))
         return ObservedAlert(
             source=self.kind,
             observed_at=observed_at,
@@ -611,7 +733,7 @@ class XsiamConnector(Connector):
             name=_s(a.get("name") or a.get("alert_name") or a.get("description")),
             severity=severity,
             techniques=techs,
-            host=_s(host),
+            host=alert_host(a),
             # `matching_service_rule_id` is the field Cortex documents on the
             # alert object; the other three were guesses that never matched.
             # `detection.rule_id` / `detection.method` / `case_ids` are the
@@ -703,6 +825,169 @@ def _s(v: Any) -> Optional[str]:
         return None
     s = str(v).strip()
     return s or None
+
+
+def alert_host(a: dict[str, Any]) -> Optional[str]:
+    """The host the connector reads on one alert record, or None.
+
+    ``host_name``, then ``endpoint_name``, then the first of ``hosts``. The one
+    reader :meth:`XsiamConnector._normalize_alert` and the tenant reader's
+    agreement join both use, so the two cannot disagree on an alert's host.
+    """
+    hosts = a.get("hosts")
+    return _s(a.get("host_name") or a.get("endpoint_name")
+              or (hosts[0] if isinstance(hosts, list) and hosts else None))
+
+
+def parse_reply(doc: Any, list_key: str,
+                normalize: Optional[Callable[[dict], Any]] = None, *,
+                strict: bool = False) -> "tuple[list[Any], int, dict[str, Any]]":
+    """``(rows, dropped, meta)`` from one parsed tenant document. THE envelope reader.
+
+    :meth:`XsiamConnector._parse_page` (the connector's paged reads) and the
+    general tenant routes in ``api/xsiam.py`` (which read through the catalog
+    client and wrap its unwrapped reply back as ``{"reply": ...}``) both call
+    this, so the two XSIAM call paths read one envelope one way.
+
+    ``normalize`` maps each dict row (default: the raw row); a ``None`` from it
+    counts in ``dropped``. ``meta`` carries the tenant's own ``total_count``
+    (or the uppercase ``TOTAL_COUNT``), ``FILTER_COUNT`` as ``filter_count``,
+    and ``result_count``, so the caller can tell a complete read from a
+    truncated one. Cortex caps a count at the string ``"9,999+"``, which is
+    read as *capped* — an admission of more, not a number. A missing count is
+    None, never 0.
+
+    ``strict`` (the issue/case ``reply.DATA`` reads): a reply without
+    ``list_key`` raises ``XSIAM_ENVELOPE_UNRECOGNISED``; there is no fallback
+    to a lowercase ``data`` list. An error names only identifier-shaped reply
+    keys (:func:`_key_names`), so no tenant free text enters a message SimCore
+    returns.
+    """
+    normalize = normalize or _raw_row
+    # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
+    # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
+    # expired key arrives looking exactly like a successful query that
+    # observed nothing. Reading that as zero alerts turns an auth failure
+    # into "the customer's stack detected nothing", which is the manufactured
+    # false negative in its most damaging form: it is the number that goes in
+    # the report. Raise instead, so the caller degrades to pending.
+    if isinstance(doc, dict):
+        err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
+        if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
+            raise ConnectorError(
+                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                f"200 response (err_code={err.get('err_code')}, "
+                f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
+                f"absence of alerts — no observation was made, so the run "
+                f"stays pending rather than being scored."
+            )
+    if not isinstance(doc, dict):
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
+            f"{type(doc).__name__}. Refusing to read it as zero alerts."
+        )
+    if strict and "reply" not in doc:
+        # The issue/case envelope is `{"reply": {"DATA": ...}}`. A bare
+        # document is some other envelope (a proxy, a changed contract);
+        # reading it as these rows is a guess.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no 'reply' wrapper "
+            f"(keys: {_key_names(doc)}). This is NOT an absence "
+            f"of rows — no observation was made."
+        )
+    reply = doc.get("reply", doc)
+    if not isinstance(reply, dict):
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
+            f"{type(reply).__name__}, not an object. Refusing to read it as "
+            f"zero {list_key}."
+        )
+    # A reply that names NEITHER list key is not "no rows" — the tenant
+    # always sends `alerts` / `incidents` (possibly empty). Defaulting the
+    # missing key to [] turned a login wall, a proxy's JSON, or an API
+    # change into a successful pull that observed nothing and reported
+    # 0 % coverage.
+    if list_key in reply:
+        alerts = reply[list_key]
+    elif strict:
+        # The issue/case envelope is uppercase `DATA`. A lowercase `data`
+        # here is some other envelope (an older API, a proxy, a changed
+        # contract), and reading it as these rows is a guess.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no '{list_key}' "
+            f"(keys: {_key_names(reply)}); a lowercase 'data' "
+            f"is not read in its place. This is NOT an absence of rows — no "
+            f"observation was made."
+        )
+    elif "data" in reply:
+        alerts = reply["data"]
+    else:
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither '{list_key}' "
+            f"nor 'data' (keys: {_key_names(reply)}). This is "
+            f"NOT an absence of {list_key} — no observation was made."
+        )
+    if not isinstance(alerts, list):
+        # A dict where a list belongs means the envelope is not what we
+        # think it is. Guessing is how `len({"data": []}) == 1` happened.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of {list_key}, got "
+            f"{type(alerts).__name__}. Refusing to infer a count from "
+            f"an envelope this connector does not recognise."
+        )
+    out: list[Any] = []
+    dropped = 0
+    for a in alerts:
+        if not isinstance(a, dict):
+            continue
+        alert = normalize(a)
+        if alert is None:
+            dropped += 1
+            continue
+        out.append(alert)
+    meta: dict[str, Any] = {}
+    total, capped = _count_or_capped(reply["total_count"] if "total_count" in reply
+                                     else reply.get("TOTAL_COUNT"))
+    meta["total_count"] = total
+    meta["total_count_capped"] = capped
+    fcount, fcapped = _count_or_capped(reply.get("FILTER_COUNT"))
+    meta["filter_count"] = fcount
+    meta["filter_count_capped"] = fcapped
+    rc = reply.get("result_count")
+    meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+    return out, dropped, meta
+
+
+#: How many reply keys an envelope error names. Only key names shaped like an
+#: identifier (``DATA``, ``total_count``, ``detection.method``) are named, at
+#: most ``_KEY_CHARS`` long; any other key is counted, never quoted.
+_KEYS_SHOWN = 10
+_KEY_CHARS = 40
+_KEY_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.\-]{0,%d}" % (_KEY_CHARS - 1), re.ASCII)
+
+
+def _key_names(mapping: dict) -> str:
+    """The reply's keys for an error message, bounded. Key names come from the
+    tenant (or whatever answered in its place) and the message is SimCore's, so
+    only identifier-shaped names are quoted, at most ``_KEYS_SHOWN`` of them;
+    the rest (free text, over-long or non-ASCII names, the overflow) are a
+    count."""
+    names = sorted(k for k in (str(k) for k in mapping) if _KEY_NAME.fullmatch(k))
+    shown = names[:_KEYS_SHOWN]
+    other = len(mapping) - len(shown)
+    text = "[" + ", ".join(f"'{k}'" for k in shown) + "]"
+    return text + (f" and {other} other key(s)" if other > 0 else "")
+
+
+def _raw_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Identity normaliser: the tenant reader's reads keep the raw row."""
+    return row
+
+
+def _paging(limit: Optional[int], max_pages: int) -> dict[str, Any]:
+    """``_harvest`` paging filters: an explicit ``limit`` is one page of that
+    size; otherwise pages of 100, up to ``max_pages``."""
+    return {"limit": limit} if limit is not None else {"max_pages": max_pages}
 
 
 def alert_key(a: dict[str, Any], key: str) -> Any:

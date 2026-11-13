@@ -40,9 +40,49 @@ class XsiamQueryError(XsiamError):
     http_status = 502
 
 
+class XqlResultTruncated(XsiamQueryError):
+    """A page that may hold only part of the answer, refused as a measurement.
+
+    Raised by ``queries.complete_rows`` when a page comes back as full as the
+    limit asked for and the reply does not confirm it is the whole result set.
+    A query error by kind, so a handler that does not know it still lands on
+    ``pending``; it has its own name so the readout can say why.
+    """
+
+    code = "XQL_RESULT_TRUNCATED"
+    http_status = 502
+
+
 class XsiamQuotaError(XsiamError):
     code = "XSIAM_QUOTA_ERROR"
     http_status = 429
+
+    def __init__(self, detail: str, *, upstream_status: Optional[int] = None,
+                 retry_after_seconds: Optional[int] = None, local: bool = False,
+                 query_started: Optional[str] = None):
+        super().__init__(detail, upstream_status=upstream_status)
+        self.retry_after_seconds = retry_after_seconds
+        # True when CortexSim's OWN budget (request bucket, open breaker, daily
+        # ceiling) refused before any byte reached the tenant. A local refusal
+        # is never something the tenant did: it does not trip the breaker, is
+        # not a query issued, and does not mark the credential unverified.
+        self.local = local
+        # Set when the refused call was a result poll for an XQL query that WAS
+        # already started on the tenant: the query is running there, only the
+        # fetch of its results was refused.
+        self.query_started = query_started
+        # True once the breaker has already been opened for this failure, so a
+        # caller that trips on quota errors does not count one 429 twice.
+        self.tripped = False
+
+
+class XsiamParseError(XsiamError):
+    """The tenant answered in a shape SimCore does not recognise (an envelope it
+    cannot read, or a row missing a field the reader requires). Not an empty
+    result: nothing was measured."""
+
+    code = "XSIAM_PARSE_ERROR"
+    http_status = 502
 
 
 class XsiamCapabilityError(XsiamError):

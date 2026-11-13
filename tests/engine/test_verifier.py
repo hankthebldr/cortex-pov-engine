@@ -455,3 +455,90 @@ def test_score_run_withholds_and_lists_soak_pending_rows():
     assert s.verdict == PASS
     assert s.counts["fail"] == 0
     assert s.to_dict()["excluded"] == ["soaking"]
+
+
+# ── a run where nothing executed is still owed, not unscoreable ──────────────
+#
+# A `channel: eal` run that stayed dry-run seeds every Result `not_executed`
+# with the step's code. Those rows leave the denominator, so nothing is left to
+# score — and `not_applicable` ("carries no measurable threshold") would file a
+# claim nobody tested under a label that reads benign. It is `pending`.
+
+_MTTD = {"kpi": "MTTD", "op": "<=", "value": 300, "unit": "s"}
+
+
+def _never_ran(n, *, outcome="not_executed", reason="EAL_DRY_RUN_NO_CONSENT"):
+    rows = []
+    for i in range(n):
+        r = FakeResult(verification_xql="dataset = xdr_data", kpi_verdict="pending",
+                       detection_id=f"eal-{i}", rid=i + 1)
+        r.outcome, r.outcome_reason = outcome, reason
+        rows.append(r)
+    return rows
+
+
+@pytest.mark.parametrize("threshold,primary_kpi", [
+    (None, None),
+    ("Qualitative pass", None),
+    (_MTTD, "MTTD"),
+])
+@pytest.mark.parametrize("tc_scoreable", [True, False])
+def test_run_with_only_not_executed_rows_is_pending_not_executed(
+        threshold, primary_kpi, tc_scoreable):
+    from engine.verifier import PENDING, score_run  # noqa: PLC0415
+
+    s = score_run(_never_ran(2), threshold=threshold, primary_kpi=primary_kpi,
+                  tc_scoreable=tc_scoreable)
+
+    assert s.verdict == PENDING
+    assert s.reason == "not_executed"
+    assert s.to_dict()["reason"] == "not_executed"
+    assert "EAL_DRY_RUN_NO_CONSENT" in s.detail
+    assert "measurable threshold" not in s.detail
+    assert sorted(s.excluded) == ["eal-0", "eal-1"]
+
+
+def test_run_with_only_not_reached_rows_is_pending_not_executed():
+    from engine.verifier import PENDING, score_run  # noqa: PLC0415
+
+    s = score_run(_never_ran(1, outcome="not_reached", reason="UPSTREAM_SEVERED"))
+
+    assert s.verdict == PENDING
+    assert s.reason == "not_executed"
+    assert "UPSTREAM_SEVERED" in s.detail
+
+
+def test_run_with_only_soak_pending_rows_is_pending_soak_pending():
+    from engine.verifier import PENDING, score_run  # noqa: PLC0415
+
+    s = score_run(_never_ran(1, outcome="pending", reason="ANALYTICS_ACTIVATION_PERIOD"))
+
+    assert s.verdict == PENDING
+    assert s.reason == "soak_pending"
+    assert "ANALYTICS_ACTIVATION_PERIOD" in s.detail
+    assert "measurable threshold" not in s.detail
+
+
+def test_a_soaking_row_beside_rows_that_never_ran_is_still_soak_pending():
+    """The soaking row ran, and its window closing can still score the run, so
+    "re-run, verifying again will not change this" would be false."""
+    from engine.verifier import PENDING, score_run  # noqa: PLC0415
+
+    rows = _never_ran(2) + _never_ran(1, outcome="pending", reason="DEDUP_WINDOW")
+    s = score_run(rows)
+
+    assert s.verdict == PENDING
+    assert s.reason == "soak_pending"
+    assert "EAL_DRY_RUN_NO_CONSENT" in s.detail
+    assert "DEDUP_WINDOW" in s.detail
+
+
+def test_run_scored_on_what_ran_carries_no_reason():
+    from engine.verifier import PASS, score_run  # noqa: PLC0415
+
+    ok = FakeResult(kpi_verdict="pass", detection_id="ok", rid=9)
+    ok.outcome = "detected"
+    s = score_run([ok, *_never_ran(2)])
+
+    assert s.verdict == PASS
+    assert s.reason is None

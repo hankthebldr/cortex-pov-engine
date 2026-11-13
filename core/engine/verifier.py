@@ -25,11 +25,17 @@ nothing — strictly worse than reporting no score at all. Those resolve to
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
-from engine.outcome import grades_as_prevention, is_in_denominator, resolve_module_mode
+from engine.outcome import (
+    EXCLUDED_FROM_DENOMINATOR,
+    grades_as_prevention,
+    is_in_denominator,
+    resolve_module_mode,
+)
 
 logger = logging.getLogger("cortexsim.verifier")
 
@@ -40,6 +46,11 @@ PENDING = "pending"
 NOT_APPLICABLE = "not_applicable"
 
 VERDICTS = (PASS, FAIL, PENDING, NOT_APPLICABLE)
+
+# Why a run is `pending` with nothing left to score (RunScore.reason). Every
+# Result left the denominator: the steps never ran, or the rows are soaking.
+REASON_NOT_EXECUTED = "not_executed"
+REASON_SOAK_PENDING = "soak_pending"
 
 # Threshold values the index uses to mean "a human decides". Anything in here
 # is unscoreable by construction.
@@ -146,10 +157,15 @@ class RunScore:
     #: Results the host says never ran (``not_reached`` / ``not_executed``):
     #: their kpi_verdict is ignored, and they are listed so a report can say so.
     excluded: list[str] = field(default_factory=list)
+    #: Set only when every Result left the denominator: ``soak_pending`` (a row
+    #: is still soaking, so its window closing can still score the run) or else
+    #: ``not_executed`` (no row ran, so only a re-run can).
+    reason: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "verdict": self.verdict,
+            "reason": self.reason,
             "detail": self.detail,
             "weighted_pass": round(self.weighted_pass, 4),
             "weighted_total": round(self.weighted_total, 4),
@@ -189,6 +205,15 @@ def score_run(
     * else → ``not_applicable``. Nothing here could be scored, and saying so is
       the honest answer.
 
+    Ahead of all of that: when EVERY result left the denominator (its step never
+    ran, or it is soak-pending) and the caller measured nothing, the run is
+    ``pending``. Its ``reason`` is ``soak_pending`` when any row is soaking
+    (that row ran; a read back after its window closes can score it) and
+    ``not_executed`` otherwise (only a re-run can). No result was tested, so
+    the test case is still owed. ``not_applicable`` would claim
+    the test case has no measurable threshold, which a dry-run eal run does not
+    show.
+
     ``measured_value`` supplies the primary KPI directly, for callers that
     measure something the engine cannot derive natively (an assertion probe
     returns a row count, a latency, a coverage percentage). It takes precedence
@@ -205,6 +230,8 @@ def score_run(
     weighted_total = 0.0
     unscoreable: list[str] = []
     excluded: list[str] = []
+    exclusions: Counter[tuple[str, str]] = Counter()
+    ran = 0
 
     for r in results:
         if not _in_denominator(r):
@@ -213,7 +240,9 @@ def score_run(
             excluded.append(str(getattr(r, "detection_id", None)
                                 or getattr(r, "expected_detection", None)
                                 or getattr(r, "id", "")))
+            exclusions[_exclusion(r)] += 1
             continue
+        ran += 1
         verdict = getattr(r, "kpi_verdict", None)
         if verdict is None:
             continue
@@ -229,6 +258,9 @@ def score_run(
         weighted_total += weight
         if verdict == PASS:
             weighted_pass += weight
+
+    if not ran and excluded and measured_value is None and mttd_seconds is None:
+        return _nothing_ran(exclusions, threshold, counts, unscoreable, excluded)
 
     # Scenario-level threshold, measured against the run's primary KPI. MTTD is
     # the only KPI the engine measures natively today; anything else needs a
@@ -276,6 +308,28 @@ def score_run(
     verdict = FAIL if counts.get(FAIL) else (PENDING if counts.get(PENDING) else PASS)
     return _clamp(RunScore(verdict, detail, weighted_pass, weighted_total,
                            counts, primary, unscoreable, excluded), tc_scoreable)
+
+
+def _exclusion(r: Any) -> tuple[str, str]:
+    """``(kind, outcome_reason)`` for a result outside the denominator. The kind
+    uses the ``excluded`` keys of ``connectors.measures.denominator_exclusion``."""
+    outcome = getattr(r, "outcome", None)
+    kind = outcome if outcome in EXCLUDED_FROM_DENOMINATOR else REASON_SOAK_PENDING
+    return kind, str(getattr(r, "outcome_reason", None) or "no reason recorded")
+
+
+def _nothing_ran(exclusions: Counter[tuple[str, str]], threshold: Any,
+                 counts: dict[str, int], unscoreable: list[str],
+                 excluded: list[str]) -> RunScore:
+    """The ``pending`` score for a run whose every result left the denominator."""
+    soaking = any(kind == REASON_SOAK_PENDING for kind, _ in exclusions)
+    groups = ", ".join(f"{kind} {why} ×{n}"
+                       for (kind, why), n in sorted(exclusions.items()))
+    detail = (f"nothing scored: all {len(excluded)} detection(s) are outside the "
+              f"scoring denominator ({groups}); the test case is still owed")
+    primary = evaluate_threshold(threshold, None).to_dict() if threshold is not None else None
+    return RunScore(PENDING, detail, 0.0, 0.0, counts, primary, unscoreable, excluded,
+                    reason=REASON_SOAK_PENDING if soaking else REASON_NOT_EXECUTED)
 
 
 def _clamp(score: RunScore, tc_scoreable: bool) -> RunScore:
@@ -566,14 +620,24 @@ def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
     count of 0 and evaluates it against the authored floor, so all 18 assertion
     artifacts would have reported **fail**. The A-17 guard cannot catch it: it
     proves the *evaluator* can go red, not that the *runner* can return rows.
+
+    It also refuses a page that may be truncated. Every probe counts, dedups,
+    divides or takes the earliest of what comes back, so a page that is a slice
+    of a larger answer measures the slice: 150 of 300 alerts read off two
+    100-row pages is 100 %. ``complete_rows`` raises ``XqlResultTruncated``
+    instead, and the probe resolves ``pending``.
     """
-    from integrations.xsiam.client import refuse_xql_write_stages  # noqa: PLC0415
-    from integrations.xsiam.queries import result_rows  # noqa: PLC0415
+    from integrations.xsiam.client import (  # noqa: PLC0415
+        XQL_PAGE_LIMIT,
+        refuse_xql_write_stages,
+    )
+    from integrations.xsiam.queries import complete_rows  # noqa: PLC0415
 
     async def _run(query: str) -> list[dict[str, Any]]:
         refuse_xql_write_stages(query)  # SEC-05; before the budget, as above
         async with _tenant_budget(client):
-            return result_rows(await client.run_xql(query, timeframe))
+            reply = await client.run_xql(query, timeframe, limit=XQL_PAGE_LIMIT)
+        return complete_rows(reply, limit=XQL_PAGE_LIMIT)
 
     return _run
 

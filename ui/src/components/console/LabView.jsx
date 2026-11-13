@@ -279,8 +279,7 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
       <div className="view-head">
         <div>
           <div className="lab__accent-bar" aria-hidden="true" />
-          <div className="lab__eyebrow">Infrastructure</div>
-          <h1>Environments</h1>
+          <h1>Lab</h1>
           <div className="view-head__meta">
             IaC topology generator
             {' · '}<span className="mono">{modules.length} modules</span>

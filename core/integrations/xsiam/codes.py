@@ -32,6 +32,7 @@ XSIAM_PARSE_ERROR = "XSIAM_PARSE_ERROR"
 XSIAM_CAPABILITY_MISSING = "XSIAM_CAPABILITY_MISSING"
 XQL_WRITE_STAGE_REFUSED = "XQL_WRITE_STAGE_REFUSED"
 XQL_REQUEST_SHAPE_INVALID = "XQL_REQUEST_SHAPE_INVALID"
+XQL_RESULT_TRUNCATED = "XQL_RESULT_TRUNCATED"
 
 ALL_CODES = (
     XSIAM_AUTH_ERROR,
@@ -44,6 +45,7 @@ ALL_CODES = (
     XSIAM_CAPABILITY_MISSING,
     XQL_WRITE_STAGE_REFUSED,
     XQL_REQUEST_SHAPE_INVALID,
+    XQL_RESULT_TRUNCATED,
 )
 
 #: What the DC should DO, and — critically — what the failure means for the
@@ -97,6 +99,12 @@ REMEDIATION: dict[str, str] = {
     XQL_REQUEST_SHAPE_INVALID: (
         "send body.request_data as an object with a non-empty string `query`"
     ),
+    XQL_RESULT_TRUNCATED: (
+        "The query matched at least a full page of rows and the reply did not "
+        "confirm the total, so the count is unknown. Push the count into XQL "
+        "(`| comp count()`, `| dedup <field>`) so the answer fits one page. "
+        "Verdicts stay `pending` — a partial page proves nothing either way."
+    ),
 }
 
 
@@ -113,6 +121,31 @@ def code_for_status(status: int) -> str:
     if status == 429:
         return XSIAM_QUOTA_ERROR
     return XSIAM_API_ERROR
+
+
+LOCAL_REFUSAL_REMEDIATION = (
+    "CortexSim's own per-tenant request budget refused this call before it was "
+    "sent to the tenant. This says nothing about the tenant. Nothing from this call "
+    "was measured, so affected verdicts stay `pending`; retry after the interval "
+    "given."
+)
+
+
+LOCAL_POLL_REFUSAL_REMEDIATION = (
+    "The XQL query WAS started on the tenant; CortexSim's own per-tenant request "
+    "budget refused fetching its results. This says nothing about the tenant, its "
+    "role or its datasets. Nothing was measured, so affected verdicts stay "
+    "`pending`; retry after the interval given."
+)
+
+
+LOCAL_DAILY_BUDGET_REMEDIATION = (
+    "CortexSim's own rolling-day XQL query budget for this tenant "
+    "(CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY) is spent, so this query was refused "
+    "before it was sent to the tenant. This says nothing about the tenant. Nothing "
+    "was measured, so affected verdicts stay `pending`; wait for the 24-hour window "
+    "to roll or raise the ceiling."
+)
 
 
 def remediation_for(code: Optional[str]) -> Optional[str]:

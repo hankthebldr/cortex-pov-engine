@@ -3,6 +3,7 @@ CortexSim configuration — reads from environment variables with sensible defau
 All settings can be overridden via environment or a .env file.
 """
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -78,6 +79,11 @@ class Settings(BaseSettings):
     CORTEXSIM_CASE_LEDGER_WINDOW_HOURS: int = 24          # refresh ledgers of runs started within this
     CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP: int = 20    # runs refreshed per sweep
     CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES: int = 60  # skip a ledger read more recently than this
+    # Run tenant evidence (POST /api/runs/{id}/tenant-evidence): an explicit,
+    # read-only issue/case/endpoint read for one run. Never polled; no loop.
+    CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES: int = 5                # issue/search pages of 100 per read
+    CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS: int = 60    # a read this recent is returned, not repeated
+    CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS: int = 300  # name/host/window join tolerance
     # A delivered run whose agent is offline and silent this long is terminalised
     # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
     CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180
@@ -112,6 +118,7 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS: int = 3           # give up after N sweeps
     CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS: int = 600      # doubled per attempt, capped at 4h
     CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP: int = 50  # hard stop on tenant queries
+    CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE: int = 60  # per-tenant request bucket (tuning.py reads the env)
     CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS: int = 3600   # XQL lookback per query
 
     # UC/TC foreign-key strictness. When false (the default for one release),
@@ -171,9 +178,17 @@ class Settings(BaseSettings):
     # port has no authentication, so exposing a tool surface on it is a
     # deliberate decision, not a default. The stdio entry point needs no flag.
     CORTEXSIM_MCP_HTTP: bool = False
+    # Bearer token a client must present at /mcp. Empty with the flag on means
+    # /mcp is NOT mounted. It only admits a client to /mcp: it is not a tenant
+    # credential and does not authenticate /api.
+    CORTEXSIM_MCP_TOKEN: SecretStr = SecretStr("")
     # Comma-separated Host headers the /mcp mount accepts (DNS-rebinding guard),
     # in addition to loopback. Empty = loopback only.
     CORTEXSIM_MCP_ALLOWED_HOSTS: str = ""
+    # MCP tools that act on a customer host (cortexsim.run.launch, cortexsim.run.abort)
+    # refuse with MCP_HOST_ACTION_DISABLED unless this is true. Both transports
+    # read it; tenant-class tools are unaffected.
+    CORTEXSIM_MCP_ALLOW_HOST_ACTIONS: bool = False
     # Ceiling on MCP tool calls that reach a customer tenant, per minute, so an
     # agent loop cannot burn the tenant's XQL quota. Same posture as the other
     # quota guards: a spent budget degrades to pending, never to a verdict.
@@ -217,6 +232,10 @@ class Settings(BaseSettings):
     # in a host-run `.env` is honoured. It used to be undeclared, and an
     # uncommented `.env` line made Settings() refuse to boot.
     CORTEXSIM_TRUSTED_PROXIES: str = ""
+    # Comma list of lab tenants' API hosts. Collector setup may write into a
+    # tenant's native firewall datasets only when its host is listed here.
+    # Empty, the default, means no tenant is a lab tenant.
+    CORTEXSIM_DOOR_PROBE_TENANTS: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

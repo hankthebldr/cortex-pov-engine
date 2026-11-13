@@ -1,0 +1,194 @@
+{
+  "id": "TTP-0000-0304",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Weakly-Encrypted Kerberos TGT Response Attack",
+    "summary": "An attacker leverages weakly-encrypted Kerberos tickets to perform credential theft and lateral movement. Cortex detects this through behavioral anomalies in Kerberos ticket handling and process execu",
+    "description": "An attacker leverages weakly-encrypted Kerberos tickets to perform credential theft and lateral movement. Cortex detects this through behavioral anomalies in Kerberos ticket handling and process execution."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.003",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "cmd /c \"set KERBEROS_TGT=\\\"C:\\\\temp\\\\ticket.kirbi\\\" && \nwhoami /fqdn && \nset /p TGT_RESPONSE=\\\"Enter TGT response\\\" && \nnet user /add testuser P@ssw0rd123 && \nnet localgroup administrators testuser /add && \nnet use \\\\192.0.2.100\\testshare /user:testuser P@ssw0rd123 && \nexit\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution of cmd.exe with Kerberos ticket handling",
+        "expected_value": "actor_process_image_name = 'cmd.exe' and action_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to TEST-NET-1 for C2 communication",
+        "expected_value": "action_remote_ip = '192.0.2.100' and dst_port = 445"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Creation of Kerberos ticket file",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\ticket.kirbi'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Weakly-Encrypted Kerberos TGT Process",
+        "description": "Detection of process starting with weakly-encrypted Kerberos ticket handling",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe' and action_process_image_name = 'cmd.exe'\n| filter action_file_path contains 'ticket.kirbi'",
+        "mitre_technique_ids": [
+          "T1558.003",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Weakly-Encrypted Kerberos TGT Response",
+        "description": "Behavioral deviation in Kerberos ticket handling using weak encryption",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe'\n| filter action_file_path contains 'ticket.kirbi'\n| filter action_remote_ip = '192.0.2.100'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'cmd.exe' and action_file_path contains 'ticket.kirbi'",
+        "mitre_technique_ids": [
+          "T1558.003",
+          "T1078"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Kerberos Ticket Handling Detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_file_path contains 'ticket.kirbi'\n| filter action_remote_ip = '192.0.2.100'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Weakly-Encrypted Kerberos TGT Response; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/weakly-encrypted-kerberos-tgt-response"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Weakly-Encrypted Kerberos TGT Response",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/weakly-encrypted-kerberos-tgt-response",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}
