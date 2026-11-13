@@ -2547,13 +2547,35 @@ inside the built image and fails below 41.
 | session mode | per process | `stateless_http=True` — SimCore restarts are routine mid-POV, and a stateful session manager would 404 every client after one |
 | DNS-rebinding guard | n/a | two layers. SimCore's app-wide Host guard answers first (`400 HOST_NOT_ALLOWED` unless `Host` is loopback, an IP literal, this machine's name or in `CORTEXSIM_ALLOWED_HOSTS`); then the SDK's transport-security allowlist, seeded with `localhost`, `127.0.0.1` and `CORTEXSIM_MCP_ALLOWED_HOSTS` (comma list, default empty), answers `421` to anything else. A name must be in both lists; an IP literal only in the second |
 
-Authentication posture is inherited, not widened: SimCore has no API
-authentication layer (`CORTEXSIM_SECRET` protects the vault at rest, not the
-routes), and the MCP surface sits inside that boundary. What the surface adds is
-the removal of the one thing an agent could newly do — writes to a tenant always
-preview (§9.5).
+Authentication: `/mcp` over HTTP requires `Authorization: Bearer
+<CORTEXSIM_MCP_TOKEN>` (scheme case-insensitive, constant-time comparison, the
+header never logged). A missing or wrong token is `401` with
+`WWW-Authenticate: Bearer` and `{"error","code":"MCP_UNAUTHORIZED","detail"}`.
+With `CORTEXSIM_MCP_HTTP=1` and no token, `/mcp` is **not mounted** and the `mcp`
+component of `/api/health` is `degraded` / `MCP_TOKEN_MISSING`; with the flag off
+it stays `ok` / `MCP_DISABLED`. The token only lets a client into `/mcp`; it is
+never a tenant credential. The MCP tenant tools hold no key: they reach the
+tenant only through SimCore's own routes, which use the integration credential
+stored in SimCore's vault at tenant onboarding — the same credential the
+run-evidence and reconcile path uses, metered by the same per-tenant budget.
+`/api` stays unauthenticated: the token does not mean SimCore is authenticated.
+The configured token is stripped of surrounding whitespace and a blank one counts
+as missing; the header is compared as raw bytes against the token encoded once at
+mount, so a non-ASCII token works and an unencodable one fails at startup.
+
+**Reach (2026-11-13).** `/mcp` is bearer-only in phase 1. A peer-address check
+cannot separate the host from the rest of the network: under Docker Desktop a
+host-loopback request (`curl http://127.0.0.1:<published port>/`) reaches the
+container with peer `172.17.0.1`, the Docker bridge gateway, not `127.0.0.1` or
+`::1`, so no loopback-only check was built and `McpGate.loopback_only` stays
+false. A loopback-only `/mcp` needs a different mechanism (open decision).
+
+Writes to a tenant always preview (§9.5). stdio is unchanged (see
+`docs/superpowers/specs/2026-11-11-in-container-tenant-reader-design.md` §7.1).
 
 Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
+`CORTEXSIM_MCP_TOKEN` (required for the mount),
+`CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` (default off, §9.3),
 `CORTEXSIM_MCP_ALLOWED_HOSTS`, `CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`
 (default 30, a process-local token bucket over tenant-class tools) and
 `CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read
@@ -2636,6 +2658,18 @@ name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
 | `xsiam.content.list` | `xsiam_content_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
 | `xsiam.ingest.status` | `xsiam_ingest_status` | xsiam | — | none | `TOOL_NOT_BACKED` (v1) |
 
+**Host actions are gated (spec §7.2).** Every tool with network `host` and class
+`write` or `destructive` — today `cortexsim.run.launch` and `cortexsim.run.abort` —
+stays registered but, unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is true, refuses
+with `MCP_HOST_ACTION_DISABLED` (the launch/abort request is never sent to SimCore). The refusal
+carries `data = {"console": "#/library" | "#/runs", "execute_as_human": "curl -X POST
+<base>/api/runs … -d '<json>'"}` (abort: `curl -X POST <base>/api/runs/<id>/abort`).
+One rule covers both transports: the stdio entry reads the env var, then
+`config.settings`; the `/mcp` mount reads `settings`, which reads the env var first.
+Desktop's `docker exec` opts in with `-e CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=1`.
+Tenant-class tools (`run.reconcile`, `run.verify`, `assertion.run`,
+`xsiam.operation.execute`) are unaffected.
+
 Four tools are registered so a consumer that expects them gets an honest
 refusal (`TOOL_NOT_BACKED`) instead of a missing tool: the XSIAM public API
 exposes no listing for them, and nothing is queried.
@@ -2712,6 +2746,7 @@ adds (`core/mcp_server/errors.py` unless noted):
 | code | when |
 |---|---|
 | `MCP_WRITE_NOT_EXECUTABLE` | `dry_run: false` on a write or destructive op through MCP (preview attached) |
+| `MCP_HOST_ACTION_DISABLED` | `cortexsim.run.launch` / `cortexsim.run.abort` called while `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is off (console path and `curl` in `data`) |
 | `TOOL_NOT_BACKED` | one of the four registered-but-unbacked tools |
 | `NO_TENANT_CONFIGURED` | no `xsiam_tenant` credential in the vault, or the named tenant is not one |
 | `TENANT_AMBIGUOUS` | more than one tenant is configured and none was named |
