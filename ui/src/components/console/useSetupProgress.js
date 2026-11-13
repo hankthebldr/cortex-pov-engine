@@ -19,6 +19,16 @@ export function useConfirmed() {
 }
 
 /**
+ * Record (or withdraw) one "you confirmed" tick, and tell every reader.
+ * Keys are the Get started step ids ('collector', 'bvm') and, for the
+ * Configure frame, '<component>:<step id>'.
+ */
+export function setConfirmedKey(key, value) {
+  writeConfirmed({ ...readConfirmed(), [key]: !!value })
+  window.dispatchEvent(new Event(EVT))
+}
+
+/**
  * The Get started checklist as a hook. The rail badge and the page both call
  * it, so a confirmation made on the page updates the badge in the same render
  * pass (via a window event) instead of on the next reload.
@@ -27,11 +37,8 @@ export default function useSetupProgress() {
   const { agents, tenants, runs } = useEnvironment()
   const confirmed = useConfirmed()
 
-  const setStepConfirmed = useCallback((id, value) => {
-    writeConfirmed({ ...readConfirmed(), [id]: !!value })
-    // Every reader — this hook included — re-reads on the event.
-    window.dispatchEvent(new Event(EVT))
-  }, [])
+  // Every reader — this hook included — re-reads on the event.
+  const setStepConfirmed = useCallback((id, value) => setConfirmedKey(id, value), [])
 
   const progress = useMemo(
     () => setupProgress({ agents, tenants, runs, confirmed }),

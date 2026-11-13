@@ -67,6 +67,11 @@ export function refreshComponentSources() {
   return inflight
 }
 
+/** What was last read, for code that runs outside a render (a Test). */
+export function currentComponentSources() {
+  return state
+}
+
 /** Test seam: forget what was read, so each test starts from nothing. */
 export function __resetComponentSources() {
   state = EMPTY
@@ -100,5 +105,5 @@ export default function useComponentStatus() {
 
   const refresh = useCallback(() => refreshComponentSources(), [])
 
-  return { statuses, issues: issueCount(statuses), refresh }
+  return { statuses, issues: issueCount(statuses), refresh, sources }
 }

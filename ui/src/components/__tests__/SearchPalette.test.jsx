@@ -105,7 +105,7 @@ describe('⌘K search', () => {
     let dialog = await openSearch()
     search(dialog, 'Agents')
     fireEvent.click(within(dialog).getByRole('button', { name: /Agents.*Component/ }))
-    await waitFor(() => expect(window.location.hash).toBe('#/agents'))
+    await waitFor(() => expect(window.location.hash).toBe('#/component-agents'))
 
     dialog = await openSearch()
     search(dialog, 'POVengine')
