@@ -88,3 +88,23 @@
 .kit-pageicon--tile { width: 30px; height: 30px; border-radius: 7px; background: var(--s2); border: 1px solid var(--bd); }
 .kit-pageicon--tile .kit-pageicon__img { width: 16px; height: 16px; }
 [data-theme='dark'] .kit-pageicon__img { filter: grayscale(1) invert(1); }
+
+/* ── Chain tray ("Your chain", v26 §4.4) ───────────────────────────────── */
+.chain-tray {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; margin: 0 0 12px;
+  background: var(--s2); border: 1px solid var(--ac-line); border-radius: 8px;
+}
+.chain-tray__title { font: 600 12.5px/1.3 var(--font-ui); color: var(--tx); white-space: nowrap; }
+.chain-tray__items {
+  flex: 1; min-width: 0;
+  font: 400 12px/1.3 var(--font-ui); color: var(--tx2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chain-tray__clear {
+  padding: 6px 10px; border: 0; background: transparent; cursor: pointer;
+  font: 500 11.5px/1 var(--font-ui); color: var(--tx3);
+}
+.chain-tray__clear:hover { color: var(--tx); }
+.chain-tray__clear:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
