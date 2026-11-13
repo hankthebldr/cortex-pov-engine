@@ -60,6 +60,24 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Changed — Packages: a plain catalog, no supply mechanics
+
+- **The Packages page no longer talks about the payload shelf.** How and when a
+  tool reaches a host (staged on the instance, installed by the target at run
+  time, provided by the lab) is the system's decision, not a catalog concept.
+  The banner, the supply statistics, the supply chips, the egress lines and the
+  Stage button are gone from the list, with the tier, safety and supply
+  filters. A card shows the tool, its category and platform, the Cortex planes
+  and techniques its signal lands on, and **Add to chain**.
+- **One readiness fact stays.** A tool this instance cannot supply reads **Not
+  ready** on its card, because a run that needs it is refused. The detail
+  panel's first section is **Availability**, in plain words, with **Make
+  ready** where the instance can fix it; a tool the target installs for itself
+  says the target needs internet access. The install-mechanics section is
+  removed from the detail.
+- A link can still scope the list (`?supply=unstaged`, used by a refused
+  launch); the scope is named in plain words and can be cleared.
+
 ### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
 
 - **Back up the database volume first, and roll back only by restoring it.**
