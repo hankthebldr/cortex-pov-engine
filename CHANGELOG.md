@@ -736,11 +736,12 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   with "0 detection(s) carry no measurable threshold". The run report then labelled
   it "NOT SCOREABLE" and the console greyed it out, as if the test case could not be
   scored. In fact nothing had been tested. Such a run now scores `pending`, with
-  `tc_verdict_detail.reason` set to `not_executed` (or `soak_pending`), and its
+  `tc_verdict_detail.reason` set to `not_executed` (or `soak_pending` when any row
+  is still soaking, because that row can still be scored), and its
   `detail` names each `outcome_reason`. `not_applicable` keeps its one meaning: the
   rows that ran carry no measurable threshold.
-- The run report labels such a run "PENDING — nothing executed" (or "every
-  detector is still soaking") rather than "verification outstanding".
+- The run report labels such a run "PENDING — nothing executed" (or "detectors
+  are still soaking") rather than "verification outstanding".
   `GET /api/uctc/test-cases/{id}` adds `runs.pending_reasons` and
   `runs.latest.reason`.
 - The console shows the reason as one element everywhere a run verdict

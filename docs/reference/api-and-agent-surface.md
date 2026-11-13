@@ -493,8 +493,9 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   When every Result is `not_reached`, `not_executed` or soak-pending and no KPI was
   measured, `verifier.score_run` returns `tc_verdict: pending`. One example is a run
   whose every step the host reported `not_run` (`TOOL_ABSENT`). In that case
-  `tc_verdict_detail.reason` is `not_executed` when at least one row never ran, and
-  `soak_pending` when every row is soaking. `detail` lists each `outcome`,
+  `tc_verdict_detail.reason` is `soak_pending` when any row is soaking (that row
+  ran, and a read back after its window closes can still score the run), and
+  `not_executed` when no row is (only a re-run can). `detail` lists each `outcome`,
   `outcome_reason` and its count. Nothing in such a run was tested, so the test case
   is still owed. `not_applicable` means something else: the rows that ran carry no
   measurable threshold, or a PASS was clamped. The run report labels it "NOT
@@ -502,7 +503,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   it out, so using it for a run where nothing ran would misreport that run. `reason`
   is `null` on every other score. Both report renderers take their label from
   `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
-  executed; the test case is still owed" or "PENDING — every detector is still
+  executed; the test case is still owed" or "PENDING — detectors are still
   soaking", not "PENDING — verification outstanding". The console renders the
   reason as a single element, `VerdictReason` (`ui/src/components/console/verdictReason.js`
   holds the labels). It is a dashed chip beside the `pending` chip, reading "nothing
