@@ -12,17 +12,29 @@
  * with a status breakdown and a `+82 more` expander, not 83 lines of uuid.
  *
  * Honesty rules the cells carry:
- *   - a failed/aborted run with no hit shows `unproven`, never `0 / 10`;
- *   - a run with no Result rows shows a dash, never `0 / 0`;
+ *   - no detection claim before the run is read back (design v26 §4.6): the
+ *     result cell says "not read back", never "0 / 10";
+ *   - a failed/aborted run with no hit shows `unproven`, never a miss;
+ *   - a run with no Result rows shows no count, never `0 / 0`;
  *   - timestamps are UTC and say so in the hover title.
+ *
+ * Each row carries the five-stage lifecycle strip and ONE action for its
+ * phase (runLifecycle.js): running → Open · nothing → — · unread → Read back
+ * (primary) · reading → "Reading…" (disabled; the row keeps its place) ·
+ * ready → Open results. The scenario cell is the button that opens the run;
+ * the row itself is not clickable, so no control is nested in another.
  */
 import React, { useEffect, useMemo, useState } from 'react'
 import { runIdOf } from '../../api/ids.js'
-import { isRunTerminal, isRunUnproven } from './runStatus.js'
+import { isRunUnproven, runStatusGlyph } from './runStatus.js'
 import {
   relativeTime, absoluteTime, runDuration, detectionCell, runAgent,
   filterRuns, groupRuns, pageOf, statusKey, PAGE_SIZE,
 } from './runRows.js'
+import { runLifecycle, PHASE } from './runLifecycle.js'
+import RunLifecycleStrip from './RunLifecycleStrip.jsx'
+import { Button } from './kit/index.js'
+import '../../styles/destinations/run-lifecycle.css'
 
 const STATUS_OPTIONS = ['running', 'complete', 'failed', 'aborted', 'pending', 'staged']
 
@@ -39,21 +51,74 @@ function shortId(id) {
   return s.length > 12 ? s.slice(0, 8) : s
 }
 
-function RunRow({ run, now, onOpen, inGroup = false }) {
+/**
+ * The result cell: `{ text, tone, title }`. Only a read-back run has a
+ * detection count; every other phase says where the run is instead.
+ */
+export function resultCell(run, lifecycle) {
+  switch (lifecycle.phase) {
+    case PHASE.RUNNING:
+      return { text: 'results after it finishes', tone: 'none', title: 'the run is still executing' }
+    case PHASE.NOTHING:
+      return { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to read back' }
+    case PHASE.READING:
+      return { text: 'reading back…', tone: 'live', title: 'reading this run back from the tenant' }
+    case PHASE.UNREAD:
+      return { text: 'not read back', tone: 'none', title: 'the tenant has not been read for this run, so it has no results yet' }
+    default: {
+      const det = detectionCell(run)
+      if (det.tone === 'unproven') return det
+      if (det.text === '—') {
+        const expected = run?.expected_detections
+        return expected === 0
+          ? { text: 'no detections expected', tone: 'none', title: 'this run seeded no expected detections' }
+          : det
+      }
+      return { ...det, text: `${run.detected_count} of ${run.expected_detections} detected` }
+    }
+  }
+}
+
+function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
+  switch (lifecycle.phase) {
+    case PHASE.RUNNING:
+      return <Button variant="secondary" className="run-list__act" onClick={() => onOpen(id)}>Open</Button>
+    case PHASE.UNREAD:
+      return <Button variant="primary" className="run-list__act" onClick={() => onReadBack(id)}>Read back</Button>
+    case PHASE.READING:
+      return <Button variant="secondary" className="run-list__act" disabled>Reading…</Button>
+    case PHASE.READY:
+      return <Button variant="secondary" className="run-list__act" onClick={() => onOpenResults(id)}>Open results</Button>
+    default:
+      return <span className="run-list__noact" title="nothing ran, so there is nothing to read back">—</span>
+  }
+}
+
+function RunRow({ run, now, inGroup = false, reading, outcomes, onOpen, onReadBack, onOpenResults }) {
   const id = runIdOf(run)
-  const det = detectionCell(run)
+  const lifecycle = runLifecycle(run, { reading: reading.has(id) })
+  const res = resultCell(run, lifecycle)
+  const outcome = outcomes.get(id)
+  // Why the last read back read nothing — only while the run is still unread.
+  const why = outcome && !outcome.ok && lifecycle.phase === PHASE.UNREAD ? outcome.message : null
   return (
-    <button
-      type="button"
+    <div
       role="row"
       className={'run-list__row' + (inGroup ? ' run-list__row--grouped' : '')}
       data-testid="run-row"
       data-run-id={id}
-      onClick={() => onOpen(id)}
+      data-phase={lifecycle.phase}
     >
       <span role="cell" className="run-list__scenario">
-        <span className="mono run-list__scenario-id">{run.scenario_id || '(scenario unknown)'}</span>
-        <span className="mono run-list__id" title={id}>{shortId(id)}</span>
+        <button
+          type="button"
+          className="run-list__open"
+          onClick={() => onOpen(id)}
+          aria-label={`Open run ${run.scenario_id || '(scenario unknown)'} ${shortId(id)}`}
+        >
+          <span className="mono run-list__scenario-id">{run.scenario_id || '(scenario unknown)'}</span>
+          <span className="mono run-list__id" title={id}>{shortId(id)}</span>
+        </button>
       </span>
       <span role="cell" className="mono run-list__started">
         <time dateTime={run.started_at || undefined} title={absoluteTime(run.started_at)} data-testid="run-started">
@@ -66,24 +131,32 @@ function RunRow({ run, now, onOpen, inGroup = false }) {
       <span role="cell" className="mono run-list__duration" data-testid="run-duration">
         {runDuration(run, now)}
       </span>
-      <span
-        role="cell"
-        className={`mono run-list__det run-list__det--${det.tone}`}
-        title={det.title}
-        data-testid="run-detections"
-      >
-        {det.text}
+      <span role="cell" className="run-list__lc">
+        <RunLifecycleStrip lifecycle={lifecycle} />
+      </span>
+      <span role="cell" className="run-list__result">
+        <span
+          className={`run-list__det run-list__det--${res.tone}`}
+          title={res.title}
+          data-testid="run-detections"
+        >
+          {res.text}
+        </span>
+        {why && <span className="run-list__why" data-testid="run-readback-why">{why}</span>}
       </span>
       <span role="cell" className="run-list__status">
         <span className={'chip run-list__status-chip' + chipClass(run.status)} data-testid="run-status">
-          {run.status || 'unknown'}
+          <span aria-hidden="true">{runStatusGlyph(run.status)}</span> {run.status || 'unknown'}
         </span>
       </span>
-    </button>
+      <span role="cell" className="run-list__action" data-testid="run-action">
+        <RunAction id={id} lifecycle={lifecycle} onOpen={onOpen} onReadBack={onReadBack} onOpenResults={onOpenResults} />
+      </span>
+    </div>
   )
 }
 
-function GroupRow({ group, now, onOpen, expanded, onToggle }) {
+function GroupRow({ group, now, expanded, onToggle, rowProps }) {
   const rest = group.rows.length - 1
   const breakdown = Object.entries(group.byStatus)
     .sort((a, b) => b[1] - a[1])
@@ -91,7 +164,7 @@ function GroupRow({ group, now, onOpen, expanded, onToggle }) {
     .join(' · ')
   return (
     <div className="run-list__group" data-testid="run-group" data-scenario-id={group.scenarioId}>
-      <RunRow run={group.newest} now={now} onOpen={onOpen} />
+      <RunRow run={group.newest} now={now} {...rowProps} />
       <button
         type="button"
         className="run-list__group-toggle"
@@ -106,13 +179,26 @@ function GroupRow({ group, now, onOpen, expanded, onToggle }) {
         <span className="mono run-list__group-breakdown">{breakdown}</span>
       </button>
       {expanded && group.rows.slice(1).map((r) => (
-        <RunRow key={runIdOf(r)} run={r} now={now} onOpen={onOpen} inGroup />
+        <RunRow key={runIdOf(r)} run={r} now={now} inGroup {...rowProps} />
       ))}
     </div>
   )
 }
 
-export default function RunList({ runs = [], params = {}, setParams = () => {}, onOpen = () => {} }) {
+const NO_RUNS_READING = new Set()
+const NO_OUTCOMES = new Map()
+
+export default function RunList({
+  runs = [],
+  params = {},
+  setParams = () => {},
+  onOpen = () => {},
+  onReadBack = () => {},
+  onOpenResults = () => {},
+  reading = NO_RUNS_READING,
+  outcomes = NO_OUTCOMES,
+}) {
+  const rowProps = { reading, outcomes, onOpen, onReadBack, onOpenResults }
   const scenario = params.scenario || ''
   const status = params.status || ''
   const page = Number(params.page) || 1
@@ -227,8 +313,10 @@ export default function RunList({ runs = [], params = {}, setParams = () => {}, 
             <span>Started</span>
             <span>Agent</span>
             <span>Duration</span>
-            <span title="detected / expected, from this SimCore's Result rows">Detections</span>
+            <span>Lifecycle</span>
+            <span title="detected of expected, once the run is read back from the tenant">Result</span>
             <span>Status</span>
+            <span />
           </div>
           {paged.items.map((entry) => (
             entry.kind === 'group' ? (
@@ -236,12 +324,12 @@ export default function RunList({ runs = [], params = {}, setParams = () => {}, 
                 key={entry.key}
                 group={entry}
                 now={now}
-                onOpen={onOpen}
+                rowProps={rowProps}
                 expanded={expanded.has(entry.key)}
                 onToggle={() => toggle(entry.key)}
               />
             ) : (
-              <RunRow key={entry.key} run={entry.run} now={now} onOpen={onOpen} />
+              <RunRow key={entry.key} run={entry.run} now={now} {...rowProps} />
             )
           ))}
         </div>

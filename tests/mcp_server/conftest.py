@@ -8,6 +8,8 @@ response carries a ``Date`` header, because ``as_of`` is SimCore's clock.
 """
 from __future__ import annotations
 
+import logging
+import sys
 from typing import Any, Callable, Optional
 
 import httpx
@@ -17,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp_server.client import SimCoreClient
 from mcp_server.naming import wire_name
 from mcp_server.ratelimit import TokenBucket
+from tests._core_reimport import CORE_DIR, is_core_module, reimport_core
 
 DATE = "Mon, 02 Nov 2026 18:04:11 GMT"
 AS_OF = "2026-11-02T18:04:11+00:00"
@@ -194,3 +197,59 @@ def stubbed_app(tmp_path, monkeypatch, restore_core_modules) -> StubbedApp:
 
     app.include_router(readiness_api.router, prefix="/api")
     return StubbedApp(app, stub, xsiam_api, app.dependency_overrides[get_db])
+
+
+# --- boot_main / mcp_client: SimCore's real main.app with /mcp mounted ---
+@pytest.fixture
+def boot_main(tmp_path, monkeypatch, restore_core_modules):
+    """``boot_main(http=bool)`` -> a freshly imported ``main`` module."""
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html><title>console</title>")
+    root = logging.getLogger()
+    handlers_before = list(root.handlers)
+
+    def _boot(*, http: bool, allowed_hosts: str = "", guard_hosts: str = "",
+              token: str | None = None, host_actions: str = "false"):
+        monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
+        monkeypatch.setenv("CORTEXSIM_STATIC_DIR", str(static))
+        monkeypatch.setenv("CORTEXSIM_ENV", "development")
+        monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
+        monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
+        monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
+        # A developer .env must not flip the host-action gate under test.
+        monkeypatch.setenv("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS", host_actions)
+        if token is None:
+            # Settings also reads .env from the working directory; an empty
+            # env var beats a developer's token there.
+            monkeypatch.setenv("CORTEXSIM_MCP_TOKEN", "")
+        else:
+            monkeypatch.setenv("CORTEXSIM_MCP_TOKEN", token)
+        # The app-wide Host guard runs before the /mcp mount's own list.
+        monkeypatch.setenv("CORTEXSIM_ALLOWED_HOSTS", guard_hosts)
+        # Another suite (tests/scripts/test_lab_readiness.py) puts scripts/ at
+        # sys.path[0] during collection, and scripts/eal_simulator/ is a package
+        # of the same name as core/eal_simulator/. The fresh import below must
+        # resolve core/ first; monkeypatch restores sys.path at teardown.
+        monkeypatch.syspath_prepend(str(CORE_DIR))
+        reimport_core("main", *[n for n, m in list(sys.modules.items()) if is_core_module(m)])
+        import main  # noqa: PLC0415
+
+        return main
+
+    yield _boot
+    # main._configure_logging() attaches a stream + file handler per import.
+    for h in [h for h in root.handlers if h not in handlers_before]:
+        root.removeHandler(h)
+        h.close()
+
+
+def mcp_client(app, *, peer: str = "127.0.0.1", token: str | None = None):
+    """A TestClient whose TCP peer is ``peer`` and whose default headers carry
+    ``Authorization: Bearer <token>`` when a token is given."""
+    from starlette.testclient import TestClient
+
+    client = TestClient(app, base_url="http://localhost", client=(peer, 50000))
+    if token is not None:
+        client.headers["Authorization"] = f"Bearer {token}"
+    return client

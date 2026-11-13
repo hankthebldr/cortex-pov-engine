@@ -37,8 +37,11 @@
  *   - the pivot chip on an edge → `onSetPivot`.
  *
  * TWO OTHER LENSES, ONE HONESTY RULE
- *   - Lanes: swimlanes by ingestion door (`composerLanes.layoutLanes`), drag to
- *     retarget. Steps only; the LAUNCH/PROOF bands stand in for the anchors.
+ *   - Lanes: the ChainStage in its editable mode (design v26 §4.1) — the same
+ *     lane stage the scenario sheet previews and Run detail draws live. Lanes
+ *     are signal paths read from each step's command, so there is nothing to
+ *     drag: a card is a button that selects its step. Tenant rules sit in the
+ *     Cortex Engine band. Zoom scales the stage; it never goes below 0.62.
  *   - Run: the REAL `build_causality_graph` (`RunGraph`) — EXPECTED | CONFIRMED |
  *     BROKEN straight through, never synthesized — over a read-only spine whose
  *     cards carry each step's real run state. With no run it says so.
@@ -54,19 +57,18 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { layoutCausalityGraph } from './composerLayout.js'
-import { effectiveChannel, PIVOTS } from './composerDraft.js'
+import { PIVOTS } from './composerDraft.js'
 import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
 import { canConnect } from './composerSpine.js'
-import { layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
 import { signalBadge } from './composerSignal.js'
-import { COMPOSER_LANES } from './povdata/corpus.js'
 import {
-  buildGraph, SNAP, PLANE_TINT, STATE_TINT, CGO_ID, PROOF_ID, GRAPH_LAYOUT,
+  buildGraph, SNAP, STATE_TINT, CGO_ID, PROOF_ID, GRAPH_LAYOUT,
 } from './composerGraph.js'
 import {
   detectionChips, contentHeadline, ruleLines, OWNERSHIP_MEANING,
 } from './composerContent.js'
-import { LANE_COL_X, LANE_COL_PITCH } from './composerLanes.js'
+import ChainStage from './ChainStage.jsx'
+import { doorTitle, MIN_STAGE_SCALE } from './chainStage.js'
 
 /**
  * What the spine actually is, said in the caption. It used to read "single
@@ -97,23 +99,6 @@ const KIND_TINT = {
   alert: 'var(--cortex-success, #2f9e44)',
 }
 
-/** Lane key → the band label and sub-label ('WIRE' → 'LIVE TRAFFIC'). */
-const LANE_LABEL = Object.fromEntries(COMPOSER_LANES.map(([key, label]) => [key, label]))
-const LANE_SUB = Object.fromEntries(COMPOSER_LANES.map(([key, , sub]) => [key, sub]))
-
-/** Why a lane cannot be changed by dragging. Shown when a card is dropped in
- *  another lane; the card snaps back. */
-const LANE_REFUSAL = 'A step\'s lane follows what its command does. Change the command, or the channel in the Inspector.'
-
-/** The door badge's title: the path in words, the plugin, where it runs; or
- *  why the path could not be read. */
-function doorTitle(sig) {
-  if (!sig) return ''
-  if (sig.unplaced) return `signal path not read: ${sig.reason}`
-  const where = sig.runsOn === 'SIM' ? 'runs in SimCore\'s own process' : 'runs on the beacon'
-  const plugin = sig.plugins?.length ? ` · plugin ${sig.plugins.join(', ')}` : ''
-  return `${LANE_LABEL[sig.path] || sig.path} · ${LANE_SUB[sig.path] || ''}${plugin} · ${where}`
-}
 
 /** Curved connector between two resolved ports (Run-lens SVG only). */
 function edgePath(from, to) {
@@ -589,20 +574,8 @@ const DesignGraph = forwardRef(function DesignGraph({
     }
   }
   const runLens = lens === 'run'
-  const lanesLens = lens === 'lanes'
   const rfRef = useRef(null)
   const [refusal, setRefusal] = useState(null)
-
-  // Lane layout (Lanes lens only) — steps at x=order, y=door band.
-  const laneLayout = useMemo(
-    () => (lanesLens ? layoutLanes(steps) : null),
-    [lanesLens, steps],
-  )
-  const lanePos = useMemo(() => {
-    const m = new Map()
-    if (laneLayout) for (const n of laneLayout.nodes) m.set(n.id, n)
-    return m
-  }, [laneLayout])
 
   // Stable per-step callbacks, keyed by index, so the node memo below does not
   // rebuild its data closures every render (which would clobber React Flow's
@@ -617,9 +590,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   // The pure graph, then callbacks injected into node/edge data.
   const built = useMemo(
     () => buildGraph(draft, steps, {
-      // The door badge on Design/Run reads the step's own channel/plane: a
-      // lane override is arrangement on the Lanes lens, and the plane lanes
-      // (CC/BVM/ENG) do not change how the step launches.
+      // The door badge on Design/Run reads the step's own channel and command.
       selectedId, runLens, causalityStates, layout: storedLayout,
       content, selectedRuleKey, stepHeights,
     }),
@@ -627,7 +598,7 @@ const DesignGraph = forwardRef(function DesignGraph({
       content, selectedRuleKey, stepHeights],
   )
 
-  hasRailRef.current = !!built.rail && !lanesLens
+  hasRailRef.current = !!built.rail
 
   // Correlation expectations with no rule behind them, per step. A property of
   // the STEP's chips, so it shows on every lens and whether or not the rail is.
@@ -638,38 +609,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   }, [unbound])
 
   const rfNodes = useMemo(() => {
-    // Lanes lens: steps only, positioned by band; no cgo/proof nodes (the
-    // LAUNCH/PROOF bands say the same thing).
-    const base = lanesLens
-      ? steps.map((s, i) => {
-        const ln = lanePos.get(s.id)
-        const plane = s.detections?.[0]?.plane || draft.plane || null
-        return {
-          id: s.id, type: 'step',
-          position: ln ? { x: ln.x, y: ln.y } : { x: 40, y: 40 },
-          dragHandle: '.chain-node__grip',
-          data: {
-            kind: 'step', step: s, order: i + 1, selected: selectedId === s.id,
-            tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
-            runState: null, runLens: false,
-            signal: ln ? ln.signal : null,
-            channelKind: effectiveChannel(s) === 'eal' ? 'eal' : (s.target ? 'target' : null),
-          },
-        }
-      }).concat(
-        // Rules sit in the Cortex Engine band, in the columns AFTER the last
-        // step, so a rule can never land on a step that is itself in that band.
-        built.nodes.filter((n) => n.type === 'rule').map((n, k) => ({
-          ...n,
-          position: {
-            x: LANE_COL_X + (steps.length + k) * LANE_COL_PITCH,
-            y: laneLayout?.lanes.find((b) => b.key === 'ENG')?.nodeY ?? n.position.y,
-          },
-        })),
-      )
-      : built.nodes
-
-    return base.map((n) => {
+    return built.nodes.map((n) => {
       if (n.type !== 'step') {
         // cgo/proof: inject the scope-link navigation.
         if (n.type === 'cgo') {
@@ -700,16 +640,13 @@ const DesignGraph = forwardRef(function DesignGraph({
       }
     })
   }, [
-    built, lanesLens, steps, lanePos, selectedId, runLens, draft,
+    built, steps, selectedId, runLens,
     tenantName, agentName, onNavigate, onSelectStep, onMoveStep, onDuplicateStep, onRemoveStep,
-    laneLayout, unboundByStep, onSelectRule,
+    unboundByStep, onSelectRule,
   ])
 
   const rfEdges = useMemo(() => {
-    const base = lanesLens
-      ? built.edges.filter((e) => e.type === 'causality' || e.type === 'content')
-      : built.edges
-    return base.map((e) => {
+    return built.edges.map((e) => {
       if (e.type === 'content') {
         return { ...e, markerEnd: { type: MarkerType.Arrow, color: 'var(--cortex-steel, #6B7E8E)' } }
       }
@@ -734,7 +671,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         },
       }
     })
-  }, [built, lanesLens, runLens, onEdgeDelete, onSetPivot])
+  }, [built, runLens, onEdgeDelete, onSetPivot])
 
   // Design-lens stitch overlay: the entity-join edges the context IMPLIES,
   // EXPECTED-only (authored intent, never outcome). Computed from the LTR node
@@ -743,7 +680,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   // vertical-spine coordinates. A key nothing consumes, or a single consumer,
   // draws no edge; consecutive consumers in step order draw one hop each.
   const stitchEdges = useMemo(() => {
-    if (runLens || lanesLens || !showStitch) return []
+    if (runLens || !showStitch) return []
     const planted = plantedKeys(stitchModel)
     if (!planted.length) return []
     const posById = new Map(built.nodes.filter((n) => n.type === 'step').map((n) => [n.id, n.position]))
@@ -760,25 +697,12 @@ const DesignGraph = forwardRef(function DesignGraph({
       }
     }
     return out
-  }, [runLens, lanesLens, showStitch, stitchModel, steps, built.nodes])
+  }, [runLens, showStitch, stitchModel, steps, built.nodes])
 
-  // ── Node change handling (position commit on drop + lane retarget) ──
+  // ── Node change handling (position commit on drop) ──
   const onNodesChange = useCallback((changes) => {
     for (const c of changes) {
       if (c.type === 'position' && c.dragging === false && c.position) {
-        if (lanesLens) {
-          // A lane is read from what the step does, so a drop cannot change
-          // it: the card snaps back to its slot, and a drop in ANOTHER lane
-          // says why instead of silently retargeting (the old behaviour wrote
-          // the channel or a presentation-only override).
-          const before = lanePos.get(c.id)
-          if (!before) continue
-          setLiveNodes((nds) => nds.map((n) => (
-            n.id === c.id ? { ...n, position: { x: before.x, y: before.y } } : n
-          )))
-          if (laneAtY(c.position.y) !== before.lane) setRefusal({ title: 'Lane not changed', reason: LANE_REFUSAL })
-          continue
-        }
         if (c.id === CGO_ID || c.id === PROOF_ID) continue
         // Only a STEP has a stored position. A rule node is not draggable, and
         // this keeps it out of `composer_layout` whatever React Flow reports.
@@ -790,7 +714,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         )
       }
     }
-  }, [onNodeMoved, lanesLens, lanePos, steps])
+  }, [onNodeMoved, steps])
 
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnNodesChange = onNodesChange
@@ -1065,22 +989,14 @@ const DesignGraph = forwardRef(function DesignGraph({
     },
   }), [])
 
-  // Lanes fits the whole band stage (all seven bands, not just the cards);
   // Design/Run fit the nodes into the region the drawers leave visible.
-  const ruleCols = built.nodes.filter((n) => n.type === 'rule').length
-  const laneStageW = laneLayout ? laneLayout.bounds.width + ruleCols * LANE_COL_PITCH : 0
-  const laneStageH = laneLayout ? laneLayout.bounds.height : 0
   const fitForLens = useCallback((rf) => {
     userMovedRef.current = false
-    if (lanesLens) {
-      rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
-    } else {
-      rf.fitView({ duration: 0, padding: fitPadding(), maxZoom: 1.2 })
-    }
+    rf.fitView({ duration: 0, padding: fitPadding(), maxZoom: 1.2 })
     // fitPadding reads a ref; deliberately not a dep (see viewInsets above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lanesLens, laneStageW, laneStageH])
-  const fitKey = lanesLens ? `lanes:${laneStageW}x${laneStageH}` : lens
+  }, [])
+  const fitKey = lens
 
   const miniColor = useCallback((n) => {
     if (n.type === 'cgo') return 'var(--tx2, #C7C7C7)'
@@ -1155,19 +1071,17 @@ const DesignGraph = forwardRef(function DesignGraph({
             />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
             <Controls showInteractive={false}>
-              {!lanesLens && (
-                <ControlButton
-                  onClick={() => setMiniPinned((v) => !v)}
-                  title={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
-                  aria-label={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
-                  aria-pressed={miniPinned}
-                  className={'composer-minimap-toggle' + (miniPinned ? ' composer-minimap-toggle--on' : '')}
-                >
-                  ▣
-                </ControlButton>
-              )}
+              <ControlButton
+                onClick={() => setMiniPinned((v) => !v)}
+                title={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                aria-label={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                aria-pressed={miniPinned}
+                className={'composer-minimap-toggle' + (miniPinned ? ' composer-minimap-toggle--on' : '')}
+              >
+                ▣
+              </ControlButton>
             </Controls>
-            {!lanesLens && (miniPinned || moving) && (
+            {(miniPinned || moving) && (
               <MiniMap
                 pannable
                 zoomable
@@ -1178,31 +1092,7 @@ const DesignGraph = forwardRef(function DesignGraph({
               />
             )}
 
-            {laneLayout && (
-              <ViewportPortal>
-                <div
-                  data-testid="composer-lane-bands"
-                  aria-hidden="true"
-                  style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -1 }}
-                >
-                  {laneLayout.lanes.map((b) => (
-                    <div
-                      key={b.key}
-                      className={'composer-lane' + (STEP_LANES.includes(b.key) ? '' : ' composer-lane--terminal')}
-                      data-lane={b.key}
-                      style={{ top: b.top, height: b.h, width: Math.max(laneStageW, 1200), background: b.fill }}
-                    >
-                      <span className="composer-lane__label">{b.label}</span>
-                      <span className="composer-lane__sub">
-                        {b.sub}{STEP_LANES.includes(b.key) ? ` · ${b.count}` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </ViewportPortal>
-            )}
-
-            {built.rail && !lanesLens && (
+            {built.rail && (
               <ViewportPortal>
                 <div
                   className="composer-rail"
@@ -1418,11 +1308,26 @@ export default function ComposerCanvas({
 }) {
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
+  const lanesLens = lens === 'lanes'
   const hasSteps = steps.length > 0
 
-  const zoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))
+  // Run and Lanes zoom by state (neither is a React Flow pane). The Lanes stage
+  // never goes below 0.62 (v26 §6), so neither does the number it shows.
+  const zoomFloor = lanesLens ? MIN_STAGE_SCALE : 0.5
+  const zoomOut = () => setZoom((z) => Math.max(zoomFloor, Math.round((z - 0.1) * 10) / 10))
   const zoomIn = () => setZoom((z) => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))
   const zoomReset = () => setZoom(1)
+  const shownZoom = lanesLens ? Math.max(MIN_STAGE_SCALE, zoom) : zoom
+
+  // Tenant rules the chain cites, for the stage's Cortex Engine band.
+  const stageRules = useMemo(
+    () => (showContent && content && Array.isArray(content.rules) ? content.rules : []).map((r) => ({
+      key: r.key,
+      label: r.ruleId || r.key,
+      sub: ruleLines(r).content,
+    })),
+    [showContent, content],
+  )
 
   const designGraphRef = useRef(null)
   const [designZoom, setDesignZoom] = useState(1)
@@ -1521,10 +1426,10 @@ export default function ComposerCanvas({
 
         {canvasView !== 'yaml' && (
           <div className="composer-canvas__zoom" role="group" aria-label="Zoom">
-            {runLens ? (
+            {runLens || lanesLens ? (
               <>
                 <button type="button" className="canvas-view" aria-label="Zoom out" onClick={zoomOut}>−</button>
-                <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={zoomReset}>{Math.round(zoom * 100)}%</button>
+                <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={zoomReset}>{Math.round(shownZoom * 100)}%</button>
                 <button type="button" className="canvas-view" aria-label="Zoom in" onClick={zoomIn}>+</button>
               </>
             ) : (
@@ -1605,12 +1510,30 @@ export default function ComposerCanvas({
 
           {loadingOrigin && <div className="destination-loading">loading {fromId}…</div>}
 
-          {hasSteps && !runLens && (
+          {hasSteps && !runLens && !lanesLens && (
             <DesignGraph
               ref={designGraphRef}
               onZoomChange={setDesignZoom}
               {...graphProps}
             />
+          )}
+
+          {hasSteps && lanesLens && (
+            <div className="composer-canvas__stage" data-testid="composer-chain">
+              <ChainStage
+                mode="editable"
+                steps={steps}
+                cgo={draft.cgo || null}
+                plane={draft.plane || null}
+                teardown={draft.teardown || null}
+                rules={stageRules}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onSelectRule={onSelectRule}
+                zoom={zoom}
+                label="Chain lanes"
+              />
+            </div>
           )}
 
           {hasSteps && runLens && (

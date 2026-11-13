@@ -8,8 +8,13 @@ import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
-import RunList from '../components/console/RunList.jsx'
-import { absoluteTime, detectionCell, runAgent } from '../components/console/runRows.js'
+import RunList, { resultCell } from '../components/console/RunList.jsx'
+import { absoluteTime, runAgent } from '../components/console/runRows.js'
+import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecycle.js'
+import useReadBack from '../components/console/useReadBack.jsx'
+import ResultOfBar from '../components/console/ResultOfBar.jsx'
+import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
+import { Button } from '../components/console/kit/index.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
 import { COMPONENTS } from '../components/console/componentModel.js'
@@ -411,8 +416,10 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 // Run history list → single Run Detail surface keyed by runId with
 // Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
-function RunsSurface({ params = {}, setParams = () => {}, onAbortRun = () => {} }) {
+function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
+  // One Read back for the list and the run's page (design v26 §4.6).
+  const { reading, outcomes, readBack } = useReadBack()
   // The live-run telemetry used to be a permanent shell row above every
   // destination. It is a property of the RUN, so it belongs on the run's own
   // surface — the header pill already answers "is something in flight" from
@@ -467,6 +474,10 @@ function RunsSurface({ params = {}, setParams = () => {}, onAbortRun = () => {} 
           params={params}
           setParams={setParams}
           onOpen={(id) => setParams({ run: id, tab: 'live', scenario: null, status: null, page: null }, { replace: true })}
+          onReadBack={readBack}
+          onOpenResults={(id) => onNavigate('proof', { run: id })}
+          reading={reading}
+          outcomes={outcomes}
         />
       </div>
     )
@@ -482,6 +493,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onAbortRun = () => {} 
         onSubTab={(tab) => setParams({ tab })}
         onBack={() => setParams({ run: null, tab: null }, { replace: true })}
         onAbort={onAbortRun}
+        onNavigate={onNavigate}
         onError={() => {}}
       />
     </Suspense>
@@ -520,9 +532,9 @@ function LastRunCard({ onOpen = () => {} }) {
   const isLive = !!running
   const stats = [
     ['Status', shown.status || 'unknown'],
-    // `detectionCell` carries the truthfulness rule: a failed run with no hit
-    // reads `unproven`, a run with no Result rows reads a dash.
-    ['Detections', detectionCell(shown).text],
+    // The same result cell as the run list: no detection count until the run
+    // has been read back, `unproven` for a failed run with no hit.
+    ['Result', resultCell(shown, runLifecycle(shown)).text],
     ['Started', absoluteTime(shown.started_at) || '—'],
     // The agent is the run's `target` column — this card used to read two
     // field names that no response ever carried.
@@ -542,7 +554,7 @@ function LastRunCard({ onOpen = () => {} }) {
         <span className="mono last-run__id">{id}</span>
         <span className="last-run__spacer" />
         <span className="mono last-run__cta">
-          {isLive ? 'Follow the live run →' : 'Open the evidence →'}
+          {isLive ? 'Follow the live run →' : 'Open the run →'}
         </span>
       </div>
       <div className="last-run__title">
@@ -654,25 +666,80 @@ const ReadinessSurface = withSuspense(ReadinessView)
 // Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
 // Read-back & integrations, and the firewall steps are Firewall's Setup and
 // Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
-// Proof & Export is its own destination now. It used to be a sub-tab of a run,
-// which meant the artefact a POV actually delivers was two clicks inside the
-// thing that produced it. EvidenceView takes its run as props rather than
-// reading the provider, so this wrapper supplies the same active/last run the
-// header pill and the telemetry read — the three cannot disagree — and lets a
-// `?run=` deep link pin a specific one.
-function ProofSurface({ params = {} }) {
-  const { runs, activeRun, lastRun } = useEnvironment()
+// Results (design v26 §4.6). Always about ONE run, named in the "Result of"
+// bar, with a switcher across the runs that have been read back. The run is
+// `?run=` when the URL names one, otherwise the newest read-back run — never
+// the live run or the last run to end, because neither has results until the
+// tenant has been read for it. A run that has not been read back gets its bar,
+// the reason and Read back instead of a scorecard, and with no run read back
+// at all the page says so and points at Runs. Results never appear without a
+// run.
+function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+  const { runs, scenarios } = useEnvironment()
+  const { reading, outcomes, readBack } = useReadBack()
   const runParam = openParam(params, 'run')
-  const pinnedRun = useMemo(() => {
-    if (!runParam) return null
-    return runs.find((r) => idMatches(runIdOf(r), runParam)) || null
-  }, [runs, runParam])
+  // `runs` is newest first, so this list is too.
+  const readBackRuns = useMemo(() => runs.filter((r) => r && readBackOf(r)), [runs])
+  const selected = useMemo(() => {
+    if (runParam) return runs.find((r) => idMatches(runIdOf(r), runParam)) || null
+    return readBackRuns[0] || null
+  }, [runs, runParam, readBackRuns])
+
+  if (!selected) {
+    return (
+      <div className="evidence results-empty" data-testid="results-empty">
+        <div className="view-head"><div><h1>Report</h1></div></div>
+        {runs.length === 0 ? (
+          <div className="results-empty__body">
+            <p>No runs yet. Results come from a run that has finished and been read back from the tenant.</p>
+            <Button variant="primary" onClick={() => onNavigate('library')}>Run</Button>
+          </div>
+        ) : runParam ? (
+          <div className="results-empty__body">
+            <p>Run <span className="mono">{runParam}</span> is not on this POVengine.</p>
+            <p>Pick a run on <a href="#/runs">Runs</a>.</p>
+          </div>
+        ) : (
+          <div className="results-empty__body">
+            <p>
+              No run has been read back yet. A run must be read back from the tenant before it has
+              results: Read back a finished run on <a href="#/runs">Runs</a>.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const id = runIdOf(selected)
+  const lifecycle = runLifecycle(selected, { reading: reading.has(id) })
+  const scenarioName = scenarios.find((x) => (x.scenario_id || x.id) === selected.scenario_id)?.name || null
+  const bar = (
+    <ResultOfBar
+      run={selected}
+      lifecycle={lifecycle}
+      scenarioName={scenarioName}
+      readBackRuns={readBackRuns}
+      onSwitch={(next) => setParams({ run: next })}
+      onOpenRun={() => onNavigate('runs', { run: id, tab: 'live' })}
+    />
+  )
+
+  if (lifecycle.phase !== PHASE.READY) {
+    return (
+      <div className="evidence">
+        <div className="view-head"><div><h1>Report</h1></div></div>
+        {bar}
+        <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
+      </div>
+    )
+  }
+
   return (
     <Suspense fallback={<DestinationLoading />}>
       <EvidenceView
-        activeRun={activeRun}
-        lastRun={lastRun}
-        pinnedRun={pinnedRun ? { runId: runIdOf(pinnedRun), scenarioId: pinnedRun.scenario_id, status: pinnedRun.status } : null}
+        pinnedRun={{ runId: id, scenarioId: selected.scenario_id, status: selected.status }}
+        intro={bar}
         onError={() => {}}
       />
     </Suspense>

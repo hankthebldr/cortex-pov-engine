@@ -91,6 +91,12 @@ services:
       # `server` may name, besides the address a request arrives on. Empty is
       # the request's own origin only; see .env.example.
       - CORTEXSIM_PUBLIC_URLS=${CORTEXSIM_PUBLIC_URLS:-}
+      # Opt-in MCP server at /mcp. It is mounted only when the flag is true AND
+      # the token is set; a token only admits a client to /mcp, and is never a
+      # tenant credential. See .env.example.
+      - CORTEXSIM_MCP_HTTP=${CORTEXSIM_MCP_HTTP:-false}
+      - CORTEXSIM_MCP_TOKEN=${CORTEXSIM_MCP_TOKEN:-}
+      - CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=${CORTEXSIM_MCP_ALLOW_HOST_ACTIONS:-false}
     # Container stdout is capped at 5 x 20 MB. json-file (Docker's default
     # driver) otherwise keeps every line under /var/lib/docker for the life of
     # the container; the app's own rotating handler caps only its file copy. A
