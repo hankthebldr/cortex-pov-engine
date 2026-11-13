@@ -2659,7 +2659,7 @@ name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
 **Host actions are gated (spec §7.2).** Every tool with network `host` and class
 `write` or `destructive` — today `cortexsim.run.launch` and `cortexsim.run.abort` —
 stays registered but, unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is true, refuses
-with `MCP_HOST_ACTION_DISABLED` before any request reaches SimCore. The refusal
+with `MCP_HOST_ACTION_DISABLED` (the launch/abort request is never sent to SimCore). The refusal
 carries `data = {"console": "#/library" | "#/runs", "execute_as_human": "curl -X POST
 <base>/api/runs … -d '<json>'"}` (abort: `curl -X POST <base>/api/runs/<id>/abort`).
 One rule covers both transports: the stdio entry reads the env var, then

@@ -30,7 +30,7 @@ REMEDIATION: dict[str, str] = {
     SIMCORE_SHAPE_UNKNOWN: "the SimCore response did not match what this tool reads; check the SimCore version",
     SIMCORE_TRANSPORT_ERROR: "the request reached SimCore but no complete answer came back; check SimCore's log before retrying a tenant-class call",
     MCP_INVALID_ARGUMENTS: "fix the arguments; the tool's inputSchema lists the accepted fields",
-    MCP_HOST_ACTION_DISABLED: "a human runs the previewed request from the console, or the operator sets CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=1 and restarts SimCore",
+    MCP_HOST_ACTION_DISABLED: "a human runs the previewed request from the console, or the operator sets CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=1 and restarts SimCore (HTTP) or the stdio MCP process",
 }
 
 

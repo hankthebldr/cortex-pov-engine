@@ -210,13 +210,15 @@ def boot_main(tmp_path, monkeypatch, restore_core_modules):
     handlers_before = list(root.handlers)
 
     def _boot(*, http: bool, allowed_hosts: str = "", guard_hosts: str = "",
-              token: str | None = None):
+              token: str | None = None, host_actions: str = "false"):
         monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
         monkeypatch.setenv("CORTEXSIM_STATIC_DIR", str(static))
         monkeypatch.setenv("CORTEXSIM_ENV", "development")
         monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
         monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
         monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
+        # A developer .env must not flip the host-action gate under test.
+        monkeypatch.setenv("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS", host_actions)
         if token is None:
             # Settings also reads .env from the working directory; an empty
             # env var beats a developer's token there.

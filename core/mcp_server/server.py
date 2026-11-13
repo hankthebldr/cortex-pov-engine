@@ -103,6 +103,15 @@ _HOST_ACTION_CONSOLE = {"cortexsim.run.launch": "#/library", "cortexsim.run.abor
 
 
 def _human_curl(spec: ToolSpec, args: BaseModel, base_url: str) -> Optional[str]:
+    """The request a human runs, or ``None`` when it cannot be built (an unusable
+    run id): the refusal code never depends on this."""
+    try:
+        return _human_curl_unsafe(spec, args, base_url)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _human_curl_unsafe(spec: ToolSpec, args: BaseModel, base_url: str) -> Optional[str]:
     if spec.id == "cortexsim.run.launch":
         body = shlex.quote(json.dumps(args.to_launch_body(), sort_keys=True))  # type: ignore[attr-defined]
         return f"curl -X POST {base_url}/api/runs -H 'content-type: application/json' -d {body}"
@@ -115,7 +124,7 @@ def gate_host_actions(specs: list[ToolSpec], *, allow: bool, base_url: str) -> l
     """With ``allow`` false, every tool that acts on a customer host
     (``network == "host"`` and class write or destructive) keeps its place in
     the registry but refuses with ``MCP_HOST_ACTION_DISABLED``, naming the
-    console page and the request a human would run. Nothing is sent to SimCore.
+    console page and the request a human would run. The launch/abort request is never sent.
     """
     if allow:
         return list(specs)

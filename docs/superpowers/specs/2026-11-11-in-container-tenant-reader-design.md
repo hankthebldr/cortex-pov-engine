@@ -203,7 +203,7 @@ response or limits the response to the fields named. The phase-1 spike (§9) set
   job.
 - Claude Desktop over HTTP, or remote connectors.
 - A remote client of `/mcp`, such as Claude on a DC jumpbox. That needs a per-instance token
-  and TLS, and is a later phase. Phase 1 refuses non-loopback clients (§7.1).
+  and TLS, and is a later phase. Phase 1 refuses non-loopback clients (§7.1) (not built: bearer-only; see the §7.1 note of 2026-11-13).
 - A new container, sidecar or listener.
 - Any change to Part B's ledger semantics (`merge_class` and the disposition vocabulary).
 - XQL in the reader. XQL stays on `xsiam.xql.query`.
@@ -235,7 +235,7 @@ infrastructure gap must never read as a claim about the customer's coverage.
 
 - **One container, one process.** SimCore is one container on `0.0.0.0:8888`. The beacons
   need LAN reach, so `/mcp` cannot get a loopback-only bind; phase 1 refuses non-loopback
-  peers at the route instead (§7.1). One uvicorn process serves the console, the beacons, SSE
+  peers at the route instead (§7.1) (not built: bearer-only; see the §7.1 note of 2026-11-13). One uvicorn process serves the console, the beacons, SSE
   and `/mcp`.
 - **Shared tenant limit.** The tenant's rate limit is shared with the customer's analysts,
   so every read is explicit, cached and counted.
@@ -264,7 +264,7 @@ infrastructure gap must never read as a claim about the customer's coverage.
                    SimCore container  (one process, :8888 on 0.0.0.0)
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │ console  ── GET/POST /api/runs/{id}/tenant-evidence ──┐                     │
- │ Claude Code ── POST /mcp (loopback+Bearer) mcp_server ┤ in-process REST     │
+ │ Claude Code ── POST /mcp (Bearer only) mcp_server ┤ in-process REST     │
  │ Claude Desktop ── docker exec -i … python -m mcp_server (stdio) ─ loopback ─┤
  │                                                       ▼                     │
  │          api/ routes ── connectors/tenant_reader.py (pure shaping:          │
@@ -889,7 +889,7 @@ Then one task per branch, in this order:
 | 2 | `feature/api-tenant-request-bucket` | §7.9 at both egress points; the breaker on a connector 429 | — |
 | 3 | `feature/api-tenant-reader` | §7.3–7.4: the reader, the shared body builders, the strict envelope, the id probe and two-class agreement, the snapshots table and five routes (general ones `xsiam_tenant` only); Part B's by-id helpers delegate | Phase 0, #0, #2 |
 | 4 | `feature/ui-results-tenant-evidence` | §7.5: the panel, the Read button, the Reconcile button behind its confirm (D5), the `RunCasePanel` hint pointing at it, and the tile label | #1, #3 |
-| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer, loopback-only, refuse-to-mount, health codes and the host-action gate | — |
+| 5 | `feature/api-mcp-http-auth` | §7.1–7.2: bearer (loopback-only not built, see §7.1 note of 2026-11-13), refuse-to-mount, health codes and the host-action gate | — |
 | 6 | `feature/api-mcp-tenant-reader-tools` | §7.6 tools, the legacy lines and §7.7 framing | #3, #5 |
 | 7 | `chore/infra-mcp-desktop-launcher` | `scripts/mcp-stdio-docker.sh`. The dot-files and `~/.claude.json` edits are host-side and wait for go-ahead | #5 |
 
@@ -947,7 +947,7 @@ assumption with good syntax".
 | A by-id probe hit joins its pair in class `id`; a probe miss falls back to name + host + window and is counted in its own class; a miss is reported as `no_hit`, never as "ids differ"; an id hit on an unattributed issue never enters `both` | there is no join |
 | A general route with only reconcile's `xsiam` credential configured answers `pending` / `NO_TENANT_CONFIGURED` naming `xsiam_tenant`, and makes no outbound call | new route |
 | Bearer: no header → 401; wrong token → 401; right token → 200; flag on with no token → not mounted, health `MCP_TOKEN_MISSING` | `/mcp` answers 200 unauthenticated when mounted |
-| A non-loopback peer gets `403` / `MCP_LOOPBACK_ONLY` even with the right token | `/mcp` answers any peer |
+| A non-loopback peer gets `403` / `MCP_LOOPBACK_ONLY` even with the right token (not built: Task 13 stopped, see the §7.1 note of 2026-11-13) | `/mcp` answers any peer |
 | Over HTTP, `run.launch` and `run.abort` refuse with `MCP_HOST_ACTION_DISABLED` unless the flag is on | they execute |
 | A non-XQL catalog read charges the per-tenant bucket; a connector page charges it; a 429 on the connector path trips the breaker | these calls are unmetered |
 | KOI fixture: an issue name holding "Ignore previous instructions…" (5,000 chars, with bidi and zero-width characters) comes back capped and stripped, under `tenant_text`, with `data_notice` | there is no projection |
@@ -1040,7 +1040,7 @@ settles them, and attribution waits for it.
   it stays only as the stopgap (D3).
 - **A loopback-only second listener for `/mcp`.** It needs a second listener in one process
   and a compose change. Phase 1 gets the same reach limit by refusing non-loopback peers at
-  the route (§7.1), with no second listener, and the bearer token meets the spec's SHOULD.
+  the route (§7.1), with no second listener, and the bearer token meets the spec's SHOULD. *2026-11-13: that reason no longer holds (the route check was not built); a loopback-only listener is now a candidate for Henry's open decision.*
 - **Switching the matcher to `issue/search` now.** That is a scoring change with no
   live-tenant agreement data behind it, so it waits for phase 2.
 
@@ -1052,7 +1052,7 @@ settles them, and attribution waits for it.
   issues may carry an IP or a user instead (unverified). The reader will therefore
   under-attribute. That shows as unattributed, never as a miss.
 - **Loopback check under Docker.** If the container sees host-loopback and LAN clients from
-  the same gateway address, the phase-1 loopback check cannot be built as written (§7.1).
+  the same gateway address, the phase-1 loopback check cannot be built as written (§7.1). *2026-11-13: this risk materialised; Docker Desktop shows the bridge gateway for host-loopback, so the check was not built.*
   The builder stops and reports rather than widen it.
 - **The weaker match class.** `name_host_window` can pair an alert with a different issue
   that has the same name on the same host within the tolerance. It is reported as its own
@@ -1134,7 +1134,7 @@ settles them, and attribution waits for it.
 27. The credential kind follows the read's shape: the general tenant routes and their MCP
     tools take only `xsiam_tenant`; the run-scoped read keeps reconcile's resolution
     (§7.3).
-28. `/mcp` is loopback-only in phase 1 (`403` / `MCP_LOOPBACK_ONLY`), the builder first
+28. *(Not built, 2026-11-13: bearer-only; see the §7.1 note.)* `/mcp` is loopback-only in phase 1 (`403` / `MCP_LOOPBACK_ONLY`), the builder first
     records the peer address Docker shows, and a remote DC jumpbox client is a later phase
     (§4, §7.1).
 29. Guard-only tests are dropped per Henry's standing feedback; the envelope raise and "no

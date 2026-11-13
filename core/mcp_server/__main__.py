@@ -35,10 +35,15 @@ def _default_tenant_calls_per_minute() -> int:
 def _default_allow_host_actions() -> bool:
     """``CORTEXSIM_MCP_ALLOW_HOST_ACTIONS``: the env var, else ``config.settings``
     (the rule the /mcp mount applies), so stdio and HTTP cannot disagree.
-    Anything but an explicit true is false."""
+    An unparseable value is false."""
     raw = os.environ.get("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS")
     if raw is not None and raw.strip():
-        return raw.strip().lower() in ("1", "true", "yes", "on")
+        from pydantic import TypeAdapter, ValidationError  # noqa: PLC0415
+
+        try:  # the rule pydantic applies to the same variable in config.settings
+            return bool(TypeAdapter(bool).validate_python(raw.strip()))
+        except ValidationError:
+            return False
     from config import settings  # noqa: PLC0415
 
     return bool(settings.CORTEXSIM_MCP_ALLOW_HOST_ACTIONS)

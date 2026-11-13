@@ -92,6 +92,25 @@ def test_stdio_entry_reads_the_same_flag(monkeypatch):
     assert main(["--list-tools"]) == 0
     assert seen[-1].get("allow_host_actions") is False
 
+    # the same parsing rule as pydantic on the mount: "y" is true, junk is false
+    monkeypatch.setenv("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS", "y")
+    assert main(["--list-tools"]) == 0
+    assert seen[-1].get("allow_host_actions") is True
+    monkeypatch.setenv("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS", "banana")
+    assert main(["--list-tools"]) == 0
+    assert seen[-1].get("allow_host_actions") is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("run_id", ["", ".", ".."])
+async def test_refusal_code_survives_an_unusable_run_id(fake_simcore, run_id):
+    mcp, calls = _built(fake_simcore)
+    res = await call(mcp, "cortexsim.run.abort", run_id=run_id)
+    assert res.isError
+    assert res.structuredContent["code"] == "MCP_HOST_ACTION_DISABLED"
+    assert res.structuredContent["data"]["console"] == "#/runs"
+    assert paths(calls, "POST") == []
+
 
 @pytest.mark.filterwarnings("ignore::starlette.exceptions.StarletteDeprecationWarning")
 @pytest.mark.asyncio
@@ -100,8 +119,7 @@ async def test_http_mount_refuses_host_actions_unless_the_flag_is_set(boot_main,
     res = await main.app.state.mcp.call_tool(wire_name("cortexsim.run.abort"), {"run_id": "r1"})
     assert res.isError and res.structuredContent["code"] == "MCP_HOST_ACTION_DISABLED"
 
-    monkeypatch.setenv("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS", "true")
-    main = boot_main(http=True, token="tok-" + "q" * 40)
+    main = boot_main(http=True, token="tok-" + "q" * 40, host_actions="true")
     res = await main.app.state.mcp.call_tool(wire_name("cortexsim.run.abort"), {"run_id": "r1"})
     # allowed: it reaches the (in-process) SimCore, which has no such run — not our refusal
     assert res.structuredContent["code"] != "MCP_HOST_ACTION_DISABLED"
