@@ -729,6 +729,22 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
+
+- When every Result left the scoring denominator (`not_reached`, `not_executed` or
+  soak-pending) and no KPI was measured, the test-case verdict was `not_applicable`
+  with "0 detection(s) carry no measurable threshold". The run report then labelled
+  it "NOT SCOREABLE" and the console greyed it out, as if the test case could not be
+  scored. In fact nothing had been tested. Such a run now scores `pending`, with
+  `tc_verdict_detail.reason` set to `not_executed` (or `soak_pending` when any row
+  is still soaking, because that row can still be scored), and its
+  `detail` names each `outcome_reason`. `not_applicable` keeps its one meaning: the
+  rows that ran carry no measurable threshold.
+- The run report labels such a run "PENDING — nothing executed" (or "detectors
+  are still soaking") rather than "verification outstanding".
+  `GET /api/uctc/test-cases/{id}` adds `runs.pending_reasons` and
+  `runs.latest.reason`.
+
 ### Added — HTTP collector backend (declaration, detections list, arrival check)
 
 - `GET /api/eal/data-streams/{source_key}/detections` lists the detections behind a data source.

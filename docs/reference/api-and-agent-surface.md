@@ -489,6 +489,23 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   a `missed` row (any expectation) to `not_reached` / `not_executed` and clears its
   `fail`; a later `aborted` moves it to `pending` / `RUN_ABORTED` (a Tier-1 `fail`
   becomes `pending`); a decided `detected` / `prevented` row is never replaced.
+- **A run with nothing left in the denominator is `pending`, not `not_applicable`.**
+  When every Result is `not_reached`, `not_executed` or soak-pending and no KPI was
+  measured, `verifier.score_run` returns `tc_verdict: pending`. One example is a run
+  whose every step the host reported `not_run` (`TOOL_ABSENT`). In that case
+  `tc_verdict_detail.reason` is `soak_pending` when any row is soaking (that row
+  ran, and a read back after its window closes can still score the run), and
+  `not_executed` when no row is (only a re-run can). `detail` lists each `outcome`,
+  `outcome_reason` and its count. Nothing in such a run was tested, so the test case
+  is still owed. `not_applicable` means something else: the rows that ran carry no
+  measurable threshold, or a PASS was clamped. The run report labels it "NOT
+  SCOREABLE — the test case carries no measurable threshold" and the console greys
+  it out, so using it for a run where nothing ran would misreport that run. `reason`
+  is `null` on every other score. Both report renderers take their label from
+  `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
+  executed; the test case is still owed" or "PENDING — detectors are still
+  soaking", not "PENDING — verification outstanding". The Tier-2 sweep still visits a run like this
+  because `pending` is not terminal, but it sends no XQL for excluded rows.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
 rc, reason, started_at, recorded_at}]` (`started_at` = first `/output` arrival, i.e.
@@ -1320,6 +1337,12 @@ console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
 - `is_scoreable` is surfaced deliberately — 57 of the 107 detection-backable
   rows carry no measurable threshold, so `pass` is impossible for them by
   construction.
+- The detail's `runs` block is `{total, verdicts, pending_reasons, latest}`.
+  `pending_reasons` counts the `pending` runs whose `tc_verdict_detail.reason`
+  is set (`not_executed`, `soak_pending`, see §1.3.1). Those runs need a re-run or
+  a closed soak window, not more verification. The map holds only the reasons
+  that occur, so it is `{}` when there are none. `latest.reason` carries the
+  same field for the newest run, or `null`.
 
 ### 1.15 Payload shelf (`core/api/payloads.py`, prefixes `/shelf` **and** `/k8s`)
 
