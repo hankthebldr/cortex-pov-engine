@@ -60,8 +60,15 @@ describe('runLifecycle', () => {
     expect(lc.phase).toBe('nothing')
   })
 
-  it('a pull run with output but no delivery stamp still ran (an older SimCore)', () => {
-    expect(runLifecycle(run({ delivered_at: null, output_bytes: 900 })).phase).toBe('unread')
+  it('launch warnings in the output are not a step having run', () => {
+    const tail = '!! TARGET_EGRESS_REQUIRED: TOOL-X — pull mode does not install tier-4 tools\n\n--- RUN ABORTED BY OPERATOR ---\n'
+    expect(runLifecycle(run({ status: 'aborted', delivered_at: null, output_bytes: 185, output_tail: tail })).phase)
+      .toBe('nothing')
+  })
+
+  it('a step frame with no delivery stamp still ran (an older SimCore)', () => {
+    const tail = '=== STEP 1/2 · step-01 · T1003 · identity=root ===\nok\n--- exit_code=0 duration=1s ---\n'
+    expect(runLifecycle(run({ delivered_at: null, output_bytes: 900, output_tail: tail })).phase).toBe('unread')
   })
 
   it('reads back as ready once SimCore scored it from a tenant read', () => {

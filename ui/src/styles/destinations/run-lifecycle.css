@@ -123,3 +123,7 @@
 .theme-console .results-empty__body { max-width: 640px; }
 .theme-console .results-empty__body p { margin: 0 0 12px; font: 400 13px/1.55 var(--font-ui); color: var(--tx2); }
 .theme-console .results-empty__body a { color: var(--ac-ink, var(--ac)); }
+
+/* Below the width the eight columns need, the table scrolls itself rather
+   than pushing the page sideways. */
+.theme-console .run-list .run-list__table { overflow-x: auto; }

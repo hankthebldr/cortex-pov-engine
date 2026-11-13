@@ -70,14 +70,22 @@ function endedLabel(status) {
   return null
 }
 
-/** A pull run that ended before its agent took the task ran no step. */
+// The beacon's per-step frame (agent/beacon/client.go::formatStepOutput).
+// Launch writes `!! TARGET_…` markers into the output before any step runs, so
+// "the output is not empty" does not mean a step ran; a step frame does.
+const STEP_FRAME = /^(=== STEP \d+\/\d+ ·|--- exit_code=-?\d+)/m
+
+/**
+ * A pull run that ended before its agent took the task ran no step: no
+ * delivery stamp, and no step frame in its transcript (the frame check keeps
+ * an older SimCore, which has no delivery stamp, from reading as "nothing").
+ */
 function ranNothing(run) {
   if (String(run.mode || '').toLowerCase() === 'push') return false
   if (run.delivered_at) return false
-  const bytes = Number(run.output_bytes)
-  if (Number.isFinite(bytes) && bytes > 0) return false
-  if (typeof run.output === 'string' && run.output.length > 0) return false
-  return true
+  const text = typeof run.output === 'string' ? run.output
+    : typeof run.output_tail === 'string' ? run.output_tail : ''
+  return !STEP_FRAME.test(text)
 }
 
 const STATE_WORD = { done: 'done', current: 'now', failed: 'failed', todo: 'not yet' }
