@@ -75,6 +75,7 @@ export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
             step={step}
             open={current === step.id}
             onToggle={() => setOpenId(current === step.id ? '__none__' : step.id)}
+            configure={CONFIGURE[step.id] ? () => onNavigate(CONFIGURE[step.id], { tab: 'setup' }) : null}
           >
             {step.id === 'agent' && <AgentStep step={step} onNavigate={onNavigate} />}
             {step.id === 'tenant' && <TenantStep step={step} />}
@@ -94,11 +95,20 @@ export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
   )
 }
 
-function Step({ n, step, open, onToggle, children }) {
+// Every setup step has a component behind it; Configure opens that
+// component's full Setup checklist (design v26 §11, slice 4).
+const CONFIGURE = {
+  agent: 'component-agents',
+  tenant: 'component-tenant',
+  collector: 'component-http',
+  bvm: 'component-bvm',
+}
+
+function Step({ n, step, open, onToggle, configure = null, children }) {
   const state = step.done ? 'done' : open ? 'open' : 'todo'
   return (
     <li className={`gs-step gs-step--${state}`} data-testid={`gs-step-${step.id}`} data-done={step.done}>
-      <button type="button" className="gs-step__row" onClick={onToggle} aria-expanded={open}>
+      <button type="button" className={'gs-step__row' + (configure ? ' gs-step__row--with-action' : '')} onClick={onToggle} aria-expanded={open}>
         <span className="gs-step__n" aria-hidden="true">{step.done ? '✓' : n}</span>
         <span className="gs-step__text">
           <span className="gs-step__title">
@@ -109,6 +119,9 @@ function Step({ n, step, open, onToggle, children }) {
         </span>
         <span className="gs-step__chev" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
+      {configure && (
+        <button type="button" className="kit-btn kit-btn--secondary gs-step__configure" onClick={configure}>Configure</button>
+      )}
       {open && (
         <div className="gs-step__body">
           <p className="gs-step__why">{step.why}</p>

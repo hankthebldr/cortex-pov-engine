@@ -62,10 +62,14 @@ describe('task rail', () => {
     }
   })
 
-  it('Agents, Tenant and Firewall in the submenu open their component pages', () => {
+  it('every component in the submenu opens its own component page', () => {
     const comp = navGroups().flatMap((g) => g.items).find((i) => i.id === 'components')
     const to = Object.fromEntries(comp.children.map((c) => [c.key, c.destination]))
-    expect(to).toMatchObject({ agent: 'component-agents', tenant: 'component-tenant', ngfw: 'component-firewall' })
+    expect(to).toEqual({
+      pov: 'component-pov', agent: 'component-agents', tenant: 'component-tenant', http: 'component-http',
+      bvm: 'component-bvm', ngfw: 'component-firewall', xdrc: 'component-xdrc', engine: 'component-engine',
+    })
+    for (const id of Object.values(to)) expect(navOwner(id), id).toBe('components')
   })
 
   it('every off-rail page names a parent that is on the rail', () => {

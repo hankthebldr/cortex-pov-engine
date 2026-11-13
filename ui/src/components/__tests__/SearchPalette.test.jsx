@@ -110,7 +110,7 @@ describe('⌘K search', () => {
     dialog = await openSearch()
     search(dialog, 'POVengine')
     fireEvent.click(within(dialog).getByRole('button', { name: /^POVengine.*Component/ }))
-    await waitFor(() => expect(window.location.hash).toBe('#/components?open=pov'))
+    await waitFor(() => expect(window.location.hash).toBe('#/component-pov'))
   })
 
   it('lists every component, and each opens where the rail opens it', async () => {
@@ -118,9 +118,9 @@ describe('⌘K search', () => {
     render(<AppConsole />)
     const dialog = await openSearch()
     search(dialog, 'Cortex Engine')
-    // Every component has a place now: its own page, or its row on Components.
+    // Every component has its own page now, including those SimCore cannot see.
     fireEvent.click(within(dialog).getByRole('button', { name: /Cortex Engine.*Component/ }))
-    await waitFor(() => expect(window.location.hash).toBe('#/components?open=engine'))
+    await waitFor(() => expect(window.location.hash).toBe('#/component-engine'))
   })
 
   it('closes on Escape', async () => {

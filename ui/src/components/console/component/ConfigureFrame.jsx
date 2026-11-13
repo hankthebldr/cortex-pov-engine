@@ -26,7 +26,8 @@ import { setConfirmedKey, useConfirmed } from '../useSetupProgress.js'
  *     test?(ctx, { progress }) → Promise<result>
  *     body?(ctx)    → node          inputs or an embedded surface }
  * `fields` and `command` may be functions of ctx, so a step can show a value
- * an earlier step produced (`ctx.shared`).
+ * an earlier step produced (`ctx.shared`, written by a Test's `share` or a
+ * body's `setShared`).
  *
  * A RESULT is { state, issue?, detail?, rows?, share? }:
  *   state   passed | failed | degraded | pending | cant_check
@@ -92,6 +93,7 @@ export default function ConfigureFrame({
   const stepCtx = useCallback((step) => ({
     ...ctx,
     shared,
+    setShared: (patch) => setShared((sh) => ({ ...sh, ...patch })),
     draft: drafts[step.id] || {},
     setDraft: (patch) => setDrafts((d) => ({ ...d, [step.id]: { ...(d[step.id] || {}), ...patch } })),
   }), [ctx, shared, drafts])

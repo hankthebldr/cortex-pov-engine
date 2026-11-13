@@ -30,7 +30,7 @@ import { Button, ErrorBadge, PageIcon, StatusIcon } from '../kit/index.js'
  *   issueStep     the Setup step the issue line's badge opens
  *   services      [{ id, name, status, word?, since?, drill? }]
  *   servicesEmpty the line shown when there are no services to list
- *   config        [{ id, label, state: ok|missing|changed|cant_check, detail?, drill? }]
+ *   config        [{ id, label, state: ok|missing|changed|cant_check|confirmed, detail?, drill? }]
  *   manageTab     { id, label, render() } | null
  *   setup()       renders the Configure frame
  *   onTest()      → Promise<{ state, issue?, step? }>; omitted = no Test button
@@ -41,7 +41,9 @@ const CONFIG_LOOK = {
   missing:    { status: 'down',     word: 'Missing',     rank: 0 },
   changed:    { status: 'degraded', word: 'Changed',     rank: 1 },
   cant_check: { status: 'unknown',  word: "Can't check", rank: 2 },
-  ok:         { status: 'up',       word: 'OK',          rank: 3 },
+  // The DC ticked the step that sets it up; POVengine cannot read it. Never OK.
+  confirmed:  { status: 'unknown',  word: 'You confirmed', rank: 3 },
+  ok:         { status: 'up',       word: 'OK',          rank: 4 },
 }
 
 export default function ComponentPage({

@@ -35,6 +35,36 @@ export const COMPONENTS = Object.freeze([
 
 export const COMPONENT_KEYS = COMPONENTS.map((c) => c.key)
 
+/**
+ * The Configure step ids of the components SimCore has no API for. Their
+ * status is the DC's ticks on those steps (stored as '<key>:<step id>'):
+ * every step ticked reads "You confirmed"; anything less reads Can't check.
+ */
+export const COMPONENT_STEPS = Object.freeze({
+  bvm: ['image', 'deploy', 'console', 'register', 'syslog', 'reach'],
+  xdrc: ['installer', 'install', 'profile', 'policy', 'arrive'],
+  engine: ['create', 'install', 'run'],
+})
+
+const NO_READ = {
+  bvm: 'POVengine has no way to see a Broker VM',
+  xdrc: 'POVengine has no way to see an XDR Collector',
+  engine: 'POVengine has no way to see a Cortex Engine',
+}
+
+function confirmedStatus(key, confirmed, extraYes = false) {
+  const ids = COMPONENT_STEPS[key]
+  const ticked = ids.filter((id) => confirmed?.[`${key}:${id}`]).length
+  if (extraYes || ticked === ids.length) {
+    return { status: 'unknown', word: YOU_CONFIRMED, detail: `You confirmed it is set up; ${NO_READ[key].replace('has no way to see', 'cannot see')}` }
+  }
+  return {
+    status: 'unknown',
+    word: CANT_CHECK,
+    detail: ticked ? `${NO_READ[key]} · you confirmed ${ticked} of ${ids.length} steps` : NO_READ[key],
+  }
+}
+
 export function componentByKey(key) {
   return COMPONENTS.find((c) => c.key === key) || null
 }
@@ -199,12 +229,11 @@ export function componentStatuses({
     agent: agentStatus(Array.isArray(agents) ? agents : [], agentsLoaded, agentsError),
     tenant: tenantStatus(Array.isArray(tenants) ? tenants : [], tenantsLoaded, tenantsError),
     http: httpStatus(collectorTargets, collectorError, confirmed || {}),
-    bvm: confirmed?.bvm
-      ? { status: 'unknown', word: YOU_CONFIRMED, detail: 'You confirmed it is set up; POVengine cannot see it' }
-      : { status: 'unknown', word: CANT_CHECK, detail: 'POVengine has no way to see a Broker VM' },
+    // Get started's own Broker VM tick counts as confirming the whole thing.
+    bvm: confirmedStatus('bvm', confirmed || {}, !!confirmed?.bvm),
     ngfw: ngfwStatus(firewalls, firewallError),
-    xdrc: { status: 'unknown', word: CANT_CHECK, detail: 'POVengine has no way to see an XDR Collector' },
-    engine: { status: 'unknown', word: CANT_CHECK, detail: 'POVengine has no way to see a Cortex Engine' },
+    xdrc: confirmedStatus('xdrc', confirmed || {}),
+    engine: confirmedStatus('engine', confirmed || {}),
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMPONENTS, componentStatuses, issueCount } from '../componentModel.js'
+import { COMPONENTS, COMPONENT_STEPS, componentStatuses, issueCount } from '../componentModel.js'
 
 /**
  * Each component's status comes from what SimCore actually holds, or it reads
@@ -146,6 +146,17 @@ describe('components SimCore has no API for', () => {
   it('Broker VM says "you confirmed" once the DC ticked it', () => {
     expect(statuses({ confirmed: { bvm: true } }).bvm.word).toBe('You confirmed')
     expect(statuses().bvm.word).toBe("Can't check")
+  })
+  it('each of them reads "You confirmed" once every Setup step is ticked, and counts the ticks before that', () => {
+    for (const key of ['bvm', 'xdrc', 'engine']) {
+      const ids = COMPONENT_STEPS[key]
+      const all = Object.fromEntries(ids.map((id) => [`${key}:${id}`, true]))
+      const one = { [`${key}:${ids[0]}`]: true }
+      expect(statuses({ confirmed: all })[key], key).toMatchObject({ status: 'unknown', word: 'You confirmed' })
+      const partial = statuses({ confirmed: one })[key]
+      expect(partial.word, key).toBe("Can't check")
+      expect(partial.detail, key).toMatch(new RegExp(`1 of ${ids.length}`))
+    }
   })
 })
 

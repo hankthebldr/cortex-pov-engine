@@ -68,13 +68,14 @@ describe('Components page', () => {
     fireEvent.click(within(row('Firewall')).getByRole('button', { name: 'Configure' }))
     expect(onNavigate).toHaveBeenLastCalledWith('component-firewall', { tab: 'setup' })
     fireEvent.click(within(row('Broker VM')).getByRole('button', { name: 'Configure' }))
-    expect(onNavigate).toHaveBeenLastCalledWith('start', { step: 'bvm' })
+    expect(onNavigate).toHaveBeenLastCalledWith('component-bvm', { tab: 'setup' })
   })
 
-  it('offers no button where there is nothing to open yet', async () => {
-    mount()
-    for (const name of ['XDR Collector', 'Cortex Engine']) {
-      expect(within(row(name)).queryAllByRole('button'), name).toHaveLength(0)
+  it('every component, seen or not, has somewhere to Configure it', async () => {
+    const { onNavigate } = mount()
+    for (const [name, id] of [['POVengine', 'component-pov'], ['XDR Collector', 'component-xdrc'], ['Cortex Engine', 'component-engine']]) {
+      fireEvent.click(within(row(name)).getByRole('button', { name: 'Configure' }))
+      expect(onNavigate).toHaveBeenLastCalledWith(id, { tab: 'setup' })
     }
   })
 

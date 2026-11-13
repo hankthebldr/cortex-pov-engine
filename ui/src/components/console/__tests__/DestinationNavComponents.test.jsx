@@ -80,7 +80,7 @@ describe('rail — journeys and the Components submenu', () => {
     fireEvent.click(within(group).getByRole('button', { name: /firewall/i }))
     expect(onNavigate).toHaveBeenCalledWith('component-firewall', undefined)
     fireEvent.click(within(group).getByRole('button', { name: /broker vm/i }))
-    expect(onNavigate).toHaveBeenLastCalledWith('components', { open: 'bvm' })
+    expect(onNavigate).toHaveBeenLastCalledWith('component-bvm', undefined)
   })
 
   it('the Components label itself opens the Components page', () => {
