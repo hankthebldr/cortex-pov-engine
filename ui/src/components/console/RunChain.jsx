@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react'
 import ChainStage from './ChainStage.jsx'
+import BrokenStepSheet from './BrokenStepSheet.jsx'
 import { draftFromScenario } from './composerDraft.js'
 import { buildStepRows, parseStepTranscript } from './useRunStepTail.js'
 import { liveStepStates, laneDestination } from './runChain.js'
@@ -52,11 +53,22 @@ export default function RunChain({ runId, run, lifecycle, onNavigate = () => {} 
   }, [ready, runId, readAt])
 
   const draft = useMemo(() => (scenario ? draftFromScenario(scenario) : null), [scenario])
+  const rows = useMemo(
+    () => (scenario ? buildStepRows(scenario.steps || [], run, parseStepTranscript(run?.output)) : []),
+    [scenario, run],
+  )
   const states = useMemo(() => {
     if (!scenario || !lifecycle) return {}
-    const rows = buildStepRows(scenario.steps || [], run, parseStepTranscript(run?.output))
     return liveStepStates(rows, lifecycle.phase, results)
-  }, [scenario, run, lifecycle, results])
+  }, [scenario, rows, lifecycle, results])
+
+  // A Broken card opens its troubleshooting sheet (§4.6); no other card is a
+  // button, because no other card has anywhere to go.
+  const [brokenId, setBrokenId] = useState(null)
+  useEffect(() => { setBrokenId(null) }, [runId])
+  const brokenRow = brokenId && states[brokenId] === 'broken'
+    ? rows.find((r) => r.id === brokenId) || null
+    : null
 
   if (!scenarioId) return null
   if (scenarioError) {
@@ -77,11 +89,22 @@ export default function RunChain({ runId, run, lifecycle, onNavigate = () => {} 
         plane={draft.plane}
         teardown={draft.teardown}
         states={states}
+        onSelect={setBrokenId}
+        canSelect={(_, state) => state === 'broken'}
         onOpenLane={(lane) => {
           const to = laneDestination(lane)
           if (to) onNavigate(to.destination, to.params)
         }}
         label={`Chain of run ${runId}`}
+      />
+      <BrokenStepSheet
+        open={!!brokenRow}
+        step={brokenRow ? draft.steps.find((s) => s.id === brokenRow.id) || null : null}
+        row={brokenRow}
+        runId={runId}
+        scenarioId={scenarioId}
+        onClose={() => setBrokenId(null)}
+        onNavigate={onNavigate}
       />
     </section>
   )
