@@ -126,7 +126,7 @@ every string as an escaped HCL literal.
 
 | Method | Full path | Purpose | Response |
 |--------|-----------|---------|----------|
-| GET | `/api/health` | One diagnostic surface, zero outbound calls | Always HTTP 200: `{"status":"ok"\|"degraded", "version", "commit", "env", "components":{…}, "degraded_components":[…], "checked":[17 keys], "not_checked":[…]}`. **`status` reads `degraded` on every deployment today** because `api_auth` is `API_UNAUTHENTICATED` by design. |
+| GET | `/api/health` | One diagnostic surface, zero outbound calls | Always HTTP 200: `{"status":"ok"\|"degraded", "version", "commit", "env", "started_at", "uptime_seconds", "components":{…}, "degraded_components":[…], "checked":[17 keys], "not_checked":[…]}`. **`status` reads `degraded` on every deployment today** because `api_auth` is `API_UNAUTHENTICATED` by design. `started_at` (UTC) and `uptime_seconds` are this SimCore process's own clock; the console header shows the uptime. |
 
 > The response now carries `version` and `commit` (GAP-API-007 is closed).
 > The 17 `checked` components are `db`, `scenario_catalog` (active corpus;
