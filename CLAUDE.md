@@ -34,7 +34,9 @@ your behaviour in this repo:
   is 6-8 commits, not one and not forty.
 - **Do not open PRs unless asked.** Commits land on the topic branch; `gh pr create`
   waits for an explicit "open a PR" / "ship it".
-- **Force-push, `reset --hard`, and branch deletion still require confirmation.**
+- **Force-push, `reset --hard`, and deleting anything that still holds unmerged or
+  uncommitted work require confirmation.** Merged branches and their worktrees are
+  deleted once nothing on them can be lost (`CONTRIBUTING.md` § *Cleaning up*).
 
 ### The two gates, in one line each
 
