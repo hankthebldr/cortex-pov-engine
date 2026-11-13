@@ -5,7 +5,7 @@
   "status": "active",
   "metadata": {
     "created_at": "2026-11-11T07:30:00+00:00",
-    "updated_at": "2026-11-11T07:30:00+00:00",
+    "updated_at": "2026-11-13T15:41:00+00:00",
     "authors": [
       {
         "name": "Henry Reed",
@@ -45,8 +45,8 @@
   },
   "identity": {
     "name": "Akira (Howling Scorpius) Linux-Host Kill Chain — Real On-Host File Encryption",
-    "summary": "An Akira operator, landed via a stolen remote session and running as root, evades defenses, reads /etc/shadow and SSH keys, stages a company share, then REALLY encrypts a synthetic victim tree with openssl AES-256 under an RSA-wrapped key, appends the .akira extension, drops the akira_readme.txt note and deletes staged backups — the real encryption raising the agent's anti-ransomware verdict.",
-    "description": "The on-host Linux variant of Akira (Unit 42 Howling Scorpius, 2024-12-02), distinct from the vCenter->ESXi hypervisor path (SIM-EDR-019) and from the SAFE-MODE non-encrypting host variant (SIM-EDR-008). It executes for real on a bare Ubuntu host against a synthetic tree under /var/tmp/.cortexsim-akira — never real user data — and cleans up fully. Only two detections are declared because only two fire on the lab agent's own judgement: the built-in 'Suspicious access to shadow file' ABIOC (Low, proven on pov-target-01 2026-11-11) on the /etc/shadow read, and the agent's anti-ransomware / behavioural-threat verdict (Medium+) on the real mass-encryption. The host-mass-encryption BIOCs, the hunt XQL and the Akira IOCs on this card are hunting / TIM content, NOT declared scenario expectations, because the lab tenant shows 0 queryable custom BIOCs and a declared-but-unfirable detection scores a working tenant as a miss.",
+    "summary": "An Akira operator, landed via a stolen remote session and running as root, evades defenses, reads /etc/shadow and SSH keys, stages a company share, then REALLY encrypts a synthetic victim tree with openssl AES-256 under an RSA-wrapped key, appends the .akira extension, drops the akira_readme.txt note and deletes staged backups — raising the built-in 'Suspicious data encryption' Analytics BIOC.",
+    "description": "The on-host Linux variant of Akira (Unit 42 Howling Scorpius, 2024-12-02), distinct from the vCenter->ESXi hypervisor path (SIM-EDR-019) and from the SAFE-MODE non-encrypting host variant (SIM-EDR-008). It executes for real on a bare Ubuntu host against a synthetic tree under /var/tmp/.cortexsim-akira — never real user data — and cleans up fully. Only two detections are declared because only two fire on the lab agent's own judgement, both built-in XDR Analytics BIOCs and both Low, so neither creates or joins a case: 'Suspicious access to shadow file' (proven on pov-target-01 2026-11-11) on the /etc/shadow read, and 'Suspicious data encryption' (observed on pov-target-01 2026-11-11 in report mode) on the openssl encryption. The BTP mass-encryption Prevention raised nothing in that run and stays on this card undeclared until product question PM-PRV-07 says what makes Linux BTP act. The host-mass-encryption BIOCs, the hunt XQL and the Akira IOCs on this card are hunting / TIM content, NOT declared scenario expectations, because the lab tenant shows 0 queryable custom BIOCs and a declared-but-unfirable detection scores a working tenant as a miss.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -187,7 +187,7 @@
     "privilege_required": "root",
     "prerequisites": [
       {
-        "description": "Cortex XDR agent on the Linux endpoint with the anti-ransomware / behavioural-threat module enabled (lab: 9.4.0.470 on Ubuntu, report-mode malware policy).",
+        "description": "Cortex XDR agent on the Linux endpoint reporting to a tenant with the built-in Analytics BIOCs enabled (lab: 9.4.0.470 on Ubuntu, report-mode malware policy).",
         "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
       },
       {
@@ -242,7 +242,7 @@
           "linux"
         ],
         "alert_name_pattern": "Behavioral Threat*",
-        "description": "The Cortex XDR agent's anti-ransomware / behavioural-threat module raising a Medium+ verdict on the real AES mass-encryption with a uniform .akira extension and a ransom note dropped across directories. SIM-EDR-025 declares it with outcome: detect, so report mode scores it detected (the case seed); a block-mode paired run would instead grade the agent's kill of the encryptor (two witnesses). AUTHORED, NOT PROVEN: no run has performed REAL on-host encryption against this lab agent, so the exact alert name and the verdict itself are unconfirmed — the alert_name_pattern is the matcher key to tune against the first observed verdict. tenant-verified: 0.",
+        "description": "UNDECLARED: SIM-EDR-025 does not reference this entry. The Cortex XDR agent's Global Behavioral Threat Protection acting on the real AES mass-encryption with a uniform .akira extension and a ransom note dropped across directories (Linux has no Ransomware Protection module). On pov-target-01 2026-11-11, in report mode, openssl encrypting about 40 files under /var/tmp raised no behavioral threat issue (docs/lab/2026-11-11-unit42-deep-real-verification.md). What makes Linux BTP act (file count, rate, path, extension rewrite, ransom note or the encrypting binary) and whether it raises anything in report mode is open product question PM-PRV-07. A Prevention row is seeded into every run, and a report-mode run scores even an outcome: prevent row as a detect, so declaring it today would score a working tenant a miss. The alert_name_pattern is unconfirmed.",
         "severity": "high",
         "mitre_techniques": [
           "T1486"
@@ -260,6 +260,17 @@
         ],
         "behavioral_profile": "statistical",
         "causality_anchor": "The unpopular process opening /etc/shadow (here cat) and its causality chain; how rarely that process touches shadow across the tenant decides whether it fires."
+      },
+      {
+        "name": "Suspicious data encryption",
+        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 in report mode (SIM-EDR-025 run 46f4394b, rule_id 30df8779-1e1e-4c5a-a9de-40cb94d837e7) one second after the openssl burst, described by the tenant as 'The process openssl used to encrypt data on the local file system' and mapped to T1486 and T1027.013, with case_ids empty. The name is the built-in alert name verbatim so the matcher keys on it. Severity is the rule's, not the policy's, so it is Low in block mode too. The logic below approximates the trigger for hunting; it is not the built-in's code.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"openssl\"\n| filter action_process_image_command_line contains \" enc \"",
+        "severity": "low",
+        "mitre_technique_ids": [
+          "T1486",
+          "T1027.013"
+        ],
+        "causality_anchor": "The openssl process encrypting local files and its causality chain (in the lab, the root operator shell under the CortexSim beacon)."
       }
     ],
     "biocs": [
@@ -408,7 +419,7 @@
       }
     ],
     "analytics_modules": [
-      "Not declared: beyond the built-in 'Suspicious access to shadow file' ABIOC, no multi-event baseline XDR Analytics alert has been observed on this endpoint for this chain, so none is an expectation."
+      "Not declared: beyond the built-in 'Suspicious access to shadow file' and 'Suspicious data encryption' ABIOCs, no multi-event baseline XDR Analytics alert has been observed on this endpoint for this chain, so none is an expectation."
     ]
   },
   "panw_mapping": {
@@ -421,17 +432,18 @@
           "XDR-ANTI-RANSOMWARE-MASS-ENCRYPTION"
         ],
         "license_required": "pro",
-        "evidence_query": "Issue from the agent's anti-ransomware / behavioural-threat module (detection.method BEHAVIORAL/RANSOMWARE) on the openssl mass-encryption, severity Medium or higher — the case seed. Authored, not yet observed."
+        "evidence_query": "Undeclared (PM-PRV-07): an issue from Global Behavioral Threat Protection on the openssl mass-encryption. None was raised in report mode on pov-target-01 2026-11-11."
       },
       {
         "module": "cortex-xdr",
         "submodule": "behavioral-analytics",
         "coverage_tier": "detection",
         "rule_ids": [
-          "XDR-ABIOC-SHADOW-FILE-ACCESS"
+          "XDR-ABIOC-SHADOW-FILE-ACCESS",
+          "XDR-ABIOC-SUSPICIOUS-DATA-ENCRYPTION"
         ],
         "license_required": "pro",
-        "evidence_query": "Issue 'Suspicious access to shadow file' (detection.method ANALYTICS_BIOC, Low) on the cat read of /etc/shadow."
+        "evidence_query": "Issues 'Suspicious access to shadow file' on the cat read of /etc/shadow and 'Suspicious data encryption' on the openssl encryption (both detection.method ANALYTICS_BIOC, Low)."
       },
       {
         "module": "cortex-xsiam",
@@ -441,14 +453,14 @@
           "XSIAM-CR-EDR-0025"
         ],
         "license_required": "advanced",
-        "evidence_query": "The anti-ransomware verdict (Medium+) carries a case_id; hunting correlation CR-EDR-0025 groups encrypt/note/recovery legs on one host if installed."
+        "evidence_query": "No declared detection carries a case_id: both are Low Analytics BIOCs, and a Low issue never creates or joins a case (lab 2026-11-11: the encryption BIOC had case_ids []). Hunting correlation CR-EDR-0025 groups encrypt/note/recovery legs on one host if installed."
       }
     ],
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-EDR-025",
         "name": "Akira Linux-Host Kill Chain Terminating In Real File Encryption",
-        "description": "Evade defenses, steal local credentials, enumerate and stage a share, encrypt for real with an RSA-wrapped AES key, inhibit recovery — and prove Cortex XDR raises an anti-ransomware verdict on the real encryption and the shadow-access ABIOC on the credential read.",
+        "description": "Evade defenses, steal local credentials, enumerate and stage a share, encrypt for real with an RSA-wrapped AES key, inhibit recovery — and prove Cortex XDR raises the built-in 'Suspicious data encryption' Analytics BIOC on the real encryption and the shadow-access ABIOC on the credential read.",
         "threat_steps": [
           {
             "threat_step_id": "TS-EDR-025A",
@@ -467,9 +479,9 @@
           },
           {
             "threat_step_id": "TS-EDR-025B",
-            "objective": "The real mass-encryption raises a Medium+ anti-ransomware verdict.",
+            "objective": "The real encryption raises the built-in 'Suspicious data encryption' Analytics BIOC.",
             "preconditions": [
-              "The anti-ransomware / behavioural-threat module enabled."
+              "Linux endpoint with the Cortex agent; built-in Analytics BIOCs enabled."
             ],
             "steps": [
               "Enumerate and stage the company share.",
@@ -477,8 +489,7 @@
               "Delete the staged backups."
             ],
             "success_criteria": [
-              "Anti-ransomware verdict (Medium+) on the encryption — the case seed.",
-              "The verdict carries a case_id."
+              "Analytics BIOC 'Suspicious data encryption' (Low, T1486) fires on the openssl encryption."
             ],
             "expected_score_weight": 0.7
           }
@@ -493,7 +504,7 @@
       "Keep immutable, offline or object-locked backups so recovery inhibition cannot reach them."
     ],
     "detection_engineering": [
-      "The headline detection is the agent's behavioural anti-ransomware verdict on the real encryption, not a filename rule: key the matcher on that verdict's alert name once observed.",
+      "The declared impact detection is the built-in 'Suspicious data encryption' Analytics BIOC (Low, no case). The agent's behavioral verdict on the encryption stays undeclared until PM-PRV-07 says what makes Linux BTP act; a filename rule is hunting content.",
       "Do not over-declare: the lab tenant has 0 queryable custom BIOCs, so the mass-encryption BIOCs and CR-EDR-0025 are hunting content, not scored expectations.",
       "Hunt XQL uses actor_causality_id and timestamp_diff(current_time(), _time, \"SECOND\") — bare causality_id and to_timestamp(current_time() - N) are rejected by the tenant."
     ]

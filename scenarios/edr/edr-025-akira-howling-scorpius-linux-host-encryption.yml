@@ -4,18 +4,25 @@ version: "1.0"
 status: active
 
 plane: EDR
-# Two agent-raised detections are the headline (the ABIOC on the shadow read and
-# the anti-ransomware Prevention verdict on the encryption). The other four steps
-# declare a Tier-2-verify XQL row that CONFIRMS that step's own telemetry exists
-# (the SIM-EDR-023 shape): these are scored only by POST /api/runs/{id}/verify
-# (1 h lookback), NOT by the report-mode agent-detection pass, so they cannot
-# manufacture a false agent-detection miss on a healthy tenant. The
-# host-mass-encryption BIOCs, hunt XQL and Akira IOCs stay on card TTP-2026-0200
-# as hunt/undeclared content because the lab tenant has 0 queryable custom BIOCs
-# and a declared-but-unfirable rule would score a working tenant as a MISS.
+# Two built-in XDR Analytics BIOCs are the agent-raised detections: "Suspicious
+# access to shadow file" on the step-02 shadow read and "Suspicious data
+# encryption" on the step-05 openssl encryption (the latter observed on
+# pov-target-01 2026-11-11, docs/lab/2026-11-11-unit42-deep-real-verification.md).
+# Both are Low, and a Low issue never creates or joins a case, so as authored this
+# scenario yields signals, not an incident. The other four steps declare a
+# Tier-2-verify XQL row that CONFIRMS that step's own telemetry exists (the
+# SIM-EDR-023 shape): these are scored only by POST /api/runs/{id}/verify (1 h
+# lookback), NOT by the report-mode agent-detection pass, so they cannot
+# manufacture a false agent-detection miss on a healthy tenant.
+# Undeclared on purpose, kept on card TTP-2026-0200: the BTP mass-encryption
+# Prevention (in report mode, ~40 files under /var/tmp raised no behavioral
+# threat issue; what makes Linux BTP act is open product question PM-PRV-07, and
+# no expectation field restricts a row to the block half of a paired run, so a
+# silent module would score a miss in report mode), plus the host-mass-encryption
+# BIOCs, hunt XQL and Akira IOCs (the lab tenant has 0 queryable custom BIOCs).
+# A declared-but-unfirable detection scores a working tenant as a MISS.
 detection_types:
   - ABIOC
-  - Prevention
   - XQL
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
@@ -75,8 +82,8 @@ execution_identity:
     - root
 
 # Push is supported: unlike the persistence scenarios (SIM-EDR-023/024) this
-# chain has NO deferred re-execution — the encryption and the agent's
-# anti-ransomware verdict are produced synchronously inside step-05, so a
+# chain has NO deferred re-execution — the encryption and the telemetry its
+# detection reads are produced synchronously inside step-05, so a
 # bundle's `trap cleanup EXIT` runs only AFTER every step and every detection
 # event has already been emitted. The tools used (openssl, tar, findmnt,
 # systemctl, chattr) are all present on a clean Ubuntu 22.04 base.
@@ -105,32 +112,32 @@ success_criteria: |
   the real .akira extension and drops the real akira_readme.txt note. No real
   user data is ever touched; cleanup fully removes the tree, the .akira files,
   the notes and the decoy service.
-  Two agent-raised detections are the headline (the tenant shows 0 queryable
-  custom BIOCs, so grouping rests on Medium+ runtime verdicts, not hand-authored
-  rules):
-    1. step-05 Prevention — the agent's anti-ransomware / behavioural-threat
-       module raises a Medium+ verdict on the real mass-encryption. Declared
-       with outcome: detect, so report mode scores it detected; a block-mode
-       paired run would instead grade the kill (two witnesses).
+  Two agent-raised detections, both built-in XDR Analytics BIOCs (the tenant
+  shows 0 queryable custom BIOCs, so nothing hand-authored is declared):
+    1. step-05 ABIOC — the built-in "Suspicious data encryption" (Low, T1486)
+       on the real openssl encryption. Observed on pov-target-01 2026-11-11 in
+       report mode (run 46f4394b, one second after the openssl burst). Severity
+       is the rule's, not the policy's, so it is Low in block mode too.
     2. step-02 ABIOC — the built-in "Suspicious access to shadow file" XDR
        Analytics BIOC (Low) on the real /etc/shadow read. Proven on this lab
        2026-11-11 (issues 1500417/1500418 on useradd/chpasswd); here the actor
        is `cat`, a distinct unpopular reader of /etc/shadow.
+  Both are Low, and a Low issue never creates or joins a case: as authored this
+  chain produces signals, not an incident. Grouping it needs a Medium+ anchor
+  (the SIM-EDR-023 shape) or an agent behavioral verdict on the encryption. The
+  BTP mass-encryption Prevention is deliberately NOT declared: in the same lab
+  run it raised nothing, and what makes Linux BTP act on mass encryption is
+  open (PM-PRV-07). It stays on card TTP-2026-0200 as undeclared content.
   The other four steps (01 defense evasion, 03 discovery, 04 staging, 06 recovery
   inhibition) each declare ONE XQL row that only CONFIRMS that step's own
   telemetry exists. These are scored solely by Tier-2 verify
   (POST /api/runs/{id}/verify, 1 h lookback) — never by the report-mode
   agent-detection pass — so they cannot manufacture a false agent-detection miss
   on a healthy tenant. Run verify within the hour or they read pending, not fail.
-  PASS: at least 80% of the six declared step-detections are observed. The two
-  agent detections are load-bearing; the anti-ransomware verdict is the one that
-  should carry a case. Rarity caveat: the shadow-file ABIOC judges rarity and
-  may read missed on a host where that process/file pair is already baselined —
-  the 80% bar tolerates that one miss.
-  tenant-verified: 0 — no run of this scenario has executed against a live
-  Cortex tenant, and no run has ever performed REAL on-host encryption against
-  this agent, so the anti-ransomware verdict in particular is authored, NOT
-  proven. Authored is not proven.
+  PASS: at least 80% of the six declared step-detections are observed. Rarity
+  caveat: the shadow-file ABIOC judges rarity and may read missed on a host
+  where that process/file pair is already baselined (it did not re-fire in the
+  2026-11-11 run window) — the 80% bar tolerates that one miss.
 moat_tier: "LEAD"
 
 steps:
@@ -308,12 +315,13 @@ steps:
     # generate an RSA keypair and a random AES key, AES-256-CBC-encrypt each
     # staged file to <file>.akira, remove the plaintext, RSA-wrap the AES key
     # into akira_wrapped.key and destroy the plaintext AES key, then drop the
-    # real akira_readme.txt note in every directory. This rapid mass-rewrite-
-    # with-uniform-extension-plus-note behaviour is what the agent's
-    # anti-ransomware / behavioural-threat module scores Medium+ — that verdict
-    # is the declared detection. Not masked: the step exits non-zero if the
-    # encryption loop fails, and the agent killing the encryptor (block mode)
-    # surfaces as a signal, never a swallowed error.
+    # real akira_readme.txt note in every directory. On pov-target-01 (report
+    # mode, 2026-11-11) the openssl encryption raised the built-in "Suspicious
+    # data encryption" Analytics BIOC (Low, no case) one second after the burst
+    # and NO behavioral-threat issue; that observed BIOC is the declared
+    # detection. Not masked: the step exits non-zero if the encryption loop
+    # fails, and an agent kill of the encryptor (block mode) surfaces as a
+    # signal, never a swallowed error.
     command: |
       set -eu
       sleep 40
@@ -354,20 +362,19 @@ steps:
     causality:
       parent_step: step-04
       pivot: process_lineage
+    # The BTP mass-encryption Prevention (card detection_id
+    # prevention-anti-ransomware-mass-encryption) is NOT declared: it did not
+    # fire in report mode, and whether Linux BTP acts at a larger file count,
+    # in a home directory or only in block mode is PM-PRV-07, still open. A
+    # Prevention row is seeded into every run whatever its outcome, and a report-
+    # mode run scores even an outcome: prevent row as a detect, so declaring it
+    # would score a working tenant a miss.
     expected_detections:
       - plane: EDR
-        type: Prevention
-        # outcome: detect -> report mode scores it detected (no two-witness
-        # requirement, no S-21 masking constraint). A block-mode paired run on
-        # the same endpoint would instead grade the agent's kill of the
-        # encryptor. btp is the module (Linux has no Ransomware Protection
-        # module; Global BTP Rules stop encryption there); the alert-name pattern is
-        # authored, NOT lab-proven — no real on-host encryption has run against
-        # this agent, so this verdict is the scenario's headline unproven claim.
-        outcome: detect
-        description: "Agent anti-ransomware / behavioural-threat verdict (Medium+) on the real AES mass-encryption with uniform .akira extension and ransom-note drop. Scored detected in report mode; the case seed. Authored, not yet observed in the lab."
+        type: ABIOC
+        description: "Built-in XDR Analytics BIOC 'Suspicious data encryption' (Low, T1486, no case): openssl encrypts data on the local file system. Observed on this endpoint 2026-11-11 in report mode, one second after the openssl burst. Low in block mode too (severity is the rule's)."
         ttp_ref: "TTP-2026-0200"
-        detection_id: prevention-anti-ransomware-mass-encryption
+        detection_id: abioc-suspicious-data-encryption
 
   - id: step-06
     name: "Inhibit recovery — delete the staged backup copies and disable the decoy service"
@@ -414,7 +421,7 @@ cleanup:
 
 author: "Henry Reed"
 created: "2026-11-11"
-last_updated: "2026-11-11"
+last_updated: "2026-11-13"
 tags:
   - edr
   - linux

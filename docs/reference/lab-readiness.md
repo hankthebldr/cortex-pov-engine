@@ -77,7 +77,7 @@
 | SIM-EDR-021 | EDR | BIOC/XQL | 3/3 | agent |  |
 | SIM-EDR-023 | EDR | ABIOC/Prevention/BIOC/XQL/Correlation | 4/4 | agent |  |
 | SIM-EDR-024 | EDR | ABIOC/BIOC/Correlation | 4/4 | agent |  |
-| SIM-EDR-025 | EDR | ABIOC/Prevention/XQL | 6/6 | agent |  |
+| SIM-EDR-025 | EDR | ABIOC/XQL | 6/6 | agent |  |
 | SIM-EMAIL-001 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-002 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-003 | EMAIL | BIOC/XQL/Correlation | 3/3 | eal |  |
