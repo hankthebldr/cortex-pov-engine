@@ -3,7 +3,6 @@ import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import { Toast, TOAST_MS } from './components/console/kit/index.js'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
-import ReadinessBanner from './components/console/ReadinessBanner.jsx'
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
 import useConsoleRouter from './app/useConsoleRouter.js'
 import {
@@ -337,17 +336,6 @@ function ConsoleShell() {
         instance={instance}
         onOpenInstance={openInstance}
         instanceTargetLabel={instanceTargetLabel}
-        // SimCore answered, but is not whole. The two deployments that break
-        // hardest — booted without tools/ or without scenarios/ — both report
-        // `status: "ok"`, so the first signal a DC gets today is an empty
-        // Library that reads as "this product has no content".
-        // Passed as the shell's `banner` slot, NOT as a child: as a child it
-        // rendered inside `.view` and pushed the destination's own filter rail
-        // down by its height while the nav rail stayed pinned, leaving the two
-        // rails 159px out of alignment.
-        banner={router.destination !== 'preflight' && router.destination !== 'readiness' ? (
-          <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
-        ) : null}
       >
         {/* Every fetcher below swallows its failure into an empty list, so a
             dead SimCore reads as "nothing configured" on all ten destinations.
