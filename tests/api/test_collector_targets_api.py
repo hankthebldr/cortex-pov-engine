@@ -402,3 +402,44 @@ def test_put_without_declaration_behaves_as_before(db_file):
     assert r.json()["dataset"] == "okta_sso_raw"
     assert r.json()["declaration"] is None
     assert r.json()["last_arrival"] is None
+
+
+def test_reput_without_declaration_rederives_it_for_the_new_url(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "api-lab.example.test")
+    native = _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic")
+    with _app(db_file) as (c, _, _s):
+        assert _put_declared(c, native, url=LAB_URL).status_code == 200
+        # old panel: same dataset, no declaration, now a customer host
+        refused = _put(c, name="dec", url=URL, dataset="panw_ngfw_traffic_raw", plugins=[])
+        kept = c.get("/api/collector-targets/dec").json()
+        # a non-native declaration moving host is re-derived, not carried stale
+        assert _put_declared(c, _declared("duo", "duo", "auth"), name="duo", url=LAB_URL).status_code == 200
+        moved = _put(c, name="duo", url=URL, dataset="duo_auth_raw", plugins=[])
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert kept["url"] == LAB_URL and kept["declaration"]["lab_tenant"] is True
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["declaration"]["lab_tenant"] is False
+
+
+def test_409_names_the_native_card_dataset_when_only_it_is_native(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "acme", "fw"))
+    assert r.status_code == 409
+    text = r.json()["detail"]["detail"]
+    assert "panw_ngfw_traffic_raw" in text and "add the lab host" in text
+    assert "Name a custom vendor/product" not in text
+
+
+def test_vendor_and_product_are_stripped_before_the_native_check(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", " panw", "ngfw_traffic "))
+        blank = _put_declared(c, _declared("duo", "   ", "auth"), name="blank")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert blank.status_code == 422

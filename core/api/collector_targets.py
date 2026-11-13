@@ -25,13 +25,13 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from eal_simulator import get_default_registry
 from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
-from eal_simulator.collector_declaration import TEST_CHANNEL, dataset_for, route_verdict
+from eal_simulator.collector_declaration import NATIVE_DATASETS, TEST_CHANNEL, dataset_for, route_verdict
 from eal_simulator.ingestion_routes import tenant_datasets
 from eal_simulator.target_preflight import preflight_target
 from eal_simulator.targets import NAME_RE, TargetSpec, TargetSpecError, collector_plugin_names
@@ -49,6 +49,13 @@ class DeclarationIn(BaseModel):
     source_key: str
     vendor: str = Field(min_length=1, max_length=64)
     product: str = Field(min_length=1, max_length=64)
+
+    @field_validator("vendor", "product", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        # Stripped before the length check and before anything compares the
+        # name: " panw" must not slip past the native-dataset check.
+        return v.strip() if isinstance(v, str) else v
 
 
 class TargetPut(BaseModel):
@@ -123,10 +130,15 @@ def _declare(decl: DeclarationIn, url: str, body_dataset: Optional[str]) -> tupl
     host = host_of(url)
     lab = is_lab_tenant_host(host)
     if verdict.verdict == "native_dataset" and not lab:
-        raise _err(409, "NATIVE_DATASET_NOT_LAB_TENANT", "Native dataset on a non-lab tenant",
-                   f"{dataset!r} is a native firewall dataset and host {host!r} is not in "
+        if dataset.lower() in NATIVE_DATASETS:
+            why = (f"{dataset!r} is a native firewall dataset and host {host!r} is not in "
                    f"CORTEXSIM_DOOR_PROBE_TENANTS; synthetic records would mix into real "
                    f"firewall data. Name a custom vendor/product or add the lab host.")
+        else:
+            why = (f"source {decl.source_key!r} reads the native firewall dataset "
+                   f"{card_dataset!r} and host {host!r} is not in "
+                   f"CORTEXSIM_DOOR_PROBE_TENANTS; add the lab host to that setting.")
+        raise _err(409, "NATIVE_DATASET_NOT_LAB_TENANT", "Native dataset on a non-lab tenant", why)
     return dataset, {"source_key": decl.source_key, "vendor": decl.vendor,
                      "product": decl.product, "verdict": verdict.verdict,
                      "card_dataset": card_dataset, "lab_tenant": lab}
@@ -175,6 +187,14 @@ async def put_target(name: str, body: TargetPut,
         dataset, declaration = _declare(body.declaration, body.url, body.dataset)
 
     existing = await store.get_row(db, name)
+    if (body.declaration is None and existing is not None and existing.dataset == body.dataset
+            and {"source_key", "vendor", "product"} <= set(existing.declaration or {})):
+        # The store would keep the old declaration; re-derive it for the new URL so
+        # lab_tenant and the native refusal never describe the previous host.
+        d = existing.declaration
+        dataset, declaration = _declare(
+            DeclarationIn(source_key=d["source_key"], vendor=d["vendor"], product=d["product"]),
+            body.url, body.dataset)
     will_have_key = token is not None or (
         existing is not None and existing.secret_name is not None and not body.clear_token)
     try:  # validates kind + URL with the same rules the resolver reads them by
