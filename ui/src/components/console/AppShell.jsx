@@ -205,6 +205,15 @@ export default function AppShell({
     markFirstRunSeen()
   }, [])
 
+  // The console routes on the URL hash, so letting the skip link follow its
+  // `#cortexsim-main` fragment rewrote the route to a destination that does
+  // not exist and dropped the user on Get started. Move focus instead.
+  const mainRef = useRef(null)
+  const skipToWorkspace = useCallback((e) => {
+    e.preventDefault()
+    if (mainRef.current) mainRef.current.focus()
+  }, [])
+
   // Header / workspace, with the safety gate above while it is shown.
   const shellClass = 'pov-shell shell shell--no-phasebar' + (immersive ? ' pov-shell--immersive' : '')
 
@@ -235,7 +244,7 @@ export default function AppShell({
     >
       {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
           main workspace. Invisible until focused. */}
-      <a href="#cortexsim-main" className="skip-link">
+      <a href="#cortexsim-main" className="skip-link" onClick={skipToWorkspace}>
         Skip to workspace
       </a>
 
@@ -283,7 +292,13 @@ export default function AppShell({
           />
         )}
 
-        <main className="pov-main main" id="cortexsim-main" aria-label="POVengine workspace">
+        <main
+          ref={mainRef}
+          className="pov-main main"
+          id="cortexsim-main"
+          tabIndex={-1}
+          aria-label="POVengine workspace"
+        >
           <div className="view" key={destination}>
             {children}
           </div>
