@@ -959,12 +959,18 @@ const DesignGraph = forwardRef(function DesignGraph({
   // ── Zero-size mount guard + live zoom ──
   const paneRef = useRef(null)
   const [measured, setMeasured] = useState(false)
+  // The pane's size, rounded, for the soft refit: the page above the canvas
+  // can change height after the fit (the readiness strip appears once
+  // /api/health answers), which shrinks the pane under a viewport fitted to
+  // the taller one and put the rule card under "+ Add step" on cold loads.
+  const [paneBox, setPaneBox] = useState('')
   useEffect(() => {
     const el = paneRef.current
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
       setMeasured(width > 0 && height > 0)
+      setPaneBox(`${Math.round(width)}x${Math.round(height)}`)
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -1086,7 +1092,10 @@ const DesignGraph = forwardRef(function DesignGraph({
               // Counted from what React Flow has MEASURED, not from the derived
               // graph: a refit issued the render the rule is derived runs before
               // the node exists in the store, and frames the chain without it.
-              softKey={ruleExtentKey(liveNodes)}
+              // ...and from the pane's own size, so a pane that shrinks or
+              // grows after the fit is refitted too (still never once the DC
+              // has panned or zoomed; a refit does not resize the pane).
+              softKey={`${ruleExtentKey(liveNodes)}|${paneBox}`}
               canSoftFit={canSoftFit}
             />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
