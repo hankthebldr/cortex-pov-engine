@@ -729,6 +729,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — stdio MCP launcher for Claude Desktop
+
+- `scripts/mcp-stdio-docker.sh [--print]` execs `python -m mcp_server` inside
+  the one running SimCore container (selected by compose labels, narrowed by
+  `CORTEXSIM_COMPOSE_PROJECT`); zero or several matches exit 2. stdio runs
+  inside the container, so it needs no bearer token.
+- `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is forwarded only when set in the
+  launcher's environment.
+- `docs/reference/api-and-agent-surface.md` §9.2 now shows the authenticated
+  HTTP registration with a `headersHelper`, the Desktop stdio entry and token
+  rotation; the old unauthenticated install line is gone.
+
 ### Added — HTTP collector backend (declaration, detections list, arrival check)
 
 - `GET /api/eal/data-streams/{source_key}/detections` lists the detections behind a data source.
