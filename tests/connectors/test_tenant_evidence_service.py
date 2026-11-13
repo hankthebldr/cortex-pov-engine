@@ -395,3 +395,72 @@ def test_parse_error_reports_the_page_it_was_sent_on():
         cfg, since=datetime(2025, 11, 1), until=datetime(2025, 11, 2))
     assert res.ok is False and res.code == "XSIAM_PARSE_ERROR"
     assert res.detail["page"] == 2 and _pages_issued(res.detail) == 2 == sent["n"]
+
+
+# ── fix round 2 ────────────────────────────────────────────────────────────
+
+_OBS_1001 = {"external_id": "1001", "name": "synthetic-3",
+             "observed_at": datetime(2025, 11, 1, 12, 26, 45), "raw": {"host_name": RUN_HOST}}
+
+
+def test_refusal_after_a_window_without_filter_count_never_claims_complete_rows(session_factory):
+    """Review 2.1: a later refusal does not make an unknown-completeness window complete."""
+    from tests.connectors.tenant_fakes import OMIT
+
+    seed(session_factory, observations=[_OBS_1001])
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), filter_count=OMIT,
+                      status={"issues_by_id": 429})
+    out = read(session_factory, fake)
+    assert out["code"] == "QUOTA_REFUSED"
+    assert out["snapshot"]["payload"]["complete"] is False
+    assert "rows are complete" not in out["detail"]
+    assert "FILTER_COUNT" in out["detail"]
+
+
+def test_refusal_after_a_truncated_window_names_the_truncation(session_factory, monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES", 1)
+    seed(session_factory, observations=[_OBS_1001])
+    rows = [_issue(2000 + i) for i in range(150)]
+    out = read(session_factory, FakeTenant(issues=rows, status={"issues_by_id": 429}))
+    assert out["code"] == "QUOTA_REFUSED"
+    assert out["snapshot"]["payload"]["issues"]["truncated"] is True
+    assert "rows are complete" not in out["detail"] and "truncated" in out["detail"]
+
+
+def test_waiter_returns_the_read_that_finished_while_it_waited(session_factory, monkeypatch):
+    """Review 2.2: a first read that outlasts the minimum interval (here 0 s)
+    still serves the request that waited behind it; no second read."""
+    from config import settings
+    from models import TenantEvidenceRead
+    from sqlalchemy import func, select
+
+    monkeypatch.setattr(settings, "CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS", 0)
+    seed(session_factory)
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), cases=copy.deepcopy(CASES),
+                      endpoints=copy.deepcopy(ENDPOINTS))
+
+    def slow(method, url, headers, body, timeout):
+        time.sleep(0.1)
+        return fake(method, url, headers, body, timeout)
+
+    async def both():
+        outs = await asyncio.gather(_read(session_factory, slow), _read(session_factory, slow))
+        async with session_factory() as db:
+            stored = (await db.execute(
+                select(func.count()).select_from(TenantEvidenceRead))).scalar()
+        return outs, stored
+
+    outs, stored = asyncio.run(both())
+    assert sorted(o["read"] for o in outs) == [False, True]
+    waiter = next(o for o in outs if not o["read"])
+    first = next(o for o in outs if o["read"])
+    assert waiter["code"] == "TENANT_EVIDENCE_READ_RECENTLY"
+    assert waiter["snapshot"]["id"] == first["snapshot"]["id"]
+    assert stored == 1 and fake.total_calls == 3
+
+    # With the interval at 0 a later, separate request reads again: only a
+    # read that finished while the request waited is reused.
+    again = asyncio.run(_read(session_factory, slow))
+    assert again["read"] is True

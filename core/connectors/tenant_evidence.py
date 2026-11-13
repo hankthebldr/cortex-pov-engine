@@ -17,7 +17,9 @@ What one read does, in order:
    ``CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`` is returned, not repeated
    (``TENANT_EVIDENCE_READ_RECENTLY``), unless ``force``. The check, the read
    and the store run under one lock per (run, tenant), so two concurrent
-   requests spend one read.
+   requests spend one read: a request that waited behind a read gets that
+   read's snapshot, even when the read outlasted the interval and even with
+   ``force``.
 4. The window is ``[earliest executed_at − 300 s, min(latest matcher window
    end, now)]`` — the matcher's own windows, so both readers look at one span.
 5. ``issue/search`` over the window and the Security domain, sorted by
@@ -409,14 +411,29 @@ async def read_run_evidence(
             "tenant; configure one under /api/credentials/integrations"))
 
     tenant = service.case_ledger_tenant(cfg)
+    # The latest read before this request queues for the lock: one stored
+    # while it waited answers it, even when that read took longer than the
+    # minimum interval (its read_at is when it STARTED) and even with force —
+    # the request asked to read now, and that read is newer than the request.
+    before = await _latest_for(db, run.run_id, tenant, integ.name)
+    before_id = before.id if before is not None else None
     async with _read_lock(run.run_id, _interval_key(tenant, integ.name)):
         now = _naive_utc(now)
         interval = timedelta(seconds=settings.CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS)
+        last = await _latest_for(db, run.run_id, tenant, integ.name)
+        age = (max(now - last.read_at, timedelta(0)) if last is not None else None)
+        where = f"tenant '{tenant}'" if tenant else f"integration '{integ.name}'"
+        if last is not None and last.id != before_id:
+            return _response(
+                run, read=False, code=TENANT_EVIDENCE_READ_RECENTLY,
+                status=(last.payload or {}).get("status") or status_for(last.code),
+                retry_after=max(0, math.ceil((interval - age).total_seconds())),
+                snapshot=last, detail=(
+                    f"a read of this run from {where} (integration '{last.integration}', "
+                    f"started {last.read_at.isoformat()} UTC) finished while this request "
+                    "waited for it; its snapshot is returned instead of a second read"))
         if not force:
-            last = await _latest_for(db, run.run_id, tenant, integ.name)
-            age = (max(now - last.read_at, timedelta(0)) if last is not None else None)
             if age is not None and age < interval:
-                where = f"tenant '{tenant}'" if tenant else f"integration '{integ.name}'"
                 return _response(
                     run, read=False, code=TENANT_EVIDENCE_READ_RECENTLY,
                     status=(last.payload or {}).get("status") or status_for(last.code),
@@ -633,7 +650,9 @@ async def _read(db: AsyncSession, run: Run, results: list[Result], executed: lis
                      "are null")
                + ", and the agreement counts that need the whole window are null"
                if window_cut else
-               "The issue rows are complete; the sections after the refusal were not read")
+               ("The issue rows are complete" if truncated is False
+                else truncation_note[0].upper() + truncation_note[1:])
+               + "; the sections after the refusal were not read")
             + f". Retry in {read.quota['retry_after_seconds']}s")
     elif unscoped:
         code = UNSCOPED
