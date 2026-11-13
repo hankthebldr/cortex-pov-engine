@@ -55,12 +55,11 @@ Agents · Tenant · Firewall
   failed first run is not "done" — the step says it stopped early and links to
   the run. The suggested first run hands off to the guided launch with the
   active online agent preselected as the target.
-- **Colour rule.** Orange = the single primary action on a screen. Green =
+- **Colour rule (minimal pass; replaced by v26 §9.1 — see "The contract
+  today" below).** Orange = the single primary action on a screen. Green =
   healthy / done / detected. Amber = a real warning; red = a real failure
   (dark `--crit` moved off salmon, which read as brand orange). Everything
-  else is neutral, and "selected" reads as brightness, not hue. Implemented at
-  the token layer (`--ac-str/-ink/-soft/-line` neutral, `--ac-brand` holds the
-  hex) plus `styles/povengine-minimal.css`, loaded last.
+  else is neutral, and "selected" reads as brightness, not hue.
 - **Chrome.** Flow bar removed. The acknowledged safety notice is a slim
   neutral line (the unacknowledged consent gate is unchanged and still loud).
   The degraded-health band is one neutral line. Theater moved into ⌘K. The
@@ -117,10 +116,29 @@ its own header, which is why it is selected rather than fixed.
 No brand mark in this console is drawn, traced or reconstructed — the DS
 forbids it, and every mark above is the real embedded asset.
 
-## The contract that changed
+## The contract today (design v26 §9.1, 2026-11-13)
 
-> Superseded in part by the minimal pass above: orange is now the primary
-> action only, not "chrome". Selection, rules and eyebrows are neutral.
+Cortex green (`--ac`, `--br`; `#00CC66` in dark, the deep `#0A6231` fill in
+light so its white label clears 7.5:1) is the primary action, the selected
+state and the brand: the one filled button on a screen, the active rail bar,
+the active tab line, a selected item's soft fill and line. Green also means
+healthy / done / detected (`--pos`), so a status is never colour alone — it
+carries its glyph and word (`kit/StatusIcon`). Yellow (`--warn`) is the only
+warning colour; coral (`--crit`) is down / missing / broken / destructive.
+PANW orange is the NGFW family tint (`--family-ngfw`) and the categorical
+plane tints, nothing else; `--ac-brand` and the `--orange` aliases are
+retired. Implemented in `cortex-tokens.css` and `povengine-minimal.css`
+(loaded last); the shared constructs are `components/console/kit` with
+`styles/povengine-kit.css`. `ds-drift.test.js` pins `--br` and `--pos-str` to
+the DS's `--panw-green` and `--family-ngfw` to its `--panw-orange`; the DS
+itself still names orange its presentation accent, and the console
+deliberately does not follow it.
+
+## The contract that changed (2026-09 parity pass — history)
+
+> Superseded twice: by the minimal pass (orange = primary action only,
+> selection neutral) and then by v26 §9.1 above (green = primary and
+> selected).
 
 The previous token contract made **Cortex green the primary accent** and
 reserved **PANW orange for warn/gap signal**. This pass **inverts** that:
