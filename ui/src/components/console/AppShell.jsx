@@ -49,6 +49,8 @@ export default function AppShell({
   povName = undefined,
   // The rail item that owns the open page (a tab's parent task).
   activeNav = null,
+  // The component the open page belongs to, marked in the Components submenu.
+  activeChild = null,
   onAbortRun = () => {},
   paletteItems = [],
   onExportPOV = null,
@@ -286,6 +288,7 @@ export default function AppShell({
           <DestinationNav
             groups={navGroups}
             active={activeNav || destination}
+            activeChild={activeChild}
             onNavigate={onNavigate}
             collapsed={railCollapsed}
             onToggleCollapse={toggleRail}

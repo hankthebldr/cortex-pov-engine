@@ -17,6 +17,8 @@ import {
 import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
+import useComponentStatus from './components/console/useComponentStatus.js'
+import { componentKeyForRoute } from './app/componentRoutes.js'
 import { downloadReportBundle, getToolAdapters } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
@@ -120,6 +122,9 @@ function ConsoleShell() {
   const shelf = useShelf({ adapters: toolAdapters })
 
   const setup = useSetupProgress()
+  // Every component's status from real state: the rail's dots and the
+  // "N issues" on Components (design v26 §5).
+  const componentStatus = useComponentStatus()
 
   // Real counts only. The rail used to badge nearly every item with a number
   // from the prototype's seed catalogs ("12 components", "0/11 verified"),
@@ -128,11 +133,17 @@ function ConsoleShell() {
   const badges = useMemo(() => ({
     // Required setup steps still open — the reason to open Get started.
     setupLeft: setup.requiredLeft > 0 ? String(setup.requiredLeft) : null,
-    agentCount: env.agents.length ? String(env.agents.length) : null,
+    // Components that are Degraded or Down. Off and Unknown are not issues.
+    componentIssues: componentStatus.issues > 0
+      ? `${componentStatus.issues} issue${componentStatus.issues === 1 ? '' : 's'}`
+      : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-  }), [setup.requiredLeft, env.agents.length, env.activeRun])
+  }), [setup.requiredLeft, componentStatus.issues, env.activeRun])
 
-  const groups = useMemo(() => navGroups(badges), [badges])
+  const groups = useMemo(
+    () => navGroups(badges, { components: componentStatus.statuses }),
+    [badges, componentStatus.statuses],
+  )
 
   // ── Command palette items (destinations + context switches + scenario jumps) ─
   const paletteItems = useMemo(() => {
@@ -273,6 +284,7 @@ function ConsoleShell() {
         tenant={env.tenant}
         agent={env.agent}
         activeNav={navOwner(dest.id)}
+        activeChild={componentKeyForRoute(dest.id, router.params)}
         immersive={immersive}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was

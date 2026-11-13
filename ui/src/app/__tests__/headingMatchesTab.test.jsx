@@ -30,17 +30,20 @@ import EalConsole from '../../components/EalConsole.jsx'
 void React
 
 const tabLabel = (id) => sectionFor(id).tabs.find(([tab]) => tab === id)[1]
+// Scenarios and Launch gate are rail items now (design v26 §1), so their h1 is
+// the rail label — the same rule, read from the registry.
+const railLabel = (id) => getDestination(id).label
 const routeLabel = (id) => getDestination(id).label
 const h1Texts = () => screen.queryAllByRole('heading', { level: 1 }).map((h) => h.textContent)
 
-describe('page h1 is the tab label', () => {
-  it('Simulate › Scenarios', async () => {
+describe('page h1 is the rail or tab label', () => {
+  it('Scenarios', async () => {
     installRoutes({ 'GET /api/scenarios': { scenarios: [] }, 'GET /api/runs': { runs: [] }, 'GET /api/agents': { agents: [] } })
     render(<OperationsView />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('library')))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('library')))
   })
 
-  it('Simulate › Launch gate', async () => {
+  it('Launch gate', async () => {
     installRoutes({
       'GET /api/health': { status: 'ok', components: {} },
       'GET /api/credentials/integrations': { integrations: [] },
@@ -49,7 +52,7 @@ describe('page h1 is the tab label', () => {
       'GET /api/assertions': { assertions: [], total: 0 },
     })
     render(<ReadinessView />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('preflight')))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('preflight')))
   })
 
   it('Results › Report', async () => {
