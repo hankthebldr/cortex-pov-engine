@@ -978,6 +978,7 @@ def _key_names(mapping: dict) -> str:
     text = "[" + ", ".join(f"'{k}'" for k in shown) + "]"
     return text + (f" and {other} other key(s)" if other > 0 else "")
 
+
 def _raw_row(row: dict[str, Any]) -> dict[str, Any]:
     """Identity normaliser: the tenant reader's reads keep the raw row."""
     return row

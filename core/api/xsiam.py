@@ -389,7 +389,8 @@ async def _no_tenant_credential(session: AsyncSession, name: str,
                        "read from a tenant"),
             "tenant": name, rows_key: None, "total_count": None, "filter_count": None,
             "truncated": None, "unrecognised_values": None, "excluded_non_security": None,
-            "queries_issued": 0, "data_notice": DATA_NOTICE, "ledger": None}
+            "duplicate_rows": None, "queries_issued": 0, "data_notice": DATA_NOTICE,
+            "ledger": None}
 
 
 def _window_filters(field: str, since: Optional[datetime],
@@ -494,13 +495,14 @@ def _truncated(counts: dict[str, Any], read_to: int) -> Optional[bool]:
 def _rows_reply(name: str, rows_key: str, rows: list[dict], client: Any, *,
                 total_count: Optional[int], filter_count: Optional[int],
                 truncated: Optional[bool], unrecognised: Optional[dict],
-                excluded: Optional[int], queries: int) -> dict[str, Any]:
+                excluded: Optional[int], duplicates: Optional[int],
+                queries: int) -> dict[str, Any]:
     from connectors.tenant_reader import DATA_NOTICE  # noqa: PLC0415
 
     return {"tenant": name, rows_key: rows, "total_count": total_count,
             "filter_count": filter_count, "truncated": truncated,
             "unrecognised_values": unrecognised, "excluded_non_security": excluded,
-            "queries_issued": queries, "data_notice": DATA_NOTICE,
+            "duplicate_rows": duplicates, "queries_issued": queries, "data_notice": DATA_NOTICE,
             "ledger": _ledger_snapshot(client)}
 
 
@@ -543,7 +545,7 @@ async def search_tenant_issues(name: str, body: IssueSearchRequest,
                                             limit=body.limit, offset=body.offset,
                                             what="issue search")
     try:
-        issues, excluded, _duplicates = _project_window(rows)
+        issues, excluded, duplicates = _project_window(rows)
     except IssueShapeError as exc:
         raise XsiamParseError(str(exc)) from exc
     return _rows_reply(name, "issues", issues, client,
@@ -551,7 +553,7 @@ async def search_tenant_issues(name: str, body: IssueSearchRequest,
                        filter_count=_count(counts, "filter_count"),
                        truncated=_truncated(counts, body.offset + len(rows)),
                        unrecognised=unrecognised_values(issues), excluded=excluded,
-                       queries=pages)
+                       duplicates=duplicates, queries=pages)
 
 
 @router.post("/tenants/{name}/cases/search")
@@ -584,7 +586,7 @@ async def search_tenant_cases(name: str, body: CaseSearchRequest,
                        total_count=_count(counts, "total_count"),
                        filter_count=_count(counts, "filter_count"),
                        truncated=_truncated(counts, body.offset + len(rows)),
-                       unrecognised=None, excluded=None, queries=pages)
+                       unrecognised=None, excluded=None, duplicates=None, queries=pages)
 
 
 @router.post("/tenants/{name}/endpoints/get")
@@ -600,7 +602,9 @@ async def get_tenant_endpoints(name: str, body: EndpointGetRequest,
     op = _op_or_404("OP-ENDPOINTS-GET-ENDPOINT")
     client = await load_xsiam_client(session, name)
     reply = await client.request(op.method, op.path, json=endpoint_get_body(body.hostnames))
-    rows, meta = _read_envelope(reply, "endpoints", strict=False)
+    # Strict: a reply with no `endpoints` list is not "no record" (a lowercase
+    # `data` included). The connector's own get_endpoints read keeps its fallback.
+    rows, meta = _read_envelope(reply, "endpoints", strict=True)
     try:
         records = [project_endpoint(r) for r in rows]
     except IssueShapeError as exc:
@@ -615,4 +619,5 @@ async def get_tenant_endpoints(name: str, body: EndpointGetRequest,
         truncated = None if len(rows) >= _READ_PAGE else False
     return _rows_reply(name, "endpoints", records, client,
                        total_count=_count(meta, "total_count"), filter_count=None,
-                       truncated=truncated, unrecognised=None, excluded=None, queries=1)
+                       truncated=truncated, unrecognised=None, excluded=None,
+                       duplicates=None, queries=1)
