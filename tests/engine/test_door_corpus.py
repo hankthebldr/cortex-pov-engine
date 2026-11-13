@@ -91,7 +91,7 @@ def corpus():
 # doors counts once under each. Collector-route and underived detections are
 # counted below, not here.
 DOOR_COUNTS: dict[str, tuple[int, int]] = {
-    "xdr_agent": (505, 104),
+    "xdr_agent": (506, 105),
     "ngfw_traffic": (136, 49),
     "cloud_aws": (67, 21),
     "saas_okta": (24, 14),
@@ -130,8 +130,8 @@ COLLECTOR_BY_TYPE: dict[str, int] = {
 # measurement read only the first anchor (spec §11) and counted it as agent-only.
 # The beta merge removed 5 agent-only detections and SIM-KOI-012 added 7 (see the
 # module docstring); measured on the merged tree. SIM-EDR-025 step-05's ABIOC
-# adds 1 (2026-11-13).
-XDR_AGENT_SOLE = 504
+# adds 1 (2026-11-13) and SIM-MP-038 step-01 one more.
+XDR_AGENT_SOLE = 505
 
 
 def test_corpus_door_counts(corpus):
@@ -158,11 +158,11 @@ def test_corpus_door_counts(corpus):
                 for door in {d for element in req.all_of for d in element}:
                     door_dets[door] += 1
                     door_scen.setdefault(door, set()).add(sc["scenario_id"])
-    assert total == 1420
-    assert collector == 208
-    assert door_dets["xdr_agent"] == 505, (
+    assert total == 1430
+    assert collector == 216
+    assert door_dets["xdr_agent"] == 506, (
         "509 (514 xdr_data less the 5 on collector steps) less 5 the beta merge removed, "
-        "plus SIM-EDR-025 step-05's ABIOC")
+        "plus SIM-EDR-025 step-05's ABIOC and SIM-MP-038 step-01")
     assert xdr_sole == XDR_AGENT_SOLE
     assert {d: (door_dets[d], len(door_scen[d])) for d in door_dets} == DOOR_COUNTS
     assert set(underived) <= set(UNDERIVED_CODES)
