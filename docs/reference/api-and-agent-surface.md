@@ -503,7 +503,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   it out, so using it for a run where nothing ran would misreport that run. `reason`
   is `null` on every other score. Both report renderers take their label from
   `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
-  executed; the test case is still owed" or "PENDING — every detector is still
+  executed; the test case is still owed" or "PENDING — detectors are still
   soaking", not "PENDING — verification outstanding". The Tier-2 sweep still visits a run like this
   because `pending` is not terminal, but it sends no XQL for excluded rows.
 

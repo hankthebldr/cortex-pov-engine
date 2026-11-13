@@ -253,7 +253,7 @@ class TestExecSummary:
 
     @pytest.mark.parametrize("reason,label", [
         ("not_executed", "PENDING — nothing executed"),
-        ("soak_pending", "PENDING — every detector is still soaking"),
+        ("soak_pending", "PENDING — detectors are still soaking"),
     ])
     def test_pending_verdict_label_names_why_nothing_was_scored(self, reason, label):
         """A run where nothing reached the denominator is not "verification

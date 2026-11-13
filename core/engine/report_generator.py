@@ -342,7 +342,7 @@ _VERDICT_LABEL = {
 #: a re-run, the second needs its soak window to close.
 _PENDING_REASON_LABEL = {
     "not_executed": "PENDING — nothing executed; the test case is still owed",
-    "soak_pending": "PENDING — every detector is still soaking",
+    "soak_pending": "PENDING — detectors are still soaking",
 }
 
 
