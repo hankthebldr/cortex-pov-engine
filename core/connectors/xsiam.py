@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Sequence
 
@@ -697,110 +698,11 @@ class XsiamConnector(Connector):
                     ) -> "tuple[list[Any], int, dict[str, Any]]":
         """Return ``(rows, dropped, meta)`` for one page of ``list_key``.
 
-        ``dropped`` counts unreadable timestamps; ``meta`` carries the tenant's
-        own ``total_count`` (or the uppercase ``TOTAL_COUNT``),
-        ``FILTER_COUNT`` as ``filter_count``, and ``result_count``, so the
-        caller can tell a complete harvest from a truncated one. Cortex caps
-        a count at the string ``"9,999+"``, which is read as *capped* — an
-        admission of more, not a number. A missing count is None, never 0.
-
-        ``strict`` (the issue/case ``reply.DATA`` reads): a reply without
-        ``list_key`` raises ``XSIAM_ENVELOPE_UNRECOGNISED``; there is no
-        fallback to a lowercase ``data`` list.
+        ``dropped`` counts unreadable timestamps. The envelope rules (counts,
+        ``strict``) are :func:`parse_reply`'s, which this calls on the parsed
+        page.
         """
-        doc = json.loads(text)
-        # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
-        # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
-        # expired key arrives looking exactly like a successful query that
-        # observed nothing. Reading that as zero alerts turns an auth failure
-        # into "the customer's stack detected nothing", which is the manufactured
-        # false negative in its most damaging form: it is the number that goes in
-        # the report. Raise instead, so the caller degrades to pending.
-        if isinstance(doc, dict):
-            err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
-            if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
-                raise ConnectorError(
-                    f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
-                    f"200 response (err_code={err.get('err_code')}, "
-                    f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
-                    f"absence of alerts — no observation was made, so the run "
-                    f"stays pending rather than being scored."
-                )
-        if not isinstance(doc, dict):
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
-                f"{type(doc).__name__}. Refusing to read it as zero alerts."
-            )
-        if strict and "reply" not in doc:
-            # The issue/case envelope is `{"reply": {"DATA": ...}}`. A bare
-            # document is some other envelope (a proxy, a changed contract);
-            # reading it as these rows is a guess.
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no 'reply' wrapper "
-                f"(keys: {sorted(str(k) for k in doc)[:20]}). This is NOT an absence "
-                f"of rows — no observation was made."
-            )
-        reply = doc.get("reply", doc)
-        if not isinstance(reply, dict):
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
-                f"{type(reply).__name__}, not an object. Refusing to read it as "
-                f"zero {list_key}."
-            )
-        # A reply that names NEITHER list key is not "no rows" — the tenant
-        # always sends `alerts` / `incidents` (possibly empty). Defaulting the
-        # missing key to [] turned a login wall, a proxy's JSON, or an API
-        # change into a successful pull that observed nothing and reported
-        # 0 % coverage.
-        if list_key in reply:
-            alerts = reply[list_key]
-        elif strict:
-            # The issue/case envelope is uppercase `DATA`. A lowercase `data`
-            # here is some other envelope (an older API, a proxy, a changed
-            # contract), and reading it as these rows is a guess.
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no '{list_key}' "
-                f"(keys: {sorted(str(k) for k in reply)[:20]}); a lowercase 'data' "
-                f"is not read in its place. This is NOT an absence of rows — no "
-                f"observation was made."
-            )
-        elif "data" in reply:
-            alerts = reply["data"]
-        else:
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither '{list_key}' "
-                f"nor 'data' (keys: {sorted(str(k) for k in reply)[:20]}). This is "
-                f"NOT an absence of {list_key} — no observation was made."
-            )
-        if not isinstance(alerts, list):
-            # A dict where a list belongs means the envelope is not what we
-            # think it is. Guessing is how `len({"data": []}) == 1` happened.
-            raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of {list_key}, got "
-                f"{type(alerts).__name__}. Refusing to infer a count from "
-                f"an envelope this connector does not recognise."
-            )
-        out: list[Any] = []
-        dropped = 0
-        for a in alerts:
-            if not isinstance(a, dict):
-                continue
-            alert = normalize(a)
-            if alert is None:
-                dropped += 1
-                continue
-            out.append(alert)
-        meta: dict[str, Any] = {}
-        total, capped = _count_or_capped(reply["total_count"] if "total_count" in reply
-                                         else reply.get("TOTAL_COUNT"))
-        meta["total_count"] = total
-        meta["total_count_capped"] = capped
-        fcount, fcapped = _count_or_capped(reply.get("FILTER_COUNT"))
-        meta["filter_count"] = fcount
-        meta["filter_count_capped"] = fcapped
-        rc = reply.get("result_count")
-        meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
-        return out, dropped, meta
+        return parse_reply(json.loads(text), list_key, normalize, strict=strict)
 
     def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
         """One alert → :class:`ObservedAlert`, or None if its time is unreadable.
@@ -936,6 +838,145 @@ def alert_host(a: dict[str, Any]) -> Optional[str]:
     return _s(a.get("host_name") or a.get("endpoint_name")
               or (hosts[0] if isinstance(hosts, list) and hosts else None))
 
+
+def parse_reply(doc: Any, list_key: str,
+                normalize: Optional[Callable[[dict], Any]] = None, *,
+                strict: bool = False) -> "tuple[list[Any], int, dict[str, Any]]":
+    """``(rows, dropped, meta)`` from one parsed tenant document. THE envelope reader.
+
+    :meth:`XsiamConnector._parse_page` (the connector's paged reads) and the
+    general tenant routes in ``api/xsiam.py`` (which read through the catalog
+    client and wrap its unwrapped reply back as ``{"reply": ...}``) both call
+    this, so the two XSIAM call paths read one envelope one way.
+
+    ``normalize`` maps each dict row (default: the raw row); a ``None`` from it
+    counts in ``dropped``. ``meta`` carries the tenant's own ``total_count``
+    (or the uppercase ``TOTAL_COUNT``), ``FILTER_COUNT`` as ``filter_count``,
+    and ``result_count``, so the caller can tell a complete read from a
+    truncated one. Cortex caps a count at the string ``"9,999+"``, which is
+    read as *capped* — an admission of more, not a number. A missing count is
+    None, never 0.
+
+    ``strict`` (the issue/case ``reply.DATA`` reads): a reply without
+    ``list_key`` raises ``XSIAM_ENVELOPE_UNRECOGNISED``; there is no fallback
+    to a lowercase ``data`` list. An error names only identifier-shaped reply
+    keys (:func:`_key_names`), so no tenant free text enters a message SimCore
+    returns.
+    """
+    normalize = normalize or _raw_row
+    # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
+    # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
+    # expired key arrives looking exactly like a successful query that
+    # observed nothing. Reading that as zero alerts turns an auth failure
+    # into "the customer's stack detected nothing", which is the manufactured
+    # false negative in its most damaging form: it is the number that goes in
+    # the report. Raise instead, so the caller degrades to pending.
+    if isinstance(doc, dict):
+        err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
+        if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
+            raise ConnectorError(
+                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                f"200 response (err_code={err.get('err_code')}, "
+                f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
+                f"absence of alerts — no observation was made, so the run "
+                f"stays pending rather than being scored."
+            )
+    if not isinstance(doc, dict):
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
+            f"{type(doc).__name__}. Refusing to read it as zero alerts."
+        )
+    if strict and "reply" not in doc:
+        # The issue/case envelope is `{"reply": {"DATA": ...}}`. A bare
+        # document is some other envelope (a proxy, a changed contract);
+        # reading it as these rows is a guess.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no 'reply' wrapper "
+            f"(keys: {_key_names(doc)}). This is NOT an absence "
+            f"of rows — no observation was made."
+        )
+    reply = doc.get("reply", doc)
+    if not isinstance(reply, dict):
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
+            f"{type(reply).__name__}, not an object. Refusing to read it as "
+            f"zero {list_key}."
+        )
+    # A reply that names NEITHER list key is not "no rows" — the tenant
+    # always sends `alerts` / `incidents` (possibly empty). Defaulting the
+    # missing key to [] turned a login wall, a proxy's JSON, or an API
+    # change into a successful pull that observed nothing and reported
+    # 0 % coverage.
+    if list_key in reply:
+        alerts = reply[list_key]
+    elif strict:
+        # The issue/case envelope is uppercase `DATA`. A lowercase `data`
+        # here is some other envelope (an older API, a proxy, a changed
+        # contract), and reading it as these rows is a guess.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries no '{list_key}' "
+            f"(keys: {_key_names(reply)}); a lowercase 'data' "
+            f"is not read in its place. This is NOT an absence of rows — no "
+            f"observation was made."
+        )
+    elif "data" in reply:
+        alerts = reply["data"]
+    else:
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither '{list_key}' "
+            f"nor 'data' (keys: {_key_names(reply)}). This is "
+            f"NOT an absence of {list_key} — no observation was made."
+        )
+    if not isinstance(alerts, list):
+        # A dict where a list belongs means the envelope is not what we
+        # think it is. Guessing is how `len({"data": []}) == 1` happened.
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of {list_key}, got "
+            f"{type(alerts).__name__}. Refusing to infer a count from "
+            f"an envelope this connector does not recognise."
+        )
+    out: list[Any] = []
+    dropped = 0
+    for a in alerts:
+        if not isinstance(a, dict):
+            continue
+        alert = normalize(a)
+        if alert is None:
+            dropped += 1
+            continue
+        out.append(alert)
+    meta: dict[str, Any] = {}
+    total, capped = _count_or_capped(reply["total_count"] if "total_count" in reply
+                                     else reply.get("TOTAL_COUNT"))
+    meta["total_count"] = total
+    meta["total_count_capped"] = capped
+    fcount, fcapped = _count_or_capped(reply.get("FILTER_COUNT"))
+    meta["filter_count"] = fcount
+    meta["filter_count_capped"] = fcapped
+    rc = reply.get("result_count")
+    meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+    return out, dropped, meta
+
+
+#: How many reply keys an envelope error names. Only key names shaped like an
+#: identifier (``DATA``, ``total_count``, ``detection.method``) are named, at
+#: most ``_KEY_CHARS`` long; any other key is counted, never quoted.
+_KEYS_SHOWN = 10
+_KEY_CHARS = 40
+_KEY_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.\-]{0,%d}" % (_KEY_CHARS - 1), re.ASCII)
+
+
+def _key_names(mapping: dict) -> str:
+    """The reply's keys for an error message, bounded. Key names come from the
+    tenant (or whatever answered in its place) and the message is SimCore's, so
+    only identifier-shaped names are quoted, at most ``_KEYS_SHOWN`` of them;
+    the rest (free text, over-long or non-ASCII names, the overflow) are a
+    count."""
+    names = sorted(k for k in (str(k) for k in mapping) if _KEY_NAME.fullmatch(k))
+    shown = names[:_KEYS_SHOWN]
+    other = len(mapping) - len(shown)
+    text = "[" + ", ".join(f"'{k}'" for k in shown) + "]"
+    return text + (f" and {other} other key(s)" if other > 0 else "")
 
 def _raw_row(row: dict[str, Any]) -> dict[str, Any]:
     """Identity normaliser: the tenant reader's reads keep the raw row."""

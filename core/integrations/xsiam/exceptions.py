@@ -63,6 +63,15 @@ class XsiamQuotaError(XsiamError):
         self.tripped = False
 
 
+class XsiamParseError(XsiamError):
+    """The tenant answered in a shape SimCore does not recognise (an envelope it
+    cannot read, or a row missing a field the reader requires). Not an empty
+    result: nothing was measured."""
+
+    code = "XSIAM_PARSE_ERROR"
+    http_status = 502
+
+
 class XsiamCapabilityError(XsiamError):
     code = "XSIAM_CAPABILITY_MISSING"
     http_status = 403  # the credential was never authorised for XQL
