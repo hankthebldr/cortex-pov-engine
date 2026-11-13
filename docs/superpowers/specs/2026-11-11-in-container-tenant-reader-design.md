@@ -703,7 +703,9 @@ poisoned tool replies.
   - **Issue:** `id`, `detection.method`, `detection.rule_id`, `severity`, `domain`,
     `status.progress`, `case_ids`, `_insert_time`, `observation_time`, the derived `host`,
     and `tenant_text.name`.
-    *Amended 2026-11-13:* also `hosts`, every distinct host value from both host fields,
+    *Amended 2026-11-13:* also `hosts`, one value per short host name from both host fields
+    (keyed on the neutralised first DNS label, case-folded, so spellings differing only by
+    case, domain or a stripped character take one slot; the first spelling is kept),
     de-duplicated before the 50-item list cap; `host` is its first value, for display.
   - **Case:** `case_id`, `status_progress`, `resolve_reason`, `severity`, `issue_ids`,
     `issue_count`, `host_count`, hostnames from `hosts`, `case_domain`, `creation_time`,

@@ -159,26 +159,32 @@ def _int_or_none(value: Any) -> Optional[int]:
 # ── projections ──────────────────────────────────────────────────────────────
 
 def _issue_hosts(row: dict) -> list[str]:
-    """Every distinct non-empty host value in ``ISSUE_HOST_FIELDS``, source
-    first. De-duplicated here, before the list cap, so repeats cannot push the
-    run's own host past ``LIST_CAP``."""
+    """One host value per short host name in ``ISSUE_HOST_FIELDS``, source
+    first, keeping the first spelling. Values are keyed on the neutralised
+    ``_short_host`` form — the form attribution compares — and de-duplicated
+    here, before the list cap, so spellings differing only by case, domain or a
+    stripped character cannot push the run's own host past ``LIST_CAP``."""
     nf = row.get("normalized_fields")
     if not isinstance(nf, dict):
         return []
-    out: dict[str, None] = {}
+    out: dict[str, str] = {}
     for field in ISSUE_HOST_FIELDS:
         value = alert_key(nf, field)
         for c in value if isinstance(value, list) else [value]:
-            if isinstance(c, str) and c.strip():
-                out.setdefault(c)
-    return list(out)
+            if not isinstance(c, str):
+                continue
+            text = neutralise_text(c)[0]
+            if text and text.strip():
+                out.setdefault(_short_host(text), c)
+    return list(out.values())
 
 
 def project_issue(row: dict) -> dict:
     """The §7.7 issue allowlist. ``id`` and ``case_ids`` are strings so a join
     on either never depends on whether the tenant sent ints. ``hosts`` holds
-    every distinct host value from both host fields, de-duplicated before the
-    list cap (attribution reads them all); ``host`` is the first, for display."""
+    one value per short host name from both host fields, de-duplicated before
+    the list cap (attribution reads them all); ``host`` is the first, for
+    display."""
     for field in ISSUE_REQUIRED:
         _required(field, alert_key(row, field))
     inserted = _iso(row["_insert_time"])

@@ -360,6 +360,16 @@ def test_repeated_host_values_dedupe_before_the_list_cap():
     assert len(many["hosts"]) == 50 and many["list_truncated"] is True
 
 
+def test_host_values_differing_by_case_domain_or_stripped_characters_take_one_slot():
+    # Fifty spellings of one short host: case, an FQDN, zero-width padding.
+    spellings = ["web-02", "WEB-02", "web-02.corp.example"]
+    spellings += ["web-02" + "\u200b" * n for n in range(1, 48)]
+    p = project_issue(_row(0, host=spellings + ["target-01"]))
+    assert p["hosts"] == ["web-02", "target-01"]
+    assert p["list_truncated"] is False
+    assert [i["id"] for i in attribute([p], "target-01")["attributed"]] == ["1001"]
+
+
 _CASE_LINK = "https://synthetic-01.xdr.us.paloaltonetworks.com/case-view/501"
 
 
