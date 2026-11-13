@@ -204,4 +204,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0202` | OpenClaw ClawHub Malicious Skill — Padded README, base64 curl|bash Dropper and Developer-Credential Theft | [sigma](sigma/TTP-2026-0202.yml), [xql](xql/TTP-2026-0202.xql), [correlation](correlation/TTP-2026-0202.json) |
 | `TTP-2026-0203` | Axios npm Supply Chain — plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill) | [sigma](sigma/TTP-2026-0203.yml), [xql](xql/TTP-2026-0203.xql), [correlation](correlation/TTP-2026-0203.json) |
 | `TTP-2026-0550` | Cloud Log Tampering and Log-Bucket Hijack — CloudTrail and Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed | [xql](xql/TTP-2026-0550.xql), [correlation](correlation/TTP-2026-0550.json) |
+| `TTP-2026-0551` | Pink (CL-CRI-1147) — Vishing, Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion | [xql](xql/TTP-2026-0551.xql), [correlation](correlation/TTP-2026-0551.json) |
 

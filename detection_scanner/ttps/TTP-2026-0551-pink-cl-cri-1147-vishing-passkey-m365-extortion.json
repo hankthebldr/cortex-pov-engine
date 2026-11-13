@@ -1,0 +1,505 @@
+{
+  "id": "TTP-2026-0551",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-13T00:00:00+00:00",
+    "updated_at": "2026-11-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-itdr",
+      "plane-cloud-app",
+      "plane-ndr",
+      "plane-edr",
+      "actor-cl-cri-1147",
+      "actor-pink",
+      "vector-vishing",
+      "entra-id",
+      "passkey",
+      "m365",
+      "sharepoint",
+      "onedrive",
+      "teams",
+      "extortion",
+      "identity-led",
+      "unit42",
+      "correlation",
+      "eal-plugin",
+      "http-collector",
+      "collector-fields-unconfirmed",
+      "real-ioc-dns-lookup",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS",
+      "SRC-MICROSOFT-LEARN",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": false,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Pink (CL-CRI-1147) — Vishing, Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion",
+    "summary": "CL-CRI-1147 (Pink) phones a user as internal IT, captures the password and an approved push on a fake Microsoft passkey page, registers its own passkey, pulls SharePoint and OneDrive through Microsoft Graph and python-requests, then extorts the company from the victim's own mailbox and Teams. No malware.",
+    "description": "Unit 42 timely threat intelligence (2026-06-03, 'Pink Extortion Brand Activity'): a new extortion brand, tracked as CL-CRI-1147 and likely Com-affiliated, whose leak site went live on 2026-05-31. The actor impersonates internal IT on a voice call and has the user type credentials into a phishing site, gaining the account and its MFA; rapidly finds and exfiltrates data from SharePoint and OneDrive; then uses the compromised account to send the initial extortion email and internal Teams messages. Second-level lure domains are reused across victims, the third level names the target, and hosting is on DDoS-Guard. Published indicators: three lure domains, three IPs with stated roles (phishing host, account access, the residential proxy that created the extortion email) and three user agents seen during exfiltration. Okta Threat Intelligence (2026-07-05) describes a kit that lists the same three lure domains: an operator-steered PHP panel, not an AiTM proxy, that keeps the user on a fake passkey page while the actor registers its own passkey on the real Entra account; it is context for the step design here, not an indicator source. SIM-MP-038 runs the chain on today's lab doors as one SimCore run: a Linux host behind the lab firewall resolves the three lure domains and PANW's DNS Security phishing test domain (DNS lookups only, no session to actor infrastructure), and three EAL steps POST shape-true Entra sign-in, passkey-registration, M365 download, Exchange Send and Teams records to an HTTP log collector (Vendor cortexsim, Product saas, dataset cortexsim_saas_raw), back-dated so the body times tell the minutes-long story. Every collector query here proves the record landed and the query finds it, not that a Cortex detector fired: no built-in BIOC, ABIOC or Analytics detector reads a custom collector dataset. Collector field names are taken from the idp_signin_emulator and m365_activity_emitter records on dev, not from a stored collector row: lab prerequisite L-1 (the cortexsim / saas HTTP collector) is not done, so no Pink record has been read back from a tenant. How the collector exposes the nested initiatedBy object (read with json_extract_scalar), the ISO-8601 body times (read with parse_timestamp) and the numeric and boolean keys is unconfirmed. Authored, not proven: tenant-verified is 0.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-CRI-1147",
+        "aliases": [
+          "Pink"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Pink extortion brand (Unit 42, 2026-06-03): vishing as internal IT, credential and MFA capture on a lure site, rapid SharePoint and OneDrive exfiltration, extortion email and internal Teams messages from the compromised account; a later free-webmail notice named a qTox ID, the Pink leak site and a 72-hour deadline. Techniques similar to Bling Libra (ShinyHunters) and CL-CRI-1116.",
+      "Okta Threat Intelligence kit report (2026-07-05, cluster O-UNC-066, listing the same three lure domains): kit pages /gate, /identify, /password, /processing, /submit-otp, /submit-authenticator, /approve-authenticator, /passkey/register, /passkey, /passkey/check and /done, steered from an operator panel at /backend.php. The user approves a number-matched push and is asked to create a passkey and keep a recovery phrase from an attacker-controlled list, while the actor registers its own passkey on the real account. Okta lists two more lure domains, assignpasskey[.]com and setpasskey[.]com; they appear here as context only, never as indicators and never on the wire."
+    ],
+    "first_observed": "2026-05-31"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.004",
+        "name": "Phishing: Spearphishing Voice",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003",
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence",
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.005",
+        "name": "Account Manipulation: Device Registration",
+        "tactic_ids": [
+          "TA0003",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1213",
+        "subtechnique_id": "T1213.002",
+        "name": "Data from Information Repositories: Sharepoint",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1657",
+        "name": "Financial Theft",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Traffic Content",
+      "Process: Process Creation",
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Modification",
+      "Cloud Storage: Cloud Storage Access",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-038 — Pink CL-CRI-1147 on today's lab doors: one agent step (DNS lookups through the lab firewall) and three in-process EAL steps (idp_signin_emulator vishing_passkey_enrollment, m365_activity_emitter storage_exfiltration and internal_extortion_notice) to the operator's HTTP log collector.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "An XSIAM HTTP log collector created by the operator with Vendor cortexsim, Product saas and Log Format JSON, added in SimCore as a collector target of kind xsiam_http_collector with its key and bound to idp_signin_emulator and m365_activity_emitter, preflighted to accepted with write_canary (lab prerequisite L-1). By the tenant's naming rule its records land in cortexsim_saas_raw. Without it D5 to D10 and both correlations have nothing to read.",
+        "check_command": "echo 'confirm in the tenant console: Settings > Data Sources > HTTP collector (Vendor cortexsim, Product saas)'"
+      },
+      {
+        "description": "Collector field names are taken from the idp_signin_emulator and m365_activity_emitter records on dev, not from a stored collector row: lab prerequisite L-1 (the cortexsim / saas HTTP collector) is not done, so no Pink record has been read back from a tenant. How the collector exposes the nested initiatedBy object (read with json_extract_scalar), the ISO-8601 body times (read with parse_timestamp) and the numeric and boolean keys is unconfirmed. Capture one row per record kind after the first lab run and correct the queries before quoting a result.",
+        "check_command": "echo 'dataset = cortexsim_saas_raw | filter cortexsim_canary = \"cortexsim-mp-038-pink\" | limit 20'"
+      },
+      {
+        "description": "The rule the lab host's DNS egress hits on the PA-440 carries an anti-spyware profile with DNS Security, and the Phishing and Malware categories log (alert or sinkhole), not default (L-2). D1 is the positive control: if it is empty, the NGFW path is broken and D2 is not evidence of anything.",
+        "check_command": "echo 'NGFW wizard: Firewall > Sources stage'"
+      },
+      {
+        "description": "LAB_RESOLVER names a public resolver reached through the PA-440 (not Pi-hole), so the query crosses the firewall from a known host (L-4).",
+        "check_command": "test -n \"${LAB_RESOLVER:-}\""
+      },
+      {
+        "description": "The Cortex XDR agent on the lab host is connected and its collectors are running (L-5); D3 and D4 read xdr_data.",
+        "check_command": "echo 'confirm the endpoint is CONNECTED in the tenant console'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SIM-MP-038 (lab only). The scenario YAML is the source of truth; this is a summary.\n# step-01 (agent, identity direct): DNS lookups only, no fetch, no session.\ndig @${LAB_RESOLVER} passkeyadd.com A +short\ndig @${LAB_RESOLVER} passkeydeploy.com A +short\ndig @${LAB_RESOLVER} deploypasskey.com A +short\ndig @${LAB_RESOLVER} test-phishing.testpanw.com A +short\n# step-02 (eal) idp_signin_emulator provider=microsoft event_pattern=vishing_passkey_enrollment source_ip=172.93.100.252 event_time_offset_seconds=-1500\n# step-03 (eal) m365_activity_emitter event_pattern=storage_exfiltration source_ip=172.93.100.252 user_agents=[Microsoft.Graph.Client/5.62.0, python-requests/2.28.1, python-requests/2.33.1] storage_targets=[sharepoint, onedrive] event_time_offset_seconds=-1200\n# step-04 (eal) m365_activity_emitter event_pattern=internal_extortion_notice source_ip=96.232.20.66 event_time_offset_seconds=-300\n# every eal step: target_user=cortexsim.pink.canary@cortexsim-canary.invalid canary_token=cortexsim-mp-038-pink",
+      "input_variables": [
+        {
+          "name": "LAB_RESOLVER",
+          "type": "string",
+          "description": "A public DNS resolver reached through the lab firewall."
+        }
+      ],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "dig started on the lab host for each lure domain.",
+        "expected_value": "action_process_image_name = \"dig\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "DNS Security threat log for PANW's phishing test domain (positive control).",
+        "expected_value": "threat_name contains \"test-phishing.testpanw.com\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "Interactive Entra sign-in for the canary principal from the access IP, then a passkey registration from the same IP 90 s later.",
+        "expected_value": "activityDisplayName = \"User registered security info\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "SharePoint and OneDrive FileDownloaded / FileSyncDownloadedFull burst carrying the three published user agents.",
+        "expected_value": "ClientIP = \"172.93.100.252\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Exchange Send to internal colleagues and Teams MessageSent by the principal from the residential proxy IP.",
+        "expected_value": "ClientIP = \"96.232.20.66\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Nothing to remove on the lab host: step-01 only resolves names.",
+        "Collector records stay in cortexsim_saas_raw; they carry cortexsim_canary = cortexsim-mp-038-pink, so they can be told apart from anything else in the dataset."
+      ]
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-038 DNS Security Logged the PANW Phishing Test Domain",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter threat_name contains \"test-phishing.testpanw.com\" or to_string(threat_id) contains \"test-phishing.testpanw.com\"\n| fields _time, source_ip, dest_ip, dest_port, sub_type, threat_id, threat_name, action, severity",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-038 DNS Security Logged a Pink Lure Domain",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter threat_name contains \"passkeyadd.com\" or threat_name contains \"passkeydeploy.com\" or threat_name contains \"deploypasskey.com\" or to_string(threat_id) contains \"passkeyadd.com\" or to_string(threat_id) contains \"passkeydeploy.com\" or to_string(threat_id) contains \"deploypasskey.com\"\n| comp count() as threat_logs, values(threat_name) as threat_names, values(action) as actions, min(_time) as first_seen, max(_time) as last_seen by source_ip",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 Endpoint Resolved a Pink Lure Domain",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"dig\"\n| filter action_process_image_command_line contains \"passkeyadd.com\" or action_process_image_command_line contains \"passkeydeploy.com\" or action_process_image_command_line contains \"deploypasskey.com\"\n| comp count() as lookups, values(action_process_image_command_line) as command_lines by agent_hostname, actor_causality_id",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-038 Linux Agent Recorded the Pink DNS Query",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter dns_query_name in (\"passkeyadd.com\", \"passkeydeploy.com\", \"deploypasskey.com\")\n| comp count() as dns_events, values(dns_query_name) as domains by agent_hostname, actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 Entra Sign-in for the Canary from the Pink Access IP",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter userPrincipalName = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and ipAddress = \"172.93.100.252\"\n| filter createdDateTime != null and authenticationRequirement = \"multiFactorAuthentication\"\n| fields _time, createdDateTime, userPrincipalName, ipAddress, appDisplayName, clientAppUsed, isInteractive, authenticationRequirement",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 Passkey Registered from the Sign-in IP Within Ten Minutes",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| alter audit_principal = json_extract_scalar(initiatedBy, \"$.user.userPrincipalName\"), audit_ip = json_extract_scalar(initiatedBy, \"$.user.ipAddress\")\n| alter principal = coalesce(userPrincipalName, audit_principal), source_ip = coalesce(ipAddress, audit_ip)\n| filter principal = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\"\n| alter signin_at = if(createdDateTime != null and authenticationRequirement = \"multiFactorAuthentication\", parse_timestamp(\"%Y-%m-%dT%H:%M:%E*S%Ez\", createdDateTime), null), passkey_at = if(activityDisplayName = \"User registered security info\" and resultReason contains \"passkey\", parse_timestamp(\"%Y-%m-%dT%H:%M:%E*S%Ez\", activityDateTime), null)\n| comp min(signin_at) as first_signin_at, min(passkey_at) as passkey_registered_at by principal, source_ip\n| filter first_signin_at != null and passkey_registered_at != null\n| alter passkey_after_signin_seconds = timestamp_diff(passkey_registered_at, first_signin_at, \"SECOND\")\n| filter passkey_after_signin_seconds >= 0 and passkey_after_signin_seconds <= 600",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 SharePoint and OneDrive Download Burst from the Pink IP",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter UserId = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and ClientIP = \"172.93.100.252\"\n| filter Workload in (\"SharePoint\", \"OneDrive\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\")\n| comp count() as downloads, count_distinct(Workload) as workloads, count_distinct(ObjectId) as objects by UserId, ClientIP\n| filter downloads >= 5 and workloads = 2",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 File Access Through Graph SDK and python-requests User Agents",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter UserId = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and to_string(UserType) = \"0\"\n| filter Workload in (\"SharePoint\", \"OneDrive\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\")\n| filter UserAgent in (\"Microsoft.Graph.Client/5.62.0\", \"python-requests/2.28.1\", \"python-requests/2.33.1\")\n| alter client_family = if(UserAgent contains \"Microsoft.Graph.Client\", \"graph_sdk\", \"python_requests\")\n| comp count() as file_ops, count_distinct(client_family) as client_families, count_distinct(UserAgent) as user_agents by UserId, ClientIP\n| filter client_families = 2",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 Internal Fan-out Send from the Extortion IP",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter UserId = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and ClientIP = \"96.232.20.66\"\n| filter Workload = \"Exchange\" and Operation = \"Send\"\n| alter recipients = to_integer(to_string(recipientCount))\n| filter recipients >= 5\n| fields _time, CreationTime, UserId, ClientIP, Operation, recipients, ObjectId",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-038 Teams Messages by the Canary from the Extortion IP",
+        "query": "dataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter UserId = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and ClientIP = \"96.232.20.66\"\n| filter Workload = \"MicrosoftTeams\" and Operation = \"MessageSent\"\n| comp count() as messages, count_distinct(MessageId) as distinct_messages by UserId, ClientIP\n| filter messages >= 2",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_saas_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-038 Lure Resolution Within Thirty Minutes of the Sign-in",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter threat_name contains \"passkeyadd.com\" or threat_name contains \"passkeydeploy.com\" or threat_name contains \"deploypasskey.com\" or to_string(threat_id) contains \"passkeyadd.com\" or to_string(threat_id) contains \"passkeydeploy.com\" or to_string(threat_id) contains \"deploypasskey.com\"\n| alter leg = \"lure\", leg_at = _time\n| fields leg, leg_at\n| union (dataset = cortexsim_saas_raw | filter cortexsim_canary = \"cortexsim-mp-038-pink\" | filter userPrincipalName = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\" and ipAddress = \"172.93.100.252\" and createdDateTime != null | alter leg = \"signin\", leg_at = parse_timestamp(\"%Y-%m-%dT%H:%M:%E*S%Ez\", createdDateTime) | fields leg, leg_at)\n| alter lure_at = if(leg = \"lure\", leg_at, null), signin_at = if(leg = \"signin\", leg_at, null)\n| comp min(lure_at) as first_lure_at, min(signin_at) as first_signin_at, count_distinct(leg) as legs\n| filter legs = 2\n| alter lure_after_signin_seconds = timestamp_diff(first_lure_at, first_signin_at, \"SECOND\")\n| filter lure_after_signin_seconds >= -1800 and lure_after_signin_seconds <= 1800",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Pink — Sign-in, Passkey and Download Burst on One Principal",
+        "rule_id": "CR-MP-0038",
+        "logic": "XQL(MP-038 Entra Sign-in for the Canary from the Pink Access IP) AND XQL(MP-038 Passkey Registered from the Sign-in IP Within Ten Minutes) AND XQL(MP-038 SharePoint and OneDrive Download Burst from the Pink IP) on cortexsim_saas_raw for the same principal and the same source IP: an Entra sign-in that required MFA, then a passkey registered from that IP, then a SharePoint and OneDrive download burst, the whole chain inside 3600 s by the records' own body times (createdDateTime, activityDateTime, CreationTime), never _time. Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name exactly as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; no MITRE tag; proposed alert field mapping principal -> User Name (untested). It reads the collector records only, so it needs the HTTP log collector created with Vendor cortexsim and Product saas. UNTESTED: this XQL has not run in any tenant. Collector field names are taken from the idp_signin_emulator and m365_activity_emitter records on dev, not from a stored collector row: lab prerequisite L-1 (the cortexsim / saas HTTP collector) is not done, so no Pink record has been read back from a tenant. How the collector exposes the nested initiatedBy object (read with json_extract_scalar), the ISO-8601 body times (read with parse_timestamp) and the numeric and boolean keys is unconfirmed. Records are joined on one principal value, coalesced from userPrincipalName (sign-in), initiatedBy.user.userPrincipalName (passkey audit record) and UserId (downloads); no list-valued field is read. Scoped by cortexsim_canary and the planted canary principal, not by target_user, which the passkey audit record's targetResources[] still carries. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| alter audit_principal = json_extract_scalar(initiatedBy, \"$.user.userPrincipalName\"), audit_ip = json_extract_scalar(initiatedBy, \"$.user.ipAddress\")\n| alter principal = coalesce(userPrincipalName, audit_principal, UserId), source_ip = coalesce(ipAddress, audit_ip, ClientIP)\n| filter principal = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\"\n| alter stage = if(createdDateTime != null and authenticationRequirement = \"multiFactorAuthentication\", \"signin\", if(activityDisplayName = \"User registered security info\", \"passkey\", if(Workload in (\"SharePoint\", \"OneDrive\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\"), \"download\", \"other\")))\n| filter stage != \"other\"\n| alter stage_at = parse_timestamp(\"%Y-%m-%dT%H:%M:%E*S%Ez\", coalesce(createdDateTime, activityDateTime, CreationTime))\n| alter signin_at = if(stage = \"signin\", stage_at, null), passkey_at = if(stage = \"passkey\", stage_at, null), download_at = if(stage = \"download\", stage_at, null)\n| comp min(signin_at) as first_signin_at, min(passkey_at) as first_passkey_at, min(download_at) as first_download_at, count_distinct(stage) as stages, count() as records by principal, source_ip\n| filter stages = 3\n| alter passkey_after_signin_seconds = timestamp_diff(first_passkey_at, first_signin_at, \"SECOND\"), download_after_passkey_seconds = timestamp_diff(first_download_at, first_passkey_at, \"SECOND\"), chain_seconds = timestamp_diff(first_download_at, first_signin_at, \"SECOND\")\n| filter passkey_after_signin_seconds >= 0 and download_after_passkey_seconds >= 0 and chain_seconds <= 3600"
+      },
+      {
+        "name": "Pink — Download Burst then Internal Extortion on One Principal",
+        "rule_id": "CR-MP-0038-EXTORT",
+        "logic": "XQL(MP-038 SharePoint and OneDrive Download Burst from the Pink IP) AND (XQL(MP-038 Internal Fan-out Send from the Extortion IP) OR XQL(MP-038 Teams Messages by the Canary from the Extortion IP)) on cortexsim_saas_raw for the same principal: the last SharePoint or OneDrive download, then the first Exchange Send or Teams MessageSent, inside 3600 s by CreationTime, never _time. The source IPs differ on purpose (the access IP downloads, the residential proxy sends). Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name exactly as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; no MITRE tag; proposed alert field mapping UserId -> User Name (untested). It needs the HTTP log collector created with Vendor cortexsim and Product saas. UNTESTED: this XQL has not run in any tenant. Collector field names are taken from the idp_signin_emulator and m365_activity_emitter records on dev, not from a stored collector row: lab prerequisite L-1 (the cortexsim / saas HTTP collector) is not done, so no Pink record has been read back from a tenant. How the collector exposes the nested initiatedBy object (read with json_extract_scalar), the ISO-8601 body times (read with parse_timestamp) and the numeric and boolean keys is unconfirmed. Records are joined on UserId only; MailboxOwnerUPN, recipientList and Teams Members are not read (MailboxOwnerUPN and Members keep target_user under the canary; Members and recipientList are lists). No current_time in the rule. XQL:\ndataset = cortexsim_saas_raw\n| filter cortexsim_canary = \"cortexsim-mp-038-pink\"\n| filter UserId = \"cortexsim-mp-038-pink@cortexsim-canary.invalid\"\n| alter stage = if(Workload in (\"SharePoint\", \"OneDrive\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\"), \"download\", if(Workload = \"Exchange\" and Operation = \"Send\", \"extortion_mail\", if(Workload = \"MicrosoftTeams\" and Operation = \"MessageSent\", \"extortion_teams\", \"other\")))\n| filter stage != \"other\"\n| alter stage_at = parse_timestamp(\"%Y-%m-%dT%H:%M:%E*S%Ez\", CreationTime)\n| alter download_at = if(stage = \"download\", stage_at, null), extortion_at = if(stage in (\"extortion_mail\", \"extortion_teams\"), stage_at, null)\n| comp max(download_at) as last_download_at, min(extortion_at) as first_extortion_at, count_distinct(stage) as stages, count_distinct(ClientIP) as source_ips by UserId\n| filter last_download_at != null and first_extortion_at != null\n| alter extortion_after_download_seconds = timestamp_diff(first_extortion_at, last_download_at, \"SECOND\")\n| filter extortion_after_download_seconds >= 0 and extortion_after_download_seconds <= 3600"
+      }
+    ],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "advanced-dns-security",
+        "coverage_tier": "detection",
+        "evidence_query": "dataset = panw_ngfw_threat_raw\n| filter threat_name contains \"test-phishing.testpanw.com\" or to_string(threat_id) contains \"test-phishing.testpanw.com\"\n| fields _time, source_ip, dest_ip, dest_port, sub_type, threat_id, threat_name, action, severity"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent-telemetry",
+        "coverage_tier": "investigation",
+        "evidence_query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"dig\"\n| filter action_process_image_command_line contains \"passkeyadd.com\" or action_process_image_command_line contains \"passkeydeploy.com\" or action_process_image_command_line contains \"deploypasskey.com\"\n| comp count() as lookups, values(action_process_image_command_line) as command_lines by agent_hostname, actor_causality_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "http-log-collector",
+        "coverage_tier": "investigation",
+        "evidence_query": "The eight cortexsim_saas_raw validation queries on this card (D5 to D10 and the two correlations), over the records of the operator's HTTP log collector (Vendor cortexsim, Product saas). Tier-2 verify only; none raises an issue."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0038",
+          "CR-MP-0038-EXTORT"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Issues 'Pink — Sign-in, Passkey and Download Burst on One Principal' and 'Pink — Download Burst then Internal Extortion on One Principal' (operator-installed correlations, Medium), one per principal. Not imported by CortexSim."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-038",
+        "name": "Pink vishing to passkey persistence, SharePoint and OneDrive exfiltration and internal extortion",
+        "description": "A lure lookup, an interactive sign-in from the access IP, an attacker passkey, a download burst through API clients and an internal extortion fan-out on one principal.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-038A",
+            "objective": "The lure lookup is visible on the firewall and the endpoint.",
+            "preconditions": [
+              "L-2 DNS Security logging",
+              "L-4 LAB_RESOLVER",
+              "L-5 XDR agent running"
+            ],
+            "steps": [
+              "Run step-01",
+              "Query MP-038 DNS Security Logged the PANW Phishing Test Domain and MP-038 Endpoint Resolved a Pink Lure Domain"
+            ],
+            "success_criteria": [
+              "XQL `MP-038 DNS Security Logged the PANW Phishing Test Domain` returns at least one row",
+              "XQL `MP-038 Endpoint Resolved a Pink Lure Domain` returns at least one row"
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-MP-038B",
+            "objective": "The sign-in and the attacker passkey land for the canary principal.",
+            "preconditions": [
+              "L-1 collector target accepted"
+            ],
+            "steps": [
+              "Run step-02",
+              "Query MP-038 Entra Sign-in for the Canary from the Pink Access IP and MP-038 Passkey Registered from the Sign-in IP Within Ten Minutes"
+            ],
+            "success_criteria": [
+              "XQL `MP-038 Entra Sign-in for the Canary from the Pink Access IP` returns at least one row",
+              "XQL `MP-038 Passkey Registered from the Sign-in IP Within Ten Minutes` returns at least one row",
+              "Correlation `Pink — Sign-in, Passkey and Download Burst on One Principal` query returns one row once step-03 has run"
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-038C",
+            "objective": "The download burst and the internal extortion land for the same principal.",
+            "preconditions": [
+              "TS-MP-038B executed"
+            ],
+            "steps": [
+              "Run step-03 and step-04",
+              "Query MP-038 SharePoint and OneDrive Download Burst from the Pink IP to MP-038 Teams Messages by the Canary from the Extortion IP"
+            ],
+            "success_criteria": [
+              "XQL `MP-038 SharePoint and OneDrive Download Burst from the Pink IP` and `MP-038 File Access Through Graph SDK and python-requests User Agents` each return at least one row",
+              "XQL `MP-038 Internal Fan-out Send from the Extortion IP` and `MP-038 Teams Messages by the Canary from the Extortion IP` each return at least one row",
+              "Correlation `Pink — Download Burst then Internal Extortion on One Principal` query returns one row"
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Give the help desk and IT a call-back procedure users can verify, and tell users IT never asks them to approve a push or enrol a passkey during a call.",
+      "Restrict who can register security information in Entra ID (Conditional Access on the 'Register security information' user action) to trusted networks or compliant devices.",
+      "Block the published lure domains with DNS Security and URL Filtering, and keep the Phishing and Malware DNS categories at block or sinkhole.",
+      "Limit Microsoft Graph and scripted access to SharePoint and OneDrive for interactive users through app consent policy and Conditional Access."
+    ],
+    "detection_engineering": [
+      "Alert on a security-info or passkey registration from an IP first seen for that user minutes earlier.",
+      "Alert on SharePoint or OneDrive download bursts by an interactive user through Microsoft.Graph.Client or python-requests user agents.",
+      "Correlate a download burst with an internal fan-out mail and Teams messages from the same principal on a different, residential IP."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 Timely Threat Intelligence — Pink Extortion Brand Activity (CL-CRI-1147)",
+      "url": "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2026-06-03",
+      "primary": true
+    },
+    {
+      "title": "Okta Threat Intelligence — Vishing actors target Entra passkey enrollment",
+      "url": "https://www.okta.com/blog/threat-intelligence/vishing-actors-target-microsoft-entra-passkey-enrollment-/",
+      "publisher": "Okta Threat Intelligence",
+      "published_date": "2026-07-05"
+    },
+    {
+      "title": "Advanced DNS Security — Test Domains",
+      "url": "https://docs.paloaltonetworks.com/dns-security/administration/configure-dns-security/dns-security-test-domains",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Microsoft Graph — signIn resource type",
+      "url": "https://learn.microsoft.com/en-us/graph/api/resources/signin",
+      "publisher": "Microsoft Learn",
+      "publisher_id": "SRC-MICROSOFT-LEARN"
+    },
+    {
+      "title": "Microsoft Graph — directoryAudit resource type",
+      "url": "https://learn.microsoft.com/en-us/graph/api/resources/directoryaudit",
+      "publisher": "Microsoft Learn",
+      "publisher_id": "SRC-MICROSOFT-LEARN"
+    },
+    {
+      "title": "Microsoft Purview — Mailbox auditing actions (Send)",
+      "url": "https://learn.microsoft.com/en-us/purview/audit-mailboxes",
+      "publisher": "Microsoft Learn",
+      "publisher_id": "SRC-MICROSOFT-LEARN"
+    },
+    {
+      "title": "Microsoft Purview — Teams activities in the audit log (MessageSent)",
+      "url": "https://learn.microsoft.com/en-us/purview/audit-teams-audit-log-events",
+      "publisher": "Microsoft Learn",
+      "publisher_id": "SRC-MICROSOFT-LEARN"
+    },
+    {
+      "title": "MITRE ATT&CK — T1566.004 Phishing: Spearphishing Voice",
+      "url": "https://attack.mitre.org/techniques/T1566/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1098.005 Account Manipulation: Device Registration",
+      "url": "https://attack.mitre.org/techniques/T1098/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
