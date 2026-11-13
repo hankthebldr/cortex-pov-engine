@@ -164,6 +164,35 @@ test('a step card that grows after the fit still leaves the rule clear of + Add 
   }, { message: 'the canvas must refit when the rule is pushed down', timeout: 8_000 }).toBe(true)
 })
 
+test('the canvas refits when the readiness strip lands after the fit at 1024x768', async ({ page }) => {
+  // The readiness strip ("SIMCORE DEGRADED") sits above the Composer and
+  // appears only once /api/health answers. On a cold load it lands AFTER the
+  // canvas has fitted: the pane loses its height under a viewport fitted to the
+  // taller one, and "+ Add step" (pinned to the pane bottom) rises into the
+  // rule card. CI hit this intermittently. Hold /api/health until the canvas
+  // has fitted, then let it answer, so the order is the cold-load one every
+  // time.
+  let release: () => void = () => {}
+  const answered = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/health', async (route) => { await answered; await route.continue() })
+
+  await openComposer(page, 1024, 768)
+  await expect.poll(async () => {
+    const b = await boxes(page)
+    return !!b.rule && !!b.stage && b.rule.bottom <= b.stage.bottom
+  }, { timeout: 8_000 }).toBe(true)
+  await expect(page.getByTestId('readiness-banner'), 'the strip must not be there before the fit').toHaveCount(0)
+
+  release()
+  await expect(page.getByTestId('readiness-banner')).toBeVisible()
+  await expect.poll(async () => {
+    const b = await boxes(page)
+    return !!b.rule && !!b.addStep
+      && !(b.rule.bottom > b.addStep.top && b.rule.top < b.addStep.bottom
+        && b.rule.right > b.addStep.left && b.rule.left < b.addStep.right)
+  }, { message: 'the canvas must refit when its pane shrinks after the fit', timeout: 8_000 }).toBe(true)
+})
+
 test('selecting the rule opens a read-only Inspector and edits nothing', async ({ page }) => {
   await openComposer(page, 1440, 900)
   await page.getByTestId(`chain-rule-${RULE}`).click()
