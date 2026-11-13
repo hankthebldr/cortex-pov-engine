@@ -475,7 +475,7 @@ standalone to preflight adapter source availability before pushing.
 
 ## Cortex Branding
 
-UI uses specific Cortex design tokens — `--cortex-navy: #003366`, `--cortex-teal: #00C0E8`, `--cortex-steel: #6B7E8E`. Plain CSS (no Tailwind). Font: Inter for UI, JetBrains Mono for code. See `ui/src/styles/cortex-theme.css`.
+The console's token contract is `ui/src/styles/cortex-tokens.css` (dark is the default; light is a complete second set). It takes every brand hue from the vendored PANW Executive Design System in `ui/src/styles/ds/` (copied verbatim, pinned by `ds-drift.test.js`). The legacy `--cortex-*` names in `cortex-theme.css` are aliases onto that contract, not values: `--cortex-teal` is PANW orange, `--cortex-steel` is `--tx2`. Colour rule (minimal pass): orange `#FA582D` is the single primary action on a screen; green means healthy, done or detected; amber is a real warning; red is a real failure; everything else is neutral, and "selected" reads as brightness, not hue. Type: Montserrat for headings, Helvetica Neue for UI text, JetBrains Mono for figures and code. Plain CSS (no Tailwind). The design source is the "POVengine Console" canvas; `docs/design/DESIGN-SYNC.md` is the seam between it and this code.
 
 ## Spec Reference
 
