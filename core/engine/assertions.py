@@ -1591,16 +1591,27 @@ async def _execute_check(
 
 
 def _classify_exception(exc: BaseException) -> str:
-    name = type(exc).__name__
-    if name == "XsiamAuthError":
+    """Taxonomy code for a probe failure, by class so subclasses inherit it.
+
+    Most specific first: ``XqlResultTruncated`` is an ``XsiamQueryError``, and a
+    write stage the runner refused is an ``XsiamConfigError``, which is the
+    assertion's query at fault, never the tenant's reachability.
+    """
+    from integrations.xsiam.exceptions import (  # noqa: PLC0415
+        XqlResultTruncated,
+        XsiamAuthError,
+        XsiamConfigError,
+        XsiamQueryError,
+        XsiamQuotaError,
+    )
+
+    if isinstance(exc, XsiamAuthError):
         return "PROBE_AUTH_FAILED"
-    if name == "XsiamQuotaError":
+    if isinstance(exc, XsiamQuotaError):
         return "PROBE_QUOTA_EXHAUSTED"
-    if name == "XqlResultTruncated":
+    if isinstance(exc, XqlResultTruncated):
         return "PROBE_RESULT_TRUNCATED"
-    if name in ("XsiamQueryError", "XsiamConfigError"):
-        return "PROBE_QUERY_FAILED"
-    if isinstance(exc, AssertionRenderError):
+    if isinstance(exc, (XsiamQueryError, XsiamConfigError, AssertionRenderError)):
         return "PROBE_QUERY_FAILED"
     return "TENANT_UNREACHABLE"
 

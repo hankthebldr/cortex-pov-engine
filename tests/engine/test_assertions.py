@@ -856,3 +856,27 @@ async def test_a_truncated_outcome_page_is_pending_not_outcome_absent():
                               scoreable=True)
     assert out.verdict == "pending"
     assert out.checks[0].outcome.code == "PROBE_RESULT_TRUNCATED"
+
+
+# ---------------------------------------------------------------------------
+# A query the runner refuses is the assertion's fault, not the tenant's. The
+# runner refuses a write stage before a byte leaves SimCore; its error is a
+# subclass of the config error, and reading it as TENANT_UNREACHABLE sent the
+# DC to check egress for a query that was never sent.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_outage():
+    from engine.assertions import run_assertion  # noqa: PLC0415
+
+    body = base_spec()
+    body["checks"][0]["params"]["query"] = (
+        'dataset in (a, b, c) | filter x contains "{{nonce}}" '
+        '| target type=lookup append=false seen_sources')
+    runner = _tenant_runner({"dataset in": _sources(3)})
+    out = await run_assertion(parse(checks=body["checks"]), runner=runner,
+                              context={"nonce": "abc"}, scoreable=True)
+    assert out.verdict == "pending"
+    assert out.checks[0].outcome.code == "PROBE_QUERY_FAILED"
+    assert out.reason == "probe_query_failed"
