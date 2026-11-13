@@ -1,4 +1,4 @@
-# Lab run plan — Unit 42 backlog: SIM-KOI-012 (and why SIM-CDR-029 gets none)
+# Lab run plan — Unit 42 backlog: SIM-KOI-012 (and why SIM-CDR-030 gets none)
 
 **Scenario:** SIM-KOI-012, the Axios npm supply chain's Linux second stage
 (card TTP-2026-0203), on branch `feature/scenarios-unit42-axios-koi-012`
@@ -9,8 +9,8 @@ beacon `pov-target-01-4dcdce` (server `http://192.168.1.105:8888`), tenant
 `deathstar`.
 **Status:** authored, not run. ***tenant-verified is 0.*** Nothing below runs
 against the VM without Henry's explicit OK, given for that run.
-**SIM-CDR-029** (Blinding the Watchmen) is authored-only and has no lab run;
-see section 8.
+**SIM-CDR-030** (Blinding the Watchmen; called SIM-CDR-029 in earlier drafts
+of this plan) is authored-only and has no lab run; see section 8.
 
 ## Executive summary
 
@@ -295,26 +295,52 @@ sudo sh -c 'if [ -f /var/tmp/.cortexsim-axios/run/ld.pid ] && grep -q cortexsim-
 
 These are the scenario's own `cleanup.commands`.
 
-### 8. SIM-CDR-029 — authored-only, no lab run
+### 8. SIM-CDR-030 — authored-only, no lab run
 
 Henry's decision of 2026-11-11 ("Yes, separate branch (Recommended)"): Blinding
-the Watchmen is built on its own branch, `feature/scenarios-unit42-cloud-logging`,
-**authored-only**, with Universal Bucket Hijacking as one leg. The emitter
-presets it needs are on `feature/api-cloud-audit-logging-presets`
-(`cloud_audit_emitter`, eight logging-service presets; Gate A PR into `dev`). On 2026-11-11 no file
-on any branch carries the id SIM-CDR-029; it is the next free CDR id.
+the Watchmen is built **authored-only**, with Universal Bucket Hijacking as one
+leg. It is `scenarios/cdr/cdr-030-cloud-logging-tamper-and-log-bucket-hijack.yml`
+with card `TTP-2026-0550`. The emitter presets it uses merged in PR #206
+(`cloud_audit_emitter`, eight logging-service presets). Earlier drafts of this
+plan called it SIM-CDR-029; that id and `TTP-2026-0204` to `TTP-2026-0549` are
+claimed by the open detection-library pull request (#229), so this scenario
+took the next ids free on both.
 
 No lab run is planned for it, and none could prove it:
 
 - The lab has no AWS or GCP account. The scenario's legs are synthetic audit
   records POSTed to an operator collector, not cloud API calls.
 - Collector records do not arm the vendor cloud-logging analytics alerts the
-  post maps to; those need a natively onboarded audit source and a training
-  period. No collector dataset is registered for the plugin yet.
-- With `iterations` > 1, the `log_destination_delete`, `log_router_delete`,
-  `log_router_create` and `stream_bucket_delete` presets repeat a delete or
-  create of one named resource, which no tenant could produce. Author those
-  steps with `iterations: 1`.
+  posts map to; those need a natively onboarded audit source, a 14-day
+  activation and a 30-day training period. All nine are hunt-only on the card.
+- The lab has no HTTP log collector. Without `COLLECTOR_URL`, `COLLECTOR_HOST`
+  and `CORTEXSIM_COLLECTOR_TOKEN` every step POSTs to a `.invalid` host,
+  delivers nothing and still exits 0: read `delivery.delivery_verdict` in each
+  step's output.
 
-***tenant-verified is 0*** for SIM-KOI-012 and for SIM-CDR-029. Authored is not
+What a run that could prove it would need (Henry's decision of 2026-11-12 on
+the dataset name):
+
+1. In the tenant, one XSIAM HTTP log collector with Vendor `cortexsim`, Product
+   `cloud_audit`, Log Format JSON, no compression. By the tenant's naming rule
+   its records land in `cortexsim_cloud_audit_raw`.
+2. Correlation `CR-CDR-0030` installed by hand from `TTP-2026-0550` (Medium,
+   every 10 minutes over 1 hour, no MITRE tag). Its XQL has not been run in any
+   tenant: paste it into the query builder first.
+3. The three collector variables in the environment of the process that runs
+   the steps, and a CortexSim checkout as its working directory. The stock
+   beacon service unit provides neither, so today that means a push bundle run
+   from a checkout, or a beacon started by hand with them set.
+4. Launch `SIM-CDR-030`, identity `root`. Eight steps, about five minutes,
+   56 records.
+5. The result that would prove it: every step reports
+   `delivery_verdict: delivered`; all eight XQL rows return rows under
+   `POST /api/runs/{id}/verify`; and one `CDR-030 Watchmen Blinded Sabotage
+   Sequence` issue per provider identity is observed within 1800 seconds of
+   launch. Wait 75 minutes before a second run against the same collector.
+
+The collector key is sent over TLS that the emitter does not verify by default.
+Use a key made for the POV and rotate it afterwards.
+
+***tenant-verified is 0*** for SIM-KOI-012 and for SIM-CDR-030. Authored is not
 proven, and this plan does not change either number.
