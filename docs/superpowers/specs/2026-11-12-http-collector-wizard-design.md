@@ -27,7 +27,7 @@ duo_auth_raw"), never as proof that a detection works. It is built on what
 POVengine already has plus five small backend additions, and it needs no
 tenant write access. Datasets the customer's own firewall already fills are
 set up only on the lab tenant. Recommended action: approve the v26 alignment
-in §0 and choose the build order (§9).
+in §0; the backend is planned and builds first (§9).
 
 ## Technical detail
 
@@ -190,10 +190,10 @@ For the chosen source the step shows:
 
 | Verdict | When | Message |
 |---|---|---|
-| `matches` | the cards query a `*_raw` dataset and a vendor/product split gives that exact name | "Name the collector `<vendor>` / `<product>` and its data lands in `<dataset>`, the dataset these detections read." |
+| `matches` | the card dataset ends in `_raw`, so a collector named `<vendor>` / `<product>` writes exactly it | "Name the collector `<vendor>` / `<product>` and its data lands in `<dataset>`, the dataset these detections read." |
 | `xql_only` | as `matches`, but some of the source's detections are Analytics, ABIOC or BIOC | "XQL and correlation rules on `<dataset>` can fire. Analytics and ABIOC need an XDM rule for this dataset first; BIOC never fires on a custom collector." |
-| `cannot_feed` | the cards query a dataset that is not `<vendor>_<product>_raw` (for example `cloud_audit_logs`, `xdr_data`) | "An HTTP collector cannot fill `<dataset>`. Records will land in `<vendor>_<product>_raw`, and only queries written against that dataset can see them." |
-| `name_disputed` | the card dataset is one of the 22 names a tenant does not create (`okta_sso` where the tenant has `okta_sso_raw`); D-2 is open | "These detections query `<card dataset>`; a tenant writes `<tenant dataset>`. Records will land in `<vendor>_<product>_raw`; whether the detections see them depends on D-2." **Claude's call:** state the conflict, pick no side |
+| `cannot_feed` | the card dataset does not end in `_raw`, and no documented tenant route names a different one for this source (for example `cloud_audit_logs` for AWS, `google_workspace_audit`) | "An HTTP collector cannot fill `<dataset>`. Records will land in `<vendor>_<product>_raw`, and only queries written against that dataset can see them." |
+| `name_disputed` | the card dataset does not end in `_raw`, and a documented tenant route writes a different name for this source (`ingestion_routes.tenant_datasets`: `okta_sso` where the tenant has `okta_sso_raw`); D-2 is open | "These detections query `<card dataset>`; a tenant writes `<tenant dataset>`. Records will land in `<vendor>_<product>_raw`; whether the detections see them depends on D-2." **Claude's call:** state the conflict, pick no side |
 | `native_dataset` | the card dataset is one a native tenant pipe fills: `panw_ngfw_traffic_raw`, `panw_ngfw_threat_raw`, `panw_ngfw_globalprotect_raw` | see below |
 
 **Henry decided (2026-11-13): `native_dataset` is allowed on the lab tenant
@@ -207,7 +207,8 @@ line "writes into the native `<dataset>`".
 How the lab tenant is recognised (**Claude's call**): a setting listing the
 lab tenants' API hosts, the same `CORTEXSIM_DOOR_PROBE_TENANTS` the #227 plan
 introduces for door probes, set in the lab `.env` only; this build adds it if
-#227 has not. The collector URL's host must equal one of them. Whether a
+#227 has not. The collector URL's host must match one of them, by host and
+case-insensitively, with entries written as a host or a URL: #227's matcher. Whether a
 tenant's HTTP collector host equals its API host is unverified (#227 spec
 §14), so any mismatch reads **not the lab tenant**, and the step stops. A
 wrong guess blocks the lab; it never lets synthetic records into a customer's
@@ -217,9 +218,12 @@ dataset.
 `cannot_feed` and `name_disputed` continue as a **delivery test**
 (**Claude's call**): the verdict is repeated on every later step, and the
 arrival result reads "delivery only: these detections will not see
-`<dataset>`". Measured on the catalogue (2026-11-12): of the 20 sources with a
-collector emitter, 8 read `matches` or `xql_only` (4 of them the native
-`panw_*` datasets), 9 `name_disputed` and 3 `cannot_feed`.
+`<dataset>`". The verdicts are checked in the order native, `_raw`, disputed,
+cannot feed. Measured 2026-11-13 over the 20 sources with a collector emitter:
+4 `native_dataset`, 4 `matches` (none `xql_only` today), 9 `name_disputed`,
+3 `cannot_feed`. Four of the matches (Duo, third-party alerts, firewalls and
+VPNs) have no card detection reading their dataset, and the step says so:
+"no detection in the library reads `<dataset>` yet".
 
 Then, the values to type into the same Cortex dialog, each with a copy button:
 
@@ -346,7 +350,11 @@ Small, read-only toward the tenant, and additive. **Claude's call** for each:
    `collector_targets`, `{source_key, vendor, product, verdict}`, set by the
    PUT; the `cgo_anchor` / `composer_layout` pattern (an additive `_migrate_*`
    step). Shared emitters mean `dataset` + `plugins` cannot identify the
-   source on a resume.
+   source on a resume. The client sends `{source_key, vendor, product}`; the
+   PUT computes `verdict` itself, stores `dataset` as
+   `<vendor>_<product>_raw`, and refuses `native_dataset` off the lab tenant
+   with 409 `NATIVE_DATASET_NOT_LAB_TENANT`. The test channel's `source_key`
+   is `test_channel` and its verdict `test_channel`.
 2. **`last_arrival` on the target.** A nullable JSON column the arrival
    endpoint writes with each counted or Can't-check result
    (`{state, found, delivered, token, checked_at, reason}`), so the Overview
@@ -413,8 +421,8 @@ Gate A: each test below is observed failing before its code exists.
   dataset preview; editing re-runs the verdict; a reload keeps the
   declaration from the query string.
 - `native_dataset`: stops at step 2 when the collector host is not in
-  `CORTEXSIM_DOOR_PROBE_TENANTS`, when the setting is empty, and when the host
-  differs only by case or port; continues with the line when it matches.
+  `CORTEXSIM_DOOR_PROBE_TENANTS` and when the setting is empty; continues with
+  the line when it matches, including an entry written as a URL or in capitals.
 - Step 4 sends header `Authorization`, empty scheme, the `declaration`, and
   never echoes the key; a PUT warning holds the step open; an emitter served
   elsewhere starts unticked, names its target, and moves only when ticked.
@@ -425,7 +433,8 @@ Gate A: each test below is observed failing before its code exists.
   and PENDING; a zero renders "Not found yet", never Passed; a manual tick
   reads "you confirmed".
 - §6: `declaration` and `last_arrival` survive a restart and an old row reads
-  null; the detections-by-source read returns each detection's type; the
+  null; the detections-by-source read returns each detection's type, and a
+  source no card reads returns `count: 0` as degraded, never ok; the
   arrival endpoint returns `pending` (not 0) for a PENDING reply,
   `not_checked` for each refusal, writes `last_arrival`, and reports
   `queries_issued`; `email_emitter` records carry `cortexsim_canary`.
@@ -439,15 +448,14 @@ Gate A: each test below is observed failing before its code exists.
 ### 9. Open questions for Henry
 
 Settled on 2026-11-13: **native datasets** are lab tenant only; **every other
-source** is offered on any tenant.
+source** is offered on any tenant; the build order below.
 
-1. **Build order.** The steps and the Overview need v26 slices 1–3, which are
-   not on `dev`. **Claude's recommendation:** build the backend (§6) now as its
-   own PR, since nothing in it waits on the design; build the UI (§5, §7) as
-   the HTTP collector part of v26 slice 4 once slice 3's Configure frame has
-   landed, so the frame is built once. The alternatives: build the Configure
-   frame here first (two people could end up building it), or wait and build
-   everything in one change after slice 3.
+**Build order** (Henry, 2026-11-13): the backend (§6) now, as its own PR;
+the UI (§5, §7) as the HTTP collector part of v26 slice 4, once slice 3's
+Configure frame has landed. Plan:
+`docs/superpowers/plans/2026-11-13-http-collector-backend.md`.
+
+No open question remains.
 
 D-2 (from the LogSimv2 port) stays open elsewhere; until it is decided step 2
 reports `name_disputed` for the 9 affected sources.
@@ -469,8 +477,10 @@ reports `name_disputed` for the 9 affected sources.
 - `provider` set from the declared source (§5.5).
 - Arrival on Test only; no tenant-wide search on a miss; a manual tick reads
   "you confirmed" (§5.6).
-- The lab tenant is recognised by `CORTEXSIM_DOOR_PROBE_TENANTS` and an exact
-  host match; any doubt reads "not the lab tenant" (§5.2).
+- The lab tenant is recognised by `CORTEXSIM_DOOR_PROBE_TENANTS` with #227's
+  host matcher; any doubt reads "not the lab tenant" (§5.2).
+- The verdict is computed by the server on the PUT, not trusted from the
+  client (§6).
 - Five backend additions, `last_arrival` among them for the Overview (§6).
 - One Services row pair per target; the Configuration rows and their sources
   in §7 replace the canvas's drill-in reading.
