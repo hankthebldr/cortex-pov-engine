@@ -744,6 +744,12 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   are still soaking") rather than "verification outstanding".
   `GET /api/uctc/test-cases/{id}` adds `runs.pending_reasons` and
   `runs.latest.reason`.
+- The console shows the reason as one element everywhere a run verdict
+  appears: the Techniques tab, the Topology Engine terminal and the UC / TC run
+  rollup. It is a dashed "nothing executed" (or "detectors soaking") chip beside
+  `pending`, with a sentence that says to re-run or wait. Before this it was a
+  raw `not_executed` token. The Techniques tab now counts excluded rows as
+  "never ran" instead of "not reached".
 
 ### Added — HTTP collector backend (declaration, detections list, arrival check)
 

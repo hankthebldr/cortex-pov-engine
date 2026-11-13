@@ -13,11 +13,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { getResultsForRun, getRun, getTtp } from '../../api/client.js'
 import { buildTechniqueModel } from './runTechniques.js'
 import { isRunUnproven } from './runStatus.js'
+import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
 
 const EVIDENCE_SENTENCE =
   'Evidence is this SimCore’s Result rows; a detection counts only once reconciled from the tenant or validated by the DC. Authored is not proven.'
 
-const TONE_LABEL = { hit: 'detected', miss: 'missed', pending: 'pending', excluded: 'not reached', empty: 'no technique' }
+const TONE_LABEL = { hit: 'detected', miss: 'missed', pending: 'pending', excluded: 'never ran', empty: 'no technique' }
 
 function summary(counts) {
   const entries = Object.entries(counts || {})
@@ -96,11 +97,16 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
         <div className="run-tech__verdict">
           <span className="run-tech__k">Run verdict</span>
           <span className={`chip run-tech__verdict-chip run-tech__verdict-chip--${verdictKey}`} data-testid="technique-verdict">{verdict}</span>
-          {model.tcVerdictDetail?.reason && <span className="mono run-tech__detail">{String(model.tcVerdictDetail.reason)}</span>}
+          <VerdictReason detail={model.tcVerdictDetail} testId="technique-verdict-reason" />
         </div>
+        <VerdictReasonSentence
+          detail={model.tcVerdictDetail}
+          testId="technique-verdict-reason-sentence"
+          className="run-tech__sentence"
+        />
         <div className="run-tech__totals mono" data-testid="technique-totals">
           {model.totals.hits} of {model.totals.denominator} rows detected
-          {model.totals.excluded ? ` · ${model.totals.excluded} not reached` : ''}
+          {model.totals.excluded ? ` · ${model.totals.excluded} never ran` : ''}
           {' · '}{model.techniques.length} technique{model.techniques.length === 1 ? '' : 's'} placed
           {model.unplaced.length ? ` · ${model.unplaced.length} unplaced` : ''}
           {' · tenant-verified: 0'}
@@ -149,7 +155,7 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
               <td className="mono">{t.steps.join(', ') || '—'}</td>
               <td className="mono">
                 <span className={`run-tech__tone run-tech__tone--${t.tone}`}>{t.hits} / {t.denominator}</span>
-                {t.excluded ? <span className="run-tech__muted"> (+{t.excluded} not reached)</span> : null}
+                {t.excluded ? <span className="run-tech__muted"> (+{t.excluded} never ran)</span> : null}
               </td>
               <td className="mono">{summary(t.outcomes)}</td>
               <td className="mono">{summary(t.kpi)}</td>

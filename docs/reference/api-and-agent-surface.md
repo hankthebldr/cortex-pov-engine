@@ -504,7 +504,14 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   is `null` on every other score. Both report renderers take their label from
   `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
   executed; the test case is still owed" or "PENDING — detectors are still
-  soaking", not "PENDING — verification outstanding". The Tier-2 sweep still visits a run like this
+  soaking", not "PENDING — verification outstanding". The console renders the
+  reason as a single element, `VerdictReason` (`ui/src/components/console/verdictReason.js`
+  holds the labels). It is a dashed chip beside the `pending` chip, reading "nothing
+  executed" or "detectors soaking", with a sentence under it that says what to do.
+  It appears on the Techniques tab, the Topology Engine terminal and the UC / TC
+  run rollup (`pending_reasons`). An unknown reason is shown as its raw token. The
+  Techniques tab counts excluded rows as "never ran", because `not_executed` is not
+  "not reached". The Tier-2 sweep still visits a run like this
   because `pending` is not terminal, but it sends no XQL for excluded rows.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
