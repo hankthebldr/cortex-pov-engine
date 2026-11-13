@@ -49,8 +49,13 @@
 # in this file. A step writes it into its campaign file (mode 0600, inside a
 # directory the step creates fresh at mode 0700 and removes when it exits or is
 # stopped by HUP, INT or TERM). It appears in no record, on no command line and
-# in no step output. A step killed outright (SIGKILL) leaves that file behind
-# until the next step or the scenario cleanup removes the directory.
+# in no step output. It IS sent to the collector over a TLS session whose
+# certificate the emitter does not verify by default, so a proxy on the path
+# can read it: use a collector key that is cheap to rotate, and rotate it after
+# the POV. A step killed outright (SIGKILL) leaves the key file behind. In a
+# pull run nothing removes it then except a later step or the operator
+# (rm -rf /var/tmp/.cortexsim-logblind), because a pull run executes no
+# cleanup.commands.
 scenario_id: SIM-CDR-030
 name: "Cloud Logging Blinded — CloudTrail and Google Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed, With a Log-Bucket Hijack Leg (victim-side audit records to an HTTP collector)"
 version: "1.0"
@@ -183,17 +188,29 @@ success_criteria: |
   name exactly the rule name, severity Medium, scheduled every 10 minutes,
   query time frame 1 hour, no MITRE tag. CortexSim never writes it to the
   tenant, and its XQL has not been run in any tenant.
-  PASS: the CR-CDR-0030 issue is observed within 1800 seconds of launch. MTTD
-  is measured on that one row and from the run's launch: about 5 to 8 minutes
-  of run, up to 10 minutes of schedule, plus ingest lag. The bound index row
+  PASS needs two things: the CR-CDR-0030 issue is observed within 1800
+  seconds of launch, AND all eight XQL rows pass POST /api/runs/{id}/verify.
+  MTTD is measured on the correlation row alone and from the run's launch:
+  about 5 to 8 minutes of run, up to 10 minutes of schedule, plus ingest lag.
+  With the issue on time and verify not yet run, the run stays pending. An
+  XQL row that runs and returns nothing reads fail. The bound index row
   carries a qualitative threshold, so a machine PASS is recorded as
   not_applicable (evidence, not a scored pass); a FAIL stands.
   Reading the other outcomes. No collector: after the match window all nine
   rows read missed on the alert axis. That is a run with no collector, not a
   tenant miss. A collector but no installed rule: the eight XQL rows can pass
-  Tier-2 verify and the run stays pending. Do not run this twice within an
-  hour: the earlier run's records are still inside the rule's time frame and
-  would raise the issue again for the new run.
+  Tier-2 verify and the run stays pending. A collector and the rule, all
+  working: after the match window the alert axis reads 1 detected and 8
+  missed. The eight are Tier-2 rows that no alert can satisfy, so missed
+  there is expected and is not a tenant gap.
+  Spacing: wait at least 75 minutes after the previous run's launch against
+  the same collector, or disable the rule between runs. The rule looks back
+  one hour on a 10-minute schedule, so for that long it can still raise an
+  issue for the earlier run, and that issue would be credited to the new run
+  by rule name.
+  The collector key is sent over TLS without certificate verification (the
+  emitter's default): use a key that is cheap to rotate and rotate it after
+  the POV.
   Not declared, on the card only as hunt content: the nine Cortex analytics
   alerts the two posts name. Each documents a 14-day activation and a 30-day
   training period over the natively onboarded AWS or GCP audit source, so
@@ -211,10 +228,14 @@ moat_tier: "PARITY"
 # cleanup.commands. No background process is started.
 #
 # Record count for the whole chain: 2 + 4 + 21 + 1 + 2 + 2 + 2 + 22 = 56, one
-# POST each. Worst case per step, when every POST runs into its 3 s timeout:
-# 40 s dwell + 3 s x records, about 106 s for step-08, the largest. Measured
-# in a container with no network (the name lookup fails at once): about 285 s
-# for the whole chain, of which 280 s is dwell.
+# POST each. request_timeout 3 bounds each phase of a POST (connect, write,
+# read), not the POST, so the emitter run itself is capped: `timeout
+# --foreground 100` ends it after 100 s with exit 124, which fails the step
+# visibly. With the 40 s dwell no step can run longer than 140 s, under the
+# beacon's 180 s step timeout. --foreground keeps python in the step's own
+# process group, so a beacon stop still reaches it. Measured in a container
+# with no network (the name lookup fails at once): about 285 s for the whole
+# chain, of which 280 s is dwell.
 steps:
   - id: step-01
     name: "Stand up a second log route to attacker-named storage (new trail, new sink)"
@@ -235,6 +256,7 @@ steps:
     command: |
       # REAL file write and REAL emitter run. The records are synthetic JSON;
       # no cloud API is called. Steps 2 to 8 repeat these mechanics unchanged.
+      # The emitter run is capped at 100 s (exit 124 fails the step).
       set -eu
       umask 077
       ROOT=/var/tmp/.cortexsim-logblind
@@ -288,7 +310,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-01.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-01.yml" --live
     identity: root
     mitre_technique: "T1537"
     platforms: ["linux"]
@@ -362,7 +384,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-02.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-02.yml" --live
     identity: root
     mitre_technique: "T1565.001"
     platforms: ["linux"]
@@ -434,7 +456,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-03.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-03.yml" --live
     identity: root
     mitre_technique: "T1485"
     platforms: ["linux"]
@@ -504,7 +526,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-04.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-04.yml" --live
     identity: root
     mitre_technique: "T1562.008"
     platforms: ["linux"]
@@ -582,7 +604,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-05.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-05.yml" --live
     identity: root
     mitre_technique: "T1562.008"
     platforms: ["linux"]
@@ -657,7 +679,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-06.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-06.yml" --live
     identity: root
     mitre_technique: "T1562.008"
     platforms: ["linux"]
@@ -732,7 +754,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-07.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-07.yml" --live
     identity: root
     mitre_technique: "T1562.008"
     platforms: ["linux"]
@@ -810,7 +832,7 @@ steps:
             request_timeout: 3
             $AUTH_LINE
       YML
-      python3 -m scripts.eal_simulator.cli run "$ROOT/step-08.yml" --live
+      timeout --foreground 100 python3 -m scripts.eal_simulator.cli run "$ROOT/step-08.yml" --live
     identity: root
     mitre_technique: "T1485"
     platforms: ["linux"]

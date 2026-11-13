@@ -142,6 +142,14 @@
       {
         "description": "No run of SIM-CDR-030 against the same collector in the previous hour: earlier records inside the rule's one-hour time frame would raise the issue again.",
         "check_command": "echo 'check the collector dataset for records in the last hour'"
+      },
+      {
+        "description": "At least 75 minutes since the previous SIM-CDR-030 run was launched against the same collector, or correlation CR-CDR-0030 disabled between runs. The rule looks back one hour on a 10-minute schedule, so for that long it can still raise an issue for the earlier run, and that issue would be credited to the new run by rule name.",
+        "check_command": "echo 'confirm the launch time of the last SIM-CDR-030 run against this collector is more than 75 minutes ago'"
+      },
+      {
+        "description": "A collector key that is cheap to rotate. The emitter sends it over TLS without verifying the collector's certificate (its default), so a proxy on the path can read it; rotate the key after the POV.",
+        "check_command": "echo 'confirm the collector key is dedicated to this POV and will be rotated afterwards'"
       }
     ],
     "payload": {
@@ -217,7 +225,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "rm -rf /var/tmp/.cortexsim-logblind"
+      "code": "# Each step removes this directory itself on exit. Run this by hand after a pull run in which a step was killed outright:\n# the 0600 campaign file holding the collector key is then still on disk, and a pull run executes no cleanup.\nrm -rf /var/tmp/.cortexsim-logblind"
     }
   },
   "detections": {
