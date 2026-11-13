@@ -35,8 +35,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import '../../styles/chain-stage.css'
 import StatusIcon from './kit/StatusIcon.jsx'
+import PageIcon from './kit/PageIcon.jsx'
+import Icon from './kit/Icon.jsx'
 import {
-  buildChainStage, clampScale, doorTitle, fitScale, liveLegend, liveStateOf, LIVE_STATES, STAGE_GEOMETRY,
+  buildChainStage, clampScale, doorTitle, fitScale, LANE_ICON, liveLegend, liveStateOf, LIVE_STATES, STAGE_GEOMETRY,
 } from './chainStage.js'
 
 const MODES = new Set(['editable', 'live', 'preview'])
@@ -175,7 +177,7 @@ export default function ChainStage({
                 data-lane={b.key}
                 style={{ top: b.top, height: b.h, background: b.fill }}
               >
-                {m === 'live' && onOpenLane && !['LAUNCH', 'PROOF'].includes(b.key) ? (
+                {m === 'live' && onOpenLane ? (
                   <button
                     type="button"
                     className="chain-stage__lane-head chain-stage__lane-head--btn"
@@ -183,13 +185,13 @@ export default function ChainStage({
                     title={laneButtonLabel(b)}
                     onClick={() => onOpenLane(b.key)}
                   >
+                    <PageIcon icon={LANE_ICON[b.key]} />
                     <span className="chain-stage__lane-label mono">{b.label}</span>
-                    <span className="chain-stage__lane-sub">{b.sub}</span>
                   </button>
                 ) : (
-                  <div className="chain-stage__lane-head">
+                  <div className="chain-stage__lane-head" title={b.sub}>
+                    <PageIcon icon={LANE_ICON[b.key]} />
                     <span className="chain-stage__lane-label mono">{b.label}</span>
-                    <span className="chain-stage__lane-sub">{b.sub}</span>
                   </div>
                 )}
               </div>
@@ -224,10 +226,12 @@ export default function ChainStage({
                     key={c.id}
                     className={`chain-stage__card chain-stage__card--anchor chain-stage__card--${c.kind}`}
                     data-testid={`stage-card-${c.id}`}
-                    data-lane={c.lane}
                     style={box}
                   >
-                    <span className="chain-stage__kicker">{c.kind === 'trigger' ? 'Trigger · CGO' : 'Proof'}</span>
+                    <span className="chain-stage__kicker">
+                      <Icon name={c.kind === 'trigger' ? 'play' : 'stop'} size={10} className="chain-stage__glyph" />
+                      {c.kind === 'trigger' ? 'Start' : 'Stop'}
+                    </span>
                     <span className="chain-stage__anchor-label mono">
                       {c.kind === 'trigger'
                         ? c.label

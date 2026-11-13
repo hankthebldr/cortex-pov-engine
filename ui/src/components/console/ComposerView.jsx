@@ -34,6 +34,7 @@ import ComposerInspector from './ComposerInspector.jsx'
 import ComposerRuleInspector from './ComposerRuleInspector.jsx'
 import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
+import Icon from './kit/Icon.jsx'
 import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
@@ -1403,7 +1404,8 @@ export default function ComposerView({
           onClick={() => launch.launch()}
           title={launchTitle()}
         >
-          {launch.launching ? 'Launching…' : `Launch on ${agentName || 'agent'}`}
+          <Icon name="play" size={11} className="composer__start-glyph" />
+          {launch.launching ? 'Starting…' : `Start on ${agentName || 'agent'}`}
         </button>
       </div>
 
@@ -1544,11 +1546,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--left"
+            className="composer-mode__reopen composer-mode__reopen--left composer-mode__reopen--icon"
             onClick={openPalette}
-            title="Open the node palette"
+            aria-label="Add to chain"
+            title="Add to chain"
           >
-            ＋ Add
+            <Icon name="plus" size={16} />
           </button>
         )}
 
@@ -1605,11 +1608,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--right"
+            className="composer-mode__reopen composer-mode__reopen--right composer-mode__reopen--icon"
             onClick={openInspector}
-            title="Open the inspector"
+            aria-label="Inspector"
+            title="Inspector"
           >
-            Inspector
+            <Icon name="sliders" size={16} />
           </button>
         )}
 

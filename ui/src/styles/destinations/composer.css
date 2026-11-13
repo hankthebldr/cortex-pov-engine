@@ -413,6 +413,15 @@
   color: var(--tx3);
 }
 .theme-console .chain-node--start .chain-node__kicker { color: var(--ac-ink); }
+/* Start ▶ and Stop ■: the chain's two fixed points, the same glyphs wherever
+   a run is started or stopped. */
+.theme-console .chain-node__glyph { margin-right: 5px; color: var(--tx2); }
+.theme-console .composer__start-glyph { margin-right: 6px; }
+.theme-console .composer--mode .composer-mode__reopen--icon { display: grid; place-items: center; width: 32px; padding: 0; }
+.theme-console .chain-node__glyph--start { color: var(--ac-ink); }
+/* The dot grid: between the hairline and the quiet-text token, so it reads as
+   depth without competing with a card's border. */
+.theme-console .composer-canvas__flow { --canvas-dot: color-mix(in srgb, var(--tx3) 45%, var(--bd2)); }
 .theme-console .chain-node__title {
   font-size: 12px; font-weight: 700; margin-top: 7px; color: var(--tx);
 }
@@ -850,8 +859,8 @@
    surface is mounted.
 
    The viewport is a FLEX COLUMN, not just an unpadded block. `.view` is not
-   the Composer's only child — the api-down banner and the ReadinessBanner are
-   its siblings — so a `.composer { height: 100% }` inside an `overflow: hidden`
+   the Composer's only child — the api-down banner is
+   its sibling — so a `.composer { height: 100% }` inside an `overflow: hidden`
    block resolves to 100% of the viewport MINUS nothing, pushing the workstream
    strip past the bottom edge where it was then clipped away entirely
    (reproduced with a degraded SimCore: the whole Payload/Preflight/Active/
