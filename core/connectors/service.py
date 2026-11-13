@@ -652,7 +652,9 @@ async def build_and_store_case_ledger(
                 pages = _pages_issued(e.detail)
                 queries += pages
                 issue_read = {"ok": False, "code": e.code, "pages": pages,
-                              "remediation": remediation_for(e.code)}
+                              "remediation": (LOCAL_REFUSAL_REMEDIATION
+                                              if e.detail.get("refused_locally")
+                                              else remediation_for(e.code))}
             try:
                 ledger = build_case_ledger(
                     [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
@@ -856,7 +858,7 @@ async def refresh_case_ledger(
     pages = _pages_issued(cpull.detail)
     if not cpull.ok:
         detail = dict(cpull.detail or {})
-        detail.update({"code": cpull.code, "remediation": remediation_for(cpull.code),
+        detail.update({"code": cpull.code, "remediation": _remediation_for_pull(cpull),
                        "queries_issued": pages})
         raise ReconcileError("CONNECTOR_PULL_FAILED", cpull.error or "case read failed",
                              detail=detail)
@@ -2262,12 +2264,13 @@ async def auto_reconcile_once(
     # production that is a completely silent zero-coverage reconcile.
     skipped: dict[str, int] = {}
     breaker_tripped = False
+    local_refused = False  # CortexSim's own request budget, not a tenant event
 
     def _note(code: str) -> None:
         skipped[code] = skipped.get(code, 0) + 1
 
     for run in runs:
-        if pulls_issued >= max_pulls or breaker_tripped:
+        if pulls_issued >= max_pulls or breaker_tripped or local_refused:
             _note("sweep_budget_spent")
             continue
         results = list((await db.execute(
@@ -2303,7 +2306,7 @@ async def auto_reconcile_once(
         matched_here = 0
         pulled_here = 0
         for kind in active_kinds:
-            if pulls_issued >= max_pulls or breaker_tripped:
+            if pulls_issued >= max_pulls or breaker_tripped or local_refused:
                 _note("sweep_budget_spent")
                 break
             pulls_issued += 1
@@ -2317,9 +2320,12 @@ async def auto_reconcile_once(
                 # A 429 is the customer's shared quota talking. Stop the whole
                 # sweep rather than walking the remaining runs into the same wall.
                 if _is_quota_error(e):
-                    breaker_tripped = True
                     local = bool((e.detail or {}).get("refused_locally")) \
                         if isinstance(e.detail, dict) else False
+                    if local:
+                        local_refused = True
+                    else:
+                        breaker_tripped = True
                     logger.warning(
                         "auto-reconcile: %s (%s) — sweep circuit-broken. %s",
                         "CortexSim's own request budget refused the pull"
@@ -2346,6 +2352,8 @@ async def auto_reconcile_once(
         "skipped": skipped,
         "pulls_issued": pulls_issued,
         "quota_tripped": breaker_tripped,
+        # CortexSim's own request budget stopped the sweep; the tenant said nothing.
+        "refused_locally": local_refused,
     }
     if runs_considered and not newly_total:
         # A sweep that looked at runs and matched nothing is a SIGNAL, not a
@@ -2424,7 +2432,7 @@ async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                 if stats["newly_matched"]:
                     logger.info("auto-reconcile: %d detection(s) validated across %d run(s) via %s",
                                 stats["newly_matched"], stats["runs_reconciled"], stats["kinds"])
-                if not stats.get("quota_tripped"):
+                if not (stats.get("quota_tripped") or stats.get("refused_locally")):
                     # Same flag (this loop only runs with it on), same breaker:
                     # a quota error in the reconcile sweep skips the refresh.
                     await _refresh_ledgers_phase()

@@ -181,6 +181,13 @@ class TenantQuotaLedger:
         with self._lock:
             self._by_tenant.setdefault(tenant, _TenantLedger()).queries.append(now)
 
+    def refund(self, tenant: str) -> None:
+        """Take back the most recent ``charge`` (a query CortexSim refused to send)."""
+        with self._lock:
+            led = self._by_tenant.get(tenant)
+            if led and led.queries:
+                led.queries.pop()
+
     def acquire_request(self, tenant: str, *, per_minute: int,
                         now: Optional[datetime] = None) -> None:
         """Take one request token for this tenant, or raise.
@@ -212,8 +219,8 @@ class TenantQuotaLedger:
             led.breaker_open_until = now + timedelta(seconds=cooldown_seconds)
             led.trips += 1
         logger.warning(
-            "XQL quota breaker OPEN for tenant '%s' for %ds — every path "
-            "(sweep, /verify, assertions) will stop querying and resolve pending",
+            "tenant request breaker OPEN for tenant '%s' for %ds — every path "
+            "(reads, sweep, /verify, assertions) will stop querying and resolve pending",
             tenant, cooldown_seconds,
         )
 

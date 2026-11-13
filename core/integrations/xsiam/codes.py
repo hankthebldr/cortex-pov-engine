@@ -116,9 +116,18 @@ def code_for_status(status: int) -> str:
 
 
 LOCAL_REFUSAL_REMEDIATION = (
-    "CortexSim's own per-tenant request budget refused this call and the tenant "
-    "was not contacted. Nothing was measured, so affected verdicts stay `pending`; "
-    "retry after the interval given."
+    "CortexSim's own per-tenant request budget refused this call before it was "
+    "sent to the tenant. This says nothing about the tenant. Nothing from this call "
+    "was measured, so affected verdicts stay `pending`; retry after the interval "
+    "given."
+)
+
+
+LOCAL_POLL_REFUSAL_REMEDIATION = (
+    "The XQL query WAS started on the tenant; CortexSim's own per-tenant request "
+    "budget refused fetching its results. This says nothing about the tenant, its "
+    "role or its datasets. Nothing was measured, so affected verdicts stay "
+    "`pending`; retry after the interval given."
 )
 
 

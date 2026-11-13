@@ -238,8 +238,11 @@ class XsiamConnector(Connector):
                 n = max(1, int(e.retry_after_seconds))
                 return PullResult(
                     ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
-                    error=("CortexSim's own per-tenant request budget refused this "
-                           f"request and the tenant was not contacted; retry in {n}s"),
+                    error=("CortexSim's own per-tenant request budget refused "
+                           + (f"page {pages + 1}; pages 1..{pages} were already "
+                              f"fetched from the tenant" if pages else
+                              "this request before it was sent to the tenant")
+                           + f"; retry in {n}s"),
                     detail={"pages": pages, "path": path, "refused_locally": True,
                             "retry_after_seconds": n})
             try:

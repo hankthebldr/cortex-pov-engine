@@ -54,7 +54,8 @@ async def _budgeted(client: Any):
             yield
     except (ledger_mod.QuotaBreakerOpen, ledger_mod.DailyBudgetExhausted) as exc:
         raise XsiamQuotaError(
-            str(exc), local=True,
+            f"CortexSim's own budget refused this request before it was sent to "
+            f"the tenant: {exc}", local=True,
             retry_after_seconds=(max(1, int(exc.retry_after_seconds))
                                  if hasattr(exc, "retry_after_seconds") else None),
         ) from exc

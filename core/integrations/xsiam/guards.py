@@ -101,6 +101,11 @@ async def tenant_budget(client: Any):
     except XsiamQuotaError as exc:
         # A 429 already tripped the breaker inside the client: one 429, one trip.
         # A local refusal (our own bucket/breaker) is not the tenant talking.
-        if not getattr(exc, "tripped", False) and not getattr(exc, "local", False):
+        local = getattr(exc, "local", False)
+        if local and not getattr(exc, "query_started", None):
+            # Refused before the start request left: no query reached the
+            # tenant, so it does not count against the daily budget.
+            ledger.refund(tenant)
+        if not getattr(exc, "tripped", False) and not local:
             ledger.trip(tenant, cooldown_seconds=tuning.xsiam_breaker_cooldown())
         raise

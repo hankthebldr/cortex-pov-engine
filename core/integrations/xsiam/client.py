@@ -250,11 +250,11 @@ class XsiamClient:
             return advanced_auth_headers(self._api_key, self._api_key_id)
         return standard_auth_headers(self._api_key, self._api_key_id)
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, *, query_id: Optional[str] = None) -> httpx.AsyncClient:
         # Every use of this client is ONE HTTP request (`async with
         # self._client() as c: resp = await c.<verb>(...)`), so charging here is
         # one token per request to the tenant, XQL polls included.
-        self._charge_request()
+        self._charge_request(query_id=query_id)
         return httpx.AsyncClient(
             base_url=self._base,
             headers=self._build_headers(),
@@ -262,7 +262,7 @@ class XsiamClient:
             timeout=self._timeout,
         )
 
-    def _charge_request(self) -> None:
+    def _charge_request(self, *, query_id: Optional[str] = None) -> None:
         from connectors import tuning  # noqa: PLC0415
 
         from .ledger import (  # noqa: PLC0415
@@ -274,9 +274,16 @@ class XsiamClient:
                 per_minute=tuning.xsiam_max_requests_per_minute())
         except (QuotaBreakerOpen, RequestBudgetExhausted) as exc:
             n = max(1, int(exc.retry_after_seconds))
+            if query_id:
+                raise XsiamQuotaError(
+                    "CortexSim's own per-tenant request budget refused fetching the "
+                    f"results of XQL query {query_id}, which WAS started on the "
+                    f"tenant; retry in {n}s ({exc})",
+                    retry_after_seconds=n, local=True, query_started=query_id,
+                ) from exc
             raise XsiamQuotaError(
                 "CortexSim's own per-tenant request budget refused this request "
-                f"and the tenant was not contacted; retry in {n}s ({exc})",
+                f"before it was sent to the tenant; retry in {n}s ({exc})",
                 retry_after_seconds=n, local=True,
             ) from exc
 
@@ -449,7 +456,7 @@ class XsiamClient:
             "query_id": query_id, "pending_flag": True,
             "limit": limit, "format": "json",
         }}
-        async with self._client() as c:
+        async with self._client(query_id=query_id) as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else {}
