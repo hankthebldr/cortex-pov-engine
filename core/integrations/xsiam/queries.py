@@ -13,10 +13,16 @@ returned zero rows for every healthy tenant and the count runner scored
 ``len({"data": []}) == 1`` for a query that matched nothing. A row count is a
 real measurement, not a sentinel, so those fed straight into `fail` and `pass`
 respectively. One unwrapper, imported everywhere, is the fix.
+
+The request-body builders for ``issue/search``, ``case/search`` and
+``endpoints/get_endpoint`` live here for the same reason: this is the substrate
+both XSIAM code paths (``connectors/`` and ``integrations/xsiam/``) import, so
+the connector's reads and any route that sends the same body use one builder
+and cannot drift apart on the wire.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional, Sequence
 
 from .exceptions import XsiamQueryError
 
@@ -98,6 +104,58 @@ def row_count(reply: Any) -> int:
     if isinstance(total, int) and total >= 0:
         return total
     return len(rows)
+
+
+# ── request bodies (one builder per Public API body) ─────────────────────────
+
+def issue_search_body(
+    *,
+    filters: list[dict],
+    search_from: int,
+    search_to: int,
+    sort: Optional[dict] = None,
+    include_fields: Optional[list[str]] = None,
+) -> dict:
+    """``POST /public_api/v1/issue/search/`` body: ``{"request_data": {...}}``.
+
+    ``sort`` and ``include_fields`` are left out when None, so a by-id read sends
+    exactly the filters and the page window. ``include_fields`` ADDS to the
+    default fields (2026-11-12 spike, spec §3.4): ``["normalized_fields"]`` is
+    how a read gets the issue's host.
+    """
+    request_data: dict[str, Any] = {
+        "filters": list(filters),
+        "search_from": int(search_from),
+        "search_to": int(search_to),
+    }
+    if sort is not None:
+        request_data["sort"] = dict(sort)
+    if include_fields is not None:
+        request_data["include_fields"] = list(include_fields)
+    return {"request_data": request_data}
+
+
+def case_search_body(*, filters: list[dict], search_from: int, search_to: int) -> dict:
+    """``POST /public_api/v1/case/search/`` body: ``{"request_data": {...}}``."""
+    return {"request_data": {
+        "filters": list(filters),
+        "search_from": int(search_from),
+        "search_to": int(search_to),
+    }}
+
+
+def endpoint_get_body(
+    hostnames: Sequence[str], *, search_from: int = 0, search_to: int = 100,
+) -> dict:
+    """``POST /public_api/v1/endpoints/get_endpoint`` body, by ``hostname`` ``in``.
+
+    The tenant returns at most 100 records per request.
+    """
+    return {"request_data": {
+        "filters": [{"field": "hostname", "operator": "in", "value": list(hostnames)}],
+        "search_from": int(search_from),
+        "search_to": int(search_to),
+    }}
 
 
 def shape_ingestion_results(reply: dict[str, Any]) -> list[dict[str, Any]]:

@@ -1,0 +1,335 @@
+{
+  "reply": {
+    "DATA": [
+      {
+        "_insert_time": 1762000001000,
+        "action_status": "synthetic-34",
+        "agentic_assistant_id": null,
+        "agentic_response_conversation_id": null,
+        "agentic_response_status": null,
+        "asset_accounts": [],
+        "asset_categories": [],
+        "asset_classes": [],
+        "asset_cloud_account_names": [],
+        "asset_external_provider_ids": [],
+        "asset_group_ids": [],
+        "asset_group_names": [],
+        "asset_ids": [],
+        "asset_names": [],
+        "asset_providers": [],
+        "asset_regions": [],
+        "asset_tags": [],
+        "asset_types": [],
+        "assigned_to": null,
+        "assigned_to_pretty": null,
+        "case_ids": [
+          501
+        ],
+        "category": "synthetic-6",
+        "description": "synthetic-4",
+        "detection.method": "TRAPS",
+        "detection.rule_id": null,
+        "domain": "Security",
+        "exception_expiration": null,
+        "exception_ids": null,
+        "extended_description": null,
+        "external_id": "synthetic-2",
+        "findings": [],
+        "has_more_findings": false,
+        "id": 1001,
+        "impact": null,
+        "initial_evidence": null,
+        "is_excepted": false,
+        "is_excluded": false,
+        "is_starred": false,
+        "last_update_timestamp": 1762000029000,
+        "name": "synthetic-3",
+        "normalized_fields": {
+          "xdm.cloud.provider": [],
+          "xdm.event.type": [
+            "synthetic-7"
+          ],
+          "xdm.identity.src.full_domain_name": "target-01",
+          "xdm.identity.src.netbios_sam_account_name": "synthetic-8",
+          "xdm.identity.src.realm": "synthetic-9",
+          "xdm.identity.src.sid": "synthetic-10",
+          "xdm.identity.src.username": "synthetic-11",
+          "xdm.resolution_timer": {
+            "runStatus": "synthetic-12",
+            "startDate": "synthetic-13",
+            "totalDuration": 14
+          },
+          "xdm.source.agent.identifier": "synthetic-15",
+          "xdm.source.agent.version": "synthetic-16",
+          "xdm.source.host.fqdn": [
+            ""
+          ],
+          "xdm.source.host.hostname": "target-01",
+          "xdm.source.host.ipv4_addresses": [
+            "192.0.2.1"
+          ],
+          "xdm.source.host.os_family": "LINUX",
+          "xdm.source.location.country": [
+            "synthetic-17"
+          ],
+          "xdm.source.process.causality_id": [
+            "synthetic-18"
+          ],
+          "xdm.source.process.command_line": [
+            "synthetic-19"
+          ],
+          "xdm.source.process.executable.path": [
+            "synthetic-20"
+          ],
+          "xdm.source.process.executable.sha256": [
+            "synthetic-21"
+          ],
+          "xdm.source.process.executable.signature_status": [
+            "synthetic-22"
+          ],
+          "xdm.source.process.name": [
+            "synthetic-23"
+          ],
+          "xdm.source.user.username": [
+            "synthetic-24"
+          ],
+          "xdm.target.agent.identifier": [],
+          "xdm.target.process.executable.path": [
+            "synthetic-25"
+          ],
+          "xdm.target.process.executable.signature_status": [
+            "synthetic-26"
+          ]
+        },
+        "observation_time": 1762000005000,
+        "playbook_run_status": "synthetic-35",
+        "remediation": null,
+        "resolution_status_modified_ts": 1762000033000,
+        "severity": "HIGH",
+        "status.progress": "In Progress",
+        "status.resolution_comment": "",
+        "status.resolution_reason": null,
+        "tags": [
+          "synthetic-30",
+          "synthetic-31"
+        ],
+        "type": "synthetic-27"
+      },
+      {
+        "_insert_time": 1762000036000,
+        "action_status": "synthetic-69",
+        "agentic_assistant_id": null,
+        "agentic_response_conversation_id": null,
+        "agentic_response_status": null,
+        "asset_accounts": [],
+        "asset_categories": [],
+        "asset_classes": [],
+        "asset_cloud_account_names": [],
+        "asset_external_provider_ids": [],
+        "asset_group_ids": [],
+        "asset_group_names": [],
+        "asset_ids": [],
+        "asset_names": [],
+        "asset_providers": [],
+        "asset_regions": [],
+        "asset_tags": [],
+        "asset_types": [],
+        "assigned_to": null,
+        "assigned_to_pretty": null,
+        "case_ids": [
+          501
+        ],
+        "category": "synthetic-41",
+        "description": "synthetic-39",
+        "detection.method": "TRAPS",
+        "detection.rule_id": null,
+        "domain": "Security",
+        "exception_expiration": null,
+        "exception_ids": null,
+        "extended_description": null,
+        "external_id": "synthetic-37",
+        "findings": [],
+        "has_more_findings": false,
+        "id": 1002,
+        "impact": null,
+        "initial_evidence": null,
+        "is_excepted": false,
+        "is_excluded": false,
+        "is_starred": false,
+        "last_update_timestamp": 1762000064000,
+        "name": "synthetic-38",
+        "normalized_fields": {
+          "xdm.cloud.provider": [],
+          "xdm.event.type": [
+            "synthetic-42"
+          ],
+          "xdm.identity.src.full_domain_name": "target-01",
+          "xdm.identity.src.netbios_sam_account_name": "synthetic-43",
+          "xdm.identity.src.realm": "synthetic-44",
+          "xdm.identity.src.sid": "synthetic-45",
+          "xdm.identity.src.username": "synthetic-46",
+          "xdm.resolution_timer": {
+            "runStatus": "synthetic-47",
+            "startDate": "synthetic-48",
+            "totalDuration": 49
+          },
+          "xdm.source.agent.identifier": "synthetic-50",
+          "xdm.source.agent.version": "synthetic-51",
+          "xdm.source.host.fqdn": [
+            ""
+          ],
+          "xdm.source.host.hostname": "target-01",
+          "xdm.source.host.ipv4_addresses": [
+            "192.0.2.2"
+          ],
+          "xdm.source.host.os_family": "LINUX",
+          "xdm.source.location.country": [
+            "synthetic-52"
+          ],
+          "xdm.source.process.causality_id": [
+            "synthetic-53"
+          ],
+          "xdm.source.process.command_line": [
+            "synthetic-54"
+          ],
+          "xdm.source.process.executable.path": [
+            "synthetic-55"
+          ],
+          "xdm.source.process.executable.sha256": [
+            "synthetic-56"
+          ],
+          "xdm.source.process.executable.signature_status": [
+            "synthetic-57"
+          ],
+          "xdm.source.process.name": [
+            "synthetic-58"
+          ],
+          "xdm.source.user.username": [
+            "synthetic-59"
+          ],
+          "xdm.target.agent.identifier": [],
+          "xdm.target.process.executable.path": [
+            "synthetic-60"
+          ],
+          "xdm.target.process.executable.signature_status": [
+            "synthetic-61"
+          ]
+        },
+        "observation_time": 1762000040000,
+        "playbook_run_status": "synthetic-70",
+        "remediation": null,
+        "resolution_status_modified_ts": 1762000068000,
+        "severity": "MEDIUM",
+        "status.progress": "In Progress",
+        "status.resolution_comment": "",
+        "status.resolution_reason": null,
+        "tags": [
+          "synthetic-65",
+          "synthetic-66"
+        ],
+        "type": "synthetic-62"
+      },
+      {
+        "_insert_time": 1762000071000,
+        "action_status": "synthetic-96",
+        "agentic_assistant_id": null,
+        "agentic_response_conversation_id": null,
+        "agentic_response_status": null,
+        "asset_accounts": [],
+        "asset_categories": [],
+        "asset_classes": [],
+        "asset_cloud_account_names": [],
+        "asset_external_provider_ids": [],
+        "asset_group_ids": [],
+        "asset_group_names": [],
+        "asset_ids": [],
+        "asset_names": [],
+        "asset_providers": [],
+        "asset_regions": [],
+        "asset_tags": [],
+        "asset_types": [],
+        "assigned_to": null,
+        "assigned_to_pretty": null,
+        "case_ids": [
+          502
+        ],
+        "category": "synthetic-76",
+        "description": "synthetic-74",
+        "detection.method": "FW",
+        "detection.rule_id": null,
+        "domain": "Security",
+        "exception_expiration": null,
+        "exception_ids": null,
+        "extended_description": null,
+        "external_id": "synthetic-72",
+        "findings": [],
+        "has_more_findings": false,
+        "id": 1003,
+        "impact": null,
+        "initial_evidence": null,
+        "is_excepted": false,
+        "is_excluded": false,
+        "is_starred": false,
+        "last_update_timestamp": 1762000091000,
+        "name": "synthetic-73",
+        "normalized_fields": {
+          "xdm.application_protocol": [
+            "synthetic-77"
+          ],
+          "xdm.event.type": [
+            "synthetic-78"
+          ],
+          "xdm.resolution_timer": {
+            "runStatus": "synthetic-79",
+            "startDate": "synthetic-80",
+            "totalDuration": 81
+          },
+          "xdm.source.agent.identifier": "synthetic-82",
+          "xdm.source.host.ipv4_addresses": [
+            "192.0.2.3"
+          ],
+          "xdm.source.host.os_family": "NO_HOST",
+          "xdm.source.ipv4": [
+            "192.0.2.4"
+          ],
+          "xdm.source.location.country": [
+            "synthetic-83"
+          ],
+          "xdm.source.process.executable.signature_status": [
+            "synthetic-84"
+          ],
+          "xdm.target.agent.identifier": [
+            "synthetic-85"
+          ],
+          "xdm.target.ipv4": [
+            "192.0.2.5"
+          ],
+          "xdm.target.location.country": [
+            "synthetic-86"
+          ],
+          "xdm.target.port": [
+            87
+          ],
+          "xdm.target.process.executable.signature_status": [
+            "synthetic-88"
+          ]
+        },
+        "observation_time": 1762000075000,
+        "playbook_run_status": "synthetic-97",
+        "remediation": null,
+        "resolution_status_modified_ts": 1762000095000,
+        "severity": "CRITICAL",
+        "status.progress": "In Progress",
+        "status.resolution_comment": "",
+        "status.resolution_reason": null,
+        "tags": [
+          "synthetic-92",
+          "synthetic-93"
+        ],
+        "type": "synthetic-89"
+      }
+    ],
+    "FILTER_COUNT": 3,
+    "TOTAL_COUNT": 4200
+  }
+}

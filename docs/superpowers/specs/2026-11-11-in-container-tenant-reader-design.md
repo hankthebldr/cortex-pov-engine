@@ -168,6 +168,33 @@ says an issue's host is in `asset_names`. Neither source has been checked agains
 reply, and the vendor page does not say whether `include_fields` adds fields to the default
 response or limits the response to the fields named. The phase-1 spike (§9) settles both.
 
+**2026-11-12 spike (settled).** ONE read-only `issue/search` on deathstar through SimCore's
+catalog read (`OP-ISSUE-SEARCH`), over a lab run's window (first step −300 s to +3600 s), with
+`include_fields: ["normalized_fields"]`, sorted `observation_time` `asc`, `search_to` 5. One
+request; three rows (two `TRAPS`, one `FW`). The redacted reply is
+`tests/fixtures/tenant_reader/issue_search_reply.json` (provenance beside it).
+
+- **`include_fields` adds.** Every default field (`id`, `severity`, `detection.method`,
+  `_insert_time`, `domain`, `case_ids`, `name`, …) came back beside `normalized_fields`, so the
+  reader sends `include_fields: ["normalized_fields"]`, not the full projection list.
+- **The host is in `normalized_fields`.** Its keys are FLAT dotted XDM names
+  (`row["normalized_fields"]["xdm.source.host.hostname"]`), not nested objects. Read
+  `xdm.source.host.hostname`, else `xdm.target.host.hostname`; the value was a string on both
+  endpoint rows, while other normalized values are lists, so accept either. `asset_names` was
+  `[]` on all three rows: the oracle note's claim does not hold for these issues. The `FW` row
+  carried no hostname (`xdm.source.host.os_family` `NO_HOST`, an IP only), so it is
+  unattributed (A4).
+- **Key style is flat.** Top-level keys are flat dotted (`detection.method`,
+  `detection.rule_id`, `status.progress`, `status.resolution_reason`), as Part B saw.
+- **Envelope.** `DATA` (list), `TOTAL_COUNT` and `FILTER_COUNT` (ints). `TOTAL_COUNT` is
+  tenant-wide, far larger than the window; `FILTER_COUNT` is the window's match count. So
+  `truncated` is `FILTER_COUNT > returned`, and `TOTAL_COUNT` never reads as the window's size.
+- **Other values.** `detection.rule_id` was null on every row; `case_ids` are lists of ints
+  (the two `TRAPS` rows share one case); `id`, `_insert_time` and `observation_time` are ints
+  (epoch ms); `external_id` is a 32-hex string, not the issue id. The first issue's `id`
+  equalled the alert id recorded on the run's `Observation`: one pair where alert id ==
+  issue id on this tenant.
+
 ## 4 · Goals, non-goals, anti-goals
 
 **Goals**
