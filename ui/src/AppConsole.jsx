@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
+import { Toast, TOAST_MS } from './components/console/kit/index.js'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
 import ReadinessBanner from './components/console/ReadinessBanner.jsx'
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
@@ -16,9 +17,20 @@ import {
 import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
-import { downloadReportBundle, getToolAdapters } from './api/client.js'
+import useComponentStatus from './components/console/useComponentStatus.js'
+import { componentKeyForRoute } from './app/componentRoutes.js'
+import { downloadReportBundle, getToolAdapters, getTtps } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
+import { instanceStatus } from './components/console/instanceStatus.js'
+import { ToastContext } from './components/console/useToast.js'
+import { ReadBackProvider } from './components/console/useReadBack.jsx'
+import { buildSearchItems, componentDestination } from './components/console/searchIndex.js'
+import { ChainTrayProvider } from './context/ChainTrayContext.jsx'
+import ChainTray from './components/console/ChainTray.jsx'
+
+// Where the "Your chain" bar shows: the pages you add to a chain from (v26 §4.4).
+const TRAY_PAGES = new Set(['library', 'ttps', 'adapters', 'streams', 'uctc'])
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -61,7 +73,7 @@ function ConsoleShell() {
     return () => { cancelled = true }
   }, [])
 
-  const surfaceToast = useCallback((message, type = 'info', ms = 3000) => {
+  const surfaceToast = useCallback((message, type = 'info', ms = TOAST_MS) => {
     setToast({ message, type })
     setTimeout(() => setToast(null), ms)
   }, [])
@@ -90,17 +102,17 @@ function ConsoleShell() {
     }
   }, [env.activeRun, env.lastRun, surfaceToast])
 
-  // Abort flow — confirmation → POST /api/runs/:id/abort.
-  const handleAbortConfirmed = useCallback(async () => {
-    setAbortConfirmOpen(false)
-    const runId = env.activeRun?.runId
+  // Abort — POST /api/runs/:id/abort for ONE named run. Re-reading the run
+  // list afterwards is what makes the run read Aborted everywhere and takes the
+  // header's Running pill away (design v26 §4.6).
+  const abortRunNow = useCallback(async (runId) => {
     if (!runId) return
     try {
       const r = await fetch(`/api/runs/${runId}/abort`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
       })
       if (r.ok) {
-        surfaceToast(`Run ${runId} aborted`, 'success')
+        surfaceToast('Run aborted — the agent stops its process tree on its next check', 'success')
         env.refreshRuns()
       } else if (r.status === 404) {
         surfaceToast('Abort endpoint not yet implemented on this SimCore', 'warn', 4000)
@@ -112,6 +124,19 @@ function ConsoleShell() {
     }
   }, [env, surfaceToast])
 
+  // The modal confirm (the live strip on Runs) aborts the live run.
+  const handleAbortConfirmed = useCallback(() => {
+    setAbortConfirmOpen(false)
+    abortRunNow(env.activeRun?.runId)
+  }, [abortRunNow, env.activeRun])
+
+  // What a surface's Abort asks for. A run's own page confirms inline and
+  // sends { runId, confirmed: true }; anything else opens the modal confirm.
+  const requestAbort = useCallback((req) => {
+    if (req && req.confirmed === true && req.runId) abortRunNow(req.runId)
+    else setAbortConfirmOpen(true)
+  }, [abortRunNow])
+
   // ── Nav badges ────────────────────────────────────────────────────────────
   // The Tools & Payloads badge counts adapters whose tool the TARGET must fetch
   // from the internet mid-run. A number on the nav is the only thing that makes
@@ -119,6 +144,9 @@ function ConsoleShell() {
   const shelf = useShelf({ adapters: toolAdapters })
 
   const setup = useSetupProgress()
+  // Every component's status from real state: the rail's dots and the
+  // "N issues" on Components (design v26 §5).
+  const componentStatus = useComponentStatus()
 
   // Real counts only. The rail used to badge nearly every item with a number
   // from the prototype's seed catalogs ("12 components", "0/11 verified"),
@@ -127,50 +155,107 @@ function ConsoleShell() {
   const badges = useMemo(() => ({
     // Required setup steps still open — the reason to open Get started.
     setupLeft: setup.requiredLeft > 0 ? String(setup.requiredLeft) : null,
-    agentCount: env.agents.length ? String(env.agents.length) : null,
+    // Components that are Degraded or Down. Off and Unknown are not issues.
+    componentIssues: componentStatus.issues > 0
+      ? `${componentStatus.issues} issue${componentStatus.issues === 1 ? '' : 's'}`
+      : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-  }), [setup.requiredLeft, env.agents.length, env.activeRun])
+  }), [setup.requiredLeft, componentStatus.issues, env.activeRun])
 
-  const groups = useMemo(() => navGroups(badges), [badges])
+  const groups = useMemo(
+    () => navGroups(badges, { components: componentStatus.statuses }),
+    [badges, componentStatus.statuses],
+  )
 
-  // ── Command palette items (destinations + context switches + scenario jumps) ─
+  // ── Header: this instance's status, uptime and live KPIs (v26 §4.5) ───────
+  const instance = useMemo(() => instanceStatus({
+    healthModel: env.healthModel,
+    runs: env.runs,
+    agents: env.agents,
+    loading: env.loading,
+    errors: env.errors,
+  }), [env.healthModel, env.runs, env.agents, env.loading, env.errors])
+  // The instance status opens the POVengine component wherever the rail opens
+  // it: componentRoutes.js is the one table, read by the rail, the Components
+  // page, this header and ⌘K, so they move together. The Launch gate is only
+  // the fallback for a build that has no such page.
+  const instanceRoute = useMemo(
+    () => componentDestination('pov', isValidDestination) || { destination: 'preflight' },
+    [],
+  )
+  const instanceTargetLabel = getDestination(instanceRoute.destination)?.label || 'Launch gate'
+  const routerNavigate = router.navigate
+  const openInstance = useCallback(
+    () => routerNavigate(instanceRoute.destination, instanceRoute.params),
+    [routerNavigate, instanceRoute],
+  )
+
+  // TTP cards for ⌘K, fetched the first time search opens — never on load.
+  // A failed fetch leaves search without cards and tries again next time.
+  const [ttpCards, setTtpCards] = useState(null)
+  const ttpLoadRef = useRef(false)
+  const loadSearchCards = useCallback(() => {
+    if (ttpLoadRef.current || ttpCards) return
+    ttpLoadRef.current = true
+    getTtps()
+      .then((d) => setTtpCards(Array.isArray(d?.ttps) ? d.ttps : []))
+      .catch(() => {})
+      .finally(() => { ttpLoadRef.current = false })
+  }, [ttpCards])
+
+  // ── ⌘K: pages, components, scenarios, TTP cards, then actions ────────────
   const paletteItems = useMemo(() => {
-    const pinnedLaunch = env.pinnedIds
+    const found = buildSearchItems({
+      destinations: DESTINATIONS,
+      isValid: isValidDestination,
+      scenarios: env.scenarios,
+      ttps: ttpCards || [],
+      navigate: router.navigate,
+    })
+
+    const pinnedRuns = env.pinnedIds
       .map((pid) => {
         const s = env.scenarios.find((x) => (x.scenario_id || x.id) === pid)
         if (!s) return null
         return {
-          section: 'Pinned · launch',
-          id: `launch-${pid}`,
-          title: `Arm ${s.name || pid}`,
-          meta: `${pid} · ${s.plane || '?'}`,
-          icon: '◼',
+          id: `run-pinned-${pid}`,
+          title: `Run ${pid}${s.name ? ` · ${s.name}` : ''}`,
+          kind: 'Pinned',
+          icon: getDestination('preflight')?.icon || null,
           shortcut: ['⌘', 'L'],
           onSelect: () => router.navigate('guided', { arm: pid }),
         }
       })
       .filter(Boolean)
 
-    const scenarios = env.scenarios.map((s) => {
-      const id = s.scenario_id || s.id
-      return {
-        section: 'Scenarios',
-        id: `scn-${id}`,
-        title: s.name || '(unnamed)',
-        meta: `${id} · ${s.plane || '?'}${s.steps ? ' · ' + s.steps.length + ' steps' : ''}`,
-        icon: '▸',
-        onSelect: () => router.navigate('library', { open: id }),
-      }
-    })
+    const actions = [
+      {
+        id: 'stage-tool',
+        title: 'Stage a tool payload',
+        meta: 'pull a public tool onto this SimCore',
+        kind: 'Action',
+        icon: getDestination('adapters')?.icon || null,
+        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
+      },
+      {
+        id: 'global-export',
+        title: 'Export POV report',
+        meta: 'active or most recent run',
+        kind: 'Action',
+        icon: getDestination('proof')?.icon || null,
+        shortcut: ['⌘', 'E'],
+        onSelect: handleExportPOV,
+      },
+    ]
 
     const tenantSwitches = env.tenants.map((t) => {
       const id = t.name || t.id
       return {
-        section: 'Switch tenant',
         id: `tenant-${id}`,
         title: `Point at ${id}`,
         meta: t.config?.region || t.region || 'XSIAM tenant',
-        icon: '⬡',
+        kind: 'Tenant',
+        icon: getDestination('tenants')?.icon || null,
         onSelect: () => { env.setTenant(id); surfaceToast(`Tenant: ${id}`, 'success', 2000) },
       }
     })
@@ -178,64 +263,26 @@ function ConsoleShell() {
     const agentSwitches = env.agents.map((a) => {
       const id = agentIdOf(a)
       return {
-        section: 'Switch agent',
         id: `agent-${id}`,
         title: `Use ${a.hostname || id}`,
         meta: [a.os, a.status].filter(Boolean).join(' · ') || 'beacon',
-        icon: '◉',
+        kind: 'Agent',
+        icon: getDestination('agents')?.icon || null,
         onSelect: () => { env.setAgent(id); surfaceToast(`Agent: ${a.hostname || id}`, 'success', 2000) },
       }
     })
 
-    // Every page, rail or not — ⌘K is how an off-rail page stays one step away.
-    const destinationActions = DESTINATIONS
-      .filter((d) => d.id !== 'readiness' && !d.redirect)
-      .map((d) => ({
-        section: 'Go to',
-        id: `go-${d.id}`,
-        title: `Go to ${d.label}`,
-        meta: d.navParent ? getDestination(d.navParent)?.label : d.group,
-        icon: d.icon || 'apps-grid',
-        onSelect: () => router.navigate(d.id),
-      }))
-
-    const utility = [
-      {
-        section: 'Actions',
-        id: 'new-pov',
-        title: 'New POV run',
-        meta: 'guided target → launch flow',
-        icon: '▸',
-        onSelect: () => router.navigate('guided'),
-      },
-      {
-        section: 'Actions',
-        id: 'stage-tool',
-        title: 'Stage a tool payload',
-        meta: 'pull a public tool onto this SimCore',
-        icon: '⇩',
-        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
-      },
-      {
-        section: 'Actions',
-        id: 'global-export',
-        title: 'Export POV report',
-        meta: 'active or most recent run',
-        icon: '↗',
-        shortcut: ['⌘', 'E'],
-        onSelect: handleExportPOV,
-      },
-    ]
-
     return [
-      ...pinnedLaunch,
-      ...destinationActions,
-      ...scenarios,
-      ...tenantSwitches,
+      ...found.pages,
+      ...found.components,
+      ...pinnedRuns,
+      ...actions,
+      ...found.scenarios,
+      ...found.ttps,
       ...agentSwitches,
-      ...utility,
+      ...tenantSwitches,
     ]
-  }, [env, router, handleExportPOV, surfaceToast])
+  }, [env, router, handleExportPOV, surfaceToast, ttpCards])
 
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
@@ -261,26 +308,35 @@ function ConsoleShell() {
   }, [dest, navigate])
 
   return (
-    <>
+    // The chain tray wraps the whole shell: AppShell keys each page by its
+    // destination, so a tray inside the page would empty on the navigation
+    // it exists to survive ("Add to chain" here, Customize there, v26 §4.4).
+    <ToastContext.Provider value={surfaceToast}>
+    <ReadBackProvider>
+    <ChainTrayProvider notify={surfaceToast}>
       <AppShell
         destination={router.destination}
         onNavigate={router.navigate}
         navGroups={groups}
         activeRun={env.activeRun}
-        lastRun={env.lastRun}
         health={env.health}
         tenant={env.tenant}
         agent={env.agent}
         activeNav={navOwner(dest.id)}
+        activeChild={componentKeyForRoute(dest.id, router.params)}
         immersive={immersive}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was
         // acknowledged against a lab one. `tenant` is the resolved object, so
         // fall back to the raw name when the pointer has not resolved yet.
         tenantId={env.tenant ? (env.tenant.name || env.tenant.id) : null}
-        onAbortRun={() => setAbortConfirmOpen(true)}
+        onAbortRun={requestAbort}
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
+        onPaletteOpen={loadSearchCards}
+        instance={instance}
+        onOpenInstance={openInstance}
+        instanceTargetLabel={instanceTargetLabel}
         // SimCore answered, but is not whole. The two deployments that break
         // hardest — booted without tools/ or without scenarios/ — both report
         // `status: "ok"`, so the first signal a DC gets today is an empty
@@ -313,12 +369,14 @@ function ConsoleShell() {
             Exit (onExit) replaces the tab strip as the way back. */}
         {!immersive && <SectionTabs destination={dest.id} onNavigate={router.navigate} />}
 
+        {TRAY_PAGES.has(dest.id) && <ChainTray onNavigate={router.navigate} />}
+
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
           <Surface
             params={router.params}
             setParams={router.setParams}
             onNavigate={router.navigate}
-            onAbortRun={() => setAbortConfirmOpen(true)}
+            onAbortRun={requestAbort}
             onExit={immersive ? exitImmersive : undefined}
           />
         </SurfaceBoundary>
@@ -351,13 +409,13 @@ function ConsoleShell() {
           confirmLabel="Abort run"
           confirmVariant="danger"
         />
+        {/* Bottom-centre confirmation (v26 §4.1 Toast). Inside the shell so it
+            takes the theme's tokens; the live region stays mounted so a screen
+            reader announces each message. */}
+        <Toast toast={toast} />
       </AppShell>
-
-      {toast && (
-        <div className={`toast toast-${toast.type} app-toast`}>
-          {toast.message}
-        </div>
-      )}
-    </>
+    </ChainTrayProvider>
+    </ReadBackProvider>
+    </ToastContext.Provider>
   )
 }

@@ -566,14 +566,24 @@ def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
     count of 0 and evaluates it against the authored floor, so all 18 assertion
     artifacts would have reported **fail**. The A-17 guard cannot catch it: it
     proves the *evaluator* can go red, not that the *runner* can return rows.
+
+    It also refuses a page that may be truncated. Every probe counts, dedups,
+    divides or takes the earliest of what comes back, so a page that is a slice
+    of a larger answer measures the slice: 150 of 300 alerts read off two
+    100-row pages is 100 %. ``complete_rows`` raises ``XqlResultTruncated``
+    instead, and the probe resolves ``pending``.
     """
-    from integrations.xsiam.client import refuse_xql_write_stages  # noqa: PLC0415
-    from integrations.xsiam.queries import result_rows  # noqa: PLC0415
+    from integrations.xsiam.client import (  # noqa: PLC0415
+        XQL_PAGE_LIMIT,
+        refuse_xql_write_stages,
+    )
+    from integrations.xsiam.queries import complete_rows  # noqa: PLC0415
 
     async def _run(query: str) -> list[dict[str, Any]]:
         refuse_xql_write_stages(query)  # SEC-05; before the budget, as above
         async with _tenant_budget(client):
-            return result_rows(await client.run_xql(query, timeframe))
+            reply = await client.run_xql(query, timeframe, limit=XQL_PAGE_LIMIT)
+        return complete_rows(reply, limit=XQL_PAGE_LIMIT)
 
     return _run
 

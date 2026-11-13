@@ -179,6 +179,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_eal_run_columns)
         await conn.run_sync(_migrate_integration_response_layer_columns)
         await conn.run_sync(_migrate_case_ledger_columns)
+        await conn.run_sync(_migrate_collector_target_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -452,6 +453,22 @@ def _migrate_case_ledger_columns(connection) -> None:
     existing = {col["name"] for col in inspector.get_columns("runs")}
     if "case_ledger" not in existing:
         connection.execute(text("ALTER TABLE runs ADD COLUMN case_ledger JSON"))
+
+
+def _migrate_collector_target_columns(connection) -> None:
+    """Add ``collector_targets.declaration`` and ``.last_arrival`` if absent (same
+    ``create_all``-never-adds-a-COLUMN rationale as the helpers above). Nullable
+    JSON: a legacy target reads as "nothing declared, no arrival checked"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "collector_targets" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("collector_targets")}
+    for column in ("declaration", "last_arrival"):
+        if column not in existing:
+            connection.execute(
+                text(f"ALTER TABLE collector_targets ADD COLUMN {column} JSON"))
 
 
 def _migrate_prevention_columns(connection) -> None:

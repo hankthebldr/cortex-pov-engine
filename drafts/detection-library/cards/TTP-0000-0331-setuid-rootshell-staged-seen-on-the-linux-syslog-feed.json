@@ -1,0 +1,130 @@
+{
+  "id": "TTP-0000-0331",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Setuid Rootshell Staged, Seen on the Linux Syslog Feed",
+    "summary": "Setuid Rootshell Staged, Seen on the Linux Syslog Feed. The attacker behavior is visible in the Linux host auth/syslog that is forwarded to a Cortex Broker VM syslog applet (parsed into dataset=linux_",
+    "description": "Setuid Rootshell Staged, Seen on the Linux Syslog Feed. The attacker behavior is visible in the Linux host auth/syslog that is forwarded to a Cortex Broker VM syslog applet (parsed into dataset=linux_syslog) — a collector/log-level detection, not the endpoint-agent process feed. CortexSim drives linux_syslog_emitter.py to reproduce the detectable syslog telemetry; no real host is touched."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.001",
+        "name": "Abuse Elevation Control Mechanism: Setuid and Setgid",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Collector/log-level validation — stream shape-true Linux auth/syslog to the lab Broker VM.\nCOLLECTOR=\"${BROKER_VM:-192.0.2.9}\"\npython3 core/eal_simulator/linux_syslog_emitter.py --collector \"$COLLECTOR\" --phase baseline --baseline-count 40\npython3 core/eal_simulator/linux_syslog_emitter.py --collector \"$COLLECTOR\" --phase attack --which setuid-privesc\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Linux syslog records for: Setuid Rootshell Staged, Seen on the Linux Syslog Feed.",
+        "expected_value": "dataset linux_syslog: the setuid-privesc pattern"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Setuid Permission Change on a File in a Writable Path",
+        "query": "dataset = linux_syslog\n| filter message contains \"setuid\" and (message contains \"/tmp/\" or message contains \"uid=0\")\n| comp count() as c by host, message\n| filter c >= 1",
+        "expected_rows_min": 1,
+        "dataset": "linux_syslog"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "/tmp/.x/rootshell",
+        "context": "Staged setuid rootshell path."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — Setuid file bit manipulation (Linux host syslog via collector; dataset=linux_syslog; ATT&CK T1548.001). Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex Analytics Alert Reference",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts",
+      "publisher": "Palo Alto Networks"
+    },
+    {
+      "title": "MITRE ATT&CK T1548.001",
+      "url": "https://attack.mitre.org/techniques/T1548/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

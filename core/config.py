@@ -3,6 +3,7 @@ CortexSim configuration — reads from environment variables with sensible defau
 All settings can be overridden via environment or a .env file.
 """
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -177,9 +178,17 @@ class Settings(BaseSettings):
     # port has no authentication, so exposing a tool surface on it is a
     # deliberate decision, not a default. The stdio entry point needs no flag.
     CORTEXSIM_MCP_HTTP: bool = False
+    # Bearer token a client must present at /mcp. Empty with the flag on means
+    # /mcp is NOT mounted. It only admits a client to /mcp: it is not a tenant
+    # credential and does not authenticate /api.
+    CORTEXSIM_MCP_TOKEN: SecretStr = SecretStr("")
     # Comma-separated Host headers the /mcp mount accepts (DNS-rebinding guard),
     # in addition to loopback. Empty = loopback only.
     CORTEXSIM_MCP_ALLOWED_HOSTS: str = ""
+    # MCP tools that act on a customer host (cortexsim.run.launch, cortexsim.run.abort)
+    # refuse with MCP_HOST_ACTION_DISABLED unless this is true. Both transports
+    # read it; tenant-class tools are unaffected.
+    CORTEXSIM_MCP_ALLOW_HOST_ACTIONS: bool = False
     # Ceiling on MCP tool calls that reach a customer tenant, per minute, so an
     # agent loop cannot burn the tenant's XQL quota. Same posture as the other
     # quota guards: a spent budget degrades to pending, never to a verdict.
@@ -223,6 +232,10 @@ class Settings(BaseSettings):
     # in a host-run `.env` is honoured. It used to be undeclared, and an
     # uncommented `.env` line made Settings() refuse to boot.
     CORTEXSIM_TRUSTED_PROXIES: str = ""
+    # Comma list of lab tenants' API hosts. Collector setup may write into a
+    # tenant's native firewall datasets only when its host is listed here.
+    # Empty, the default, means no tenant is a lab tenant.
+    CORTEXSIM_DOOR_PROBE_TENANTS: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

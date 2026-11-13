@@ -8,6 +8,8 @@
 tools back from it; neither makes a request. Otherwise the server speaks MCP
 over stdio. stdout is the protocol channel, so logs go to stderr only: one
 line per tenant-class call (tool id, tenant, queries_issued, duration).
+``cortexsim.run.launch`` and ``cortexsim.run.abort`` refuse unless
+``CORTEXSIM_MCP_ALLOW_HOST_ACTIONS`` is true.
 """
 from __future__ import annotations
 
@@ -28,6 +30,23 @@ def _default_tenant_calls_per_minute() -> int:
     from config import settings  # noqa: PLC0415
 
     return int(settings.CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE)
+
+
+def _default_allow_host_actions() -> bool:
+    """``CORTEXSIM_MCP_ALLOW_HOST_ACTIONS``: the env var, else ``config.settings``
+    (the rule the /mcp mount applies), so stdio and HTTP cannot disagree.
+    An unparseable value is false."""
+    raw = os.environ.get("CORTEXSIM_MCP_ALLOW_HOST_ACTIONS")
+    if raw is not None and raw.strip():
+        from pydantic import TypeAdapter, ValidationError  # noqa: PLC0415
+
+        try:  # the rule pydantic applies to the same variable in config.settings
+            return bool(TypeAdapter(bool).validate_python(raw.strip()))
+        except ValidationError:
+            return False
+    from config import settings  # noqa: PLC0415
+
+    return bool(settings.CORTEXSIM_MCP_ALLOW_HOST_ACTIONS)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -56,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = ToolContext(client=SimCoreClient(args.server),
                       bucket=TokenBucket(args.max_tenant_calls_per_minute))
-    mcp = build(ctx)
+    mcp = build(ctx, allow_host_actions=_default_allow_host_actions())
     by_id = {s.id: s for s in all_specs()}
     ids = registered_ids(mcp)
 

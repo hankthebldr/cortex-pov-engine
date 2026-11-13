@@ -126,7 +126,7 @@ every string as an escaped HCL literal.
 
 | Method | Full path | Purpose | Response |
 |--------|-----------|---------|----------|
-| GET | `/api/health` | One diagnostic surface, zero outbound calls | Always HTTP 200: `{"status":"ok"\|"degraded", "version", "commit", "env", "components":{…}, "degraded_components":[…], "checked":[17 keys], "not_checked":[…]}`. **`status` reads `degraded` on every deployment today** because `api_auth` is `API_UNAUTHENTICATED` by design. |
+| GET | `/api/health` | One diagnostic surface, zero outbound calls | Always HTTP 200: `{"status":"ok"\|"degraded", "version", "commit", "env", "started_at", "uptime_seconds", "components":{…}, "degraded_components":[…], "checked":[17 keys], "not_checked":[…]}`. **`status` reads `degraded` on every deployment today** because `api_auth` is `API_UNAUTHENTICATED` by design. `started_at` (UTC) and `uptime_seconds` are this SimCore process's own clock; the console header shows the uptime. |
 
 > The response now carries `version` and `commit` (GAP-API-007 is closed).
 > The 17 `checked` components are `db`, `scenario_catalog` (active corpus;
@@ -1149,6 +1149,7 @@ install removes its own items and fails `NEEDS_ROOT`.
 |--------|-----------|---------|---------|----------|
 | GET | `/api/eal/plugins` | List registered simulator plugins | — | `{"plugins":[...],"total":N}`; each plugin carries `family` (`analytics_log_streamer` \| `network_eal`) and `delivery` (`collector` \| `wire`), the signal-path class the Composer lanes read (`core/engine/signal_path.py`) |
 | GET | `/api/eal/plugins/{name}` | Plugin metadata + JSON schema | — | `plugin.metadata()`; 404 `PLUGIN_NOT_FOUND` |
+| GET | `/api/eal/data-streams/{source_key}/detections` | Which active-scenario detections read a catalogue source's dataset (detection level: a detection is listed only when that detection object itself reads the dataset, not merely because its card reads it for another detection; `cards[]` and `reading_kinds` still describe the cards), the suggested vendor/product and the HTTP collector route verdict for the names given. Read-only, no tenant contact | query: `vendor?`, `product?` (stripped as the collector-targets PUT strips them; default to the prefill), `collector_host?` | `{source_key, name, card_dataset, tenant_datasets[], reading_kinds[], cards[{card_id,kinds[]}], detections[{scenario_id,step_id,detection_id,type,ttp_ref}], count, prefill{vendor,product}, verdict{verdict,dataset,card_dataset,tenant_datasets,reading_kinds}, lab_tenant (null without `collector_host`), status, code}`; `status`/`code`: `ok`/null, `degraded`/`NO_DETECTION_READS_DATASET`, `degraded`/`SOURCE_HAS_NO_DATASET`, `not_applicable`/`TEST_CHANNEL`; 404 `DATA_SOURCE_UNKNOWN` |
 | POST | `/api/eal/campaigns` | Persist a campaign def (validates each step's plugin+params) | `Campaign` (Pydantic) | `<EalCampaign.to_dict()>` (201); 400 `CALLER_EXECUTABLE_REFUSED` (a step sets `params.binary`; a plugin runs only the CLI on SimCore's PATH); 422 `PLUGIN_NOT_FOUND`/`PARAMS_INVALID`; 409 `DUPLICATE_CAMPAIGN` |
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
@@ -1207,10 +1208,11 @@ guarantee.
 | Method | Path | Purpose | Request | Response / errors |
 |---|---|---|---|---|
 | GET | `/api/collector-targets` | List targets | — | `{targets[], count, default_target, collector_plugins[], unbound_plugins[], status, code}`; zero targets is `status: degraded`, `code: NO_COLLECTOR_TARGETS` |
-| GET | `/api/collector-targets/{name}` | One target | — | `{name, kind, url, dataset, auth_header, auth_scheme, plugins[], is_default, has_key, last_check, warnings[]}`; 404 `TARGET_NOT_FOUND` |
-| PUT | `/api/collector-targets/{name}` | Create or replace | `{kind, url, dataset?, auth_header?, auth_scheme?, plugins[], is_default?, token?, clear_token?}` — `token` write-only, omitted keeps the stored key | target + `previous_default`; 422 `TARGET_NAME_INVALID` / `TARGET_INVALID` / `TARGET_PLUGIN_NOT_COLLECTOR` / `TARGET_PLUGIN_ALREADY_BOUND`. A change to url, kind, header, scheme or key discards `last_check` |
+| GET | `/api/collector-targets/{name}` | One target | — | `{name, kind, url, dataset, auth_header, auth_scheme, plugins[], is_default, has_key, last_check, warnings[], declaration, last_arrival}` (`declaration` and `last_arrival` null when unset); 404 `TARGET_NOT_FOUND` |
+| PUT | `/api/collector-targets/{name}` | Create or replace | `{kind, url, dataset?, auth_header?, auth_scheme?, plugins[], is_default?, token?, clear_token?, declaration?: {source_key, vendor, product}}` — `token` write-only, omitted keeps the stored key. A `declaration` names the data source the collector carries (`source_key` is a catalogue key or `test_channel`); the server computes the route verdict (any client-sent verdict is ignored; the native-dataset check also compares a canonical form of the name: lowercase, runs of non-alphanumerics as `_`, edge `_` trimmed), stores `{source_key, vendor, product, verdict, card_dataset, lab_tenant}`, and sets `dataset` to `<vendor>_<product>_raw` (a body `dataset` must agree, case-insensitively) | target + `previous_default`; 422 `TARGET_NAME_INVALID` / `TARGET_INVALID` / `TARGET_PLUGIN_NOT_COLLECTOR` / `TARGET_PLUGIN_ALREADY_BOUND` / `DECLARATION_SOURCE_UNKNOWN` / `TARGET_DATASET_DECLARATION_MISMATCH`; 409 `NATIVE_DATASET_NOT_LAB_TENANT` (verdict `native_dataset` and the url host is not in `CORTEXSIM_DOOR_PROBE_TENANTS`). Every target (GET, list, PUT) carries `declaration` and `last_arrival`, null when unset. A change to url, kind, header, scheme or key discards `last_check` |
 | DELETE | `/api/collector-targets/{name}` | Remove the target and its key | — | 204; 404 |
 | POST | `/api/collector-targets/{name}/preflight` | configured → reachable → accepted | `{write_canary: false}` | `{verdict, code, rungs[{rung,status,code,detail,proves,does_not_prove}], write_canary, post_attempted, records_written, status_code, remediation, warnings[], tenant_verified: 0}`; stored as `last_check` |
+| POST | `/api/collector-targets/{name}/arrival` | Ask the tenant (read-only XQL, one fixed query through the existing client) how many records tagged `cortexsim_canary = <token>` reached the target's dataset | `{tenant, token (canary token shape), delivered >= 0, since?, query_id?}`. Without `query_id`: one metered start inside the tenant budget, then one unmetered read (`queries_issued: 1`); with the `query_id` of a pending check: the read only (`0`). Timeframe is `since`..now, else the last 24 h. A `query_id` is valid only with the token it was started for. The target's dataset must be a bare identifier (`^[A-Za-z_][A-Za-z0-9_]*$`); anything else is never put into a query. POVengine's own request budget can refuse locally: before the start it reads `not_checked` / `QUOTA` with `queries_issued: 0` (nothing charged); on the results fetch it reads `pending` with a `reason` (test again) | `{state, found, delivered, first_seen, last_seen, query_id, queries_issued, code, reason, proves[], does_not_prove[]}`. `state`: `counted` (tenant answered SUCCESS; `found` may be 0), `pending` (still running; `found` null, never 0; carries `query_id`; not stored), `not_checked` with `code` `TARGET_HAS_NO_DATASET` / `DATASET_NOT_QUERYABLE` / `TENANT_NOT_CONFIGURED` / `XQL_NOT_AUTHORISED` / `QUOTA` / `TENANT_UNAUTHORIZED` / `TENANT_ERROR` / `QUERY_FAILED` (the tenant ended the query or reported a query error such as bad syntax or an unknown dataset) / `UNRECOGNISED_REPLY` (a reply this code cannot read), never a count. `proves[]` is non-empty only for `counted` with `found > 0` (k of N when `found < delivered`); `does_not_prove[]` is on every result. `counted` and `not_checked` are stored as `last_arrival`; 404 `TARGET_NOT_FOUND`; 422 on a malformed token |
 
 `kind` ∈ `xsiam_http_collector` (key required) · `http_forwarder`. Broker VM
 targets are not modelled yet. **The reachable rung sends no HTTP request**; only
@@ -2570,13 +2572,35 @@ inside the built image and fails below 41.
 | session mode | per process | `stateless_http=True` — SimCore restarts are routine mid-POV, and a stateful session manager would 404 every client after one |
 | DNS-rebinding guard | n/a | two layers. SimCore's app-wide Host guard answers first (`400 HOST_NOT_ALLOWED` unless `Host` is loopback, an IP literal, this machine's name or in `CORTEXSIM_ALLOWED_HOSTS`); then the SDK's transport-security allowlist, seeded with `localhost`, `127.0.0.1` and `CORTEXSIM_MCP_ALLOWED_HOSTS` (comma list, default empty), answers `421` to anything else. A name must be in both lists; an IP literal only in the second |
 
-Authentication posture is inherited, not widened: SimCore has no API
-authentication layer (`CORTEXSIM_SECRET` protects the vault at rest, not the
-routes), and the MCP surface sits inside that boundary. What the surface adds is
-the removal of the one thing an agent could newly do — writes to a tenant always
-preview (§9.5).
+Authentication: `/mcp` over HTTP requires `Authorization: Bearer
+<CORTEXSIM_MCP_TOKEN>` (scheme case-insensitive, constant-time comparison, the
+header never logged). A missing or wrong token is `401` with
+`WWW-Authenticate: Bearer` and `{"error","code":"MCP_UNAUTHORIZED","detail"}`.
+With `CORTEXSIM_MCP_HTTP=1` and no token, `/mcp` is **not mounted** and the `mcp`
+component of `/api/health` is `degraded` / `MCP_TOKEN_MISSING`; with the flag off
+it stays `ok` / `MCP_DISABLED`. The token only lets a client into `/mcp`; it is
+never a tenant credential. The MCP tenant tools hold no key: they reach the
+tenant only through SimCore's own routes, which use the integration credential
+stored in SimCore's vault at tenant onboarding — the same credential the
+run-evidence and reconcile path uses, metered by the same per-tenant budget.
+`/api` stays unauthenticated: the token does not mean SimCore is authenticated.
+The configured token is stripped of surrounding whitespace and a blank one counts
+as missing; the header is compared as raw bytes against the token encoded once at
+mount, so a non-ASCII token works and an unencodable one fails at startup.
+
+**Reach (2026-11-13).** `/mcp` is bearer-only in phase 1. A peer-address check
+cannot separate the host from the rest of the network: under Docker Desktop a
+host-loopback request (`curl http://127.0.0.1:<published port>/`) reaches the
+container with peer `172.17.0.1`, the Docker bridge gateway, not `127.0.0.1` or
+`::1`, so no loopback-only check was built and `McpGate.loopback_only` stays
+false. A loopback-only `/mcp` needs a different mechanism (open decision).
+
+Writes to a tenant always preview (§9.5). stdio is unchanged (see
+`docs/superpowers/specs/2026-11-11-in-container-tenant-reader-design.md` §7.1).
 
 Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
+`CORTEXSIM_MCP_TOKEN` (required for the mount),
+`CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` (default off, §9.3),
 `CORTEXSIM_MCP_ALLOWED_HOSTS`, `CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`
 (default 30, a process-local token bucket over tenant-class tools) and
 `CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read
@@ -2659,6 +2683,18 @@ name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
 | `xsiam.content.list` | `xsiam_content_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
 | `xsiam.ingest.status` | `xsiam_ingest_status` | xsiam | — | none | `TOOL_NOT_BACKED` (v1) |
 
+**Host actions are gated (spec §7.2).** Every tool with network `host` and class
+`write` or `destructive` — today `cortexsim.run.launch` and `cortexsim.run.abort` —
+stays registered but, unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is true, refuses
+with `MCP_HOST_ACTION_DISABLED` (the launch/abort request is never sent to SimCore). The refusal
+carries `data = {"console": "#/library" | "#/runs", "execute_as_human": "curl -X POST
+<base>/api/runs … -d '<json>'"}` (abort: `curl -X POST <base>/api/runs/<id>/abort`).
+One rule covers both transports: the stdio entry reads the env var, then
+`config.settings`; the `/mcp` mount reads `settings`, which reads the env var first.
+Desktop's `docker exec` opts in with `-e CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=1`.
+Tenant-class tools (`run.reconcile`, `run.verify`, `assertion.run`,
+`xsiam.operation.execute`) are unaffected.
+
 Four tools are registered so a consumer that expects them gets an honest
 refusal (`TOOL_NOT_BACKED`) instead of a missing tool: the XSIAM public API
 exposes no listing for them, and nothing is queried.
@@ -2735,6 +2771,7 @@ adds (`core/mcp_server/errors.py` unless noted):
 | code | when |
 |---|---|
 | `MCP_WRITE_NOT_EXECUTABLE` | `dry_run: false` on a write or destructive op through MCP (preview attached) |
+| `MCP_HOST_ACTION_DISABLED` | `cortexsim.run.launch` / `cortexsim.run.abort` called while `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is off (console path and `curl` in `data`) |
 | `TOOL_NOT_BACKED` | one of the four registered-but-unbacked tools |
 | `NO_TENANT_CONFIGURED` | no `xsiam_tenant` credential in the vault, or the named tenant is not one |
 | `TENANT_AMBIGUOUS` | more than one tenant is configured and none was named |

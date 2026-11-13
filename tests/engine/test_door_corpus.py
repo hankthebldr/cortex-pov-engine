@@ -28,6 +28,12 @@ collector route: total 1,411 -> 1,420, collector 199 -> 208 (XQL 63 -> 71,
 Correlation 21 -> 22). No door count and no underived count moves. The
 scenario is collector-only, so it reads ``needs_doors`` with every door open
 and with none (10 -> 11, 191 -> 192).
+
+Re-pinned 2026-11-13 for SIM-EDR-025 step-05: its BTP Prevention row (no
+dataset) became the built-in "Suspicious data encryption" ABIOC, which reads
+xdr_data and needs only the agent: xdr_agent 504 -> 505 (still 104 scenarios),
+XDR_AGENT_SOLE 503 -> 504, NO_DATASET 224 -> 223. Total, collector and states
+unchanged.
 """
 from __future__ import annotations
 
@@ -75,7 +81,7 @@ def corpus():
 # doors counts once under each. Collector-route and underived detections are
 # counted below, not here.
 DOOR_COUNTS: dict[str, tuple[int, int]] = {
-    "xdr_agent": (504, 104),
+    "xdr_agent": (505, 104),
     "ngfw_traffic": (136, 49),
     "cloud_aws": (67, 21),
     "saas_okta": (24, 14),
@@ -100,9 +106,9 @@ DOOR_COUNTS: dict[str, tuple[int, int]] = {
 # Every code, zeros included. No corpus detection names a missing card, and every
 # dataset a card reads has a registry row. NO_DATASET is the 293 of spec §11 less
 # the 68 on collector steps (47 IOC, 21 correlation), less the 2 the beta merge
-# removed, plus SIM-KOI-012's Prevention row.
+# removed, plus SIM-KOI-012's Prevention row, less SIM-EDR-025's (now an ABIOC).
 UNDERIVED: dict[str, int] = {
-    "CARD_NOT_FOUND": 0, "NO_DATASET": 224, "DOORS_UNKNOWN": 61, "NO_PROVIDER": 39,
+    "CARD_NOT_FOUND": 0, "NO_DATASET": 223, "DOORS_UNKNOWN": 61, "NO_PROVIDER": 39,
     "UNREGISTERED_DATASET": 0,
 }
 COLLECTOR_BY_TYPE: dict[str, int] = {
@@ -113,8 +119,9 @@ COLLECTOR_BY_TYPE: dict[str, int] = {
 # msft_azure_ad_signin, so under rule 2 it needs saas_entra too. The dev 8c90739
 # measurement read only the first anchor (spec §11) and counted it as agent-only.
 # The beta merge removed 5 agent-only detections and SIM-KOI-012 added 7 (see the
-# module docstring); measured on the merged tree.
-XDR_AGENT_SOLE = 503
+# module docstring); measured on the merged tree. SIM-EDR-025 step-05's ABIOC
+# adds 1 (2026-11-13).
+XDR_AGENT_SOLE = 504
 
 
 def test_corpus_door_counts(corpus):
@@ -143,8 +150,9 @@ def test_corpus_door_counts(corpus):
                     door_scen.setdefault(door, set()).add(sc["scenario_id"])
     assert total == 1420
     assert collector == 208
-    assert door_dets["xdr_agent"] == 504, (
-        "509 (514 xdr_data less the 5 on collector steps) less 5 the beta merge removed")
+    assert door_dets["xdr_agent"] == 505, (
+        "509 (514 xdr_data less the 5 on collector steps) less 5 the beta merge removed, "
+        "plus SIM-EDR-025 step-05's ABIOC")
     assert xdr_sole == XDR_AGENT_SOLE
     assert {d: (door_dets[d], len(door_scen[d])) for d in door_dets} == DOOR_COUNTS
     assert set(underived) <= set(UNDERIVED_CODES)

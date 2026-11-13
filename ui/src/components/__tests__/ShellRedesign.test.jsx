@@ -6,8 +6,8 @@
  *   - the safety banner is a per-TENANT consent gate, not a dismissable notice
  *   - the phase bar answers "where am I in the work", including the honest
  *     "nowhere" for destinations outside the six-phase model
- *   - the header run view is UNCONDITIONAL (it used to vanish between runs,
- *     which is most of a session)
+ *   - the header Running pill is there only while a run is live (design v26
+ *     §4.5); between runs the header states the instance instead
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -99,11 +99,16 @@ describe('SectionTabs — the pages inside a task', () => {
   // The flow bar (six phases + a "Next:" CTA at the foot of every page) is
   // gone. Wayfinding is the task rail plus this strip, which only exists on
   // tasks that have more than one page.
-  it('shows the Simulate pages, with the open one selected', () => {
-    render(<SectionTabs destination="composer" />)
-    expect(screen.getByTestId('section-tab-library')).toHaveTextContent('Scenarios')
-    expect(screen.getByTestId('section-tab-composer')).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByTestId('section-tab-preflight')).toHaveAttribute('aria-selected', 'false')
+  it('shows the Catalog pages, with the open one selected', () => {
+    render(<SectionTabs destination="streams" />)
+    expect(screen.getByTestId('section-tab-ttps')).toHaveTextContent('TTP cards')
+    expect(screen.getByTestId('section-tab-streams')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('section-tab-uctc')).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it("Simulate's pages are rail items now, so they carry no strip", () => {
+    const { container } = render(<SectionTabs destination="composer" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('navigates by destination id — a tab is a route, not local state', async () => {
@@ -120,10 +125,13 @@ describe('SectionTabs — the pages inside a task', () => {
   })
 })
 
-describe('ConsoleHeader — the run view is always present', () => {
+describe('ConsoleHeader — the Running pill is there only while a run is live', () => {
+  // Design v26 §4.5 reverses the old "always present" run view: between runs
+  // the header states this instance (uptime, runs, issues) instead, and the
+  // pill appears only when there is something live to open.
   const health = { hostname: 'lab-test', version: 'v1.0', sensors: {} }
 
-  it('shows LIVE with a step counter while a run is in flight', () => {
+  it('shows RUNNING with the step while a run is in flight', () => {
     render(
       <ConsoleHeader
         health={health}
@@ -132,50 +140,31 @@ describe('ConsoleHeader — the run view is always present', () => {
     )
     const view = screen.getByTestId('header-run-view')
     expect(view).toHaveAttribute('data-run-state', 'live')
+    expect(view).toHaveTextContent('RUNNING')
     expect(view).toHaveTextContent('SIM-EDR-001')
-    expect(view).toHaveTextContent('2/5')
+    expect(view).toHaveTextContent('step 2 of 5')
   })
 
-  it('falls back to the LAST RUN when nothing is in flight', () => {
+  it('renders no pill when nothing is in flight, even after earlier runs', () => {
     render(
       <ConsoleHeader
         health={health}
         activeRun={null}
-        lastRun={{ runId: 'r-0', scenarioId: 'SIM-CDR-003', status: 'completed' }}
+        lastRun={{ runId: 'r-0', scenarioId: 'SIM-CDR-003', status: 'complete' }}
       />,
     )
-    const view = screen.getByTestId('header-run-view')
-    expect(view).toHaveAttribute('data-run-state', 'last')
-    expect(view).toHaveTextContent('SIM-CDR-003')
+    expect(screen.queryByTestId('header-run-view')).not.toBeInTheDocument()
   })
 
-  it('says there are no runs explicitly when there has never been one', () => {
-    // An empty slot would read as "we failed to load it". The copy tightened
-    // from "NO RUNS / nothing launched yet" to a single "no runs yet" when the
-    // header went to one line at the 1200px floor — the contract is that the
-    // state is STATED, not that it is stated in two labels.
-    render(<ConsoleHeader health={health} activeRun={null} lastRun={null} />)
-    const view = screen.getByTestId('header-run-view')
-    expect(view).toHaveAttribute('data-run-state', 'none')
-    expect(view).toHaveTextContent(/no runs yet/i)
-  })
-
-  it('routes live → the live tab and last → the evidence tab', async () => {
+  it('opens the live run’s detail', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    const { rerender } = render(
+    render(
       <ConsoleHeader health={health} onNavigate={onNavigate}
         activeRun={{ runId: 'r-1', scenarioId: 'S', step: 1, totalSteps: 2, elapsed: 1 }} />,
     )
     await user.click(screen.getByTestId('header-run-view'))
     expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'r-1', tab: 'live' })
-
-    rerender(
-      <ConsoleHeader health={health} onNavigate={onNavigate}
-        activeRun={null} lastRun={{ runId: 'r-0', scenarioId: 'S', status: 'completed' }} />,
-    )
-    await user.click(screen.getByTestId('header-run-view'))
-    expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'r-0', tab: 'evidence' })
   })
 
   it('keeps the tenant and agent switchers — they are richer than static pills', () => {

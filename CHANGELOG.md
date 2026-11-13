@@ -729,6 +729,15 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — HTTP collector backend (declaration, detections list, arrival check)
+
+- `GET /api/eal/data-streams/{source_key}/detections` lists the detections behind a data source.
+- `POST /api/collector-targets/{name}/arrival` checks that a collector's example records arrived.
+- `PUT /api/collector-targets/{name}` takes a `declaration` field; refusals: `DECLARATION_SOURCE_UNKNOWN`, `NATIVE_DATASET_NOT_LAB_TENANT`, `TARGET_DATASET_DECLARATION_MISMATCH`.
+- New setting `CORTEXSIM_DOOR_PROBE_TENANTS` (lab `.env` only; compose passes it through).
+- `collector_targets` gains `declaration` and `last_arrival` columns, added at boot.
+- The email emitter carries a `canary_token` on its records.
+
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
@@ -784,6 +793,26 @@ with 409 `PUSH_NOT_SUPPORTED`.
   is removed; nothing in the run path reads the column; and
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
+
+### Fixed — SIM-EDR-025 expects the encryption detection the lab saw fire
+
+`SIM-EDR-025` step-05 declared the agent's Behavioral Threat Protection
+verdict on its mass encryption (`prevention-anti-ransomware-mass-encryption`,
+module `btp`) as `outcome: detect`. On `pov-target-01` (2026-11-11, report
+mode) openssl encrypting about 40 files under `/var/tmp` raised only the
+built-in Low Analytics BIOC "Suspicious data encryption" and no behavioral
+threat issue, so a working tenant scored a miss (CONT-04/10).
+
+- **Step-05 now expects "Suspicious data encryption"** (`type: ABIOC`,
+  `abioc-suspicious-data-encryption`, new on card `TTP-2026-0200`), keyed on
+  the built-in alert name verbatim. It is Low, so it creates or joins no case:
+  the scenario's text now says the chain yields signals, not an incident.
+- **The BTP row stays on the card, undeclared.** What makes Linux BTP act on
+  mass encryption is open (PM-PRV-07). Declaring it only for the block half of
+  a paired run is not expressible: every row is seeded into every run, and a
+  report-mode run scores even an `outcome: prevent` row as a detect.
+- Counts: Prevention step-detections 3 → 2, ABIOC 163 → 164, catalog
+  detection objects 2260 → 2261; step-detections unchanged at 1411.
 
 ### Security — how 1.1.1's fixes sit on top of the beta hardening
 
@@ -935,6 +964,64 @@ escape every string behind it.
   share 10.1% (141). `tenant-verified` is still 0; nothing here has run
   against the tenant.
 
+### Added — Unit 42 backlog: a triage, two scenarios and eight log-tampering presets
+
+- **Triage of the 20 Unit 42 posts that no card or scenario cited**
+  (`docs/reference/unit42-backlog-triage.md`). Each post was read in full and
+  given a verdict: 16 are not scenario material (reports, briefs and reference
+  pages with no reproducible behaviour), one was built, one was built as
+  authored-only with a second post as one of its legs, and one is deferred
+  until the lab has a Windows host.
+- **SIM-KOI-012**, with card TTP-2026-0203: the Axios npm supply-chain
+  compromise on a Linux developer endpoint, from the postinstall dropper to the
+  Python remote access tool. Seven steps. Its network leg fails closed: every
+  beacon goes to a `.invalid` name, and if a resolver ever answers for that
+  name the payload sends nothing. Not yet run on the lab endpoint; the run plan
+  is `docs/lab/2026-11-11-unit42-backlog-lab-run-plan.md`.
+- **Eight `cloud_audit_emitter` presets for cloud log tampering** against AWS
+  CloudTrail and Google Cloud Logging: `log_stop`, `log_destination_delete`,
+  `log_router_delete`, `log_key_swap`, `log_object_overwrite`,
+  `log_router_create`, `log_router_redirect` and `stream_bucket_delete`. They
+  emit the victim account's audit records only, with the request parameters
+  each call carries.
+- **SIM-CDR-030**, with card TTP-2026-0550: cloud logging re-routed, poisoned,
+  stopped and destroyed, with a log-bucket hijack leg. Eight steps emit 56
+  audit records through those presets to an HTTP collector. It declares eight
+  XQL rows and one correlation rule the operator installs. Authored only: its
+  steps read the collector address from the environment, which a stock pull
+  install does not pass to a step, so it has not been delivered to a tenant.
+- **Dataset registry row `cortexsim_cloud_audit_raw`**, the dataset an XSIAM
+  HTTP collector writes those records to. The registry now lists 33 datasets.
+- **Counts:** 200 scenarios, 198 cards, 1420 step-detections, Correlation
+  share 10.1% (143), from `docs/reference/ground-truth.md`.
+
+### Added — a staged draft detection library, and a packager that clones nothing
+
+- **`drafts/detection-library/`** holds 366 generated scenario and card pairs
+  (310 Windows, 56 Linux) that are **not corpus content**. They carry
+  provisional ids (`SIM-DRAFT-NNN`, `TTP-0000-NNNN`) and `status: draft`. SimCore
+  does not load them, the console does not show them, no count includes them
+  and the image does not ship them. A pair enters the corpus by promotion, one
+  reviewed pair at a time; the directory's README gives the path.
+- **Why they are staged.** The pairs came from a local-model pipeline whose
+  packager cloned a live scenario and card and replaced only part of each. Every
+  pair therefore carried that exemplar's source citation, UC/TC refs and cleanup
+  line, and 320 cards carried one invented SHA-256 marked malicious. The pairs
+  were rebuilt from the model's own output and the Cortex analytics alert each
+  was written for: 306 cite that alert, 60 have no recorded source and say so,
+  and 331 hash indicators with no source were dropped.
+- **`INDEX.md` and `MANIFEST.json`** list what each draft's content still
+  shows, generated by `scripts/detdev/manifest.py`. 78 drafts name a host a
+  command would really reach, 75 have a step that is a placeholder, and the 310
+  Windows drafts cannot be lab-run without a Windows host. No draft has been
+  reviewed or run.
+- **The pipeline (`scripts/detdev/`)** now builds a pair from the model fragment
+  and its recorded source only. `package.py` previews by default and writes into
+  the staging directory with `--apply`, never into `scenarios/` or
+  `detection_scanner/ttps/`. `genfrag.py` takes the target platform and alert,
+  reads the gateway key from the environment, and no longer asks the model for
+  an invented hash. The new prompt has not been run against a model.
+
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 
 - **A DC enters the tenant-side collectors once and every in-process consumer
@@ -960,6 +1047,42 @@ escape every string behind it.
   helper) and a new `collector_targets` table.
 - **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
   Broker VM targets, which wait on confirmation of the applets in use.
+
+### Fixed — assertion probes no longer measure a page the API may have truncated
+
+- **A full page of XQL results was scored as the tenant's whole answer.** The
+  assertion runner fetches one page at a limit of 100 rows, and every probe
+  counts, dedups, divides or takes the earliest of what comes back. With 300
+  alerts in the population and 150 in the numerator, `xql_ratio` read
+  "100 of 100 = 100 %", a pass against a 90 % bar. `xql_rows` and
+  `xql_distinct` could never clear a bar above what one page shows, and
+  `xql_latency` could report `OUTCOME_ABSENT` (a hard fail) when the outcome
+  that followed the trigger sat past row 100. A page that comes back full now
+  resolves `PROBE_RESULT_TRUNCATED` → `pending`, unless the reply's
+  `number_of_results` equals the page. A larger `number_of_results` is not
+  taken as the count while PM-XQL-03 asks what the field counts. A count
+  pushed into XQL (`| comp count()`) is one row and is unaffected. Scenario
+  Tier-2 verification (`xsiam_query_runner`) is unchanged. Guard: the
+  truncated-page cases in `tests/engine/test_assertions.py`, which drive the
+  production runner over a tenant stand-in that pages like the API; 4 of 7
+  failed before the change.
+- **A query the runner refused was reported as an unreachable tenant.** The
+  probe failure classifier matched exception class names exactly, so a
+  subclass fell through to `TENANT_UNREACHABLE`. An assertion whose query
+  carries a `| target` write stage is refused before it is sent, yet its
+  remediation told the DC to check network egress. It now reads
+  `PROBE_QUERY_FAILED`; the verdict was and stays `pending`. Guard:
+  `test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_outage`,
+  which failed before the change.
+- **A spent CortexSim query budget was also reported as an unreachable
+  tenant.** The per-tenant ledger around the assertion runner raises its own
+  errors when its breaker is open or its daily cap
+  (`CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY`) is spent; they are not XSIAM errors,
+  so they fell through to `TENANT_UNREACHABLE`. They now read
+  `PROBE_QUOTA_EXHAUSTED`, whose remediation names CortexSim's budget as well
+  as the tenant's. Verdict unchanged (`pending`). Guard:
+  `test_a_spent_query_budget_reads_as_quota_not_as_an_unreachable_tenant`
+  (breaker open, daily cap spent), both failed before the change.
 
 ### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
 

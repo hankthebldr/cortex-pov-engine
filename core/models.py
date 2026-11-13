@@ -1270,6 +1270,8 @@ class CollectorTargetConfig(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     secret_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_check: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    declaration: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    last_arrival: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -1285,6 +1287,8 @@ class CollectorTargetConfig(Base):
             "is_default": bool(self.is_default),
             "has_key": self.secret_name is not None,
             "last_check": self.last_check,
+            "declaration": self.declaration,
+            "last_arrival": self.last_arrival,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

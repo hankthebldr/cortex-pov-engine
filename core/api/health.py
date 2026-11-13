@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Request
@@ -44,6 +45,18 @@ logger = logging.getLogger("cortexsim.api.health")
 router = APIRouter(tags=["health"])
 
 APP_VERSION = "1.1.1"
+
+# When THIS process started. The console header states the instance's uptime,
+# and only SimCore's own clock can say it: the wall time is for display, the
+# monotonic one for the arithmetic, so a clock step on the host never makes the
+# uptime run backwards.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+_PROCESS_STARTED_MONO = time.monotonic()
+
+
+def uptime_seconds() -> int:
+    """Whole seconds since this SimCore process started."""
+    return max(0, int(time.monotonic() - _PROCESS_STARTED_MONO))
 
 OK = "ok"
 DEGRADED = "degraded"
@@ -967,6 +980,17 @@ def probe_mcp(app: Any = None) -> dict[str, Any]:
             **common,
         )
 
+    if not settings.CORTEXSIM_MCP_TOKEN.get_secret_value().strip():
+        return _degraded(
+            "MCP_TOKEN_MISSING",
+            "CORTEXSIM_MCP_HTTP is set but CORTEXSIM_MCP_TOKEN is empty, so /mcp is NOT mounted. "
+            "Fix: generate a token with python -c 'import secrets; print(secrets.token_urlsafe(32))', "
+            "set CORTEXSIM_MCP_TOKEN to it, and restart SimCore.",
+            mounted=False,
+            tools=0,
+            **common,
+        )
+
     try:
         from mcp_server.server import registered_ids  # noqa: PLC0415
     except ImportError as exc:
@@ -1136,6 +1160,8 @@ async def health_payload(app: Any = None) -> dict[str, Any]:
         "version": APP_VERSION,
         "commit": commit_sha(),
         "env": settings.CORTEXSIM_ENV,
+        "started_at": _PROCESS_STARTED_AT.isoformat().replace("+00:00", "Z"),
+        "uptime_seconds": uptime_seconds(),
         "components": components,
         "degraded_components": degraded,
         "checked": list(COMPONENT_KEYS),

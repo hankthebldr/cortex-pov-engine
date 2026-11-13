@@ -1,0 +1,174 @@
+/* component-page.css — the component page and the Configure frame
+   (design v26 §2, §4.2, §4.3, §5). Tokens only; no hex.
+   Cards: --s1, 1px --bd, radius 10px, padding 14–16px; rows inside a card
+   are separated by a 1px top border, not gaps. */
+
+.cmp-page { max-width: 1180px; }
+
+/* Card and step titles are 13–16px UI type; the console's global h2 rule
+   (cortex-console.css, `.theme-console h2`) would make them display-size. */
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.cmp-page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.cmp-page__id { min-width: 0; }
+.cmp-page__title { display: flex; align-items: center; gap: 11px; }
+.cmp-page__title .pov-page__title { margin: 0; font-size: 26px; line-height: 1.2; }
+.cmp-page__status { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-width: 0; }
+.cmp-page__detail {
+  font: 400 13px/1.4 var(--font-ui); color: var(--tx2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch;
+}
+.cmp-page__lede { margin-top: 8px; }
+.cmp-page__actions { display: flex; align-items: center; gap: 8px; flex: none; padding-top: 4px; }
+.cmp-page__off { margin: 12px 0 0; font: 400 13px/1.5 var(--font-ui); color: var(--tx2); }
+
+/* ── Issue line ─────────────────────────────────────────────────────────── */
+.cmp-issue {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 16px; padding: 12px 15px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+  font: 400 12.5px/1.45 var(--font-ui); color: var(--tx2);
+}
+.cmp-issue--degraded { border-left: 3px solid var(--warn); }
+.cmp-issue--down { border-left: 3px solid var(--crit); }
+.cmp-issue__text { min-width: 0; }
+
+/* ── Tabs (selected: --ac-soft fill, --ac-line border, §5) ──────────────── */
+.cmp-tabs { display: flex; gap: 6px; margin: 18px 0 0; padding-bottom: 12px; border-bottom: 1px solid var(--bd); }
+.cmp-tab {
+  padding: 7px 12px; border-radius: 6px;
+  border: 1px solid transparent; background: transparent;
+  font: 600 12.5px/1 var(--font-ui); color: var(--tx2); cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.cmp-tab:hover { background: var(--s2); color: var(--tx); }
+.cmp-tab--on { background: var(--ac-soft); border-color: var(--ac-line); color: var(--tx); }
+.cmp-tab:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+
+/* ── Overview: Services | Configuration ─────────────────────────────────── */
+.cmp-overview {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px; align-items: start; margin-top: 16px;
+}
+@media (max-width: 1279px) { .cmp-overview { grid-template-columns: minmax(0, 1fr); } }
+
+.cmp-card { background: var(--s1); border: 1px solid var(--bd); border-radius: 10px; padding: 6px 16px 8px; }
+.theme-console .cmp-card__title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin: 10px 0 8px; font: 600 13px/1.2 var(--font-ui); color: var(--tx);
+}
+.cmp-card__count { font: 400 12px/1 var(--font-ui); color: var(--tx3); }
+.cmp-card__empty { margin: 4px 0 12px; font: 400 12px/1.5 var(--font-ui); color: var(--tx3); }
+
+.cmp-rows { list-style: none; margin: 0; padding: 0; }
+.cmp-rows__item + .cmp-rows__item { border-top: 1px solid var(--bd); }
+.cmp-row {
+  width: 100%; min-height: 44px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 6px; margin: 0;
+  border: 0; border-radius: 6px; background: transparent;
+  color: var(--tx); text-align: left; font: inherit; cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+button.cmp-row:hover { background: var(--s2); }
+button.cmp-row:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.cmp-row--static { cursor: default; }
+.cmp-row .kit-status__word { min-width: 74px; }
+.cmp-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmp-row__title { font: 500 12.5px/1.35 var(--font-ui); color: var(--tx); }
+.cmp-row__sub {
+  font: 400 11.5px/1.4 var(--font-ui); color: var(--tx3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp-row__drill { flex: none; font: 500 11.5px/1 var(--font-ui); color: var(--tx2); }
+
+.cmp-setup, .cmp-manage { margin-top: 16px; }
+
+/* ── Configure frame ────────────────────────────────────────────────────── */
+.cfg { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.cfg__side { display: flex; flex-direction: column; gap: 10px; }
+.cfg__steps {
+  list-style: none; margin: 0; padding: 6px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+}
+.cfg__step {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 8px 9px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--tx2); text-align: left; cursor: pointer;
+  font: 500 12.5px/1.35 var(--font-ui);
+  transition: background-color 120ms ease-out;
+}
+.cfg__step:hover { background: var(--s2); color: var(--tx); }
+.cfg__step--on { background: var(--ac-soft); border-color: var(--ac-line); color: var(--tx); }
+.cfg__step:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.cfg__step-n {
+  flex: none; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--s3); color: var(--tx2); font: 600 10px/1 var(--font-mono);
+}
+.cfg__step-title { flex: 1; min-width: 0; }
+
+.cfg__path { display: flex; flex-direction: column; gap: 6px; }
+.cfg__path-label { font: 700 9px/1 var(--font-ui); letter-spacing: .13em; text-transform: uppercase; color: var(--tx3); }
+.cfg__seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.cfg__seg-opt {
+  padding: 6px 10px; border-radius: 6px; border: 1px solid var(--bd2);
+  background: transparent; color: var(--tx2); cursor: pointer; font: 600 11.5px/1 var(--font-ui);
+}
+.cfg__seg-opt--on { background: var(--ac-soft); border-color: var(--ac-line); color: var(--tx); }
+
+.cfg__panel { background: var(--s1); border: 1px solid var(--bd); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.cfg__panel-n { font: 500 11px/1 var(--font-mono); color: var(--tx3); }
+.theme-console .cfg__panel-title { margin: 6px 0 8px; font: 600 16px/1.3 var(--font-ui); color: var(--tx); }
+.cfg__why { margin: 0 0 10px; font: 400 12.5px/1.55 var(--font-ui); color: var(--tx2); max-width: 70ch; }
+.cfg__where { margin: 0 0 10px; font: 400 12px/1.45 var(--font-ui); color: var(--tx2); }
+.cfg__k { font: 700 9px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); margin-right: 8px; }
+.cfg__fields { margin: 0 0 12px; display: flex; flex-direction: column; }
+.cfg__field { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--bd); }
+.cfg__field dt { padding-top: 3px; }
+.cfg__v { margin: 0; font-size: 12px; color: var(--tx); overflow-wrap: anywhere; }
+.cfg__body { margin: 4px 0 12px; }
+.cfg__cmd { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; }
+.cfg__cmd-text {
+  flex: 1; min-width: 0; margin: 0; padding: 10px 12px;
+  background: var(--s0); border: 1px solid var(--bd); border-radius: 7px;
+  font-size: 11.5px; line-height: 1.5; color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cfg__verify { border-top: 1px solid var(--bd); padding-top: 12px; }
+.cfg__verifier { margin: 0 0 10px; font: 400 12px/1.45 var(--font-ui); color: var(--tx2); }
+.cfg__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 30px; }
+.cfg__actions:empty { display: none; }
+.cfg__tick { display: flex; align-items: center; gap: 8px; margin-top: 10px; font: 400 12px/1.4 var(--font-ui); color: var(--tx2); cursor: pointer; }
+.cfg__tick input { accent-color: var(--ac); width: auto; flex: none; margin: 0; }
+.cfg__result:focus { outline: none; }
+.cfg__detail { margin: 10px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx2); }
+.cfg__rows { list-style: none; margin: 10px 0 0; padding: 0; }
+.cfg__row { display: flex; align-items: baseline; gap: 9px; padding: 6px 0; border-top: 1px solid var(--bd); font: 400 12px/1.45 var(--font-ui); }
+.cfg__row .kit-status { align-self: center; }
+.cfg__row-label { flex: none; min-width: 140px; color: var(--tx); font-size: 11.5px; }
+.cfg__row-detail { color: var(--tx2); min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cmp-tab, .cmp-row, .cfg__step { transition: none; }
+}
+
+/* ── Step inputs (a pov step that stores values) ────────────────────────── */
+.cfg-inputs { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.cfg-input { display: flex; flex-direction: column; gap: 5px; }
+.cfg-input__label { font: 700 9px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); }
+.cfg-input__box {
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--s0); border: 1px solid var(--bd2); color: var(--tx);
+  font-size: 12px;
+}
+.cfg-input__box:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+
+/* ── POVengine › API (generated from /api/openapi.json) ─────────────────── */
+.cmp-api { width: 100%; border-collapse: collapse; margin: 4px 0 10px; font: 400 12px/1.4 var(--font-ui); }
+.cmp-api th { text-align: left; font: 700 9px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); padding: 8px 6px; }
+.cmp-api td { padding: 8px 6px; border-top: 1px solid var(--bd); vertical-align: top; color: var(--tx); }
+.cmp-api summary { cursor: pointer; color: var(--tx2); }
+.cmp-api__ops { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cmp-api__ops li { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; }
+.cmp-api__method { min-width: 52px; color: var(--tx2); }
+.cmp-api__summary { color: var(--tx3); }

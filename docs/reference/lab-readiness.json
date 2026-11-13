@@ -1283,7 +1283,6 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "ABIOC",
-        "Prevention",
         "XQL"
       ],
       "egress_tools": [],

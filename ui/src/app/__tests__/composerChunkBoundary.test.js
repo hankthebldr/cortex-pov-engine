@@ -79,9 +79,12 @@ describe('production bundle — React Flow stays out of the entry chunk', () => 
     const files = assetFiles()
     const entryFile = findChunk(files, 'index-', '.js')
     const { size } = fs.statSync(path.join(DIST_ASSETS, entryFile))
-    // Measured pre-Task-8 baseline was 98.79 kB raw. Generous headroom for
-    // unrelated future growth; still tight enough to catch a whole library
-    // (React Flow alone added ~180 kB to the Composer chunk) landing here.
-    expect(size).toBeLessThan(150 * 1024)
+    // Measured pre-Task-8 baseline was 98.79 kB raw. The design v26 shell is
+    // eager by design (rail and component model, header instance status, ⌘K
+    // index, read-back, toast, the shared kit): dev measured 146.6 KiB and the
+    // rail merged onto it 155.7 KiB (2026-11-13). The limit is for a LIBRARY
+    // landing here — React Flow alone is ~180 kB — not for shell code, so it
+    // sits at 170 KiB: a whole library still trips it.
+    expect(size).toBeLessThan(170 * 1024)
   })
 })

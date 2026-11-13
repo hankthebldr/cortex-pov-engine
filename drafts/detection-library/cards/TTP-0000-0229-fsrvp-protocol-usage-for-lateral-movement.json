@@ -1,0 +1,186 @@
+{
+  "id": "TTP-0000-0229",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "FSRVP Protocol Usage for Lateral Movement",
+    "summary": "An attacker uses the File Server Remote VSS Protocol (FSRVP) to create a shadow copy of a remote system's volume, enabling lateral movement and data exfiltration. Cortex should detect this behavior vi",
+    "description": "An attacker uses the File Server Remote VSS Protocol (FSRVP) to create a shadow copy of a remote system's volume, enabling lateral movement and data exfiltration. Cortex should detect this behavior via process creation and network activity."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1077",
+        "name": "T1077",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "name": "OS Credential Dumping",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "net use \\\\192.0.2.10\\ADMIN$ /user:Administrator\nvssadmin create shadow /for=C:\n\\vss\\vssadmin.exe create shadow /for=C:\\\n\\vss\\vssadmin.exe list shadows\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "vssadmin.exe process execution",
+        "expected_value": "action_process_image_name = 'vssadmin.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Remote connection to target system",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious FSRVP Usage",
+        "description": "Detection of vssadmin.exe being invoked with shadow creation commands on Windows systems",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'vssadmin.exe'\n| filter action_process_command_line contains 'create shadow'",
+        "mitre_technique_ids": [
+          "T1077",
+          "T1003",
+          "T1021.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious FSRVP Usage",
+        "description": "Behavioral deviation where vssadmin.exe is used to create shadow copies on remote systems",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'vssadmin.exe'\n| filter action_process_command_line contains 'create shadow'\n| filter action_remote_ip = '192.0.2.10'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "vssadmin.exe process start with shadow creation command",
+        "mitre_technique_ids": [
+          "T1077",
+          "T1003",
+          "T1021.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "VSS Admin Shadow Creation",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'vssadmin.exe'\n| filter action_process_command_line contains 'create shadow'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious usage of File Server Remote VSS Protocol (FSRVP); Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-usage-of-file-server-remote-vss-protocol-fsrvp"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious usage of File Server Remote VSS Protocol (FSRVP)",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-usage-of-file-server-remote-vss-protocol-fsrvp",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1077",
+      "url": "https://attack.mitre.org/techniques/T1077/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1003",
+      "url": "https://attack.mitre.org/techniques/T1003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.002",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

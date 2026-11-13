@@ -1,0 +1,184 @@
+{
+  "id": "TTP-0000-0225",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Domain Controller SMB Connection via DCSync",
+    "summary": "An attacker uses DCSync techniques to extract password hashes from a domain controller via SMB, triggering a suspicious SMB connection alert. Cortex should detect the unusual SMB activity from a domai",
+    "description": "An attacker uses DCSync techniques to extract password hashes from a domain controller via SMB, triggering a suspicious SMB connection alert. Cortex should detect the unusual SMB activity from a domain controller."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.006",
+        "name": "OS Credential Dumping: DCSync",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1077",
+        "name": "T1077",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.001",
+        "name": "T1558.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -ExecutionPolicy Bypass -Command \"Import-Module ActiveDirectory; Get-ADDomainController -Filter * | ForEach-Object { Invoke-DomainSync -TargetDC $_.Name }\"\nnet use \\\\dc01.contoso.local\\IPC$\nls \\\\dc01.contoso.local\\C$\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB connection from domain controller to target",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 445"
+      },
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process invoking DCSync",
+        "expected_value": "actor_process_image_name = 'powershell.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious SMB Connection from Domain Controller",
+        "description": "Detects an SMB connection initiated from a domain controller to a remote IP address",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip != '192.0.2.0/24'\n| filter dst_port = 445\n| filter actor_process_image_name = 'lsass.exe' or actor_process_image_name = 'net.exe'\n| filter causality_actor_process_image_name = 'dcdomaincontroller.exe'",
+        "mitre_technique_ids": [
+          "T1003.006",
+          "T1077",
+          "T1558.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "DCSync SMB Connection Behavior",
+        "description": "Behavioral deviation indicating an SMB connection initiated from a domain controller to a non-local IP address",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip != '192.0.2.0/24'\n| filter dst_port = 445\n| filter actor_process_image_name = 'lsass.exe' or actor_process_image_name = 'net.exe'\n| filter causality_actor_process_image_name = 'dcdomaincontroller.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "SMB connection initiated from domain controller",
+        "mitre_technique_ids": [
+          "T1003.006",
+          "T1077",
+          "T1558.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect SMB from DC",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip != '192.0.2.0/24'\n| filter dst_port = 445\n| filter actor_process_image_name = 'lsass.exe' or actor_process_image_name = 'net.exe'\n| filter causality_actor_process_image_name = 'dcdomaincontroller.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious SMB connection from domain controller; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-smb-connection-from-domain-controller"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious SMB connection from domain controller",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-smb-connection-from-domain-controller",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1003.006",
+      "url": "https://attack.mitre.org/techniques/T1003/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1077",
+      "url": "https://attack.mitre.org/techniques/T1077/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1558.001",
+      "url": "https://attack.mitre.org/techniques/T1558/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

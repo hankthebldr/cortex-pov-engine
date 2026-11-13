@@ -1,0 +1,144 @@
+{
+  "id": "TTP-0000-0327",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Sudo Authentication Brute Force on the Linux Syslog Feed",
+    "summary": "Sudo Authentication Brute Force on the Linux Syslog Feed. The attacker behavior is visible in the Linux host auth/syslog that is forwarded to a Cortex Broker VM syslog applet (parsed into dataset=linu",
+    "description": "Sudo Authentication Brute Force on the Linux Syslog Feed. The attacker behavior is visible in the Linux host auth/syslog that is forwarded to a Cortex Broker VM syslog applet (parsed into dataset=linux_syslog) — a collector/log-level detection, not the endpoint-agent process feed. CortexSim drives linux_syslog_emitter.py to reproduce the detectable syslog telemetry; no real host is touched."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.001",
+        "name": "Brute Force: Password Guessing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.003",
+        "name": "T1548.003",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Collector/log-level validation — stream shape-true Linux auth/syslog to the lab Broker VM.\nCOLLECTOR=\"${BROKER_VM:-192.0.2.9}\"\npython3 core/eal_simulator/linux_syslog_emitter.py --collector \"$COLLECTOR\" --phase baseline --baseline-count 40\npython3 core/eal_simulator/linux_syslog_emitter.py --collector \"$COLLECTOR\" --phase attack --which sudo-brute-force\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Linux syslog records for: Sudo Authentication Brute Force on the Linux Syslog Feed.",
+        "expected_value": "dataset linux_syslog: the sudo-brute-force pattern"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Repeated sudo PAM Auth Failures Then a Success",
+        "query": "dataset = linux_syslog\n| filter process = \"sudo\" and message contains \"authentication failure\"\n| comp count() as fails by user, host\n| filter fails >= 3",
+        "expected_rows_min": 1,
+        "dataset": "linux_syslog"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.7",
+        "context": "Host source of repeated sudo auth failures."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — Possible brute force on sudo user (Linux host syslog via collector; dataset=linux_syslog; ATT&CK T1110.001,T1548.003). Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex Analytics Alert Reference",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts",
+      "publisher": "Palo Alto Networks"
+    },
+    {
+      "title": "MITRE ATT&CK T1110.001",
+      "url": "https://attack.mitre.org/techniques/T1110/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1548.003",
+      "url": "https://attack.mitre.org/techniques/T1548/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

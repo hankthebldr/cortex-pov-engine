@@ -69,16 +69,29 @@ async def record_check(db: AsyncSession, name: str, result: dict[str, Any]) -> N
     await db.commit()
 
 
+#: What an arrival check keeps on the row as ``last_arrival``.
+_ARRIVAL_FIELDS = ("state", "found", "delivered", "token", "checked_at", "reason", "code")
+
+
+async def record_arrival(db: AsyncSession, name: str, result: dict[str, Any]) -> None:
+    row = await get_row(db, name)
+    if row is None:
+        return
+    row.last_arrival = {k: result.get(k) for k in _ARRIVAL_FIELDS}
+    await db.commit()
+
+
 async def upsert(
     db: AsyncSession, name: str, *, kind: str, url: str, dataset: Optional[str],
     auth_header: str, auth_scheme: str, plugins: list[str], is_default: bool,
-    token: Optional[str], clear_token: bool,
+    token: Optional[str], clear_token: bool, declaration: Optional[dict] = None,
 ) -> tuple[CollectorTargetConfig, Optional[str]]:
     """Create or replace a target. Returns ``(row, previous_default)``.
 
     The caller has validated the input. A change to anything that decides
-    where or how records go discards the stored check: it described a
-    different door.
+    where or how records go discards the stored check and the last arrival: they
+    described a different door. A declaration given is stored; none given is
+    kept only while the dataset is unchanged, since it described that dataset.
     """
     store = CredentialStore(db)
     row = await get_row(db, name)
@@ -93,9 +106,15 @@ async def upsert(
     if row is None:
         row = CollectorTargetConfig(name=name, created_at=now)
         changed = True
+        dataset_changed = True
     else:
         changed = (row.url, row.kind, row.auth_header, row.auth_scheme) != (
             url, kind, auth_header, auth_scheme)
+        dataset_changed = row.dataset != dataset
+    if declaration is not None:
+        row.declaration = declaration
+    elif dataset_changed:
+        row.declaration = None
     # Every NOT NULL field is set before the row joins the session: the vault
     # write below flushes, and a half-built row would fail that flush.
     row.kind, row.url, row.dataset = kind, url, dataset
@@ -115,6 +134,9 @@ async def upsert(
 
     if changed:
         row.last_check = None
+        row.last_arrival = None
+    if dataset_changed:
+        row.last_arrival = None
     await db.commit()
     await db.refresh(row)
     return row, previous_default

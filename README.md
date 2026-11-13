@@ -258,7 +258,7 @@ flowchart LR
         IDX["UC/TC index v2.2<br/>266 test cases"]
     end
 
-    subgraph CORE["SimCore — FastAPI :8888 · 161 routes"]
+    subgraph CORE["SimCore — FastAPI :8888 · 163 routes"]
         LOAD["scenario_loader<br/>S-01..S-30"]
         ORCH["orchestrator<br/>durable queue"]
         SHELF["payload_shelf<br/>digest-pinned"]
@@ -459,7 +459,7 @@ erDiagram
 
 ### API surface
 
-**161 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`). Interactive docs ship with the app at
+**163 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -469,7 +469,7 @@ erDiagram
 |---|---:|---|
 | `agents` | 16 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix |
 | `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
-| `eal` | 15 | campaigns, collectors, preflight, offline bundle |
+| `eal` | 16 | campaigns, collectors, preflight, offline bundle |
 | `xsiam` | 11 | 151-op gated operation catalog (writes preview) + Tier-2 XQL + issue, case and endpoint reads |
 | `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
@@ -477,13 +477,13 @@ erDiagram
 | `tools` | 8 | adapter catalog, tool instantiation |
 | `drafts` · `payloads` | 7 each | Composer drafts · the shelf, mounted at `/shelf` and `/k8s` |
 | `assertions` · `scenarios` | 6 each | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) · corpus, bundle download |
-| `collector_targets` | 5 | the collector targets the EAL emitters POST to, with preflight |
+| `collector_targets` | 6 | the collector targets the EAL emitters POST to, with preflight |
 | `results` · `infra` · `connectors` | 4 each | detection validation → MTTD · IaC bundle generation · preflight / reconcile / observations |
 | `tools_dist` · `pov` · `doors` · `ngfw` · `prerequisites` | 3 each | binaries · entitlement scoping · ingestion doors · PAN-OS connection · dataset prerequisites |
 | `mitre` · `events` · `tenant_evidence` | 2 each | coverage heatmap · SSE · run tenant evidence |
 | `storyline` · `health` · `causality` · `readiness` | 1 each | run narrative · diagnostics · causality graph · connector ladder |
 
-Counted 2026-11-13 by `@router.*` decorator per file; only the total (161) is
+Counted 2026-11-13 by `@router.*` decorator per file; only the total (163) is
 regenerated into the ground truth.
 
 </details>
@@ -1062,7 +1062,7 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    29 router files · 161 routes
+│   ├── api/                    29 router files · 163 routes
 │   ├── engine/                 18 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline

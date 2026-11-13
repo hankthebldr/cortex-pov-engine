@@ -1,0 +1,192 @@
+{
+  "id": "TTP-0000-0215",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "High Integrity Process Execution via Task Scheduler",
+    "summary": "An attacker uses schtasks to create a scheduled task that executes a malicious binary with SYSTEM privileges. Cortex should detect the execution of a process with high integrity level (SYSTEM) that wa",
+    "description": "An attacker uses schtasks to create a scheduled task that executes a malicious binary with SYSTEM privileges. Cortex should detect the execution of a process with high integrity level (SYSTEM) that was initiated by a scheduled task."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "schtasks /create /sc daily /tn \"UpdateService\" /tr \"C:\\\\temp\\\\malware.exe\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Scheduled task execution",
+        "expected_value": "action_process_image_name = 'C:\\\\Windows\\\\System32\\\\schtasks.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malicious binary created in temp directory",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious Process Executed with High Integrity Level",
+        "description": "A process was started with SYSTEM integrity level that was initiated by a scheduled task",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'C:\\\\Windows\\\\System32\\\\schtasks.exe'\n| filter action_process_integrity_level = ENUM.HIGH",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001",
+          "T1068"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual Scheduled Task Execution with Elevated Privileges",
+        "description": "Detection of scheduled task execution that results in a process with SYSTEM integrity level",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'C:\\\\Windows\\\\System32\\\\schtasks.exe'\n| filter action_process_integrity_level = ENUM.HIGH",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'C:\\\\Windows\\\\System32\\\\schtasks.exe'",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001",
+          "T1068"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect High Integrity Process from Scheduled Task",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'C:\\\\Windows\\\\System32\\\\schtasks.exe'\n| filter action_process_integrity_level = ENUM.HIGH",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious process executed with a high integrity level; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-executed-with-a-high-integrity-level"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious process executed with a high integrity level",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-executed-with-a-high-integrity-level",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1053.005",
+      "url": "https://attack.mitre.org/techniques/T1053/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1068",
+      "url": "https://attack.mitre.org/techniques/T1068/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

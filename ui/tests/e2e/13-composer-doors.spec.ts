@@ -8,10 +8,10 @@ import type { Page } from '@playwright/test'
  * WHY AN E2E SPEC
  * ---------------
  * The unit suite proves the derivation and the badge text. What jsdom cannot
- * prove is that the Lanes lens actually draws each card inside the band its
- * path names, that a dropped card visibly snaps back, and that a badge as long
- * as "AGT → COLLECTOR" fits on the card without covering its id. Those are
- * measured here.
+ * prove is that the Lanes lens (the ChainStage, design v26 §4.1) actually
+ * draws each card inside the band its path names, that pressing a card opens
+ * its step, and that a badge as long as "AGT → COLLECTOR" fits on the card
+ * without covering its id. Those are measured here.
  *
  * The scenarios were picked from the corpus because the old plane-derived
  * badge got each of them wrong:
@@ -41,20 +41,12 @@ async function openComposer(page: Page, scenario: string, w = 1440, h = 900) {
 
 const badge = (page: Page, step: string) => page.getByTestId(`chain-door-${step}`)
 
-/** Switch to the Lanes lens and wait for its fit to finish: the viewport moves
- *  when the lens changes, and a drag read from a box mid-fit misses its card. */
+/** Switch to the Lanes lens: the ChainStage in its editable mode (design v26
+ *  §4.1). It is not a React Flow pane, so there is no fit to wait out — the
+ *  bands and cards are placed on first paint. */
 async function openLanes(page: Page) {
   await page.getByTestId('composer-lens-lanes').click()
-  // The band container has no box of its own (its bands are absolute): wait
-  // for a band.
-  await page.waitForSelector('.composer-lane[data-lane="ENDPOINT"]')
-  let last = ''
-  await expect.poll(async () => {
-    const now = await page.evaluate(() => (document.querySelector('.react-flow__viewport') as HTMLElement).style.transform)
-    const steady = now === last
-    last = now
-    return steady
-  }, { intervals: [150, 150, 150, 250, 250, 500], timeout: 8_000 }).toBe(true)
+  await page.waitForSelector('[data-testid="chain-stage"][data-mode="editable"] .chain-stage__lane[data-lane="ENDPOINT"]')
 }
 
 test('SIM-AIACC-003: the Gemini burst reads as live traffic, its preflight as the endpoint', async ({ page }) => {
@@ -104,41 +96,29 @@ test('SIM-AISPM-003: Lanes lens draws each card inside the band its path names',
   await expect(badge(page, 'step-03')).toHaveText('AGT')
 
   const placed = await page.evaluate(() => {
-    const bands = Object.fromEntries([...document.querySelectorAll('.composer-lane')]
+    const bands = Object.fromEntries([...document.querySelectorAll('.chain-stage__lane')]
       .map((b) => [(b as HTMLElement).dataset.lane, b.getBoundingClientRect()]))
-    const centre = (id: string) => {
-      const r = document.querySelector(`.react-flow__node[data-id="${id}"]`)!.getBoundingClientRect()
-      return r.top + Math.min(r.height, 40) / 2
-    }
+    const card = (id: string) => document.querySelector(`[data-testid="stage-card-${id}"]`)!.getBoundingClientRect()
+    // The WHOLE card sits inside its band, not just its centre.
     const inBand = (id: string) => Object.entries(bands)
-      .find(([, b]) => centre(id) >= b.top && centre(id) < b.bottom)?.[0] || null
+      .find(([, b]) => card(id).top >= b.top - 0.5 && card(id).bottom <= b.bottom + 0.5)?.[0] || null
     return { 'step-01': inBand('step-01'), 'step-02': inBand('step-02'), 'step-03': inBand('step-03'), keys: Object.keys(bands) }
   })
   expect(placed.keys).toEqual(['LAUNCH', 'ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG', 'PROOF'])
   expect(placed['step-01']).toBe('CLOUD')
   expect(placed['step-02']).toBe('NONE')
   expect(placed['step-03']).toBe('ENDPOINT')
-  await expect(page.getByTestId('composer-lane-bands')).toContainText('CLOUD CONTROL PLANE')
+  await expect(page.getByTestId('chain-stage')).toContainText('CLOUD CONTROL PLANE')
 })
 
-test('a card dragged into another lane snaps back and says why', async ({ page }) => {
+test('a Lanes card is a button: pressing it opens that step in the inspector', async ({ page }) => {
   await openComposer(page, 'SIM-AISPM-003')
   await openLanes(page)
-  const node = page.locator('.react-flow__node[data-id="step-03"]')
-  const before = (await node.boundingBox())!
-  const target = (await page.locator('.composer-lane[data-lane="WIRE"]').boundingBox())!
-  const grip = page.getByTestId('chain-node-grip-step-03')
-  const g = (await grip.boundingBox())!
-  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(g.x + g.width / 2, target.y + target.height / 2, { steps: 12 })
-  await page.mouse.up()
-
-  await expect(page.getByTestId('canvas-refusal')).toContainText(/^Lane not changed/)
-  await expect(page.getByTestId('canvas-refusal')).toContainText(/lane follows what its command does/i)
-  await expect.poll(async () => Math.round((await node.boundingBox())!.y)).toBe(Math.round(before.y))
+  await page.getByTestId('stage-card-step-03').click()
+  await expect(page.getByTestId('stage-card-step-03')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.composer-mode__drawer--right .composer-mode__drawer-title')).toHaveText('step-03')
   await expect(badge(page, 'step-03')).toHaveText('AGT')
-  // A lane is not an edit: the chain does not read as changed.
+  // Selecting is not an edit: the chain does not read as changed.
   await expect(page.locator('.composer__edited')).toHaveCount(0)
 })
 
@@ -148,13 +128,13 @@ test('the Engine band holds tenant content, never a step', async ({ page }) => {
   await page.waitForSelector('[data-testid="chain-rule-CR-AIACC-0003"]', { timeout: 20_000 })
   await openLanes(page)
   const where = await page.evaluate(() => {
-    const eng = document.querySelector('.composer-lane[data-lane="ENG"]')!.getBoundingClientRect()
+    const eng = document.querySelector('.chain-stage__lane[data-lane="ENG"]')!.getBoundingClientRect()
     const inEng = (sel: string) => [...document.querySelectorAll(sel)].filter((n) => {
       const r = n.getBoundingClientRect()
-      const c = r.top + Math.min(r.height, 40) / 2
+      const c = r.top + r.height / 2
       return c >= eng.top && c < eng.bottom
     }).length
-    return { steps: inEng('.react-flow__node-step'), rules: inEng('.react-flow__node-rule') }
+    return { steps: inEng('[data-testid^="stage-card-step-"]'), rules: inEng('[data-testid^="stage-rule-"]') }
   })
   expect(where.steps).toBe(0)
   expect(where.rules).toBe(1)
