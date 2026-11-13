@@ -1,0 +1,165 @@
+{
+  "id": "TTP-0000-0354",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: rubeus (adapter-deployed)",
+    "summary": "rubeus roasts and forges Kerberos tickets (kerberoast / asreproast / pass-the-ticket). The tool is delivered through the Cortex POV tool adapter (TOOL-RUBEUS, installed by the pack at dispatch) rather",
+    "description": "rubeus roasts and forges Kerberos tickets (kerberoast / asreproast / pass-the-ticket). The tool is delivered through the Cortex POV tool adapter (TOOL-RUBEUS, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of rubeus and its artifacts."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.003",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.003",
+        "name": "Use Alternate Authentication Material: Pass the Ticket",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# MATURE: rubeus deployed via adapter_ref TOOL-RUBEUS.\n# adapter TOOL-RUBEUS installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nrubeus.exe kerberoast\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "rubeus executed by a service account.",
+        "expected_value": "action_process_image_name contains \"rubeus.exe\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Rubeus Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs rubeus — an offensive TOOL-RUBEUS-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains \"rubeus.exe\" or action_process_command_line contains \"rubeus\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of rubeus on This Host",
+        "description": "A host that has never run rubeus executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"rubeus\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of rubeus -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Rubeus Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"rubeus\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "rubeus.exe",
+        "context": "rubeus artifact path/name on the target."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — uncommon offensive tool (rubeus) executed by a service account; Required Data: XDR Agent; ATT&CK T1558.003."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1558.003",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.003",
+      "url": "https://attack.mitre.org/techniques/T1550/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

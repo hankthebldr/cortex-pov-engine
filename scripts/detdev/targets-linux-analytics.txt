@@ -1,0 +1,22 @@
+A compressed file was exfiltrated over SSH	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compressed-file-was-exfiltrated-over-ssh
+Kubernetes nsenter container escape	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/kubernetes-nsenter-container-escape
+Masquerading as the Linux crond process	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/masquerading-as-the-linux-crond-process
+Multiple uncommon SSH Servers with the same Server host key	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-uncommon-ssh-servers-with-the-same-server-host-key
+Possible binary padding using dd	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-binary-padding-using-dd
+Possible brute force on sudo user	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-brute-force-on-sudo-user
+Rare process created an SSH session to an uncommon cloud resource	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-created-an-ssh-session-to-an-uncommon-cloud-resource
+Rare process created an SSH session to an uncommon external host	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-created-an-ssh-session-to-an-uncommon-external-host
+Rare SSH Session	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-ssh-session
+Reading bash command history file	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/reading-bash-command-history-file
+Setuid and Setgid file bit manipulation	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/setuid-and-setgid-file-bit-manipulation
+SSH authentication brute force attempts	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ssh-authentication-brute-force-attempts
+Sudoedit Brute force attempt	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/sudoedit-brute-force-attempt
+Suspicious container orchestration job	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-container-orchestration-job
+Suspicious container reconnaissance activity in a Kubernetes pod	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-container-reconnaissance-activity-in-a-kubernetes-pod
+Suspicious container runtime connection from within a Kubernetes Pod	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-container-runtime-connection-from-within-a-kubernetes-pod
+Suspicious process execution in a privileged container	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-process-execution-in-a-privileged-container
+Suspicious sshpass command execution	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-sshpass-command-execution
+Uncommon reverse SSH tunnel to external domain/ip	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-reverse-ssh-tunnel-to-external-domain-ip
+Uncommon SSH session was established	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-ssh-session-was-established
+Unusual SSH Activity	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-ssh-activity
+Unusual SSH activity that resembles SSH proxy	https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-ssh-activity-that-resembles-ssh-proxy

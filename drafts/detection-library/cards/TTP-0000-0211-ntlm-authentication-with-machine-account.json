@@ -1,0 +1,195 @@
+{
+  "id": "TTP-0000-0211",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "NTLM Authentication with Machine Account",
+    "summary": "An attacker uses a stolen machine account to perform NTLM authentication, triggering a CortexSim alert for suspicious behavior. This attack involves impersonating a domain controller to gain access to",
+    "description": "An attacker uses a stolen machine account to perform NTLM authentication, triggering a CortexSim alert for suspicious behavior. This attack involves impersonating a domain controller to gain access to sensitive resources."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -Command \"Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\\\Windows\\\\System32\\\\cmd.exe /c \"\"net use \\\\dc01.testnet.local\\IPC$ /user:testdomain\\machine$ pass123\"\"'\"\nnet use \\\\dc01.testnet.local\\IPC$ /user:testdomain\\machine$ pass123\nls \\dc01.testnet.local\\C$\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process creation of cmd.exe with net command",
+        "expected_value": "action_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to domain controller over IPC$",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 445"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Execution of net command",
+        "expected_value": "action_file_path = 'C:\\\\Windows\\\\System32\\\\net.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious NTLM authentication with machine account",
+        "description": "Detects NTLM authentication attempts using a machine account",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'cmd.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_file_path = 'C:\\\\Windows\\\\System32\\\\net.exe'\n| filter causality_actor_process_image_name = 'net.exe'",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1550"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious NTLM authentication with machine account",
+        "description": "Behavioral deviation detected when a process attempts to authenticate with a machine account over network",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 445\n| filter causality_actor_process_image_name = 'cmd.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "cmd.exe process initiating network connection to domain controller",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1550"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect NTLM authentication with machine account",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 445\n| filter causality_actor_process_image_name = 'cmd.exe'\n| filter action_file_path = 'C:\\\\Windows\\\\System32\\\\net.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious NTLM authentication with machine account; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-ntlm-authentication-with-machine-account"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious NTLM authentication with machine account",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-ntlm-authentication-with-machine-account",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550",
+      "url": "https://attack.mitre.org/techniques/T1550/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

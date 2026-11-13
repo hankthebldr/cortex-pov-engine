@@ -1,0 +1,197 @@
+{
+  "id": "TTP-0000-0124",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Multiple Discovery Commands on Windows Host by Same Process",
+    "summary": "An attacker executes multiple discovery commands (whoami, net user, ipconfig) from a single process to gather system information. Cortex detects this behavior as suspicious process activity.",
+    "description": "An attacker executes multiple discovery commands (whoami, net user, ipconfig) from a single process to gather system information. Cortex detects this behavior as suspicious process activity."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1082",
+        "name": "System Information Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1069",
+        "subtechnique_id": "T1069.001",
+        "name": "T1069.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "C:\\Windows\\System32\\cmd.exe /c whoami\nC:\\Windows\\System32\\cmd.exe /c net user\nC:\\Windows\\System32\\cmd.exe /c ipconfig /all\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution of cmd.exe",
+        "expected_value": "action_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution of whoami",
+        "expected_value": "action_process_image_name = 'whoami.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution of net user",
+        "expected_value": "action_process_image_name = 'net.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution of ipconfig",
+        "expected_value": "action_process_image_name = 'ipconfig.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Multiple Discovery Commands by Process",
+        "description": "Detection of multiple discovery commands executed by the same process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('cmd.exe', 'whoami.exe', 'net.exe', 'ipconfig.exe')\n| comp count() as cnt by actor_process_image_name\n| comp count() as cmd_count\n| filter cmd_count > 3",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1082",
+          "T1069.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Multiple Discovery Commands Behavior",
+        "description": "Detects a single process executing multiple discovery commands in sequence",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('cmd.exe', 'whoami.exe', 'net.exe', 'ipconfig.exe')\n| comp count() as cnt by actor_process_image_name\n| comp count() as cmd_count\n| filter cmd_count > 3",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1082",
+          "T1069.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hunt for Multiple Discovery Commands",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('cmd.exe', 'whoami.exe', 'net.exe', 'ipconfig.exe')\n| comp count() as cnt by actor_process_image_name\n| comp count() as cmd_count\n| filter cmd_count > 3",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Multiple discovery commands on a Windows host by the same process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-windows-host-by-the-same-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Multiple discovery commands on a Windows host by the same process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-discovery-commands-on-a-windows-host-by-the-same-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1082",
+      "url": "https://attack.mitre.org/techniques/T1082/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1069.001",
+      "url": "https://attack.mitre.org/techniques/T1069/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}
