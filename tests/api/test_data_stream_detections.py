@@ -53,6 +53,22 @@ def test_okta_lists_its_detections_with_types_and_a_disputed_verdict(client):
     assert body["cards"] and all(c["kinds"] for c in body["cards"])
 
 
+def test_every_listed_detection_itself_reads_the_source_dataset(client):
+    """Detection level, not card level: a card that reads okta_sso also holds detections
+    on other datasets, and those must not be listed."""
+    from engine.door_resolution import detection_datasets
+    from engine.ttp_catalog import catalog
+
+    for key, dataset in (("okta", "okta_sso"), ("pan_firewall_traffic_logs", "panw_ngfw_traffic_raw")):
+        body = client.get(f"/api/eal/data-streams/{key}/detections").json()
+        assert body["count"] == len(body["detections"])
+        for d in body["detections"]:
+            read = detection_datasets(d, catalog)
+            assert dataset.lower() in {x.lower() for x in read}, (key, d, read)
+    okta = client.get("/api/eal/data-streams/okta/detections").json()
+    assert okta["count"] == 2
+
+
 def test_a_source_no_card_reads_is_degraded_not_ok(client):
     body = client.get("/api/eal/data-streams/duo/detections").json()
     assert (body["count"], body["status"], body["code"]) == (0, "degraded", "NO_DETECTION_READS_DATASET")

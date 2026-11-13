@@ -397,6 +397,7 @@ async def data_stream_detections(
     )
     from eal_simulator.ingestion_routes import tenant_datasets  # noqa: PLC0415
     from engine.dataset_requirements import card_dataset_index  # noqa: PLC0415
+    from engine.door_resolution import detection_datasets  # noqa: PLC0415
     from engine.lab_tenants import is_lab_tenant_host  # noqa: PLC0415
     from engine.ttp_catalog import catalog  # noqa: PLC0415
     from models import Scenario  # noqa: PLC0415
@@ -427,7 +428,11 @@ async def data_stream_detections(
         for scenario in rows:
             for step in scenario.to_dict().get("steps") or []:
                 for det in step.get("expected_detections") or []:
-                    if det.get("ttp_ref") in by_card:
+                    # Detection level: this detection object itself reads the card dataset,
+                    # not merely a card that reads it somewhere.
+                    if card_dataset.lower() in {
+                        ds.lower() for ds in detection_datasets(det, catalog)
+                    }:
                         detections.append({
                             "scenario_id": scenario.scenario_id,
                             "step_id": step.get("id"),
