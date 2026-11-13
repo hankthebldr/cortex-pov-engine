@@ -220,3 +220,88 @@ def test_delete_removes_the_row_and_its_key(db_file):
             async with Session() as s:
                 return len((await s.execute(select(Secret))).scalars().all())
         assert asyncio.run(_count()) == 0
+
+
+# --- declaration and last_arrival -------------------------------------------
+
+DECL = {"collection": "okta_sso", "fields": ["user", "ip"]}
+ARRIVAL = {"state": "arrived", "found": 3, "delivered": 3, "token": "tok-1",
+           "checked_at": "2026-11-13T10:00:00Z", "reason": None, "code": None,
+           "extra": "must not be kept"}
+
+
+def _upsert(Session, name="okta-hec", arrival=None, **over):
+    """Drive the store directly, as Tasks 4 and 6 will: the PUT takes no declaration yet."""
+    from engine import collector_targets as store
+
+    kw = dict(kind="xsiam_http_collector", url=URL, dataset="okta_sso_raw",
+              auth_header="Authorization", auth_scheme="", plugins=["idp_signin_emulator"],
+              is_default=False, token=None, clear_token=False)
+    kw.update(over)
+
+    async def _go():
+        async with Session() as s:
+            await store.upsert(s, name, **kw)
+            if arrival is not None:
+                await store.record_arrival(s, name, arrival)
+    asyncio.run(_go())
+
+
+def test_declaration_and_arrival_survive_a_restart(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+    with _app(db_file) as (c, _, _s):
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == DECL
+    assert body["last_arrival"] == {k: v for k, v in ARRIVAL.items() if k != "extra"}
+
+
+def test_a_legacy_row_reads_null(db_file):
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] is None
+    assert body["last_arrival"] is None
+
+
+def test_changing_dataset_without_a_declaration_clears_both(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        assert c.get("/api/collector-targets/okta-hec").json()["declaration"] == DECL
+        assert _put(c, token=None, dataset="other_raw").status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] is None
+    assert body["last_arrival"] is None
+
+
+def test_an_unchanged_dataset_keeps_the_declaration(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL)
+        assert _put(c, token=None).status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == DECL
+
+
+def test_a_declaration_given_with_a_new_dataset_is_stored(db_file):
+    new = {"collection": "other", "fields": []}
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        _upsert(Session, dataset="other_raw", declaration=new)
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == new
+    assert body["last_arrival"] is None
+
+
+def test_changing_the_url_clears_last_arrival(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        assert c.get("/api/collector-targets/okta-hec").json()["last_arrival"] is not None
+        assert _put(c, token=None, url="https://other.example.test/logs/v1/event").status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["last_arrival"] is None
+    assert body["last_check"] is None
