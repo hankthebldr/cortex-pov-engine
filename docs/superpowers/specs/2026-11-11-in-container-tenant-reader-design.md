@@ -691,6 +691,7 @@ poisoned tool replies.
 - **Neutralised.**
   - Stripped: C0/C1 controls, zero-width characters (U+200B–U+200F, U+2060, U+FEFF) and bidi
     controls (U+202A–U+202E, U+2066–U+2069).
+  - *Amended 2026-11-13:* also stripped are the Unicode tag block U+E0000–U+E007F ("ASCII smuggling"), U+061C (Arabic letter mark) and lone surrogates U+D800–U+DFFF, which cannot be encoded as UTF-8 and would turn one tenant string into a 500.
   - Each text field is capped at 200 characters and marked `text_truncated: true` when cut.
     Lists are capped at 50.
 - **Framed.**

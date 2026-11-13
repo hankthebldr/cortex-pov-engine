@@ -9,7 +9,8 @@ What the 2026-11-12 spike settled (spec §3.4) and this module relies on:
 * ``include_fields`` ADDS to the default fields, so a read sends
   ``ISSUE_INCLUDE_FIELDS`` to get the host and still receives everything else.
 * An issue's host is in ``row["normalized_fields"]`` under FLAT dotted XDM keys
-  (``ISSUE_HOST_FIELDS``, source then target); the value is a string or a list.
+  (``ISSUE_HOST_FIELDS``, source then target); the value is a string or a list,
+  and attribution reads every value in both.
   ``asset_names`` was empty on every observed row and is not read.
 * Top-level keys are flat dotted (``"detection.method"``, ``"status.progress"``)
   and are read through :func:`connectors.xsiam.alert_key`, the connector's own
@@ -43,7 +44,8 @@ TEXT_CAP = 200
 LIST_CAP = 50
 
 #: ``issue/search`` ``include_fields``: adds the host-bearing normalized fields.
-ISSUE_INCLUDE_FIELDS = ["normalized_fields"]
+#: A tuple, so no caller can change another's request; ``list()`` it into a body.
+ISSUE_INCLUDE_FIELDS = ("normalized_fields",)
 #: Flat dotted keys inside ``row["normalized_fields"]``, read in this order.
 ISSUE_HOST_FIELDS = ("xdm.source.host.hostname", "xdm.target.host.hostname")
 
@@ -81,12 +83,17 @@ _STRIP = {cp: None for cp in (
     *range(0x00, 0x20), 0x7F, *range(0x80, 0xA0),        # C0, DEL, C1
     *range(0x200B, 0x2010), 0x2060, 0xFEFF,              # zero-width
     *range(0x202A, 0x202F), *range(0x2066, 0x206A),      # bidi controls
+    0x061C,                                              # Arabic letter mark (bidi)
+    *range(0xE0000, 0xE0080),                            # tag block ("ASCII smuggling")
+    *range(0xD800, 0xE000),                              # lone surrogates: not encodable as UTF-8
 )}
 
 
 def neutralise_text(value: Any) -> tuple[Optional[str], bool]:
-    """``(text, truncated)``: controls, zero-width and bidi characters stripped,
-    then capped at ``TEXT_CAP`` characters. ``None`` stays ``None``."""
+    """``(text, truncated)``: controls, zero-width, bidi and tag characters and
+    lone surrogates stripped, then capped at ``TEXT_CAP`` characters. ``None``
+    stays ``None``. A lone surrogate (valid in JSON, ``"\\ud83d"``) would make
+    the response encoder raise, turning one tenant string into a 500."""
     if value is None:
         return None, False
     text = str(value).translate(_STRIP)
@@ -145,29 +152,32 @@ def _int_or_none(value: Any) -> Optional[int]:
 
 # ── projections ──────────────────────────────────────────────────────────────
 
-def _issue_host(row: dict) -> Optional[str]:
+def _issue_hosts(row: dict) -> list[str]:
+    """Every non-empty host value in ``ISSUE_HOST_FIELDS``, source first."""
     nf = row.get("normalized_fields")
     if not isinstance(nf, dict):
-        return None
+        return []
+    out: list[str] = []
     for field in ISSUE_HOST_FIELDS:
         value = alert_key(nf, field)
-        candidates = value if isinstance(value, list) else [value]
-        for c in candidates:
+        for c in value if isinstance(value, list) else [value]:
             if isinstance(c, str) and c.strip():
-                return c
-    return None
+                out.append(c)
+    return out
 
 
 def project_issue(row: dict) -> dict:
     """The §7.7 issue allowlist. ``id`` and ``case_ids`` are strings so a join
-    on either never depends on whether the tenant sent ints."""
+    on either never depends on whether the tenant sent ints. ``hosts`` holds
+    every host value from both host fields (attribution reads them all);
+    ``host`` is the first, for display."""
     for field in ISSUE_REQUIRED:
         _required(field, alert_key(row, field))
     inserted = _iso(row["_insert_time"])
     if inserted is None:
         raise IssueShapeError("_insert_time", "not a timestamp")
     p = _Projector()
-    host = p.text(_issue_host(row))
+    hosts = list(dict.fromkeys(h for h in p.items(_issue_hosts(row)) if h))
     return {
         "id": p.text(row["id"]),
         "detection_method": p.text(alert_key(row, "detection.method")),
@@ -178,7 +188,8 @@ def project_issue(row: dict) -> dict:
         "case_ids": p.items(row.get("case_ids")),
         "insert_time": inserted,
         "observation_time": _iso(alert_key(row, "observation_time")),
-        "host": host or None,
+        "host": hosts[0] if hosts else None,
+        "hosts": hosts,
         "tenant_text": {"name": p.text(row.get("name"))},
         **p.flags(),
     }
@@ -283,61 +294,78 @@ def run_issue_filters(since_ms: int, until_ms: int) -> list[dict]:
 
 # ── attribution and grouping ─────────────────────────────────────────────────
 
+def _short_hosts(issue: dict) -> set[str]:
+    values = issue.get("hosts")
+    if values is None:
+        values = [issue.get("host")]
+    return {_short_host(v) for v in values} - {""}
+
+
 def attribute(issues: list[dict], run_host: Optional[str]) -> dict:
     """Split projected issues by host against the run's host (§7.3 step 3).
 
-    Hosts compare through the matcher's ``_short_host``, so an FQDN or a case
-    difference still attributes. ``attributed`` is credited to the run;
-    ``other_host`` is a count only; ``without_host`` is shown as unattributed and
-    never credited (A4) — it holds every issue that cannot be attributed for want
-    of a host. With no run host that is every issue: the code is ``UNSCOPED``,
-    ``host`` is null and ``other_host`` is null (not measured), never 0.
+    An issue is attributed when the run host matches ANY of its host values,
+    source or target, through the matcher's ``_short_host`` (so an FQDN or a
+    case difference still attributes). An issue with no host is never
+    attributed (A4).
+
+    * ``attributed`` — credited to the run.
+    * ``other_host`` — a count of issues whose hosts are all someone else's;
+      null under ``UNSCOPED``, where there is no run host to compare with.
+    * ``without_host`` — issues that carry no host at all. Measurable with or
+      without a run host, so it never absorbs the missing run host.
+    * ``unattributed`` — the issues to show as unattributed, not credited: the
+      ``without_host`` issues, or under ``UNSCOPED`` every issue.
+
+    With no run host the code is ``UNSCOPED`` and ``host`` is null.
     """
     want = _short_host(run_host)
+    without = [i for i in issues if not _short_hosts(i)]
     if not want:
-        return {"code": "UNSCOPED", "host": None, "attributed": [],
-                "other_host": None, "without_host": list(issues)}
-    attributed: list[dict] = []
-    without: list[dict] = []
-    other = 0
-    for issue in issues:
-        have = _short_host(issue.get("host"))
-        if not have:
-            without.append(issue)
-        elif have == want:
-            attributed.append(issue)
-        else:
-            other += 1
-    return {"code": "OK", "host": want, "attributed": attributed,
-            "other_host": other, "without_host": without}
+        return {"code": "UNSCOPED", "host": None, "attributed": [], "other_host": None,
+                "without_host": without, "unattributed": list(issues)}
+    attributed = [i for i in issues if want in _short_hosts(i)]
+    other = len(issues) - len(attributed) - len(without)
+    return {"code": "OK", "host": want, "attributed": attributed, "other_host": other,
+            "without_host": without, "unattributed": list(without)}
 
 
 def group_cases(attributed: list[dict], cases_by_id: Optional[dict[Any, dict]]) -> list[dict]:
     """One row per case the attributed issues carry, in first-seen order.
 
-    ``grouped`` is true when those issues come from two or more distinct
-    detection methods. Only attributed issues count, so it can under-count but
-    never over-claim. Case ids join as strings, whichever side sent ints. When
-    the case read failed (``cases_by_id is None``) ``issue_count`` is null; when
-    it succeeded the case's projected fields are merged into its row.
+    ``cases_by_id`` holds RAW case rows (``search_cases`` rows), or ``None`` when
+    the case read failed. Each is passed through :func:`project_case` here, so
+    only the allowlisted, neutralised case fields reach a row, whatever the
+    caller hands in. Cases join on the projected ``case_id`` (a string), so ints
+    on one side and strings on the other still join; the dict's keys are not
+    trusted.
+
+    ``grouped`` is true when the attributed issues on the case come from two or
+    more detection methods, compared case-insensitively; ``methods_seen`` keeps
+    the first spelling of each. Only attributed issues count, so it can
+    under-count but never over-claim. ``issue_count`` is null when the case read
+    failed or did not return this case.
     """
-    cases = None if cases_by_id is None else {str(k): v for k, v in cases_by_id.items()}
+    cases: dict[str, dict] = {}
+    for raw in (cases_by_id or {}).values():
+        case = project_case(raw)
+        cases[case["case_id"]] = case
     seen: dict[str, dict[str, Any]] = {}
     for issue in attributed:
         for cid in dict.fromkeys(str(c) for c in issue.get("case_ids") or []):
-            entry = seen.setdefault(cid, {"issues": set(), "methods": set()})
+            entry = seen.setdefault(cid, {"issues": set(), "methods": {}})
             entry["issues"].add(issue.get("id"))
-            if issue.get("detection_method") is not None:
-                entry["methods"].add(issue["detection_method"])
+            method = issue.get("detection_method")
+            if method is not None:
+                entry["methods"].setdefault(method.casefold(), method)
     rows: list[dict] = []
     for cid, entry in seen.items():
-        case = (cases or {}).get(cid) or {}
-        methods = sorted(entry["methods"])
+        case = cases.get(cid, {})
         rows.append({
             **case,
             "case_id": cid,
-            "grouped": len(methods) >= 2,
-            "methods_seen": methods,
+            "grouped": len(entry["methods"]) >= 2,
+            "methods_seen": sorted(entry["methods"].values()),
             "issues_seen": len(entry["issues"]),
             "issue_count": case.get("issue_count"),
         })
