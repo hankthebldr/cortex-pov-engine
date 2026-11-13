@@ -854,6 +854,25 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
 
+### Added — MCP tools for the tenant reader
+
+- Five tools project the tenant-reader routes, taking the MCP server from 41
+  to 46 tools (27 `cortexsim.*`, 19 `xsiam.*`): `xsiam.issue.search`,
+  `xsiam.case.search` and `xsiam.endpoint.get` (`xsiam_tenant` credential only;
+  a reconcile-only vault answers `NO_TENANT_CONFIGURED` with no call), and
+  `cortexsim.run.tenant_evidence.get` (stored snapshot, zero tenant queries) and
+  `.read` (one metered read; `queries_issued` is the snapshot's when the reply
+  says `read: true`, else 0). They hold no tenant key; SimCore reads with the
+  credential stored at tenant onboarding.
+- Tenant rows are framed as data. These five tools, plus `xsiam.alert.list`,
+  `xsiam.incident.list` and `xsiam.correlation_rule.list`, return
+  `data.data_notice`, and their descriptions repeat it. Tenant text never
+  enters `statement`, `error` or `remediation`.
+- `xsiam.alert.list` and `xsiam.incident.list` carry a `LEGACY` line, in their
+  descriptions and in `data.degradations`, naming PANW's deprecation map and
+  pointing to `xsiam.issue.search` and `xsiam.case.search`. Their field layout
+  is unchanged. `make check-mcp-boot` now fails below 46 tools.
+
 ### Fixed — Results shows each result's alert id and source
 
 - `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
