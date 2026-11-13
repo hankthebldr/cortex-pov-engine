@@ -967,6 +967,17 @@ def probe_mcp(app: Any = None) -> dict[str, Any]:
             **common,
         )
 
+    if not settings.CORTEXSIM_MCP_TOKEN.get_secret_value():
+        return _degraded(
+            "MCP_TOKEN_MISSING",
+            "CORTEXSIM_MCP_HTTP is set but CORTEXSIM_MCP_TOKEN is empty, so /mcp is NOT mounted. "
+            "Fix: generate a token with python -c 'import secrets; print(secrets.token_urlsafe(32))', "
+            "set CORTEXSIM_MCP_TOKEN to it, and restart SimCore.",
+            mounted=False,
+            tools=0,
+            **common,
+        )
+
     try:
         from mcp_server.server import registered_ids  # noqa: PLC0415
     except ImportError as exc:

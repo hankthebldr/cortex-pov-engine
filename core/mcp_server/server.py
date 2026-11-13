@@ -21,8 +21,10 @@ from typing import Any, AsyncIterator, Iterable, Optional, Sequence
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.routing import Route
 from pydantic import BaseModel
 
+from .auth import McpGate
 from .client import SimCoreClient, SimCoreUnreachable
 from .errors import McpToolError
 from .naming import canonical_id
@@ -121,7 +123,9 @@ def registered_ids(mcp: FastMCP) -> list[str]:
 def mount(app: Any, *, settings: Any) -> Optional[FastMCP]:
     """Add the streamable-HTTP endpoint at exactly ``/mcp`` to ``app``.
 
-    ``None`` (and nothing touched) when ``CORTEXSIM_MCP_HTTP`` is false. Must be
+    ``None`` (and nothing touched) when ``CORTEXSIM_MCP_HTTP`` is false, or when
+    ``CORTEXSIM_MCP_TOKEN`` is empty: the mount is refused rather than opened
+    without a bearer token (:mod:`mcp_server.auth`). Must be
     called before the static catch-all at ``/``, which would otherwise answer
     ``/mcp``. The SDK's own ``Route`` is added to ``app`` rather than mounting
     its Starlette sub-app: a ``Mount("/mcp")`` matches ``/mcp/...`` only, so the
@@ -129,6 +133,10 @@ def mount(app: Any, *, settings: Any) -> Optional[FastMCP]:
     The session manager runs in SimCore's lifespan (:func:`lifespan_for`).
     """
     if not settings.CORTEXSIM_MCP_HTTP:
+        return None
+    token = settings.CORTEXSIM_MCP_TOKEN.get_secret_value()
+    if not token:
+        logger.error("CORTEXSIM_MCP_TOKEN is not set — /mcp is NOT mounted")
         return None
     client = SimCoreClient(settings.CORTEXSIM_URL, transport=httpx.ASGITransport(app=app))
     ctx = ToolContext(client=client, bucket=TokenBucket(settings.CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE))
@@ -138,7 +146,9 @@ def mount(app: Any, *, settings: Any) -> Optional[FastMCP]:
     if len(routes) != 1 or len(sub.routes) != 1:
         raise RuntimeError(f"unexpected streamable-HTTP route table from the MCP SDK: "
                            f"{[getattr(r, 'path', r) for r in sub.routes]}")
-    app.router.routes.append(routes[0])
+    route = routes[0]
+    app.router.routes.append(Route(MCP_PATH, endpoint=McpGate(route.endpoint, token=token, loopback_only=False),
+                                   name=route.name))
     app.state.mcp = mcp
     app.state.mcp_client = client
     logger.info("MCP streamable-HTTP mounted at %s with %d tools", MCP_PATH, len(registered_ids(mcp)))

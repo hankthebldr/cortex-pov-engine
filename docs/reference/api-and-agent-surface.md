@@ -2545,13 +2545,23 @@ inside the built image and fails below 41.
 | session mode | per process | `stateless_http=True` — SimCore restarts are routine mid-POV, and a stateful session manager would 404 every client after one |
 | DNS-rebinding guard | n/a | two layers. SimCore's app-wide Host guard answers first (`400 HOST_NOT_ALLOWED` unless `Host` is loopback, an IP literal, this machine's name or in `CORTEXSIM_ALLOWED_HOSTS`); then the SDK's transport-security allowlist, seeded with `localhost`, `127.0.0.1` and `CORTEXSIM_MCP_ALLOWED_HOSTS` (comma list, default empty), answers `421` to anything else. A name must be in both lists; an IP literal only in the second |
 
-Authentication posture is inherited, not widened: SimCore has no API
-authentication layer (`CORTEXSIM_SECRET` protects the vault at rest, not the
-routes), and the MCP surface sits inside that boundary. What the surface adds is
-the removal of the one thing an agent could newly do — writes to a tenant always
-preview (§9.5).
+Authentication: `/mcp` over HTTP requires `Authorization: Bearer
+<CORTEXSIM_MCP_TOKEN>` (scheme case-insensitive, constant-time comparison, the
+header never logged). A missing or wrong token is `401` with
+`WWW-Authenticate: Bearer` and `{"error","code":"MCP_UNAUTHORIZED","detail"}`.
+With `CORTEXSIM_MCP_HTTP=1` and no token, `/mcp` is **not mounted** and the `mcp`
+component of `/api/health` is `degraded` / `MCP_TOKEN_MISSING`; with the flag off
+it stays `ok` / `MCP_DISABLED`. The token only lets a client into `/mcp`; it is
+never a tenant credential. The MCP tenant tools hold no key: they reach the
+tenant only through SimCore's own routes, which use the integration credential
+stored in SimCore's vault at tenant onboarding — the same credential the
+run-evidence and reconcile path uses, metered by the same per-tenant budget.
+`/api` stays unauthenticated: the token does not mean SimCore is authenticated.
+Writes to a tenant always preview (§9.5). stdio is unchanged (see
+`docs/superpowers/specs/2026-11-11-in-container-tenant-reader-design.md` §7.1).
 
 Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
+`CORTEXSIM_MCP_TOKEN` (required for the mount),
 `CORTEXSIM_MCP_ALLOWED_HOSTS`, `CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`
 (default 30, a process-local token bucket over tenant-class tools) and
 `CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read

@@ -849,6 +849,8 @@ def test_an_ignored_forwarder_with_no_agent_enrolled_is_still_named(monkeypatch)
 # ---------------------------------------------------------------------------
 
 
+from pydantic import SecretStr  # noqa: E402
+
 def test_mcp_off_is_ok_with_disabled_code(monkeypatch):
     import config
     from api import health
@@ -862,6 +864,19 @@ def test_mcp_off_is_ok_with_disabled_code(monkeypatch):
     assert comp["detail"] == "opt-in; set CORTEXSIM_MCP_HTTP=1 to mount"
 
 
+def test_mcp_on_without_token_is_degraded_token_missing(monkeypatch):
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr(""))
+    comp = health.probe_mcp()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_TOKEN_MISSING"
+    assert comp["mounted"] is False
+    assert "Fix:" in comp["detail"]
+
+
 def test_mcp_on_but_sdk_missing_is_degraded(monkeypatch):
     import builtins
 
@@ -869,6 +884,7 @@ def test_mcp_on_but_sdk_missing_is_degraded(monkeypatch):
     from api import health
 
     monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
     real_import = builtins.__import__
 
     def _no_mcp_server(name, *args, **kwargs):
@@ -899,6 +915,7 @@ def test_mcp_on_reports_tool_count(monkeypatch):
     from mcp_server.server import build
 
     monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
     mcp = build(ToolContext(client=SimCoreClient("http://simcore.test"), bucket=TokenBucket(30)))
     comp = health.probe_mcp(_app_with_mcp(mcp))
     assert comp["status"] == "ok"
@@ -913,6 +930,7 @@ def test_mcp_on_but_not_mounted_is_degraded(monkeypatch):
     from api import health
 
     monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
     for app in (None, _app_with_mcp(None)):
         comp = health.probe_mcp(app)
         assert comp["status"] == "degraded"
@@ -928,6 +946,7 @@ def test_mcp_on_with_zero_registered_tools_is_degraded(monkeypatch):
     from mcp.server.fastmcp import FastMCP
 
     monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
     comp = health.probe_mcp(_app_with_mcp(FastMCP("empty")))
     assert comp["status"] == "degraded"
     assert comp["code"] == "MCP_NO_TOOLS"
