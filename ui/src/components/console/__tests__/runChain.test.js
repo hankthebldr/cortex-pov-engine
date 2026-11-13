@@ -54,11 +54,14 @@ describe('liveStepStates', () => {
 })
 
 describe('laneDestination', () => {
-  it('opens the component behind each signal path', () => {
-    expect(laneDestination('ENDPOINT')).toBe('agents')
-    expect(laneDestination('WIRE')).toBe('firewall')
-    expect(laneDestination('CLOUD')).toBe('tenants')
-    expect(laneDestination('ENG')).toBe('tenants')
-    expect(laneDestination('COLLECTOR')).toBe('start')
+  it('opens the component behind each signal path, from the one component table', () => {
+    const page = (lane) => laneDestination(lane)?.destination
+    expect(page('ENDPOINT')).toBe('agents')
+    expect(page('WIRE')).toBe('firewall')
+    expect(page('CLOUD')).toBe('tenants')
+    expect(page('ENG')).toBe('tenants')
+    // The HTTP collector opens its row on the Components page until slice 4
+    // gives it a page; whatever the table says, the run chain follows it.
+    expect(laneDestination('COLLECTOR')).toEqual({ destination: 'components', params: { open: 'http' } })
   })
 })
