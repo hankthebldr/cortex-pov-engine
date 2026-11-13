@@ -2,10 +2,11 @@
  * verdictReason — why a run's test-case verdict is `pending` with nothing scored.
  *
  * `engine/verifier.py::score_run` sets `tc_verdict_detail.reason` only when no
- * Result was left to score (§1.3.1 of the API reference): `not_executed` when a
- * step never ran, `soak_pending` when every row is inside its soak window.
- * Neither is "verification outstanding" — verifying again will not move it —
- * so the console names it instead of leaving a bare `pending` chip.
+ * Result was left to score (§1.3.1 of the API reference): `soak_pending` when
+ * any row is still inside its soak window (it ran, and a read back after the
+ * window closes can still score the run), `not_executed` when no row is (only
+ * a re-run can). Neither is "verification outstanding", so the console names
+ * it instead of leaving a bare `pending` chip.
  *
  * The labels match `report_generator.verdict_label`, so the console and the
  * report say the same thing. An unknown reason is shown as its raw token rather
@@ -22,8 +23,8 @@ export const VERDICT_REASONS = {
   soak_pending: {
     label: 'detectors soaking',
     tone: 'info',
-    sentence: 'Every detection is inside its Analytics activation or dedup window. '
-      + 'The verdict resolves when the window closes.',
+    sentence: 'The detections that ran are still inside their Analytics activation or dedup window. '
+      + 'Read the run back after the window closes to score it.',
   },
 }
 
