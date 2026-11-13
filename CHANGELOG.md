@@ -135,6 +135,21 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   workflow legitimately needs more.
 - **New table `tenant_evidence_reads`** is created at boot; no migration step.
 
+### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
+
+- **A Broken card on a run's chain is now a button** that opens a sheet of
+  likely causes, in the order to check, each opening the page that fixes it.
+  The causes are read from the host's record of the step (how it ended, its
+  exit code, its signal, and the identity and runtime notes in its frame),
+  which the sheet shows above them; none is guessed. A step killed by a signal
+  POVengine did not send is described as the host half of a prevention and
+  opens that run's Results, not as a fault. Exit 127 opens Packages filtered to
+  unstaged tools; a timeout opens Build a chain; an agent that stopped
+  reporting opens Agents › Fleet; every step ends with its own output.
+- **Only a Broken card is a button.** ChainStage takes an optional
+  `canSelect(stepId, state)`, so the other live cards stay plain cards rather
+  than buttons that do nothing.
+
 ### Security
 
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`

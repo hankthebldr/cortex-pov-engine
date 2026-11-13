@@ -715,6 +715,10 @@
     "bash": "592df4645fc5c2c929ed9cbd1f0cc0d32381b8d8f3fefd98deb8a9e14ab73543",
     "powershell": null
   },
+  "SIM-MP-038": {
+    "bash": "5c3e161b6564434823cf0b2ac95426195bfd9e10a946cef89f82020d85d47fc5",
+    "powershell": null
+  },
   "SIM-NDR-001": {
     "bash": "c7a702d607a903855c3fce0894099e836fda6913b4e6b4b6afd821a49c9b3f22",
     "powershell": null

@@ -143,7 +143,11 @@ def test_corpus_signal_paths():
     abf0d808 into the beta carries both, measured 533 on the merged tree.
 
     COLLECTOR 89 -> 97 on 2026-11-13: SIM-CDR-030's 8 steps, every one a
-    collector POST."""
+    collector POST.
+
+    SIM-MP-038 on 2026-11-13: ENDPOINT 533 -> 534 (step-01, dig on the
+    beacon host) and COLLECTOR 97 -> 100 (steps 02-04, the corpus's first
+    ``channel: eal`` steps, placed by their collector plugins)."""
     counts: dict[str, int] = {}
     unplaced = []
     for sid, step in _corpus_steps():
@@ -152,4 +156,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 533, "COLLECTOR": 97, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 534, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}

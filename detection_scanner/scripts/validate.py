@@ -182,6 +182,11 @@ KNOWN_DATASETS = frozenset({
     # (Cisco Duo Auth Log), not invented; exact tenant field mapping awaits
     # live-tenant confirmation (tenant-verified is 0).
     "duo_auth_raw",
+    # SIM-MP-038 Pink (TTP-2026-0551) — the operator's HTTP log collector
+    # (Vendor cortexsim, Product saas) that idp_signin_emulator and
+    # m365_activity_emitter POST to. Named by the tenant's <vendor>_<product>_raw
+    # rule, not read from a tenant: no record has been ingested yet.
+    "cortexsim_saas_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain

@@ -5621,6 +5621,32 @@
     },
     {
       "c2_tools": [],
+      "consent_gated": true,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Pink (CL-CRI-1147) \u2014 Vishing to an Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "channel: eal steps POST from SimCore at launch: live only with launch consent, an authorized_by and a keyed collector target, otherwise dry-run",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-038",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "YELLOW",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
       "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
@@ -5956,13 +5982,13 @@
     "by_tier": {
       "GREEN": 168,
       "RED": 5,
-      "YELLOW": 27
+      "YELLOW": 28
     },
     "detection_steps_without_signal": 142,
-    "eal_delivered": 71,
-    "scenarios_consent_gated": 4,
+    "eal_delivered": 72,
+    "scenarios_consent_gated": 5,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 200,
+    "scenarios_total": 201,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5970,6 +5996,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 831
+    "total_steps": 835
   }
 }

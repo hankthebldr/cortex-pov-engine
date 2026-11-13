@@ -132,6 +132,9 @@ export function buildStepRows(steps = [], run = null, parsed = { order: [], step
       duration: t?.duration || null,
       reason: o?.reason || null,
       signal: o?.signal || null,
+      // How the host says the step ended (exited · signaled · timeout · …);
+      // the Broken step's troubleshooting sheet reads its causes from it.
+      termination: o?.termination || null,
     }
   })
 }

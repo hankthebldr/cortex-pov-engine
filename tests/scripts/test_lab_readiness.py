@@ -9,17 +9,20 @@ each with RED/GREEN evidence, plus the corpus-level invariant.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPTS = REPO_ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 os.environ.setdefault("CORTEXSIM_BASE_DIR", str(REPO_ROOT))
 
-import lab_readiness as lr  # noqa: E402
+# Loaded by file path, not by putting scripts/ first on sys.path: that made
+# scripts/eal_simulator (the CLI package) shadow core's eal_simulator for any
+# later import in the same session (test_signal_path failed after this file).
+_spec = importlib.util.spec_from_file_location(
+    "lab_readiness", REPO_ROOT / "scripts" / "lab_readiness.py")
+lr = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lr)
 
 
 # --- clause splitting: quotes and comments must not be mistaken for operators ---
@@ -63,6 +66,33 @@ def test_real_commands_are_signal():
 def test_a_scan_flag_is_not_mistaken_for_a_version_flag():
     # `-sV` must not be swallowed by the `-V` version-probe rule.
     assert lr._step_produces_signal("nmap -sV target") is True
+
+
+# --- in-process EAL steps (channel: eal) ---
+
+def test_a_channel_eal_step_is_eal_delivered_and_consent_gated():
+    # A `channel: eal` step runs inside SimCore, never on the agent, and goes
+    # live only with launch consent, an authorized_by and a keyed collector
+    # target. Its command is a descriptive no-op, so the command text cannot
+    # be what decides delivery or signal. RED before: delivery "agent", GREEN,
+    # "runs offline on a provisioned target".
+    doc = {
+        "scenario_id": "SIM-TEST-EAL",
+        "steps": [
+            {"id": "step-01", "command": "dig @${LAB_RESOLVER} example.com A +short",
+             "expected_detections": [{"type": "XQL"}]},
+            {"id": "step-02", "command": "echo 'SimCore POSTs these records'",
+             "channel": "eal", "eal": {"plugin": "m365_activity_emitter", "params": {}},
+             "expected_detections": [{"type": "XQL"}]},
+        ],
+    }
+    row = lr.classify(doc, {})
+    assert row["delivery"] == "eal"
+    assert row["steps_real_signal"] == 2 and row["detection_steps_without_signal"] == 0
+    assert row["consent_gated"] is True
+    assert row["tier"] == "YELLOW"
+    assert "offline" not in row["reason"]
+    assert "consent" in row["reason"] and "collector target" in row["reason"]
 
 
 # --- corpus-level invariant ---
