@@ -1,0 +1,855 @@
+# Cloud log tampering and log-bucket hijack, as victim-side audit records.
+#
+# AUTHORED ONLY. Nothing in this file can be proven in the lab: the behaviour is
+# cloud control-plane activity, the lab has no cloud account and no collector,
+# and the steps only POST synthetic JSON. tenant-verified is 0.
+#
+# Sources (two Unit 42 posts, both technique research; neither names an actor,
+# a campaign or an IOC, and neither publishes a query):
+#   [1] "Blinding the Watchmen: Abusing Cloud Logging Services for Defense
+#       Evasion and Visibility", published 2026-06-09
+#       https://unit42.paloaltonetworks.com/cloud-logging-defense-evasion/
+#       Seven techniques against AWS CloudTrail and Google Cloud Logging only
+#       (no Azure): stop logging, delete the log storage destination, delete
+#       the log router, impair logging through an attacker-controlled
+#       encryption key, log poisoning, configure a new log routing resource,
+#       log redirection. Steps 1, 2 and 4 to 8 come from this post.
+#   [2] "Universal Bucket Hijacking", published 2026-06-22
+#       https://unit42.paloaltonetworks.com/cloud-bucket-hijacking-risks/
+#       ONE leg only, step-03: the object-delete burst and then the deletion of
+#       a bucket that a log stream writes to. The re-creation of that bucket
+#       name happens in the attacker's own project. A victim's audit log does
+#       not contain it, the emitter does not write it, and nothing here detects
+#       or implies a detection of it. Post [2] also says Google has since
+#       changed how router resources interact with target storage, so the
+#       hijack itself may no longer work as described; the victim-side delete
+#       events are unchanged.
+#
+# THE ORDER IS OUR COMPOSITION. Post [1] is a catalogue and gives no attacker
+# order of operations. The chain below is one plausible defence-evasion story:
+# gain a copy of the logs and hide it (steps 1 to 4), then blind and destroy the
+# victim's own pipeline (steps 5 to 8), leaving only the shadow trail and sink.
+# No step touches a resource an earlier step deleted. A real intruder would
+# pick some of these techniques, not all of them: the scenario walks each one
+# once. Do not read this run's order or timing as an observed attack.
+#
+# What executes. Each step writes a campaign file inside the one sandbox
+# directory /var/tmp/.cortexsim-logblind and runs the cloud_audit_emitter EAL
+# plugin, which POSTs shape-true AWS CloudTrail and Google Cloud audit records
+# (the VICTIM-side events of each technique) to an HTTP collector. Operation
+# names and request fields come from provider documentation through the plugin,
+# not from the CLI spellings and IAM permission names the posts print. No cloud
+# API is called. Every name inside a record (cortexsim-canary-*, account
+# 123456789012, attacker-project-999, 203.0.113.201) is a synthetic constant of
+# the plugin, not a threat attribute, which is why there is no indicators block.
+#
+# Collector. COLLECTOR_URL defaults to a .invalid host, so by default nothing
+# leaves the endpoint and nothing is delivered. The collector key is supplied
+# by the operator at run time in CORTEXSIM_COLLECTOR_TOKEN and is never written
+# in this file. A step writes it into its campaign file (mode 0600, inside a
+# directory the step creates fresh at mode 0700 and removes when it exits or is
+# stopped by HUP, INT or TERM). It appears in no record, on no command line and
+# in no step output. A step killed outright (SIGKILL) leaves that file behind
+# until the next step or the scenario cleanup removes the directory.
+scenario_id: SIM-CDR-030
+name: "Cloud Logging Blinded — CloudTrail and Google Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed, With a Log-Bucket Hijack Leg (victim-side audit records to an HTTP collector)"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Same primary binding as the other cloud-audit emitter scenarios on this plane
+# (SIM-CDR-020, SIM-CDR-024). The row describes ML analytics, while the scored
+# rows here are XQL and one operator-installed correlation, and the row is
+# already evidenced: this is a second record shape, not new index breadth.
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
+
+# The posts name tactics only (Defense Evasion, Discovery, Impact). The
+# technique ids below are our mapping; all four are already used in the corpus.
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1562.008"
+mitre_technique_name: "Impair Defenses: Disable or Modify Cloud Logs"
+additional_techniques:
+  - technique: "T1485"
+    name: "Data Destruction"
+  - technique: "T1565.001"
+    name: "Data Manipulation: Stored Data Manipulation"
+  - technique: "T1537"
+    name: "Transfer Data to Cloud Account"
+
+threat_report: "Unit 42 — Blinding the Watchmen: Abusing Cloud Logging Services for Defense Evasion and Visibility"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-logging-defense-evasion/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# There is no endpoint process chain to stitch: the evidence is collector
+# records, which carry no causality fields. cgo_anchor labels SimCore's own
+# causality graph (the python3 emitter process) and, in a pull run, is the
+# argv[0] the beacon gives the one shell that runs the steps. It does not
+# change the tenant's CGO: in the 2026-11-11 lab every beacon-run step recorded
+# cortexsim-agent as its causality actor. step-01 is the single root. Steps 2
+# to 8 join it on shared_entity: every record of one provider carries the same
+# caller in principal_id, with no process fork between two bursts of API calls.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "root"
+
+# Direct identities only. An identity that goes through runuser -l resets the
+# environment, so the operator's COLLECTOR_URL and key would never reach the
+# step and it could only ever POST to the .invalid default.
+execution_identity:
+  default: root
+  options:
+    - root
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Cloud Audit-Log Signal Injection to a Collector & Correlation Timing"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 1800
+  unit: "seconds"
+success_criteria: |
+  AUTHORED ONLY. Nothing here is lab-provable. The behaviour is cloud
+  control-plane activity (CloudTrail, Cloud Logging, S3, Cloud Storage) that
+  cannot execute on an endpoint; the lab has no cloud account and no
+  collector; and the steps only POST synthetic JSON records shaped like the
+  victim-side audit events of each technique. No cloud API is called and no
+  real log is touched.
+  What the operator creates first: one XSIAM HTTP log collector with Vendor
+  cortexsim, Product cloud_audit, Log Format JSON and no compression. By the
+  tenant's naming rule (<Vendor>_<Product>_raw) that gives the dataset
+  cortexsim_cloud_audit_raw. The name is a rule the operator follows, not a
+  tenant fact: no record of this scenario has been ingested by any tenant,
+  and how a collector dataset exposes these JSON keys to XQL is unverified.
+  What the process that runs the steps needs. For a pull run that process is
+  the beacon, whose stock service unit sets no environment and no working
+  directory; for a push run it is the shell that runs the bundle. It needs
+  three variables: COLLECTOR_URL (https://api-<tenant>/logs/v1/event),
+  COLLECTOR_HOST (that URL's host; if it does not match, the campaign refuses
+  the target and sends nothing) and CORTEXSIM_COLLECTOR_TOKEN (the collector's
+  key, sent bare in the Authorization header with no Bearer prefix). It also
+  needs a CortexSim checkout as its working directory, with pydantic, httpx
+  and pyyaml importable, because every step runs python3 -m
+  scripts.eal_simulator.cli: without one, step-01 exits non-zero and a pull
+  run stops there. Run as identity root; an identity that goes through
+  runuser resets the environment.
+  Without the three variables every step POSTs to a .invalid host, nothing is
+  delivered, and every step still exits 0. A collector that refuses the
+  records (a 401 on a wrong key, for one) leaves the exit code at 0 as well,
+  and so does a refused target. A green step is not a delivered step: read
+  delivery.delivery_verdict in each step's output. Only delivered means the
+  collector accepted every record; partial and not_delivered mean it did
+  not, and not_applicable means the campaign refused the target.
+  Nine step-detections are declared, of two kinds.
+  Tier-2-verify-only (8 of 9): the XQL rows on step-01 to step-08. Each reads
+  cortexsim_cloud_audit_raw and filters only on flat string keys the emitter
+  writes at the top level of a record: api_operation, principal_id and
+  log_resource_name on every record, and log_object_key, log_destination and
+  kms_key_id on the records that have one. They are scored by
+  POST /api/runs/{id}/verify, never by an alert, and never raise Detection
+  Accuracy. A query the tenant rejects reads pending, not fail. A query that
+  runs and returns no row reads fail, and that is also what a run whose
+  records never reached the collector looks like: check the delivery verdicts
+  before reading a fail as a tenant result. For a push run verify looks back
+  one hour from when it is called, so verify within the hour.
+  Alert-backed (1 of 9): correlation CR-CDR-0030 on step-08. It fires ONLY if
+  the operator installs it by hand before the run, from TTP-2026-0550: alert
+  name exactly the rule name, severity Medium, scheduled every 10 minutes,
+  query time frame 1 hour, no MITRE tag. CortexSim never writes it to the
+  tenant, and its XQL has not been run in any tenant.
+  PASS: the CR-CDR-0030 issue is observed within 1800 seconds of launch. MTTD
+  is measured on that one row and from the run's launch: about 5 to 8 minutes
+  of run, up to 10 minutes of schedule, plus ingest lag. The bound index row
+  carries a qualitative threshold, so a machine PASS is recorded as
+  not_applicable (evidence, not a scored pass); a FAIL stands.
+  Reading the other outcomes. No collector: after the match window all nine
+  rows read missed on the alert axis. That is a run with no collector, not a
+  tenant miss. A collector but no installed rule: the eight XQL rows can pass
+  Tier-2 verify and the run stays pending. Do not run this twice within an
+  hour: the earlier run's records are still inside the rule's time frame and
+  would raise the issue again for the new run.
+  Not declared, on the card only as hunt content: the nine Cortex analytics
+  alerts the two posts name. Each documents a 14-day activation and a 30-day
+  training period over the natively onboarded AWS or GCP audit source, so
+  records POSTed to a collector do not arm them; the one alert the second
+  post shows also needs the bucket classified as holding sensitive data.
+  Not emitted, and not visible in a victim's audit log at all: whatever the
+  attacker does in their own account or project, including the re-creation
+  of the deleted bucket name that completes the hijack in the second post.
+  tenant-verified: 0 — no run of this scenario has executed against a live Cortex tenant; authored is not proven.
+moat_tier: "PARITY"
+
+# Sandbox: /var/tmp/.cortexsim-logblind holds one campaign file (step-NN.yml,
+# mode 0600) for the life of one step and nothing else. Each step creates the
+# directory fresh and removes it on exit, because a pull run does not execute
+# cleanup.commands. No background process is started.
+#
+# Record count for the whole chain: 2 + 4 + 21 + 1 + 2 + 2 + 2 + 22 = 56, one
+# POST each. Worst case per step, when every POST runs into its 3 s timeout:
+# 40 s dwell + 3 s x records, about 106 s for step-08, the largest. Measured
+# in a container with no network (the name lookup fails at once): about 285 s
+# for the whole chain, of which 280 s is dwell.
+steps:
+  - id: step-01
+    name: "Stand up a second log route to attacker-named storage (new trail, new sink)"
+    # Post [1], continuous visibility 1 (configure a new log routing resource):
+    # a new trail that delivers to the attacker's bucket, and a new sink whose
+    # destination is attacker-controlled.
+    # What the endpoint sensor should record (not scored, and our own tooling
+    # rather than threat behaviour): process starts for rm, mkdir, cat and
+    # python3 running scripts.eal_simulator.cli (and for sed when a key is
+    # set), plus the create, write and removal of step-01.yml under the
+    # sandbox. With the default collector the name lookup fails and there is
+    # no connection; with an operator collector python3 connects to it.
+    # What the collector receives: 2 records. aws CreateTrail (shadow trail,
+    # log_destination cortexsim-canary-attacker-logs-999) and gcp
+    # google.logging.v2.ConfigServiceV2.CreateSink (shadow sink, log_destination
+    # storage.googleapis.com/cortexsim-canary-attacker-log-drop). This is the
+    # root step: no dwell and no causality block.
+    command: |
+      # REAL file write and REAL emitter run. The records are synthetic JSON;
+      # no cloud API is called. Steps 2 to 8 repeat these mechanics unchanged.
+      set -eu
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      # A fresh 0700 directory of our own: whatever sits at that path goes
+      # first, and mkdir without -p fails if anything reappears there.
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      # Remove it on exit, and exit normally on HUP, INT or TERM so the removal
+      # also runs when the beacon stops the step. A pull run executes no
+      # cleanup.commands, so this is the only cleanup such a run gets.
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      # The collector key comes only from the operator's environment. A
+      # backslash or double quote in it is escaped for the YAML scalar: left
+      # raw it breaks the campaign file and the parser error prints the line
+      # that holds the key. printf is a shell builtin and sed reads stdin, so
+      # the key is on no command line.
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-01.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-01 - new trail and new sink to attacker-named storage"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_router_create
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_router_create
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-01.yml" --live
+    identity: root
+    mitre_technique: "T1537"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — CreateTrail and CreateSink records that name attacker storage as the log destination are in the collector dataset. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-new-trail-or-sink-created-with-attacker-storage-target
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("CreateTrail", "google.logging.v2.ConfigServiceV2.CreateSink") and log_destination contains "cortexsim-canary-attacker"
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name, log_destination
+
+  - id: step-02
+    name: "Overwrite a stored log object: read it, then write over it"
+    # Post [1], defence evasion 5 (log poisoning): download a delivered log
+    # object, alter it and upload it over the original. Both stores still
+    # exist at this point in the chain.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-02.yml.
+    # What the collector receives: 4 records. aws GetObject then PutObject on
+    # one key in cortexsim-canary-cloudtrail-logs (S3 data events); gcp
+    # storage.objects.get then storage.objects.create on one object in
+    # cortexsim-canary-log-archive (Data Access). Each pair shares
+    # principal_id, log_resource_name and log_object_key. These four operation
+    # names are written by this step only.
+    command: |
+      set -eu
+      sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-02.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-02 - stored log object read then written over"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_object_overwrite
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_object_overwrite
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-02.yml" --live
+    identity: root
+    mitre_technique: "T1565.001"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — one caller both reads and writes the same stored log object (GetObject with PutObject, or storage.objects.get with storage.objects.create); the query does not test their order. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-stored-log-object-read-and-written-over-by-one-caller
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("GetObject", "PutObject", "storage.objects.get", "storage.objects.create")
+          | comp count_distinct(api_operation) as operations, count() as records by principal_id, log_resource_name, log_object_key
+          | filter operations = 2
+
+  - id: step-03
+    name: "Empty and delete the Cloud Storage bucket the sink writes to (bucket-hijack leg, victim side only)"
+    # Post [2], victim side only: empty the Cloud Storage bucket that a Cloud
+    # Logging sink writes to, then delete the bucket. Placed here on purpose:
+    # the sink still exists, is enabled and still names this bucket, which is
+    # the precondition post [2] describes. The re-creation of the bucket name
+    # in the attacker's project is NOT emitted and NOT detectable here: this
+    # bucket delete is the last signal a victim's audit log holds.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-03.yml.
+    # What the collector receives: 21 records. 20 x storage.objects.delete
+    # (Data Access, one object each) then 1 x storage.buckets.delete (Admin
+    # Activity), all on projects/_/buckets/cortexsim-canary-log-archive.
+    # iterations stays 1: a repeat would delete the same bucket twice, which
+    # no tenant can produce.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-03.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-03 - sink bucket emptied then deleted"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, bucket-hijack]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: stream_bucket_delete
+            burst_count: 20
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-03.yml" --live
+    identity: root
+    mitre_technique: "T1485"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — one caller both deletes objects in the sink's Cloud Storage bucket (storage.objects.delete) and deletes the bucket (storage.buckets.delete): the victim-side leg of the bucket hijack; the query does not test their order. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-sink-bucket-emptied-and-removed
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("storage.objects.delete", "storage.buckets.delete")
+          | comp count_distinct(api_operation) as operations, count() as records by principal_id, log_resource_name
+          | filter operations = 2
+
+  - id: step-04
+    name: "Point the existing trail at attacker-named storage"
+    # Post [1], continuous visibility 2 (log redirection): change an existing
+    # trail's destination bucket to the attacker's bucket. AWS only by design.
+    # On Google Cloud this chain goes after the sink's destination through
+    # step-03's bucket leg instead, which post [2] stresses needs no
+    # sink-update permission (and says may no longer work as described).
+    # Leaving the gcp redirect out also keeps UpdateSink unique to step-06.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-04.yml.
+    # What the collector receives: 1 record. aws UpdateTrail on
+    # cortexsim-canary-trail with log_destination
+    # cortexsim-canary-attacker-logs-999. UpdateTrail is also written by
+    # step-05; log_destination is what tells the two apart.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-04.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-04 - existing trail repointed to attacker-named bucket"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_router_redirect
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-04.yml" --live
+    identity: root
+    mitre_technique: "T1562.008"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — UpdateTrail repoints the existing trail to the attacker-named bucket. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-existing-trail-repointed-to-attacker-bucket
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation = "UpdateTrail" and log_destination = "cortexsim-canary-attacker-logs-999"
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name, log_destination
+
+  - id: step-05
+    name: "Swap the log encryption key for a key in another account or project"
+    # Post [1], defence evasion 4 (impair logging through an
+    # attacker-controlled encryption key). Only the repointing call is
+    # victim-side. Creating the external key and later removing the logging
+    # service's access to it happen in the attacker's account: a victim's
+    # audit log does not contain them and the emitter does not write them.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-05.yml.
+    # What the collector receives: 2 records. aws UpdateTrail with a kmsKeyId
+    # in another account, and gcp
+    # google.logging.v2.ConfigServiceV2.UpdateBucket setting
+    # cmekSettings.kmsKeyName to a key in another project. Both carry the flat
+    # kms_key_id, which this step alone writes.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-05.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-05 - log encryption key swapped for an external key"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_key_swap
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_key_swap
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-05.yml" --live
+    identity: root
+    mitre_technique: "T1562.008"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — UpdateTrail or UpdateBucket swaps the log encryption key for a key in another account or project. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-log-encryption-key-swapped-for-external-key
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("UpdateTrail", "google.logging.v2.ConfigServiceV2.UpdateBucket") and kms_key_id contains "cortexsim-canary"
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name, kms_key_id
+
+  - id: step-06
+    name: "Stop the trail and disable the sink"
+    # Post [1], defence evasion 1 (stop logging): stop logging on the trail,
+    # and set the sink's disabled field to true.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-06.yml.
+    # What the collector receives: 2 records. aws StopLogging on the trail, and
+    # gcp google.logging.v2.ConfigServiceV2.UpdateSink with sink.disabled true.
+    # The sink's destination is still the bucket step-03 deleted: this chain
+    # never redirects the sink, and post [2] says the sink configuration still
+    # looks valid after its bucket is gone.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-06.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-06 - trail stopped and sink disabled"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_stop
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_stop
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-06.yml" --live
+    identity: root
+    mitre_technique: "T1562.008"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — StopLogging on the trail, or UpdateSink disabling the sink. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-trail-stopped-or-sink-disabled
+        # UpdateSink is specific to this step only because the chain emits no
+        # gcp log_router_redirect record (see step-04).
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("StopLogging", "google.logging.v2.ConfigServiceV2.UpdateSink")
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name
+
+  - id: step-07
+    name: "Delete the trail and the sink"
+    # Post [1], defence evasion 3 (delete the log router): delete the trail,
+    # and delete the sink. The shadow trail and shadow sink of step-01 are
+    # never deleted.
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-07.yml.
+    # What the collector receives: 2 records. aws DeleteTrail and gcp
+    # google.logging.v2.ConfigServiceV2.DeleteSink. iterations stays 1.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-07.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-07 - trail and sink deleted"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_router_delete
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_router_delete
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-07.yml" --live
+    identity: root
+    mitre_technique: "T1562.008"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-06
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — DeleteTrail or DeleteSink removes the log router. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-trail-or-sink-removed
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("DeleteTrail", "google.logging.v2.ConfigServiceV2.DeleteSink")
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name
+
+  - id: step-08
+    name: "Empty and delete the trail's bucket; delete the Cloud Logging log bucket"
+    # Post [1], defence evasion 2 (delete the log storage destination): empty
+    # and delete the S3 bucket the trail delivered to, and delete the Cloud
+    # Logging log bucket (one call: a log bucket has no object-level API).
+    # What the endpoint sensor records (not scored): as step-01, for
+    # step-08.yml.
+    # What the collector receives: 22 records. aws 20 x DeleteObject (S3 data
+    # events) then 1 x DeleteBucket on cortexsim-canary-cloudtrail-logs; gcp
+    # 1 x google.logging.v2.ConfigServiceV2.DeleteBucket on the us-central1 log
+    # bucket. These two bucket-delete operation names are written by this step
+    # only (step-03's is storage.buckets.delete), which is what the
+    # correlation rule's closing condition keys on. iterations stays 1.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      umask 077
+      ROOT=/var/tmp/.cortexsim-logblind
+      rm -rf "$ROOT"
+      mkdir "$ROOT"
+      trap 'rm -rf "$ROOT"' EXIT
+      trap 'exit 143' HUP INT TERM
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      AUTH_LINE=""
+      if [ -n "${CORTEXSIM_COLLECTOR_TOKEN:-}" ]; then
+        KEY=$(printf '%s' "$CORTEXSIM_COLLECTOR_TOKEN" | sed 's/[\\"]/\\&/g')
+        AUTH_LINE="auth_token: \"$KEY\""
+      fi
+      cat > "$ROOT/step-08.yml" <<YML
+      campaign_id: CMP-CDR-030
+      name: "SIM-CDR-030 step-08 - trail bucket and log bucket deleted"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-logging, defense-evasion]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: log_destination_delete
+            burst_count: 20
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+        - step_id: step-02
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: gcp
+            event_pattern: log_destination_delete
+            iterations: 1
+            request_timeout: 3
+            $AUTH_LINE
+      YML
+      python3 -m scripts.eal_simulator.cli run "$ROOT/step-08.yml" --live
+    identity: root
+    mitre_technique: "T1485"
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    causality:
+      parent_step: step-07
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation — DeleteBucket on the trail's S3 bucket, or DeleteBucket on the Cloud Logging log bucket. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: xql-cdr-030-trail-bucket-or-log-bucket-removed
+        verification_xql: |
+          dataset = cortexsim_cloud_audit_raw
+          | filter api_operation in ("DeleteBucket", "google.logging.v2.ConfigServiceV2.DeleteBucket")
+          | fields _time, audit_provider, api_operation, principal_id, log_resource_name
+      - plane: CDR
+        type: Correlation
+        description: "Correlation CR-CDR-0030 (operator-installed, Medium, scheduled every 10 min over 1 h, no MITRE tag, principal_id mapped to User Name): in cortexsim_cloud_audit_raw one caller performs at least four distinct log-tampering operations and deletes the log store itself — the whole chain as one issue per provider identity"
+        ttp_ref: "TTP-2026-0550"
+        detection_id: CR-CDR-0030
+
+cleanup:
+  commands:
+    - "rm -rf /var/tmp/.cortexsim-logblind"
+
+author: "Henry Reed"
+created: "2026-11-12"
+last_updated: "2026-11-13"
+tags:
+  - cdr
+  - cloud
+  - aws
+  - gcp
+  - cloudtrail
+  - cloud-logging
+  - defense-evasion
+  - log-tampering
+  - bucket-hijack
+  - eal-plugin
+  - authored-only

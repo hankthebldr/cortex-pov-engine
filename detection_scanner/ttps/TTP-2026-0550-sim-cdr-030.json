@@ -1,0 +1,608 @@
+{
+  "id": "TTP-2026-0550",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00+00:00",
+    "updated_at": "2026-11-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "cloud",
+      "aws",
+      "gcp",
+      "cloudtrail",
+      "cloud-logging",
+      "vector-cloud-control-plane",
+      "defense-evasion",
+      "log-tampering",
+      "bucket-hijack",
+      "eal-plugin",
+      "authored-only",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws",
+        "gcp",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 480,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud Log Tampering and Log-Bucket Hijack — CloudTrail and Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed",
+    "summary": "Seven techniques against AWS CloudTrail and Google Cloud Logging (stop logging, delete the log store or the log router, swap the encryption key, overwrite stored logs, add or redirect a log route) plus the victim-side leg of a log-bucket hijack, emitted as synthetic victim-side audit records to an HTTP collector. Authored only.",
+    "description": "Two Unit 42 posts by the same author, both technique research. Neither names a threat actor, a campaign or a victim, and neither publishes an IOC or a hunting query. FIRST POST, the source of this card: 'Blinding the Watchmen: Abusing Cloud Logging Services for Defense Evasion and Visibility' (Unit 42, Yahav Festinger, published 2026-06-09). It catalogues seven techniques against AWS CloudTrail and Google Cloud Logging only, in two groups. Defense Evasion: stop logging; delete the log storage destination; delete the log router; impair logging through an attacker-controlled encryption key; log poisoning. Continuous Visibility: configure a new log routing resource; log redirection. It gives no attacker order of operations. Its own table rates the likelihood of malice: stop logging High, delete the log storage destination Medium, delete the log router Low, impair through a key Medium, log poisoning Medium, a new log routing resource Low, log redirection High. It notes two provider fallbacks: AWS keeps an immutable 90-day Event History of management events (data events are not in it), and Google's _Required log bucket cannot be disabled, modified or deleted. It lists eight Cortex XDR alert names with tactics only (Defense Evasion, Discovery, Impact) and names no ATT&CK technique id; the technique ids on this card are our mapping. The post has no Azure content. SECOND POST, one leg only: 'Universal Bucket Hijacking' (Unit 42, published 2026-06-22). An identity that can delete a bucket a data stream writes to empties and deletes it; an attacker re-creates the globally unique name in their own account and the stream keeps delivering. The post says no real-world actor has been seen using it, and that Google has since adjusted how router resources interact with target storage, so the hijack itself may no longer work as described; the victim-side delete events are unchanged. This card claims nothing about the hijack working on current Google Cloud. WHAT SIM-CDR-030 DOES. It is authored only. Eight steps run the cloud_audit_emitter plugin, which POSTs 56 synthetic JSON records shaped like the victim-side AWS CloudTrail and Google Cloud audit events of each technique to an HTTP log collector. No cloud API is called. The step order is our composition, not an observed attack: add a hidden copy of the logs, poison a stored log, take the sink's bucket (the second post's leg), redirect the trail, then swap the key, stop, delete the routers and delete the log stores. Operation names and request fields come from provider documentation through the plugin, not from the CLI spellings and IAM permission names the posts print. Every name inside a record is a synthetic constant of the plugin, not a threat attribute, so this card carries no IOC. NOT EMITTED, because a victim's audit log does not contain it: anything the attacker does in their own account or project. That covers creating the external key and later removing the logging service's access to it (first post), and re-creating the deleted bucket name (second post). Nothing here detects or implies a detection of those actions. WHAT IS DECLARED. Eight XQL validation rows over the collector's records, scored by Tier-2 verify only, and one operator-installed correlation, CR-CDR-0030, the only row an alert can back. The collector is one the operator creates with Vendor cortexsim and Product cloud_audit; the tenant then names its records cortexsim_cloud_audit_raw. That name is a rule the operator follows, not a tenant fact. WHAT IS HUNT ONLY. The nine Cortex analytics alerts the two posts name: each documents a 14-day activation and a 30-day training period over the natively onboarded AWS or GCP audit source, which collector records do not arm. Nothing here is lab-provable: the lab has no cloud account and no collector. tenant-verified: 0. No record of SIM-CDR-030 has been ingested by any tenant; authored is not proven.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": []
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1562",
+        "subtechnique_id": "T1562.008",
+        "name": "Impair Defenses: Disable or Modify Cloud Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1485",
+        "name": "Data Destruction",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1565",
+        "subtechnique_id": "T1565.001",
+        "name": "Data Manipulation: Stored Data Manipulation",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1537",
+        "name": "Transfer Data to Cloud Account",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Disable",
+      "Cloud Service: Cloud Service Modification",
+      "Cloud Storage: Cloud Storage Access",
+      "Cloud Storage: Cloud Storage Modification",
+      "Cloud Storage: Cloud Storage Deletion"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-030 — cloud log tampering and the victim-side leg of a log-bucket hijack, emitted as synthetic AWS CloudTrail and Google Cloud audit records by the cloud_audit_emitter plugin to an operator-supplied HTTP collector. Authored only.",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "An XSIAM HTTP log collector created by the operator with Vendor cortexsim, Product cloud_audit, Log Format JSON and no compression. By the tenant's naming rule its records land in cortexsim_cloud_audit_raw. Without it the eight validation rows and the correlation have nothing to read.",
+        "check_command": "echo 'confirm in the tenant console: Settings > Data Sources > HTTP collector (Vendor cortexsim, Product cloud_audit)'"
+      },
+      {
+        "description": "COLLECTOR_URL, COLLECTOR_HOST and CORTEXSIM_COLLECTOR_TOKEN in the environment of the process that runs the steps (identity root): the beacon for a pull run, whose stock service unit sets no environment, or the shell that runs the bundle for a push run. The key is sent bare in the Authorization header. Unset, every step POSTs to a .invalid host and delivers nothing.",
+        "check_command": "test -n \"${COLLECTOR_URL:-}\" && test -n \"${COLLECTOR_HOST:-}\" && test -n \"${CORTEXSIM_COLLECTOR_TOKEN:-}\""
+      },
+      {
+        "description": "A CortexSim checkout as the working directory of the process that runs the steps, with pydantic, httpx and pyyaml importable by python3: the steps run python3 -m scripts.eal_simulator.cli. The stock beacon service unit sets no working directory. Without a checkout step-01 exits non-zero and a pull run stops there.",
+        "check_command": "test -f scripts/eal_simulator/cli.py && python3 -c 'import pydantic, httpx, yaml'"
+      },
+      {
+        "description": "Correlation CR-CDR-0030 from this card installed in the tenant at Medium before the run. Without it the one alert-backed row cannot fire.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > Correlations'"
+      },
+      {
+        "description": "No run of SIM-CDR-030 against the same collector in the previous hour: earlier records inside the rule's one-hour time frame would raise the issue again.",
+        "check_command": "echo 'check the collector dataset for records in the last hour'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/cdr/cdr-030-cloud-logging-tamper-and-log-bucket-hijack.yml\n# is the delivery path (eight steps, 40 s apart, one campaign file per step inside\n# /var/tmp/.cortexsim-logblind). This is the shape of one campaign step only. No cloud API is called.\n#   - step_id: step-01\n#     plugin: cloud_audit_emitter\n#     params:\n#       collector_url: \"$COLLECTOR_URL\"\n#       provider: aws            # or gcp\n#       event_pattern: log_stop  # log_router_create | log_object_overwrite | stream_bucket_delete |\n#                                # log_router_redirect | log_key_swap | log_router_delete | log_destination_delete\n#       iterations: 1\n#       request_timeout: 3\npython3 -m scripts.eal_simulator.cli run /var/tmp/.cortexsim-logblind/step-NN.yml --live",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "url",
+          "default": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "The operator's HTTP collector endpoint (https://api-<tenant>/logs/v1/event). The default never resolves."
+        },
+        {
+          "name": "COLLECTOR_HOST",
+          "type": "string",
+          "default": "collector.cortexsim-canary.invalid",
+          "description": "The host of COLLECTOR_URL, placed on the campaign target allowlist. A mismatch makes the campaign refuse the target."
+        },
+        {
+          "name": "CORTEXSIM_COLLECTOR_TOKEN",
+          "type": "secret",
+          "description": "The collector's key, from the operator's environment at run time. No default; never stored in the scenario or on this card."
+        }
+      ],
+      "timeout_seconds": 150
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-01: a new trail and a new sink that deliver to attacker-named storage (2 records).",
+        "expected_value": "api_operation in (\"CreateTrail\", \"google.logging.v2.ConfigServiceV2.CreateSink\") and log_destination contains \"cortexsim-canary-attacker\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-02: a stored log object read and then written over by the same caller, once per provider (4 records).",
+        "expected_value": "api_operation in (\"GetObject\", \"PutObject\", \"storage.objects.get\", \"storage.objects.create\") with one log_object_key per provider"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-03: the sink's Cloud Storage bucket emptied and then deleted (21 records). The re-creation of the bucket name in the attacker's project is not emitted.",
+        "expected_value": "20 x api_operation = \"storage.objects.delete\" then 1 x api_operation = \"storage.buckets.delete\" on log_resource_name = \"projects/_/buckets/cortexsim-canary-log-archive\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-04: the existing trail repointed to the attacker-named bucket (1 record).",
+        "expected_value": "api_operation = \"UpdateTrail\" and log_destination = \"cortexsim-canary-attacker-logs-999\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-05: the log encryption key swapped for a key in another account or project (2 records).",
+        "expected_value": "api_operation in (\"UpdateTrail\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\") and kms_key_id contains \"cortexsim-canary\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-06: the trail stopped and the sink disabled (2 records).",
+        "expected_value": "api_operation in (\"StopLogging\", \"google.logging.v2.ConfigServiceV2.UpdateSink\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-07: the trail and the sink deleted (2 records).",
+        "expected_value": "api_operation in (\"DeleteTrail\", \"google.logging.v2.ConfigServiceV2.DeleteSink\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "step-08: the trail's S3 bucket emptied and deleted, and the Cloud Logging log bucket deleted (22 records).",
+        "expected_value": "20 x api_operation = \"DeleteObject\", then api_operation in (\"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "On the endpoint, not scored: one campaign file per step, mode 0600, in a directory the step creates fresh at mode 0700 and removes when it exits or is stopped by HUP, INT or TERM.",
+        "expected_value": "/var/tmp/.cortexsim-logblind/step-NN.yml"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /var/tmp/.cortexsim-logblind"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-030 New Trail Or Sink Created With Attacker Storage Target",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"CreateTrail\", \"google.logging.v2.ConfigServiceV2.CreateSink\") and log_destination contains \"cortexsim-canary-attacker\"\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name, log_destination",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Stored Log Object Read And Written Over By One Caller",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"GetObject\", \"PutObject\", \"storage.objects.get\", \"storage.objects.create\")\n| comp count_distinct(api_operation) as operations, count() as records by principal_id, log_resource_name, log_object_key\n| filter operations = 2",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Sink Bucket Emptied And Removed",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"storage.objects.delete\", \"storage.buckets.delete\")\n| comp count_distinct(api_operation) as operations, count() as records by principal_id, log_resource_name\n| filter operations = 2",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Existing Trail Repointed To Attacker Bucket",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation = \"UpdateTrail\" and log_destination = \"cortexsim-canary-attacker-logs-999\"\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name, log_destination",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Log Encryption Key Swapped For External Key",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"UpdateTrail\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\") and kms_key_id contains \"cortexsim-canary\"\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name, kms_key_id",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Trail Stopped Or Sink Disabled",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"StopLogging\", \"google.logging.v2.ConfigServiceV2.UpdateSink\")\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Trail Or Sink Removed",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"DeleteTrail\", \"google.logging.v2.ConfigServiceV2.DeleteSink\")\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-030 Trail Bucket Or Log Bucket Removed",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\")\n| fields _time, audit_provider, api_operation, principal_id, log_resource_name",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "CDR-030 Hunt — Log Tampering Operations Per Caller (collector records; use before the correlation rule is installed)",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter api_operation in (\"CreateTrail\", \"UpdateTrail\", \"StopLogging\", \"DeleteTrail\", \"PutObject\", \"DeleteObject\", \"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.CreateSink\", \"google.logging.v2.ConfigServiceV2.UpdateSink\", \"google.logging.v2.ConfigServiceV2.DeleteSink\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\", \"storage.objects.create\", \"storage.objects.delete\", \"storage.buckets.delete\")\n| alter chain_stage = if(api_operation in (\"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\"), \"log_store_deleted\", \"earlier_tampering\")\n| comp count_distinct(api_operation) as distinct_operations, count_distinct(chain_stage) as chain_stages, count() as records, min(_time) as first_seen, max(_time) as last_seen by principal_id, audit_provider\n| sort desc distinct_operations",
+        "dataset": "cortexsim_cloud_audit_raw"
+      },
+      {
+        "purpose": "investigation",
+        "name": "CDR-030 Collector Read-Back — Records Per Operation (one full run is 56 records over 17 operation names)",
+        "query": "dataset = cortexsim_cloud_audit_raw\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| comp count() as records by audit_provider, api_operation\n| sort asc audit_provider",
+        "dataset": "cortexsim_cloud_audit_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "CDR-030 Watchmen Blinded Sabotage Sequence",
+        "rule_id": "CR-CDR-0030",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name EXACTLY as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; NO MITRE tag (a tagged issue would also be credited to this scenario's validation rows, because every row of a step shares the step's technique); proposed alert field mapping: principal_id -> User Name (untested). It reads the collector records only, so it needs the HTTP log collector created with Vendor cortexsim and Product cloud_audit. UNTESTED: this XQL has not been run in any tenant, and how a collector exposes these JSON keys to a query is unverified. Its alter, comp, then filter shape follows CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11 against endpoint data. It is built only from records SIM-CDR-030 emits and only from flat string keys the emitter writes on every record of these presets. It fires for one caller that performed at least four distinct log-tampering operations AND deleted the log store itself. Only step-08 writes those two bucket-delete operations, so the issue stands for the whole chain. SIM-CDR-030 gives the aws caller 7 of the listed operations and the gcp caller 8, so a floor of four tolerates lost records. Reads of a log object are left out on purpose: a read is not tampering. Expect one issue per provider identity, two per run of the rule, and again on every scheduled run while the records stay inside the time frame; alert suppression is the operator's choice. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = cortexsim_cloud_audit_raw\n| filter api_operation in (\"CreateTrail\", \"UpdateTrail\", \"StopLogging\", \"DeleteTrail\", \"PutObject\", \"DeleteObject\", \"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.CreateSink\", \"google.logging.v2.ConfigServiceV2.UpdateSink\", \"google.logging.v2.ConfigServiceV2.DeleteSink\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\", \"storage.objects.create\", \"storage.objects.delete\", \"storage.buckets.delete\")\n| alter chain_stage = if(api_operation in (\"DeleteBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\"), \"log_store_deleted\", \"earlier_tampering\")\n| comp count_distinct(api_operation) as distinct_operations, count_distinct(chain_stage) as chain_stages, count() as records, min(_time) as first_seen, max(_time) as last_seen by principal_id, audit_provider\n| filter distinct_operations >= 4 and chain_stages = 2"
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "AWS CloudTrail has been stopped",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. Named in the first Unit 42 post. Required data: AWS Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. Page severity Informational, with Medium and Low variations. On a natively onboarded account it would correspond to step-06, the StopLogging call."
+      },
+      {
+        "module": "AWS CloudTrail modification",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. Named in the first Unit 42 post. Required data: AWS Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. The page's investigative steps include checking whether a new destination was set for log archiving. It would correspond to step-04 and step-05, the two UpdateTrail calls."
+      },
+      {
+        "module": "GCP logging sink modification",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. The first Unit 42 post writes the name as Google Cloud logging sink modification. Required data: Gcp Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. It would correspond to step-06, the sink disable; this chain emits no sink redirect on Google Cloud."
+      },
+      {
+        "module": "GCP Logging Bucket Deletion",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. The first Unit 42 post writes the name as Google Cloud Logging Bucket Deletion. Required data: Gcp Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. It would correspond to step-08, the log-bucket delete."
+      },
+      {
+        "module": "CloudTrail logging deletion",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. Named in the first Unit 42 post. Required data: AWS Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. Its Medium and Low variations judge the identity against learned history (a non-admin identity, an unusual identity). It would correspond to step-07, the DeleteTrail call."
+      },
+      {
+        "module": "GCP logging sink deletion",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. The first Unit 42 post writes the name as Google Cloud logging sink deletion. Required data: Gcp Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. It would correspond to step-07, the DeleteSink call."
+      },
+      {
+        "module": "Logging was impaired via external encryption key",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. Named in the first Unit 42 post. Required data: AWS Audit Log or Gcp Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. Page severity Medium. It would correspond to step-05, the key swap."
+      },
+      {
+        "module": "Suspicious activity on logging bucket",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. Named in the first Unit 42 post. Required data: AWS Audit Log. The reference page documents a 14-day activation and a 30-day training period over the natively onboarded audit source; records POSTed to an HTTP collector do not arm it. The page names deletion on a CloudTrail logging bucket and on an S3 access-logs bucket; it does not say an overwrite is covered. Object-level S3 events also need CloudTrail data events, which a default onboarding leaves off. It would correspond to step-08; whether it covers step-02 is an open question."
+      },
+      {
+        "module": "GCP Storage Bucket containing sensitive data was deleted",
+        "validated": false,
+        "note": "Hunt only; SIM-CDR-030 does not declare it. SECOND Unit 42 post (Universal Bucket Hijacking, Figure 8); it is not one of the first post's eight alerts. No reference page was found under this name; the nearest page read, GCP Storage Bucket deletion, documents a 14-day activation and a 30-day training period over Gcp Audit Log. The figure says the bucket contains sensitive data, so the alert depends on the bucket having been classified, which synthetic records cannot confer. It would correspond to step-03, the storage.buckets.delete call."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "http-log-collector",
+        "coverage_tier": "investigation",
+        "evidence_query": "The eight validation queries on this card, over the records of the operator's HTTP log collector (Vendor cortexsim, Product cloud_audit). Tier-2 verify only; none raises an issue."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0030"
+        ],
+        "evidence_query": "Issue 'CDR-030 Watchmen Blinded Sabotage Sequence' (operator-installed correlation, Medium), one per provider identity. The only alert-backed row of SIM-CDR-030."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics-cloud-aws-audit-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AWS CloudTrail has been stopped",
+          "AWS CloudTrail modification",
+          "CloudTrail logging deletion",
+          "Suspicious activity on logging bucket",
+          "Logging was impaired via external encryption key"
+        ],
+        "evidence_query": "// HUNT for a tenant with natively onboarded AWS audit logs. Not scored by SIM-CDR-030 and not satisfied by its collector records.\n// Field names of the normalised cloud audit data are UNVERIFIED: cloud_provider and event_name follow this corpus's convention, not a schema read from a tenant.\ndataset = cloud_audit_logs\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter cloud_provider = \"AWS\" and event_name in (\"CreateTrail\", \"UpdateTrail\", \"StopLogging\", \"DeleteTrail\")\n| fields _time, cloud_provider, event_name"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics-cloud-gcp-audit-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "GCP logging sink modification",
+          "GCP logging sink deletion",
+          "GCP Logging Bucket Deletion",
+          "Logging was impaired via external encryption key"
+        ],
+        "evidence_query": "// HUNT for a tenant with natively onboarded Google Cloud audit logs. Not scored by SIM-CDR-030 and not satisfied by its collector records.\n// Field names of the normalised cloud audit data are UNVERIFIED: cloud_provider and event_name follow this corpus's convention, not a schema read from a tenant. Whether event_name holds the full method name on Google Cloud records is also unverified.\ndataset = cloud_audit_logs\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter cloud_provider = \"GCP\" and event_name in (\"google.logging.v2.ConfigServiceV2.CreateSink\", \"google.logging.v2.ConfigServiceV2.UpdateSink\", \"google.logging.v2.ConfigServiceV2.DeleteSink\", \"google.logging.v2.ConfigServiceV2.UpdateBucket\", \"google.logging.v2.ConfigServiceV2.DeleteBucket\", \"storage.buckets.delete\")\n| fields _time, cloud_provider, event_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics-data-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "GCP Storage Bucket containing sensitive data was deleted"
+        ],
+        "evidence_query": "Shown in the second Unit 42 post (Figure 8). Hunt only: it needs natively onboarded Gcp Audit Log and a bucket classified as holding sensitive data. No reference page was found under this name."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CDR-030",
+        "name": "Cloud Logging Blinded Step by Step, With a Log-Bucket Hijack Leg",
+        "description": "Emit the victim-side audit records of each cloud log tampering technique to an HTTP collector and check two things: every record is queryable where the operator's collector puts it, and an operator-installed correlation ties one caller's tampering into one issue.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CDR-030A",
+            "objective": "The attacker gains and hides a copy of the logs: a new log route, a poisoned log object and a redirected trail are queryable.",
+            "preconditions": [
+              "The HTTP log collector exists (Vendor cortexsim, Product cloud_audit) and its URL, host and key are exported."
+            ],
+            "steps": [
+              "Emit CreateTrail and CreateSink naming attacker storage (step-01).",
+              "Emit the read-then-write pair on one stored log object per provider (step-02).",
+              "Emit UpdateTrail repointing the trail to the attacker-named bucket (step-04)."
+            ],
+            "success_criteria": [
+              "XQL `CDR-030 New Trail Or Sink Created With Attacker Storage Target` returns a row.",
+              "XQL `CDR-030 Stored Log Object Read And Written Over By One Caller` returns a row.",
+              "XQL `CDR-030 Existing Trail Repointed To Attacker Bucket` returns a row.",
+              "These rows are scored by Tier-2 verify only and never raise Detection Accuracy."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-CDR-030B",
+            "objective": "The victim-side leg of the log-bucket hijack is queryable: the sink's bucket is emptied and then deleted.",
+            "preconditions": [
+              "The sink still exists, is enabled and still names the bucket (step-03 runs before step-06 and step-07)."
+            ],
+            "steps": [
+              "Emit 20 storage.objects.delete records and then one storage.buckets.delete record (step-03)."
+            ],
+            "success_criteria": [
+              "XQL `CDR-030 Sink Bucket Emptied And Removed` returns a row.",
+              "Not a criterion: the re-creation of the bucket name. It happens in the attacker's project, is not emitted and is not visible in a victim's audit log."
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-CDR-030C",
+            "objective": "The victim's own pipeline is blinded and destroyed, and the correlation ties the caller's tampering into one issue.",
+            "preconditions": [
+              "CR-CDR-0030 installed at Medium, scheduled every 10 minutes over a 1 hour time frame, with no MITRE tag."
+            ],
+            "steps": [
+              "Emit the key swap (step-05), the stop and disable (step-06), the router deletes (step-07) and the log store deletes (step-08)."
+            ],
+            "success_criteria": [
+              "XQL `CDR-030 Log Encryption Key Swapped For External Key` returns a row.",
+              "XQL `CDR-030 Trail Stopped Or Sink Disabled` returns a row.",
+              "XQL `CDR-030 Trail Or Sink Removed` returns a row.",
+              "XQL `CDR-030 Trail Bucket Or Log Bucket Removed` returns a row.",
+              "Issue `CDR-030 Watchmen Blinded Sabotage Sequence` (Medium) from CR-CDR-0030 within 1800 seconds of launch: alert-backed, and only if the operator installed the rule.",
+              "Not a criterion: the nine Cortex analytics alerts named by the two posts. They are hunt content for a natively onboarded account."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict the permissions the first post names for each technique: cloudtrail:StopLogging, s3:DeleteBucket and s3:DeleteObject on the trail's bucket, logging.sinks.update, logging.sinks.create and logging.buckets.delete, and the trail update and delete calls.",
+      "Turn on log file integrity validation for trails created through the API or the CLI. The first post notes it is on by default only for trails created in the console.",
+      "Lock Cloud Logging log buckets that must survive: the first post notes a locked log bucket cannot be deleted, and that an unlocked one sits in DELETE_REQUESTED for seven days before it is gone.",
+      "Know the provider fallbacks the first post describes, and their limits: AWS keeps an immutable 90-day Event History of management events (data events are not in it), and Google's _Required log bucket cannot be disabled, modified or deleted.",
+      "Treat permission to delete a bucket that a log or data stream writes to as permission to redirect that stream. The second post shows the delete-and-recreate path needs none of the sink, subscription or transfer-job update permissions, and that the predefined Storage Admin role grants storage.buckets.delete."
+    ],
+    "detection_engineering": [
+      "On a collector, key on the flat keys the emitter writes at the top level of a record and compare strings only: api_operation, audit_provider, principal_id and log_resource_name are on every record of these presets; log_object_key, log_destination and kms_key_id are on the records that have one. How a collector exposes nested JSON and JSON booleans to a query is unverified.",
+      "UpdateTrail is written by both the redirect and the key swap. Tell them apart by what the call changed: log_destination on one, kms_key_id on the other.",
+      "The bucket delete is the last victim-side signal of the hijack in the second post. The re-creation of the name happens in the attacker's account, and the sink configuration still looks valid afterwards.",
+      "Only the repointing call of the key technique is in the victim's audit log. The key's creation and the later removal of the logging service's access to it happen in the attacker's account.",
+      "Leave the MITRE tag off CR-CDR-0030. A tagged correlation issue would also be credited to the validation rows of the step that shares the technique.",
+      "Keep the rule at Medium or higher: a Low issue never creates or joins a case.",
+      "The nine Cortex analytics alerts on this card need a natively onboarded AWS or GCP audit source and their documented activation and training periods. Object-level S3 events also need CloudTrail data events, which a default onboarding leaves off.",
+      "The alert reference pages read on 2026-11-11 print a newer ATT&CK mapping for these alerts (Defense Impairment, TA0112, and T1685.002). That is the vendor pages' mapping, not the posts'; this card keeps T1562.008, the id the corpus already uses.",
+      "The posts print CLI spellings and IAM permission names (stop-logging, logging.sinks.update). Audit records carry API operation names (StopLogging, google.logging.v2.ConfigServiceV2.UpdateSink); the emitter takes those from provider documentation."
+    ]
+  },
+  "references": [
+    {
+      "title": "Blinding the Watchmen: Abusing Cloud Logging Services for Defense Evasion and Visibility",
+      "url": "https://unit42.paloaltonetworks.com/cloud-logging-defense-evasion/",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2026-06-09",
+      "primary": true
+    },
+    {
+      "title": "SECOND SOURCE, one leg only (step-03: the victim-side bucket empty-and-delete) — Universal Bucket Hijacking",
+      "url": "https://unit42.paloaltonetworks.com/cloud-bucket-hijacking-risks/",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2026-06-22"
+    },
+    {
+      "title": "Cortex analytics alert reference — AWS CloudTrail has been stopped",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/aws-cloudtrail-has-been-stopped.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — AWS CloudTrail modification",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/aws-cloudtrail-modification.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — GCP logging sink modification",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/gcp-logging-sink-modification.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — GCP Logging Bucket Deletion",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/gcp-logging-bucket-deletion.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — CloudTrail logging deletion",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/cloudtrail-logging-deletion.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — GCP logging sink deletion",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/gcp-logging-sink-deletion.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — Logging was impaired via external encryption key",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/logging-was-impaired-via-external-encryption-key.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — Suspicious activity on logging bucket",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-activity-on-logging-bucket.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex analytics alert reference — GCP Storage Bucket deletion (the nearest page to the alert the second post shows)",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/gcp-storage-bucket-deletion.md",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "AWS CloudTrail API Reference — StopLogging",
+      "url": "https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_StopLogging.html",
+      "publisher": "Amazon Web Services"
+    },
+    {
+      "title": "AWS CloudTrail API Reference — UpdateTrail",
+      "url": "https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_UpdateTrail.html",
+      "publisher": "Amazon Web Services"
+    },
+    {
+      "title": "AWS CloudTrail API Reference — CreateTrail",
+      "url": "https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_CreateTrail.html",
+      "publisher": "Amazon Web Services"
+    },
+    {
+      "title": "AWS CloudTrail User Guide — CloudTrail record contents",
+      "url": "https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-event-reference-record-contents.html",
+      "publisher": "Amazon Web Services"
+    },
+    {
+      "title": "Amazon S3 User Guide — Amazon S3 CloudTrail events",
+      "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/cloudtrail-logging-s3-info.html",
+      "publisher": "Amazon Web Services"
+    },
+    {
+      "title": "Google Cloud — Cloud Logging audit logging",
+      "url": "https://docs.cloud.google.com/logging/docs/audit-logging",
+      "publisher": "Google Cloud"
+    },
+    {
+      "title": "Google Cloud — Cloud Audit Logs with Cloud Storage",
+      "url": "https://docs.cloud.google.com/storage/docs/audit-logging",
+      "publisher": "Google Cloud"
+    },
+    {
+      "title": "Google Cloud — Cloud Logging API v2: projects.sinks",
+      "url": "https://docs.cloud.google.com/logging/docs/reference/v2/rest/v2/projects.sinks",
+      "publisher": "Google Cloud"
+    },
+    {
+      "title": "Google Cloud — Cloud Logging API v2: projects.locations.buckets",
+      "url": "https://docs.cloud.google.com/logging/docs/reference/v2/rest/v2/projects.locations.buckets",
+      "publisher": "Google Cloud"
+    },
+    {
+      "title": "MITRE ATT&CK — T1562.008 Impair Defenses: Disable or Modify Cloud Logs",
+      "url": "https://attack.mitre.org/techniques/T1562/008/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
