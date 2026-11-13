@@ -171,3 +171,41 @@ def test_query_text_is_the_spec_query():
         '| filter cortexsim_canary = "wiz-x-1"\n'
         '| comp count() as found, min(_insert_time) as first_seen, '
         'max(_insert_time) as last_seen')
+
+
+def _queries(stub):
+    key = ledger_mod.tenant_ledger_key(stub._base)
+    return ledger_mod.ledger.snapshot(key, limit=1000)["queries_last_24h"]
+
+
+def test_local_refusal_before_the_start_left_is_quota_and_refunded():
+    stub = _Stub(start_exc=XsiamQuotaError("own bucket empty", local=True))
+    r = run(stub)
+    assert (r["state"], r["code"], r["found"]) == ("not_checked", "QUOTA", None)
+    assert r["queries_issued"] == 0 and _queries(stub) == 0
+    assert "POVengine" in r["reason"] and "before" in r["reason"]
+
+
+@pytest.mark.parametrize("started", ["q1", None])
+def test_local_refusal_of_the_poll_after_a_start_is_pending_with_the_id(started):
+    # The public get_query_results never names the started query, so the
+    # refusal may carry query_started=None; the phase decides, not the field.
+    stub = _Stub(read_exc=XsiamQuotaError("poll refused", local=True, query_started=started))
+    r = run(stub)
+    assert (r["state"], r["found"], r["query_id"]) == ("pending", None, "q1")
+    assert r["queries_issued"] == 1 and _queries(stub) == 1
+    assert "locally" in r["reason"] and "again later" in r["reason"]
+
+
+def test_local_poll_refusal_for_a_caller_supplied_id_issues_nothing():
+    stub = _Stub(read_exc=XsiamQuotaError("poll refused", local=True))
+    r = run(stub, query_id="q9")
+    assert (r["state"], r["query_id"], r["queries_issued"]) == ("pending", "q9", 0)
+    assert stub.starts == 0 and _queries(stub) == 0
+
+
+def test_tenant_429_stays_quota_and_charged():
+    stub = _Stub(start_exc=XsiamQuotaError("429"))
+    r = run(stub)
+    assert (r["state"], r["code"], r["queries_issued"]) == ("not_checked", "QUOTA", 1)
+    assert _queries(stub) == 1

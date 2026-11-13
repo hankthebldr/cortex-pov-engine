@@ -66,6 +66,7 @@ async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int
                         since: Optional[datetime],
                         query_id: Optional[str]) -> dict[str, Any]:
     issued = 0
+    polling = False  # True once the start (if any) is behind us
 
     def refused(code: str, reason: str) -> dict[str, Any]:
         return _result("not_checked", dataset=dataset, delivered=delivered, query_id=query_id,
@@ -78,6 +79,7 @@ async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int
                 issued = 1  # the ledger is charged on entry, before the call is made
                 query_id = await client.start_xql_query(
                     arrival_query(dataset, token), _timeframe(since))
+        polling = True
         reply = await client.get_query_results(query_id, limit=10)
         status = reply.get("status")
         if status is None or status == "PENDING":
@@ -89,7 +91,24 @@ async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int
         return refused("TENANT_NOT_CONFIGURED", exc.detail)
     except XsiamCapabilityError as exc:
         return refused("XQL_NOT_AUTHORISED", exc.detail)
-    except (QuotaBreakerOpen, DailyBudgetExhausted, XsiamQuotaError) as exc:
+    except XsiamQuotaError as exc:
+        if getattr(exc, "local", False):
+            if polling or getattr(exc, "query_started", None):
+                # POVengine's own budget refused the results fetch; the query
+                # is running on the tenant, so this is pending, not a failure.
+                return _result(
+                    "pending", dataset=dataset, delivered=delivered,
+                    query_id=getattr(exc, "query_started", None) or query_id,
+                    issued=issued,
+                    reason="POVengine's own request budget refused the results "
+                           "fetch locally; the query is running on the tenant. "
+                           "Test again later.")
+            issued = 0  # refused before the start left; tenant_budget refunded it
+            return refused("QUOTA", "POVengine's own request budget refused the "
+                           "request before it was sent to the tenant; nothing was "
+                           "charged. Test again later.")
+        return refused("QUOTA", getattr(exc, "detail", None) or str(exc))
+    except (QuotaBreakerOpen, DailyBudgetExhausted) as exc:
         return refused("QUOTA", getattr(exc, "detail", None) or str(exc))
     except XsiamAuthError as exc:
         return refused("TENANT_UNAUTHORIZED", exc.detail)
