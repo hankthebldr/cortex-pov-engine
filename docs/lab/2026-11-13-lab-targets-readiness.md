@@ -287,9 +287,25 @@ Cross-check by the canary session (one read-only XQL, −4d..+2h): all 7 rows pr
 `_reporting_device_ip` is null on every row. On this door, `_time` is whole seconds and 4–7 s *before*
 `_collection_timestamp` (ms precision), and `_insert_time` is about 0.1 s after collection. For example, `udp514` reads
 `_time` 23:39:12, collection 23:39:18.723, insert 23:39:19. That looks like the sender's syslog header time, where
-the HTTP collector filed records at arrival unless the body carried `_time`. A back-dated header and CEF `rt` probe
-(nonces `cxsdp-040547-*`, sent 23:53:28–23:53:32Z to UDP 514 and TCP 5514, plus a truncated line and a 70 KB line
-over TCP) is out for read-back by the canary session. Until it reports, count syslog read-backs by `_insert_time`.
+the HTTP collector filed records at arrival unless the body carried `_time`.
+
+**Time and malformed-line probe** (nonces `cxsdp-040547-*`, raw `nc` from pov-target-01, 23:53:28–23:53:32Z, to UDP 514
+and TCP 5514). The canary session read it back at +2 min and I re-read it independently:
+
+| Case | `_time` | Landed |
+|---|---|---|
+| RFC 5424 header 3 days back, no `rt` | 2026-11-10 23:53:28 (header time, not clamped) | parsed, both protocols |
+| RFC 3164 header now, CEF `rt` 3 days back | 2026-11-10 23:53:28 (`rt` wins over a current header) | parsed, both protocols |
+| header and `rt` now | 23:53:28 | parsed, both protocols |
+| CEF cut off after the signatureId | = `_insert_time` (23:54:15, ~35 s after collection) | **raw only**: `_raw_log` set, no `cefName`/`cs1`/`cefDeviceEventClassId` |
+| 70 KB CEF line, TCP only | — | not seen at +2 min, re-read pending |
+| earlier plain-text line with no `CEF:` marker (`door-syslog-f2f705-plain`) | — | absent, raw column included |
+
+Collection is batched: every UDP row shares one `_collection_timestamp` (23:53:30.502), and every TCP row another
+(23:53:40.501). One TCP row inserted 80 s after collection. **Rules for the testing pass:** a sender controls
+`_time` on this door through its syslog header or CEF `rt`, so read-backs must filter on `_insert_time` or use a window
+that covers every timestamp sent, and the matcher window cannot assume `_time` is arrival. A CEF line that fails to
+parse is findable only through `_raw_log contains`, and a non-CEF line on a CEF row is dropped.
 
 #### 5.4.1 Applet inventory and syslog row options (tenant Broker API schema, `broker-papi.yaml`)
 
