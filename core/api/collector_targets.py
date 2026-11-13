@@ -12,6 +12,7 @@ destination from them (``eal_simulator.targets``).
   PUT    /api/collector-targets/{name}        create or replace (key write-only)
   DELETE /api/collector-targets/{name}        remove the target and its key
   POST   /api/collector-targets/{name}/preflight   configured -> reachable -> accepted
+  POST   /api/collector-targets/{name}/arrival     did the tagged records arrive (read-only XQL)
 
 The key goes to the encrypted vault and is never returned — not by value, not
 by tail. The operator API is unauthenticated, so the guarantee is the key's
@@ -22,6 +23,7 @@ Spec: docs/superpowers/specs/2026-11-10-collector-targets-design.md
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -31,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from eal_simulator import get_default_registry
 from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
+from eal_simulator.analytics_emitter import CANARY_TOKEN_RE
+from eal_simulator.arrival import DOES_NOT_PROVE, PROVES, check_arrival
 from eal_simulator.collector_declaration import NATIVE_DATASETS, TEST_CHANNEL, dataset_for, route_verdict
 from eal_simulator.ingestion_routes import tenant_datasets
 from eal_simulator.target_preflight import preflight_target
@@ -39,6 +43,8 @@ from engine import collector_targets as store
 from engine.dataset_requirements import card_dataset_index
 from engine.lab_tenants import host_of, is_lab_tenant_host
 from engine.ttp_catalog import catalog
+from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.loader import load_xsiam_client
 
 router = APIRouter(prefix="/collector-targets", tags=["collector-targets"])
 
@@ -73,6 +79,26 @@ class TargetPut(BaseModel):
 
 class PreflightBody(BaseModel):
     write_canary: bool = False
+
+
+class ArrivalBody(BaseModel):
+    tenant: str = Field(min_length=1)
+    token: str = Field(pattern=CANARY_TOKEN_RE.pattern)
+    delivered: int = Field(ge=0)
+    since: Optional[datetime] = None
+    query_id: Optional[str] = Field(default=None, min_length=1)
+
+
+def _not_checked(body: ArrivalBody, code: str, reason: str) -> dict[str, Any]:
+    return {"state": "not_checked", "found": None, "delivered": body.delivered,
+            "first_seen": None, "last_seen": None, "query_id": body.query_id,
+            "queries_issued": 0, "code": code, "reason": reason,
+            "proves": list(PROVES), "does_not_prove": list(DOES_NOT_PROVE)}
+
+
+def _no_dataset_result(body: ArrivalBody) -> dict[str, Any]:
+    return _not_checked(body, "TARGET_HAS_NO_DATASET",
+                        "this target names no dataset, so there is nothing to query")
 
 
 def preflight_transports() -> tuple[Any, Any]:
@@ -252,4 +278,29 @@ async def preflight(
         connect=connect, client_factory=client_factory,
     )
     await store.record_check(db, name, result)
+    return result
+
+
+@router.post("/{name}/arrival")
+async def arrival(name: str, body: ArrivalBody,
+                  db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Ask the tenant, read-only, how many tagged example records reached the
+    target's dataset. A counted or not_checked answer is stored as the target's
+    ``last_arrival``; a pending one is not, because it says nothing yet."""
+    row = await _row_or_404(db, name)
+    if not row.dataset:
+        result = _no_dataset_result(body)
+    else:
+        try:
+            client = await load_xsiam_client(db, body.tenant)
+        except XsiamConfigError as exc:
+            result = _not_checked(body, "TENANT_NOT_CONFIGURED", exc.detail)
+        else:
+            result = await check_arrival(
+                client, dataset=row.dataset, token=body.token, delivered=body.delivered,
+                since=body.since, query_id=body.query_id)
+    if result["state"] != "pending":
+        await store.record_arrival(db, name, {
+            **result, "token": body.token,
+            "checked_at": datetime.now(timezone.utc).isoformat()})
     return result

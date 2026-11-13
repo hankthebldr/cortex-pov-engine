@@ -443,3 +443,100 @@ def test_vendor_and_product_are_stripped_before_the_native_check(db_file, monkey
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
     assert blank.status_code == 422
+
+
+# --- arrival check ------------------------------------------------------------
+
+ARRIVAL_TOKEN = "wiz-a-202611131200-ab12"
+
+
+class _ArrivalStub:
+    capabilities = ["xql"]
+    _base = "https://api-arrival.example.test"
+
+    def __init__(self, reply):
+        self.reply, self.starts = reply, 0
+
+    async def start_xql_query(self, query, timeframe):
+        self.starts += 1
+        return "q1"
+
+    async def get_query_results(self, query_id, limit=100):
+        return self.reply
+
+
+def _patch_tenant(monkeypatch, reply=None, exc=None):
+    from api import collector_targets as ct_api
+    stub = _ArrivalStub(reply)
+
+    async def _loader(session, name):
+        if exc:
+            raise exc
+        return stub
+    monkeypatch.setattr(ct_api, "load_xsiam_client", _loader)
+    return stub
+
+
+def _arrive(c, **over):
+    body = {"tenant": "acme", "token": ARRIVAL_TOKEN, "delivered": 3}
+    body.update(over)
+    return c.post("/api/collector-targets/okta-hec/arrival", json=body)
+
+
+def _last_arrival(c):
+    return c.get("/api/collector-targets/okta-hec").json()["last_arrival"]
+
+
+def test_arrival_records_counted_and_not_pending(db_file, monkeypatch):
+    done = {"status": "SUCCESS", "results": {"data": [{"found": 3, "first_seen": 1, "last_seen": 2}]}}
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        pending = _arrive(c)
+        after_pending = _last_arrival(c)
+        _patch_tenant(monkeypatch, done)
+        counted = _arrive(c)
+        recorded = _last_arrival(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        _arrive(c)
+        still = _last_arrival(c)
+    assert pending.json()["state"] == "pending" and pending.json()["found"] is None
+    assert after_pending is None
+    assert counted.json()["state"] == "counted" and counted.json()["found"] == 3
+    assert recorded["state"] == "counted" and recorded["found"] == 3
+    assert recorded["token"] == ARRIVAL_TOKEN and recorded["checked_at"].endswith("+00:00")
+    assert still == recorded
+
+
+def test_arrival_without_a_tenant_is_not_checked(db_file, monkeypatch):
+    from integrations.xsiam.exceptions import XsiamConfigError
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, exc=XsiamConfigError("no such tenant"))
+        r = _arrive(c)
+        recorded = _last_arrival(c)
+    assert r.status_code == 200
+    assert (r.json()["state"], r.json()["code"], r.json()["found"]) == (
+        "not_checked", "TENANT_NOT_CONFIGURED", None)
+    assert recorded["state"] == "not_checked" and recorded["code"] == "TENANT_NOT_CONFIGURED"
+
+
+def test_arrival_on_a_target_without_a_dataset_is_not_checked(db_file, monkeypatch):
+    with _app(db_file) as (c, _, _s):
+        _put(c, dataset=None)
+        stub = _patch_tenant(monkeypatch, {"status": "PENDING"})
+        r = _arrive(c)
+    assert r.json()["state"] == "not_checked" and r.json()["code"] == "TARGET_HAS_NO_DATASET"
+    assert stub.starts == 0
+
+
+def test_arrival_unknown_target_is_404_and_bad_body_is_422(db_file, monkeypatch):
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        missing = c.post("/api/collector-targets/nope/arrival",
+                         json={"tenant": "acme", "token": ARRIVAL_TOKEN, "delivered": 1})
+        bad = _arrive(c, token='x" | drop')
+        negative = _arrive(c, delivered=-1)
+    assert missing.status_code == 404
+    assert bad.status_code == 422 and negative.status_code == 422
