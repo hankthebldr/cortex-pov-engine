@@ -1055,8 +1055,12 @@ provider).
   `<Vendor>_<Product>_raw` from the collector's own settings, and
   `cloud_audit_logs` is filled by platform normalisation of natively onboarded
   audit data, which a POST does not pass through. A scored query has to name the
-  collector's dataset. No collector dataset is registered for this plugin yet
-  (`KNOWN_DATASETS`, `spec/dataset_requirements.yml`); that is an open decision.
+  collector's dataset. That dataset is `cortexsim_cloud_audit_raw` (decided
+  2026-11-12): the operator creates the HTTP collector with Vendor `cortexsim`
+  and Product `cloud_audit`. It is registered in `KNOWN_DATASETS` and
+  `spec/dataset_requirements.yml`, and SIM-CDR-030 is the first scenario to
+  query it. The name is a rule the operator follows, not a tenant fact: no
+  record has been ingested by a tenant.
 - *Vendor analytics alerts.* The Cortex alerts these calls correspond to on a
   natively onboarded account — "AWS CloudTrail has been stopped", "AWS CloudTrail
   modification", "CloudTrail logging deletion", "Suspicious activity on logging
