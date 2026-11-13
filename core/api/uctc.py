@@ -550,22 +550,37 @@ async def _runs_for(db: AsyncSession, scenario_ids: list[str]) -> dict[str, Any]
         .order_by(Run.started_at.desc(), Run.id.desc())
     )
     runs = list((await db.execute(stmt)).scalars().all())
+    # A pending run whose verdict carries a reason (`not_executed`,
+    # `soak_pending`) had nothing to score: it needs a re-run or a closed soak
+    # window, not more verification, so the rollup counts it apart.
+    pending_reasons: dict[str, int] = {}
     for r in runs:
         key = r.tc_verdict or "pending"
         verdicts[key] = verdicts.get(key, 0) + 1
+        reason = _verdict_reason(r)
+        if key == "pending" and reason:
+            pending_reasons[reason] = pending_reasons.get(reason, 0) + 1
 
     latest = runs[0] if runs else None
     return {
         "total": len(runs),
         "verdicts": verdicts,
+        "pending_reasons": pending_reasons,
         "latest": {
             "run_id": latest.run_id,
             "scenario_id": latest.scenario_id,
             "status": latest.status,
             "tc_verdict": latest.tc_verdict,
+            "reason": _verdict_reason(latest),
             "started_at": latest.started_at.isoformat() if latest.started_at else None,
         } if latest else None,
     }
+
+
+def _verdict_reason(run: Run) -> Optional[str]:
+    detail = run.tc_verdict_detail
+    reason = detail.get("reason") if isinstance(detail, dict) else None
+    return str(reason) if reason else None
 
 
 @router.get("/coverage")

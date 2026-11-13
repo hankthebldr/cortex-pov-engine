@@ -250,6 +250,25 @@ class TestExecSummary:
         assert "authoring" not in conclusion
 
 
+
+    @pytest.mark.parametrize("reason,label", [
+        ("not_executed", "PENDING — nothing executed"),
+        ("soak_pending", "PENDING — detectors are still soaking"),
+    ])
+    def test_pending_verdict_label_names_why_nothing_was_scored(self, reason, label):
+        """A run where nothing reached the denominator is not "verification
+        outstanding": verifying again will not change it."""
+        run = {**_run(), "tc_verdict": "pending",
+               "tc_verdict_detail": {"reason": reason, "detail": "nothing scored"}}
+        md = rg.render_exec_summary_markdown(run, _scenario(), _results(0, 0, 1))
+        assert f"**Test-case verdict:** **{label}" in md
+        assert "verification outstanding" not in md
+
+    def test_pending_verdict_without_reason_keeps_the_outstanding_label(self):
+        run = {**_run(), "tc_verdict": "pending", "tc_verdict_detail": {"reason": None}}
+        md = rg.render_exec_summary_markdown(run, _scenario(), _results(0, 0, 1))
+        assert "**PENDING — verification outstanding**" in md
+
 # ---------------------------------------------------------------------------
 # Bundle (tar.gz)
 # ---------------------------------------------------------------------------
