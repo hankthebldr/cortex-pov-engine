@@ -137,6 +137,33 @@ for (const { w, h } of [{ w: 1440, h: 900 }, { w: 1024, h: 768 }]) {
   })
 }
 
+test('a step card that grows after the fit still leaves the rule clear of + Add step at 1024x768', async ({ page }) => {
+  // The rail sits below the tallest MEASURED step card, so a card that grows
+  // after the canvas has fitted (a late font swap, a chip that arrives with its
+  // card) pushes the rule down. CI's runner did exactly that and drew the rule
+  // under the "+ Add step" button. The canvas must refit for it while the DC
+  // has not panned or zoomed.
+  await openComposer(page, 1024, 768)
+  await expect.poll(async () => {
+    const b = await boxes(page)
+    return !!b.rule && !!b.stage && b.rule.bottom <= b.stage.bottom
+  }, { timeout: 8_000 }).toBe(true)
+  // The rule's place in the graph is its own transform (flow coordinates, so a
+  // refit does not change it). Wait until the taller cards have pushed it down,
+  // then require the canvas to have refitted around it.
+  const ruleNode = page.locator(`.react-flow__node[data-id="${RULE_NODE}"]`)
+  const placedAt = await ruleNode.evaluate((el) => (el as HTMLElement).style.transform)
+  await page.addStyleTag({ content: '.react-flow__node-step > * { padding-bottom: 40px !important; }' })
+  await expect.poll(() => ruleNode.evaluate((el) => (el as HTMLElement).style.transform),
+    { message: 'the taller cards must push the rule down', timeout: 8_000 }).not.toBe(placedAt)
+  await expect.poll(async () => {
+    const b = await boxes(page)
+    return !!b.rule && !!b.addStep
+      && !(b.rule.bottom > b.addStep.top && b.rule.top < b.addStep.bottom
+        && b.rule.right > b.addStep.left && b.rule.left < b.addStep.right)
+  }, { message: 'the canvas must refit when the rule is pushed down', timeout: 8_000 }).toBe(true)
+})
+
 test('selecting the rule opens a read-only Inspector and edits nothing', async ({ page }) => {
   await openComposer(page, 1440, 900)
   await page.getByTestId(`chain-rule-${RULE}`).click()
