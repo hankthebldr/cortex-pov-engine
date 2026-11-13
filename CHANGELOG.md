@@ -157,6 +157,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   longer name card TTP-2026-0200 without a detection on it, which logged an
   unresolved-card warning at every boot.
 
+### Fixed — the Composer refits when its canvas changes size after the fit
+
+- **On a cold load the rule card could sit under "+ Add step".** The
+  readiness strip above the Composer ("SIMCORE DEGRADED") appears only once
+  `/api/health` answers. When that landed after the canvas had fitted, the
+  canvas lost about 43 px of height while the view kept the zoom fitted to the
+  taller one, and "+ Add step", pinned to the canvas bottom, rose into the
+  rule card at 1024x768. The canvas now refits when its own size changes, as
+  it already did when the rule card moved, and still never once the DC has
+  panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
+  failure on #258, #260 and #270.
+
 ### Security
 
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
