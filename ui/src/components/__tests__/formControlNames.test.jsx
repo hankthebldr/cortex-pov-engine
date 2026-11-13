@@ -113,6 +113,8 @@ describe('Quick launch selects', () => {
 
   it('Identity and Agent are reached by their labels', () => {
     render(<ScenarioInspector scenario={scenario} open launch={launch} />)
+    // The quick-launch selects live on the sheet's Launch options tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Launch options' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'Identity' }), { target: { value: 'root' } })
     expect(launch.setIdentity).toHaveBeenCalledWith('root')
     fireEvent.change(screen.getByRole('combobox', { name: 'Agent' }), { target: { value: 'a-2' } })

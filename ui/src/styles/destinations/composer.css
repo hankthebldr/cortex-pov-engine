@@ -1138,35 +1138,26 @@
 .theme-console .composer-canvas__binding-pair { color: var(--tx2); }
 .theme-console .composer-canvas__binding-pair strong { color: var(--ink); }
 
-/* ── Lanes lens — swimlane bands behind the chain (composerLanes.js) ──────────
-   Bands are drawn in flow space via <ViewportPortal>, so they pan and zoom
-   with the nodes. Fills come from COMPOSER_LANES (plane tints at 5%); here we
-   only give each band its rule, its label, and the terminal bands their
-   quieter treatment. */
-.theme-console .composer-lane {
-  position: absolute;
-  left: 0;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--bd);
-  padding: 8px 0 0 12px;
+/* ── Lanes lens — the ChainStage, editable (design v26 §4.1) ─────────────────
+   The stage brings its own bands, cards and edges (styles/chain-stage.css).
+   Here it only fills the canvas region and scrolls inside it, in both axes:
+   the bar above stays put while the lanes move. */
+.theme-console .composer-canvas__stage {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  min-height: 420px;
+  padding: 10px 16px 64px;
 }
-.theme-console .composer-lane--terminal {
-  border-bottom-style: dashed;
+.theme-console .composer--mode .composer-canvas__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  /* Clear the floating chrome: the caption pill and the drawer tabs above,
+     "+ Add step" and the workstream dock below. */
+  padding: 56px 16px 100px;
 }
-.theme-console .composer-lane__label {
-  font: 700 9px/1 var(--font-ui);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--tx2);
-}
-.theme-console .composer-lane--terminal .composer-lane__label { color: var(--tx3); }
-.theme-console .composer-lane__sub {
-  font: 400 10px/1.2 var(--font-ui);
-  color: var(--tx3);
-}
+.theme-console .composer-canvas__stage .chain-stage { flex: 1 1 auto; min-height: 0; }
 
 /* The door badge: where the step runs and its signal path ("AGT → WIRE"),
    read from the command, never the plane. It has its own line under the
