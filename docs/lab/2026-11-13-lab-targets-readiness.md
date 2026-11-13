@@ -21,7 +21,8 @@ that failure looks like a missed detection in a report. Both have a short fix wa
 machine has not been installed: the vendor does not list this operating system version, so a failure there is a host
 problem, not a product gap. The on-premises log broker has not been deployed. The host has ample spare capacity and
 fast spare disks, but only one of the four planned collection types has a data source in the lab today. The cloud HTTP
-collector is receiving data, but the local simulator is not pointed at it yet. **Recommended action:** approve
+collector is receiving data, but the local simulator is not pointed at it yet, and the simulator's built-in
+connection test would wrongly report this collector as refusing data. **Recommended action:** approve
 the cleanup and the account setup now, deploy the broker this week, and run the testing pass only after the
 local simulator rebuild adds the HTTP collector target. Treat Windows event, file share and database collection
 as closed paths in this pass unless a source is added.
@@ -42,8 +43,8 @@ as closed paths in this pass unless a source is added.
 | 6b | Applet: Windows Event Collector | **not started; no source** | The lab has no Windows Server 2012 R2+ forwarder | §5.5 |
 | 6c | Applet: Files and Folders Collector | **not started; no source** | No SMB or NFS share exists in the lab | §5.5 |
 | 6d | Applet: Database Collector | **not started; no source** | No MySQL/PostgreSQL/MSSQL/Oracle instance exists in the lab | §5.5 |
-| 7 | HTTP event collector (tenant side) | **receiving** (being configured by the canary session, not touched here) | `metrics_view` 7 d: `_collector_type HTTP`, `_collector_name pov-engine-test`, `CUSTOM/custom`, 19 events, last_seen 2026-11-13 22:00Z | Owned by the canary session |
-| 8 | SimCore collector target → that collector | **not pointed** | `GET /api/collector-targets`: `count 0`, `code NO_COLLECTOR_TARGETS`, 15 unbound emitter plugins. `:8888` predates #263: `openapi.json` has no `/arrival` or `/data-streams/{key}/detections` route | §6 |
+| 7 | HTTP event collector `pov-engine-test` (tenant side) | **receiving** (created by Henry ~22:00Z for the canary session; not touched here) | `metrics_view` 7 d: `_collector_type HTTP`, `CUSTOM/custom`, 19 events, last_seen 22:00Z. `dataset = custom_custom_raw`: 18 rows, inserted 22:01:14–22:02:52Z. Canary session: JSON, **gzip required** (uncompressed body → 400), every 200 landed and no refused body did | None for the collector itself. The key was pasted into a chat: rotate it |
+| 8 | SimCore collector target → that collector | **not pointed** | `GET /api/collector-targets`: `count 0`, `code NO_COLLECTOR_TARGETS`, 15 unbound emitter plugins. `:8888` predates #263: `openapi.json` has no `/arrival` or `/data-streams/{key}/detections` route. The key is in no env var or vault | §6 |
 
 ### 2. Evidence
 
@@ -280,10 +281,17 @@ here. The tenant shows it receiving (row 7). SimCore does not point at it: `:888
 runs a build without #263's `declaration`/`arrival` routes. Henry's steps, after the `:8888` rebuild that follows
 #235:
 
-1. Tenant › Collector targets › Add, with the collector's URL and dataset. Type the key into the write-only field
+1. Rotate the `pov-engine-test` key (it was pasted into a chat), then Tenant › Collector targets › Add with the
+   collector's URL, dataset `custom_custom_raw` and **compress on**. Type the new key into the write-only field
    yourself. The auth header is `Authorization` with no scheme, because a `Bearer` scheme gets 401.
-2. Claude, read-only: `POST /api/collector-targets/<name>/preflight` without `write_canary`, then
-   `GET /api/collector-targets` showing `count 1` and the target as default.
+2. Claude, read-only: `GET /api/collector-targets` showing `count 1` and the target as default.
+
+**Do not read this collector's preflight as a closed door.** Both SimCore preflights (campaign preflight and the
+target's "Send test record") post an uncompressed `application/json` body whatever the target's `compress`
+setting (`core/eal_simulator/collector.py:271-273`). This collector refuses uncompressed bodies with 400, so the
+preflight reads `collector_rejected` even when a `compress=true` campaign lands. Prove the route with a compressed
+canary and a `custom_custom_raw` read-back, as the canary session did. Making the preflight honour `compress` is a
+SimCore fix for the canary session's follow-up list.
 
 **Corrections to `docs/lab/2026-11-12-ingestion-sources-bringup.md`:**
 - B1/B2 put the Broker VM disk in `/var/lib/libvirt/images`. That is on the 56 GB-free root LV under K3s, so use
