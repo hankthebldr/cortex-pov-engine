@@ -435,15 +435,13 @@ async def test_tenant_and_transport_errors_are_pending_never_fail(pos_specs):
     false negative in a customer readout, which is worse than reporting nothing.
     An unknown dataset lands here too — which is exactly what happens on the
     first live run if `cortex_cloud_posture` is not this tenant's real name."""
-
-    class XsiamAuthError(Exception):
-        pass
-
-    class XsiamQuotaError(Exception):
-        pass
-
-    class XsiamQueryError(Exception):
-        pass
+    # The real client errors: the classifier maps by class, so a look-alike
+    # with the same name is not the error the runner raises.
+    from integrations.xsiam.exceptions import (  # noqa: PLC0415
+        XsiamAuthError,
+        XsiamQueryError,
+        XsiamQuotaError,
+    )
 
     cases = {
         "probe_auth_failed": XsiamAuthError("401"),
