@@ -118,11 +118,11 @@ describe('Header — this POVengine instance', () => {
     expect(btn).not.toHaveTextContent(/running|agents|issues/)
   })
 
-  it('opens POVengine where the rail opens it — its row on Components until its page exists', async () => {
+  it('opens the POVengine component page, where the rail opens it', async () => {
     serve()
     render(<AppConsole />)
     fireEvent.click(await instanceButton())
-    await waitFor(() => expect(window.location.hash).toBe('#/components?open=pov'))
+    await waitFor(() => expect(window.location.hash).toBe('#/component-pov'))
   })
 })
 
