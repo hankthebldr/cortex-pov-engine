@@ -390,3 +390,51 @@ class TestRegistration:
         props = meta["params_schema"]["properties"]
         assert "collector_url" in props
         assert "event_pattern" in props
+
+
+# --------------------------------------------------------------------------
+# Canary token
+# --------------------------------------------------------------------------
+
+_CANARY = "wiz-m365-202611131200-ab12"
+
+
+def _canary_params(**extra: Any) -> EmailEmitterParams:
+    return EmailEmitterParams.model_validate(
+        {"collector_url": _DEFAULT_COLLECTOR, **extra}
+    )
+
+
+class TestCanaryToken:
+    @pytest.mark.parametrize("provider", ["proofpoint", "microsoft365"])
+    @pytest.mark.parametrize("pattern", sorted(_EVENT_PATTERNS))
+    def test_every_record_carries_the_canary(self, provider, pattern):
+        recs = EmailEmitter().plan_offline_records(
+            _canary_params(provider=provider, event_pattern=pattern,
+                           canary_token=_CANARY),
+            sim_run_id="sim-1", iteration=0,
+        )
+        assert recs and all(r["cortexsim_canary"] == _CANARY for r in recs)
+
+    @pytest.mark.parametrize("provider", ["proofpoint", "microsoft365"])
+    def test_no_token_leaves_records_unchanged(self, provider):
+        recs = EmailEmitter().plan_offline_records(
+            _canary_params(provider=provider), sim_run_id="sim-1", iteration=0,
+        )
+        assert recs and all("cortexsim_canary" not in r for r in recs)
+
+    @pytest.mark.parametrize("bad", ["Bad Token!", "short", "-leading-hyphen-1"])
+    def test_a_bad_token_is_refused(self, bad):
+        with pytest.raises(Exception, match="canary_token must match"):
+            _canary_params(canary_token=bad)
+
+    def test_wire_records_carry_the_canary(self, monkeypatch):
+        stub = _RecordingClient()
+        monkeypatch.setattr(
+            EmailEmitter, "_build_client", lambda self, params: stub,
+        )
+        campaign = _campaign(provider="microsoft365", canary_token=_CANARY)
+        _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
+        assert stub.requests
+        for req in stub.requests:
+            assert json.loads(req["content"])["cortexsim_canary"] == _CANARY
