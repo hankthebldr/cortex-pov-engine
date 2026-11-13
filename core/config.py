@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     CORTEXSIM_CASE_LEDGER_WINDOW_HOURS: int = 24          # refresh ledgers of runs started within this
     CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP: int = 20    # runs refreshed per sweep
     CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES: int = 60  # skip a ledger read more recently than this
+    # Run tenant evidence (POST /api/runs/{id}/tenant-evidence): an explicit,
+    # read-only issue/case/endpoint read for one run. Never polled; no loop.
+    CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES: int = 5                # issue/search pages of 100 per read
+    CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS: int = 60    # a read this recent is returned, not repeated
+    CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS: int = 300  # name/host/window join tolerance
     # A delivered run whose agent is offline and silent this long is terminalised
     # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
     CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180

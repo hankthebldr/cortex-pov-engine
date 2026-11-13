@@ -77,6 +77,29 @@ git rebase origin/dev          # on your topic branch
 > `git diff <target>..<branch> --diff-filter=A --name-only` and check whether the
 > files it adds actually exist on the target. Commit counts lie; blobs do not.
 
+### Cleaning up
+
+Delete what is merged. A branch and its worktree go once nothing on them can be
+lost:
+
+- **Every change is on the base.** The branch is an ancestor of `origin/dev` (or
+  `origin/main`), or merging it would change nothing. The second test is the
+  squash-merge case: `git merge-tree --write-tree origin/dev <branch>` prints
+  `origin/dev`'s own tree id (`git rev-parse 'origin/dev^{tree}'`) when the
+  branch adds nothing.
+- **The worktree is clean.** `git status --porcelain` shows no uncommitted or
+  untracked work. Copy ignored files that may matter (`.env`, local `data/`)
+  somewhere safe first.
+- **Nothing depends on it.** No running session, process or container mount uses
+  the worktree, and the branch has no open PR.
+
+Fetch first (`git fetch --prune`), so "merged" is judged against the current
+`dev`. A branch confirmed merged this way is deleted with `git branch -D`:
+`git branch -d` judges against whatever the current checkout has out, not
+against `dev`. Anything that fails a check is kept and reported; deleting a
+branch that still holds unmerged or uncommitted work needs the owner's
+confirmation.
+
 ---
 
 ## 2. Tasks and subtasks

@@ -1,17 +1,19 @@
-"""The ``cortexsim.*`` group: 25 tools over SimCore's own REST API (spec 5.2).
+"""The ``cortexsim.*`` group: 27 tools over SimCore's own REST API (spec 5.2).
 
-Each tool is one REST call (Appendix A) plus the evidence envelope. SimCore
-computes every number; these functions only read it off the response. A
-response without a field a tool reads raises ``SimCoreShapeUnknown`` — never
-read as empty, never as zero.
+Each tool is one REST call (Appendix A, plus the tenant reader's two run tools)
+and the evidence envelope. SimCore computes every number; these functions only
+read it off the response. A response without a field a tool reads raises
+``SimCoreShapeUnknown`` — never read as empty, never as zero.
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 
+from connectors.tenant_reader import DATA_NOTICE
+
 from ..client import SimCoreError, SimCoreShapeUnknown, encode_segment
 from ..envelope import Envelope
-from ..errors import McpToolError
+from ..errors import NO_TENANT_CONFIGURED, McpToolError
 from ..registry import (
     ToolContext,
     ToolSpec,
@@ -40,6 +42,7 @@ from ..schemas import (
     RunListIn,
     RunResultsIn,
     ScenarioListIn,
+    TenantEvidenceReadIn,
     VerifyIn,
 )
 
@@ -341,6 +344,58 @@ async def assertion_run(ctx: ToolContext, args: AssertionRunIn) -> Envelope:
     return Envelope(data=body, evidence=ev)
 
 
+# --- run tenant evidence (tenant-reader spec §7.4, §7.6) -----------------------
+async def tenant_evidence_get(ctx: ToolContext, args: RunIdIn) -> Envelope:
+    """The stored snapshot, read off SimCore's database: zero tenant queries."""
+    path = _run_path(args.run_id, "/tenant-evidence")
+    body = _require(await ctx.client.get(path), f"GET {path}", "code", "snapshot", "history")
+    return await _simcore(ctx, {**body, "data_notice": DATA_NOTICE}, "simcore")
+
+
+def _evidence_read(path: str):
+    """``(queries_issued, tenant_answered)``: the snapshot's count when this call
+    read (``read: true``; a null count stays null), else 0 — a returned snapshot
+    from an earlier read is not this call's cost."""
+    where = f"POST {path}"
+
+    def read(body: dict) -> tuple[Optional[int], bool]:
+        _require(body, where, "read", "code", "snapshot")
+        flag, snap = body["read"], body["snapshot"]
+        if not isinstance(flag, bool) or not (snap is None or isinstance(snap, dict)):
+            raise SimCoreShapeUnknown(200, f"{where}: read {flag!r} / snapshot {type(snap).__name__} "
+                                           "is not a boolean and an object or null")
+        if flag is False:
+            return 0, False
+        if snap is None:
+            raise SimCoreShapeUnknown(200, f"{where}: read is true but snapshot is null")
+        queries = _require(snap, f"{where} snapshot", "queries_issued", "payload")["queries_issued"]
+        if queries is not None and (isinstance(queries, bool) or not isinstance(queries, int)):
+            raise SimCoreShapeUnknown(200, f"{where}: snapshot.queries_issued is not an integer "
+                                           f"({queries!r})")
+        payload = snap["payload"] if isinstance(snap["payload"], dict) else {}
+        return queries, payload.get("tenant_answered") is True
+    return read
+
+
+async def tenant_evidence_read(ctx: ToolContext, args: TenantEvidenceReadIn) -> Envelope:
+    """One explicit, metered read; the route resolves the credential itself
+    (``xsiam`` or ``xsiam_tenant``, as reconcile does) and answers ``pending``
+    when none is configured."""
+    take_token(ctx)
+    path = _run_path(args.run_id, "/tenant-evidence")
+    body, (queries, answered) = await tenant_call(
+        ctx, tenant=args.integration, read=_evidence_read(path),
+        coro=ctx.client.post(path, params=_params(force="true" if args.force else None,
+                                                   integration=args.integration)))
+    snap = body["snapshot"] or {}
+    tenant = (None if body["code"] == NO_TENANT_CONFIGURED
+              else snap.get("integration") or args.integration)
+    ev = await evidence_for_tenant(ctx, tenant=tenant, queries_issued=queries,
+                                   ledger_snapshot=await ledger_for(ctx, tenant),
+                                   tenant_answered=answered)
+    return Envelope(data={**body, "data_notice": DATA_NOTICE}, evidence=ev)
+
+
 # --- the table ----------------------------------------------------------------
 _SIMCORE_ONLY = "SimCore-local; makes no tenant call."
 
@@ -424,4 +479,22 @@ def specs() -> list[ToolSpec]:
           "POST /api/assertions/{id}/run. dry_run defaults true (a preview, nothing sent); a live run "
           "needs dry_run: false explicitly and queries the tenant read-only.",
           scopes=("xql.execute",), idempotent=False),
+        s("cortexsim.run.tenant_evidence.get", RunIdIn, tenant_evidence_get, "read", "simcore",
+          "GET /api/runs/{id}/tenant-evidence: the latest stored tenant-evidence snapshot (issues, "
+          "cases, endpoint record, agreement with the matcher), history[] (last 10: id, read_at, "
+          "code) and case_ledger; never read is snapshot: null with TENANT_EVIDENCE_NOT_READ. "
+          "Holds no tenant key and makes no tenant call: it returns what SimCore stored. "
+          f"data_notice: {DATA_NOTICE}"),
+        s("cortexsim.run.tenant_evidence.read", TenantEvidenceReadIn, tenant_evidence_read, "read",
+          "tenant",
+          "POST /api/runs/{id}/tenant-evidence[?force&integration]: one explicit, metered, "
+          "read-only read of the run's issues, cases and endpoint record, stored as a snapshot "
+          "(its only write); it never changes a score. Inside the minimum interval it answers "
+          "read: false (TENANT_EVIDENCE_READ_RECENTLY) with the stored snapshot unless force; no "
+          "credential is pending with NO_TENANT_CONFIGURED; a push run or one with no executed "
+          "step is NO_RUN_WINDOW. evidence.queries_issued is snapshot.queries_issued when read is "
+          "true, else 0. Rate-limited. Holds no tenant key: SimCore reads with the integration "
+          "credential stored at tenant onboarding, under the per-tenant request budget reconcile "
+          f"shares. data_notice: {DATA_NOTICE}",
+          scopes=("alert.read",), idempotent=False),
     ]
