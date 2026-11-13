@@ -9,17 +9,20 @@ each with RED/GREEN evidence, plus the corpus-level invariant.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPTS = REPO_ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 os.environ.setdefault("CORTEXSIM_BASE_DIR", str(REPO_ROOT))
 
-import lab_readiness as lr  # noqa: E402
+# Loaded by file path, not by putting scripts/ first on sys.path: that made
+# scripts/eal_simulator (the CLI package) shadow core's eal_simulator for any
+# later import in the same session (test_signal_path failed after this file).
+_spec = importlib.util.spec_from_file_location(
+    "lab_readiness", REPO_ROOT / "scripts" / "lab_readiness.py")
+lr = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lr)
 
 
 # --- clause splitting: quotes and comments must not be mistaken for operators ---

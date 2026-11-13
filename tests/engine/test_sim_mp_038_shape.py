@@ -19,6 +19,11 @@ import yaml
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+# Bound at collection, like the other eal tests: tests/scripts/test_lab_readiness.py
+# puts scripts/ first on sys.path, where scripts/eal_simulator (the CLI package)
+# would shadow core's eal_simulator for an import made later inside a test.
+from eal_simulator.registry import get_default_registry
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = (REPO_ROOT / "scenarios" / "multi_plane"
             / "mp-038-pink-cl-cri-1147-vishing-passkey-m365-extortion.yml")
@@ -149,8 +154,6 @@ def test_eal_params_validate_against_their_plugins(scenario):
     """The loader does not validate eal.params, so a bad pattern is caught here.
     Then each step is rendered: a dry run never builds records, so validation
     alone proves nothing about rendering."""
-    from eal_simulator.registry import get_default_registry  # noqa: PLC0415
-
     reg = get_default_registry()
     for st in scenario["steps"]:
         if st.get("channel") != "eal":
