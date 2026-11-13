@@ -1,0 +1,125 @@
+/* run-lifecycle.css — the run lifecycle (design v26 §4.6).
+   ---------------------------------------------------------------------------
+   The five-stage strip (compact on Runs rows, full on the run's page), the
+   Runs row's action column, the Results "Result of" bar, the read-back notice
+   and the inline Abort confirm. Tokens only; no hex. Every stage carries a
+   glyph as well as a colour: ✓ done · ● now · ✕ failed · – not yet. */
+
+/* ── Strip ─────────────────────────────────────────────────────────────── */
+.theme-console .lc { list-style: none; margin: 0; padding: 0; }
+.theme-console .lc-stage__glyph,
+.theme-console .lc--compact .lc-stage {
+  display: inline-grid; place-items: center; flex: none;
+  border-radius: 50%;
+  font: 700 8.5px/1 var(--font-ui);
+  background: var(--s3); color: var(--tx3);
+}
+.theme-console .lc-stage--done .lc-stage__glyph::before,
+.theme-console .lc--compact .lc-stage--done::before { content: '✓'; }
+.theme-console .lc-stage--current .lc-stage__glyph::before,
+.theme-console .lc--compact .lc-stage--current::before { content: '●'; }
+.theme-console .lc-stage--failed .lc-stage__glyph::before,
+.theme-console .lc--compact .lc-stage--failed::before { content: '✕'; }
+.theme-console .lc-stage--todo .lc-stage__glyph::before,
+.theme-console .lc--compact .lc-stage--todo::before { content: '–'; }
+
+.theme-console .lc-stage--done .lc-stage__glyph,
+.theme-console .lc--compact .lc-stage--done { background: var(--pos-soft); color: var(--pos-ink); }
+.theme-console .lc-stage--current .lc-stage__glyph,
+.theme-console .lc--compact .lc-stage--current { background: var(--ac-soft); color: var(--ac-ink, var(--ac)); box-shadow: inset 0 0 0 1px var(--ac-line); }
+.theme-console .lc-stage--failed .lc-stage__glyph,
+.theme-console .lc--compact .lc-stage--failed { background: var(--crit-soft); color: var(--crit); }
+
+/* Compact: five 15px pips in a row. */
+.theme-console .lc--compact { display: flex; align-items: center; gap: 3px; }
+.theme-console .lc--compact .lc-stage { width: 15px; height: 15px; position: relative; }
+
+/* Full: five columns, a bar over each, label and one line beneath. */
+.theme-console .lc--full {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 14px 0 0;
+}
+.theme-console .lc--full .lc-stage { padding-top: 10px; border-top: 3px solid var(--bd); min-width: 0; }
+.theme-console .lc--full .lc-stage--done,
+.theme-console .lc--full .lc-stage--current { border-top-color: var(--ac); }
+.theme-console .lc--full .lc-stage--failed { border-top-color: var(--crit); }
+.theme-console .lc-stage__head { display: flex; align-items: center; gap: 7px; }
+.theme-console .lc-stage__glyph { width: 16px; height: 16px; font-size: 9px; }
+.theme-console .lc-stage__label { font: 600 12px/1.2 var(--font-ui); color: var(--tx2); }
+.theme-console .lc-stage--current .lc-stage__label { color: var(--tx); }
+.theme-console .lc-stage--todo .lc-stage__label { color: var(--tx3); }
+.theme-console .lc-stage__sub {
+  display: block; margin-top: 5px;
+  font: 400 11px/1.4 var(--font-ui); color: var(--tx3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Run's page: lifecycle block and head actions ─────────────────────── */
+.theme-console .run-detail__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.theme-console .run-lifecycle { margin: 4px 0 16px; }
+.theme-console .run-lifecycle__msg { margin: 12px 0 0; font: 400 13px/1.5 var(--font-ui); color: var(--tx); max-width: 760px; }
+.theme-console .run-lifecycle__why { margin: 6px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--warn); max-width: 760px; }
+.theme-console .run-abort-confirm { display: inline-flex; align-items: center; gap: 8px; }
+.theme-console .run-abort-confirm__q { font: 500 12px/1 var(--font-ui); color: var(--tx2); white-space: nowrap; }
+
+/* ── Runs list: lifecycle, result and action columns ──────────────────── */
+.theme-console .run-list .run-list__head,
+.theme-console .run-list .run-list__row {
+  grid-template-columns:
+    minmax(140px, 1.3fr) 76px minmax(96px, 1fr) 62px 92px minmax(120px, 1fr) 96px 116px;
+}
+.theme-console .run-list .run-list__row { cursor: default; }
+.theme-console .run-list .run-list__row:hover { border-color: var(--bd2); }
+.theme-console .run-list__open {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: 0; border: 0; background: transparent; color: inherit;
+  text-align: left; cursor: pointer;
+}
+.theme-console .run-list__open:hover .run-list__scenario-id { color: var(--tx); text-decoration: underline; }
+.theme-console .run-list__open:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .run-list__result { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.theme-console .run-list__why { font: 400 10.5px/1.35 var(--font-ui); color: var(--warn); }
+.theme-console .run-list__action { display: flex; justify-content: flex-end; }
+.theme-console .run-list__act { padding: 6px 10px; font-size: 11px; white-space: nowrap; }
+.theme-console .run-list__noact { color: var(--tx3); padding-right: 10px; }
+
+/* ── Results: "Result of" bar ──────────────────────────────────────────── */
+.theme-console .result-of {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 16px; align-items: center;
+  padding: 13px 15px; margin: 0 0 14px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+}
+.theme-console .result-of__main { min-width: 0; }
+.theme-console .result-of__eyebrow { font: 400 11.5px/1 var(--font-ui); color: var(--tx3); }
+.theme-console .result-of__title {
+  margin-top: 5px;
+  font: 600 14px/1.3 var(--font-ui); color: var(--tx);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-console .result-of__facts { margin-top: 3px; font-size: 11px; color: var(--tx2); overflow-wrap: anywhere; }
+.theme-console .result-of__readback { margin-top: 4px; font: 500 11.5px/1.3 var(--font-ui); color: var(--tx3); }
+.theme-console .result-of__readback--yes { color: var(--pos-ink); }
+.theme-console .result-of__switch { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.theme-console .result-of__switch-k { font: 400 11px/1 var(--font-ui); color: var(--tx3); }
+.theme-console .result-of__switch select {
+  max-width: 360px; padding: 6px 8px;
+  background: var(--s0); color: var(--tx);
+  border: 1px solid var(--bd); border-radius: 6px;
+  font: 500 11.5px/1.2 var(--font-mono);
+}
+
+/* ── Read-back notice (Results and the run's Evidence tab) ─────────────── */
+.theme-console .readback-notice {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 15px; margin: 0 0 12px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+}
+.theme-console .readback-notice__text { flex: 1; min-width: 0; }
+.theme-console .readback-notice__text p { margin: 0; font: 400 13px/1.5 var(--font-ui); color: var(--tx); }
+.theme-console .readback-notice__text .readback-notice__why { margin-top: 6px; font-size: 12px; color: var(--warn); }
+
+/* ── Results with nothing to show ──────────────────────────────────────── */
+.theme-console .results-empty__body { max-width: 640px; }
+.theme-console .results-empty__body p { margin: 0 0 12px; font: 400 13px/1.55 var(--font-ui); color: var(--tx2); }
+.theme-console .results-empty__body a { color: var(--ac-ink, var(--ac)); }
