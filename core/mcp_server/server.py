@@ -13,7 +13,9 @@ transports differ only in the ``httpx`` transport handed to ``SimCoreClient``:
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
+import shlex
 import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Iterable, Optional, Sequence
@@ -25,8 +27,8 @@ from starlette.routing import Route
 from pydantic import BaseModel
 
 from .auth import McpGate
-from .client import SimCoreClient, SimCoreUnreachable
-from .errors import McpToolError
+from .client import SimCoreClient, SimCoreUnreachable, encode_segment
+from .errors import MCP_HOST_ACTION_DISABLED, REMEDIATION, McpToolError
 from .naming import canonical_id
 from .ratelimit import TokenBucket
 from .registry import ToolContext, ToolSpec, register
@@ -96,8 +98,47 @@ def _logged(spec: ToolSpec) -> ToolSpec:
     return dataclasses.replace(spec, impl=timed)
 
 
+# Where a human does what a refused host action would have done (spec section 7.2).
+_HOST_ACTION_CONSOLE = {"cortexsim.run.launch": "#/library", "cortexsim.run.abort": "#/runs"}
+
+
+def _human_curl(spec: ToolSpec, args: BaseModel, base_url: str) -> Optional[str]:
+    if spec.id == "cortexsim.run.launch":
+        body = shlex.quote(json.dumps(args.to_launch_body(), sort_keys=True))  # type: ignore[attr-defined]
+        return f"curl -X POST {base_url}/api/runs -H 'content-type: application/json' -d {body}"
+    if spec.id == "cortexsim.run.abort":
+        return f"curl -X POST {base_url}/api/runs/{encode_segment(args.run_id)}/abort"  # type: ignore[attr-defined]
+    return None
+
+
+def gate_host_actions(specs: list[ToolSpec], *, allow: bool, base_url: str) -> list[ToolSpec]:
+    """With ``allow`` false, every tool that acts on a customer host
+    (``network == "host"`` and class write or destructive) keeps its place in
+    the registry but refuses with ``MCP_HOST_ACTION_DISABLED``, naming the
+    console page and the request a human would run. Nothing is sent to SimCore.
+    """
+    if allow:
+        return list(specs)
+
+    def refusing(spec: ToolSpec) -> ToolSpec:
+        async def refuse(ctx: ToolContext, args: BaseModel) -> Any:
+            raise McpToolError(
+                MCP_HOST_ACTION_DISABLED,
+                "Host actions are disabled on this MCP server",
+                f"{spec.id} would act on a customer host; it was not sent. A human runs it from the "
+                "console, or the operator sets CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=1 and restarts.",
+                remediation=REMEDIATION[MCP_HOST_ACTION_DISABLED],
+                data={"console": _HOST_ACTION_CONSOLE.get(spec.id, "#/runs"),
+                      "execute_as_human": _human_curl(spec, args, base_url)})
+
+        return dataclasses.replace(spec, impl=refuse)
+
+    return [refusing(s) if s.network == "host" and s.klass in ("write", "destructive") else s
+            for s in specs]
+
+
 def build(ctx: ToolContext, *, stateless: bool = True, allowed_hosts: Sequence[str] = (),
-          specs: Optional[Iterable[ToolSpec]] = None) -> FastMCP:
+          specs: Optional[Iterable[ToolSpec]] = None, allow_host_actions: bool = False) -> FastMCP:
     hosts = allowed_hosts_for(allowed_hosts)
     mcp = FastMCP(
         "cortexsim",
@@ -110,7 +151,8 @@ def build(ctx: ToolContext, *, stateless: bool = True, allowed_hosts: Sequence[s
             allowed_origins=_allowed_origins(hosts),
         ),
     )
-    chosen = list(all_specs() if specs is None else specs)
+    chosen = gate_host_actions(list(all_specs() if specs is None else specs),
+                               allow=allow_host_actions, base_url=ctx.client.base_url)
     register(mcp, [_logged(s) if s.network == "tenant" else s for s in chosen], ctx)
     return mcp
 
@@ -134,13 +176,16 @@ def mount(app: Any, *, settings: Any) -> Optional[FastMCP]:
     """
     if not settings.CORTEXSIM_MCP_HTTP:
         return None
-    token = settings.CORTEXSIM_MCP_TOKEN.get_secret_value()
+    token = settings.CORTEXSIM_MCP_TOKEN.get_secret_value().strip()
     if not token:
         logger.error("CORTEXSIM_MCP_TOKEN is not set — /mcp is NOT mounted")
         return None
     client = SimCoreClient(settings.CORTEXSIM_URL, transport=httpx.ASGITransport(app=app))
     ctx = ToolContext(client=client, bucket=TokenBucket(settings.CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE))
-    mcp = build(ctx, stateless=True, allowed_hosts=parse_hosts(settings.CORTEXSIM_MCP_ALLOWED_HOSTS))
+    # Settings reads CORTEXSIM_MCP_ALLOW_HOST_ACTIONS from the environment first,
+    # so this is the same rule the stdio entry applies (__main__).
+    mcp = build(ctx, stateless=True, allowed_hosts=parse_hosts(settings.CORTEXSIM_MCP_ALLOWED_HOSTS),
+                allow_host_actions=bool(settings.CORTEXSIM_MCP_ALLOW_HOST_ACTIONS))
     sub = mcp.streamable_http_app()
     routes = [r for r in sub.routes if getattr(r, "path", None) == MCP_PATH]
     if len(routes) != 1 or len(sub.routes) != 1:

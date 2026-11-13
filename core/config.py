@@ -180,6 +180,10 @@ class Settings(BaseSettings):
     # Comma-separated Host headers the /mcp mount accepts (DNS-rebinding guard),
     # in addition to loopback. Empty = loopback only.
     CORTEXSIM_MCP_ALLOWED_HOSTS: str = ""
+    # MCP tools that act on a customer host (cortexsim.run.launch, cortexsim.run.abort)
+    # refuse with MCP_HOST_ACTION_DISABLED unless this is true. Both transports
+    # read it; tenant-class tools are unaffected.
+    CORTEXSIM_MCP_ALLOW_HOST_ACTIONS: bool = False
     # Ceiling on MCP tool calls that reach a customer tenant, per minute, so an
     # agent loop cannot burn the tenant's XQL quota. Same posture as the other
     # quota guards: a spent budget degrades to pending, never to a verdict.

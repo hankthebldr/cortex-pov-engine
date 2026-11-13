@@ -96,6 +96,7 @@ services:
       # tenant credential. See .env.example.
       - CORTEXSIM_MCP_HTTP=${CORTEXSIM_MCP_HTTP:-false}
       - CORTEXSIM_MCP_TOKEN=${CORTEXSIM_MCP_TOKEN:-}
+      - CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=${CORTEXSIM_MCP_ALLOW_HOST_ACTIONS:-false}
     # Container stdout is capped at 5 x 20 MB. json-file (Docker's default
     # driver) otherwise keeps every line under /var/lib/docker for the life of
     # the container; the app's own rotating handler caps only its file copy. A
