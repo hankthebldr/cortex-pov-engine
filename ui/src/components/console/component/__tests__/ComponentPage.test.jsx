@@ -144,6 +144,12 @@ describe('component page', () => {
     expect(within(tabs).getAllByRole('button').map((b) => b.textContent)).toEqual(['Overview', 'Setup'])
   })
 
+  it('on Setup the step owns the one primary, so the header buttons step back', () => {
+    mount({ params: { tab: 'setup' }, status: { status: 'off' } })
+    expect(screen.getByRole('button', { name: 'Configure' })).not.toHaveClass('kit-btn--primary')
+    expect(screen.getByRole('button', { name: 'Test' })).not.toHaveClass('kit-btn--primary')
+  })
+
   it('the Setup tab is the Configure frame', async () => {
     mount({ params: { tab: 'setup' } })
     await waitFor(() => expect(screen.getByTestId('setup-frame')).toBeInTheDocument())

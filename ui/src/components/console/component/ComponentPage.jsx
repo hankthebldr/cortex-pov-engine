@@ -84,6 +84,11 @@ export default function ComponentPage({
     else setParams({ tab: drill.tab, ...(drill.step !== undefined ? { step: drill.step } : {}), ...(drill.path ? { path: drill.path } : {}) })
   }
 
+  // One primary per view (v26 §4.1): Configure while the component is Off,
+  // Test otherwise — and neither on Setup, where the current step's Test is
+  // the action.
+  const headPrimary = tab === 'setup' ? null : off ? 'configure' : 'test'
+
   const testLabel = test.state === 'testing' ? 'Testing…' : test.state === 'passed' ? 'Passed' : 'Test'
   // When the Test's failure is the page's issue (a check this session drives
   // the status), the issue line already carries the badge; one is enough.
@@ -113,9 +118,9 @@ export default function ComponentPage({
               {test.issue}
             </ErrorBadge>
           )}
-          <Button variant={off ? 'primary' : 'secondary'} onClick={() => openSetup(null)}>Configure</Button>
+          <Button variant={headPrimary === 'configure' ? 'primary' : 'secondary'} onClick={() => openSetup(null)}>Configure</Button>
           {onTest && (
-            <Button variant={off ? 'secondary' : 'primary'} onClick={runTest} disabled={test.state === 'testing'}>
+            <Button variant={headPrimary === 'test' ? 'primary' : 'secondary'} onClick={runTest} disabled={test.state === 'testing'}>
               {testLabel}
             </Button>
           )}
