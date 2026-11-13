@@ -177,6 +177,7 @@ class XsiamConnector(Connector):
         normalize: Any, kind: str,
         request_for: Optional[Callable[[int, int], dict]] = None,
         strict: bool = False,
+        keep_partial: bool = False,
     ) -> PullResult:
         # `request_for(search_from, page_size)` replaces the alert time-window body
         # for the by-id and tenant-reader reads; everything else (auth, URL
@@ -187,6 +188,12 @@ class XsiamConnector(Connector):
         # fallback, and the window is measured by FILTER_COUNT (the filter's
         # match count). TOTAL_COUNT there is tenant-wide, so it never decides
         # truncation; a missing FILTER_COUNT leaves `truncated` null, never False.
+        #
+        # `keep_partial` (the tenant reader's window read only): a failure after
+        # one or more pages still fails the read, but the failed PullResult
+        # carries the rows already fetched and `detail["rows_kept"]`, so a caller
+        # that reports a floor (spec §7.9) can keep them. Every other caller
+        # gets the old contract: a failed read carries no rows.
         conf = cfg.config or {}
         # `base_url` first so ONE registration (the xsiam_tenant spelling) can
         # serve both call paths; `fqdn`/`tenant_url` stay for back-compat with
@@ -230,6 +237,14 @@ class XsiamConnector(Connector):
         items: list[Any] = []
         dropped = 0
         pages = 0
+
+        def failed(res: PullResult) -> PullResult:
+            if keep_partial and items:
+                (res.incidents if kind in ("incidents", "cases")
+                 else res.observations).extend(items)
+                res.detail = {**res.detail, "rows_kept": len(items)}
+            return res
+
         total_count: Optional[int] = None
         total_capped = False
         filter_count: Optional[int] = None
@@ -249,7 +264,7 @@ class XsiamConnector(Connector):
                     per_minute=tuning.xsiam_max_requests_per_minute())
             except (QuotaBreakerOpen, RequestBudgetExhausted) as e:
                 n = max(1, int(e.retry_after_seconds))
-                return PullResult(
+                return failed(PullResult(
                     ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
                     error=("CortexSim's own per-tenant request budget refused "
                            + (f"page {pages + 1}; pages 1..{pages} were already "
@@ -257,14 +272,14 @@ class XsiamConnector(Connector):
                               "this request before it was sent to the tenant")
                            + f"; retry in {n}s"),
                     detail={"pages": pages, "path": path, "refused_locally": True,
-                            "retry_after_seconds": n})
+                            "retry_after_seconds": n}))
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
                 logger.warning("xsiam %s pull transport error: %s", kind, e)
-                return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
-                                  detail={"page": pages + 1, "path": path})
+                return failed(PullResult(ok=False, connector=self.kind,
+                                         code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
+                                         detail={"page": pages + 1, "path": path}))
 
             if status != 200:
                 # The tenant's response body is attacker-influenceable and
@@ -279,22 +294,24 @@ class XsiamConnector(Connector):
                                 cooldown_seconds=tuning.xsiam_breaker_cooldown())
                 logger.warning("xsiam %s pull HTTP %s from %s (page %d); body=%s",
                                kind, status, _host_only(url), pages + 1, text[:500])
-                return PullResult(
+                return failed(PullResult(
                     ok=False, connector=self.kind, code=codes.code_for_status(status),
                     error=f"tenant returned HTTP {status}" + (
                         f" on page {pages + 1}" if pages else ""),
                     detail={"status": status, "page": pages + 1, "path": path,
                             "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
-                )
+                ))
 
             try:
                 page_items, page_dropped, meta = self._parse_page(text, list_key, normalize,
                                                                   strict=strict)
             except Exception as e:  # noqa: BLE001
-                return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_PARSE_ERROR,
-                                  error=f"failed to parse tenant response: {e}",
-                                  detail={"path": path})
+                # `page`: the page that was sent and could not be read, so a
+                # caller counting requests counts it (and every page before it).
+                return failed(PullResult(ok=False, connector=self.kind,
+                                         code=codes.XSIAM_PARSE_ERROR,
+                                         error=f"failed to parse tenant response: {e}",
+                                         detail={"page": pages + 1, "path": path}))
 
             pages += 1
             items.extend(page_items)
@@ -482,6 +499,7 @@ class XsiamConnector(Connector):
         limit: Optional[int] = None,
         max_pages: int = 1,
         normalize: Optional[Callable[[dict], Any]] = None,
+        keep_partial: bool = False,
     ) -> PullResult:
         """``POST /public_api/v1/issue/search/``, strict ``reply.DATA``.
 
@@ -495,14 +513,14 @@ class XsiamConnector(Connector):
         (``TOTAL_COUNT``, tenant-wide), ``filter_count`` (``FILTER_COUNT``) and
         ``truncated`` (``filter_count > returned``, or None when ``FILTER_COUNT``
         is missing). A reply without ``DATA`` is ``XSIAM_PARSE_ERROR`` naming
-        ``XSIAM_ENVELOPE_UNRECOGNISED``, never zero rows.
+        ``XSIAM_ENVELOPE_UNRECOGNISED``, never zero rows. ``keep_partial``: a
+        failure after some pages still fails, and carries the rows already
+        fetched (``detail["rows_kept"]``); see :meth:`_harvest`.
         """
-        conf = cfg.config or {}
-        path = str(conf.get("issues_path") or self._ISSUES_SEARCH_PATH)
-        return self._harvest(cfg, path, since=None, until=None,
+        return self._harvest(cfg, self._issues_path(cfg), since=None, until=None,
                              filters=_paging(limit, max_pages), list_key="DATA",
                              normalize=normalize or _raw_row, kind="issues",
-                             request_for=body_for, strict=True)
+                             request_for=body_for, strict=True, keep_partial=keep_partial)
 
     def issues_by_id(
         self,
@@ -510,6 +528,7 @@ class XsiamConnector(Connector):
         issue_ids: Sequence[str],
         *,
         normalize: Optional[Callable[[dict], Any]] = None,
+        include_fields: Optional[Sequence[str]] = None,
     ) -> PullResult:
         """``issue/search`` filtered by ``id`` ``in``, strict ``reply.DATA``.
 
@@ -518,10 +537,13 @@ class XsiamConnector(Connector):
         a failed chunk fails the whole read, since a partial id set would read
         as "those issues do not exist". Rows land on ``.observations``. An id the
         tenant does not return is simply absent. No ids, no request.
+        ``include_fields`` (the tenant reader's id probe passes
+        ``["normalized_fields"]``) adds fields to each row; left None, the body
+        is exactly the filters and the page window.
         """
-        conf = cfg.config or {}
-        path = str(conf.get("issues_path") or self._ISSUES_SEARCH_PATH)
+        path = self._issues_path(cfg)
         ids = _clean_ids(issue_ids)
+        extra = list(include_fields) if include_fields is not None else None
 
         def _one(chunk: list[str]) -> PullResult:
             values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
@@ -530,7 +552,7 @@ class XsiamConnector(Connector):
             def body(search_from: int, page_size: int) -> dict:
                 return issue_search_body(
                     filters=[{"field": "id", "operator": "in", "value": values}],
-                    search_from=0, search_to=len(chunk))
+                    search_from=0, search_to=len(chunk), include_fields=extra)
             return self._harvest(cfg, path, since=None, until=None,
                                  filters={"limit": len(chunk)}, list_key="DATA",
                                  normalize=normalize or _raw_row, kind="issues",
@@ -554,9 +576,7 @@ class XsiamConnector(Connector):
         read on this connector uses. ``detail`` carries ``total_count``,
         ``filter_count`` and ``truncated`` as :meth:`search_issues` does.
         """
-        conf = cfg.config or {}
-        path = str(conf.get("cases_path") or self._CASES_SEARCH_PATH)
-        return self._harvest(cfg, path, since=None, until=None,
+        return self._harvest(cfg, self._cases_path(cfg), since=None, until=None,
                              filters=_paging(limit, max_pages), list_key="DATA",
                              normalize=_raw_row, kind="cases",
                              request_for=body_for, strict=True)
@@ -571,8 +591,7 @@ class XsiamConnector(Connector):
         back full. Raw endpoint records land on ``.observations``. No
         hostnames, no request.
         """
-        conf = cfg.config or {}
-        path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
+        path = self._endpoints_path(cfg)
         names = list(hostnames)
         if not names:
             return PullResult(ok=True, connector=self.kind,
@@ -592,6 +611,25 @@ class XsiamConnector(Connector):
             # A full page with no count: records may have been left behind.
             res.detail["truncated"] = None
         return res
+
+    # ── the reader's paths, per credential ────────────────────────────────
+
+    def _issues_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("issues_path") or self._ISSUES_SEARCH_PATH)
+
+    def _cases_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("cases_path") or self._CASES_SEARCH_PATH)
+
+    def _endpoints_path(self, cfg: ConnectorConfig) -> str:
+        return str((cfg.config or {}).get("endpoints_path") or self._ENDPOINT_PATH)
+
+    def reader_paths(self, cfg: ConnectorConfig) -> dict[str, str]:
+        """The vendor routes the tenant reader reads for this credential: the
+        class defaults unless the integration overrides ``issues_path`` /
+        ``cases_path`` / ``endpoints_path`` (spec §7.4 ``reader``)."""
+        return {"issues": f"POST {self._issues_path(cfg)}",
+                "cases": f"POST {self._cases_path(cfg)}",
+                "endpoint": f"POST {self._endpoints_path(cfg)}"}
 
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:

@@ -395,6 +395,9 @@ issue, case and endpoint reads.
 - Part B's `pull_issue_status` and `pull_endpoint_ips` are re-expressed over
   `search_issues` and `get_endpoints`. Part B's own tests are what show the delegation kept
   their behaviour.
+  *Amended 2026-11-13:* `pull_issue_status` is re-expressed over `issues_by_id` (the by-id
+  `issue/search`, chunks of 100), not over `search_issues`; `pull_endpoint_ips` is over
+  `get_endpoints` as written.
 - **Claude's call:** one function builds an `issue/search` request body, and the reader,
   Part B's by-id read and the general route's catalog op (`OP-ISSUE-SEARCH`, §7.4) all call
   it. One function likewise builds a `get_endpoint` body. They live in the substrate that
@@ -460,6 +463,9 @@ the loop the same way; §14 notes it but does not fix it.
 
    A row whose `domain` is not `Security` is excluded and counted, in case the tenant ignored
    the filter.
+
+   *Settled 2026-11-13:* the 2026-11-12 spike (§3.4) answered this: `include_fields` adds to
+   the default fields, so the reader sends `["normalized_fields"]`.
 3. **Attribution.** An issue's host comes from the field the phase-1 spike shows carries it:
    `asset_names`, as the oracle note says, or `xdm.source.host.hostname`, else
    `xdm.target.host.hostname`, as the vendor page says (§3.4). Attribution is not built
@@ -470,6 +476,10 @@ the loop the same way; §14 notes it but does not fix it.
    - `without_host`, which is shown separately as **unattributed, not credited** (A4).
 
    With no run host, every issue is unattributed and the snapshot code is `UNSCOPED`.
+
+   *Settled 2026-11-13:* the 2026-11-12 spike (§3.4) answered this: the host is in
+   `normalized_fields`, and `asset_names` was empty on every row, so attribution is built on
+   the two `normalized_fields` host fields.
 
    *Amended 2026-11-13:* the host is not "`xdm.source.host.hostname`, else
    `xdm.target.host.hostname`": attribution matches the run host against ANY value in
@@ -958,6 +968,9 @@ evidence.
   snapshot reports the `id` and `name_host_window` counts separately. Reason: deathstar's
   alerts carry no rule id (§3.2), so a threshold resting on a rule-id join could never be
   met there.
+  *Cross-reference 2026-11-13:* "joined pairs" is counted as §7.3's units line defines it,
+  `both.id + both.name_host_window` (distinct alerts), not `len(pairs)`, which has one entry
+  per (`result_id`, `issue_id`).
 - **P2-2. Matcher migration.** The matcher's default read moves from
   `get_alerts_multi_events` to `issue/search`.
   - It joins on id if every recorded id probe hit (`id_space.no_hit == 0` over the recorded

@@ -55,7 +55,10 @@ ISSUE_HOST_FIELDS = ("xdm.source.host.hostname", "xdm.target.host.hostname")
 #: spike observed ``TRAPS`` and ``FW``. Anything else is listed, not mapped.
 KNOWN_DETECTION_METHODS = frozenset({"FW", "ANALYTICS_BIOC", "BIOC", "TRAPS", "CORRELATION"})
 
-#: The snapshot payload's ``reader`` dict (§7.4): the vendor routes this reads.
+#: The vendor routes the reader reads, at the connector's class defaults. A
+#: snapshot's ``reader`` dict (§7.4) comes from ``XsiamConnector.reader_paths(cfg)``
+#: instead, which honours a credential's ``issues_path`` / ``cases_path`` /
+#: ``endpoints_path`` overrides.
 READER_PATHS = {
     "issues": f"POST {XsiamConnector._ISSUES_SEARCH_PATH}",
     "cases": f"POST {XsiamConnector._CASES_SEARCH_PATH}",
