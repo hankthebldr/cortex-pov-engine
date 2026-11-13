@@ -128,6 +128,13 @@ describe('component page', () => {
     expect(rows[3]).toHaveTextContent('View ›')
   })
 
+  it('a configuration item the DC ticked reads You confirmed, never OK', () => {
+    mount({ config: [{ id: 'c', label: 'Registered with a token', state: 'confirmed', drill: { tab: 'setup', step: 'register' } }] })
+    const row = within(screen.getByRole('region', { name: 'Configuration' })).getByRole('button')
+    expect(within(row).getByRole('img', { name: 'You confirmed' })).toBeInTheDocument()
+    expect(within(row).queryByRole('img', { name: 'OK' })).toBeNull()
+  })
+
   it('tabs are Overview · Setup · the management tab, the selected one pressed', () => {
     const { setParams } = mount({ manageTab: { id: 'fleet', label: 'Fleet', render: () => <p>fleet body</p> }, params: { tab: 'fleet' } })
     const tabs = screen.getByRole('group', { name: 'Component pages' })

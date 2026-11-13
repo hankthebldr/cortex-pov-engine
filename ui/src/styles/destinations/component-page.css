@@ -150,3 +150,24 @@ button.cmp-row:focus-visible { outline: 2px solid var(--ac); outline-offset: -2p
 @media (prefers-reduced-motion: reduce) {
   .cmp-tab, .cmp-row, .cfg__step { transition: none; }
 }
+
+/* ── Step inputs (a pov step that stores values) ────────────────────────── */
+.cfg-inputs { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.cfg-input { display: flex; flex-direction: column; gap: 5px; }
+.cfg-input__label { font: 700 9px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); }
+.cfg-input__box {
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--s0); border: 1px solid var(--bd2); color: var(--tx);
+  font-size: 12px;
+}
+.cfg-input__box:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+
+/* ── POVengine › API (generated from /api/openapi.json) ─────────────────── */
+.cmp-api { width: 100%; border-collapse: collapse; margin: 4px 0 10px; font: 400 12px/1.4 var(--font-ui); }
+.cmp-api th { text-align: left; font: 700 9px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); padding: 8px 6px; }
+.cmp-api td { padding: 8px 6px; border-top: 1px solid var(--bd); vertical-align: top; color: var(--tx); }
+.cmp-api summary { cursor: pointer; color: var(--tx2); }
+.cmp-api__ops { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cmp-api__ops li { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; }
+.cmp-api__method { min-width: 52px; color: var(--tx2); }
+.cmp-api__summary { color: var(--tx3); }
