@@ -542,6 +542,23 @@ export async function getRun(runId) {
 }
 
 /**
+ * POST /api/runs/:id/reconcile?connector=xsiam — read this run back from the
+ * tenant: pull the alerts in its window, match them to what it expected, and
+ * score it (the console's "Read back"). Read-only toward Cortex; it writes only
+ * SimCore's own Result rows. With no tenant credential SimCore answers 400
+ * NO_INTEGRATION and nothing is read — the thrown Error carries `.code`.
+ *
+ * @param {string} runId
+ * @param {{connector?: string, integration?: string|null}} [opts]
+ * @returns {Promise<Object>} the reconcile summary (observed, denominator, queries_issued, …)
+ */
+export async function reconcileRun(runId, { connector = 'xsiam', integration = null } = {}) {
+  const qs = new URLSearchParams({ connector })
+  if (integration) qs.set('integration', integration)
+  return request(`/api/runs/${encodeURIComponent(runId)}/reconcile?${qs}`, { method: 'POST' })
+}
+
+/**
  * POST /api/runs/canary — launch the block-mode canary against an agent.
  * 409 CANARY_NOT_AVAILABLE when the deployment has no canary scenario; the
  * thrown Error carries `.code` / `.detail` for the launch form to render.

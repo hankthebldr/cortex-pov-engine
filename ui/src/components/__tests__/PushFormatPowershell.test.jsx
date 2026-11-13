@@ -13,7 +13,7 @@
  */
 import React, { useEffect } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import LaunchView from '../console/LaunchView.jsx'
@@ -191,10 +191,16 @@ function InspectorHarness({ scenario }) {
   return <ScenarioInspector scenario={scenario} open launch={launch} />
 }
 
+/** The quick launch lives on the sheet's "Launch options" tab (design v26 §4.1). */
+function renderInspector(scenario) {
+  render(<InspectorHarness scenario={scenario} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Launch options' }))
+}
+
 describe('ScenarioInspector — quick-launch push format', () => {
   it('offers auto, bash, PowerShell and k8s', async () => {
     installRoutes(routes(() => ps1Response('SIM-EDR-013')))
-    render(<InspectorHarness scenario={WIN_SCENARIO} />)
+    renderInspector(WIN_SCENARIO)
     expect(await screen.findByRole('button', { name: /^PowerShell$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^auto$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^bash$/ })).toBeInTheDocument()
@@ -203,7 +209,7 @@ describe('ScenarioInspector — quick-launch push format', () => {
 
   it('downloads the .ps1 when PowerShell is picked', async () => {
     installRoutes(routes(() => ps1Response('SIM-EDR-013')))
-    render(<InspectorHarness scenario={WIN_SCENARIO} />)
+    renderInspector(WIN_SCENARIO)
     await userEvent.click(await screen.findByRole('button', { name: /^PowerShell$/ }))
     await userEvent.click(screen.getByRole('button', { name: /Push bundle/i }))
     await waitFor(() => expect(savedAs).toEqual(['cortexsim-SIM-EDR-013.ps1']))
@@ -214,7 +220,7 @@ describe('ScenarioInspector — quick-launch push format', () => {
     installRoutes(routes(() => new Response(JSON.stringify(UNSATISFIABLE_POSIX), {
       status: 409, headers: { 'content-type': 'application/json' },
     })))
-    render(<InspectorHarness scenario={WIN_SCENARIO} />)
+    renderInspector(WIN_SCENARIO)
     await userEvent.click(await screen.findByRole('button', { name: /^bash$/ }))
     await userEvent.click(screen.getByRole('button', { name: /Push bundle/i }))
     const alert = await screen.findByRole('alert')

@@ -1,0 +1,108 @@
+/* chain-stage.css — ChainStage (design v26 §4.1, §6).
+   ---------------------------------------------------------------------------
+   One chain drawing for the Composer (editable), Run detail (live) and a
+   scenario's sheet (preview). Lanes are horizontal bands; cards are absolutely
+   placed inside a stage that is scaled as a whole and scrolls inside its own
+   box (never the page). Tokens only — no hex here; a lane's fill and a card's
+   plane tint arrive as inline values from the shared lane/plane tables. */
+
+.chain-stage { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.chain-stage__bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 18px; }
+.chain-stage__summary { font: 400 11.5px/1.3 var(--font-ui); color: var(--tx3); }
+.chain-stage__legend { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.chain-stage__legend .kit-status__word { font-size: 11px; }
+
+.chain-stage__scroll {
+  overflow-x: auto; overflow-y: hidden;
+  background: var(--s0); border: 1px solid var(--bd); border-radius: 9px;
+  max-width: 100%;
+}
+.chain-stage--editable .chain-stage__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.chain-stage__canvas { position: relative; transform-origin: 0 0; }
+
+/* ── Lanes ─────────────────────────────────────────────────────────────── */
+.chain-stage__lane {
+  position: absolute; left: 0; right: 0; z-index: 0;
+  border-top: 1px solid var(--bd);
+}
+.chain-stage__lane:first-child { border-top: 0; }
+.chain-stage__lane-head {
+  position: absolute; left: 12px; top: 9px; width: 112px;
+  display: flex; flex-direction: column; gap: 4px;
+  text-align: left; background: none; border: 0; padding: 0; color: inherit;
+}
+.chain-stage__lane-head--btn { cursor: pointer; border-radius: 4px; }
+.chain-stage__lane-head--btn:hover .chain-stage__lane-label { color: var(--tx); text-decoration: underline; }
+.chain-stage__lane-head--btn:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.chain-stage__lane-label { font: 700 9.5px/1.2 var(--font-mono); letter-spacing: .11em; color: var(--tx2); }
+.chain-stage__lane-sub {
+  font: 400 9.5px/1.35 var(--font-mono); color: var(--tx3);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* ── Edges ─────────────────────────────────────────────────────────────── */
+.chain-stage__edges { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; overflow: visible; }
+.chain-stage__edge { stroke: var(--tx3); stroke-width: 1.5; }
+.chain-stage__edge--root,
+.chain-stage__edge--terminal { stroke: var(--bd2); stroke-width: 1.25; }
+.chain-stage__edge--pos { stroke: var(--pos); }
+.chain-stage__edge--crit { stroke: var(--crit); stroke-width: 2; }
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.chain-stage__card {
+  position: absolute; z-index: 2; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 0 11px 9px; overflow: hidden;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+  text-align: left; color: var(--tx); font: inherit;
+}
+button.chain-stage__card { cursor: pointer; transition: border-color 120ms ease-out; }
+button.chain-stage__card:hover { border-color: var(--bd2); }
+button.chain-stage__card:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.chain-stage__card--selected { border-color: var(--ac-line); box-shadow: 0 0 0 1px var(--ac-line); }
+.chain-stage__card--broken { border-color: var(--crit); }
+.chain-stage__card--anchor { border-style: dashed; padding-top: 9px; justify-content: center; }
+
+.chain-stage__tint { display: block; height: 3px; margin: 0 -11px 3px; background: var(--bd2); flex: none; }
+.chain-stage__card-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.chain-stage__plane { font: 700 8.5px/1 var(--font-mono); letter-spacing: .1em; color: var(--tx2); }
+.chain-stage__order { font: 500 8.5px/1 var(--font-mono); color: var(--tx3); }
+.chain-stage__spacer { flex: 1; }
+.chain-stage__state .kit-status__word { font-size: 10.5px; }
+.chain-stage__name {
+  font: 600 12px/1.3 var(--font-ui); color: var(--tx);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.chain-stage__card-foot { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: auto; }
+.chain-stage__door {
+  flex: none; padding: 3px 4px; border-radius: 3px;
+  background: var(--s3); color: var(--tx2); font: 600 8.5px/1 var(--font-mono); white-space: nowrap;
+}
+.chain-stage__door--unplaced { color: var(--warn); }
+.chain-stage__tech {
+  flex: 1; min-width: 0; font: 400 9px/1.3 var(--font-mono); color: var(--tx3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chain-stage__kicker {
+  font: 700 8.5px/1 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--tx3);
+}
+.chain-stage__anchor-label { font: 600 11px/1.3 var(--font-mono); color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chain-stage__card--rule { padding: 0; border-style: dashed; }
+.chain-stage__rule-btn {
+  all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;
+  width: 100%; height: 100%; padding: 9px 11px; cursor: pointer;
+}
+.chain-stage__rule-btn:disabled { cursor: default; }
+.chain-stage__rule-btn:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+
+.chain-stage__empty {
+  margin: 0; padding: 18px 16px;
+  background: var(--s0); border: 1px dashed var(--bd2); border-radius: 9px;
+  font: 400 12px/1.5 var(--font-ui); color: var(--tx3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.chain-stage__card { transition: none; }
+}

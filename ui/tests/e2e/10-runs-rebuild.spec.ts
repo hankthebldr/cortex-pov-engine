@@ -46,8 +46,11 @@ test('Runs list: rows carry live fields, the pager turns at 25, the scenario fil
   await expect(started).not.toHaveText('')
   await expect(started, 'hover carries the absolute UTC timestamp').toHaveAttribute('title', ABSOLUTE_UTC)
   await expect(row.getByTestId('run-duration')).not.toHaveText('')
-  await expect(row.getByTestId('run-detections'), 'detected / expected from Result rows').toHaveText(/^\d+ \/ \d+$/)
-  await expect(row.getByTestId('run-status')).toHaveText('staged')
+  // A staged bundle has not been read back from the tenant, so it carries no
+  // detection count yet — and its one action is Read back (design v26 §4.6).
+  await expect(row.getByTestId('run-detections'), 'no detection claim before a read back').toHaveText('not read back')
+  await expect(row.getByRole('button', { name: 'Read back' })).toBeVisible()
+  await expect(row.getByTestId('run-status')).toHaveText(/staged$/)
 
   // Pager: 25 per page, and the label counts the whole list.
   const label = page.getByTestId('run-pager-label')

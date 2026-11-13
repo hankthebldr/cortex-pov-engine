@@ -171,30 +171,31 @@ describe('ComposerCanvas — lens toggle', () => {
   })
 })
 
-describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
-  // The design bands the canvas by launch door so that where a node sits
-  // means the same thing as where the Runs topology will band it. The Design
-  // lens draws none of this; the Lanes lens draws all of it, and every card
-  // wears the door it launches through.
+describe('ComposerCanvas — Lanes lens (the ChainStage, editable)', () => {
+  // The design bands the canvas by signal path so that where a node sits means
+  // the same thing on the scenario sheet and on Run detail: all three draw ONE
+  // stage (ChainStage, design v26 §4.1). The Design lens draws none of this;
+  // the Lanes lens draws all of it, and every card wears its door.
   it('draws the eight lane bands and badges each step with its signal path', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
-    const bands = screen.getByTestId('composer-lane-bands')
-    expect(bands.querySelectorAll('.composer-lane')).toHaveLength(8)
+    const stage = screen.getByTestId('chain-stage')
+    expect(stage).toHaveAttribute('data-mode', 'editable')
+    expect(stage.querySelectorAll('.chain-stage__lane')).toHaveLength(8)
     // LAUNCH, the Engine (tenant content) and PROOF hold no step.
-    expect(bands.querySelectorAll('.composer-lane--terminal')).toHaveLength(3)
-    expect(bands).toHaveTextContent('ENDPOINT RUNTIME')
-    expect(bands).toHaveTextContent('LOG INJECTION')
-    expect(bands).toHaveTextContent('LIVE TRAFFIC')
-    expect(bands).toHaveTextContent('CLOUD CONTROL PLANE')
-    expect(bands).toHaveTextContent('NO ACTION')
+    expect(stage.querySelectorAll('.chain-stage__lane--terminal')).toHaveLength(3)
+    expect(stage).toHaveTextContent('ENDPOINT RUNTIME')
+    expect(stage).toHaveTextContent('LOG INJECTION')
+    expect(stage).toHaveTextContent('LIVE TRAFFIC')
+    expect(stage).toHaveTextContent('CLOUD CONTROL PLANE')
+    expect(stage).toHaveTextContent('NO ACTION')
     // Both fixture steps run a command on the host.
     expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
     expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent(/^AGT$/)
-    // The LAUNCH / PROOF bands replace the Design lens's START / END anchors
-    // — two statements of where the chain begins would be one too many.
+    // The Design lens's React Flow anchors are not drawn a second time: the
+    // stage's own trigger and proof cards sit in the LAUNCH / PROOF bands.
     expect(screen.queryByTestId('chain-start')).toBeNull()
     expect(screen.queryByTestId('chain-end')).toBeNull()
-    expect(screen.queryByTestId('composer-connector-root')).toBeNull()
+    expect(screen.getByTestId('stage-card-trigger')).toHaveAttribute('data-lane', 'LAUNCH')
     expect(screen.getByTestId('composer-add-step')).toBeInTheDocument()
   })
 
@@ -222,40 +223,49 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
       expect(badge('step-05')).toHaveTextContent('AGT · no action')
       // An unreadable step says so instead of naming a door.
       expect(badge('step-06')).toHaveTextContent('AGT → EAL ?')
-      expect(badge('step-06').className).toContain('chain-node__doorbadge--unplaced')
+      expect(badge('step-06').className).toMatch(/--unplaced/)
       expect(badge('step-06').getAttribute('title')).toMatch(/made_up_emitter/)
       cleanup()
     }
   })
 
-  it('a card dropped in another lane snaps back and says why', () => {
-    const onNodeMoved = vi.fn()
-    render(<ComposerCanvas {...baseProps({ lens: 'lanes', onNodeMoved })} />)
-    const onNodesChange = window.__rfOnNodesChange
-    expect(typeof onNodesChange).toBe('function')
-    // step-01 sits in ENDPOINT RUNTIME; drop it in LIVE TRAFFIC.
-    act(() => {
-      onNodesChange([{ id: 'step-01', type: 'position', dragging: false, position: { x: 40, y: BANDS.WIRE.nodeY } }])
-    })
-    const refusal = screen.getByTestId('canvas-refusal')
-    expect(refusal).toHaveTextContent(/^Lane not changed/)
-    expect(refusal).toHaveTextContent(/lane follows what its command does/i)
-    expect(refusal).toHaveTextContent(/Inspector/)
-    expect(onNodeMoved).not.toHaveBeenCalled()
-    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
+  it('places each card in the band its command names', () => {
+    const steps = [
+      { ...STEPS[0], id: 'step-01', command: 'cat /etc/shadow' },
+      { ...STEPS[0], id: 'step-02', command: 'aws s3 ls', causalityParent: 'step-01' },
+    ]
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes', draft: { ...DRAFT, steps } })} />)
+    expect(screen.getByTestId('stage-card-step-01')).toHaveAttribute('data-lane', 'ENDPOINT')
+    expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-lane', 'CLOUD')
+    const band = document.querySelector('.chain-stage__lane[data-lane="CLOUD"]')
+    const top = parseFloat(screen.getByTestId('stage-card-step-02').style.top)
+    expect(top).toBeGreaterThanOrEqual(parseFloat(band.style.top))
+    expect(top).toBeLessThan(parseFloat(band.style.top) + BANDS.CLOUD.h)
   })
 
-  it('a card dropped back in its own lane is not refused', () => {
+  it('a card is a button: pressing it selects that step', async () => {
+    const onSelect = vi.fn()
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes', onSelect, selectedId: 'step-02' })} />)
+    expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('stage-card-step-01')).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.setup().click(screen.getByTestId('stage-card-step-01'))
+    expect(onSelect).toHaveBeenCalledWith('step-01')
+  })
+
+  it('the zoom buttons scale the Lanes stage, and never below 0.62', async () => {
     render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
-    act(() => {
-      window.__rfOnNodesChange([{ id: 'step-01', type: 'position', dragging: false, position: { x: 40, y: BANDS.ENDPOINT.nodeY } }])
-    })
-    expect(screen.queryByTestId('canvas-refusal')).toBeNull()
+    const user = userEvent.setup()
+    expect(screen.getByTestId('chain-stage')).toHaveAttribute('data-scale', '1')
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByTestId('chain-stage')).toHaveAttribute('data-scale', '1.1')
+    for (let i = 0; i < 8; i += 1) await user.click(screen.getByRole('button', { name: 'Zoom out' }))
+    expect(screen.getByTestId('chain-stage')).toHaveAttribute('data-scale', '0.62')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('62%')
   })
 
-  it('the Design lens draws no bands, and takes no lane props', () => {
+  it('the Design lens draws no bands', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
-    expect(screen.queryByTestId('composer-lane-bands')).toBeNull()
+    expect(screen.queryByTestId('chain-stage')).toBeNull()
     expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
   })
 })
