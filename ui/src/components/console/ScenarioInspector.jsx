@@ -47,6 +47,8 @@ export default function ScenarioInspector({
   onContinueToLaunch = null,
   onOpenInComposer = null,
 }) {
+  // Before the early return: a hook runs on every render.
+  const uid = React.useId()
   if (!scenario || !launch) return <aside className="inspector" />
 
   const id = scenario.scenario_id || scenario.id
@@ -162,8 +164,9 @@ export default function ScenarioInspector({
           {/* Identity */}
           {launch.identityOptions.length > 0 && (
             <div className="insp-config__row">
-              <label className="insp-config__label">Identity</label>
+              <label className="insp-config__label" htmlFor={`${uid}-identity`}>Identity</label>
               <select
+                id={`${uid}-identity`}
                 className="insp-select"
                 value={launch.identity}
                 onChange={(e) => launch.setIdentity(e.target.value)}
@@ -179,13 +182,14 @@ export default function ScenarioInspector({
           {/* Pull: agent */}
           {launch.mode === 'pull' && (
             <div className="insp-config__row">
-              <label className="insp-config__label">Agent</label>
+              <label className="insp-config__label" htmlFor={`${uid}-agent`}>Agent</label>
               {launch.agents.length === 0 ? (
                 <span className="mono insp-config__no-agents">
                   ! no agents connected
                 </span>
               ) : (
                 <select
+                  id={`${uid}-agent`}
                   className="insp-select"
                   value={launch.selectedAgent}
                   onChange={(e) => launch.setSelectedAgent(e.target.value)}

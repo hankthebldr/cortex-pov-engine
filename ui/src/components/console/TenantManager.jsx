@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useId } from 'react'
 import '../../styles/destinations/tenants.css'
 import {
   registerXsiamTenant,
@@ -64,36 +64,57 @@ function StepIndicator({ current }) {
   )
 }
 
-function FieldRow({ label, hint, required, error, children }) {
+/**
+ * One labelled form row. `children` is a function handed the wiring its
+ * control needs: `id` (the label's `htmlFor` target), `describedBy` (the
+ * error while there is one, else the hint), `invalid` and `required`. A
+ * `group` row labels a set of controls rather than one, so its caption is
+ * referenced by `labelId` (aria-labelledby) instead of being a <label>.
+ *
+ * The asterisk is visual only; `required` reaches assistive technology as
+ * aria-required, so the field's name stays "Base URL", not "Base URL*".
+ */
+function FieldRow({ label, hint, required = false, error, group = false, children }) {
+  const uid = useId()
+  const id = `${uid}-control`
+  const labelId = `${uid}-label`
+  const hintId = `${uid}-hint`
+  const errorId = `${uid}-error`
+  const describedBy = error ? errorId : (hint ? hintId : undefined)
+  const Caption = group ? 'span' : 'label'
   return (
     <div className="tenant-mgr__field">
-      <label className="tenant-mgr__field-label">
-        {label}{required && <span className="tenant-mgr__field-required">*</span>}
-      </label>
-      {children}
+      <Caption id={labelId} className="tenant-mgr__field-label" htmlFor={group ? undefined : id}>
+        {label}{required && <span className="tenant-mgr__field-required" aria-hidden="true">*</span>}
+      </Caption>
+      {children({ id, labelId, describedBy, invalid: !!error, required })}
       {hint && !error && (
-        <div className="tenant-mgr__field-hint">{hint}</div>
+        <div id={hintId} className="tenant-mgr__field-hint">{hint}</div>
       )}
       {error && (
-        <div className="tenant-mgr__field-error">{error}</div>
+        <div id={errorId} className="tenant-mgr__field-error">{error}</div>
       )}
     </div>
   )
 }
 
-function Field({ value, onChange, placeholder, type = 'text', mono = false, error }) {
+function Field({ id, describedBy, invalid = false, required = false, value, onChange, placeholder, type = 'text', mono = false }) {
   const className = [
     'tenant-mgr__input',
     mono && 'tenant-mgr__input--mono',
-    error && 'tenant-mgr__input--error',
+    invalid && 'tenant-mgr__input--error',
   ].filter(Boolean).join(' ')
   return (
     <input
+      id={id}
       type={type}
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       autoComplete={type === 'password' ? 'new-password' : 'off'}
+      aria-describedby={describedBy}
+      aria-invalid={invalid || undefined}
+      aria-required={required || undefined}
       className={className}
     />
   )
@@ -145,13 +166,15 @@ function Step1({ form, onChange, errors }) {
         required
         error={errors.name}
       >
-        <Field
-          value={form.name}
-          onChange={v => onChange('name', v)}
-          placeholder="acme-prod"
-          mono
-          error={errors.name}
-        />
+        {(control) => (
+          <Field
+            {...control}
+            value={form.name}
+            onChange={v => onChange('name', v)}
+            placeholder="acme-prod"
+            mono
+          />
+        )}
       </FieldRow>
 
       <FieldRow
@@ -160,13 +183,15 @@ function Step1({ form, onChange, errors }) {
         required
         error={errors.base_url}
       >
-        <Field
-          value={form.base_url}
-          onChange={v => onChange('base_url', v)}
-          placeholder={XSIAM_TENANT_URL_HINT}
-          mono
-          error={errors.base_url}
-        />
+        {(control) => (
+          <Field
+            {...control}
+            value={form.base_url}
+            onChange={v => onChange('base_url', v)}
+            placeholder={XSIAM_TENANT_URL_HINT}
+            mono
+          />
+        )}
       </FieldRow>
 
       <FieldRow
@@ -175,13 +200,15 @@ function Step1({ form, onChange, errors }) {
         required
         error={errors.region}
       >
-        <Field
-          value={form.region}
-          onChange={v => onChange('region', v)}
-          placeholder="us"
-          mono
-          error={errors.region}
-        />
+        {(control) => (
+          <Field
+            {...control}
+            value={form.region}
+            onChange={v => onChange('region', v)}
+            placeholder="us"
+            mono
+          />
+        )}
       </FieldRow>
     </div>
   )
@@ -196,42 +223,46 @@ function Step2({ form, onChange, errors }) {
         API credentials
       </h3>
 
-      <FieldRow label="Auth Mode" required>
-        <div className="tenant-mgr__radio-row">
-          {[
-            { value: 'standard', label: 'Standard',  available: true  },
-            { value: 'advanced', label: 'Advanced',  available: false },
-          ].map(opt => {
-            const selected = form.auth_mode === opt.value
-            const optionClass = [
-              'tenant-mgr__radio-option',
-              selected && 'tenant-mgr__radio-option--selected',
-              !opt.available && 'tenant-mgr__radio-option--disabled',
-            ].filter(Boolean).join(' ')
-            return (
-              <label key={opt.value} className={optionClass}>
-                <input
-                  type="radio"
-                  name="auth_mode"
-                  value={opt.value}
-                  checked={selected}
-                  disabled={!opt.available}
-                  onChange={() => opt.available && onChange('auth_mode', opt.value)}
-                  className="tenant-mgr__radio-input"
-                />
-                {opt.label}
-                {!opt.available && (
-                  <span className="tenant-mgr__radio-note">
-                    (Slice 2)
-                  </span>
-                )}
-              </label>
-            )
-          })}
-        </div>
-        <div className="tenant-mgr__radio-hint">
-          Standard auth uses static headers: x-xdr-auth-id + Authorization.
-        </div>
+      <FieldRow label="Auth Mode" required group>
+        {({ labelId, required }) => (
+          <>
+            <div className="tenant-mgr__radio-row" role="radiogroup" aria-labelledby={labelId} aria-required={required || undefined}>
+              {[
+                { value: 'standard', label: 'Standard',  available: true  },
+                { value: 'advanced', label: 'Advanced',  available: false },
+              ].map(opt => {
+                const selected = form.auth_mode === opt.value
+                const optionClass = [
+                  'tenant-mgr__radio-option',
+                  selected && 'tenant-mgr__radio-option--selected',
+                  !opt.available && 'tenant-mgr__radio-option--disabled',
+                ].filter(Boolean).join(' ')
+                return (
+                  <label key={opt.value} className={optionClass}>
+                    <input
+                      type="radio"
+                      name="auth_mode"
+                      value={opt.value}
+                      checked={selected}
+                      disabled={!opt.available}
+                      onChange={() => opt.available && onChange('auth_mode', opt.value)}
+                      className="tenant-mgr__radio-input"
+                    />
+                    {opt.label}
+                    {!opt.available && (
+                      <span className="tenant-mgr__radio-note">
+                        (Slice 2)
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+            <div className="tenant-mgr__radio-hint">
+              Standard auth uses static headers: x-xdr-auth-id + Authorization.
+            </div>
+          </>
+        )}
       </FieldRow>
 
       <FieldRow
@@ -240,13 +271,15 @@ function Step2({ form, onChange, errors }) {
         required
         error={errors.api_key_id}
       >
-        <Field
-          value={form.api_key_id}
-          onChange={v => onChange('api_key_id', v)}
-          placeholder="42"
-          mono
-          error={errors.api_key_id}
-        />
+        {(control) => (
+          <Field
+            {...control}
+            value={form.api_key_id}
+            onChange={v => onChange('api_key_id', v)}
+            placeholder="42"
+            mono
+          />
+        )}
       </FieldRow>
 
       <FieldRow
@@ -255,14 +288,16 @@ function Step2({ form, onChange, errors }) {
         required
         error={errors.api_key}
       >
-        <Field
-          value={form.api_key}
-          onChange={v => onChange('api_key', v)}
-          placeholder="Paste API key…"
-          type="password"
-          mono
-          error={errors.api_key}
-        />
+        {(control) => (
+          <Field
+            {...control}
+            value={form.api_key}
+            onChange={v => onChange('api_key', v)}
+            placeholder="Paste API key…"
+            type="password"
+            mono
+          />
+        )}
       </FieldRow>
     </div>
   )
