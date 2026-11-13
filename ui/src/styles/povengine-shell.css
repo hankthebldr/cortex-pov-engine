@@ -50,8 +50,11 @@
 .pov-header {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 0 18px;
+  /* 10, not the prototype's 18: the instance read-out (v26 §4.5) added
+     ~450px to a bar that also carries the RUNNING pill, and at 1280 the
+     difference is whether the avatar is on screen. */
+  gap: 10px;
+  padding: 0 14px;
   height: var(--header-h);
   background: var(--s1);
   border-bottom: 1px solid var(--bd);
@@ -208,15 +211,50 @@ button.pov-chip:hover { border-color: var(--bd2); }
 }
 .pov-chip__label { font: 400 11px/1 var(--font-ui); }
 
-/* The LIVE pill is the ONE place green appears in the chrome, and it is not
-   chrome — it is a state. It links to Runs, so the way to the evidence never
-   moves. */
+/* ── This instance (design v26 §4.5) ──────────────────────────────────────
+   StatusIcon + word + uptime, then up to four live KPIs, each separated by a
+   hairline. One button: the whole read-out opens the POVengine page. */
+.pov-instance {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  color: var(--tx);
+  cursor: pointer;
+  transition: border-color 120ms ease-out;
+}
+.pov-instance:hover { border-color: var(--bd2); }
+.pov-instance:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.pov-instance__state { display: inline-flex; align-items: center; gap: 6px; }
+.pov-instance__state .kit-status__word { font-size: 12px; }
+.pov-instance__uptime { font: 600 12px/1 var(--font-ui); color: var(--tx); }
+.pov-instance__kpi {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding-left: 9px;
+  border-left: 1px solid var(--bd2);
+}
+.pov-instance__kpi-v { font: 600 12px/1 var(--font-mono); color: var(--tx); }
+.pov-instance__kpi-v--pos { color: var(--pos-ink, var(--pos)); }
+.pov-instance__kpi-v--warn { color: var(--warn); }
+.pov-instance__kpi-k { font: 400 11px/1 var(--font-ui); color: var(--tx3); }
+/* Below 1366px the run total is the one KPI to give up so the bar still
+   fits at 1280 with a RUNNING pill: Runs states the same count, while
+   running / agents online / issues are the ones a DC acts on. */
+@media (max-width: 1365px) {
+  .pov-instance__kpi--runs { display: none; }
+}
+
+/* The RUNNING pill is the one place green appears in the chrome, and it is
+   not chrome — it is a state. It exists only while a run is live and opens
+   that run, so the way to what is happening never moves. */
 .pov-live {
   background: var(--pos-soft);
   border-color: var(--pos-line);
 }
 .pov-live .pov-chip__dot { animation: povblink 1.4s ease-in-out infinite; }
 .pov-live__tag { font: 700 9.5px/1 var(--font-mono); letter-spacing: .1em; color: var(--pos); }
+.pov-live__detail { font: 500 11px/1 var(--font-ui); color: var(--tx2); }
 
 .pov-avatar {
   width: 26px; height: 26px; border-radius: 50%;
@@ -482,3 +520,54 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-btn--primary { background: var(--ac); border-color: var(--ac); color: var(--ac-tx); font-weight: 700; }
 .pov-btn--primary:hover { filter: brightness(1.08); border-color: var(--ac); }
 .pov-btn--flex { flex: 1; }
+
+/* ── ⌘K search (design v26 §2, §4.5) ──────────────────────────────────────
+   Centred, 520px wide, 90px from the top. One flat list: each row is the
+   page's icon, a label, and its kind on the right. Overrides the older
+   palette rules in cortex-console.css, which load first. */
+.theme-console .cmd-palette-backdrop {
+  background: rgba(0, 0, 0, .6);
+  backdrop-filter: none;
+  padding-top: 90px;
+}
+.theme-console .cmd-palette {
+  width: 520px; max-width: calc(100% - 32px);
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 11px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .55);
+}
+.theme-console .cmd-palette__input {
+  gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .cmd-palette__input:focus-within { border-bottom-color: var(--ac-line); }
+.theme-console .cmd-palette__input input {
+  padding: 8px 10px;
+  background: var(--s0);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  font: 400 13px/1 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--tx);
+}
+.theme-console .cmd-palette__input input:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+.theme-console .cmd-palette__input input::placeholder { color: var(--tx3); }
+.theme-console .cmd-palette__results { max-height: 340px; padding: 6px; }
+.theme-console .cmd-result {
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0; border-radius: 6px;
+}
+.theme-console .cmd-result:hover,
+.theme-console .cmd-result--active { background: var(--s2); border-left-color: transparent; }
+.theme-console .cmd-result:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.theme-console .cmd-result__icon { display: inline-grid; place-items: center; }
+.theme-console .cmd-result__title {
+  font: 500 12.5px/1.3 var(--font-ui); color: var(--tx);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-console .cmd-result__meta { color: var(--tx3); }
+.theme-console .cmd-result__kind { font: 400 11px/1 var(--font-ui); color: var(--tx3); white-space: nowrap; }
+.theme-console .cmd-palette__footer { background: var(--s1); border-top: 1px solid var(--bd); color: var(--tx3); }

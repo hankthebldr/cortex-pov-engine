@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 199  (GREEN 167 · YELLOW 27 · RED 5)
-- **Steps:** 823 total · 142 detection-bearing steps produce no real signal
+- **Scenarios:** 200  (GREEN 168 · YELLOW 27 · RED 5)
+- **Steps:** 831 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
 - **Consent-gated:** 4 scenarios
-- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 70 scenarios
+- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 71 scenarios
 - **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 167 scenarios
+## GREEN — 168 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -54,6 +54,7 @@
 | SIM-CDR-025 | CDR | ABIOC/XQL/Correlation | 2/2 | eal |  |
 | SIM-CDR-027 | CDR | BIOC/Analytics | 1/1 | agent |  |
 | SIM-CDR-028 | CDR | BIOC/Analytics | 1/1 | agent |  |
+| SIM-CDR-030 | CDR | XQL/Correlation | 8/8 | eal |  |
 | SIM-CLOUD-001 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |
 | SIM-CLOUD-002 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |
 | SIM-CLOUD-003 | CLOUD_APP | BIOC/XQL | 3/3 | eal |  |

@@ -129,6 +129,20 @@ cortexsim_airs_raw:
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
+cortexsim_cloud_audit_raw:
+  produced_by: cortexsim-synthetic
+  doors: [http_collector]
+  cortex_side:
+    - kind: collector
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortexsim-synthetic
+      requirement: log_forwarding
+      detail: "CortexSim's cloud_audit_emitter plugin POSTs synthetic AWS CloudTrail and Google Cloud audit records to an XSIAM HTTP log collector created with Vendor cortexsim and Product cloud_audit; the tenant names the dataset from those two collector settings, not from the record's own dataset key. No record has been ingested by a tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
 esxi_syslog:
   produced_by: vmware-esxi
   doors_unknown: "ESXi syslog sshd logons and vSphere VM-creation events are read, but which product emits this dataset and how it is onboarded are not confirmed."
