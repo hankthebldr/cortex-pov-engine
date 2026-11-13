@@ -6,14 +6,18 @@ Spec §7.3 (the reader) and §7.4 (the snapshot and its routes).
 
 What one read does, in order:
 
-1. A run with no ``Result.executed_at`` has no window: ``NO_RUN_WINDOW``, no
-   tenant request, nothing stored.
+1. A push run (its execution time is unknown) or a run with no
+   ``Result.executed_at`` has no window: ``NO_RUN_WINDOW``, no tenant request,
+   nothing stored.
 2. The credential resolves as reconcile's does (``xsiam``, or the equivalent
    ``xsiam_tenant``). None configured: ``pending`` / ``NO_TENANT_CONFIGURED``,
    ``issues: null``.
-3. A read of the same run and integration inside
+3. A read of the same run and tenant (the tenant ledger key; the
+   integration name when the URL gives none) inside
    ``CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`` is returned, not repeated
-   (``TENANT_EVIDENCE_READ_RECENTLY``), unless ``force``.
+   (``TENANT_EVIDENCE_READ_RECENTLY``), unless ``force``. The check, the read
+   and the store run under one lock per (run, tenant), so two concurrent
+   requests spend one read.
 4. The window is ``[earliest executed_at − 300 s, min(latest matcher window
    end, now)]`` — the matcher's own windows, so both readers look at one span.
 5. ``issue/search`` over the window and the Security domain, sorted by
@@ -29,7 +33,10 @@ synchronous and SimCore's loop also serves beacon polls, SSE and the abort
 poll. ``queries_issued`` sums the requests each sub-read actually sent (a local
 budget refusal sends nothing). The first quota refusal stops the read: later
 sections are ``QUOTA_REFUSED`` without a request, rows already read are kept,
-and the snapshot is ``complete: false``.
+and the snapshot is ``complete: false``. A window that may hold rows the read
+did not see (cut by a refusal, truncated, or with no ``FILTER_COUNT``) is
+incomplete: its issue counts are floors (null when no row was read) and the
+agreement counts that need the whole window are null.
 
 Read-only toward the tenant, and context only here: this never calls
 ``mark_integration_verified`` and writes nothing a scorer reads — only a row in
@@ -39,6 +46,7 @@ Read-only toward the tenant, and context only here: this never calls
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
@@ -55,8 +63,11 @@ from models import Observation, Result, Run, TenantEvidenceRead
 from . import service, tuning
 from .base import HttpFetcher, PullResult, coerce_utc
 from .matcher import DEFAULT_WINDOW_SECONDS, _short_host
+from .verify_window import PUSH_WINDOW_REASON
 from .provenance import tenant_verified
 from .tenant_reader import (
+    CLASS_ID,
+    CLASS_NAME_HOST_WINDOW,
     DATA_NOTICE,
     ISSUE_INCLUDE_FIELDS,
     STATEMENT,
@@ -154,9 +165,11 @@ def _quota_section(quota: dict[str, Any], *, attempted: bool) -> dict[str, Any]:
     """A section the quota stopped. ``attempted`` is false for a section that
     was never tried because an earlier request was refused."""
     n = quota["retry_after_seconds"]
+    who = ("CortexSim's own per-tenant request budget" if quota["refused_locally"]
+           else "the tenant's rate limit (HTTP 429)")
     if not attempted:
-        detail = ("not read: an earlier request in this read was refused for quota, "
-                  f"so no further request was sent; retry in {n}s")
+        detail = (f"not read: {who} refused an earlier request in this read, so no further "
+                  f"request was sent; retry in {n}s")
     elif quota["refused_locally"]:
         detail = ("CortexSim's own per-tenant request budget refused this read before "
                   f"it was sent to the tenant; this says nothing about the tenant. "
@@ -167,8 +180,7 @@ def _quota_section(quota: dict[str, Any], *, attempted: bool) -> dict[str, Any]:
     return {"code": QUOTA_REFUSED,
             "refused_locally": quota["refused_locally"] if attempted else None,
             "attempted": attempted, "retry_after_seconds": n, "detail": detail,
-            "remediation": (LOCAL_REFUSAL_REMEDIATION
-                            if attempted and quota["refused_locally"]
+            "remediation": (LOCAL_REFUSAL_REMEDIATION if quota["refused_locally"]
                             else remediation_for(codes.XSIAM_QUOTA_ERROR))}
 
 
@@ -224,11 +236,9 @@ async def _matcher_rows(db: AsyncSession, run_id: str, results: list[Result],
     return out
 
 
-async def _snapshots(db: AsyncSession, run_id: str, *, integration: Optional[str] = None,
+async def _snapshots(db: AsyncSession, run_id: str, *,
                      limit: int = HISTORY_LIMIT) -> list[TenantEvidenceRead]:
     q = select(TenantEvidenceRead).where(TenantEvidenceRead.run_id == run_id)
-    if integration is not None:
-        q = q.where(TenantEvidenceRead.integration == integration)
     q = q.order_by(TenantEvidenceRead.read_at.desc(), TenantEvidenceRead.id.desc()).limit(limit)
     return list((await db.execute(q)).scalars().all())
 
@@ -283,6 +293,81 @@ def _case_value(cid: str) -> Any:
     return int(cid) if cid.isascii() and cid.isdigit() else cid
 
 
+# ── one read at a time per run and tenant ────────────────────────────────────
+#
+# The minimum-interval check and the store are far apart (every connector call
+# yields to the loop), so two clicks would both pass the check and spend two
+# metered reads. One lock per (run, tenant) makes the second wait, then see the
+# first's snapshot and return it. Keyed by the running loop too, so a lock never
+# outlives the loop it was made on; an entry is dropped when nobody holds or
+# waits on it.
+_LOCKS: dict[tuple, list] = {}
+
+
+@contextlib.asynccontextmanager
+async def _read_lock(run_id: str, tenant_key: str):
+    key = (id(asyncio.get_running_loop()), run_id, tenant_key)
+    entry = _LOCKS.setdefault(key, [asyncio.Lock(), 0])
+    entry[1] += 1
+    try:
+        async with entry[0]:
+            yield
+    finally:
+        entry[1] -= 1
+        if entry[1] == 0 and _LOCKS.get(key) is entry:
+            del _LOCKS[key]
+
+
+def _interval_key(tenant: Optional[str], integration: str) -> str:
+    """The minimum interval and the lock are per tenant: one tenant is often
+    configured twice (an ``xsiam`` and an ``xsiam_tenant`` credential), and it
+    is the tenant's budget the interval protects. A credential whose URL gives
+    no tenant key falls back to its own name."""
+    return f"tenant:{tenant}" if tenant else f"integration:{integration}"
+
+
+async def _latest_for(db: AsyncSession, run_id: str, tenant: Optional[str],
+                      integration: str) -> Optional[TenantEvidenceRead]:
+    q = select(TenantEvidenceRead).where(TenantEvidenceRead.run_id == run_id)
+    q = (q.where(TenantEvidenceRead.tenant == tenant) if tenant
+         else q.where(TenantEvidenceRead.integration == integration))
+    q = q.order_by(TenantEvidenceRead.read_at.desc(), TenantEvidenceRead.id.desc()).limit(1)
+    return (await db.execute(q)).scalars().first()
+
+
+def _floors_flag(cut: bool, rows_read: bool, truncated: Any) -> Optional[bool]:
+    """Whether the issue counts are floors: true when the window was cut by a
+    refusal after some pages or the tenant holds more than was read; null when
+    nothing was read or completeness is unknown (no FILTER_COUNT)."""
+    if cut:
+        return True if rows_read else None
+    return None if truncated is None else bool(truncated)
+
+
+def _scope_agreement(out: dict, *, unscoped: bool, partial_window: bool) -> dict:
+    """Withdraw the join counts a read cannot stand behind.
+
+    * ``UNSCOPED``: with no run host nothing can join, so neither class, nor
+      ``matcher_only`` / ``reader_only`` / ``ambiguous``, is claimed.
+    * A partial window (cut by a quota refusal, truncated, or of unknown
+      completeness): an issue in an unread row could join an alert, or make a
+      join ambiguous, so ``name_host_window``, ``matcher_only``, ``reader_only``
+      and ``ambiguous`` are unknown (``matcher_only`` would be an upper bound,
+      not a floor), and only id-class pairs are kept.
+
+    ``id_space`` and ``unjoinable`` are measured from the probe and the
+    matcher's own rows, and stay.
+    """
+    if unscoped:
+        return {**out, "both": {CLASS_ID: None, CLASS_NAME_HOST_WINDOW: None},
+                "matcher_only": None, "reader_only": None, "ambiguous": None, "pairs": []}
+    if partial_window:
+        return {**out, "both": {**out["both"], CLASS_NAME_HOST_WINDOW: None},
+                "matcher_only": None, "reader_only": None, "ambiguous": None,
+                "pairs": [p for p in out["pairs"] if p["class"] == CLASS_ID]}
+    return out
+
+
 async def read_run_evidence(
     db: AsyncSession, run: Run, *, integration_name: Optional[str] = None,
     force: bool = False, fetcher: Optional[HttpFetcher] = None,
@@ -295,9 +380,16 @@ async def read_run_evidence(
     payload's issues section, or null when nothing was read. Raises
     :class:`connectors.service.ReconcileError` for a named integration that
     does not exist or a credential that cannot be loaded (the API maps them as
-    reconcile does).
+    reconcile does). ``now`` defaults to the time the read starts, taken once
+    this call holds the run's read lock.
     """
-    now = _naive_utc(now)
+    if getattr(run, "mode", None) == "push":
+        # A push run's Result.executed_at is stamped when the bundle is made;
+        # the bundle runs later, offline, and SimCore never learns when.
+        return _response(run, read=False, code=NO_RUN_WINDOW, detail=(
+            f"this is a push run: its execution time is unknown ({PUSH_WINDOW_REASON}), "
+            "because the bundle runs offline after it is generated, so there is no window "
+            "to read; no tenant request was made"))
     results = await _results(db, run.run_id)
     executed = [r.executed_at for r in results if r.executed_at is not None]
     if not executed:
@@ -316,28 +408,38 @@ async def read_run_evidence(
             f"no integration of kind {kinds} is configured, so nothing was read from a "
             "tenant; configure one under /api/credentials/integrations"))
 
-    interval = timedelta(seconds=settings.CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS)
-    if not force:
-        recent = await _snapshots(db, run.run_id, integration=integ.name, limit=1)
-        if recent and now - recent[0].read_at < interval:
-            last = recent[0]
-            wait = math.ceil((interval - (now - last.read_at)).total_seconds())
-            return _response(
-                run, read=False, code=TENANT_EVIDENCE_READ_RECENTLY,
-                status=(last.payload or {}).get("status") or status_for(last.code),
-                retry_after=max(1, wait), snapshot=last, detail=(
-                    f"this run was read from integration '{integ.name}' at "
-                    f"{last.read_at.isoformat()} UTC, inside the "
-                    f"{settings.CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS}-second minimum "
-                    "interval (CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS); the stored "
-                    "snapshot is returned. Pass force=true to read now"))
+    tenant = service.case_ledger_tenant(cfg)
+    async with _read_lock(run.run_id, _interval_key(tenant, integ.name)):
+        now = _naive_utc(now)
+        interval = timedelta(seconds=settings.CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS)
+        if not force:
+            last = await _latest_for(db, run.run_id, tenant, integ.name)
+            age = (max(now - last.read_at, timedelta(0)) if last is not None else None)
+            if age is not None and age < interval:
+                where = f"tenant '{tenant}'" if tenant else f"integration '{integ.name}'"
+                return _response(
+                    run, read=False, code=TENANT_EVIDENCE_READ_RECENTLY,
+                    status=(last.payload or {}).get("status") or status_for(last.code),
+                    retry_after=max(1, math.ceil((interval - age).total_seconds())),
+                    snapshot=last, detail=(
+                        f"this run was read from {where} at {last.read_at.isoformat()} UTC "
+                        f"(integration '{last.integration}'), inside the "
+                        f"{settings.CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS}-second "
+                        "minimum interval (CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS); "
+                        "the stored snapshot is returned. Pass force=true to read now"))
+        return await _read(db, run, results, executed, conn=conn, cfg=cfg,
+                           integration=integ.name, tenant=tenant, now=now)
 
+
+async def _read(db: AsyncSession, run: Run, results: list[Result], executed: list[datetime],
+                *, conn: Any, cfg: Any, integration: str, tenant: Optional[str],
+                now: datetime) -> dict:
+    """Steps 4–9 of the read and the store, under the run's read lock."""
     since = min(executed) - timedelta(seconds=WINDOW_LEAD_SECONDS)
     ends = await service.match_window_ends(db, run.run_id, results,
                                            window_seconds=DEFAULT_WINDOW_SECONDS)
     until = max(min(max(ends.values()), now) if ends else now, since)
     run_host = await service.resolve_run_host(db, run)
-    tenant = service.case_ledger_tenant(cfg)
     read = _Read()
 
     # 5. The window issue read.
@@ -356,13 +458,19 @@ async def read_run_evidence(
     window_pages = read.last_sent
     issues_section = _section_for(wres, read, "issue")
     issues_failed = issues_section is not None and issues_section["code"] != QUOTA_REFUSED
+    # A quota refusal cut the window read: the case ids of unread rows are unknown.
+    window_cut = issues_section is not None and not issues_failed
+    rows_read = bool(wres is not None and wres.observations)
+    truncated = (wres.detail or {}).get("truncated") if wres is not None and wres.ok else None
     window: list[dict] = []
     excluded = duplicates = 0
     if not issues_failed:
         try:
             window, excluded, duplicates = _project_window(list(wres.observations))
         except IssueShapeError as e:
-            issues_section, issues_failed = _parse_section(e, "issue"), True
+            issues_section, issues_failed, window_cut = _parse_section(e, "issue"), True, False
+    # A window that may hold rows this read did not see.
+    partial_window = window_cut or (not issues_failed and truncated is not False)
 
     # 6. Attribution.
     att = attribute(window, run_host)
@@ -393,6 +501,8 @@ async def read_run_evidence(
             matcher_rows, attributed, probe_rows, run_host,
             tolerance_seconds=settings.CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS)
         agreement_out["id_space"]["code"] = probe_code
+        agreement_out = _scope_agreement(agreement_out, unscoped=unscoped,
+                                         partial_window=partial_window)
         pairs = agreement_out["pairs"]
 
     # 8. Cases for the attributed issues.
@@ -401,6 +511,11 @@ async def read_run_evidence(
         if unscoped:
             cases_section = {"code": UNSCOPED, "rows": None, "requested": 0,
                              "detail": "no run host, so no issue is attributed and no case is read"}
+        elif window_cut:
+            # Not "no case ids": the ids on the rows not read are unknown.
+            cases_section = {**_quota_section(read.quota, attempted=False),
+                             "rows": group_cases(attributed, None) if rows_read else None,
+                             "requested": 0, "ids_capped": None}
         else:
             all_ids = list(dict.fromkeys(c for i in attributed for c in i.get("case_ids") or []))
             case_ids = all_ids[:CASE_IDS_MAX]
@@ -442,12 +557,14 @@ async def read_run_evidence(
         else:
             want = _short_host(run_host)
             try:
-                records = [project_endpoint(r) for r in eres.observations
-                           if _short_host(r.get("endpoint_name")) == want]
+                # Every record is projected before any is filtered out: one the
+                # reader cannot read is a parse error, never "no record".
+                projected = [project_endpoint(r) for r in eres.observations]
             except IssueShapeError as e:
                 endpoint.update(_parse_section(e, "endpoint"))
-                records = None
-            if records is not None:
+                projected = None
+            if projected is not None:
+                records = [r for r in projected if _short_host(r["endpoint_name"]) == want]
                 endpoint["truncated"] = eres.detail.get("truncated")
                 if not records:
                     endpoint.update(code=ENDPOINT_NOT_FOUND, detail=(
@@ -463,44 +580,61 @@ async def read_run_evidence(
                 else:
                     endpoint.update(code=OK, record=records[0])
 
-    # The issues section, measured from the rows read (a floor when refused).
-    if not issues_failed:
+    # The issues section, measured from the rows read.
+    if issues_failed:
+        issues_section = {**issues_section, "total_count": None, "filter_count": None,
+                          "truncated": None, "counts_are_floors": None, "host_scope": None,
+                          "excluded_non_security": None, "unrecognised_values": None,
+                          "rows": None, "unattributed_rows": None}
+    else:
+        measured = rows_read or not window_cut      # nothing read: nothing counted
         executed_by_id = {r.id: r.executed_at for r in results}
         detail = (wres.detail if wres is not None else {}) or {}
         issues_section = {
             **(issues_section or {"code": OK}),
             "total_count": detail.get("total_count"),
             "filter_count": detail.get("filter_count"),
-            "truncated": detail.get("truncated") if wres is not None and wres.ok else None,
+            "truncated": truncated,
+            "counts_are_floors": _floors_flag(window_cut, rows_read, truncated),
             "pages": window_pages,
-            "host_scope": {"host": att["host"],
-                           "attributed": None if unscoped else len(attributed),
-                           "other_host": att["other_host"],
-                           "without_host": len(att["without_host"])},
-            "excluded_non_security": excluded,
-            "duplicate_rows": duplicates,
-            "unrecognised_values": unrecognised_values(window),
-            "rows": [_with_lag(i, pairs, executed_by_id) for i in attributed],
-            "unattributed_rows": att["unattributed"],
+            "host_scope": {
+                "host": att["host"],
+                "attributed": len(attributed) if measured and not unscoped else None,
+                "other_host": att["other_host"] if measured else None,
+                "without_host": len(att["without_host"]) if measured else None},
+            "excluded_non_security": excluded if measured else None,
+            "duplicate_rows": duplicates if measured else None,
+            "unrecognised_values": unrecognised_values(window) if measured else None,
+            "rows": [_with_lag(i, pairs, executed_by_id) for i in attributed] if measured else None,
+            "unattributed_rows": att["unattributed"] if measured else None,
         }
-    else:
-        issues_section = {**issues_section, "total_count": None, "filter_count": None,
-                          "truncated": None, "host_scope": None,
-                          "excluded_non_security": None, "unrecognised_values": None,
-                          "rows": None, "unattributed_rows": None}
 
     window_text = f"between {since.isoformat()} and {until.isoformat()} UTC"
+    truncation_note = (
+        "" if issues_failed or window_cut or truncated is False
+        else ("the window read was truncated: the tenant holds more matching issues than "
+              f"the {window_pages} page(s) read, so issues for this host may sit in rows "
+              "not read" if truncated
+              else "the window read's completeness is unknown: the tenant sent no "
+                   "FILTER_COUNT, so issues for this host may sit in rows not read"))
     if issues_failed:
         code = issues_section["code"]
         top_detail = (f"the issue read failed ({code}); nothing was measured from it, so this "
                       "says nothing about the run's detections")
     elif read.quota is not None:
         code = QUOTA_REFUSED
-        top_detail = ((("CortexSim's own per-tenant request budget" if read.quota["refused_locally"]
-                        else "the tenant's rate limit (HTTP 429)")
-                       + " refused a request in this read. Rows read before the refusal are "
-                       "kept; the read is incomplete and its counts are floors. Retry in "
-                       f"{read.quota['retry_after_seconds']}s"))
+        who = ("CortexSim's own per-tenant request budget" if read.quota["refused_locally"]
+               else "the tenant's rate limit (HTTP 429)")
+        top_detail = (
+            f"{who} refused a request in this read; no request was sent after it. "
+            + (("The window read was cut: its issue counts are floors from the rows read "
+                "before the refusal" if rows_read
+                else "The window read was cut before any row was read, so its issue counts "
+                     "are null")
+               + ", and the agreement counts that need the whole window are null"
+               if window_cut else
+               "The issue rows are complete; the sections after the refusal were not read")
+            + f". Retry in {read.quota['retry_after_seconds']}s")
     elif unscoped:
         code = UNSCOPED
         top_detail = (
@@ -509,31 +643,38 @@ async def read_run_evidence(
             f"{window_text} are listed as unattributed, not credited")
     elif not attributed:
         code = NO_ATTRIBUTED_ISSUES
-        top_detail = (
-            f"the tenant returned no Security-domain issue attributed to host '{run_host}' "
-            f"{window_text}. Check these first: ingestion latency (issues can take minutes "
-            "to appear; read again later), the hostname (the tenant may record this endpoint "
-            f"under another name than '{run_host}'), the window (from "
-            f"{WINDOW_LEAD_SECONDS} s before the first step to the end of the matcher's "
-            "windows) and the Security domain filter (issues in other domains are not read)")
+        causes = [
+            "ingestion latency (issues can take minutes to appear; read again later)",
+            f"the hostname (the tenant may record this endpoint under another name than "
+            f"'{run_host}')",
+            f"the window (from {WINDOW_LEAD_SECONDS} s before the first step to the end of the "
+            "matcher's windows)",
+            "the Security domain filter (issues in other domains are not read)"]
+        if truncation_note:
+            causes.insert(0, truncation_note)
+        top_detail = (f"the tenant returned no Security-domain issue attributed to host "
+                      f"'{run_host}' {window_text}. Check these first: " + "; ".join(causes))
     else:
         code = OK
         top_detail = (f"{len(attributed)} Security-domain issue(s) attributed to host "
                       f"'{run_host}' {window_text}")
+        if truncation_note:
+            top_detail += f"; {truncation_note}, so these counts are floors"
 
     sections = [issues_section, endpoint] + ([cases_section] if cases_section else [])
     section_codes = [s["code"] for s in sections]
     if agreement_out is not None:
         section_codes.append(agreement_out["id_space"]["code"])
-    complete = all(c in _ANSWERED for c in section_codes)
-    status = "ok" if code == OK and all(c == OK for c in section_codes) else "degraded"
-    if code == OK and status != "ok":
+    complete = all(c in _ANSWERED for c in section_codes) and not partial_window
+    status = ("ok" if code == OK and complete and all(c == OK for c in section_codes)
+              else "degraded")
+    if code == OK and any(c != OK for c in section_codes):
         top_detail += "; some sections are degraded, and each carries its own code"
 
     payload = {
         "reader": conn.reader_paths(cfg),
         "tenant": tenant,
-        "integration": integ.name,
+        "integration": integration,
         "read_at": now.isoformat(),
         "window": [since.isoformat(), until.isoformat()],
         "queries_issued": read.queries,
@@ -551,7 +692,7 @@ async def read_run_evidence(
         "data_notice": DATA_NOTICE,
     }
     row = TenantEvidenceRead(
-        run_id=run.run_id, integration=integ.name, tenant=tenant, read_at=now,
+        run_id=run.run_id, integration=integration, tenant=tenant, read_at=now,
         since=since, until=until, code=code, queries_issued=read.queries,
         reader_version=READER_VERSION, payload=payload)
     db.add(row)

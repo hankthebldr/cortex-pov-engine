@@ -490,6 +490,11 @@ the loop the same way; §14 notes it but does not fix it.
 4. **Id probe.** Part B's by-id `issue/search`, filtered by `id` `in` the `external_id` of
    every `Observation` on the run, in chunks of 100 (see *Agreement* below). Its requests
    count in `queries_issued`.
+   *Amended 2026-11-13:* the probe reads the `external_id` of every `Observation` on the run
+   that is linked to a `Result` (`result_id` set), not every `Observation`: those are the
+   matcher rows the agreement counts, so an unlinked observation is neither probed nor
+   counted in `id_space`. It also sends `include_fields: ["normalized_fields"]`, so a hit
+   outside the window carries its own hosts.
 5. **Cases.** `case/search` with `case_id` `in` the `case_ids` of the attributed issues: one
    request, at most 100 ids. It feeds grouping with `issue_count`, `issue_ids`, `hosts`,
    `case_domain` and `xdr_url`. Disposition stays the Part B ledger's job (§7.8).

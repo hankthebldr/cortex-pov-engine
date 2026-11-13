@@ -200,6 +200,11 @@ def test_quota_on_a_later_window_page_keeps_the_pages_already_read(session_facto
     assert len(p["issues"]["rows"]) == 100
     assert p["queries_issued"] == 2
     assert (p["cases"]["code"], p["endpoint"]["code"]) == ("QUOTA_REFUSED", "QUOTA_REFUSED")
+    # Review 1: the pages read give floors, labelled as such; the case ids of
+    # the unread pages are unknown, so the case read is refused, not empty.
+    assert p["issues"]["counts_are_floors"] is True
+    assert p["issues"]["host_scope"]["attributed"] == 100
+    assert p["cases"]["attempted"] is False
 
 
 def test_local_budget_refusal_is_never_described_as_the_tenant(session_factory, monkeypatch):
@@ -265,3 +270,128 @@ def test_matcher_row_without_a_recorded_host_takes_the_run_host(session_factory)
     out = read(session_factory, FakeTenant(issues=copy.deepcopy(ISSUES),
                                            cases=copy.deepcopy(CASES)))
     assert out["snapshot"]["payload"]["agreement"]["both"]["name_host_window"] == 1
+
+
+# ── fix round 1 ────────────────────────────────────────────────────────────
+
+def _spend_the_only_token():
+    from integrations.xsiam.ledger import ledger, tenant_ledger_key
+    from integrations.xsiam.tenant_url import normalize_tenant_base_url
+
+    base = normalize_tenant_base_url("api-acme.xdr.us.paloaltonetworks.com")
+    ledger.acquire_request(tenant_ledger_key(base), per_minute=1)
+
+
+def test_window_refused_before_any_page_publishes_no_counts(session_factory, monkeypatch):
+    """Review 1: nothing was read, so nothing is counted — null, never 0."""
+    seed(session_factory, observations=[{
+        "external_id": "1001", "name": "synthetic-3",
+        "observed_at": datetime(2025, 11, 1, 12, 26, 45), "raw": {"host_name": RUN_HOST}}])
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    _spend_the_only_token()
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), cases=copy.deepcopy(CASES),
+                      endpoints=copy.deepcopy(ENDPOINTS))
+    out = read(session_factory, fake)
+    p = out["snapshot"]["payload"]
+    assert out["code"] == "QUOTA_REFUSED" and fake.total_calls == 0
+    assert p["queries_issued"] == 0 and p["tenant_answered"] is None
+    issues = p["issues"]
+    assert issues["host_scope"] == {"host": RUN_HOST, "attributed": None, "other_host": None,
+                                    "without_host": None}
+    assert (issues["excluded_non_security"], issues["duplicate_rows"]) == (None, None)
+    assert issues["rows"] is None and issues["unattributed_rows"] is None
+    assert issues["counts_are_floors"] is None
+    assert p["cases"]["code"] == "QUOTA_REFUSED" and p["cases"]["attempted"] is False
+    assert p["cases"]["rows"] is None
+    # A section skipped after a LOCAL refusal never blames the tenant either.
+    for skipped in (p["cases"], p["endpoint"]):
+        assert "CortexSim's own per-tenant request budget" in skipped["detail"]
+        assert "tenant's API/XQL quota" not in skipped["remediation"]
+    assert "floors" not in out["detail"] and "before any row was read" in out["detail"]
+    a = p["agreement"]
+    assert a["both"] == {"id": None, "name_host_window": None}
+    assert (a["matcher_only"], a["reader_only"], a["ambiguous"]) == (None, None, None)
+    assert a["unjoinable"] == 0
+    assert a["id_space"]["code"] == "QUOTA_REFUSED" and a["id_space"]["hit"] is None
+
+
+def test_concurrent_reads_of_one_run_send_one_read(session_factory):
+    """Review 2: a double click is one metered read; the second waits and gets it."""
+    from models import TenantEvidenceRead
+    from sqlalchemy import func, select
+
+    seed(session_factory)
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), cases=copy.deepcopy(CASES),
+                      endpoints=copy.deepcopy(ENDPOINTS))
+
+    def slow(method, url, headers, body, timeout):
+        time.sleep(0.1)
+        return fake(method, url, headers, body, timeout)
+
+    async def both():
+        outs = await asyncio.gather(_read(session_factory, slow), _read(session_factory, slow))
+        async with session_factory() as db:
+            stored = (await db.execute(
+                select(func.count()).select_from(TenantEvidenceRead))).scalar()
+        return outs, stored
+
+    outs, stored = asyncio.run(both())
+    assert sorted(o["read"] for o in outs) == [False, True]
+    assert {o["code"] for o in outs} == {"OK", "TENANT_EVIDENCE_READ_RECENTLY"}
+    assert stored == 1
+    assert fake.total_calls == 3          # issues, cases, endpoint: one read's worth
+
+
+def test_truncated_window_is_incomplete_and_named_first(session_factory, monkeypatch):
+    """Review 4: a cut window is not a complete answer, and a zero over it
+    points at the cut before anything else."""
+    from config import settings
+
+    monkeypatch.setattr(settings, "CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES", 1)
+    seed(session_factory)
+    rows = [_issue(2000 + i, host="lab-box-9") for i in range(150)]
+    out = read(session_factory, FakeTenant(issues=rows))
+    p = out["snapshot"]["payload"]
+    assert p["issues"]["truncated"] is True
+    assert out["code"] == "NO_ATTRIBUTED_ISSUES"
+    assert p["complete"] is False and out["status"] == "degraded"
+    detail = out["detail"]
+    assert "truncat" in detail
+    assert detail.index("truncat") < detail.index("ingestion latency")
+
+
+def test_window_without_filter_count_is_incomplete(session_factory):
+    from tests.connectors.tenant_fakes import OMIT
+
+    seed(session_factory)
+    out = read(session_factory, FakeTenant(issues=copy.deepcopy(ISSUES), filter_count=OMIT,
+                                           cases=copy.deepcopy(CASES),
+                                           endpoints=copy.deepcopy(ENDPOINTS)))
+    p = out["snapshot"]["payload"]
+    assert p["issues"]["truncated"] is None
+    assert out["code"] == "OK"
+    assert p["complete"] is False and out["status"] == "degraded"
+
+
+def test_parse_error_reports_the_page_it_was_sent_on():
+    """Review 7: a parse failure on page N sent N requests, and says so."""
+    import json
+
+    from connectors.base import ConnectorConfig
+    from connectors.service import _pages_issued
+    from connectors.xsiam import XsiamConnector
+
+    cfg = ConnectorConfig(integration_name="t", secret="k", config={
+        "base_url": "https://api-lab.xdr.us.paloaltonetworks.com", "api_key_id": "7"})
+    page = {"alerts": [{"alert_id": f"a{i}", "detection_timestamp": 1762000000000 + i}
+                       for i in range(100)], "total_count": 250, "result_count": 100}
+    sent = {"n": 0}
+
+    def second_page_unreadable(method, url, headers, body, timeout):
+        sent["n"] += 1
+        return (200, json.dumps({"reply": page})) if sent["n"] == 1 else (200, "<html>")
+
+    res = XsiamConnector(fetcher=second_page_unreadable).pull(
+        cfg, since=datetime(2025, 11, 1), until=datetime(2025, 11, 2))
+    assert res.ok is False and res.code == "XSIAM_PARSE_ERROR"
+    assert res.detail["page"] == 2 and _pages_issued(res.detail) == 2 == sent["n"]

@@ -76,7 +76,8 @@ def obs_1001(**kw) -> dict:
 
 
 def seed(SessionLocal, *, run_id="r1", host=RUN_HOST, executed=True, credential=True,
-         observations=(), config=None, observed=False, tc_verdict=None):
+         observations=(), config=None, observed=False, tc_verdict=None, mode="pull",
+         extra_credentials=()):
     """One pull run with two Results; ``host=None`` leaves the run with no agent."""
     from models import Agent, Observation, Result, Run
     from security.credentials import CredentialStore
@@ -85,7 +86,8 @@ def seed(SessionLocal, *, run_id="r1", host=RUN_HOST, executed=True, credential=
         async with SessionLocal() as db:
             if host is not None:
                 db.add(Agent(agent_id="ag-1", hostname=host, os="linux"))
-            db.add(Run(run_id=run_id, scenario_id="SIM-X", mode="pull", status="complete",
+            db.add(Run(run_id=run_id, scenario_id="SIM-X", mode=mode,
+                       status="staged" if mode == "push" else "complete",
                        target="ag-1" if host is not None else None, started_at=STEP_AT,
                        tc_verdict=tc_verdict,
                        tc_verdict_detail={"reason": "seeded"} if tc_verdict else None))
@@ -108,6 +110,9 @@ def seed(SessionLocal, *, run_id="r1", host=RUN_HOST, executed=True, credential=
                     name="acme", kind="xsiam", plaintext_secret="k" * 40,
                     config=config or {"fqdn": "api-acme.xdr.us.paloaltonetworks.com",
                                       "api_key_id": "1"})
+                for name, kind, conf in extra_credentials:
+                    await CredentialStore(db).put_integration(
+                        name=name, kind=kind, plaintext_secret="k" * 40, config=conf)
                 await db.commit()
     asyncio.run(go())
 
@@ -354,3 +359,104 @@ def test_reader_paths_follow_the_integration_overrides(client, session_factory, 
     assert p["reader"]["issues"] == "POST /public_api/v2/issue/search/"
     assert p["reader"]["cases"] == "POST /public_api/v1/case/search/"
     assert any("/public_api/v2/issue/search/" in u for u in fake.urls)
+
+
+# ── fix round 1 ────────────────────────────────────────────────────────────
+
+def test_unscoped_agreement_claims_no_join_but_keeps_the_id_space(
+        client, session_factory, inject):
+    """Review 3: with no run host nothing can join, so no join count is claimed."""
+    seed(session_factory, host=None, observations=[obs_1001()])
+    inject(default_tenant())
+    agreement = payload(post(client).json())["agreement"]
+    assert agreement["both"] == {"id": None, "name_host_window": None}
+    assert (agreement["matcher_only"], agreement["reader_only"], agreement["ambiguous"]) == (
+        None, None, None)
+    assert agreement["pairs"] == []
+    assert agreement["unjoinable"] == 0
+    assert agreement["id_space"] == {"probed": 1, "hit": 1, "no_hit": 0, "code": "OK"}
+
+
+def test_malformed_endpoint_record_is_a_parse_error_not_not_found(
+        client, session_factory, inject):
+    """Review 5: a record the reader cannot read is never "no record"."""
+    seed(session_factory)
+    nameless = {"reply": {"endpoints": [{"endpoint_id": "synthetic-endpoint-9",
+                                         "endpoint_status": "CONNECTED"}],
+                          "total_count": 1, "result_count": 1}}
+    inject(default_tenant(replies={"endpoints": nameless}))
+    ep = payload(post(client).json())["endpoint"]
+    assert ep["code"] == "XSIAM_PARSE_ERROR"
+    assert ep["record"] is None
+
+
+def test_min_interval_is_keyed_by_tenant_not_credential(client, session_factory, inject):
+    """Review 6: two credentials for one tenant share the minimum interval."""
+    seed(session_factory, extra_credentials=[(
+        "acme-t", "xsiam_tenant",
+        {"base_url": "https://api-acme.xdr.us.paloaltonetworks.com", "api_key_id": "1"})])
+    fake = inject(default_tenant())
+    first = post(client, integration="acme").json()
+    assert first["read"] is True
+    sent = fake.total_calls
+    again = post(client, integration="acme-t").json()
+    assert again["read"] is False and again["code"] == "TENANT_EVIDENCE_READ_RECENTLY"
+    assert again["snapshot"]["id"] == first["snapshot"]["id"]
+    assert fake.total_calls == sent
+
+
+def test_push_run_has_no_window_and_makes_no_call(client, session_factory, inject):
+    """Review 9: a push run's executed_at is bundle time, not execution time."""
+    seed(session_factory, mode="push", host=None)
+    fake = inject(default_tenant())
+    body = post(client).json()
+    assert body["code"] == "NO_RUN_WINDOW" and body["read"] is False
+    assert "push_execution_time_unknown" in body["detail"]
+    assert fake.total_calls == 0
+    assert client.get("/api/runs/r1/tenant-evidence").json()["code"] == "TENANT_EVIDENCE_NOT_READ"
+
+
+def test_reconcile_parse_error_on_page_one_reports_one_request_to_mcp(
+        session_factory, make_client):
+    """Review 7: a reconcile whose page 1 the tenant answered unreadably sent
+    one request; the MCP reconcile tool reads that count off the route's error."""
+    import httpx
+
+    import connectors.service as svc
+    from api.connectors import runs_reconcile_router
+    from mcp_server.client import SimCoreClient, SimCoreError
+    from mcp_server.tools.cortexsim import _pull_failed_page
+
+    seed(session_factory)
+
+    async def delivered():
+        from models import Run
+        from sqlalchemy import update
+        async with session_factory() as db:
+            await db.execute(update(Run).where(Run.run_id == "r1").values(delivered_at=STEP_AT))
+            await db.commit()
+    asyncio.run(delivered())
+
+    real = svc.get_connector
+    unreadable = lambda method, url, headers, body, timeout: (200, "<html>not json</html>")  # noqa: E731
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(svc, "get_connector", lambda kind, fetcher=None: real(kind, fetcher=unreadable))
+        r = make_client(runs_reconcile_router).post(
+            "/api/runs/r1/reconcile", params={"connector": "xsiam"})
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["detail"]["page"] == 1
+
+    transport = httpx.MockTransport(lambda req: httpx.Response(r.status_code, content=r.content,
+                                                               headers=r.headers))
+
+    async def via_mcp_client():
+        mcp_client = SimCoreClient("http://simcore", transport=transport)
+        try:
+            await mcp_client.post("/api/runs/r1/reconcile")
+        except SimCoreError as err:
+            return err
+        finally:
+            await mcp_client.aclose()
+    err = asyncio.run(via_mcp_client())
+    assert err.code == "CONNECTOR_PULL_FAILED"
+    assert _pull_failed_page(err) == 1
