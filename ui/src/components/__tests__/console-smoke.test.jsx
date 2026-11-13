@@ -208,7 +208,7 @@ describe('console-view smoke renders', () => {
     }
     render(<ScenarioInspector scenario={scenario} open launch={launch} pinned={false} />)
     expect(screen.getByText(/APT29 Cloud Credential Theft/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /launch/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
   it('NarrativeTimeline renders nothing with empty frames', () => {
