@@ -729,6 +729,15 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — HTTP collector backend (declaration, detections list, arrival check)
+
+- `GET /api/eal/data-streams/{source_key}/detections` lists the detections behind a data source.
+- `POST /api/collector-targets/{name}/arrival` checks that a collector's example records arrived.
+- `PUT /api/collector-targets/{name}` takes a `declaration` field; refusals: `DECLARATION_SOURCE_UNKNOWN`, `NATIVE_DATASET_NOT_LAB_TENANT`, `TARGET_DATASET_DECLARATION_MISMATCH`.
+- New setting `CORTEXSIM_DOOR_PROBE_TENANTS` (lab `.env` only; compose passes it through).
+- `collector_targets` gains `declaration` and `last_arrival` columns, added at boot.
+- The email emitter carries a `canary_token` on its records.
+
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,

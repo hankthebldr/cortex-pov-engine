@@ -227,6 +227,10 @@ class Settings(BaseSettings):
     # in a host-run `.env` is honoured. It used to be undeclared, and an
     # uncommented `.env` line made Settings() refuse to boot.
     CORTEXSIM_TRUSTED_PROXIES: str = ""
+    # Comma list of lab tenants' API hosts. Collector setup may write into a
+    # tenant's native firewall datasets only when its host is listed here.
+    # Empty, the default, means no tenant is a lab tenant.
+    CORTEXSIM_DOOR_PROBE_TENANTS: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

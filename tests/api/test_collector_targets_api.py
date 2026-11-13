@@ -220,3 +220,337 @@ def test_delete_removes_the_row_and_its_key(db_file):
             async with Session() as s:
                 return len((await s.execute(select(Secret))).scalars().all())
         assert asyncio.run(_count()) == 0
+
+
+# --- declaration and last_arrival -------------------------------------------
+
+DECL = {"collection": "okta_sso", "fields": ["user", "ip"]}
+ARRIVAL = {"state": "arrived", "found": 3, "delivered": 3, "token": "tok-1",
+           "checked_at": "2026-11-13T10:00:00Z", "reason": None, "code": None,
+           "extra": "must not be kept"}
+
+
+def _upsert(Session, name="okta-hec", arrival=None, **over):
+    """Drive the store directly, as Tasks 4 and 6 will: the PUT takes no declaration yet."""
+    from engine import collector_targets as store
+
+    kw = dict(kind="xsiam_http_collector", url=URL, dataset="okta_sso_raw",
+              auth_header="Authorization", auth_scheme="", plugins=["idp_signin_emulator"],
+              is_default=False, token=None, clear_token=False)
+    kw.update(over)
+
+    async def _go():
+        async with Session() as s:
+            await store.upsert(s, name, **kw)
+            if arrival is not None:
+                await store.record_arrival(s, name, arrival)
+    asyncio.run(_go())
+
+
+def test_declaration_and_arrival_survive_a_restart(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+    with _app(db_file) as (c, _, _s):
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == DECL
+    assert body["last_arrival"] == {k: v for k, v in ARRIVAL.items() if k != "extra"}
+
+
+def test_a_legacy_row_reads_null(db_file):
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] is None
+    assert body["last_arrival"] is None
+
+
+def test_changing_dataset_without_a_declaration_clears_both(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        assert c.get("/api/collector-targets/okta-hec").json()["declaration"] == DECL
+        assert _put(c, token=None, dataset="other_raw").status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] is None
+    assert body["last_arrival"] is None
+
+
+def test_an_unchanged_dataset_keeps_the_declaration(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL)
+        assert _put(c, token=None).status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == DECL
+
+
+def test_a_declaration_given_with_a_new_dataset_is_stored(db_file):
+    new = {"collection": "other", "fields": []}
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        _upsert(Session, dataset="other_raw", declaration=new)
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["declaration"] == new
+    assert body["last_arrival"] is None
+
+
+def test_changing_the_url_clears_last_arrival(db_file):
+    with _app(db_file) as (c, _, Session):
+        _put(c)
+        _upsert(Session, declaration=DECL, arrival=ARRIVAL)
+        assert c.get("/api/collector-targets/okta-hec").json()["last_arrival"] is not None
+        assert _put(c, token=None, url="https://other.example.test/logs/v1/event").status_code == 200
+        body = c.get("/api/collector-targets/okta-hec").json()
+    assert body["last_arrival"] is None
+    assert body["last_check"] is None
+
+
+# --- data declaration -------------------------------------------------------
+
+LAB_URL = "https://api-lab.example.test/logs/v1/event"
+
+
+def _declared(source_key, vendor, product, **extra):
+    return {"source_key": source_key, "vendor": vendor, "product": product, **extra}
+
+
+def _put_declared(client, declaration, name="dec", **over):
+    body = {"plugins": [], "dataset": None}
+    body.update(over)
+    return _put(client, name=name, declaration=declaration, **body)
+
+
+def test_declared_put_stores_the_server_verdict_and_dataset(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", "duo", "auth"))
+        again = c.get("/api/collector-targets/dec")
+    assert r.status_code == 200, r.text
+    assert r.json()["dataset"] == "duo_auth_raw"
+    dec = r.json()["declaration"]
+    assert dec["verdict"] == "matches"
+    assert (dec["source_key"], dec["vendor"], dec["product"]) == ("duo", "duo", "auth")
+    assert dec["card_dataset"] == "duo_auth_raw" and dec["lab_tenant"] is False
+    assert again.json()["declaration"] == dec
+    assert KEY not in r.text
+
+
+def test_client_verdict_is_ignored(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("okta", "okta", "sso", verdict="matches",
+                                       lab_tenant=True))
+    assert r.status_code == 200, r.text
+    assert r.json()["declaration"]["verdict"] == "name_disputed"
+    assert r.json()["declaration"]["lab_tenant"] is False
+
+
+def test_native_off_lab_is_refused_with_the_host(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "lab.example.test")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic"))
+        listed = c.get("/api/collector-targets").json()
+    assert r.status_code == 409
+    d = r.json()["detail"]
+    assert d["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert "api-acme.example.test" in d["detail"]
+    assert "CORTEXSIM_DOOR_PROBE_TENANTS" in d["detail"]
+    assert listed["count"] == 0
+
+
+def test_native_on_lab_is_stored_with_lab_flag(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "api-lab.example.test")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic"),
+                          url=LAB_URL)
+    assert r.status_code == 200, r.text
+    assert r.json()["declaration"]["verdict"] == "native_dataset"
+    assert r.json()["declaration"]["lab_tenant"] is True
+    assert r.json()["dataset"] == "panw_ngfw_traffic_raw"
+
+
+def test_typed_native_name_on_another_source_is_refused_off_lab(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", "panw", "ngfw_traffic"))
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+
+
+def test_unknown_source_and_dataset_mismatch_are_422(db_file):
+    with _app(db_file) as (c, _, _s):
+        unknown = _put_declared(c, _declared("no_such_source", "a", "b"))
+        mismatch = _put_declared(c, _declared("duo", "duo", "auth"), dataset="other_raw")
+        same_case = _put_declared(c, _declared("duo", "duo", "auth"), dataset="DUO_AUTH_RAW")
+        test_channel = _put_declared(c, _declared("test_channel", "cortexsim", "door_http"))
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "DECLARATION_SOURCE_UNKNOWN"
+    assert mismatch.status_code == 422
+    assert mismatch.json()["detail"]["code"] == "TARGET_DATASET_DECLARATION_MISMATCH"
+    assert same_case.status_code == 200, same_case.text
+    assert test_channel.status_code == 200, test_channel.text
+    assert test_channel.json()["declaration"]["verdict"] == "test_channel"
+
+
+def test_put_without_declaration_behaves_as_before(db_file):
+    with _app(db_file) as (c, _, _s):
+        r = _put(c)
+    assert r.status_code == 200, r.text
+    assert r.json()["dataset"] == "okta_sso_raw"
+    assert r.json()["declaration"] is None
+    assert r.json()["last_arrival"] is None
+
+
+def test_reput_without_declaration_rederives_it_for_the_new_url(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "api-lab.example.test")
+    native = _declared("pan_firewall_traffic_logs", "panw", "ngfw_traffic")
+    with _app(db_file) as (c, _, _s):
+        assert _put_declared(c, native, url=LAB_URL).status_code == 200
+        # old panel: same dataset, no declaration, now a customer host
+        refused = _put(c, name="dec", url=URL, dataset="panw_ngfw_traffic_raw", plugins=[])
+        kept = c.get("/api/collector-targets/dec").json()
+        # a non-native declaration moving host is re-derived, not carried stale
+        assert _put_declared(c, _declared("duo", "duo", "auth"), name="duo", url=LAB_URL).status_code == 200
+        moved = _put(c, name="duo", url=URL, dataset="duo_auth_raw", plugins=[])
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert kept["url"] == LAB_URL and kept["declaration"]["lab_tenant"] is True
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["declaration"]["lab_tenant"] is False
+
+
+def test_409_names_the_native_card_dataset_when_only_it_is_native(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("pan_firewall_traffic_logs", "acme", "fw"))
+    assert r.status_code == 409
+    text = r.json()["detail"]["detail"]
+    assert "panw_ngfw_traffic_raw" in text and "add the lab host" in text
+    assert "Name a custom vendor/product" not in text
+
+
+def test_vendor_and_product_are_stripped_before_the_native_check(db_file, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_DOOR_PROBE_TENANTS", "")
+    with _app(db_file) as (c, _, _s):
+        r = _put_declared(c, _declared("duo", " panw", "ngfw_traffic "))
+        blank = _put_declared(c, _declared("duo", "   ", "auth"), name="blank")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NATIVE_DATASET_NOT_LAB_TENANT"
+    assert blank.status_code == 422
+
+
+# --- arrival check ------------------------------------------------------------
+
+ARRIVAL_TOKEN = "wiz-a-202611131200-ab12"
+
+
+class _ArrivalStub:
+    capabilities = ["xql"]
+    _base = "https://api-arrival.example.test"
+
+    def __init__(self, reply):
+        self.reply, self.starts = reply, 0
+
+    async def start_xql_query(self, query, timeframe):
+        self.starts += 1
+        return "q1"
+
+    async def get_query_results(self, query_id, limit=100):
+        return self.reply
+
+
+def _patch_tenant(monkeypatch, reply=None, exc=None):
+    from api import collector_targets as ct_api
+    stub = _ArrivalStub(reply)
+
+    async def _loader(session, name):
+        if exc:
+            raise exc
+        return stub
+    monkeypatch.setattr(ct_api, "load_xsiam_client", _loader)
+    return stub
+
+
+def _arrive(c, **over):
+    body = {"tenant": "acme", "token": ARRIVAL_TOKEN, "delivered": 3}
+    body.update(over)
+    return c.post("/api/collector-targets/okta-hec/arrival", json=body)
+
+
+def _last_arrival(c):
+    return c.get("/api/collector-targets/okta-hec").json()["last_arrival"]
+
+
+def test_arrival_records_counted_and_not_pending(db_file, monkeypatch):
+    done = {"status": "SUCCESS", "results": {"data": [{"found": 3, "first_seen": 1, "last_seen": 2}]}}
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        pending = _arrive(c)
+        after_pending = _last_arrival(c)
+        _patch_tenant(monkeypatch, done)
+        counted = _arrive(c)
+        recorded = _last_arrival(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        _arrive(c)
+        still = _last_arrival(c)
+    assert pending.json()["state"] == "pending" and pending.json()["found"] is None
+    assert after_pending is None
+    assert counted.json()["state"] == "counted" and counted.json()["found"] == 3
+    assert pending.json()["proves"] == [] and counted.json()["proves"]
+    assert recorded["state"] == "counted" and recorded["found"] == 3
+    assert recorded["token"] == ARRIVAL_TOKEN and recorded["checked_at"].endswith("+00:00")
+    assert still == recorded
+
+
+def test_arrival_without_a_tenant_is_not_checked(db_file, monkeypatch):
+    from integrations.xsiam.exceptions import XsiamConfigError
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, exc=XsiamConfigError("no such tenant"))
+        r = _arrive(c)
+        recorded = _last_arrival(c)
+    assert r.status_code == 200
+    assert (r.json()["state"], r.json()["code"], r.json()["found"]) == (
+        "not_checked", "TENANT_NOT_CONFIGURED", None)
+    assert recorded["state"] == "not_checked" and recorded["code"] == "TENANT_NOT_CONFIGURED"
+
+
+def test_arrival_on_a_target_without_a_dataset_is_not_checked(db_file, monkeypatch):
+    with _app(db_file) as (c, _, _s):
+        _put(c, dataset=None)
+        stub = _patch_tenant(monkeypatch, {"status": "PENDING"})
+        r = _arrive(c)
+    assert r.json()["state"] == "not_checked" and r.json()["code"] == "TARGET_HAS_NO_DATASET"
+    assert stub.starts == 0
+    assert r.json()["proves"] == [] and len(r.json()["does_not_prove"]) == 3
+
+
+def test_arrival_never_pastes_a_stored_dataset_into_xql(db_file, monkeypatch):
+    evil = 'xdr_data | limit 3 | alter cortexsim_canary = "' + ARRIVAL_TOKEN + '"'
+    with _app(db_file) as (c, _, _s):
+        _put(c, dataset=evil)
+        stub = _patch_tenant(monkeypatch, {"status": "SUCCESS", "results": {"data": [
+            {"found": 3, "first_seen": 1, "last_seen": 2}]}})
+        r = _arrive(c)
+    assert (r.json()["state"], r.json()["code"], r.json()["queries_issued"]) == (
+        "not_checked", "DATASET_NOT_QUERYABLE", 0)
+    assert stub.starts == 0 and r.json()["proves"] == []
+
+
+def test_arrival_unknown_target_is_404_and_bad_body_is_422(db_file, monkeypatch):
+    with _app(db_file) as (c, _, _s):
+        _put(c)
+        _patch_tenant(monkeypatch, {"status": "PENDING"})
+        missing = c.post("/api/collector-targets/nope/arrival",
+                         json={"tenant": "acme", "token": ARRIVAL_TOKEN, "delivered": 1})
+        bad = _arrive(c, token='x" | drop')
+        negative = _arrive(c, delivered=-1)
+    assert missing.status_code == 404
+    assert bad.status_code == 422 and negative.status_code == 422

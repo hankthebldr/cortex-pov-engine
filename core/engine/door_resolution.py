@@ -200,6 +200,15 @@ def _resolve_object(det: Mapping, catalog: Any):
     return None, card, raw, tuple(datasets)
 
 
+def detection_datasets(det: Mapping, catalog: Any) -> tuple[str, ...]:
+    """The datasets this one detection object reads; empty when it reads none or cannot be resolved.
+
+    The detection-level answer: a card can hold several detections on different datasets,
+    so a card reading a dataset says nothing about this detection.
+    """
+    return _resolve_object(det, catalog)[3]
+
+
 def _named_providers(card: Any, raw: Mapping) -> set[str]:
     """Provider door ids the detection names: its logic's filter, else the card's tags."""
     found: set[str] = set()
