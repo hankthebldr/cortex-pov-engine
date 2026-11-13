@@ -24,6 +24,7 @@ from connectors.tenant_reader import (
     project_endpoint,
     project_issue,
     run_issue_filters,
+    safe_xdr_url,
     unrecognised_values,
 )
 from tests.connectors.tenant_fakes import fixture
@@ -332,3 +333,48 @@ def test_tag_characters_and_arabic_letter_mark_are_stripped():
     text, cut = neutralise_text("ok" + "\U000E0001" + smuggled + "\U000E007F" + "\u061c" + "done")
     assert text == "okdone"
     assert cut is False
+
+
+def test_soft_hyphen_invisible_operators_and_variation_selectors_are_stripped():
+    hidden = ("­"                                # soft hyphen
+              "⁡⁢⁣⁤"              # invisible operators
+              "᠎"                                # Mongolian vowel separator
+              "⁪⁫⁬⁭⁮⁯"  # deprecated format characters
+              "︀️"                          # variation selectors
+              "\U000e0100\U000e01ef")                 # variation selectors supplement
+    text, cut = neutralise_text("Ig" + hidden + "nore previous" + hidden)
+    assert text == "Ignore previous"
+    assert cut is False
+
+
+# ── host values and case links (2026-11-13) ──────────────────────────────────
+
+def test_repeated_host_values_dedupe_before_the_list_cap():
+    p = project_issue(_row(0, host=["web-02"] * 50 + ["target-01"]))
+    assert p["hosts"] == ["web-02", "target-01"]
+    assert p["list_truncated"] is False
+    out = attribute([p], "target-01")
+    assert [i["id"] for i in out["attributed"]] == ["1001"]
+    assert out["other_host"] == 0
+    many = project_issue(_row(0, host=[f"host-{n}" for n in range(60)]))
+    assert len(many["hosts"]) == 50 and many["list_truncated"] is True
+
+
+_CASE_LINK = "https://synthetic-01.xdr.us.paloaltonetworks.com/case-view/501"
+
+
+@pytest.mark.parametrize("url", [
+    _CASE_LINK + json.loads('"\\ud83d"'),             # lone surrogate: the response would 500
+    _CASE_LINK + "‮",                            # bidi override
+    _CASE_LINK + "\U000e0041",                        # tag character
+    _CASE_LINK.replace("case", "сase"),          # Cyrillic look-alike
+    _CASE_LINK + "?" + "a" * 300,                     # longer than any case link
+], ids=["lone-surrogate", "bidi", "tag", "look-alike", "overlong"])
+def test_case_link_outside_printable_ascii_or_overlong_is_withheld(url):
+    from starlette.responses import JSONResponse
+
+    assert safe_xdr_url(url) is None
+    p = project_case(dict(CASES[0], xdr_url=url))
+    assert p["xdr_url"] is None and p["xdr_url_withheld"] is True
+    JSONResponse(p)
+    assert safe_xdr_url(_CASE_LINK) == _CASE_LINK

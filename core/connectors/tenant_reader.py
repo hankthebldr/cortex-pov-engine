@@ -18,8 +18,9 @@ What the 2026-11-12 spike settled (spec §3.4) and this module relies on:
   reader — except ``case_ids``, which is read raw as the whole list.
 
 Tenant text is data (§7.7). Only an allowlisted projection leaves this module;
-every string in it is neutralised (controls, zero-width and bidi characters
-stripped, capped at ``TEXT_CAP``) and lists are capped at ``LIST_CAP``. Free text
+every string in it is neutralised (controls, zero-width, bidi, tag and other
+invisible characters stripped, capped at ``TEXT_CAP``) and lists are capped at
+``LIST_CAP``. Free text
 a tenant user could have written sits under ``tenant_text`` so a consumer can
 frame it with ``DATA_NOTICE``. A row missing a required field raises
 :class:`IssueShapeError`; an unknown enum value is kept verbatim and reported by
@@ -87,12 +88,16 @@ _STRIP = {cp: None for cp in (
     0x061C,                                              # Arabic letter mark (bidi)
     *range(0xE0000, 0xE0080),                            # tag block ("ASCII smuggling")
     *range(0xD800, 0xE000),                              # lone surrogates: not encodable as UTF-8
+    0x00AD, 0x180E,                                      # soft hyphen, Mongolian vowel separator
+    *range(0x2061, 0x2065), *range(0x206A, 0x2070),      # invisible operators, deprecated formats
+    *range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0),    # variation selectors (+ supplement)
 )}
 
 
 def neutralise_text(value: Any) -> tuple[Optional[str], bool]:
-    """``(text, truncated)``: controls, zero-width, bidi and tag characters and
-    lone surrogates stripped, then capped at ``TEXT_CAP`` characters. ``None``
+    """``(text, truncated)``: controls, zero-width, bidi, tag and other invisible
+    format characters, variation selectors and lone surrogates stripped, then
+    capped at ``TEXT_CAP`` characters. ``None``
     stays ``None``. A lone surrogate (valid in JSON, ``"\\ud83d"``) would make
     the response encoder raise, turning one tenant string into a 500."""
     if value is None:
@@ -154,24 +159,26 @@ def _int_or_none(value: Any) -> Optional[int]:
 # ── projections ──────────────────────────────────────────────────────────────
 
 def _issue_hosts(row: dict) -> list[str]:
-    """Every non-empty host value in ``ISSUE_HOST_FIELDS``, source first."""
+    """Every distinct non-empty host value in ``ISSUE_HOST_FIELDS``, source
+    first. De-duplicated here, before the list cap, so repeats cannot push the
+    run's own host past ``LIST_CAP``."""
     nf = row.get("normalized_fields")
     if not isinstance(nf, dict):
         return []
-    out: list[str] = []
+    out: dict[str, None] = {}
     for field in ISSUE_HOST_FIELDS:
         value = alert_key(nf, field)
         for c in value if isinstance(value, list) else [value]:
             if isinstance(c, str) and c.strip():
-                out.append(c)
-    return out
+                out.setdefault(c)
+    return list(out)
 
 
 def project_issue(row: dict) -> dict:
     """The §7.7 issue allowlist. ``id`` and ``case_ids`` are strings so a join
     on either never depends on whether the tenant sent ints. ``hosts`` holds
-    every host value from both host fields (attribution reads them all);
-    ``host`` is the first, for display."""
+    every distinct host value from both host fields, de-duplicated before the
+    list cap (attribution reads them all); ``host`` is the first, for display."""
     for field in ISSUE_REQUIRED:
         _required(field, alert_key(row, field))
     inserted = _iso(row["_insert_time"])
@@ -202,12 +209,15 @@ _XDR_BAD_CHARS = set('\\()<>`|[]"\'')
 
 def safe_xdr_url(url) -> Optional[str]:
     """``xdr_url`` comes from the tenant: link it only when it is plain https on
-    a ``paloaltonetworks.com`` host. Whitespace, control characters, backslash,
-    markdown/HTML metacharacters, userinfo and an explicit port all reject; the
-    emitted string is re-serialised from the validated parts."""
-    if not isinstance(url, str) or not url:
+    a ``paloaltonetworks.com`` host. Only printable ASCII passes (so no
+    whitespace, control, bidi, tag or look-alike character and no lone
+    surrogate, which would make the response encoder raise); backslash,
+    markdown/HTML metacharacters, userinfo, an explicit port and anything longer
+    than ``TEXT_CAP`` all reject. The emitted string is re-serialised from the
+    validated parts."""
+    if not isinstance(url, str) or not url or len(url) > TEXT_CAP:
         return None
-    if any(ord(ch) <= 32 or ord(ch) == 127 or ch in _XDR_BAD_CHARS for ch in url):
+    if any(not 32 < ord(ch) < 127 or ch in _XDR_BAD_CHARS for ch in url):
         return None
     try:
         parts = urlsplit(url)

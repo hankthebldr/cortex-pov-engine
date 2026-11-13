@@ -184,6 +184,9 @@ request; three rows (two `TRAPS`, one `FW`). The redacted reply is
   `[]` on all three rows: the oracle note's claim does not hold for these issues. The `FW` row
   carried no hostname (`xdm.source.host.os_family` `NO_HOST`, an IP only), so it is
   unattributed (A4).
+  *Amended 2026-11-13:* not "source, else target". Attribution reads every host value in
+  EITHER field, and an issue is attributed when the run host matches ANY of them; the
+  displayed `host` is the first value, source first.
 - **Key style is flat.** Top-level keys are flat dotted (`detection.method`,
   `detection.rule_id`, `status.progress`, `status.resolution_reason`), as Part B saw.
 - **Envelope.** `DATA` (list), `TOTAL_COUNT` and `FILTER_COUNT` (ints). `TOTAL_COUNT` is
@@ -467,6 +470,13 @@ the loop the same way; §14 notes it but does not fix it.
    - `without_host`, which is shown separately as **unattributed, not credited** (A4).
 
    With no run host, every issue is unattributed and the snapshot code is `UNSCOPED`.
+
+   *Amended 2026-11-13:* the host is not "`xdm.source.host.hostname`, else
+   `xdm.target.host.hostname`": attribution matches the run host against ANY value in
+   EITHER field. `attribute()` also returns `unattributed`, the issues to show as
+   unattributed, not credited: the `without_host` issues, or every issue under `UNSCOPED`.
+   `without_host` holds only issues that carry no host, and `other_host` is `null` under
+   `UNSCOPED`, where there is no run host to compare with.
 4. **Id probe.** Part B's by-id `issue/search`, filtered by `id` `in` the `external_id` of
    every `Observation` on the run, in chunks of 100 (see *Agreement* below). Its requests
    count in `queries_issued`.
@@ -682,16 +692,21 @@ poisoned tool replies.
   - **Issue:** `id`, `detection.method`, `detection.rule_id`, `severity`, `domain`,
     `status.progress`, `case_ids`, `_insert_time`, `observation_time`, the derived `host`,
     and `tenant_text.name`.
+    *Amended 2026-11-13:* also `hosts`, every distinct host value from both host fields,
+    de-duplicated before the 50-item list cap; `host` is its first value, for display.
   - **Case:** `case_id`, `status_progress`, `resolve_reason`, `severity`, `issue_ids`,
     `issue_count`, `host_count`, hostnames from `hosts`, `case_domain`, `creation_time`,
     `modification_time`, `xdr_url` (validated or withheld), and the case name, if present,
     under `tenant_text`.
+    *Amended 2026-11-13:* `xdr_url` is validated as https on a `paloaltonetworks.com` host,
+    printable ASCII only (no bidi, tag or look-alike character, no lone surrogate), at most
+    200 characters, with no userinfo or port; anything else is withheld.
   - **Endpoint:** the fields in §3.4, with `assigned_prevention_policy` under `tenant_text`.
   - Descriptions are not projected in phase 1.
 - **Neutralised.**
   - Stripped: C0/C1 controls, zero-width characters (U+200B–U+200F, U+2060, U+FEFF) and bidi
     controls (U+202A–U+202E, U+2066–U+2069).
-  - *Amended 2026-11-13:* also stripped are the Unicode tag block U+E0000–U+E007F ("ASCII smuggling"), U+061C (Arabic letter mark) and lone surrogates U+D800–U+DFFF, which cannot be encoded as UTF-8 and would turn one tenant string into a 500.
+  - *Amended 2026-11-13:* also stripped are the Unicode tag block U+E0000–U+E007F ("ASCII smuggling"), U+061C (Arabic letter mark) and lone surrogates U+D800–U+DFFF, which cannot be encoded as UTF-8 and would turn one tenant string into a 500; and the other invisible format characters U+00AD (soft hyphen), U+2061–U+2064 (invisible operators), U+180E (Mongolian vowel separator) and U+206A–U+206F (deprecated format characters), plus the variation selectors U+FE00–U+FE0F and U+E0100–U+E01EF.
   - Each text field is capped at 200 characters and marked `text_truncated: true` when cut.
     Lists are capped at 50.
 - **Framed.**
