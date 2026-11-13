@@ -432,8 +432,10 @@ async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: s
     ``xsiam`` one is ``NO_TENANT_CONFIGURED`` before any request. The count is
     the route's. Its own ``pending`` reply (the credential changed between the
     readiness read and the call) passes through at the count it reports, 0.
-    ``data.truncated`` is the route's true/false/null verbatim; the boolean
-    ``evidence.truncated`` errs safe and is false only when the route says false.
+    ``data.truncated`` is the route's true/false/null verbatim. When the reply
+    carries rows, the boolean ``evidence.truncated`` errs safe and is false only
+    when the route says false; a reply with no rows (``pending``) has nothing a
+    cut could leave behind, and this layer caps nothing of its own, so it is false.
     """
     tenant = await _reader_tenant(ctx, args.tenant)
     take_token(ctx)
@@ -447,8 +449,9 @@ async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: s
     body, queries = await tenant_call(ctx, tenant=tenant, read=read,
                                       coro=ctx.client.post(path, json=args.to_body()))
     data = {**body, "data_notice": DATA_NOTICE}
+    has_rows = isinstance(body[rows_key], list)
     return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=body["ledger"],
-                             truncated=body["truncated"] is not False,
+                             truncated=has_rows and body["truncated"] is not False,
                              answered=body.get("status") != "pending")
 
 
@@ -641,8 +644,9 @@ _READER = ("Returns the route's reply: {rows}[] (allowlisted; free text only und
            "tenant, total_count, filter_count, truncated, unrecognised_values, "
            "excluded_non_security, duplicate_rows, queries_issued, ledger and data_notice. "
            "data.truncated is the route's true/false/null verbatim (null: the tenant sent no "
-           "count, so whether rows were left behind is unknown); evidence.truncated is true "
-           "unless the route says false. A reconcile-only xsiam credential is "
+           "count, so whether rows were left behind is unknown); when rows came back, "
+           "evidence.truncated is true unless the route says false (a pending reply with no "
+           "rows is false). A reconcile-only xsiam credential is "
            "NO_TENANT_CONFIGURED with no call; an unrecognised reply is XSIAM_PARSE_ERROR, never "
            "an empty list.")
 

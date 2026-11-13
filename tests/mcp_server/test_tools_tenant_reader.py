@@ -160,6 +160,32 @@ async def test_issue_search_unknown_truncation_is_null_in_data_and_true_in_evide
 
 
 @pytest.mark.asyncio
+async def test_issue_search_pending_reply_with_no_rows_is_not_truncated():
+    """The route's own pending reply (the credential changed after readiness was
+    read) carries no rows, so there is nothing a cut could have left behind."""
+    from mcp_server.tools.xsiam import specs as xsiam_specs
+
+    client, _ = make_fake_simcore({
+        ("GET", "/api/readiness"): readiness_body(integrations=[integration("deathstar")]),
+        ("POST", "/api/xsiam/tenants/deathstar/issues/search"): {
+            "status": "pending", "code": "NO_TENANT_CONFIGURED", "detail": "…",
+            "tenant": "deathstar", "issues": None, "total_count": None, "filter_count": None,
+            "truncated": None, "unrecognised_values": None, "excluded_non_security": None,
+            "duplicate_rows": None, "queries_issued": 0, "data_notice": DATA_NOTICE,
+            "ledger": None},
+    })
+
+    res = await call(mcp_with(xsiam_specs(), make_ctx(client)), "xsiam.issue.search")
+
+    assert not res.isError, res.structuredContent
+    data = res.structuredContent["data"]
+    assert (data["issues"], data["truncated"]) == (None, None)        # passed through
+    ev = res.structuredContent["evidence"]
+    assert ev["truncated"] is False
+    assert (ev["queries_issued"], ev["tenant_answered"]) == (0, False)
+
+
+@pytest.mark.asyncio
 async def test_issue_search_reads_only_the_fields_it_uses():
     """A reply missing a field the tool does not read is still a good read: the
     metered request already happened, so it is not SIMCORE_SHAPE_UNKNOWN."""

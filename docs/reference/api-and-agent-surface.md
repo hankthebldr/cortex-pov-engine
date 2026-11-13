@@ -2739,8 +2739,10 @@ never reaches the tenant itself and holds no tenant key.
   that credential as an `xsiam` (reconcile) one. `data` is the route's reply,
   passed through; `evidence.queries_issued` is the route's count. `data.truncated`
   is the route's `true`/`false`/`null` verbatim (`null`: the tenant sent no count,
-  so whether rows were left behind is unknown); the boolean `evidence.truncated`
-  errs safe and is `false` only when the route says `false`.
+  so whether rows were left behind is unknown). When the reply carries rows, the
+  boolean `evidence.truncated` errs safe and is `false` only when the route says
+  `false`; a `pending` reply with no rows is `false`, because there is nothing a
+  cut could have left behind and the MCP layer caps nothing of its own.
 - `cortexsim.run.tenant_evidence.read` passes `force` and `integration` to the
   route, which resolves the credential as reconcile does. `evidence.queries_issued`
   is `snapshot.queries_issued` when the reply says `read: true` (a null count
