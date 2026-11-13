@@ -24,6 +24,21 @@ function makeItems() {
   ]
 }
 
+describe('<CommandPalette /> — focus on open', () => {
+  it('owns focus the moment it opens, so the first keys typed after ⌘K are a query', () => {
+    // It used to move focus on a 20 ms timer, and anything typed in that gap
+    // went to whatever button had focus before (Enter would press it).
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const { rerender } = render(<CommandPalette open={false} items={makeItems()} />)
+    rerender(<CommandPalette open items={makeItems()} />)
+    // No timers advanced, no waitFor: focus must already be in the search box.
+    expect(screen.getByRole('searchbox', { name: /search pages/i })).toHaveFocus()
+    opener.remove()
+  })
+})
+
 describe('<CommandPalette />', () => {
   it('Enter runs the hovered command, not the last one', () => {
     const items = makeItems()

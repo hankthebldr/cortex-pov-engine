@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { PageIcon } from './kit/index.js'
 import { trapTabKey } from './focusTrap.js'
 
@@ -46,14 +46,16 @@ export default function CommandPalette({
   const openerRef = useRef(null)
 
   // Remember what had focus when the palette opened and give it back on close.
-  useEffect(() => {
+  // A layout effect, so the search box owns focus before the browser handles
+  // the next keystroke: on a timer, the first keys typed after ⌘K went to the
+  // button that opened it (and Enter pressed that button).
+  useLayoutEffect(() => {
     if (!open) return undefined
     openerRef.current = typeof document !== 'undefined' ? document.activeElement : null
     setQuery('')
     setActiveIndex(0)
-    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 20)
+    if (inputRef.current) inputRef.current.focus()
     return () => {
-      clearTimeout(t)
       const opener = openerRef.current
       if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus()
     }
