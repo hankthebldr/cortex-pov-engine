@@ -418,44 +418,62 @@ def _external_id(row: dict) -> Optional[str]:
     return text or None
 
 
+def _alert_key(row: dict) -> tuple:
+    """The alert behind a matcher row. The matcher writes one ``Observation``
+    per (result, alert) and does not consume technique or name matches, so one
+    alert linked to several Results arrives as several rows: by ``external_id``
+    when the row has one, else by (name as the projection stores it,
+    ``observed_at``, short host)."""
+    ext = _external_id(row)
+    if ext is not None:
+        return ("id", ext)
+    return ("row", _name_key(row.get("name")), coerce_utc(row.get("observed_at")),
+            _short_host(row.get("host")))
+
+
 def agreement(matcher_rows: list[dict], attributed: list[dict],
               probe_rows: Optional[list[dict]], run_host: Optional[str], *,
               tolerance_seconds: int) -> dict:
     """Join the matcher's rows to the reader's attributed issues (§7.3).
 
     ``matcher_rows`` are ``{"result_id", "external_id", "name", "observed_at",
-    "host", "executed_at"}`` — one per ``Observation`` linked to a ``Result``.
-    ``attributed`` is :func:`attribute`'s ``attributed`` list. ``probe_rows`` is
-    the projected by-id read of the rows' external ids, or ``None`` when that
-    probe failed.
+    "host", "executed_at"}`` — one per ``Observation``, i.e. per (result,
+    alert). ``attributed`` is :func:`attribute`'s ``attributed`` list.
+    ``probe_rows`` is the projected by-id read of the rows' external ids, or
+    ``None`` when that probe failed.
 
-    Every matcher row lands in exactly one outcome:
+    **Units.** The unit of agreement is the distinct ALERT (:func:`_alert_key`):
+    rows sharing an alert share one outcome. ``both.id``,
+    ``both.name_host_window``, ``matcher_only``, ``unjoinable`` and
+    ``ambiguous`` count distinct alerts; ``id_space`` counts distinct ids;
+    ``reader_only`` counts issues; ``pairs`` holds one entry per
+    (``result_id``, ``issue_id``), so each Result shows its link.
 
-    * class ``id`` — the probe found an issue whose id is the row's
+    Every alert lands in exactly one outcome:
+
+    * class ``id`` — the probe found an issue whose id is the alert's
       ``external_id`` and that issue is attributed to ``run_host`` (the window's
       attribution, or the probe row's own hosts when it lies outside the window).
-      Exact, so two rows sharing one alert id may both join the same issue.
     * a probe hit on an issue NOT attributed to the run counts in
-      ``id_space.hit`` only; the hit says which issue the alert is, so the row
+      ``id_space.hit`` only; the hit says which issue the alert is, so the alert
       does not fall back to a same-named issue and is ``matcher_only``.
-    * class ``name_host_window`` — tried only by a row the probe did not find,
-      or that has no id, or by every row when the probe failed: the row's
-      ``name``, neutralised as the projection neutralises tenant text, equals
-      the issue's ``tenant_text.name`` under the matcher's ``_norm``; the row's
-      host is the run host (``_short_host``); the issue is attributed; and
-      ``|issue.observation_time − row.observed_at| ≤ tolerance_seconds``. An
+    * class ``name_host_window`` — tried only by an alert the probe did not
+      find, or that has no id, or by every alert when the probe failed: its
+      name, neutralised as the projection neutralises tenant text, equals the
+      issue's ``tenant_text.name`` under the matcher's ``_norm``; its host is
+      the run host (``_short_host``); the issue is attributed; and
+      ``|issue.observation_time − alert.observed_at| ≤ tolerance_seconds``. An
       issue already joined by id is not a candidate.
-    * ``ambiguous`` — more than one candidate, or a candidate that more than one
-      row claims as its only one. Never resolved silently.
-    * ``unjoinable`` — no ``external_id`` and no ``name``.
+    * ``ambiguous`` — an alert with more than one candidate issue, or a
+      candidate issue that more than one distinct alert claims as its only one.
+      Never resolved silently.
+    * ``unjoinable`` — no ``external_id`` and no name.
     * ``matcher_only`` — none of the above.
 
-    ``reader_only`` counts attributed issues no row joined or was ambiguous
-    over. ``id_space`` is counted per row: ``probed`` the rows carrying an id,
-    ``hit`` / ``no_hit`` those the probe did / did not find. A ``no_hit``
-    proves nothing about the ids — the issue may sit outside the window, the
-    domain or retention. A failed probe leaves ``both.id``, ``hit`` and
-    ``no_hit`` null. No issue without a host enters ``both`` (A4).
+    ``reader_only`` counts attributed issues no alert joined or was ambiguous
+    over. A ``no_hit`` proves nothing about the ids — the issue may sit outside
+    the window, the domain or retention. A failed probe leaves ``both.id``,
+    ``hit`` and ``no_hit`` null. No issue without a host enters ``both`` (A4).
     """
     want = _short_host(run_host)
     tolerance = timedelta(seconds=tolerance_seconds)
@@ -463,14 +481,20 @@ def agreement(matcher_rows: list[dict], attributed: list[dict],
     probed_by_id = _by_id(probe_rows)
     window = {iid: i for iid, i in _by_id(attributed).items() if _attributes_to(i, want)}
 
-    outcome: dict[int, str] = {}          # row index -> its one outcome
-    joined: dict[int, str] = {}           # row index -> issue id, for a row in either class
+    keys = [_alert_key(row) for row in matcher_rows]
+    alerts: dict[tuple, list[dict]] = {}          # alert key -> its rows, first-seen order
+    for key, row in zip(keys, matcher_rows):
+        alerts.setdefault(key, []).append(row)
+
+    outcome: dict[tuple, str] = {}                # alert key -> its one outcome
+    joined: dict[tuple, str] = {}                 # alert key -> issue id, in either class
     hit = no_hit = probed = 0
-    fallback: list[int] = []
-    for n, row in enumerate(matcher_rows):
-        ext = _external_id(row)
-        if ext is None and not _name_key(row.get("name")):
-            outcome[n] = "unjoinable"
+    fallback: list[tuple] = []
+    for key, rows in alerts.items():
+        first = rows[0]
+        ext = _external_id(first)
+        if ext is None and not _name_key(first.get("name")):
+            outcome[key] = "unjoinable"
             continue
         if ext is not None:
             probed += 1
@@ -479,46 +503,52 @@ def agreement(matcher_rows: list[dict], attributed: list[dict],
                 if hit_issue is not None:
                     hit += 1
                     if ext in window or _attributes_to(hit_issue, want):
-                        outcome[n], joined[n] = CLASS_ID, ext
+                        outcome[key], joined[key] = CLASS_ID, ext
                     else:
-                        outcome[n] = "matcher_only"
+                        outcome[key] = "matcher_only"
                     continue
                 no_hit += 1
-        fallback.append(n)
+        fallback.append(key)
 
     id_claimed = set(joined.values())
     issue_names = {iid: _name_key((i.get("tenant_text") or {}).get("name")) for iid, i in window.items()}
-    candidates: dict[int, list[str]] = {}
-    for n in fallback:
-        row = matcher_rows[n]
-        name = _name_key(row.get("name"))
-        observed = coerce_utc(row.get("observed_at"))
+    candidates: dict[tuple, list[str]] = {}
+    for key in fallback:
+        first = alerts[key][0]
+        name = _name_key(first.get("name"))
+        observed = coerce_utc(first.get("observed_at"))
         found: list[str] = []
-        if name and want and _short_host(row.get("host")) == want and observed is not None:
+        if name and want and _short_host(first.get("host")) == want and observed is not None:
             for iid, issue in window.items():
                 if iid in id_claimed or issue_names[iid] != name:
                     continue
                 at = coerce_utc(issue.get("observation_time"))
                 if at is not None and abs(at - observed) <= tolerance:
                     found.append(iid)
-        candidates[n] = found
+        candidates[key] = found
 
-    sole_claims: dict[str, int] = {}
+    sole_claims: dict[str, int] = {}              # issue id -> distinct alerts claiming it alone
     for found in candidates.values():
         if len(found) == 1:
             sole_claims[found[0]] = sole_claims.get(found[0], 0) + 1
     contested: set[str] = set()
-    for n, found in candidates.items():
+    for key, found in candidates.items():
         if not found:
-            outcome[n] = "matcher_only"
+            outcome[key] = "matcher_only"
         elif len(found) > 1 or sole_claims[found[0]] > 1:
-            outcome[n] = "ambiguous"
+            outcome[key] = "ambiguous"
             contested.update(found)
         else:
-            outcome[n], joined[n] = CLASS_NAME_HOST_WINDOW, found[0]
+            outcome[key], joined[key] = CLASS_NAME_HOST_WINDOW, found[0]
 
-    pairs = [{"result_id": matcher_rows[n]["result_id"], "issue_id": joined[n], "class": outcome[n]}
-             for n in sorted(joined)]
+    pairs: list[dict] = []
+    paired: set[tuple] = set()
+    for key, row in zip(keys, matcher_rows):
+        if key not in joined or (row.get("result_id"), joined[key]) in paired:
+            continue
+        paired.add((row.get("result_id"), joined[key]))
+        pairs.append({"result_id": row.get("result_id"), "issue_id": joined[key],
+                      "class": outcome[key]})
     counts = {k: sum(1 for v in outcome.values() if v == k) for k in (
         CLASS_ID, CLASS_NAME_HOST_WINDOW, "matcher_only", "unjoinable", "ambiguous")}
     seen = set(joined.values()) | contested

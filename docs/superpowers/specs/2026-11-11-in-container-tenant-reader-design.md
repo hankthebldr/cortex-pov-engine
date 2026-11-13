@@ -527,6 +527,17 @@ lab ledger shows deathstar's alerts carry no rule id (§3.2), so that join would
   - `unjoinable`: no `external_id` and no name on the matcher row;
   - `ambiguous`: more than one `name_host_window` candidate, never resolved silently;
   - `id_space {probed, hit, no_hit}`. This is the evidence phase 2 needs (G7).
+- *Amended 2026-11-13 (units):* the unit of agreement is the distinct **alert**, not the
+  `Observation` row. The matcher writes one `Observation` per (result, alert) and does not
+  consume technique or name matches, so one alert linked to several Results is the normal
+  case. An alert is keyed by `external_id`, else by (name as the projection stores it,
+  `observed_at`, short host), and its rows share one outcome. `both.id`,
+  `both.name_host_window`, `matcher_only`, `unjoinable` and `ambiguous` count distinct
+  alerts; `ambiguous` means one alert with more than one candidate issue, or one candidate
+  issue claimed by more than one distinct alert. `id_space` counts distinct ids;
+  `reader_only` counts issues; `pairs` keeps one entry per (`result_id`, `issue_id`) so each
+  Result shows its link. P2-1's "at least 5 joined pairs" therefore means 5 distinct
+  alert↔issue joins, never Results fanned out from fewer alerts.
 
 **Lag, not MTTD.** **Claude's call:** each attributed issue shows
 `observation_time − step executed_at` as "observed after step", and `_insert_time` as

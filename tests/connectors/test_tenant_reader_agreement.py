@@ -163,7 +163,7 @@ def test_two_name_candidates_are_ambiguous_not_resolved():
 
 def test_row_without_id_or_name_is_unjoinable():
     rows = [_mrow(1, external_id=None, name=None, observed_at=OBSERVED["1001"]),
-            _mrow(2, external_id="  ", name="   ", observed_at=OBSERVED["1001"])]
+            _mrow(2, external_id="  ", name="   ", observed_at=OBSERVED["1002"])]
     out = agreement(rows, _attributed(), [_issue(0)], RUN_HOST, tolerance_seconds=TOL)
     assert out["unjoinable"] == 2
     assert out["matcher_only"] == 0
@@ -205,3 +205,40 @@ def test_matcher_name_compares_as_the_projection_stores_it():
     rows = [_mrow(1, name=raw, observed_at=OBSERVED["1001"])]
     out = agreement(rows, _attributed([_issue(0, name=raw)]), [], RUN_HOST, tolerance_seconds=TOL)
     assert _class_pairs(out) == [(1, "1001", "name_host_window")]
+
+
+def test_one_alert_linked_to_three_results_joins_in_both_classes():
+    # The matcher records one Observation per (result, alert) and does not
+    # consume technique/name matches, so one alert behind three Results is the
+    # normal case: it is ONE alert, joined once, with one pair per Result.
+    def fanned(external_id, name, observed_at):
+        return [_mrow(r, external_id=external_id, name=name, observed_at=observed_at)
+                for r in (1, 2, 3)]
+
+    by_id = agreement(fanned("1001", "synthetic-3", OBSERVED["1001"]), _attributed(), [_issue(0)],
+                      RUN_HOST, tolerance_seconds=TOL)
+    assert by_id["both"] == {"id": 1, "name_host_window": 0}
+    assert _class_pairs(by_id) == [(1, "1001", "id"), (2, "1001", "id"), (3, "1001", "id")]
+    assert by_id["id_space"] == {"probed": 1, "hit": 1, "no_hit": 0}
+    assert by_id["ambiguous"] == 0 and by_id["matcher_only"] == 0
+    assert by_id["reader_only"] == 1                              # 1002
+
+    by_name = agreement(fanned("alert-77", "synthetic-38", OBSERVED["1002"]), _attributed(), [],
+                        RUN_HOST, tolerance_seconds=TOL)
+    assert by_name["both"] == {"id": 0, "name_host_window": 1}
+    assert _class_pairs(by_name) == [(1, "1002", "name_host_window"),
+                                     (2, "1002", "name_host_window"),
+                                     (3, "1002", "name_host_window")]
+    assert by_name["id_space"] == {"probed": 1, "hit": 0, "no_hit": 1}
+    assert by_name["ambiguous"] == 0
+
+    no_probe = agreement(fanned("1001", "synthetic-3", OBSERVED["1001"]), _attributed(), None,
+                         RUN_HOST, tolerance_seconds=TOL)
+    assert no_probe["both"] == {"id": None, "name_host_window": 1}
+    assert len(no_probe["pairs"]) == 3 and no_probe["ambiguous"] == 0
+    assert no_probe["id_space"] == {"probed": 1, "hit": None, "no_hit": None}
+
+    no_id = agreement(fanned(None, "synthetic-38", OBSERVED["1002"]), _attributed(), [],
+                      RUN_HOST, tolerance_seconds=TOL)
+    assert no_id["both"]["name_host_window"] == 1
+    assert len(no_id["pairs"]) == 3 and no_id["ambiguous"] == 0
