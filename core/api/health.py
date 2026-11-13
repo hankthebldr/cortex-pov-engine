@@ -967,7 +967,7 @@ def probe_mcp(app: Any = None) -> dict[str, Any]:
             **common,
         )
 
-    if not settings.CORTEXSIM_MCP_TOKEN.get_secret_value():
+    if not settings.CORTEXSIM_MCP_TOKEN.get_secret_value().strip():
         return _degraded(
             "MCP_TOKEN_MISSING",
             "CORTEXSIM_MCP_HTTP is set but CORTEXSIM_MCP_TOKEN is empty, so /mcp is NOT mounted. "

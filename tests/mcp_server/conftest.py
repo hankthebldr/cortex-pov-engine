@@ -218,7 +218,9 @@ def boot_main(tmp_path, monkeypatch, restore_core_modules):
         monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
         monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
         if token is None:
-            monkeypatch.delenv("CORTEXSIM_MCP_TOKEN", raising=False)
+            # Settings also reads .env from the working directory; an empty
+            # env var beats a developer's token there.
+            monkeypatch.setenv("CORTEXSIM_MCP_TOKEN", "")
         else:
             monkeypatch.setenv("CORTEXSIM_MCP_TOKEN", token)
         # The app-wide Host guard runs before the /mcp mount's own list.

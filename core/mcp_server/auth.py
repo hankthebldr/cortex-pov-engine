@@ -14,35 +14,46 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 _CODE = "MCP_UNAUTHORIZED"
 
 
-def bearer_ok(header: Optional[str], token: str) -> bool:
-    """True when ``header`` is ``Bearer <token>`` (scheme case-insensitive).
+def bearer_ok(header: Optional[bytes], token: bytes) -> bool:
+    """True when the raw ``Authorization`` header is ``Bearer <token>`` (scheme
+    case-insensitive).
 
-    Compared as bytes with ``hmac.compare_digest``. An empty configured token
-    never matches anything, so a misconfigured gate fails closed.
+    Both sides are bytes: the header exactly as it arrived, the token encoded
+    once by :class:`McpGate`, compared with ``hmac.compare_digest``. An empty
+    configured token never matches anything, so a misconfigured gate fails closed.
     """
     if not header or not token:
         return False
-    scheme, _, presented = header.strip().partition(" ")
-    if scheme.lower() != "bearer":
+    scheme, _, presented = header.strip().partition(b" ")
+    if scheme.lower() != b"bearer":
         return False
-    return hmac.compare_digest(presented.strip().encode("utf-8"), token.encode("utf-8"))
+    return hmac.compare_digest(presented.strip(), token)
 
 
 class McpGate:
     """ASGI wrapper that answers 401 before the wrapped MCP endpoint sees a request.
 
-    ``loopback_only`` is reserved for the peer check; it is accepted here so the
-    mount's call site does not change when that check is turned on.
+    ``loopback_only`` is reserved for a peer check and stays False: under Docker
+    a host-loopback request does not arrive from a loopback address, so /mcp is
+    bearer-only (spec section 7.1, note of 2026-11-13).
+
+    The token is encoded to UTF-8 once, here, so an unencodable token fails at
+    mount time instead of on every request. Anything that is not an HTTP request
+    is refused: the gate fails closed on its own.
     """
 
     def __init__(self, app: ASGIApp, *, token: str, loopback_only: bool) -> None:
         self.app = app
-        self._token = token
+        try:
+            self._token = token.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("CORTEXSIM_MCP_TOKEN is not valid UTF-8 text") from exc
         self.loopback_only = loopback_only
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
-            await self.app(scope, receive, send)
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
             return
         header = _authorization(scope)
         if not bearer_ok(header, self._token):
@@ -56,8 +67,8 @@ class McpGate:
         await self.app(scope, receive, send)
 
 
-def _authorization(scope: Any) -> Optional[str]:
+def _authorization(scope: Any) -> Optional[bytes]:
     for name, value in scope.get("headers", ()):
         if name == b"authorization":
-            return value.decode("latin-1")
+            return value
     return None

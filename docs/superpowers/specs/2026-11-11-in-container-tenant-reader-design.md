@@ -182,8 +182,8 @@ response or limits the response to the fields named. The phase-1 spike (§9) set
 - **G2.** The scorecard's Alert ID column and the matched alert's source are populated.
 - **G3.** One tenant reader inside SimCore serves the console over REST and Claude over
   `/mcp` (HTTP), plus stdio for Desktop.
-- **G4.** `/mcp` over HTTP needs a bearer token, accepts loopback clients only in phase 1,
-  and is read-only by default. One user-scope registration serves every Claude Code session
+- **G4.** `/mcp` over HTTP needs a bearer token, accepts loopback clients only in phase 1
+  (not built; bearer-only, see the 2026-11-13 note in §7.1), and is read-only by default. One user-scope registration serves every Claude Code session
   on the host.
 - **G5.** One per-tenant request budget covers every SimCore path that calls the tenant.
 - **G6.** Parity with all 12 tools of `cortex-mcp` 1.0.5, then retirement of
@@ -305,7 +305,16 @@ boundary. D1 reverses that **for `/mcp` over HTTP only**:
   **Claude's call:** no token-strength check (the earlier `MCP_TOKEN_WEAK` heuristic is
   dropped). Reason: Henry's standing feedback is functional fixes without extra guards, and
   §7.10 generates the token with `secrets.token_urlsafe(32)` anyway.
-- **Loopback only in phase 1.** **Claude's call:** `/mcp` refuses any request whose TCP peer
+- **Note, 2026-11-13: the loopback check below was NOT built.** The builder check this
+  bullet asked for found that, under Docker Desktop on this Mac, a host-loopback request
+  (`curl http://127.0.0.1:<published port>/`) reaches the container with peer `172.17.0.1`
+  (the Docker bridge gateway), not `127.0.0.1` or `::1`. A peer-address check therefore
+  cannot tell the host from anything Docker forwards, and the gateway may not be
+  allowlisted (plan decision PD5, Task 13 stopped). `/mcp` is **bearer-only in phase 1**,
+  `McpGate.loopback_only` stays `False`, and the `403` / `MCP_LOOPBACK_ONLY` behaviour and
+  every other "loopback only" statement in this spec describe the intent, not the shipped
+  behaviour. A loopback-only `/mcp` needs a different mechanism; Henry decides.
+- **Loopback only in phase 1 (not built, see the note above).** **Claude's call:** `/mcp` refuses any request whose TCP peer
   is not a loopback address, with `403` and `MCP_LOOPBACK_ONLY`, before the token is
   checked. Reason: phase 1's only HTTP client is Claude Code on the same host. A remote DC
   jumpbox client needs a per-instance token and TLS, and is a later phase (§4 non-goals).

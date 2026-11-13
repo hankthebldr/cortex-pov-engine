@@ -88,3 +88,74 @@ def test_token_never_appears_in_logs(boot_main, caplog):
     text = "\n".join(r.getMessage() + " " + str(r.args) for r in caplog.records)
     assert TOKEN not in text and wrong not in text
     assert "Bearer " not in text
+
+
+def test_non_ascii_token_matches_and_raw_header_bytes_are_compared(boot_main):
+    token = "tök-" + "é" * 20 + "-ключ"
+    main = boot_main(http=True, token=token)
+    with mcp_client(main.app) as client:
+        good = _init(client, Authorization=("Bearer " + token).encode("utf-8"))
+        bad = _init(client, Authorization=("Bearer " + token + "x").encode("utf-8"))
+    assert good.status_code == 200, good.text
+    assert bad.status_code == 401
+
+
+def test_unencodable_token_fails_at_mount_not_per_request():
+    from types import SimpleNamespace
+
+    from pydantic import SecretStr
+    from starlette.applications import Starlette
+
+    from mcp_server.auth import McpGate
+    from mcp_server.server import mount
+
+    async def inner(scope, receive, send):  # pragma: no cover - never reached
+        raise AssertionError
+
+    with pytest.raises(ValueError):
+        McpGate(inner, token="bad-\ud800-token", loopback_only=False)
+    settings = SimpleNamespace(
+        CORTEXSIM_MCP_HTTP=True, CORTEXSIM_MCP_TOKEN=SecretStr("bad-\ud800-token"),
+        CORTEXSIM_URL="http://simcore.test", CORTEXSIM_MCP_ALLOWED_HOSTS="",
+        CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE=30, CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=False)
+    with pytest.raises(ValueError):
+        mount(Starlette(), settings=settings)
+
+
+def test_whitespace_only_token_is_missing(boot_main):
+    main = boot_main(http=True, token="   ")
+    assert not [r for r in main.app.router.routes if getattr(r, "path", None) == "/mcp"]
+    with mcp_client(main.app) as client:
+        comp = client.get("/api/health").json()["components"]["mcp"]
+    assert comp["status"] == "degraded" and comp["code"] == "MCP_TOKEN_MISSING"
+
+
+def test_padded_token_still_authenticates(boot_main):
+    main = boot_main(http=True, token=f"  {TOKEN}\n")
+    with mcp_client(main.app, token=TOKEN) as client:
+        resp = _init(client)
+        health = client.get("/api/health").json()["components"]["mcp"]
+    assert resp.status_code == 200, resp.text
+    assert health["status"] == "ok" and health["mounted"] is True
+
+
+def test_non_http_scope_is_refused_by_the_gate_itself():
+    import asyncio
+
+    from mcp_server.auth import McpGate
+
+    reached = []
+
+    async def inner(scope, receive, send):
+        reached.append(scope["type"])
+
+    gate = McpGate(inner, token=TOKEN, loopback_only=False)
+
+    async def send(msg):
+        pass
+
+    async def receive():
+        return {"type": "websocket.connect"}
+
+    asyncio.run(gate({"type": "websocket", "headers": []}, receive, send))
+    assert reached == []
