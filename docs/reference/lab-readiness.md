@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 200  (GREEN 168 · YELLOW 27 · RED 5)
-- **Steps:** 831 total · 142 detection-bearing steps produce no real signal
+- **Scenarios:** 201  (GREEN 169 · YELLOW 27 · RED 5)
+- **Steps:** 835 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
 - **Consent-gated:** 4 scenarios
 - **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 71 scenarios
 - **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 168 scenarios
+## GREEN — 169 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -110,6 +110,7 @@
 | SIM-MP-034 | ANALYTICS | Analytics/XQL/Correlation | 6/6 | eal |  |
 | SIM-MP-035 | ANALYTICS | BIOC/XQL/IOC/ABIOC/Correlation | 9/9 | eal |  |
 | SIM-MP-037 | ANALYTICS | BIOC/XQL/Correlation | 7/7 | eal |  |
+| SIM-MP-038 | ANALYTICS | XQL/Correlation | 4/4 | agent |  |
 | SIM-NDR-001 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-002 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-003 | NDR | BIOC/XQL/IOC | 2/2 | eal |  |
