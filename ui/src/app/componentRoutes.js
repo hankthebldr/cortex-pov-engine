@@ -8,41 +8,26 @@
  *   componentConfigure(key) the page where the component is configured, or
  *                           null when the console has nowhere to send the DC
  *
- * Until each component has its own page (design v26 slices 3–4), a rail entry
- * opens the page the component is managed on today — Agents, Tenant,
- * Firewall — and the rest open their row on the Components page, which says
- * what POVengine can and cannot see about them. No entry is a dead end.
+ * Every component has its own page (design v26 §4.2): the rail entry opens
+ * it, and Configure opens its Setup tab. The Components page (`components`,
+ * `?open=<key>`) is the hub that lists all eight.
  */
 
 const ROUTES = {
-  pov: { destination: 'components', params: { open: 'pov' } },
+  pov: { destination: 'component-pov' },
   agent: { destination: 'component-agents' },
   tenant: { destination: 'component-tenant' },
-  http: { destination: 'components', params: { open: 'http' } },
-  bvm: { destination: 'components', params: { open: 'bvm' } },
+  http: { destination: 'component-http' },
+  bvm: { destination: 'component-bvm' },
   ngfw: { destination: 'component-firewall' },
-  xdrc: { destination: 'components', params: { open: 'xdrc' } },
-  engine: { destination: 'components', params: { open: 'engine' } },
+  xdrc: { destination: 'component-xdrc' },
+  engine: { destination: 'component-engine' },
 }
 
-// A component page's Configure is its Setup tab. The HTTP collector's
-// targets are managed on Tenant › Read-back & integrations today
-// (CollectorTargetsPanel); the Broker VM is a guided step on Get started.
-// POVengine, XDR Collector and Cortex Engine have no page to configure on yet.
-const CONFIGURE = {
-  agent: { destination: 'component-agents', params: { tab: 'setup' } },
-  tenant: { destination: 'component-tenant', params: { tab: 'setup' } },
-  http: { destination: 'component-tenant', params: { tab: 'readback' } },
-  bvm: { destination: 'start', params: { step: 'bvm' } },
-  ngfw: { destination: 'component-firewall', params: { tab: 'setup' } },
-}
-
-// Where a problem on a component is explained when it has no Configure page:
-// POVengine's degraded components are listed, with remediation, on the
-// Launch gate.
-const FIX = {
-  pov: { destination: 'preflight' },
-}
+// Configure is the component page's Setup tab, for every component.
+const CONFIGURE = Object.fromEntries(
+  Object.entries(ROUTES).map(([k, r]) => [k, { destination: r.destination, params: { tab: 'setup' } }]),
+)
 
 export function componentRoute(key) {
   return ROUTES[key] || { destination: 'components', params: { open: key } }
@@ -52,9 +37,9 @@ export function componentConfigure(key) {
   return CONFIGURE[key] || null
 }
 
-/** Where the ErrorBadge on a component sends the DC. */
+/** Where the ErrorBadge on a component sends the DC: its Setup. */
 export function componentFix(key) {
-  return CONFIGURE[key] || FIX[key] || null
+  return CONFIGURE[key] || null
 }
 
 /** The component a route belongs to, so the rail can mark it current. */

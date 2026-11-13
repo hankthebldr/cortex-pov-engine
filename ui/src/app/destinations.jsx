@@ -163,6 +163,13 @@ const ComponentsView = makeLazySurface(() => import('../components/console/Compo
 const AgentsComponent = makeLazySurface(() => import('../components/console/component/AgentsComponent.jsx'), 'Agents')
 const TenantComponent = makeLazySurface(() => import('../components/console/component/TenantComponent.jsx'), 'Tenant')
 const FirewallComponent = makeLazySurface(() => import('../components/console/component/FirewallComponent.jsx'), 'Firewall')
+const PovengineComponent = makeLazySurface(() => import('../components/console/component/PovengineComponent.jsx'), 'POVengine')
+const HttpCollectorComponent = makeLazySurface(() => import('../components/console/component/HttpCollectorComponent.jsx'), 'HTTP collector')
+// The three SimCore cannot see share one module; each is its own page.
+const confirmedPage = (name) => () => import('../components/console/component/ConfirmedComponents.jsx').then((m) => ({ default: m[name] }))
+const BrokerVmComponent = makeLazySurface(confirmedPage('BrokerVmComponent'), 'Broker VM')
+const XdrCollectorComponent = makeLazySurface(confirmedPage('XdrCollectorComponent'), 'XDR Collector')
+const CortexEngineComponent = makeLazySurface(confirmedPage('CortexEngineComponent'), 'Cortex Engine')
 
 /** A surface that only forwards to another destination, for ids whose page
  *  was retired. `extra` params are merged over the ones the old link carried,
@@ -732,11 +739,17 @@ export const DESTINATIONS = [
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
 
   // ── The components' own pages, reached from the Components submenu ──
-  // One page shape each (v26 §4.2). The label is the h1 and the submenu name.
-  { id: 'component-agents',   label: 'Agents',   hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsComponent },
-  { id: 'component-tenant',   label: 'Tenant',   hidden: true, navParent: 'components', icon: 'people',           Component: TenantComponent },
+  // One page shape each (v26 §4.2), in the submenu's order. The label is the
+  // h1 and the submenu name.
+  { id: 'component-pov',      label: 'POVengine',      hidden: true, navParent: 'components', icon: 'settings-edit',    Component: PovengineComponent },
+  { id: 'component-agents',   label: 'Agents',         hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsComponent },
+  { id: 'component-tenant',   label: 'Tenant',         hidden: true, navParent: 'components', icon: 'people',           Component: TenantComponent },
+  { id: 'component-http',     label: 'HTTP collector', hidden: true, navParent: 'components', icon: 'doc-search',       Component: HttpCollectorComponent },
+  { id: 'component-bvm',      label: 'Broker VM',      hidden: true, navParent: 'components', icon: 'building',         Component: BrokerVmComponent },
   // No shield icon ships under /icons; threat-network is the existing network glyph.
-  { id: 'component-firewall', label: 'Firewall', hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallComponent },
+  { id: 'component-firewall', label: 'Firewall',       hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallComponent },
+  { id: 'component-xdrc',     label: 'XDR Collector',  hidden: true, navParent: 'components', icon: 'apps-grid',        Component: XdrCollectorComponent },
+  { id: 'component-engine',   label: 'Cortex Engine',  hidden: true, navParent: 'components', icon: 'keyboard',         Component: CortexEngineComponent },
   // The Manage pages they replace (v26 §5). A bookmark lands on the
   // management tab the old page was, keeping its own params.
   { id: 'agents',    label: 'Agents',   hidden: true, redirect: true, navParent: 'components', icon: 'fingerprint-scan', Component: redirectTo('component-agents', { tab: 'fleet' }) },
