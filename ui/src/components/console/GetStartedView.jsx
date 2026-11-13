@@ -195,7 +195,7 @@ function AgentStep({ step, onNavigate }) {
             <li key={a.agent_id}><span className="gs-dot gs-dot--ok" /> <b className="mono">{a.agent_id}</b> · {a.hostname} · {a.os}</li>
           ))}
         </ul>
-        <button type="button" className="pov-btn" onClick={() => onNavigate('agents')}>Manage agents</button>
+        <button type="button" className="pov-btn" onClick={() => onNavigate('component-agents', { tab: 'fleet' })}>Manage agents</button>
       </div>
     )
   }

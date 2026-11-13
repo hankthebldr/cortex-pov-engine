@@ -16,24 +16,25 @@
 
 const ROUTES = {
   pov: { destination: 'components', params: { open: 'pov' } },
-  agent: { destination: 'agents' },
-  tenant: { destination: 'tenants' },
+  agent: { destination: 'component-agents' },
+  tenant: { destination: 'component-tenant' },
   http: { destination: 'components', params: { open: 'http' } },
   bvm: { destination: 'components', params: { open: 'bvm' } },
-  ngfw: { destination: 'firewall' },
+  ngfw: { destination: 'component-firewall' },
   xdrc: { destination: 'components', params: { open: 'xdrc' } },
   engine: { destination: 'components', params: { open: 'engine' } },
 }
 
-// The HTTP collector's targets are managed on the Tenant page today
+// A component page's Configure is its Setup tab. The HTTP collector's
+// targets are managed on Tenant › Read-back & integrations today
 // (CollectorTargetsPanel); the Broker VM is a guided step on Get started.
 // POVengine, XDR Collector and Cortex Engine have no page to configure on yet.
 const CONFIGURE = {
-  agent: { destination: 'agents' },
-  tenant: { destination: 'tenants' },
-  http: { destination: 'tenants' },
+  agent: { destination: 'component-agents', params: { tab: 'setup' } },
+  tenant: { destination: 'component-tenant', params: { tab: 'setup' } },
+  http: { destination: 'component-tenant', params: { tab: 'readback' } },
   bvm: { destination: 'start', params: { step: 'bvm' } },
-  ngfw: { destination: 'firewall' },
+  ngfw: { destination: 'component-firewall', params: { tab: 'setup' } },
 }
 
 // Where a problem on a component is explained when it has no Configure page:

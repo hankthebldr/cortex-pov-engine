@@ -42,9 +42,9 @@ const TITLES = {
   runs: /^runs$/i,
   proof: /.+/,
   ttps: /ttp cards/i,
-  agents: /agents/i,
-  tenants: /^tenant$/i,
-  firewall: /^firewall$/i,
+  'component-agents': /^agents$/i,
+  'component-tenant': /^tenant$/i,
+  'component-firewall': /^firewall$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
   coverage: /coverage/i,
@@ -60,7 +60,7 @@ const FOREIGN = [
   ['start', /^get started$/i],
   ['preflight', /launch gate/i],
   ['overview', /prove what the stack/i],
-  ['tenants', /^tenant$/i],
+  ['component-tenant', /^tenant$/i],
 ]
 
 // The three journeys and Reference are the rail; their tab pages are walked
@@ -104,7 +104,7 @@ describe('every destination renders itself, and only itself', () => {
 
   it('retired seed pages redirect instead of rendering', () => {
     const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
-    expect(retired).toEqual(['cli', 'scope', 'setup', 'validation'])
+    expect(retired).toEqual(['agents', 'cli', 'firewall', 'scope', 'setup', 'tenants', 'validation'])
   })
 
   it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {

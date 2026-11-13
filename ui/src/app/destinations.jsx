@@ -146,8 +146,6 @@ const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBr
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
 const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
-const TenantView = makeLazySurface(() => import('../components/console/TenantView.jsx'), 'Tenant')
-const FirewallView = makeLazySurface(() => import('../components/console/FirewallView.jsx'), 'Firewall')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -161,12 +159,22 @@ const OverviewView = makeLazySurface(() => import('../components/console/Overvie
 const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
 // The hub for the eight components (design v26 §9.2), rebuilt on real state.
 const ComponentsView = makeLazySurface(() => import('../components/console/ComponentsView.jsx'), 'Components')
+// One page shape per component (v26 §4.2): Overview · Setup · management tab.
+const AgentsComponent = makeLazySurface(() => import('../components/console/component/AgentsComponent.jsx'), 'Agents')
+const TenantComponent = makeLazySurface(() => import('../components/console/component/TenantComponent.jsx'), 'Tenant')
+const FirewallComponent = makeLazySurface(() => import('../components/console/component/FirewallComponent.jsx'), 'Firewall')
 
-/** A surface that only forwards to another destination (replacing the
- *  history entry), for ids whose page was retired. */
-function redirectTo(target) {
-  return function Redirect({ onNavigate = () => {} }) {
-    useEffect(() => { onNavigate(target) }, [onNavigate])
+/** A surface that only forwards to another destination, for ids whose page
+ *  was retired. `extra` params are merged over the ones the old link carried,
+ *  so `#/agents?open=x` lands on the Agents component's Fleet tab with `open`
+ *  intact. */
+function redirectTo(target, extra = null) {
+  return function Redirect({ params = {}, onNavigate = () => {} }) {
+    useEffect(() => {
+      const next = { ...(params || {}), ...(extra || {}) }
+      if (Object.keys(next).length) onNavigate(target, next)
+      else onNavigate(target)
+    }, [onNavigate]) // eslint-disable-line react-hooks/exhaustive-deps
     return null
   }
 }
@@ -641,14 +649,11 @@ const EnvironmentsSurface = withSuspense(LabView)
 // NOT the default destination — a health page that greets you every morning
 // stops being read.
 const ReadinessSurface = withSuspense(ReadinessView)
-const AgentsSurface = withSuspense(TargetsView)
-// One tenant per instance, in four tabs. The registration wizard is not gone
-// — it is the Binding tab inside TenantView, because binding a tenant is a real
-// operation that has to happen once, it just stopped being the whole page.
-const TenantsSurface = withSuspense(TenantView)
-// PAN-OS NGFW: register, read-only preflight, per-agent stitch readiness
-// (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md §6).
-const FirewallSurface = withSuspense(FirewallView)
+// Agents, Tenant and Firewall are component pages now (component/*.jsx); their
+// former surfaces live on as those pages' management tabs: TargetsView is
+// Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
+// Read-back & integrations, and the firewall steps are Firewall's Setup and
+// Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
 // Proof & Export is its own destination now. It used to be a sub-tab of a run,
 // which meant the artefact a POV actually delivers was two clicks inside the
 // thing that produced it. EvidenceView takes its run as props rather than
@@ -727,10 +732,16 @@ export const DESTINATIONS = [
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
 
   // ── The components' own pages, reached from the Components submenu ──
-  { id: 'agents',    label: 'Agents',   hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsSurface },
-  { id: 'tenants',   label: 'Tenant',   hidden: true, navParent: 'components', icon: 'people',           Component: TenantsSurface },
+  // One page shape each (v26 §4.2). The label is the h1 and the submenu name.
+  { id: 'component-agents',   label: 'Agents',   hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsComponent },
+  { id: 'component-tenant',   label: 'Tenant',   hidden: true, navParent: 'components', icon: 'people',           Component: TenantComponent },
   // No shield icon ships under /icons; threat-network is the existing network glyph.
-  { id: 'firewall',  label: 'Firewall', hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallSurface },
+  { id: 'component-firewall', label: 'Firewall', hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallComponent },
+  // The Manage pages they replace (v26 §5). A bookmark lands on the
+  // management tab the old page was, keeping its own params.
+  { id: 'agents',    label: 'Agents',   hidden: true, redirect: true, navParent: 'components', icon: 'fingerprint-scan', Component: redirectTo('component-agents', { tab: 'fleet' }) },
+  { id: 'tenants',   label: 'Tenant',   hidden: true, redirect: true, navParent: 'components', icon: 'people',           Component: redirectTo('component-tenant', { tab: 'readback' }) },
+  { id: 'firewall',  label: 'Firewall', hidden: true, redirect: true, navParent: 'components', icon: 'threat-network',   Component: redirectTo('component-firewall', { tab: 'sources' }) },
 
   // ── Off-rail, reached as tabs or links ──
   { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },

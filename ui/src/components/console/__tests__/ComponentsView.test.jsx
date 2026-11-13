@@ -60,13 +60,13 @@ describe('Components page', () => {
     const { onNavigate } = mount({ agents: [{ agent_id: 'a1', hostname: 'a1', status: 'offline' }] })
     const badge = within(row('Agents')).getByRole('button', { name: /none online/i })
     fireEvent.click(badge)
-    expect(onNavigate).toHaveBeenCalledWith('agents', undefined)
+    expect(onNavigate).toHaveBeenCalledWith('component-agents', { tab: 'setup' })
   })
 
   it('Configure opens where each component is configured today', async () => {
     const { onNavigate } = mount()
     fireEvent.click(within(row('Firewall')).getByRole('button', { name: 'Configure' }))
-    expect(onNavigate).toHaveBeenLastCalledWith('firewall', undefined)
+    expect(onNavigate).toHaveBeenLastCalledWith('component-firewall', { tab: 'setup' })
     fireEvent.click(within(row('Broker VM')).getByRole('button', { name: 'Configure' }))
     expect(onNavigate).toHaveBeenLastCalledWith('start', { step: 'bvm' })
   })

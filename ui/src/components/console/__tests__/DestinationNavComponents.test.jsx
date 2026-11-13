@@ -78,7 +78,7 @@ describe('rail — journeys and the Components submenu', () => {
     const { onNavigate } = renderNav({ active: 'components' })
     const group = screen.getByRole('group', { name: 'Components' })
     fireEvent.click(within(group).getByRole('button', { name: /firewall/i }))
-    expect(onNavigate).toHaveBeenCalledWith('firewall', undefined)
+    expect(onNavigate).toHaveBeenCalledWith('component-firewall', undefined)
     fireEvent.click(within(group).getByRole('button', { name: /broker vm/i }))
     expect(onNavigate).toHaveBeenLastCalledWith('components', { open: 'bvm' })
   })

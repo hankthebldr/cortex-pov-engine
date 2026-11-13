@@ -57,7 +57,15 @@ describe('task rail', () => {
   })
 
   it('a component page lights up Components', () => {
-    for (const id of ['agents', 'tenants', 'firewall']) expect(navOwner(id), id).toBe('components')
+    for (const id of ['component-agents', 'component-tenant', 'component-firewall']) {
+      expect(navOwner(id), id).toBe('components')
+    }
+  })
+
+  it('Agents, Tenant and Firewall in the submenu open their component pages', () => {
+    const comp = navGroups().flatMap((g) => g.items).find((i) => i.id === 'components')
+    const to = Object.fromEntries(comp.children.map((c) => [c.key, c.destination]))
+    expect(to).toMatchObject({ agent: 'component-agents', tenant: 'component-tenant', ngfw: 'component-firewall' })
   })
 
   it('every off-rail page names a parent that is on the rail', () => {
@@ -84,19 +92,24 @@ describe('task rail', () => {
   })
 
   it('tasks without tabs render no strip', () => {
-    for (const id of ['start', 'components', 'runs', 'agents', 'tenants']) expect(sectionFor(id)).toBeNull()
+    for (const id of ['start', 'components', 'runs', 'component-agents', 'component-tenant']) expect(sectionFor(id)).toBeNull()
   })
 
   it('retired routes forward to the page that replaced them', () => {
-    const forwards = (id) => {
+    const forwards = (id, params = {}) => {
       const calls = []
       const Redirect = getDestination(id).Component
-      render(<Redirect onNavigate={(...a) => calls.push(a)} />)
+      render(<Redirect params={params} onNavigate={(...a) => calls.push(a)} />)
       return calls[0]
     }
     expect(forwards('setup')[0]).toBe('start')
     expect(forwards('scope')[0]).toBe('start')
     expect(forwards('validation')[0]).toBe('proof')
+    // The Manage pages became component pages (v26 §5). A bookmark lands on
+    // the management tab it used to be, keeping its own params.
+    expect(forwards('agents', { open: 'jb-01' })).toEqual(['component-agents', { tab: 'fleet', open: 'jb-01' }])
+    expect(forwards('tenants')).toEqual(['component-tenant', { tab: 'readback' }])
+    expect(forwards('firewall')).toEqual(['component-firewall', { tab: 'sources' }])
   })
 
   it('every rail destination has a real icon asset, never a glyph', () => {
