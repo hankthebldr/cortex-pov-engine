@@ -296,6 +296,24 @@
   border-color: transparent;
 }
 
+/* ── Verdict reason (VerdictReason.jsx) ────────────────────────────────────
+   Why a run verdict is `pending` with nothing scored. The dashed border means
+   "nothing ran here"; tone colours the ink only, so the chip sits beside the
+   verdict chip without competing with it. Ink uses --warn / --info, not
+   --warn-str: the bright yellow fails text contrast on the light surface.
+   Keyed on [data-reason] so the element reads the same on every surface:
+   destination sheets restyle `.chip` at (0,3,0) — `.uctc .chip` did, and
+   turned this grey and solid. */
+.theme-console .chip.verdict-reason[data-reason] {
+  background: transparent;
+  border: 1px dashed currentColor;
+  white-space: nowrap; /* the chip is a fixed 20px tall: wrap the row, never the label */
+}
+.theme-console .chip.verdict-reason--warn[data-reason] { color: var(--warn); }
+.theme-console .chip.verdict-reason--info[data-reason] { color: var(--info); }
+.theme-console .chip.verdict-reason--neutral[data-reason] { color: var(--tx3); }
+.theme-console .verdict-reason__sentence { margin: 0; font-size: 12px; color: var(--tx2); }
+
 /* ── Detection-type chips (GAP-2: XQL + Correlation now first-class) ──────
    Vocabulary: BIOC | XQL | Analytics | Correlation | IOC. Correlation is the
    key XSIAM differentiator — given the distinct violet accent so it pops

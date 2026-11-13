@@ -144,6 +144,17 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     expect(within(row).getByTestId('run-action')).toHaveTextContent('—')
   })
 
+  it('a run where no step that carries a detection ran says so and offers no Read back', () => {
+    const NOT_EXECUTED = { tc_verdict: 'pending', tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }
+    render(<RunList runs={[run({ run_id: 'dry', ...NOT_EXECUTED })]} />)
+    const row = screen.getByTestId('run-row')
+    expect(row).toHaveAttribute('data-phase', 'nothing')
+    const det = within(row).getByTestId('run-detections')
+    expect(det).toHaveTextContent('nothing executed')
+    expect(det).toHaveAttribute('title', expect.stringMatching(/no step that carries a detection ran/i))
+    expect(within(row).queryByRole('button', { name: /read back|open results/i })).toBeNull()
+  })
+
   it('states why a read back did not happen, and keeps Read back on offer', () => {
     const outcomes = new Map([['u', { ok: false, message: 'No tenant credential is configured, so nothing was read.' }]])
     render(<RunList runs={[run({ run_id: 'u', ...UNREAD })]} outcomes={outcomes} />)

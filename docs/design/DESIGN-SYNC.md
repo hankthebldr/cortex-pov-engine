@@ -14,7 +14,7 @@ from drifting apart silently.
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-09-14T18:14:52Z · tree `a4130a9fe88a` |
-| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) |
+| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
 | Current handoff | **Design v26 → `ui/src`, 2026-11-13:** `docs/design/2026-11-13-v26-design-to-code.md` |
 
@@ -164,43 +164,62 @@ AA-clean token set — see the measured contrast table at the top of
 
 ## Screen map
 
-Where each surface lives in the code after the minimal pass.
+Where each surface lives in the code after design v26 (2026-11-13). The rail
+is three journeys plus Reference; everything else is a component page, a tab
+or a link.
 
 | Surface | Rail / tab | Implementation |
 |---|---|---|
-| Get started | Get started | `components/console/GetStartedView.jsx` · `setupProgress.js` · `useSetupProgress.js` |
-| Scenarios (Library) | Simulate › Scenarios | `components/console/OperationsView.jsx` |
-| Composer node canvas | Simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
-| Launch Gate | Simulate › Launch gate | `components/console/ReadinessView.jsx` |
-| Guided launch | (from Get started / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
-| Runs (list → detail) | Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `InflightView.jsx` |
+| Get started | Onboard & connect › Get started | `components/console/GetStartedView.jsx` · `setupProgress.js` · `useSetupProgress.js` (each step points at its component's Configure) |
+| Components hub | Onboard & connect › Components | `components/console/ComponentsView.jsx` · `componentModel.js` · `app/componentRoutes.js` |
+| POVengine | Components › POVengine (API tab generated from OpenAPI) | `component/PovengineComponent.jsx` |
+| Agents | Components › Agents (Fleet tab is the former Agents page) | `component/AgentsComponent.jsx` → `TargetsView.jsx` |
+| Lab | Components › Agents (`#/environments`) | `components/console/LabView.jsx` |
+| Tenant | Components › Tenant (Read-back & integrations tab) | `component/TenantComponent.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
+| HTTP collector | Components › HTTP collector | `component/HttpCollectorComponent.jsx` |
+| Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
+| Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
+| Component page shape + Configure frame | — | `component/ComponentPage.jsx` · `ConfigureFrame.jsx` · `checks.js` |
+| Scenarios (Library) | Compose & simulate › Scenarios | `components/console/OperationsView.jsx` · `ScenarioGrid.jsx` · `ScenarioInspector.jsx` (the scenario sheet) |
+| Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
+| Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
+| Guided launch | (from Scenarios › Run / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
+| Runs (list → detail) | Run & observe › Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `RunLifecycleStrip.jsx` · `RunChain.jsx` |
+| Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
-| Report | Results › Report | `components/console/EvidenceView.jsx` |
+| Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
 | Coverage | Results › Coverage | `components/console/CoverageView.jsx` |
-| TTP Cards | Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
+| TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
 | UC / TC Index | Catalog › UC / TC index | `components/console/UcTcIndexView.jsx` |
-| Agents | Manage | `components/console/TargetsView.jsx` |
-| Lab | Manage › Agents (`#/environments`) | `components/console/LabView.jsx` |
-| Tenant | Manage | `components/console/TenantView.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
-| Firewall | Manage | `components/console/FirewallView.jsx` (Connect · Check · Sources steps) |
-| Traffic / EAL | (from Simulate, `#/eal`) | `components/EalConsole.jsx` |
+| "Your chain" tray | Scenarios and Catalog pages | `components/console/ChainTray.jsx` · `context/ChainTrayContext.jsx` |
+| Chain stage (editable · live · preview) | Composer Lanes lens, Run detail, scenario sheet | `components/console/ChainStage.jsx` · `chainStage.js` |
+| Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
-| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` |
+| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
 | Lane and plane vocabulary | — | `components/console/povdata/` |
-| Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-minimal.css` |
+| Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-kit.css` · `styles/povengine-minimal.css` |
+
+Retired routes redirect: `setup`, `scope` → Get started; `validation` →
+Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
+Read-back / Sources tab; `readiness` is an alias of the Launch gate.
+
+All eight slices of the v26 handoff are in `dev` (PRs #250, #252, #253, #254,
+#257, #258, #259, #260, plus the Broken step sheet).
 
 ## IA decisions carried over from the design thread
 
 These were argued out in the design conversation and are contracts, not
 preferences. Changing one means changing it on both tracks.
 
-- **The rail is a task list** (minimal pass). Five tasks plus Manage; every
-  other page is a tab inside one task (`SECTIONS` in `app/destinations.jsx`).
-  This replaced "the rail is the phase model", which was correct as a model
-  but answered "what does this contain" rather than "what do I do next".
+- **The rail is three journeys** (design v26 §1): Onboard & connect · Compose
+  & simulate · Run & observe, plus Reference. Components expands into the
+  eight component pages. This replaced the minimal pass's "five tasks plus
+  Manage", which replaced "the rail is the phase model"; each answered "what
+  do I do next" better than the one before.
 - **A destination id is a route, not a label.** `library` is labelled
   Simulate, `ttps` Catalog, `proof` Results, `adapters` Packages. Retired pages
   keep their ids and redirect.
@@ -289,8 +308,9 @@ is left to the repo owner. The asset is present at
 mark IS used, in the header, theme-swapped — Cortex is named nominatively as
 the platform under test, which NOTICE already covers.
 
-**4. Seed-only design surfaces are not implemented.** The prototype's
-Components inventory, CLI items, scoping wizard, Tenant validation sheets,
+**4. Seed-only design surfaces are not implemented.** Components came back in
+v26 on real state only (§9.2): where SimCore has no API it says "you confirmed"
+or Unknown. The prototype's CLI items, scoping wizard, Tenant validation sheets,
 evidence collection and planes × doors matrix have no SimCore data behind
 them. Rather than render seed numbers as facts, the minimal pass removed them.
 Each can come back when an endpoint exists to back it. (The run topology was on
@@ -325,7 +345,7 @@ Each exists because the corresponding mistake was actually made:
 |---|---|
 | `styles/__tests__/ds-drift.test.js` | a DS refresh moving a brand hue without the console following |
 | `styles/__tests__/cortex-tokens.test.js` | the contract — surfaces, opaque chip fills, and any accent role other than the primary action turning orange again |
-| `app/__tests__/everyDestinationRenders.test.jsx` | the rail drifting from the five tasks + Manage; one page's markup leaking into another's |
+| `app/__tests__/everyDestinationRenders.test.jsx` | the rail drifting from the three journeys; one page's markup leaking into another's |
 | `app/__tests__/mastheadEyebrow.test.jsx` | the retired phase vocabulary reappearing on a page |
 | `console/__tests__/navTaskRail.test.js` | an off-rail page whose parent is not on the rail; a tab pointing at nothing; an e2e route id that no longer resolves |
 | `console/povdata/__tests__/povdata.test.js` | `povdata/` growing record-shaped (seed) exports again |

@@ -314,7 +314,7 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
 | GET | `/api/runs/{run_id}/events` | SSE stream scoped to one run (+ global) | — | `text/event-stream` |
 
-**Verification window.** Unless `timeframe_seconds` is passed (on `POST /verify` or to the sweep), each run's `verification_xql` is queried over that run's own absolute window, `{"from": ms, "to": ms}` (UTC epoch ms): `started_at - 300 s` to `min((completed_at or started_at) + max(the scenario's correlation_window_seconds, 300 s), now)`, falling back to `CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS` when the scenario sets none. The 300 s floor on the tail allows for log-generation delay and clock skew after a run whose correlation window is short (10-120 s windows exist). When a `channel: eal` step sets `eal.params.event_time_offset_seconds` (<= 0, back-dating its record bodies), the lead grows by the magnitude of the most negative offset in the scenario, so rows whose `_time` the collector takes from the body still fall inside the window. An explicit `timeframe_seconds` keeps the old `{"relativeTime": s*1000}`. The window used is recorded at `tc_verdict_detail.verification.window`. **Push runs keep the relative lookback** (`{"relativeTime": CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS*1000}`): a push run reaches `staged` when its bundle is generated, the bundle runs offline later and SimCore never learns when, so a window anchored on staging would miss every event. Their record carries `verification.window: null` and `verification.window_reason: "push_execution_time_unknown"`. This removes the late-verify false `fail` (a run verified hours later used to query the last hour and find nothing) for pull runs of 12 of the 14 scenarios that carry `verification_xql` (counted on this tree from `steps[].expected_detections[].verification_xql`). The other two keep it: `SIM-EDR-018` (step-04) and `SIM-EDR-025` filter on `current_time()` inside their own queries, so a late verify still finds nothing whatever window SimCore passes. Push runs are outside the fix: they keep the relative lookback above, so a push run verified more than `CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS` after its bundle ran can still read `fail`. ***tenant-verified stays 0.***
+**Verification window.** Unless `timeframe_seconds` is passed (on `POST /verify` or to the sweep), each run's `verification_xql` is queried over that run's own absolute window, `{"from": ms, "to": ms}` (UTC epoch ms): `started_at - 300 s` to `min((completed_at or started_at) + max(the scenario's correlation_window_seconds, 300 s), now)`, falling back to `CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS` when the scenario sets none. The 300 s floor on the tail allows for log-generation delay and clock skew after a run whose correlation window is short (10-120 s windows exist). When a `channel: eal` step sets `eal.params.event_time_offset_seconds` (<= 0, back-dating its record bodies), the lead grows by the magnitude of the most negative offset in the scenario, so rows whose `_time` the collector takes from the body still fall inside the window. An explicit `timeframe_seconds` keeps the old `{"relativeTime": s*1000}`. The window used is recorded at `tc_verdict_detail.verification.window`. **Push runs keep the relative lookback** (`{"relativeTime": CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS*1000}`): a push run reaches `staged` when its bundle is generated, the bundle runs offline later and SimCore never learns when, so a window anchored on staging would miss every event. Their record carries `verification.window: null` and `verification.window_reason: "push_execution_time_unknown"`. This removes the late-verify false `fail` (a run verified hours later used to query the last hour and find nothing) for pull runs of 15 of the 17 scenarios that carry `verification_xql` (counted 2026-11-13 from `steps[].expected_detections[].verification_xql`, after `SIM-MP-038`). The other two keep it: `SIM-EDR-018` (step-04) and `SIM-EDR-025` filter on `current_time()` inside their own queries, so a late verify still finds nothing whatever window SimCore passes. Push runs are outside the fix: they keep the relative lookback above, so a push run verified more than `CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS` after its bundle ran can still read `fail`. ***tenant-verified stays 0.***
 
 > The single-run SSE route lives in the dedicated `events` router (`core/api/events.py`)
 > but its path falls under `/api/runs/{run_id}/...`; the global stream is
@@ -489,6 +489,36 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   a `missed` row (any expectation) to `not_reached` / `not_executed` and clears its
   `fail`; a later `aborted` moves it to `pending` / `RUN_ABORTED` (a Tier-1 `fail`
   becomes `pending`); a decided `detected` / `prevented` row is never replaced.
+- **A run with nothing left in the denominator is `pending`, not `not_applicable`.**
+  When every Result is `not_reached`, `not_executed` or soak-pending and no KPI was
+  measured, `verifier.score_run` returns `tc_verdict: pending`. One example is a run
+  whose every step the host reported `not_run` (`TOOL_ABSENT`). In that case
+  `tc_verdict_detail.reason` is `soak_pending` when any row is soaking (that row
+  ran, and a read back after its window closes can still score the run), and
+  `not_executed` when no row is (only a re-run can). `detail` lists each `outcome`,
+  `outcome_reason` and its count. Nothing in such a run was tested, so the test case
+  is still owed. `not_applicable` means something else: the rows that ran carry no
+  measurable threshold, or a PASS was clamped. The run report labels it "NOT
+  SCOREABLE — the test case carries no measurable threshold" and the console greys
+  it out, so using it for a run where nothing ran would misreport that run. `reason`
+  is `null` on every other score. Both report renderers take their label from
+  `report_generator.verdict_label`. For these runs it reads "PENDING — nothing
+  executed; the test case is still owed" or "PENDING — detectors are still
+  soaking", not "PENDING — verification outstanding". The console renders the
+  reason as a single element, `VerdictReason` (`ui/src/components/console/verdictReason.js`
+  holds the labels). It is a dashed chip beside the `pending` chip, reading "nothing
+  executed" or "detectors soaking", with a sentence under it that says what to do.
+  It appears on the Techniques tab, the Topology Engine terminal and the UC / TC
+  run rollup (`pending_reasons`). An unknown reason is shown as its raw token. The
+  Techniques tab counts excluded rows as "never ran", because `not_executed` is not
+  "not reached". The Tier-2 sweep still visits a run like this
+  because `pending` is not terminal, but it sends no XQL for excluded rows.
+  The console's run lifecycle (`runLifecycle.js`: the Runs list, the run's page
+  and Report) puts a run whose reason is `not_executed` in its `nothing` phase.
+  It reads "nothing executed", offers Run instead of Read back, and says why.
+  Reconcile and verify skip rows the host says never ran, so a read back cannot
+  change that verdict. A `soak_pending` run keeps Read back, because a read back
+  after its window closes can score it.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
 rc, reason, started_at, recorded_at}]` (`started_at` = first `/output` arrival, i.e.
@@ -1320,6 +1350,12 @@ console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
 - `is_scoreable` is surfaced deliberately — 57 of the 107 detection-backable
   rows carry no measurable threshold, so `pass` is impossible for them by
   construction.
+- The detail's `runs` block is `{total, verdicts, pending_reasons, latest}`.
+  `pending_reasons` counts the `pending` runs whose `tc_verdict_detail.reason`
+  is set (`not_executed`, `soak_pending`, see §1.3.1). Those runs need a re-run or
+  a closed soak window, not more verification. The map holds only the reasons
+  that occur, so it is `{}` when there are none. `latest.reason` carries the
+  same field for the newest run, or `null`.
 
 ### 1.15 Payload shelf (`core/api/payloads.py`, prefixes `/shelf` **and** `/k8s`)
 

@@ -915,7 +915,7 @@
 .theme-console .run-detail .run-tech__head,
 .theme-console .run-detail .run-topo__head { display: flex; flex-direction: column; gap: 6px; }
 .theme-console .run-detail .run-tech__verdict,
-.theme-console .run-detail .run-topo__engine-verdict { display: flex; align-items: center; gap: 10px; }
+.theme-console .run-detail .run-topo__engine-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .theme-console .run-detail .run-tech__k,
 .theme-console .run-detail .run-topo__k { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tx3); }
 .theme-console .run-detail .run-tech__totals,

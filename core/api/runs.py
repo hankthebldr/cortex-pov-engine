@@ -422,14 +422,14 @@ def _case_section(run: Run) -> list[str]:
 def _verdict_section(run: Run) -> list[str]:
     """Markdown block for a run's test-case verdict. Empty when unscored.
 
-    Reuses ``report_generator._VERDICT_LABEL`` rather than restating the four
-    labels — the wording of "NOT SCOREABLE" in particular is load-bearing and
-    must not fork between the two renderers.
+    Reuses ``report_generator.verdict_label`` rather than restating the labels —
+    the wording of "NOT SCOREABLE" in particular is load-bearing and must not
+    fork between the two renderers.
     """
     if not run.tc_verdict:
         return []
     detail = run.tc_verdict_detail if isinstance(run.tc_verdict_detail, dict) else {}
-    label = report_generator._VERDICT_LABEL.get(run.tc_verdict, run.tc_verdict)
+    label = report_generator.verdict_label(run.tc_verdict, detail)
 
     out = ["## Test-Case Verdict", "", f"**{label}**", ""]
     if detail.get("detail"):

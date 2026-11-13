@@ -72,6 +72,20 @@ describe('Read back on the Runs list', () => {
     await waitFor(() => expect(refreshRuns).toHaveBeenCalled())
   })
 
+  it('the page of a run where nothing executed says why and offers Run, not Read back', async () => {
+    const dry = { ...UNREAD_RUN, run_id: 'run-dry-2', tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }
+    installRoutes({})
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [dry] }}>
+        <RunsSurface params={{ run: 'run-dry-2' }} setParams={() => {}} onNavigate={() => {}} onAbortRun={() => {}} />
+      </EnvironmentContext.Provider>,
+    )
+    const msg = await screen.findByTestId('run-lifecycle-message')
+    expect(msg).toHaveTextContent(/no step that carries a detection ran/i)
+    expect(screen.queryByRole('button', { name: 'Read back' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+  })
+
   it('without a tenant credential the run stays unread, with the reason, and Read back stays on offer', async () => {
     mount({
       'POST /api/runs/:id/reconcile': () => new Response(JSON.stringify({
