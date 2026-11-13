@@ -301,10 +301,56 @@ def test_snapshot_carries_statement_data_notice_and_tenant_verified_0(
     assert p["tenant_verified"] == 0
     assert p["integration"] == "acme" and p["tenant"]
     assert p["complete"] is True and p["tenant_answered"] is True
-    assert isinstance(p["queries_issued"], int) and p["queries_issued"] == 4
-    assert body["snapshot"]["queries_issued"] == 4
+    assert isinstance(p["queries_issued"], int) and p["queries_issued"] == 5
+    assert body["snapshot"]["queries_issued"] == 5
     assert body["snapshot"]["reader_version"] == "1"
     assert body["code"] == "OK" and body["status"] == "ok"
+
+
+def test_snapshot_records_tenant_version_or_null(client, session_factory, inject, monkeypatch):
+    """PD9: one more request reads get_tenant_info, last; the snapshot records
+    its version, or null with that sub-read's code. It never moves the
+    snapshot's own code, status or completeness."""
+    from integrations.xsiam.ledger import ledger
+
+    from tests.connectors.tenant_fakes import TENANT_INFO
+
+    def read_now(fake: FakeTenant, **params) -> tuple[dict, dict]:
+        inject(fake)
+        body = post(client, **params).json()
+        assert body["read"] is True, body
+        assert (body["code"], body["status"]) == ("OK", "ok")
+        assert payload(body)["complete"] is True
+        return body, payload(body)
+
+    seed(session_factory, observations=[obs_1001()])
+
+    # The reply PANW documents: licence fields, no version field.
+    fake = default_tenant()
+    _, p = read_now(fake)
+    assert (p["tenant_version"], p["tenant_version_code"]) == (None, "TENANT_VERSION_NOT_REPORTED")
+    assert len(fake.calls["tenant_info"]) == 1 and fake.calls["tenant_info"] == [{}]
+    assert p["queries_issued"] == 5           # the four evidence requests, then this one
+
+    # A reply that carries a version: recorded, neutralised.
+    _, p = read_now(default_tenant(tenant_info={**TENANT_INFO, "version": "3.6.0​"}),
+                    force="true")
+    assert (p["tenant_version"], p["tenant_version_code"]) == ("3.6.0", "OK")
+
+    # A failed sub-read: null with its code; the request still counts.
+    _, p = read_now(default_tenant(status={"tenant_info": 500}), force="true")
+    assert (p["tenant_version"], p["tenant_version_code"]) == (None, "XSIAM_API_ERROR")
+    assert p["queries_issued"] == 5
+
+    # CortexSim's own budget refuses it once the evidence requests spent it: a
+    # local refusal sends nothing, and the snapshot is not QUOTA_REFUSED.
+    ledger.reset()
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "4")
+    fake = default_tenant()
+    body, p = read_now(fake, force="true")
+    assert (p["tenant_version"], p["tenant_version_code"]) == (None, "QUOTA_REFUSED")
+    assert fake.calls["tenant_info"] == [] and p["queries_issued"] == 4
+    assert body["retry_after_seconds"] is None
 
 
 def test_unknown_run_is_404_and_makes_no_call(client, inject):

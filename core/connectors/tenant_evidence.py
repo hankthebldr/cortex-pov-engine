@@ -29,6 +29,11 @@ What one read does, in order:
 7. The id probe: the matcher's alert ids read back by id, with the host fields.
 8. Cases: ``case/search`` for the attributed issues' case ids (at most 100).
 9. The run host's endpoint record, labelled as of ``read_at``.
+10. PD9: one ``get_tenant_info`` request, last, so it never takes the evidence
+    reads' budget. ``tenant_version`` is the reply's version, or null with
+    ``tenant_version_code`` naming why (``TENANT_VERSION_NOT_REPORTED``, the
+    sub-read's own code, or ``QUOTA_REFUSED``). It never changes the snapshot's
+    code, status or ``complete``.
 
 Every connector call runs in ``asyncio.to_thread``: the fetcher is
 synchronous and SimCore's loop also serves beacon polls, SSE and the abort
@@ -78,6 +83,7 @@ from .tenant_reader import (
     attribute,
     group_cases,
     lag_seconds,
+    neutralise_text,
     project_endpoint,
     project_issue,
     run_issue_filters,
@@ -104,6 +110,13 @@ TENANT_EVIDENCE_READ_RECENTLY = "TENANT_EVIDENCE_READ_RECENTLY"
 TENANT_EVIDENCE_NOT_READ = "TENANT_EVIDENCE_NOT_READ"
 ENDPOINT_NOT_FOUND = "ENDPOINT_NOT_FOUND"
 AMBIGUOUS_ENDPOINT_RECORDS = "AMBIGUOUS_ENDPOINT_RECORDS"
+#: PD9: the tenant-info read answered, and its reply names no version.
+TENANT_VERSION_NOT_REPORTED = "TENANT_VERSION_NOT_REPORTED"
+#: The ``get_tenant_info`` key a version is read from. PANW's page (fetched
+#: 2026-11-13) documents licence fields only, so a reply as documented gives
+#: ``TENANT_VERSION_NOT_REPORTED``; the live check settles whether a tenant
+#: sends one (docs/reference/xsiam-platform-apis/15-parity-reads.md).
+TENANT_VERSION_KEY = "version"
 
 _PENDING = frozenset({NO_TENANT_CONFIGURED, TENANT_EVIDENCE_NOT_READ})
 #: Section codes that are a complete answer, even when degraded.
@@ -140,8 +153,11 @@ class _Read:
         self.answered: Optional[bool] = None
         self.quota: Optional[dict[str, Any]] = None
 
-    async def call(self, fn: Callable[..., PullResult], *args: Any, **kwargs: Any
-                   ) -> Optional[PullResult]:
+    async def call(self, fn: Callable[..., PullResult], *args: Any, _stops_read: bool = True,
+                   **kwargs: Any) -> Optional[PullResult]:
+        """``fn`` in a worker thread, counted. ``_stops_read=False`` (PD9's
+        tenant-info read) still counts what it sent but does not latch a quota
+        refusal, so it cannot turn the snapshot into ``QUOTA_REFUSED``."""
         if self.quota is not None:
             return None
         res = await asyncio.to_thread(fn, *args, **kwargs)
@@ -155,7 +171,7 @@ class _Read:
                 self.answered = True
         elif sent and self.answered is None:
             self.answered = False
-        if not res.ok and res.code == codes.XSIAM_QUOTA_ERROR:
+        if _stops_read and not res.ok and res.code == codes.XSIAM_QUOTA_ERROR:
             retry = (detail.get("retry_after_seconds") if local
                      else tuning.xsiam_breaker_cooldown())
             self.quota = {"refused_locally": local,
@@ -293,6 +309,26 @@ def _with_lag(issue: dict, pairs: list[dict], executed: dict[Any, Optional[datet
 
 def _case_value(cid: str) -> Any:
     return int(cid) if cid.isascii() and cid.isdigit() else cid
+
+
+async def _tenant_version(read: _Read, conn: Any, cfg: Any) -> tuple[Optional[str], str]:
+    """PD9: ``(tenant_version, code)`` from one ``get_tenant_info`` request, sent
+    after every evidence read so it never takes their budget. Never fails the
+    snapshot: a refusal or failure is ``None`` with that sub-read's code
+    (``QUOTA_REFUSED`` for either budget, else the connector's), and it does not
+    latch a quota refusal onto the read. Not sent after an earlier refusal."""
+    res = await read.call(conn.get_tenant_info, cfg, _stops_read=False)
+    if res is None or (not res.ok and res.code == codes.XSIAM_QUOTA_ERROR):
+        return None, QUOTA_REFUSED
+    if not res.ok:
+        return None, res.code or codes.XSIAM_API_ERROR
+    if TENANT_VERSION_KEY not in res.detail["tenant_info"]:
+        return None, TENANT_VERSION_NOT_REPORTED
+    value = res.detail["tenant_info"][TENANT_VERSION_KEY]
+    version = neutralise_text(value)[0] if isinstance(value, str) else None
+    if not version or not version.strip():
+        return None, codes.XSIAM_PARSE_ERROR       # present, but not a version string
+    return version, OK
 
 
 # ── one read at a time per run and tenant ────────────────────────────────────
@@ -597,6 +633,9 @@ async def _read(db: AsyncSession, run: Run, results: list[Result], executed: lis
                 else:
                     endpoint.update(code=OK, record=records[0])
 
+    # 10. PD9: the tenant's version, last, in its own request.
+    tenant_version, tenant_version_code = await _tenant_version(read, conn, cfg)
+
     # The issues section, measured from the rows read.
     if issues_failed:
         issues_section = {**issues_section, "total_count": None, "filter_count": None,
@@ -706,6 +745,8 @@ async def _read(db: AsyncSession, run: Run, results: list[Result], executed: lis
         "cases": cases_section,
         "endpoint": endpoint,
         "agreement": agreement_out,
+        "tenant_version": tenant_version,
+        "tenant_version_code": tenant_version_code,
         "tenant_verified": (await tenant_verified(db)).count,
         "statement": STATEMENT,
         "data_notice": DATA_NOTICE,

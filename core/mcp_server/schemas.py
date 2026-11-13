@@ -250,6 +250,12 @@ class DatasetSchemaIn(_In):
     tenant: str | None = None
 
 
+class AssetGetIn(TenantIn):
+    """``xsiam.asset.get``: the asset id fills ``OP-ASSETS-ID``'s ``{id}``; the
+    executor route refuses anything that is not one path segment."""
+    asset_id: str
+
+
 class ReportIn(_In):
     run_id: str
     format: Literal["markdown"] = "markdown"

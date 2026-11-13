@@ -873,6 +873,29 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   pointing to `xsiam.issue.search` and `xsiam.case.search`. Their field layout
   is unchanged. `make check-mcp-boot` now fails below 46 tools.
 
+### Added — six parity reads over the MCP server
+
+- Six named tenant reads close the named-read rows of the `~/cortex-mcp` parity
+  table (tenant-reader spec §8.1), taking the MCP server from 46 to 52 tools
+  (27 `cortexsim.*`, 25 `xsiam.*`): `xsiam.tenant_info.get`,
+  `xsiam.audit_log.list`, `xsiam.asset.list`, `xsiam.asset.get`,
+  `xsiam.vulnerability.list` and `xsiam.assessment_result.list`. Each runs one
+  catalog op through SimCore's executor route, on the per-tenant request budget,
+  with the `xsiam_tenant` credential only; they hold no tenant key.
+- Fields are allowlisted from PANW's public API pages
+  (`docs/reference/xsiam-platform-apis/15-parity-reads.md`); free text sits
+  under `tenant_text`, every string is neutralised and capped as the tenant
+  reader's are, and every result carries `data.data_notice`. An unrecognised
+  reply is `XSIAM_PARSE_ERROR`, never an empty list or object, and its detail
+  names reply keys, never a tenant value. `asset.get` refuses an id that is not
+  one path segment with `XSIAM_CONFIG_ERROR` before any tenant call.
+- Each tenant-evidence snapshot spends one more request, last, on
+  `get_tenant_info` and records `tenant_version` with `tenant_version_code`. PANW
+  documents licence fields only in that reply, so a reply as documented records
+  `null` with `TENANT_VERSION_NOT_REPORTED`; a failed or refused sub-read records
+  `null` with its code. It never changes the snapshot's code, status or
+  completeness. `make check-mcp-boot` now fails below 52 tools.
+
 ### Fixed — Results shows each result's alert id and source
 
 - `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
