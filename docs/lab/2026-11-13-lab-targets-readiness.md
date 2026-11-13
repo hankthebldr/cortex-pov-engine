@@ -281,6 +281,42 @@ did not land, and no audit warning was logged for it. The wrong-source controls 
 rows accept 192.168.122.1. Either the source network is wider than `/32`, or the restriction is not in effect. TCP
 5514 also accepts connections from ms-01, so any restriction is applied after the TCP connect, not by a firewall.
 
+#### 5.4.1 Applet inventory and syslog row options (tenant Broker API schema, `broker-papi.yaml`)
+
+The tenant offers ten applets: `syslog`, `kafka`, `db`, `ftp` (FTP/SFTP/FTPS), `file` (shared folder), `csv`,
+`wec`, `netflow` (UDP per port), `network_mapper` and `local_agent_settings` (agent proxy and content caching).
+
+A syslog row is a **(protocol, port) listener** with one or more **network settings**. Each setting maps a
+`source_network` to a `(format, vendor, product)` triple:
+
+| Field | Values | Default |
+|---|---|---|
+| `protocol` | `udp`, `tcp`, `secure_TCP` (needs a PEM server cert and key, optional CA, `min_tls_ver` 1.0 or 1.2) | — |
+| `port` | 1–65535; each (protocol, port) pair at most once | — |
+| `source_network` | IPv4, IPv4 CIDR or `Any`; unique within a row | `Any` |
+| `format` | `auto`, `CEF`, `LEEF`, `CISCO`, `CORELIGHT`, `RAW` | `auto` |
+| `vendor`, `product` | ASCII letters, digits, `-`, `_` | `auto` |
+
+Two consequences for this lab:
+- The wrong-source controls landed because the source is `Any` (the default). Setting `192.168.122.77/32` in
+  place of `Any` makes ms-01's control a real negative.
+- Every sender here is pov-target-01, so the routing key is the port, not the source. **One port per product**:
+  the same source IP cannot map to two products on one port.
+
+#### 5.4.2 CortexSim data streams that need the Broker VM, and the row each needs
+
+| Dataset the corpus reads | Queries (cards) | Route in `ingestion_routes.py` | Row it needs | Who sends it today | State |
+|---|---|---|---|---|---|
+| `cortexsim_door_syslog_raw` (door probe) | — | — | UDP 514 + TCP 5514, `CEF`, `cortexsim`/`door_syslog` | lab `logger` | **proven** (nonce read-back, both framings) |
+| `cisco_asa_raw` | 7 (TTP-2026-0106, SIM-NDR-010) | `broker_syslog` Cisco/ASA, documented | Its own port (e.g. UDP 5515), `CISCO`, vendor/product auto (vendor ASA guide); parser supports message IDs 302013–302016 | **Nobody.** SIM-NDR-010 writes its `%ASA-…` lines to `/tmp/cortexsim-ndr-010-asa-syslog.log` and never sends them | Gap: needs a step that ships the file to the row |
+| `esxi_syslog` | 4 (TTP-2026-0006, TTP-2026-0123) | none; registry says `doors_unknown` | — | Nobody | **Mismapped:** the VMware ESXi route lands in `vmware_esxi_raw` (`ingestion_routes.py`), so these queries cannot match broker-fed ESXi data |
+| `kubernetes_audit_logs` | 8 (SIM-CDR-025/026) | registry doors `syslog_kubernetes_kubernetes` or `cloud_aws` | not via syslog in this lab | `k8s_audit_emitter` over the HTTP collector | Not a Broker VM path here |
+| `msft_windows_security` | 33 (9 cards) | registry doors `windows_events` or `xdr_agent_xth`; WEC route lands `microsoft_windows_raw` | WEC applet | Nobody (no Windows source) | Closed; the dataset name differs from the WEC route's, so check it before WEC goes live |
+| `cisco_firepower_raw`, `fortinet_fortigate_raw`, `infoblox_infoblox_raw`, `apache_httpd_raw`, `vmware_esxi_raw` | 0 | `broker_syslog` routes | — | — | Catalogue only, no detection reads them |
+
+CortexSim has no syslog transport (`core/eal_simulator` opens no syslog socket), so in this pass the Broker VM
+carries only what a lab command sends to it.
+
 #### 5.5 The other three applets need a source the lab does not have
 
 | Applet | What must exist first (vendor docs) | Lab option | State for the pass |
