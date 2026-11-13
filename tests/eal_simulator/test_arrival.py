@@ -121,6 +121,26 @@ def test_open_breaker_is_quota():
     assert (r["state"], r["code"]) == ("not_checked", "QUOTA")
 
 
+def test_a_start_that_fails_after_the_charge_still_counts_one_query():
+    r = run(_Stub(start_exc=XsiamApiError("boom", upstream_status=500)))
+    key = ledger_mod.tenant_ledger_key(_Stub._base)
+    assert r["code"] == "TENANT_ERROR" and r["queries_issued"] == 1
+    assert ledger_mod.ledger.snapshot(key, limit=1000)["queries_last_24h"] == 1
+
+
+def test_a_ledger_refusal_reads_zero_queries():
+    key = ledger_mod.tenant_ledger_key(_Stub._base)
+    ledger_mod.ledger.trip(key, cooldown_seconds=60)
+    r = run(_Stub(reply={"status": "SUCCESS"}))
+    assert (r["code"], r["queries_issued"]) == ("QUOTA", 0)
+
+
+def test_proves_names_the_queried_dataset():
+    r = run(_Stub(reply={"status": "PENDING"}), dataset="acme_okta_raw")
+    assert r["proves"] == ["These records, sent from SimCore just now, were ingested into "
+                           "`acme_okta_raw`."]
+
+
 def test_unexpected_exception_propagates():
     with pytest.raises(ZeroDivisionError):
         run(_Stub(start_exc=ZeroDivisionError()))

@@ -34,7 +34,7 @@ from database import get_db
 from eal_simulator import get_default_registry
 from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
 from eal_simulator.analytics_emitter import CANARY_TOKEN_RE
-from eal_simulator.arrival import DOES_NOT_PROVE, PROVES, check_arrival
+from eal_simulator.arrival import DOES_NOT_PROVE, check_arrival, proves_for
 from eal_simulator.collector_declaration import NATIVE_DATASETS, TEST_CHANNEL, dataset_for, route_verdict
 from eal_simulator.ingestion_routes import tenant_datasets
 from eal_simulator.target_preflight import preflight_target
@@ -89,15 +89,15 @@ class ArrivalBody(BaseModel):
     query_id: Optional[str] = Field(default=None, min_length=1)
 
 
-def _not_checked(body: ArrivalBody, code: str, reason: str) -> dict[str, Any]:
+def _not_checked(body: ArrivalBody, dataset: Optional[str], code: str, reason: str) -> dict[str, Any]:
     return {"state": "not_checked", "found": None, "delivered": body.delivered,
             "first_seen": None, "last_seen": None, "query_id": body.query_id,
             "queries_issued": 0, "code": code, "reason": reason,
-            "proves": list(PROVES), "does_not_prove": list(DOES_NOT_PROVE)}
+            "proves": proves_for(dataset), "does_not_prove": list(DOES_NOT_PROVE)}
 
 
 def _no_dataset_result(body: ArrivalBody) -> dict[str, Any]:
-    return _not_checked(body, "TARGET_HAS_NO_DATASET",
+    return _not_checked(body, None, "TARGET_HAS_NO_DATASET",
                         "this target names no dataset, so there is nothing to query")
 
 
@@ -294,7 +294,7 @@ async def arrival(name: str, body: ArrivalBody,
         try:
             client = await load_xsiam_client(db, body.tenant)
         except XsiamConfigError as exc:
-            result = _not_checked(body, "TENANT_NOT_CONFIGURED", exc.detail)
+            result = _not_checked(body, row.dataset, "TENANT_NOT_CONFIGURED", exc.detail)
         else:
             result = await check_arrival(
                 client, dataset=row.dataset, token=body.token, delivered=body.delivered,

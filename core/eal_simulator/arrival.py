@@ -23,9 +23,11 @@ from integrations.xsiam.guards import require_xql_capability, tenant_budget
 from integrations.xsiam.ledger import DailyBudgetExhausted, QuotaBreakerOpen
 from integrations.xsiam.queries import result_rows
 
-PROVES = [
-    "These records, sent from SimCore just now, were ingested into the dataset.",
-]
+def proves_for(dataset: Optional[str]) -> list[str]:
+    return [f"These records, sent from SimCore just now, were ingested into "
+            f"`{dataset or '<dataset>'}`."]
+
+
 DOES_NOT_PROVE = [
     "That a jumpbox inside the customer network can reach the collector.",
     "That XDM maps the dataset.",
@@ -51,13 +53,13 @@ def _timeframe(since: Optional[datetime]) -> dict[str, int]:
             "to": int(datetime.now(timezone.utc).timestamp() * 1000)}
 
 
-def _result(state: str, *, delivered: int, query_id: Optional[str], issued: int,
+def _result(state: str, *, dataset: Optional[str], delivered: int, query_id: Optional[str], issued: int,
             found: Optional[int] = None, first_seen: Any = None, last_seen: Any = None,
             code: Optional[str] = None, reason: Optional[str] = None) -> dict[str, Any]:
     return {"state": state, "found": found, "delivered": delivered,
             "first_seen": first_seen, "last_seen": last_seen, "query_id": query_id,
             "queries_issued": issued, "code": code, "reason": reason,
-            "proves": list(PROVES), "does_not_prove": list(DOES_NOT_PROVE)}
+            "proves": proves_for(dataset), "does_not_prove": list(DOES_NOT_PROVE)}
 
 
 async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int,
@@ -66,20 +68,20 @@ async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int
     issued = 0
 
     def refused(code: str, reason: str) -> dict[str, Any]:
-        return _result("not_checked", delivered=delivered, query_id=query_id,
+        return _result("not_checked", dataset=dataset, delivered=delivered, query_id=query_id,
                        issued=issued, code=code, reason=reason)
 
     try:
         require_xql_capability(getattr(client, "capabilities", None), tenant="")
         if query_id is None:
             async with tenant_budget(client):
+                issued = 1  # the ledger is charged on entry, before the call is made
                 query_id = await client.start_xql_query(
                     arrival_query(dataset, token), _timeframe(since))
-            issued = 1
         reply = await client.get_query_results(query_id, limit=10)
         status = reply.get("status")
         if status is None or status == "PENDING":
-            return _result("pending", delivered=delivered, query_id=query_id, issued=issued)
+            return _result("pending", dataset=dataset, delivered=delivered, query_id=query_id, issued=issued)
         if status != "SUCCESS":
             return refused("QUERY_FAILED", f"the tenant ended the query with status {status!r}")
         rows = result_rows(reply)
@@ -98,12 +100,12 @@ async def check_arrival(client: Any, *, dataset: str, token: str, delivered: int
         return refused("UNRECOGNISED_REPLY", exc.detail)
 
     if not rows:  # SUCCESS with no rows is a real zero: the tenant answered
-        return _result("counted", delivered=delivered, query_id=query_id,
+        return _result("counted", dataset=dataset, delivered=delivered, query_id=query_id,
                        issued=issued, found=0)
     found = rows[0].get("found") if len(rows) == 1 and isinstance(rows[0], dict) else None
     if type(found) is not int:
         return refused("UNRECOGNISED_REPLY",
                        "the tenant's reply carried no single integer 'found' count")
-    return _result("counted", delivered=delivered, query_id=query_id, issued=issued,
+    return _result("counted", dataset=dataset, delivered=delivered, query_id=query_id, issued=issued,
                    found=found, first_seen=rows[0].get("first_seen"),
                    last_seen=rows[0].get("last_seen"))
