@@ -136,7 +136,7 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
             <input className="cfg-input__box mono" type="password" autoComplete="new-password" value={draft.token || ''}
               onChange={(e) => setDraft({ token: e.target.value })} />
           </Field>
-          <label className="cfg-tick">
+          <label className="cfg__tick">
             <input type="checkbox" checked={!!draft.isDefault} onChange={(e) => setDraft({ isDefault: e.target.checked })} />
             <span>Use as the default target</span>
           </label>
