@@ -522,3 +522,172 @@ async def test_a_refused_poll_keeps_the_daily_count_for_the_started_query(monkey
     assert ei.value.query_started == "q1"
     assert _snap()["queries_last_24h"] == 1      # the start reached the tenant
     assert _snap()["trips"] == 0
+
+
+# ── round 4: the verify sweep's accounting and the response-layer mix ──────
+
+
+def _book(run):
+    return (run.tc_verdict_detail or {}).get("verification") or {}
+
+
+def _verify_rig(monkeypatch):
+    """A real ``xsiam_query_runner`` over a recording transport."""
+    from engine.verifier import xsiam_query_runner
+
+    sent: list = []
+
+    def handler(request):
+        sent.append(request.url.path)
+        if request.url.path.endswith("start_xql_query"):
+            return httpx.Response(200, json={"reply": "q1"})
+        return httpx.Response(200, json={"reply": {"status": "SUCCESS",
+                                                   "results": {"data": [{"a": 1}]}}})
+
+    return sent, xsiam_query_runner(_client(handler), {"relativeTime": 1000})
+
+
+def test_a_locally_refused_verify_is_not_an_attempt_and_never_reaches_the_cap(
+        session_factory, monkeypatch):
+    from config import settings
+    from connectors.service import auto_verify_once, verify_run_now
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION
+    from models import Run
+    from sqlalchemy import select
+    from tests.connectors.test_auto_verify import _seed_run
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    monkeypatch.setattr(settings, "CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(settings, "CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS", 0)
+    ledger.acquire_request(tenant_ledger_key(BASE), per_minute=1)   # bucket empty
+    sent, runner = _verify_rig(monkeypatch)
+    _seed_run(session_factory, run_id="run-local")
+
+    async def go():
+        sweeps, books = [], []
+        async with session_factory() as db:
+            for _ in range(4):
+                sweeps.append(await auto_verify_once(
+                    db, lookback_seconds=86400, runner=runner, tenant="acme-prod",
+                    max_attempts=3, backoff_seconds=0))
+                run = (await db.execute(select(Run))).scalar_one()
+                books.append(_book(run))
+            manual = await verify_run_now(db, run, runner=runner, tenant="acme-prod")
+            return sweeps, books, manual, run.tc_verdict
+
+    sweeps, books, manual, verdict = asyncio.run(go())
+    assert sent == []                                    # nothing reached the tenant
+    for stats, book in zip(sweeps, books):
+        assert stats["runs_considered"] == 1             # never skipped as attempt_cap
+        assert stats["queries_issued"] == 0 and stats["runs_verified"] == 0
+        assert stats["refused_locally"] is True and stats["quota_tripped"] is False
+        assert int(book.get("attempts") or 0) == 0
+        assert not book.get("last_attempt_at")
+        assert book["queries_issued"] == 0 and book["refused_locally"] is True
+    assert manual.reason == "refused_locally"            # not attempt_cap
+    assert manual.remediation == LOCAL_REFUSAL_REMEDIATION
+    assert (manual.retry_after_seconds or 0) >= 1
+    assert manual.queries_issued == 0
+    assert verdict == "pending"
+
+
+def test_a_spent_daily_budget_stops_the_verify_sweep_and_is_not_issued(
+        session_factory, monkeypatch):
+    from connectors.service import auto_verify_once, verify_run_now
+    from models import Run
+    from sqlalchemy import select
+    from tests.connectors.test_auto_verify import _seed_run
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY", "1")
+    ledger.charge(tenant_ledger_key(BASE), limit=1)                 # day spent
+    sent, real = _verify_rig(monkeypatch)
+    tried: list = []
+
+    async def runner(query: str) -> int:
+        tried.append(query)
+        return await real(query)
+
+    for i in range(3):
+        _seed_run(session_factory, run_id=f"run-day{i}")
+
+    async def go():
+        async with session_factory() as db:
+            stats = await auto_verify_once(db, lookback_seconds=86400, runner=runner,
+                                           tenant="acme-prod", backoff_seconds=0)
+            runs = (await db.execute(select(Run).order_by(Run.run_id))).scalars().all()
+            manual = await verify_run_now(db, runs[0], runner=runner, tenant="acme-prod")
+            return stats, [_book(r) for r in runs], [r.tc_verdict for r in runs], manual
+
+    stats, books, verdicts, manual = asyncio.run(go())
+    assert sent == []
+    assert len(tried) == 2                    # the sweep stopped at the refusal (+1 manual)
+    assert stats["queries_issued"] == 0 and stats["runs_verified"] == 0
+    assert stats["refused_locally"] is True and stats["quota_tripped"] is False
+    assert all(int(b.get("attempts") or 0) == 0 for b in books)
+    assert verdicts[0] == "pending"           # never fail
+    assert all(v not in ("pass", "fail") for v in verdicts)
+    assert manual.reason == "refused_locally" and manual.queries_issued == 0
+    assert "CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY" in (manual.remediation or "")
+    assert "before it was sent" in manual.remediation
+    assert manual.retry_after_seconds is None   # a rolling day names no interval
+    assert _snap()["queries_last_24h"] == 1     # only the pre-spent query
+
+
+def test_a_refused_poll_of_a_started_query_is_issued_but_not_an_attempt(session_factory):
+    """The start reached the tenant, so it counts as issued. No answer came back,
+    so it is not an attempt: the attempt cap claims 'verified N times without the
+    detection appearing', and this verify learned nothing."""
+    from connectors.service import verify_run_now
+    from integrations.xsiam.codes import LOCAL_POLL_REFUSAL_REMEDIATION
+    from integrations.xsiam.exceptions import XsiamQuotaError
+    from models import Run
+    from sqlalchemy import select
+    from tests.connectors.test_auto_verify import _seed_run
+
+    _seed_run(session_factory, run_id="run-poll")
+
+    async def runner(query: str) -> int:
+        raise XsiamQuotaError("poll refused", local=True, query_started="q1",
+                              retry_after_seconds=7)
+
+    async def go():
+        async with session_factory() as db:
+            run = (await db.execute(select(Run))).scalar_one()
+            out = await verify_run_now(db, run, runner=runner, tenant="acme-prod")
+            return out, _book(run)
+
+    out, book = asyncio.run(go())
+    assert out.queries_issued == 1 and book["queries_issued"] == 1
+    assert int(book.get("attempts") or 0) == 0 and not book.get("last_attempt_at")
+    assert out.reason == "refused_locally"
+    assert out.remediation == LOCAL_POLL_REFUSAL_REMEDIATION
+    assert out.retry_after_seconds == 7
+
+
+def test_response_layer_names_each_read_when_local_and_tenant_failures_mix(monkeypatch):
+    """Reverse order of the round-3 case: packs refused by our own bucket, a token
+    refills, then the tenant answers the list-names read with a 403."""
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    ticks = iter([0.0, 0.0, 0.0])          # bucket born, pre-spend, packs refused
+    monkeypatch.setattr(ledger, "_clock", lambda: next(ticks, 120.0))
+    ledger.acquire_request(tenant_ledger_key(BASE), per_minute=1)   # bucket empty
+    seen: list = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path.endswith("lists/names"):
+            return httpx.Response(403, json={})
+        return httpx.Response(200, json=[])
+
+    report = pf.PreflightReport(tenant="t", kind="xsiam_tenant")
+    stage = asyncio.run(pf._probe_response_layer(_client(handler), report,
+                                                 datetime(2026, 11, 11, 12)))
+    assert len(seen) == 1 and seen[0].endswith("lists/names")
+    assert report.queries_issued == 1
+    assert "installed packs" in stage.detail and "before it was sent" in stage.detail
+    assert "list names" in stage.detail and "HTTP 403" in stage.detail
+    assert LOCAL_REFUSAL_REMEDIATION in stage.remediation
+    assert "list-names read" in stage.remediation
+    assert "installed-packs read was refused or failed" not in stage.remediation

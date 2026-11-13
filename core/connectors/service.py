@@ -1807,9 +1807,12 @@ async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str,
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
     # `tripped`: the tenant reported its quota. `refused_locally`: CortexSim's own
-    # request budget / breaker refused; the tenant said nothing.
+    # request budget / breaker / daily ceiling refused; the tenant said nothing.
+    # `unanswered`: queries that WERE started on the tenant but whose results
+    # fetch was refused locally (issued, never answered). `refusal`: what to tell
+    # the DC about the local refusal (remediation, retry_after_seconds).
     return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False,
-            "refused_locally": False}
+            "refused_locally": False, "unanswered": 0, "refusal": None}
 
 
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
@@ -1828,7 +1831,9 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
     as ``pending``. A budget CortexSim spent is not evidence about the customer.
     """
     from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
-    from integrations.xsiam.ledger import QuotaBreakerOpen  # noqa: PLC0415
+    from integrations.xsiam.ledger import (  # noqa: PLC0415
+        DailyBudgetExhausted, QuotaBreakerOpen,
+    )
 
     async def _run(query: str) -> int:
         if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
@@ -1837,21 +1842,51 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
         budget["issued"] += 1
         try:
             return await runner(query)
-        except (XsiamQuotaError, QuotaBreakerOpen) as exc:
+        except (XsiamQuotaError, QuotaBreakerOpen, DailyBudgetExhausted) as exc:
             # The customer's analysts share this quota. Stop issuing queries for
             # the rest of THIS sweep. The cross-cycle half — the per-tenant
             # ledger and its breaker — is charged inside the runner itself
             # (`verifier._tenant_budget`) so that assertion runs, which build a
             # runner directly and never reach this wrapper, are bounded too.
-            if isinstance(exc, QuotaBreakerOpen) or getattr(exc, "local", False):
-                # Our own budget refused: stop the sweep, but do not record a
-                # tenant quota event that never happened. The verdict stays pending.
-                budget["refused_locally"] = True
-            else:
+            if not (isinstance(exc, (QuotaBreakerOpen, DailyBudgetExhausted))
+                    or getattr(exc, "local", False)):
                 budget["tripped"] = True
+                raise
+            # Our own budget refused: stop the sweep, but record no tenant quota
+            # event that never happened. The verdict stays pending.
+            budget["refused_locally"] = True
+            budget["refusal"] = _local_refusal_note(exc)
+            if getattr(exc, "query_started", None):
+                # The start reached the tenant (it stays issued); only the fetch
+                # of its results was refused, so no answer came back.
+                budget["unanswered"] = budget.get("unanswered", 0) + 1
+            else:
+                # Refused before the start left: no query was issued.
+                budget["remaining"] += 1
+                budget["issued"] -= 1
             raise
 
     return _run
+
+
+def _local_refusal_note(exc: BaseException) -> dict[str, Any]:
+    """What a caller tells the DC about a local refusal: remediation + retry."""
+    from integrations.xsiam.codes import (  # noqa: PLC0415
+        LOCAL_DAILY_BUDGET_REMEDIATION, LOCAL_POLL_REFUSAL_REMEDIATION,
+        LOCAL_REFUSAL_REMEDIATION,
+    )
+    from integrations.xsiam.ledger import DailyBudgetExhausted  # noqa: PLC0415
+
+    if isinstance(exc, DailyBudgetExhausted):
+        # A rolling day names no single interval: no retry_after_seconds.
+        return {"remediation": LOCAL_DAILY_BUDGET_REMEDIATION, "retry_after_seconds": None}
+    retry = getattr(exc, "retry_after_seconds", None)
+    return {
+        "remediation": (LOCAL_POLL_REFUSAL_REMEDIATION
+                        if getattr(exc, "query_started", None)
+                        else LOCAL_REFUSAL_REMEDIATION),
+        "retry_after_seconds": max(1, int(retry)) if retry is not None else None,
+    }
 
 
 def _bookkeeping(run: Run) -> dict[str, Any]:
@@ -2036,16 +2071,24 @@ async def verify_run_now(
     budget.setdefault("tenant", tenant)
 
     before = budget["issued"]
+    unanswered_before = budget.get("unanswered", 0)
     counts = await verifier.verify_results(
         results, _budgeted(runner, budget),
         agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
         module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
+    # An attempt is a verify the tenant answered (rows, an error, its own 429).
+    # A query refused locally before it left is not issued at all; one started
+    # but whose results fetch was refused is issued and unanswered. Neither
+    # advances `attempts` / `last_attempt_at`: the attempt cap claims "verified
+    # N times without the detection appearing", which a refusal never tested.
+    answered = issued - (budget.get("unanswered", 0) - unanswered_before)
 
     book = _bookkeeping(run)
     book.update({
-        "attempts": int(book.get("attempts") or 0) + (1 if issued else 0),
-        "last_attempt_at": datetime.utcnow().isoformat() if issued else book.get("last_attempt_at"),
+        "attempts": int(book.get("attempts") or 0) + (1 if answered else 0),
+        "last_attempt_at": (datetime.utcnow().isoformat() if answered
+                            else book.get("last_attempt_at")),
         "tenant": tenant,
         "queries_issued": issued,
         "counts": counts,
@@ -2060,11 +2103,14 @@ async def verify_run_now(
         book["window_reason"] = window_reason
     score = await score_run_for_run(db, run, source=source, results=results,
                                     extra_detail={"verification": book})
+    refusal = (budget.get("refusal") or {}) if budget.get("refused_locally") else {}
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
                          tenant=tenant, queries_issued=issued,
                          reason=("quota_exhausted" if budget.get("tripped")
                                  else "refused_locally" if budget.get("refused_locally")
-                                 else None))
+                                 else None),
+                         remediation=refusal.get("remediation"),
+                         retry_after_seconds=refusal.get("retry_after_seconds"))
 
 
 async def auto_verify_once(
@@ -2140,6 +2186,7 @@ async def auto_verify_once(
             logger.debug("auto-verify skip run=%s: %s", run.run_id, skip)
             continue
         stats["runs_considered"] += 1
+        attempts_before = int(_bookkeeping(run).get("attempts") or 0)
         try:
             run_runner, run_window, run_reason = runner, None, None
             if client is not None and run.mode == "push":
@@ -2148,13 +2195,15 @@ async def auto_verify_once(
                 from engine.verifier import xsiam_query_runner  # noqa: PLC0415
                 run_window = await _run_window(db, run, now=now)
                 run_runner = xsiam_query_runner(client, run_window)
-            outcome = await verify_run_now(db, run, runner=run_runner, tenant=tenant,
-                                           budget=budget, source="sweep",
-                                           window=run_window, window_reason=run_reason)
+            await verify_run_now(db, run, runner=run_runner, tenant=tenant,
+                                 budget=budget, source="sweep",
+                                 window=run_window, window_reason=run_reason)
         except Exception:  # noqa: BLE001 — one bad run must not kill the sweep
             logger.exception("auto-verify failed run=%s", run.run_id)
             continue
-        if outcome.queries_issued:
+        if int(_bookkeeping(run).get("attempts") or 0) > attempts_before:
+            # Counted only when the tenant answered: a locally refused query is
+            # not a verification, whatever it cost.
             stats["runs_verified"] += 1
 
     stats["queries_issued"] = budget["issued"]

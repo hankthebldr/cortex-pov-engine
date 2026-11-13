@@ -889,9 +889,12 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     sources: list[str] = []
     packs = names = tenant_config = evidence = None
     shape_error: Optional[str] = None
-    read_problem: Optional[str] = None
-    local_problem = False  # a read was refused by CortexSim's own request budget
-    tenant_problem = False  # a read the tenant itself refused or failed
+    # One entry per read that did not complete, each naming the read and its own
+    # outcome: a local refusal and a tenant refusal in one stage are two facts.
+    problems: list[str] = []
+    # The local remediation for each read CortexSim's own request budget refused.
+    local_fixes: list[str] = []
+    tenant_reads: list[str] = []  # packs / list-names reads the tenant refused or failed
 
     # 1. installed packs
     try:
@@ -902,12 +905,13 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
         shape_error = str(exc)
     except XsiamError as exc:
         _uncount_local(report, exc)
-        local_problem = local_problem or _is_local(exc)
-        tenant_problem = tenant_problem or not _is_local(exc)
-        read_problem = str(exc)
+        _note_local(local_fixes, exc)
+        if not _is_local(exc):
+            tenant_reads.append("installed-packs")
+        problems.append(f"installed packs: {exc}")
     except Exception as exc:  # noqa: BLE001 — transport
-        tenant_problem = True
-        read_problem = str(exc)
+        tenant_reads.append("installed-packs")
+        problems.append(f"installed packs: {exc}")
 
     # 2. list names (a leftover-lists signal, so read even if packs failed)
     try:
@@ -919,9 +923,10 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
         packs = None  # a shape we cannot read: neither present nor absent
     except Exception as exc:  # noqa: BLE001 — XsiamError or transport
         _uncount_local(report, exc)
-        local_problem = local_problem or _is_local(exc)
-        tenant_problem = tenant_problem or not _is_local(exc)
-        read_problem = read_problem or str(exc)
+        _note_local(local_fixes, exc)
+        if not _is_local(exc):
+            tenant_reads.append("list-names")
+        problems.append(f"list names: {exc}")
 
     core = packs is not None and _socfw.CORE_PACK_ID in packs
     if core and names is not None and all(n in names for n in _socfw.CONFIG_LISTS) \
@@ -940,15 +945,15 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                 tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
                 sources.append("list_content")
             if tenant_config is None and shape_error is None:
-                read_problem = read_problem or (
+                problems.append(
                     "list content (SOCFWTenantConfig / SOCFWConfigModes) was not readable"
                     + (": " + "; ".join(refusals) if refusals else ""))
         except _socfw.ResponseLayerShapeError as exc:
             shape_error = str(exc)
         except Exception as exc:  # noqa: BLE001 — transport mid-read
             _uncount_local(report, exc)
-            local_problem = local_problem or _is_local(exc)
-            read_problem = read_problem or f"list content read failed: {exc}"
+            _note_local(local_fixes, exc)
+            problems.append(f"list content read failed: {exc}")
 
     if core and shape_error is None:
         # 4. execution evidence
@@ -959,12 +964,12 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                                          {"relativeTime": RESPONSE_LAYER_TIMEFRAME_MS})
         except XsiamQuotaError as qexc:
             _uncount_local(report, qexc)
-            local_problem = local_problem or _is_local(qexc)
-            read_problem = read_problem or (
+            _note_local(local_fixes, qexc)
+            problems.append(
                 f"XQL read refused by CortexSim's own request budget: {qexc}"
                 if _is_local(qexc) else "XQL read: quota exhausted")
         except Exception as exc:  # noqa: BLE001 — XsiamError or transport
-            read_problem = read_problem or f"XQL read failed: {exc}"
+            problems.append(f"XQL read failed: {exc}")
             logger.info("response_layer: execution evidence unreadable: %s", exc)
         if reply is not None:
             # Any failure unwrapping or summarising a reply that ARRIVED is a
@@ -977,6 +982,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
 
     if shape_error is not None:
         packs = None
+    read_problem = "; ".join(problems) or None
     layer = _socfw.assemble_response_layer(
         packs=packs, list_names=names, tenant_config=tenant_config, evidence=evidence,
         sources_used=sources, read_at=now, shape_error=shape_error)
@@ -1001,14 +1007,22 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                          f"the response layer is reported UNKNOWN."),
             ms=ms, extra=extra)
     if layer.state == "UNKNOWN":
+        # Only a failed installed-packs read leaves the layer UNKNOWN; list names
+        # is read regardless, so either read may be the one the tenant refused.
+        tenant_fix = None
+        if "installed-packs" in tenant_reads or not local_fixes:
+            tenant_fix = ("The installed-packs read was refused or failed, so neither "
+                          "present nor absent can be claimed. Check the role of the "
+                          "xsiam_tenant API key: it needs Marketplace / installed-packs "
+                          "read.")
+        elif "list-names" in tenant_reads:
+            tenant_fix = ("The tenant refused or failed the list-names read (see "
+                          "detail). Check the role of the xsiam_tenant API key: it "
+                          "needs list read.")
         return Stage(
             "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
             read_problem or "the installed-packs read failed",
-            remediation=(_LOCAL_REMEDIATION() if local_problem and not tenant_problem else
-                         "The installed-packs read was refused or failed, so neither "
-                         "present nor absent can be claimed. Check the role of the "
-                         "xsiam_tenant API key: it needs Marketplace / installed-packs "
-                         "read."),
+            remediation=_combined_remediation(tenant_fix, local_fixes),
             ms=ms, extra=extra)
     if layer.state == "PRESENT" and not read_problem:
         # Name every Auto Triage value that was assumed or inferred, not read.
@@ -1019,10 +1033,39 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     return Stage(
         "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
         read_problem or "framework present, its config could not be read",
-        remediation=("A read against the SOC Framework did not complete (see detail), so "
-                     "part of its state is unknown. Disposition is shown for context "
-                     "only."),
+        remediation=_combined_remediation(
+            "A read against the SOC Framework did not complete (see detail), so "
+            "part of its state is unknown. Disposition is shown for context only.",
+            local_fixes),
         ms=ms, extra=extra)
+
+
+def _note_local(local_fixes: list[str], exc: BaseException) -> None:
+    """Record the local remediation for a read CortexSim's own budget refused.
+
+    A refused result poll of a started XQL query gets the poll text: that query
+    WAS sent, so "refused before it was sent" would be false for it.
+    """
+    from integrations.xsiam.codes import LOCAL_POLL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    if not _is_local(exc):
+        return
+    fix = (LOCAL_POLL_REFUSAL_REMEDIATION if getattr(exc, "query_started", None)
+           else _LOCAL_REMEDIATION())
+    if fix not in local_fixes:
+        local_fixes.append(fix)
+
+
+def _combined_remediation(tenant_fix: Optional[str],
+                          local_fixes: list[str]) -> Optional[str]:
+    """The tenant's fix and the local-refusal remediation(s), each when it applies.
+
+    A stage can hold both: one read refused by CortexSim's own budget, another
+    refused by the tenant. Each needs its own fix, so neither text replaces the
+    other.
+    """
+    parts = [p for p in (tenant_fix, *local_fixes) if p]
+    return " ".join(parts) or None
 
 
 def _is_local(exc: BaseException) -> bool:

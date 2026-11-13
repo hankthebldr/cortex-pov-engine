@@ -131,6 +131,15 @@ LOCAL_POLL_REFUSAL_REMEDIATION = (
 )
 
 
+LOCAL_DAILY_BUDGET_REMEDIATION = (
+    "CortexSim's own rolling-day XQL query budget for this tenant "
+    "(CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY) is spent, so this query was refused "
+    "before it was sent to the tenant. This says nothing about the tenant. Nothing "
+    "was measured, so affected verdicts stay `pending`; wait for the 24-hour window "
+    "to roll or raise the ceiling."
+)
+
+
 def remediation_for(code: Optional[str]) -> Optional[str]:
     """Remediation text for a code, or None when the code is unknown."""
     return REMEDIATION.get(code or "")
