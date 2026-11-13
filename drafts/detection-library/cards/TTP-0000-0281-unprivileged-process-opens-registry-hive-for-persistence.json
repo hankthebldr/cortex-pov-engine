@@ -1,0 +1,182 @@
+{
+  "id": "TTP-0000-0281",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unprivileged Process Opens Registry Hive for Persistence",
+    "summary": "An unprivileged user process opens a registry hive to establish persistence. Cortex should detect the registry hive access by a non-system process. The attack involves using reg.exe to open a hive fil",
+    "description": "An unprivileged user process opens a registry hive to establish persistence. Cortex should detect the registry hive access by a non-system process. The attack involves using reg.exe to open a hive file directly."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1012",
+        "name": "T1012",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1547",
+        "subtechnique_id": "T1547.001",
+        "name": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "reg load HKLM\\TEMP_HIVE C:\\Windows\\System32\\config\\SOFTWARE\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process opens registry hive",
+        "expected_value": "actor_process_image_name = 'reg.exe' and action_file_path = 'C:\\\\Windows\\\\System32\\\\config\\\\SOFTWARE'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unprivileged Process Opened Registry Hive",
+        "description": "Detection of an unprivileged process opening a registry hive file directly, bypassing normal registry access mechanisms.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'reg.exe'\n| filter action_file_path contains 'SOFTWARE' and action_file_path contains 'System32' and action_file_path contains 'config'",
+        "mitre_technique_ids": [
+          "T1012",
+          "T1059.001",
+          "T1547.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unprivileged Process Opens Registry Hive",
+        "description": "Behavioral ABIOC that flags when an unprivileged process opens a registry hive file directly, indicating potential persistence or privilege escalation attempt.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'reg.exe'\n| filter action_file_path contains 'SOFTWARE' and action_file_path contains 'System32' and action_file_path contains 'config'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1012",
+          "T1059.001",
+          "T1547.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Registry Hive Access by Unprivileged Process",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'reg.exe'\n| filter action_file_path contains 'SOFTWARE' and action_file_path contains 'System32' and action_file_path contains 'config'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Unprivileged process opened a registry hive; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unprivileged-process-opened-a-registry-hive"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Unprivileged process opened a registry hive",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unprivileged-process-opened-a-registry-hive",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1012",
+      "url": "https://attack.mitre.org/techniques/T1012/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1547.001",
+      "url": "https://attack.mitre.org/techniques/T1547/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

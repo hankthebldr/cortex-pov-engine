@@ -1,0 +1,2930 @@
+{
+ "TTP-0000-0001": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0184-sim-edr-024.json",
+  "card_id": "TTP-2026-0184",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-024-edr-linux-sysgorat-go-implant-establishe.yml",
+  "scenario_id": "SIM-EDR-024"
+ },
+ "TTP-0000-0002": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0185-sim-edr-025.json",
+  "card_id": "TTP-2026-0185",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-025-edr-squidoor-backdoor-beacons-over-dns-t.yml",
+  "scenario_id": "SIM-EDR-025"
+ },
+ "TTP-0000-0003": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0186-sim-edr-026.json",
+  "card_id": "TTP-2026-0186",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-026-edr-linux-tinyrct-backdoor-stands-up-a-s.yml",
+  "scenario_id": "SIM-EDR-026"
+ },
+ "TTP-0000-0004": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0187-sim-edr-027.json",
+  "card_id": "TTP-2026-0187",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 2,
+  "scenario_file": "scenarios/edr/edr-027-edr-ak47c2-multi-protocol-backdoor-loade.yml",
+  "scenario_id": "SIM-EDR-027"
+ },
+ "TTP-0000-0005": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0188-sim-cdr-029.json",
+  "card_id": "TTP-2026-0188",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/cdr/cdr-029-esxi-uncommon-command-syslog.yml",
+  "scenario_id": "SIM-CDR-029"
+ },
+ "TTP-0000-0006": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0189-sim-ndr-013.json",
+  "card_id": "TTP-2026-0189",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/ndr/ndr-013-rdp-outbound-egress.yml",
+  "scenario_id": "SIM-NDR-013"
+ },
+ "TTP-0000-0007": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0190-sim-edr-028.json",
+  "card_id": "TTP-2026-0190",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-028-win-uac-bypass.yml",
+  "scenario_id": "SIM-EDR-028"
+ },
+ "TTP-0000-0008": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0191-sim-edr-029.json",
+  "card_id": "TTP-2026-0191",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-029-win-defender-tamper.yml",
+  "scenario_id": "SIM-EDR-029"
+ },
+ "TTP-0000-0009": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0192-sim-edr-030.json",
+  "card_id": "TTP-2026-0192",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-030-win-process-hollow.yml",
+  "scenario_id": "SIM-EDR-030"
+ },
+ "TTP-0000-0010": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0193-sim-edr-031.json",
+  "card_id": "TTP-2026-0193",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-031-win-inhibit-recovery.yml",
+  "scenario_id": "SIM-EDR-031"
+ },
+ "TTP-0000-0011": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0194-sim-edr-032.json",
+  "card_id": "TTP-2026-0194",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-032-win-squiblydoo.yml",
+  "scenario_id": "SIM-EDR-032"
+ },
+ "TTP-0000-0012": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0195-sim-edr-033.json",
+  "card_id": "TTP-2026-0195",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-033-win-bits-jobs.yml",
+  "scenario_id": "SIM-EDR-033"
+ },
+ "TTP-0000-0013": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0196-sim-edr-034.json",
+  "card_id": "TTP-2026-0196",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-034-win-browser-creds.yml",
+  "scenario_id": "SIM-EDR-034"
+ },
+ "TTP-0000-0014": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0197-sim-edr-035.json",
+  "card_id": "TTP-2026-0197",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-035-win-wmi-persist.yml",
+  "scenario_id": "SIM-EDR-035"
+ },
+ "TTP-0000-0015": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0198-sim-edr-036.json",
+  "card_id": "TTP-2026-0198",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-036-windows-a-process-is-masquerading-as-a-commo.yml",
+  "scenario_id": "SIM-EDR-036"
+ },
+ "TTP-0000-0016": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0199-sim-edr-037.json",
+  "card_id": "TTP-2026-0199",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-037-windows-a-rare-dll-signed-by-an-uncommon-ven.yml",
+  "scenario_id": "SIM-EDR-037"
+ },
+ "TTP-0000-0017": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0200-sim-edr-038.json",
+  "card_id": "TTP-2026-0200",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-038-windows-abnormal-rdp-connections-to-multiple.yml",
+  "scenario_id": "SIM-EDR-038"
+ },
+ "TTP-0000-0018": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0201-sim-edr-039.json",
+  "card_id": "TTP-2026-0201",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-039-windows-attempt-to-execute-a-command-on-a-re.yml",
+  "scenario_id": "SIM-EDR-039"
+ },
+ "TTP-0000-0019": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0202-sim-edr-040.json",
+  "card_id": "TTP-2026-0202",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-040-windows-command-execution-via-wmiexec.yml",
+  "scenario_id": "SIM-EDR-040"
+ },
+ "TTP-0000-0020": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0203-sim-edr-041.json",
+  "card_id": "TTP-2026-0203",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-041-windows-copy-a-process-memory-file.yml",
+  "scenario_id": "SIM-EDR-041"
+ },
+ "TTP-0000-0021": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0204-sim-edr-042.json",
+  "card_id": "TTP-2026-0204",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-042-windows-suspicious-dump-of-ntdsdit-using-sha.yml",
+  "scenario_id": "SIM-EDR-042"
+ },
+ "TTP-0000-0022": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0205-sim-edr-043.json",
+  "card_id": "TTP-2026-0205",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-043-windows-an-uncommon-service-was-started.yml",
+  "scenario_id": "SIM-EDR-043"
+ },
+ "TTP-0000-0023": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0206-sim-edr-044.json",
+  "card_id": "TTP-2026-0206",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-044-windows-64-bit-powershell-spawning-an-uncomm.yml",
+  "scenario_id": "SIM-EDR-044"
+ },
+ "TTP-0000-0024": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0207-sim-edr-045.json",
+  "card_id": "TTP-2026-0207",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-045-windows-new-addition-to-windows-defender-exc.yml",
+  "scenario_id": "SIM-EDR-045"
+ },
+ "TTP-0000-0025": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0208-sim-edr-046.json",
+  "card_id": "TTP-2026-0208",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-046-windows-hidden-attribute-was-added-to-a-file.yml",
+  "scenario_id": "SIM-EDR-046"
+ },
+ "TTP-0000-0026": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0209-sim-edr-047.json",
+  "card_id": "TTP-2026-0209",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-047-windows-a-rare-local-administrator-login.yml",
+  "scenario_id": "SIM-EDR-047"
+ },
+ "TTP-0000-0027": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0210-sim-edr-048.json",
+  "card_id": "TTP-2026-0210",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-048-windows-an-uncommon-lolbin-execution-by-sche.yml",
+  "scenario_id": "SIM-EDR-048"
+ },
+ "TTP-0000-0028": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0211-sim-edr-049.json",
+  "card_id": "TTP-2026-0211",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-049-linux-possible-brute-force-on-sudo-user.yml",
+  "scenario_id": "SIM-EDR-049"
+ },
+ "TTP-0000-0029": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0212-sim-edr-050.json",
+  "card_id": "TTP-2026-0212",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-050-linux-masquerading-as-the-linux-crond-proc.yml",
+  "scenario_id": "SIM-EDR-050"
+ },
+ "TTP-0000-0030": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0213-sim-edr-051.json",
+  "card_id": "TTP-2026-0213",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-051-linux-setuid-and-setgid-file-bit-manipulat.yml",
+  "scenario_id": "SIM-EDR-051"
+ },
+ "TTP-0000-0031": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0214-sim-edr-052.json",
+  "card_id": "TTP-2026-0214",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-052-linux-reading-bash-command-history-file.yml",
+  "scenario_id": "SIM-EDR-052"
+ },
+ "TTP-0000-0032": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0215-sim-edr-053.json",
+  "card_id": "TTP-2026-0215",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-053-linux-possible-binary-padding-using-dd.yml",
+  "scenario_id": "SIM-EDR-053"
+ },
+ "TTP-0000-0033": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0216-sim-edr-054.json",
+  "card_id": "TTP-2026-0216",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-054-linux-a-compressed-file-was-exfiltrated-ov.yml",
+  "scenario_id": "SIM-EDR-054"
+ },
+ "TTP-0000-0034": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0217-sim-edr-055.json",
+  "card_id": "TTP-2026-0217",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-055-linux-adding-execution-privileges.yml",
+  "scenario_id": "SIM-EDR-055"
+ },
+ "TTP-0000-0035": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0218-sim-edr-056.json",
+  "card_id": "TTP-2026-0218",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-056-linux-kubernetes-nsenter-container-escape.yml",
+  "scenario_id": "SIM-EDR-056"
+ },
+ "TTP-0000-0036": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0219-sim-edr-057.json",
+  "card_id": "TTP-2026-0219",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-057-linux-suspicious-process-execution-in-a-pr.yml",
+  "scenario_id": "SIM-EDR-057"
+ },
+ "TTP-0000-0037": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0220-sim-edr-058.json",
+  "card_id": "TTP-2026-0220",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-058-linux-suspicious-curl-user-agent.yml",
+  "scenario_id": "SIM-EDR-058"
+ },
+ "TTP-0000-0038": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0221-sim-edr-059.json",
+  "card_id": "TTP-2026-0221",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-059-windows-a-commonly-abused-process-connected-to-a.yml",
+  "scenario_id": "SIM-EDR-059"
+ },
+ "TTP-0000-0039": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0222-sim-edr-060.json",
+  "card_id": "TTP-2026-0222",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-060-windows-a-commonly-abused-process-connected-to-a.yml",
+  "scenario_id": "SIM-EDR-060"
+ },
+ "TTP-0000-0040": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0223-sim-edr-061.json",
+  "card_id": "TTP-2026-0223",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-061-windows-a-compromised-process-accessed-a-rare-cl.yml",
+  "scenario_id": "SIM-EDR-061"
+ },
+ "TTP-0000-0041": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0224-sim-edr-062.json",
+  "card_id": "TTP-2026-0224",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-062-windows-a-compromised-process-accessed-a-rare-ex.yml",
+  "scenario_id": "SIM-EDR-062"
+ },
+ "TTP-0000-0042": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0225-sim-edr-063.json",
+  "card_id": "TTP-2026-0225",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-063-windows-a-contained-executable-from-a-mounted-sh.yml",
+  "scenario_id": "SIM-EDR-063"
+ },
+ "TTP-0000-0043": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0226-sim-edr-064.json",
+  "card_id": "TTP-2026-0226",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-064-windows-a-contained-executable-was-executed-by-a.yml",
+  "scenario_id": "SIM-EDR-064"
+ },
+ "TTP-0000-0044": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0227-sim-edr-065.json",
+  "card_id": "TTP-2026-0227",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-065-windows-a-process-connected-to-a-rare-cloud-reso.yml",
+  "scenario_id": "SIM-EDR-065"
+ },
+ "TTP-0000-0045": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0228-sim-edr-066.json",
+  "card_id": "TTP-2026-0228",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-066-windows-a-process-connected-to-a-rare-external-h.yml",
+  "scenario_id": "SIM-EDR-066"
+ },
+ "TTP-0000-0046": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0229-sim-edr-067.json",
+  "card_id": "TTP-2026-0229",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-067-windows-a-process-connected-to-rare-external-hos.yml",
+  "scenario_id": "SIM-EDR-067"
+ },
+ "TTP-0000-0047": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0230-sim-edr-068.json",
+  "card_id": "TTP-2026-0230",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-068-windows-a-process-was-executed-with-a-command-li.yml",
+  "scenario_id": "SIM-EDR-068"
+ },
+ "TTP-0000-0048": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0231-sim-edr-069.json",
+  "card_id": "TTP-2026-0231",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-069-windows-a-rare-dll-signed-by-an-uncommon-vendor.yml",
+  "scenario_id": "SIM-EDR-069"
+ },
+ "TTP-0000-0049": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0232-sim-edr-070.json",
+  "card_id": "TTP-2026-0232",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-070-windows-a-service-was-disabled.yml",
+  "scenario_id": "SIM-EDR-070"
+ },
+ "TTP-0000-0050": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0233-sim-edr-071.json",
+  "card_id": "TTP-2026-0233",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-071-windows-a-suspicious-process-enrolled-for-a-cert.yml",
+  "scenario_id": "SIM-EDR-071"
+ },
+ "TTP-0000-0051": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0234-sim-edr-072.json",
+  "card_id": "TTP-2026-0234",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-072-windows-a-user-accessed-an-uncommon-appid.yml",
+  "scenario_id": "SIM-EDR-072"
+ },
+ "TTP-0000-0052": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0235-sim-edr-073.json",
+  "card_id": "TTP-2026-0235",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-073-windows-a-user-logged-in-from-an-abnormal-countr.yml",
+  "scenario_id": "SIM-EDR-073"
+ },
+ "TTP-0000-0053": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0236-sim-edr-074.json",
+  "card_id": "TTP-2026-0236",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-074-windows-abnormal-communication-to-a-rare-domain.yml",
+  "scenario_id": "SIM-EDR-074"
+ },
+ "TTP-0000-0054": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0237-sim-edr-075.json",
+  "card_id": "TTP-2026-0237",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-075-windows-abnormal-communication-with-a-rare-combi.yml",
+  "scenario_id": "SIM-EDR-075"
+ },
+ "TTP-0000-0055": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0238-sim-edr-076.json",
+  "card_id": "TTP-2026-0238",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-076-windows-abnormal-connections-to-a-dormant-host-f.yml",
+  "scenario_id": "SIM-EDR-076"
+ },
+ "TTP-0000-0056": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0239-sim-edr-077.json",
+  "card_id": "TTP-2026-0239",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-077-windows-abnormal-network-communication-through-t.yml",
+  "scenario_id": "SIM-EDR-077"
+ },
+ "TTP-0000-0057": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0240-sim-edr-078.json",
+  "card_id": "TTP-2026-0240",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-078-windows-abnormal-network-communication-with-a-ra.yml",
+  "scenario_id": "SIM-EDR-078"
+ },
+ "TTP-0000-0058": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0241-sim-edr-079.json",
+  "card_id": "TTP-2026-0241",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-079-windows-abnormal-process-connection-to-default-m.yml",
+  "scenario_id": "SIM-EDR-079"
+ },
+ "TTP-0000-0059": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0242-sim-edr-080.json",
+  "card_id": "TTP-2026-0242",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-080-windows-abnormal-rdp-connections-to-multiple-hos.yml",
+  "scenario_id": "SIM-EDR-080"
+ },
+ "TTP-0000-0060": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0243-sim-edr-081.json",
+  "card_id": "TTP-2026-0243",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-081-windows-abnormal-rdp-session-to-a-remote-host-fr.yml",
+  "scenario_id": "SIM-EDR-081"
+ },
+ "TTP-0000-0061": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0244-sim-edr-082.json",
+  "card_id": "TTP-2026-0244",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-082-windows-abnormal-recurring-communications-to-a-r.yml",
+  "scenario_id": "SIM-EDR-082"
+ },
+ "TTP-0000-0062": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0245-sim-edr-083.json",
+  "card_id": "TTP-2026-0245",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-083-windows-abnormal-smb-activity-to-multiple-hosts.yml",
+  "scenario_id": "SIM-EDR-083"
+ },
+ "TTP-0000-0063": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0246-sim-edr-084.json",
+  "card_id": "TTP-2026-0246",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-084-windows-abnormal-smb-scanning-activity-to-multip.yml",
+  "scenario_id": "SIM-EDR-084"
+ },
+ "TTP-0000-0064": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0247-sim-edr-085.json",
+  "card_id": "TTP-2026-0247",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-085-windows-abnormal-user-login-to-domain-controller.yml",
+  "scenario_id": "SIM-EDR-085"
+ },
+ "TTP-0000-0065": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0248-sim-edr-086.json",
+  "card_id": "TTP-2026-0248",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-086-windows-an-uncommon-rdp-session-from-a-managed-h.yml",
+  "scenario_id": "SIM-EDR-086"
+ },
+ "TTP-0000-0066": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0249-sim-edr-087.json",
+  "card_id": "TTP-2026-0249",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-087-windows-an-uncommon-rdp-session-was-established.yml",
+  "scenario_id": "SIM-EDR-087"
+ },
+ "TTP-0000-0067": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0250-sim-edr-088.json",
+  "card_id": "TTP-2026-0250",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-088-windows-an-unsigned-process-created-scheduled-ta.yml",
+  "scenario_id": "SIM-EDR-088"
+ },
+ "TTP-0000-0068": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0251-sim-edr-089.json",
+  "card_id": "TTP-2026-0251",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-089-windows-analytics-enhanced-ngfw---rare-internal.yml",
+  "scenario_id": "SIM-EDR-089"
+ },
+ "TTP-0000-0069": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0252-sim-edr-090.json",
+  "card_id": "TTP-2026-0252",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-090-windows-applescript-interpreter-dynamic-library.yml",
+  "scenario_id": "SIM-EDR-090"
+ },
+ "TTP-0000-0070": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0253-sim-edr-091.json",
+  "card_id": "TTP-2026-0253",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-091-windows-applescript-process-executed-with-a-rare.yml",
+  "scenario_id": "SIM-EDR-091"
+ },
+ "TTP-0000-0071": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0254-sim-edr-092.json",
+  "card_id": "TTP-2026-0254",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-092-windows-attempt-to-execute-a-command-on-a-remote.yml",
+  "scenario_id": "SIM-EDR-092"
+ },
+ "TTP-0000-0072": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0255-sim-edr-093.json",
+  "card_id": "TTP-2026-0255",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-093-windows-cached-credentials-discovery-with-cmdkey.yml",
+  "scenario_id": "SIM-EDR-093"
+ },
+ "TTP-0000-0073": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0256-sim-edr-094.json",
+  "card_id": "TTP-2026-0256",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-094-windows-cloud-imds-access-followed-by-remote-tok.yml",
+  "scenario_id": "SIM-EDR-094"
+ },
+ "TTP-0000-0074": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0257-sim-edr-095.json",
+  "card_id": "TTP-2026-0257",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-095-windows-common-third-party-software-name-masquer.yml",
+  "scenario_id": "SIM-EDR-095"
+ },
+ "TTP-0000-0075": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0258-sim-edr-096.json",
+  "card_id": "TTP-2026-0258",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-096-windows-commonly-abused-process-launched-as-a-sy.yml",
+  "scenario_id": "SIM-EDR-096"
+ },
+ "TTP-0000-0076": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0259-sim-edr-097.json",
+  "card_id": "TTP-2026-0259",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-097-windows-conhostexe-spawned-a-suspicious-cmd-proc.yml",
+  "scenario_id": "SIM-EDR-097"
+ },
+ "TTP-0000-0077": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0260-sim-edr-098.json",
+  "card_id": "TTP-2026-0260",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-098-windows-contained-process-execution-with-a-rare.yml",
+  "scenario_id": "SIM-EDR-098"
+ },
+ "TTP-0000-0078": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0261-sim-edr-099.json",
+  "card_id": "TTP-2026-0261",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-099-windows-discovery-of-host-users-via-wmic.yml",
+  "scenario_id": "SIM-EDR-099"
+ },
+ "TTP-0000-0079": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0262-sim-edr-100.json",
+  "card_id": "TTP-2026-0262",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-100-windows-encoded-information-using-windows-certif.yml",
+  "scenario_id": "SIM-EDR-100"
+ },
+ "TTP-0000-0080": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0263-sim-edr-101.json",
+  "card_id": "TTP-2026-0263",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-101-windows-execution-of-an-uncommon-process-at-an-e.yml",
+  "scenario_id": "SIM-EDR-101"
+ },
+ "TTP-0000-0081": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0264-sim-edr-102.json",
+  "card_id": "TTP-2026-0264",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-102-windows-execution-of-an-uncommon-process-at-an-e.yml",
+  "scenario_id": "SIM-EDR-102"
+ },
+ "TTP-0000-0082": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0265-sim-edr-103.json",
+  "card_id": "TTP-2026-0265",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-103-windows-execution-of-an-uncommon-process-with-a.yml",
+  "scenario_id": "SIM-EDR-103"
+ },
+ "TTP-0000-0083": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0266-sim-edr-104.json",
+  "card_id": "TTP-2026-0266",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-104-windows-execution-of-an-uncommon-process-with-a.yml",
+  "scenario_id": "SIM-EDR-104"
+ },
+ "TTP-0000-0084": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0267-sim-edr-105.json",
+  "card_id": "TTP-2026-0267",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-105-windows-execution-of-command-from-within-a-kuber.yml",
+  "scenario_id": "SIM-EDR-105"
+ },
+ "TTP-0000-0085": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0268-sim-edr-106.json",
+  "card_id": "TTP-2026-0268",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-106-windows-execution-of-dllhostexe-with-an-empty-co.yml",
+  "scenario_id": "SIM-EDR-106"
+ },
+ "TTP-0000-0086": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0269-sim-edr-107.json",
+  "card_id": "TTP-2026-0269",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-107-windows-execution-of-masqueraded-third-party-uti.yml",
+  "scenario_id": "SIM-EDR-107"
+ },
+ "TTP-0000-0087": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0270-sim-edr-108.json",
+  "card_id": "TTP-2026-0270",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-108-windows-extracting-credentials-from-unix-files.yml",
+  "scenario_id": "SIM-EDR-108"
+ },
+ "TTP-0000-0088": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0271-sim-edr-109.json",
+  "card_id": "TTP-2026-0271",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-109-windows-fodhelperexe-uac-bypass.yml",
+  "scenario_id": "SIM-EDR-109"
+ },
+ "TTP-0000-0089": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0272-sim-edr-110.json",
+  "card_id": "TTP-2026-0272",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-110-windows-globally-uncommon-high-entropy-module-wa.yml",
+  "scenario_id": "SIM-EDR-110"
+ },
+ "TTP-0000-0090": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0273-sim-edr-111.json",
+  "card_id": "TTP-2026-0273",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-111-windows-globally-uncommon-high-entropy-process-w.yml",
+  "scenario_id": "SIM-EDR-111"
+ },
+ "TTP-0000-0091": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0274-sim-edr-112.json",
+  "card_id": "TTP-2026-0274",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-112-windows-globally-uncommon-image-load-from-a-sign.yml",
+  "scenario_id": "SIM-EDR-112"
+ },
+ "TTP-0000-0092": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0275-sim-edr-113.json",
+  "card_id": "TTP-2026-0275",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-113-windows-globally-uncommon-injection-from-a-signe.yml",
+  "scenario_id": "SIM-EDR-113"
+ },
+ "TTP-0000-0093": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0276-sim-edr-114.json",
+  "card_id": "TTP-2026-0276",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-114-windows-globally-uncommon-ip-address-by-a-common.yml",
+  "scenario_id": "SIM-EDR-114"
+ },
+ "TTP-0000-0094": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0277-sim-edr-115.json",
+  "card_id": "TTP-2026-0277",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-115-windows-globally-uncommon-ip-address-connection.yml",
+  "scenario_id": "SIM-EDR-115"
+ },
+ "TTP-0000-0095": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0278-sim-edr-116.json",
+  "card_id": "TTP-2026-0278",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-116-windows-globally-uncommon-root-domain-from-a-sig.yml",
+  "scenario_id": "SIM-EDR-116"
+ },
+ "TTP-0000-0096": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0279-sim-edr-117.json",
+  "card_id": "TTP-2026-0279",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-117-windows-globally-uncommon-root-domain-port-combi.yml",
+  "scenario_id": "SIM-EDR-117"
+ },
+ "TTP-0000-0097": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0280-sim-edr-118.json",
+  "card_id": "TTP-2026-0280",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-118-windows-globally-uncommon-root-domain-port-combi.yml",
+  "scenario_id": "SIM-EDR-118"
+ },
+ "TTP-0000-0098": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0281-sim-edr-119.json",
+  "card_id": "TTP-2026-0281",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-119-windows-http-with-suspicious-characteristics.yml",
+  "scenario_id": "SIM-EDR-119"
+ },
+ "TTP-0000-0099": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0282-sim-edr-120.json",
+  "card_id": "TTP-2026-0282",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-120-windows-injection-into-rundll32exe.yml",
+  "scenario_id": "SIM-EDR-120"
+ },
+ "TTP-0000-0100": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0283-sim-edr-121.json",
+  "card_id": "TTP-2026-0283",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-121-windows-installation-of-a-new-system-v-service.yml",
+  "scenario_id": "SIM-EDR-121"
+ },
+ "TTP-0000-0101": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0284-sim-edr-122.json",
+  "card_id": "TTP-2026-0284",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-122-windows-interactive-login-by-a-service-account.yml",
+  "scenario_id": "SIM-EDR-122"
+ },
+ "TTP-0000-0102": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0285-sim-edr-123.json",
+  "card_id": "TTP-2026-0285",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-123-windows-js-runtime-attempted-to-read-git-authent.yml",
+  "scenario_id": "SIM-EDR-123"
+ },
+ "TTP-0000-0103": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0286-sim-edr-124.json",
+  "card_id": "TTP-2026-0286",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-124-windows-kerberos-pre-auth-failures-by-host.yml",
+  "scenario_id": "SIM-EDR-124"
+ },
+ "TTP-0000-0104": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0287-sim-edr-125.json",
+  "card_id": "TTP-2026-0287",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-125-windows-kerberos-pre-auth-failures-by-user-and-h.yml",
+  "scenario_id": "SIM-EDR-125"
+ },
+ "TTP-0000-0105": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0288-sim-edr-126.json",
+  "card_id": "TTP-2026-0288",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-126-windows-kerberos-traffic-from-non-standard-proce.yml",
+  "scenario_id": "SIM-EDR-126"
+ },
+ "TTP-0000-0106": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0289-sim-edr-127.json",
+  "card_id": "TTP-2026-0289",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-127-windows-kerberos-user-enumeration.yml",
+  "scenario_id": "SIM-EDR-127"
+ },
+ "TTP-0000-0107": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0290-sim-edr-128.json",
+  "card_id": "TTP-2026-0290",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-128-windows-ldap-traffic-from-non-standard-process.yml",
+  "scenario_id": "SIM-EDR-128"
+ },
+ "TTP-0000-0108": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0291-sim-edr-129.json",
+  "card_id": "TTP-2026-0291",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-129-windows-linux-process-execution-with-a-rare-gith.yml",
+  "scenario_id": "SIM-EDR-129"
+ },
+ "TTP-0000-0109": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0292-sim-edr-130.json",
+  "card_id": "TTP-2026-0292",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-130-windows-lolbas-executable-injects-into-another-p.yml",
+  "scenario_id": "SIM-EDR-130"
+ },
+ "TTP-0000-0110": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0293-sim-edr-131.json",
+  "card_id": "TTP-2026-0293",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-131-windows-lolbin-process-executed-with-a-high-inte.yml",
+  "scenario_id": "SIM-EDR-131"
+ },
+ "TTP-0000-0111": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0294-sim-edr-132.json",
+  "card_id": "TTP-2026-0294",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-132-windows-manipulation-of-netsh-helper-dlls-regist.yml",
+  "scenario_id": "SIM-EDR-132"
+ },
+ "TTP-0000-0112": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0295-sim-edr-133.json",
+  "card_id": "TTP-2026-0295",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-133-windows-massive-upload-to-a-rare-storage-or-mail.yml",
+  "scenario_id": "SIM-EDR-133"
+ },
+ "TTP-0000-0113": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0296-sim-edr-134.json",
+  "card_id": "TTP-2026-0296",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-134-windows-memory-dumping-with-comsvcsdll.yml",
+  "scenario_id": "SIM-EDR-134"
+ },
+ "TTP-0000-0114": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0297-sim-edr-135.json",
+  "card_id": "TTP-2026-0297",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-135-windows-microsoft-html-application-host-spawns-f.yml",
+  "scenario_id": "SIM-EDR-135"
+ },
+ "TTP-0000-0115": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0298-sim-edr-136.json",
+  "card_id": "TTP-2026-0298",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-136-windows-microsoft-office-injects-code-into-a-pro.yml",
+  "scenario_id": "SIM-EDR-136"
+ },
+ "TTP-0000-0116": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0299-sim-edr-137.json",
+  "card_id": "TTP-2026-0299",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-137-windows-microsoft-office-process-spawning-a-susp.yml",
+  "scenario_id": "SIM-EDR-137"
+ },
+ "TTP-0000-0117": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0300-sim-edr-138.json",
+  "card_id": "TTP-2026-0300",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-138-windows-microsoft-office-process-spawns-a-common.yml",
+  "scenario_id": "SIM-EDR-138"
+ },
+ "TTP-0000-0118": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0301-sim-edr-139.json",
+  "card_id": "TTP-2026-0301",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-139-windows-microsoft-office-process-spawns-conhoste.yml",
+  "scenario_id": "SIM-EDR-139"
+ },
+ "TTP-0000-0119": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0302-sim-edr-140.json",
+  "card_id": "TTP-2026-0302",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-140-windows-mimikatz-command-line-arguments.yml",
+  "scenario_id": "SIM-EDR-140"
+ },
+ "TTP-0000-0120": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0303-sim-edr-141.json",
+  "card_id": "TTP-2026-0303",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-141-windows-mshtaexe-launched-with-suspicious-argume.yml",
+  "scenario_id": "SIM-EDR-141"
+ },
+ "TTP-0000-0121": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0304-sim-edr-142.json",
+  "card_id": "TTP-2026-0304",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-142-windows-mshtaexe-spawns-from-a-browser-process.yml",
+  "scenario_id": "SIM-EDR-142"
+ },
+ "TTP-0000-0122": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0305-sim-edr-143.json",
+  "card_id": "TTP-2026-0305",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-143-windows-msiexec-execution-of-an-executable-from.yml",
+  "scenario_id": "SIM-EDR-143"
+ },
+ "TTP-0000-0123": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0306-sim-edr-144.json",
+  "card_id": "TTP-2026-0306",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-144-windows-multiple-discovery-commands-on-a-linux-h.yml",
+  "scenario_id": "SIM-EDR-144"
+ },
+ "TTP-0000-0124": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0307-sim-edr-145.json",
+  "card_id": "TTP-2026-0307",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-145-windows-multiple-discovery-commands-on-a-windows.yml",
+  "scenario_id": "SIM-EDR-145"
+ },
+ "TTP-0000-0125": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0308-sim-edr-146.json",
+  "card_id": "TTP-2026-0308",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-146-windows-multiple-rare-lolbin-process-executions.yml",
+  "scenario_id": "SIM-EDR-146"
+ },
+ "TTP-0000-0126": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0309-sim-edr-147.json",
+  "card_id": "TTP-2026-0309",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-147-windows-multiple-rare-process-executions-in-orga.yml",
+  "scenario_id": "SIM-EDR-147"
+ },
+ "TTP-0000-0127": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0310-sim-edr-148.json",
+  "card_id": "TTP-2026-0310",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-148-windows-multiple-weakly-encrypted-kerberos-ticke.yml",
+  "scenario_id": "SIM-EDR-148"
+ },
+ "TTP-0000-0128": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0311-sim-edr-149.json",
+  "card_id": "TTP-2026-0311",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-149-windows-ntlm-brute-force-on-a-service-account.yml",
+  "scenario_id": "SIM-EDR-149"
+ },
+ "TTP-0000-0129": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0312-sim-edr-150.json",
+  "card_id": "TTP-2026-0312",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-150-windows-office-process-spawned-with-suspicious-c.yml",
+  "scenario_id": "SIM-EDR-150"
+ },
+ "TTP-0000-0130": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0313-sim-edr-151.json",
+  "card_id": "TTP-2026-0313",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-151-windows-phantom-dll-loading.yml",
+  "scenario_id": "SIM-EDR-151"
+ },
+ "TTP-0000-0131": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0314-sim-edr-152.json",
+  "card_id": "TTP-2026-0314",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-152-windows-ping-to-localhost-from-an-uncommon-unsig.yml",
+  "scenario_id": "SIM-EDR-152"
+ },
+ "TTP-0000-0132": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0315-sim-edr-153.json",
+  "card_id": "TTP-2026-0315",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-153-windows-possible-dll-hijack-into-a-microsoft-pro.yml",
+  "scenario_id": "SIM-EDR-153"
+ },
+ "TTP-0000-0133": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0316-sim-edr-154.json",
+  "card_id": "TTP-2026-0316",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-154-windows-possible-dll-search-order-hijacking.yml",
+  "scenario_id": "SIM-EDR-154"
+ },
+ "TTP-0000-0134": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0317-sim-edr-155.json",
+  "card_id": "TTP-2026-0317",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-155-windows-possible-external-rdp-brute-force.yml",
+  "scenario_id": "SIM-EDR-155"
+ },
+ "TTP-0000-0135": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0318-sim-edr-156.json",
+  "card_id": "TTP-2026-0318",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-156-windows-possible-kerberos-relay-attack.yml",
+  "scenario_id": "SIM-EDR-156"
+ },
+ "TTP-0000-0136": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0319-sim-edr-157.json",
+  "card_id": "TTP-2026-0319",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-157-windows-possible-malicious-net-compilation-start.yml",
+  "scenario_id": "SIM-EDR-157"
+ },
+ "TTP-0000-0137": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0320-sim-edr-158.json",
+  "card_id": "TTP-2026-0320",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-158-windows-possible-network-service-discovery-via-c.yml",
+  "scenario_id": "SIM-EDR-158"
+ },
+ "TTP-0000-0138": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0321-sim-edr-159.json",
+  "card_id": "TTP-2026-0321",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-159-windows-possible-rdp-session-hijacking-using-tsc.yml",
+  "scenario_id": "SIM-EDR-159"
+ },
+ "TTP-0000-0139": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0322-sim-edr-160.json",
+  "card_id": "TTP-2026-0322",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-160-windows-potential-extraction-of-naa-account-cred.yml",
+  "scenario_id": "SIM-EDR-160"
+ },
+ "TTP-0000-0140": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0323-sim-edr-161.json",
+  "card_id": "TTP-2026-0323",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-161-windows-powershell-running-with-download-in-the.yml",
+  "scenario_id": "SIM-EDR-161"
+ },
+ "TTP-0000-0141": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0324-sim-edr-162.json",
+  "card_id": "TTP-2026-0324",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-162-windows-powershell-script-executed-from-a-tempor.yml",
+  "scenario_id": "SIM-EDR-162"
+ },
+ "TTP-0000-0142": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0325-sim-edr-163.json",
+  "card_id": "TTP-2026-0325",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-163-windows-powershell-suspicious-flags.yml",
+  "scenario_id": "SIM-EDR-163"
+ },
+ "TTP-0000-0143": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0326-sim-edr-164.json",
+  "card_id": "TTP-2026-0326",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-164-windows-psexec-was-executed-with-a-suspicious-co.yml",
+  "scenario_id": "SIM-EDR-164"
+ },
+ "TTP-0000-0144": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0327-sim-edr-165.json",
+  "card_id": "TTP-2026-0327",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-165-windows-rare-access-to-known-advertising-domains.yml",
+  "scenario_id": "SIM-EDR-165"
+ },
+ "TTP-0000-0145": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0328-sim-edr-166.json",
+  "card_id": "TTP-2026-0328",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-166-windows-rare-appid-usage-to-a-rare-destination.yml",
+  "scenario_id": "SIM-EDR-166"
+ },
+ "TTP-0000-0146": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0329-sim-edr-167.json",
+  "card_id": "TTP-2026-0329",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-167-windows-rare-binary-connected-to-a-rare-cloud-re.yml",
+  "scenario_id": "SIM-EDR-167"
+ },
+ "TTP-0000-0147": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0330-sim-edr-168.json",
+  "card_id": "TTP-2026-0330",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-168-windows-rare-binary-connected-to-a-rare-external.yml",
+  "scenario_id": "SIM-EDR-168"
+ },
+ "TTP-0000-0148": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0331-sim-edr-169.json",
+  "card_id": "TTP-2026-0331",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-169-windows-rare-communication-over-email-ports-to-e.yml",
+  "scenario_id": "SIM-EDR-169"
+ },
+ "TTP-0000-0149": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0332-sim-edr-170.json",
+  "card_id": "TTP-2026-0332",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-170-windows-rare-file-transfer-over-smb-protocol.yml",
+  "scenario_id": "SIM-EDR-170"
+ },
+ "TTP-0000-0150": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0333-sim-edr-171.json",
+  "card_id": "TTP-2026-0333",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-171-windows-rare-lolbin-process-execution-by-user.yml",
+  "scenario_id": "SIM-EDR-171"
+ },
+ "TTP-0000-0151": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0334-sim-edr-172.json",
+  "card_id": "TTP-2026-0334",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-172-windows-rare-ms-update-traffic-over-http.yml",
+  "scenario_id": "SIM-EDR-172"
+ },
+ "TTP-0000-0152": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0335-sim-edr-173.json",
+  "card_id": "TTP-2026-0335",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-173-windows-rare-ntlm-access-by-user-to-host.yml",
+  "scenario_id": "SIM-EDR-173"
+ },
+ "TTP-0000-0153": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0336-sim-edr-174.json",
+  "card_id": "TTP-2026-0336",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-174-windows-rare-ntlm-usage-by-user.yml",
+  "scenario_id": "SIM-EDR-174"
+ },
+ "TTP-0000-0154": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0337-sim-edr-175.json",
+  "card_id": "TTP-2026-0337",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-175-windows-rare-process-executed-by-an-applescript.yml",
+  "scenario_id": "SIM-EDR-175"
+ },
+ "TTP-0000-0155": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0338-sim-edr-176.json",
+  "card_id": "TTP-2026-0338",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-176-windows-rare-process-execution-by-user.yml",
+  "scenario_id": "SIM-EDR-176"
+ },
+ "TTP-0000-0156": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0339-sim-edr-177.json",
+  "card_id": "TTP-2026-0339",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-177-windows-rare-process-execution-in-organization.yml",
+  "scenario_id": "SIM-EDR-177"
+ },
+ "TTP-0000-0157": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0340-sim-edr-178.json",
+  "card_id": "TTP-2026-0340",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-178-windows-rare-process-spawned-by-srvanyexe.yml",
+  "scenario_id": "SIM-EDR-178"
+ },
+ "TTP-0000-0158": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0341-sim-edr-179.json",
+  "card_id": "TTP-2026-0341",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-179-windows-rare-process-with-vnc-server-capabilitie.yml",
+  "scenario_id": "SIM-EDR-179"
+ },
+ "TTP-0000-0159": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0342-sim-edr-180.json",
+  "card_id": "TTP-2026-0342",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-180-windows-rare-rdp-session-to-a-remote-host.yml",
+  "scenario_id": "SIM-EDR-180"
+ },
+ "TTP-0000-0160": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0343-sim-edr-181.json",
+  "card_id": "TTP-2026-0343",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-181-windows-rare-security-product-signed-executable.yml",
+  "scenario_id": "SIM-EDR-181"
+ },
+ "TTP-0000-0161": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0344-sim-edr-182.json",
+  "card_id": "TTP-2026-0344",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-182-windows-rare-signature-signed-executable-execute.yml",
+  "scenario_id": "SIM-EDR-182"
+ },
+ "TTP-0000-0162": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0345-sim-edr-183.json",
+  "card_id": "TTP-2026-0345",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-183-windows-rare-smb-session-to-a-remote-host.yml",
+  "scenario_id": "SIM-EDR-183"
+ },
+ "TTP-0000-0163": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0346-sim-edr-184.json",
+  "card_id": "TTP-2026-0346",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-184-windows-rare-smtps-session.yml",
+  "scenario_id": "SIM-EDR-184"
+ },
+ "TTP-0000-0164": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0347-sim-edr-185.json",
+  "card_id": "TTP-2026-0347",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-185-windows-rare-unix-process-divided-files-by-size.yml",
+  "scenario_id": "SIM-EDR-185"
+ },
+ "TTP-0000-0165": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0348-sim-edr-186.json",
+  "card_id": "TTP-2026-0348",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-186-windows-rare-unsigned-process-execution-by-sched.yml",
+  "scenario_id": "SIM-EDR-186"
+ },
+ "TTP-0000-0166": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0349-sim-edr-187.json",
+  "card_id": "TTP-2026-0349",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-187-windows-rare-unsigned-process-spawned-by-office.yml",
+  "scenario_id": "SIM-EDR-187"
+ },
+ "TTP-0000-0167": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0350-sim-edr-188.json",
+  "card_id": "TTP-2026-0350",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-188-windows-rare-windows-remote-management-winrm-htt.yml",
+  "scenario_id": "SIM-EDR-188"
+ },
+ "TTP-0000-0168": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0351-sim-edr-189.json",
+  "card_id": "TTP-2026-0351",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-189-windows-rare-winrm-session.yml",
+  "scenario_id": "SIM-EDR-189"
+ },
+ "TTP-0000-0169": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0352-sim-edr-190.json",
+  "card_id": "TTP-2026-0352",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-190-windows-rdp-connection-to-localhost.yml",
+  "scenario_id": "SIM-EDR-190"
+ },
+ "TTP-0000-0170": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0353-sim-edr-191.json",
+  "card_id": "TTP-2026-0353",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-191-windows-rdp-from-an-unmanaged-endpoint-in-a-typi.yml",
+  "scenario_id": "SIM-EDR-191"
+ },
+ "TTP-0000-0171": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0354-sim-edr-192.json",
+  "card_id": "TTP-2026-0354",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-192-windows-recurring-access-to-rare-domain.yml",
+  "scenario_id": "SIM-EDR-192"
+ },
+ "TTP-0000-0172": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0355-sim-edr-193.json",
+  "card_id": "TTP-2026-0355",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-193-windows-recurring-access-to-rare-ip.yml",
+  "scenario_id": "SIM-EDR-193"
+ },
+ "TTP-0000-0173": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0356-sim-edr-194.json",
+  "card_id": "TTP-2026-0356",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-194-windows-recurring-rare-domain-access-from-an-uns.yml",
+  "scenario_id": "SIM-EDR-194"
+ },
+ "TTP-0000-0174": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0357-sim-edr-195.json",
+  "card_id": "TTP-2026-0357",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-195-windows-recurring-rare-domain-access-to-dynamic.yml",
+  "scenario_id": "SIM-EDR-195"
+ },
+ "TTP-0000-0175": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0358-sim-edr-196.json",
+  "card_id": "TTP-2026-0358",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-196-windows-registration-of-uncommon-net-services-an.yml",
+  "scenario_id": "SIM-EDR-196"
+ },
+ "TTP-0000-0176": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0359-sim-edr-197.json",
+  "card_id": "TTP-2026-0359",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-197-windows-registry-credentials-extraction.yml",
+  "scenario_id": "SIM-EDR-197"
+ },
+ "TTP-0000-0177": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0360-sim-edr-198.json",
+  "card_id": "TTP-2026-0360",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-198-windows-remote-command-execution-via-wmicexe.yml",
+  "scenario_id": "SIM-EDR-198"
+ },
+ "TTP-0000-0178": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0361-sim-edr-199.json",
+  "card_id": "TTP-2026-0361",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-199-windows-remote-psexec-like-command-execution.yml",
+  "scenario_id": "SIM-EDR-199"
+ },
+ "TTP-0000-0179": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0362-sim-edr-200.json",
+  "card_id": "TTP-2026-0362",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-200-windows-remote-service-command-execution-from-an.yml",
+  "scenario_id": "SIM-EDR-200"
+ },
+ "TTP-0000-0180": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0363-sim-edr-201.json",
+  "card_id": "TTP-2026-0363",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-201-windows-remote-service-start-from-an-uncommon-so.yml",
+  "scenario_id": "SIM-EDR-201"
+ },
+ "TTP-0000-0181": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0364-sim-edr-202.json",
+  "card_id": "TTP-2026-0364",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-202-windows-remote-wmi-process-execution.yml",
+  "scenario_id": "SIM-EDR-202"
+ },
+ "TTP-0000-0182": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0365-sim-edr-203.json",
+  "card_id": "TTP-2026-0365",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-203-windows-retrieval-of-kubelet-credentials.yml",
+  "scenario_id": "SIM-EDR-203"
+ },
+ "TTP-0000-0183": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0366-sim-edr-204.json",
+  "card_id": "TTP-2026-0366",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-204-windows-rundll32exe-executes-a-rare-unsigned-mod.yml",
+  "scenario_id": "SIM-EDR-204"
+ },
+ "TTP-0000-0184": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0367-sim-edr-205.json",
+  "card_id": "TTP-2026-0367",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-205-windows-rundll32exe-running-with-no-command-line.yml",
+  "scenario_id": "SIM-EDR-205"
+ },
+ "TTP-0000-0185": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0368-sim-edr-206.json",
+  "card_id": "TTP-2026-0368",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-206-windows-rundll32exe-spawns-conhostexe.yml",
+  "scenario_id": "SIM-EDR-206"
+ },
+ "TTP-0000-0186": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0369-sim-edr-207.json",
+  "card_id": "TTP-2026-0369",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-207-windows-scrconsexe-rare-child-process.yml",
+  "scenario_id": "SIM-EDR-207"
+ },
+ "TTP-0000-0187": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0370-sim-edr-208.json",
+  "card_id": "TTP-2026-0370",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-208-windows-screensaver-process-executed-from-users.yml",
+  "scenario_id": "SIM-EDR-208"
+ },
+ "TTP-0000-0188": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0371-sim-edr-209.json",
+  "card_id": "TTP-2026-0371",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-209-windows-script-file-added-to-startup-related-reg.yml",
+  "scenario_id": "SIM-EDR-209"
+ },
+ "TTP-0000-0189": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0372-sim-edr-210.json",
+  "card_id": "TTP-2026-0372",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-210-windows-scripting-engine-connected-to-a-rare-ext.yml",
+  "scenario_id": "SIM-EDR-210"
+ },
+ "TTP-0000-0190": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0373-sim-edr-211.json",
+  "card_id": "TTP-2026-0373",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-211-windows-service-execution-via-scexe.yml",
+  "scenario_id": "SIM-EDR-211"
+ },
+ "TTP-0000-0191": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0374-sim-edr-212.json",
+  "card_id": "TTP-2026-0374",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-212-windows-signed-process-creates-a-scheduled-task.yml",
+  "scenario_id": "SIM-EDR-212"
+ },
+ "TTP-0000-0192": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0375-sim-edr-213.json",
+  "card_id": "TTP-2026-0375",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-213-windows-signed-process-performed-an-unpopular-dl.yml",
+  "scenario_id": "SIM-EDR-213"
+ },
+ "TTP-0000-0193": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0376-sim-edr-214.json",
+  "card_id": "TTP-2026-0376",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-214-windows-signed-process-performed-an-unpopular-in.yml",
+  "scenario_id": "SIM-EDR-214"
+ },
+ "TTP-0000-0194": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0377-sim-edr-215.json",
+  "card_id": "TTP-2026-0377",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-215-windows-smb-traffic-from-non-standard-process.yml",
+  "scenario_id": "SIM-EDR-215"
+ },
+ "TTP-0000-0195": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0378-sim-edr-216.json",
+  "card_id": "TTP-2026-0378",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-216-windows-stored-credentials-exported-using-credwi.yml",
+  "scenario_id": "SIM-EDR-216"
+ },
+ "TTP-0000-0196": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0379-sim-edr-217.json",
+  "card_id": "TTP-2026-0379",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-217-windows-suspicious-net-process-loads-an-msbuild.yml",
+  "scenario_id": "SIM-EDR-217"
+ },
+ "TTP-0000-0197": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0380-sim-edr-218.json",
+  "card_id": "TTP-2026-0380",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-218-windows-suspicious-authentication-package-regist.yml",
+  "scenario_id": "SIM-EDR-218"
+ },
+ "TTP-0000-0198": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0381-sim-edr-219.json",
+  "card_id": "TTP-2026-0381",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-219-windows-suspicious-certutil-ad-cs-contact.yml",
+  "scenario_id": "SIM-EDR-219"
+ },
+ "TTP-0000-0199": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0382-sim-edr-220.json",
+  "card_id": "TTP-2026-0382",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-220-windows-suspicious-certutil-command-line.yml",
+  "scenario_id": "SIM-EDR-220"
+ },
+ "TTP-0000-0200": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0383-sim-edr-221.json",
+  "card_id": "TTP-2026-0383",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-221-windows-suspicious-data-encryption.yml",
+  "scenario_id": "SIM-EDR-221"
+ },
+ "TTP-0000-0201": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0384-sim-edr-222.json",
+  "card_id": "TTP-2026-0384",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-222-windows-suspicious-disablement-of-the-windows-fi.yml",
+  "scenario_id": "SIM-EDR-222"
+ },
+ "TTP-0000-0202": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0385-sim-edr-223.json",
+  "card_id": "TTP-2026-0385",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-223-windows-suspicious-dns-traffic.yml",
+  "scenario_id": "SIM-EDR-223"
+ },
+ "TTP-0000-0203": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0386-sim-edr-224.json",
+  "card_id": "TTP-2026-0386",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-224-windows-suspicious-docker-image-download-from-an.yml",
+  "scenario_id": "SIM-EDR-224"
+ },
+ "TTP-0000-0204": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0387-sim-edr-225.json",
+  "card_id": "TTP-2026-0387",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-225-windows-suspicious-external-rdp-login.yml",
+  "scenario_id": "SIM-EDR-225"
+ },
+ "TTP-0000-0205": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0388-sim-edr-226.json",
+  "card_id": "TTP-2026-0388",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-226-windows-suspicious-failed-http-request---potenti.yml",
+  "scenario_id": "SIM-EDR-226"
+ },
+ "TTP-0000-0206": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0389-sim-edr-227.json",
+  "card_id": "TTP-2026-0389",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-227-windows-suspicious-http-parameters-detected.yml",
+  "scenario_id": "SIM-EDR-227"
+ },
+ "TTP-0000-0207": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0390-sim-edr-228.json",
+  "card_id": "TTP-2026-0390",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-228-windows-suspicious-icmp-packet.yml",
+  "scenario_id": "SIM-EDR-228"
+ },
+ "TTP-0000-0208": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0391-sim-edr-229.json",
+  "card_id": "TTP-2026-0391",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-229-windows-suspicious-icmp-traffic-that-resembles-s.yml",
+  "scenario_id": "SIM-EDR-229"
+ },
+ "TTP-0000-0209": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0392-sim-edr-230.json",
+  "card_id": "TTP-2026-0392",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-230-windows-suspicious-module-load-using-direct-sysc.yml",
+  "scenario_id": "SIM-EDR-230"
+ },
+ "TTP-0000-0210": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0393-sim-edr-231.json",
+  "card_id": "TTP-2026-0393",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-231-windows-suspicious-network-connection-originatin.yml",
+  "scenario_id": "SIM-EDR-231"
+ },
+ "TTP-0000-0211": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0394-sim-edr-232.json",
+  "card_id": "TTP-2026-0394",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-232-windows-suspicious-ntlm-authentication-with-mach.yml",
+  "scenario_id": "SIM-EDR-232"
+ },
+ "TTP-0000-0212": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0395-sim-edr-233.json",
+  "card_id": "TTP-2026-0395",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-233-windows-suspicious-powershell-command-line.yml",
+  "scenario_id": "SIM-EDR-233"
+ },
+ "TTP-0000-0213": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0396-sim-edr-234.json",
+  "card_id": "TTP-2026-0396",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-234-windows-suspicious-powershell-enumeration-of-run.yml",
+  "scenario_id": "SIM-EDR-234"
+ },
+ "TTP-0000-0214": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0397-sim-edr-235.json",
+  "card_id": "TTP-2026-0397",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-235-windows-suspicious-process-accessed-a-site-masqu.yml",
+  "scenario_id": "SIM-EDR-235"
+ },
+ "TTP-0000-0215": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0398-sim-edr-236.json",
+  "card_id": "TTP-2026-0398",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-236-windows-suspicious-process-executed-with-a-high.yml",
+  "scenario_id": "SIM-EDR-236"
+ },
+ "TTP-0000-0216": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0399-sim-edr-237.json",
+  "card_id": "TTP-2026-0399",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-237-windows-suspicious-process-execution-from-tmp-fo.yml",
+  "scenario_id": "SIM-EDR-237"
+ },
+ "TTP-0000-0217": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0400-sim-edr-238.json",
+  "card_id": "TTP-2026-0400",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-238-windows-suspicious-process-loads-a-known-powersh.yml",
+  "scenario_id": "SIM-EDR-238"
+ },
+ "TTP-0000-0218": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0401-sim-edr-239.json",
+  "card_id": "TTP-2026-0401",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-239-windows-suspicious-process-spawned-by-adobe-read.yml",
+  "scenario_id": "SIM-EDR-239"
+ },
+ "TTP-0000-0219": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0402-sim-edr-240.json",
+  "card_id": "TTP-2026-0402",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-240-windows-suspicious-process-spawned-by-wininitexe.yml",
+  "scenario_id": "SIM-EDR-240"
+ },
+ "TTP-0000-0220": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0403-sim-edr-241.json",
+  "card_id": "TTP-2026-0403",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-241-windows-suspicious-proxy-environment-variable-se.yml",
+  "scenario_id": "SIM-EDR-241"
+ },
+ "TTP-0000-0221": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0404-sim-edr-242.json",
+  "card_id": "TTP-2026-0404",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-242-windows-suspicious-runonce-parent-process.yml",
+  "scenario_id": "SIM-EDR-242"
+ },
+ "TTP-0000-0222": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0405-sim-edr-243.json",
+  "card_id": "TTP-2026-0405",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-243-windows-suspicious-runonceexe-parent-process.yml",
+  "scenario_id": "SIM-EDR-243"
+ },
+ "TTP-0000-0223": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0406-sim-edr-244.json",
+  "card_id": "TTP-2026-0406",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-244-windows-suspicious-searchprotocolhostexe-parent.yml",
+  "scenario_id": "SIM-EDR-244"
+ },
+ "TTP-0000-0224": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0407-sim-edr-245.json",
+  "card_id": "TTP-2026-0407",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-245-windows-suspicious-setspnexe-execution.yml",
+  "scenario_id": "SIM-EDR-245"
+ },
+ "TTP-0000-0225": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0408-sim-edr-246.json",
+  "card_id": "TTP-2026-0408",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-246-windows-suspicious-smb-connection-from-domain-co.yml",
+  "scenario_id": "SIM-EDR-246"
+ },
+ "TTP-0000-0226": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0409-sim-edr-247.json",
+  "card_id": "TTP-2026-0409",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-247-windows-suspicious-successful-rdp-connection-to.yml",
+  "scenario_id": "SIM-EDR-247"
+ },
+ "TTP-0000-0227": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0410-sim-edr-248.json",
+  "card_id": "TTP-2026-0410",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-248-windows-suspicious-systemd-timer-activity.yml",
+  "scenario_id": "SIM-EDR-248"
+ },
+ "TTP-0000-0228": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0411-sim-edr-249.json",
+  "card_id": "TTP-2026-0411",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-249-windows-suspicious-time-provider-registered.yml",
+  "scenario_id": "SIM-EDR-249"
+ },
+ "TTP-0000-0229": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0412-sim-edr-250.json",
+  "card_id": "TTP-2026-0412",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-250-windows-suspicious-usage-of-file-server-remote-v.yml",
+  "scenario_id": "SIM-EDR-250"
+ },
+ "TTP-0000-0230": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0413-sim-edr-251.json",
+  "card_id": "TTP-2026-0413",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-251-windows-svchostexe-loads-a-rare-unsigned-module.yml",
+  "scenario_id": "SIM-EDR-251"
+ },
+ "TTP-0000-0231": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0414-sim-edr-252.json",
+  "card_id": "TTP-2026-0414",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-252-windows-uncommon-applescript-containing-a-potent.yml",
+  "scenario_id": "SIM-EDR-252"
+ },
+ "TTP-0000-0232": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0415-sim-edr-253.json",
+  "card_id": "TTP-2026-0415",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-253-windows-uncommon-applescript-containing-a-potent.yml",
+  "scenario_id": "SIM-EDR-253"
+ },
+ "TTP-0000-0233": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0416-sim-edr-254.json",
+  "card_id": "TTP-2026-0416",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-254-windows-uncommon-applescript-designed-to-access.yml",
+  "scenario_id": "SIM-EDR-254"
+ },
+ "TTP-0000-0234": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0417-sim-edr-255.json",
+  "card_id": "TTP-2026-0417",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-255-windows-uncommon-applescript-designed-to-access.yml",
+  "scenario_id": "SIM-EDR-255"
+ },
+ "TTP-0000-0235": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0418-sim-edr-256.json",
+  "card_id": "TTP-2026-0418",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-256-windows-uncommon-applescript-designed-to-access.yml",
+  "scenario_id": "SIM-EDR-256"
+ },
+ "TTP-0000-0236": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0419-sim-edr-257.json",
+  "card_id": "TTP-2026-0419",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-257-windows-uncommon-applescript-designed-to-capture.yml",
+  "scenario_id": "SIM-EDR-257"
+ },
+ "TTP-0000-0237": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0420-sim-edr-258.json",
+  "card_id": "TTP-2026-0420",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-258-windows-uncommon-applescript-potentially-utilize.yml",
+  "scenario_id": "SIM-EDR-258"
+ },
+ "TTP-0000-0238": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0421-sim-edr-259.json",
+  "card_id": "TTP-2026-0421",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-259-windows-uncommon-applescript-was-executed-via-th.yml",
+  "scenario_id": "SIM-EDR-259"
+ },
+ "TTP-0000-0239": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0422-sim-edr-260.json",
+  "card_id": "TTP-2026-0422",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-260-windows-uncommon-applescript-with-a-potential-de.yml",
+  "scenario_id": "SIM-EDR-260"
+ },
+ "TTP-0000-0240": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0423-sim-edr-261.json",
+  "card_id": "TTP-2026-0423",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-261-windows-uncommon-applescript-with-a-potential-di.yml",
+  "scenario_id": "SIM-EDR-261"
+ },
+ "TTP-0000-0241": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0424-sim-edr-262.json",
+  "card_id": "TTP-2026-0424",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-262-windows-uncommon-arp-cache-listing-via-arpexe.yml",
+  "scenario_id": "SIM-EDR-262"
+ },
+ "TTP-0000-0242": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0425-sim-edr-263.json",
+  "card_id": "TTP-2026-0425",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-263-windows-uncommon-attempt-to-clear-shell-history.yml",
+  "scenario_id": "SIM-EDR-263"
+ },
+ "TTP-0000-0243": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0426-sim-edr-264.json",
+  "card_id": "TTP-2026-0426",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-264-windows-uncommon-cloud-cli-tool-usage.yml",
+  "scenario_id": "SIM-EDR-264"
+ },
+ "TTP-0000-0244": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0427-sim-edr-265.json",
+  "card_id": "TTP-2026-0427",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-265-windows-uncommon-communication-to-an-instant-mes.yml",
+  "scenario_id": "SIM-EDR-265"
+ },
+ "TTP-0000-0245": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0428-sim-edr-266.json",
+  "card_id": "TTP-2026-0428",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-266-windows-uncommon-dll-sideloading-from-a-logical.yml",
+  "scenario_id": "SIM-EDR-266"
+ },
+ "TTP-0000-0246": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0429-sim-edr-267.json",
+  "card_id": "TTP-2026-0429",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-267-windows-uncommon-dotnet-module-load-relationship.yml",
+  "scenario_id": "SIM-EDR-267"
+ },
+ "TTP-0000-0247": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0430-sim-edr-268.json",
+  "card_id": "TTP-2026-0430",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-268-windows-uncommon-driver-loaded.yml",
+  "scenario_id": "SIM-EDR-268"
+ },
+ "TTP-0000-0248": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0431-sim-edr-269.json",
+  "card_id": "TTP-2026-0431",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-269-windows-uncommon-execution-of-odbcconf.yml",
+  "scenario_id": "SIM-EDR-269"
+ },
+ "TTP-0000-0249": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0432-sim-edr-270.json",
+  "card_id": "TTP-2026-0432",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-270-windows-uncommon-ip-configuration-listing-via-ip.yml",
+  "scenario_id": "SIM-EDR-270"
+ },
+ "TTP-0000-0250": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0433-sim-edr-271.json",
+  "card_id": "TTP-2026-0433",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-271-windows-uncommon-kernel-module-load.yml",
+  "scenario_id": "SIM-EDR-271"
+ },
+ "TTP-0000-0251": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0434-sim-edr-272.json",
+  "card_id": "TTP-2026-0434",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-272-windows-uncommon-launch-agent-persistency-was-re.yml",
+  "scenario_id": "SIM-EDR-272"
+ },
+ "TTP-0000-0252": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0435-sim-edr-273.json",
+  "card_id": "TTP-2026-0435",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-273-windows-uncommon-launch-daemon-persistency-was-r.yml",
+  "scenario_id": "SIM-EDR-273"
+ },
+ "TTP-0000-0253": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0436-sim-edr-274.json",
+  "card_id": "TTP-2026-0436",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-274-windows-uncommon-linux-process-communication-to.yml",
+  "scenario_id": "SIM-EDR-274"
+ },
+ "TTP-0000-0254": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0437-sim-edr-275.json",
+  "card_id": "TTP-2026-0437",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-275-windows-uncommon-linux-remote-shell-command-exec.yml",
+  "scenario_id": "SIM-EDR-275"
+ },
+ "TTP-0000-0255": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0438-sim-edr-276.json",
+  "card_id": "TTP-2026-0438",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-276-windows-uncommon-linux-shell-command-execution.yml",
+  "scenario_id": "SIM-EDR-276"
+ },
+ "TTP-0000-0256": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0439-sim-edr-277.json",
+  "card_id": "TTP-2026-0439",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-277-windows-uncommon-local-scheduled-task-creation-v.yml",
+  "scenario_id": "SIM-EDR-277"
+ },
+ "TTP-0000-0257": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0440-sim-edr-278.json",
+  "card_id": "TTP-2026-0440",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-278-windows-uncommon-login-item-persistency-was-regi.yml",
+  "scenario_id": "SIM-EDR-278"
+ },
+ "TTP-0000-0258": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0441-sim-edr-279.json",
+  "card_id": "TTP-2026-0441",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-279-windows-uncommon-macos-process-communication-to.yml",
+  "scenario_id": "SIM-EDR-279"
+ },
+ "TTP-0000-0259": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0442-sim-edr-280.json",
+  "card_id": "TTP-2026-0442",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-280-windows-uncommon-macos-shell-command-execution.yml",
+  "scenario_id": "SIM-EDR-280"
+ },
+ "TTP-0000-0260": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0443-sim-edr-281.json",
+  "card_id": "TTP-2026-0443",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-281-windows-uncommon-managed-object-format-mof-compi.yml",
+  "scenario_id": "SIM-EDR-281"
+ },
+ "TTP-0000-0261": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0444-sim-edr-282.json",
+  "card_id": "TTP-2026-0444",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-282-windows-uncommon-msiexec-execution-of-an-arbitra.yml",
+  "scenario_id": "SIM-EDR-282"
+ },
+ "TTP-0000-0262": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0445-sim-edr-283.json",
+  "card_id": "TTP-2026-0445",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-283-windows-uncommon-net-group-command-execution.yml",
+  "scenario_id": "SIM-EDR-283"
+ },
+ "TTP-0000-0263": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0446-sim-edr-284.json",
+  "card_id": "TTP-2026-0446",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-284-windows-uncommon-net-localgroup-command-executio.yml",
+  "scenario_id": "SIM-EDR-284"
+ },
+ "TTP-0000-0264": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0447-sim-edr-285.json",
+  "card_id": "TTP-2026-0447",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-285-windows-uncommon-network-connection-under-an-unt.yml",
+  "scenario_id": "SIM-EDR-285"
+ },
+ "TTP-0000-0265": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0448-sim-edr-286.json",
+  "card_id": "TTP-2026-0448",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-286-windows-uncommon-network-connection-under-an-unt.yml",
+  "scenario_id": "SIM-EDR-286"
+ },
+ "TTP-0000-0266": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0449-sim-edr-287.json",
+  "card_id": "TTP-2026-0449",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-287-windows-uncommon-nodejs-package-initiated-commun.yml",
+  "scenario_id": "SIM-EDR-287"
+ },
+ "TTP-0000-0267": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0450-sim-edr-288.json",
+  "card_id": "TTP-2026-0450",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-288-windows-uncommon-rdp-connection.yml",
+  "scenario_id": "SIM-EDR-288"
+ },
+ "TTP-0000-0268": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0451-sim-edr-289.json",
+  "card_id": "TTP-2026-0451",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-289-windows-uncommon-recurring-rare-external-host-ac.yml",
+  "scenario_id": "SIM-EDR-289"
+ },
+ "TTP-0000-0269": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0452-sim-edr-290.json",
+  "card_id": "TTP-2026-0452",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-290-windows-uncommon-remote-monitoring-and-managemen.yml",
+  "scenario_id": "SIM-EDR-290"
+ },
+ "TTP-0000-0270": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0453-sim-edr-291.json",
+  "card_id": "TTP-2026-0453",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-291-windows-uncommon-remote-scheduled-task-creation.yml",
+  "scenario_id": "SIM-EDR-291"
+ },
+ "TTP-0000-0271": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0454-sim-edr-292.json",
+  "card_id": "TTP-2026-0454",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-292-windows-uncommon-remote-service-start-via-scexe.yml",
+  "scenario_id": "SIM-EDR-292"
+ },
+ "TTP-0000-0272": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0455-sim-edr-293.json",
+  "card_id": "TTP-2026-0455",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-293-windows-uncommon-routing-table-listing-via-route.yml",
+  "scenario_id": "SIM-EDR-293"
+ },
+ "TTP-0000-0273": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0456-sim-edr-294.json",
+  "card_id": "TTP-2026-0456",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-294-windows-uncommon-service-createconfig.yml",
+  "scenario_id": "SIM-EDR-294"
+ },
+ "TTP-0000-0274": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0457-sim-edr-295.json",
+  "card_id": "TTP-2026-0457",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-295-windows-uncommon-service-stop-operation.yml",
+  "scenario_id": "SIM-EDR-295"
+ },
+ "TTP-0000-0275": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0458-sim-edr-296.json",
+  "card_id": "TTP-2026-0458",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-296-windows-uncommon-signed-process-execution-by-sch.yml",
+  "scenario_id": "SIM-EDR-296"
+ },
+ "TTP-0000-0276": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0459-sim-edr-297.json",
+  "card_id": "TTP-2026-0459",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-297-windows-uncommon-sql-like-command-line.yml",
+  "scenario_id": "SIM-EDR-297"
+ },
+ "TTP-0000-0277": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0460-sim-edr-298.json",
+  "card_id": "TTP-2026-0460",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-298-windows-uncommon-user-management-via-net-command.yml",
+  "scenario_id": "SIM-EDR-298"
+ },
+ "TTP-0000-0278": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0461-sim-edr-299.json",
+  "card_id": "TTP-2026-0461",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-299-windows-uncommon-vnc-server-communication.yml",
+  "scenario_id": "SIM-EDR-299"
+ },
+ "TTP-0000-0279": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0462-sim-edr-300.json",
+  "card_id": "TTP-2026-0462",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-300-windows-uncommon-wpad-queries.yml",
+  "scenario_id": "SIM-EDR-300"
+ },
+ "TTP-0000-0280": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0463-sim-edr-301.json",
+  "card_id": "TTP-2026-0463",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-301-windows-unpopular-rsync-process-execution.yml",
+  "scenario_id": "SIM-EDR-301"
+ },
+ "TTP-0000-0281": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0464-sim-edr-302.json",
+  "card_id": "TTP-2026-0464",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-302-windows-unprivileged-process-opened-a-registry-h.yml",
+  "scenario_id": "SIM-EDR-302"
+ },
+ "TTP-0000-0282": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0465-sim-edr-303.json",
+  "card_id": "TTP-2026-0465",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-303-windows-unsigned-and-unpopular-process-performed.yml",
+  "scenario_id": "SIM-EDR-303"
+ },
+ "TTP-0000-0283": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0466-sim-edr-304.json",
+  "card_id": "TTP-2026-0466",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-304-windows-unsigned-and-unpopular-process-performed.yml",
+  "scenario_id": "SIM-EDR-304"
+ },
+ "TTP-0000-0284": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0467-sim-edr-305.json",
+  "card_id": "TTP-2026-0467",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-305-windows-unsigned-dll-hijack-into-a-microsoft-pro.yml",
+  "scenario_id": "SIM-EDR-305"
+ },
+ "TTP-0000-0285": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0468-sim-edr-306.json",
+  "card_id": "TTP-2026-0468",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-306-windows-unsigned-dll-side-loading.yml",
+  "scenario_id": "SIM-EDR-306"
+ },
+ "TTP-0000-0286": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0469-sim-edr-307.json",
+  "card_id": "TTP-2026-0469",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-307-windows-unsigned-process-creates-a-scheduled-tas.yml",
+  "scenario_id": "SIM-EDR-307"
+ },
+ "TTP-0000-0287": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0470-sim-edr-308.json",
+  "card_id": "TTP-2026-0470",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-308-windows-unsigned-process-injecting-into-a-window.yml",
+  "scenario_id": "SIM-EDR-308"
+ },
+ "TTP-0000-0288": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0471-sim-edr-309.json",
+  "card_id": "TTP-2026-0471",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-309-windows-unsigned-process-running-from-a-temporar.yml",
+  "scenario_id": "SIM-EDR-309"
+ },
+ "TTP-0000-0289": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0472-sim-edr-310.json",
+  "card_id": "TTP-2026-0472",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-310-windows-untrusted-process-contacted-llm-api.yml",
+  "scenario_id": "SIM-EDR-310"
+ },
+ "TTP-0000-0290": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0473-sim-edr-311.json",
+  "card_id": "TTP-2026-0473",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-311-windows-unusual-adfs-remote-synchronization-netw.yml",
+  "scenario_id": "SIM-EDR-311"
+ },
+ "TTP-0000-0291": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0474-sim-edr-312.json",
+  "card_id": "TTP-2026-0474",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-312-windows-unusual-aws-credentials-creation.yml",
+  "scenario_id": "SIM-EDR-312"
+ },
+ "TTP-0000-0292": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0475-sim-edr-313.json",
+  "card_id": "TTP-2026-0475",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-313-windows-unusual-aws-user-added-to-group.yml",
+  "scenario_id": "SIM-EDR-313"
+ },
+ "TTP-0000-0293": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0476-sim-edr-314.json",
+  "card_id": "TTP-2026-0476",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-314-windows-unusual-azure-ad-sync-module-load.yml",
+  "scenario_id": "SIM-EDR-314"
+ },
+ "TTP-0000-0294": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0477-sim-edr-315.json",
+  "card_id": "TTP-2026-0477",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-315-windows-unusual-cloud-instance-metadata-service.yml",
+  "scenario_id": "SIM-EDR-315"
+ },
+ "TTP-0000-0295": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0478-sim-edr-316.json",
+  "card_id": "TTP-2026-0478",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-316-windows-unusual-compressed-file-password-protect.yml",
+  "scenario_id": "SIM-EDR-316"
+ },
+ "TTP-0000-0296": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0479-sim-edr-317.json",
+  "card_id": "TTP-2026-0479",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-317-windows-unusual-db-process-spawning-a-shell.yml",
+  "scenario_id": "SIM-EDR-317"
+ },
+ "TTP-0000-0297": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0480-sim-edr-318.json",
+  "card_id": "TTP-2026-0480",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-318-windows-unusual-internal-access-to-network-devic.yml",
+  "scenario_id": "SIM-EDR-318"
+ },
+ "TTP-0000-0298": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0481-sim-edr-319.json",
+  "card_id": "TTP-2026-0481",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-319-windows-unusual-kubernetes-dashboard-communicati.yml",
+  "scenario_id": "SIM-EDR-319"
+ },
+ "TTP-0000-0299": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0482-sim-edr-320.json",
+  "card_id": "TTP-2026-0482",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-320-windows-unusual-lolbins-process-spawned-by-insta.yml",
+  "scenario_id": "SIM-EDR-320"
+ },
+ "TTP-0000-0300": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0483-sim-edr-321.json",
+  "card_id": "TTP-2026-0483",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-321-windows-unusual-process-accessed-the-powershell.yml",
+  "scenario_id": "SIM-EDR-321"
+ },
+ "TTP-0000-0301": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0484-sim-edr-322.json",
+  "card_id": "TTP-2026-0484",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-322-windows-unusual-process-executed-by-aws-systems.yml",
+  "scenario_id": "SIM-EDR-322"
+ },
+ "TTP-0000-0302": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0485-sim-edr-323.json",
+  "card_id": "TTP-2026-0485",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-323-windows-unusual-process-spawned-by-nginx-in-ingr.yml",
+  "scenario_id": "SIM-EDR-323"
+ },
+ "TTP-0000-0303": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0486-sim-edr-324.json",
+  "card_id": "TTP-2026-0486",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-324-windows-unusual-weak-authentication-by-user.yml",
+  "scenario_id": "SIM-EDR-324"
+ },
+ "TTP-0000-0304": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0487-sim-edr-325.json",
+  "card_id": "TTP-2026-0487",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-325-windows-weakly-encrypted-kerberos-tgt-response.yml",
+  "scenario_id": "SIM-EDR-325"
+ },
+ "TTP-0000-0305": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0488-sim-edr-326.json",
+  "card_id": "TTP-2026-0488",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-326-windows-weakly-encrypted-kerberos-ticket-request.yml",
+  "scenario_id": "SIM-EDR-326"
+ },
+ "TTP-0000-0306": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0489-sim-edr-327.json",
+  "card_id": "TTP-2026-0489",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-327-windows-web-server-cgo-executed-an-uncommon-proc.yml",
+  "scenario_id": "SIM-EDR-327"
+ },
+ "TTP-0000-0307": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0490-sim-edr-328.json",
+  "card_id": "TTP-2026-0490",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-328-windows-windows-cgo-actor-process-and-action-mod.yml",
+  "scenario_id": "SIM-EDR-328"
+ },
+ "TTP-0000-0308": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0491-sim-edr-329.json",
+  "card_id": "TTP-2026-0491",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-329-windows-windows-lolbin-executable-connected-to-a.yml",
+  "scenario_id": "SIM-EDR-329"
+ },
+ "TTP-0000-0309": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0492-sim-edr-330.json",
+  "card_id": "TTP-2026-0492",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-330-windows-wmiprvseexe-rare-child-command-line.yml",
+  "scenario_id": "SIM-EDR-330"
+ },
+ "TTP-0000-0310": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0493-sim-edr-331.json",
+  "card_id": "TTP-2026-0493",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-331-windows-wscriptcscript-loads-net-dlls.yml",
+  "scenario_id": "SIM-EDR-331"
+ },
+ "TTP-0000-0311": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0494-sim-edr-332.json",
+  "card_id": "TTP-2026-0494",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-332-windows-wsmprovhostexe-rare-child-process.yml",
+  "scenario_id": "SIM-EDR-332"
+ },
+ "TTP-0000-0312": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0495-sim-edr-333.json",
+  "card_id": "TTP-2026-0495",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-333-linux-multiple-uncommon-ssh-servers-with-the-s.yml",
+  "scenario_id": "SIM-EDR-333"
+ },
+ "TTP-0000-0313": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0496-sim-edr-334.json",
+  "card_id": "TTP-2026-0496",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-334-linux-rare-process-created-an-ssh-session-to-a.yml",
+  "scenario_id": "SIM-EDR-334"
+ },
+ "TTP-0000-0314": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0497-sim-edr-335.json",
+  "card_id": "TTP-2026-0497",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-335-linux-rare-process-created-an-ssh-session-to-a.yml",
+  "scenario_id": "SIM-EDR-335"
+ },
+ "TTP-0000-0315": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0498-sim-edr-336.json",
+  "card_id": "TTP-2026-0498",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-336-linux-rare-ssh-session.yml",
+  "scenario_id": "SIM-EDR-336"
+ },
+ "TTP-0000-0316": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0499-sim-edr-337.json",
+  "card_id": "TTP-2026-0499",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-337-linux-ssh-authentication-brute-force-attempts.yml",
+  "scenario_id": "SIM-EDR-337"
+ },
+ "TTP-0000-0317": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0500-sim-edr-338.json",
+  "card_id": "TTP-2026-0500",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-338-linux-sudoedit-brute-force-attempt.yml",
+  "scenario_id": "SIM-EDR-338"
+ },
+ "TTP-0000-0318": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0501-sim-edr-339.json",
+  "card_id": "TTP-2026-0501",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-339-linux-suspicious-container-orchestration-job.yml",
+  "scenario_id": "SIM-EDR-339"
+ },
+ "TTP-0000-0319": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0502-sim-edr-340.json",
+  "card_id": "TTP-2026-0502",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-340-linux-suspicious-container-reconnaissance-acti.yml",
+  "scenario_id": "SIM-EDR-340"
+ },
+ "TTP-0000-0320": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0503-sim-edr-341.json",
+  "card_id": "TTP-2026-0503",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-341-linux-suspicious-container-runtime-connection.yml",
+  "scenario_id": "SIM-EDR-341"
+ },
+ "TTP-0000-0321": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0504-sim-edr-342.json",
+  "card_id": "TTP-2026-0504",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-342-linux-suspicious-sshpass-command-execution.yml",
+  "scenario_id": "SIM-EDR-342"
+ },
+ "TTP-0000-0322": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0505-sim-edr-343.json",
+  "card_id": "TTP-2026-0505",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-343-linux-uncommon-reverse-ssh-tunnel-to-external.yml",
+  "scenario_id": "SIM-EDR-343"
+ },
+ "TTP-0000-0323": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0506-sim-edr-344.json",
+  "card_id": "TTP-2026-0506",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-344-linux-uncommon-ssh-session-was-established.yml",
+  "scenario_id": "SIM-EDR-344"
+ },
+ "TTP-0000-0324": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0507-sim-edr-345.json",
+  "card_id": "TTP-2026-0507",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-345-linux-unusual-ssh-activity.yml",
+  "scenario_id": "SIM-EDR-345"
+ },
+ "TTP-0000-0325": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0508-sim-edr-346.json",
+  "card_id": "TTP-2026-0508",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-346-linux-unusual-ssh-activity-that-resembles-ssh.yml",
+  "scenario_id": "SIM-EDR-346"
+ },
+ "TTP-0000-0326": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0509-sim-edr-347.json",
+  "card_id": "TTP-2026-0509",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-347-linux-syslog-ssh-brute.yml",
+  "scenario_id": "SIM-EDR-347"
+ },
+ "TTP-0000-0327": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0510-sim-edr-348.json",
+  "card_id": "TTP-2026-0510",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-348-linux-syslog-sudo-brute.yml",
+  "scenario_id": "SIM-EDR-348"
+ },
+ "TTP-0000-0328": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0511-sim-edr-349.json",
+  "card_id": "TTP-2026-0511",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-349-linux-syslog-new-root-acct.yml",
+  "scenario_id": "SIM-EDR-349"
+ },
+ "TTP-0000-0329": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0512-sim-edr-350.json",
+  "card_id": "TTP-2026-0512",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-350-linux-syslog-cron-persist.yml",
+  "scenario_id": "SIM-EDR-350"
+ },
+ "TTP-0000-0330": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0513-sim-edr-351.json",
+  "card_id": "TTP-2026-0513",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-351-linux-syslog-su-root.yml",
+  "scenario_id": "SIM-EDR-351"
+ },
+ "TTP-0000-0331": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0514-sim-edr-352.json",
+  "card_id": "TTP-2026-0514",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-352-linux-syslog-setuid-log.yml",
+  "scenario_id": "SIM-EDR-352"
+ },
+ "TTP-0000-0332": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0515-sim-edr-353.json",
+  "card_id": "TTP-2026-0515",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-353-mature-traitor-privesc.yml",
+  "scenario_id": "SIM-EDR-353"
+ },
+ "TTP-0000-0333": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0516-sim-edr-354.json",
+  "card_id": "TTP-2026-0516",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-354-mature-deepce-escape.yml",
+  "scenario_id": "SIM-EDR-354"
+ },
+ "TTP-0000-0334": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0517-sim-edr-355.json",
+  "card_id": "TTP-2026-0517",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-355-mature-pspy.yml",
+  "scenario_id": "SIM-EDR-355"
+ },
+ "TTP-0000-0335": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0518-sim-edr-356.json",
+  "card_id": "TTP-2026-0518",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-356-mature-suid3num.yml",
+  "scenario_id": "SIM-EDR-356"
+ },
+ "TTP-0000-0336": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0519-sim-edr-357.json",
+  "card_id": "TTP-2026-0519",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-357-mature-amicontained.yml",
+  "scenario_id": "SIM-EDR-357"
+ },
+ "TTP-0000-0337": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0520-sim-edr-358.json",
+  "card_id": "TTP-2026-0520",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-358-mature-lse.yml",
+  "scenario_id": "SIM-EDR-358"
+ },
+ "TTP-0000-0338": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0521-sim-edr-359.json",
+  "card_id": "TTP-2026-0521",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 1,
+  "scenario_file": "scenarios/edr/edr-359-mature-linenum.yml",
+  "scenario_id": "SIM-EDR-359"
+ },
+ "TTP-0000-0339": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0522-sim-edr-360.json",
+  "card_id": "TTP-2026-0522",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-360-mature-credking.yml",
+  "scenario_id": "SIM-EDR-360"
+ },
+ "TTP-0000-0340": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0523-sim-edr-361.json",
+  "card_id": "TTP-2026-0523",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-361-mature-impacket.yml",
+  "scenario_id": "SIM-EDR-361"
+ },
+ "TTP-0000-0341": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0524-sim-edr-362.json",
+  "card_id": "TTP-2026-0524",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-362-mature-mimikatz.yml",
+  "scenario_id": "SIM-EDR-362"
+ },
+ "TTP-0000-0342": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0525-sim-edr-363.json",
+  "card_id": "TTP-2026-0525",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-363-mature-pypykatz.yml",
+  "scenario_id": "SIM-EDR-363"
+ },
+ "TTP-0000-0343": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0526-sim-edr-364.json",
+  "card_id": "TTP-2026-0526",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-364-mature-netexec.yml",
+  "scenario_id": "SIM-EDR-364"
+ },
+ "TTP-0000-0344": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0527-sim-edr-365.json",
+  "card_id": "TTP-2026-0527",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-365-mature-evil-winrm.yml",
+  "scenario_id": "SIM-EDR-365"
+ },
+ "TTP-0000-0345": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0528-sim-edr-366.json",
+  "card_id": "TTP-2026-0528",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-366-mature-printspoofer.yml",
+  "scenario_id": "SIM-EDR-366"
+ },
+ "TTP-0000-0346": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0529-sim-edr-367.json",
+  "card_id": "TTP-2026-0529",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-367-mature-nmap.yml",
+  "scenario_id": "SIM-EDR-367"
+ },
+ "TTP-0000-0347": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0530-sim-edr-368.json",
+  "card_id": "TTP-2026-0530",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-368-mature-frp.yml",
+  "scenario_id": "SIM-EDR-368"
+ },
+ "TTP-0000-0348": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0531-sim-edr-369.json",
+  "card_id": "TTP-2026-0531",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-369-mature-sliver.yml",
+  "scenario_id": "SIM-EDR-369"
+ },
+ "TTP-0000-0349": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0532-sim-edr-370.json",
+  "card_id": "TTP-2026-0532",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-370-mature-havoc.yml",
+  "scenario_id": "SIM-EDR-370"
+ },
+ "TTP-0000-0350": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0533-sim-edr-371.json",
+  "card_id": "TTP-2026-0533",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-371-mature-empire.yml",
+  "scenario_id": "SIM-EDR-371"
+ },
+ "TTP-0000-0351": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0534-sim-edr-372.json",
+  "card_id": "TTP-2026-0534",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-372-mature-metasploit.yml",
+  "scenario_id": "SIM-EDR-372"
+ },
+ "TTP-0000-0352": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0535-sim-edr-373.json",
+  "card_id": "TTP-2026-0535",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-373-mature-starkiller.yml",
+  "scenario_id": "SIM-EDR-373"
+ },
+ "TTP-0000-0353": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0536-sim-edr-374.json",
+  "card_id": "TTP-2026-0536",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-374-mature-bloodhound.yml",
+  "scenario_id": "SIM-EDR-374"
+ },
+ "TTP-0000-0354": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0537-sim-edr-375.json",
+  "card_id": "TTP-2026-0537",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-375-mature-rubeus.yml",
+  "scenario_id": "SIM-EDR-375"
+ },
+ "TTP-0000-0355": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0538-sim-edr-376.json",
+  "card_id": "TTP-2026-0538",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-376-mature-bloodyad.yml",
+  "scenario_id": "SIM-EDR-376"
+ },
+ "TTP-0000-0356": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0539-sim-edr-377.json",
+  "card_id": "TTP-2026-0539",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-377-mature-krbrelayup.yml",
+  "scenario_id": "SIM-EDR-377"
+ },
+ "TTP-0000-0357": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0540-sim-edr-378.json",
+  "card_id": "TTP-2026-0540",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-378-mature-tokenvator.yml",
+  "scenario_id": "SIM-EDR-378"
+ },
+ "TTP-0000-0358": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0541-sim-edr-379.json",
+  "card_id": "TTP-2026-0541",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-379-mature-sqlmap.yml",
+  "scenario_id": "SIM-EDR-379"
+ },
+ "TTP-0000-0359": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0542-sim-edr-380.json",
+  "card_id": "TTP-2026-0542",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-380-mature-nuclei.yml",
+  "scenario_id": "SIM-EDR-380"
+ },
+ "TTP-0000-0360": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0543-sim-edr-381.json",
+  "card_id": "TTP-2026-0543",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-381-mature-ffuf.yml",
+  "scenario_id": "SIM-EDR-381"
+ },
+ "TTP-0000-0361": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0544-sim-edr-382.json",
+  "card_id": "TTP-2026-0544",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-382-mature-wpscan.yml",
+  "scenario_id": "SIM-EDR-382"
+ },
+ "TTP-0000-0362": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0545-sim-edr-383.json",
+  "card_id": "TTP-2026-0545",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-383-mature-commix.yml",
+  "scenario_id": "SIM-EDR-383"
+ },
+ "TTP-0000-0363": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0546-sim-edr-384.json",
+  "card_id": "TTP-2026-0546",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-384-mature-responder.yml",
+  "scenario_id": "SIM-EDR-384"
+ },
+ "TTP-0000-0364": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0547-sim-edr-385.json",
+  "card_id": "TTP-2026-0547",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-385-mature-smbmap.yml",
+  "scenario_id": "SIM-EDR-385"
+ },
+ "TTP-0000-0365": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0548-sim-edr-386.json",
+  "card_id": "TTP-2026-0548",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-386-mature-hashcat.yml",
+  "scenario_id": "SIM-EDR-386"
+ },
+ "TTP-0000-0366": {
+  "card_file": "detection_scanner/ttps/TTP-2026-0549-sim-edr-387.json",
+  "card_id": "TTP-2026-0549",
+  "from": "PR #229 @ 46df794d",
+  "hash_iocs_dropped": 0,
+  "scenario_file": "scenarios/edr/edr-387-mature-theharvester.yml",
+  "scenario_id": "SIM-EDR-387"
+ }
+}
