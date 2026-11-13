@@ -6316,7 +6316,6 @@
  * font-size (18px vs the authored 22px) at the same file was a landmine,
  * not a fallback — see the T2 section of the repair doc.
  * ───────────────────────────────────────────────────────────────────────── */
-.eal-console__title-accent { color: var(--cortex-teal); }
 .eal-console__close { margin-left: auto; }
 .eal-list__toolbar { justify-content: space-between; margin-bottom: 8px; }
 .eal-list__count { margin: 0; }

@@ -88,10 +88,7 @@ export default function EalConsole({ onMessage, onClose }) {
         <div className="eal-console__hero">
           <div className="eal-console__heading">
             <div className="eal-console__accent-bar" aria-hidden="true" />
-            <div className="eal-console__eyebrow">Traffic</div>
-            <h2 className="eal-console__title">
-              <span className="eal-console__title-accent">EAL</span> Traffic Simulator
-            </h2>
+            <h1 className="eal-console__title">Traffic / EAL</h1>
             <p className="eal-console__meta">{heroMeta}</p>
           </div>
           <div className="eal-console__actions">

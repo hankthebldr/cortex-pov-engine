@@ -367,9 +367,7 @@ function StreamsHead({ onNavigate = () => {}, counts = null }) {
           {/* h1, not h2. This is the top heading of its own destination, and
               starting the document outline at depth 2 is a real screen-reader
               defect rather than only a test inconvenience. */}
-          <h1 className="eal-console__title">
-            <span className="eal-console__title-accent">Data</span> Streams
-          </h1>
+          <h1 className="eal-console__title">Data streams</h1>
           <p className="eal-console__meta">
             Analytics log-streamer coverage against the vendor's{' '}
             <span className="mono">{counts?.total ?? '—'}</span>-source catalogue

@@ -119,12 +119,12 @@ const TITLE_FIXTURES = [
     titleSelector: 'h1',
   },
   {
-    name: 'UC / TC Index — UcTcIndexView.jsx h1.uctc__pagehead-title',
+    name: 'UC / TC index — UcTcIndexView.jsx h1.uctc__pagehead-title',
     html: `<div class="adapter-registry uctc" data-testid="uctc-index">
       <div class="uctc__pagehead">
         <div class="uctc__pagehead-bar" aria-hidden="true"></div>
         <div class="uctc__pagehead-eyebrow mono">Analyze · UC / TC Index</div>
-        <h1 class="uctc__pagehead-title">UC / TC Index</h1>
+        <h1 class="uctc__pagehead-title">UC / TC index</h1>
       </div>
     </div>`,
     bgSelector: '.uctc',
@@ -147,12 +147,12 @@ const TITLE_FIXTURES = [
     titleSelector: '.readiness h1',
   },
   {
-    name: 'EAL Traffic Simulator — EalConsole.jsx h2.eal-console__title',
+    name: 'Traffic / EAL — EalConsole.jsx h1.eal-console__title',
     html: `<section class="eal-console">
       <header class="eal-console__head">
         <div class="eal-console__hero">
           <div class="eal-console__heading">
-            <h2 class="eal-console__title"><span class="eal-console__title-accent">EAL</span> Traffic Simulator</h2>
+            <h1 class="eal-console__title">Traffic / EAL</h1>
           </div>
         </div>
       </header>

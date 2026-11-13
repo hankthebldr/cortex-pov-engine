@@ -76,7 +76,7 @@ export default function CoverageView({ onNavigate } = {}) {
         <div className="view-head">
           <div>
             <CoverageKicker />
-            <h1>PANW Stack Coverage</h1>
+            <h1>Coverage</h1>
             <div className="view-head__meta">
               product × kill chain · click a cell to drill into scenarios
             </div>
@@ -101,7 +101,7 @@ export default function CoverageView({ onNavigate } = {}) {
         <div className="view-head">
           <div>
             <CoverageKicker />
-            <h1>Competitive Position</h1>
+            <h1>Coverage</h1>
             <div className="view-head__meta">
               capability matrix · Cortex vs. major EDR / SIEM / BAS competitors
             </div>
@@ -118,7 +118,7 @@ export default function CoverageView({ onNavigate } = {}) {
       <div className="view-head">
         <div>
           <CoverageKicker />
-          <h1>ATT&amp;CK Coverage</h1>
+          <h1>Coverage</h1>
           <div className="view-head__meta">
             {data?.summary ? (
               <>

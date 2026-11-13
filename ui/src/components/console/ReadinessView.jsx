@@ -84,7 +84,7 @@ function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, 
   return (
     <header className="view-head">
       <div>
-        <h1>Launch Gate</h1>
+        <h1>Launch gate</h1>
         <div className="view-head__meta">
           <span className={HS_CHIP[status] || 'chip'} data-testid="readiness-overall">
             {HS_LABEL[status] || 'UNKNOWN'}
@@ -453,7 +453,7 @@ function ComponentSection({ model, onNavigate }) {
             {c.remediation && <div className="rdy-comp__fix">→ {c.remediation}</div>}
             {c.key === 'payload_shelf' && (
               <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-                Tools &amp; Payloads ▸
+                Packages ▸
               </button>
             )}
             {c.key === 'agent_binaries' && (
