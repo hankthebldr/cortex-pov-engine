@@ -208,3 +208,14 @@ def _no_external_network(request, monkeypatch):
             + ". Point it at a local sink or stub the resolver; see the "
               "comment above _no_external_network in tests/conftest.py."
         )
+
+
+@pytest.fixture(autouse=True)
+def _reset_tenant_quota_ledger():
+    """The tenant ledger (daily queries, breaker, request buckets) is a process
+    singleton; clear it so one test's spend or trip never reaches the next."""
+    from integrations.xsiam.ledger import ledger
+
+    ledger.reset()
+    yield
+    ledger.reset()

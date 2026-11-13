@@ -67,7 +67,7 @@
   --c-text-muted:      var(--tx3);
   --c-text-disabled:   var(--tx3);
 
-  --c-panw-orange:     var(--orange);
+  --c-panw-orange:     var(--family-ngfw);
 
   color: var(--tx);
 }

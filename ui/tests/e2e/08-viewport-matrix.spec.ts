@@ -393,6 +393,8 @@ test('quick-launch selects are tall enough for their own text', async ({ page })
   await page.goto('/#/library')
   await page.waitForSelector('.scenario-card')
   await page.locator('.scenario-card').first().click()
+  // The quick launch lives on the scenario sheet's Launch options tab (v26 §4.1).
+  await page.getByRole('tab', { name: 'Launch options' }).click()
   await page.waitForSelector('.insp-select')
 
   // NOT `scrollHeight > clientHeight`. That is the natural probe and it does

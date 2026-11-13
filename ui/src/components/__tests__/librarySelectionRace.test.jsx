@@ -40,14 +40,14 @@ describe('Library — the newest selection is the one the drawer launches', () =
 
     fireEvent.click(screen.getByText('Alpha card'))
     fireEvent.click(screen.getByText('Bravo card'))
-    await waitFor(() => expect(document.querySelector('.insp-launch__title').textContent).toBe('Bravo detail'))
+    await waitFor(() => expect(document.querySelector('.scenario-sheet__title').textContent).toBe('Bravo detail'))
 
     await act(async () => { releaseAlpha() })
-    expect(document.querySelector('.insp-launch__title').textContent).toBe('Bravo detail')
+    expect(document.querySelector('.scenario-sheet__title').textContent).toBe('Bravo detail')
 
     // And the launch the drawer would fire is for B.
     const launchBtn = await waitFor(() => {
-      const b = screen.getAllByRole('button', { name: /^Launch/ })[0]
+      const b = screen.getAllByRole('button', { name: 'Run' })[0]
       expect(b).not.toBeDisabled()
       return b
     })

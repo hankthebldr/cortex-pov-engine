@@ -456,12 +456,17 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     """XSIAM integration failures → structured {error, code, detail} envelope.
     API key values never appear in XsiamError.detail (only HTTP status text)."""
     logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
+    content = {"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
+               "upstream_status": exc.upstream_status}
+    # Additive, and only when the refusal knows when to come back.
+    retry_after = getattr(exc, "retry_after_seconds", None)
+    if retry_after is not None:
+        content["retry_after_seconds"] = retry_after
     return JSONResponse(
         status_code=exc.http_status,
         # upstream_status is additive: the tenant's HTTP status (e.g. 403 on the
         # license-gated healthcheck), so a caller never reads it out of `detail`.
-        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
-                 "upstream_status": exc.upstream_status},
+        content=content,
     )
 
 

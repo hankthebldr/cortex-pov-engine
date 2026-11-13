@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS: int = 3           # give up after N sweeps
     CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS: int = 600      # doubled per attempt, capped at 4h
     CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP: int = 50  # hard stop on tenant queries
+    CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE: int = 60  # per-tenant request bucket (tuning.py reads the env)
     CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS: int = 3600   # XQL lookback per query
 
     # UC/TC foreign-key strictness. When false (the default for one release),
