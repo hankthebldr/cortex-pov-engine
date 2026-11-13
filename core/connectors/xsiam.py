@@ -33,8 +33,12 @@ from typing import Any, Callable, Optional, Sequence
 from integrations.xsiam import codes
 from integrations.xsiam.auth import advanced_auth_headers, standard_auth_headers
 from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.ledger import (
+    QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+)
 from integrations.xsiam.tenant_url import normalize_tenant_base_url
 
+from . import tuning
 from .base import (
     Connector,
     ConnectorConfig,
@@ -224,6 +228,23 @@ class XsiamConnector(Connector):
                                                 search_from=search_from,
                                                 page_size=page_size))
             body = json.dumps(payload).encode("utf-8")
+            # One token per page, from the same per-tenant bucket (and the same
+            # key) the tenant client spends: two egress points, one budget.
+            try:
+                ledger.acquire_request(
+                    tenant_ledger_key(base),
+                    per_minute=tuning.xsiam_max_requests_per_minute())
+            except (QuotaBreakerOpen, RequestBudgetExhausted) as e:
+                n = max(1, int(e.retry_after_seconds))
+                return PullResult(
+                    ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
+                    error=("CortexSim's own per-tenant request budget refused "
+                           + (f"page {pages + 1}; pages 1..{pages} were already "
+                              f"fetched from the tenant" if pages else
+                              "this request before it was sent to the tenant")
+                           + f"; retry in {n}s"),
+                    detail={"pages": pages, "path": path, "refused_locally": True,
+                            "retry_after_seconds": n})
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
@@ -240,6 +261,9 @@ class XsiamConnector(Connector):
                 # the server log; ship only a status and a digest the operator
                 # can correlate with it. A failure on page N>1 fails the WHOLE
                 # pull: page 1 alone would read as "the tenant held this many".
+                if status == 429:
+                    ledger.trip(tenant_ledger_key(base),
+                                cooldown_seconds=tuning.xsiam_breaker_cooldown())
                 logger.warning("xsiam %s pull HTTP %s from %s (page %d); body=%s",
                                kind, status, _host_only(url), pages + 1, text[:500])
                 return PullResult(
@@ -447,7 +471,9 @@ class XsiamConnector(Connector):
         for start in range(0, len(ids), self._ID_CHUNK):
             r = one(ids[start:start + self._ID_CHUNK])
             if not r.ok:
-                r.detail = {**r.detail, "pages": merged.detail["pages"] + 1}
+                # A locally refused chunk sent no request; a failed one sent one.
+                sent = 0 if r.detail.get("refused_locally") else 1
+                r.detail = {**r.detail, "pages": merged.detail["pages"] + sent}
                 return r
             merged.incidents.extend(r.incidents)
             merged.observations.extend(r.observations)

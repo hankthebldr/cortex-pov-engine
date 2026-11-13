@@ -25,12 +25,38 @@ the tenant's own 429 both still apply.
 from __future__ import annotations
 
 import logging
+import math
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger("cortexsim.xsiam.ledger")
+
+
+class TokenBucket:
+    """``per_minute`` tokens, refilled continuously, capacity ``per_minute``."""
+
+    def __init__(self, per_minute: int, *, clock: Callable[[], float] = time.monotonic) -> None:
+        if per_minute < 1:
+            raise ValueError("per_minute must be >= 1")
+        self._capacity = float(per_minute)
+        self._rate = per_minute / 60.0  # tokens per second
+        self._clock = clock
+        self._tokens = self._capacity
+        self._stamp = clock()
+
+    def acquire(self) -> float:
+        """``0.0`` when a token was taken, else ``retry_after_seconds`` (ceil, at least 1)."""
+        now = self._clock()
+        elapsed = max(0.0, now - self._stamp)
+        self._stamp = now
+        self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
+        if self._tokens >= 1.0:
+            self._tokens -= 1.0
+            return 0.0
+        return float(max(1, math.ceil((1.0 - self._tokens) / self._rate)))
 
 
 def tenant_ledger_key(base_url: str) -> str:
@@ -54,7 +80,7 @@ class QuotaBreakerOpen(RuntimeError):
 
     def __init__(self, tenant: str, retry_after_seconds: int) -> None:
         super().__init__(
-            f"XQL quota breaker open for tenant '{tenant}'; "
+            f"tenant request breaker open for tenant '{tenant}'; "
             f"retry in {retry_after_seconds}s"
         )
         self.tenant = tenant
@@ -73,6 +99,18 @@ class DailyBudgetExhausted(RuntimeError):
         self.limit = limit
 
 
+class RequestBudgetExhausted(RuntimeError):
+    """The per-minute request bucket for this tenant is empty."""
+
+    def __init__(self, tenant: str, retry_after_seconds: int) -> None:
+        super().__init__(
+            f"tenant '{tenant}' request budget exhausted; "
+            f"retry in {retry_after_seconds}s"
+        )
+        self.tenant = tenant
+        self.retry_after_seconds = retry_after_seconds
+
+
 @dataclass
 class _TenantLedger:
     queries: list[datetime] = field(default_factory=list)
@@ -87,9 +125,12 @@ class _TenantLedger:
 class TenantQuotaLedger:
     """Per-tenant rolling-day counter + breaker. Thread-safe; process-scoped."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._lock = threading.Lock()
         self._by_tenant: dict[str, _TenantLedger] = {}
+        self._clock = clock
+        #: tenant -> (per_minute, bucket); rebuilt when per_minute changes.
+        self._buckets: dict[str, tuple[int, TokenBucket]] = {}
 
     # ── read ────────────────────────────────────────────────────────────
 
@@ -140,6 +181,35 @@ class TenantQuotaLedger:
         with self._lock:
             self._by_tenant.setdefault(tenant, _TenantLedger()).queries.append(now)
 
+    def refund(self, tenant: str) -> None:
+        """Take back the most recent ``charge`` (a query CortexSim refused to send)."""
+        with self._lock:
+            led = self._by_tenant.get(tenant)
+            if led and led.queries:
+                led.queries.pop()
+
+    def acquire_request(self, tenant: str, *, per_minute: int,
+                        now: Optional[datetime] = None) -> None:
+        """Take one request token for this tenant, or raise.
+
+        Breaker first (``QuotaBreakerOpen``), then the per-minute bucket
+        (``RequestBudgetExhausted``). Counts nothing against the daily query
+        ledger: that is ``charge``'s job.
+        """
+        now = now or datetime.utcnow()
+        with self._lock:
+            led = self._by_tenant.get(tenant)
+            if led and led.breaker_open_until and now < led.breaker_open_until:
+                raise QuotaBreakerOpen(
+                    tenant, int((led.breaker_open_until - now).total_seconds()))
+            entry = self._buckets.get(tenant)
+            if entry is None or entry[0] != per_minute:
+                entry = (per_minute, TokenBucket(per_minute, clock=self._clock))
+                self._buckets[tenant] = entry
+            wait = entry[1].acquire()
+        if wait > 0:
+            raise RequestBudgetExhausted(tenant, max(1, int(math.ceil(wait))))
+
     def trip(self, tenant: str, *, cooldown_seconds: int,
              now: Optional[datetime] = None) -> None:
         """Open the breaker after the tenant reported a quota failure."""
@@ -149,8 +219,8 @@ class TenantQuotaLedger:
             led.breaker_open_until = now + timedelta(seconds=cooldown_seconds)
             led.trips += 1
         logger.warning(
-            "XQL quota breaker OPEN for tenant '%s' for %ds — every path "
-            "(sweep, /verify, assertions) will stop querying and resolve pending",
+            "tenant request breaker OPEN for tenant '%s' for %ds — every path "
+            "(reads, sweep, /verify, assertions) will stop querying and resolve pending",
             tenant, cooldown_seconds,
         )
 
@@ -159,8 +229,10 @@ class TenantQuotaLedger:
         with self._lock:
             if tenant is None:
                 self._by_tenant.clear()
+                self._buckets.clear()
             else:
                 self._by_tenant.pop(tenant, None)
+                self._buckets.pop(tenant, None)
 
 
 #: The process singleton. Import this, do not construct another — a second
