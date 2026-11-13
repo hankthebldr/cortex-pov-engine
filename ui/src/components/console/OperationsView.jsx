@@ -421,11 +421,12 @@ export default function OperationsView({
           ? (runsByScenario.get(selectedId) || [])
           : []}
         onOpenRunEvidence={onOpenRunEvidence}
-        onOpenInComposer={selectedId ? () => onNavigate('composer', { open: selectedId }) : null}
-        onContinueToLaunch={onContinueToLaunch
+        // Customize: Build a chain with this scenario's chain loaded.
+        onCustomize={selectedId ? () => onNavigate('composer', { open: selectedId }) : null}
+        // Run: the launch step with this scenario loaded. It is armed on
+        // select; close the sheet and hand off.
+        onRun={onContinueToLaunch
           ? () => {
-              // Scenario is already armed on select; close the drawer and hand
-              // off to the canonical ③ Launch step.
               if (selectedId) onArmScenario(selectedId)
               setDrawerOpen(false)
               onContinueToLaunch()

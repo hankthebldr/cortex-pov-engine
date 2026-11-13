@@ -9,20 +9,28 @@ import { parseServerTime } from '../../api/time.js'
 import { SUPPLY, supplyOf } from './supplyState.js'
 import { PUSH_FORMATS } from './useLaunchScenario.js'
 import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice } from './LaunchErrorNotice.jsx'
+import ChainStage from './ChainStage.jsx'
+import { draftFromScenario } from './composerDraft.js'
+import { Button, PageIcon, StatusIcon } from './kit/index.js'
 
 /**
- * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
- * metadata, expected-detection matrix, and footer.
+ * ScenarioInspector — the scenario's deep-dive SHEET (design v26 §4.1, §4.4).
+ *
+ *   header   kind icon + "Scenario" + id + run status (icon AND word), the
+ *            name, and the action row: Run (primary) · Customize · Close
+ *   stage    the scenario's chain — the same ChainStage the Composer edits and
+ *            Run detail draws live — in preview: no state, scaled to fit
+ *   tabs     Overview · Detections · Run history · Launch options
+ *
+ * The two verbs are the scenario card's (§4.4): Run hands the scenario to the
+ * launch step with it loaded (`onRun`); Customize opens Build a chain with its
+ * chain loaded (`onCustomize`). With no launch step to hand off to (an isolated
+ * render), Run launches in place through the parent's launch hook.
  *
  * Launch state is owned by the parent (OperationsView) so the same hook
- * instance powers both the drawer button AND the global ⌘L shortcut.
- *
- * Launch convergence (redesign v2): the canonical launch surface is the
- * dedicated ③ Launch step. The drawer's primary CTA "Continue to Launch ▸"
- * arms the scenario and hands off there (target picker + identity + consent +
- * fire). The inline launch-config below is a power-user QUICK-LAUNCH path that
- * the ⌘L shortcut drives — kept but visually demoted so the two paths don't
- * read as redundant.
+ * instance powers both the sheet AND the global ⌘L shortcut. The power-user
+ * quick launch (mode · identity · agent · push bundle) lives on the Launch
+ * options tab.
  *
  * Props:
  *   scenario          — scenario detail object
@@ -31,10 +39,28 @@ import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice } from './Launc
  *   pinned            — boolean — whether this scenario is currently pinned
  *   onTogglePin       — () => void
  *   onClose           — () => void
- *   onContinueToLaunch— () => void  hand off to the canonical ③ Launch step
- *   onOpenInComposer  — () => void  open this scenario on the Composer canvas;
- *                       optional — the parent owns the navigation
+ *   onRun             — () => void  hand off to the launch step with this scenario
+ *   onCustomize       — () => void  open this scenario's chain in Build a chain
  */
+
+const TABS = [
+  ['overview', 'Overview'],
+  ['detections', 'Detections'],
+  ['history', 'Run history'],
+  ['launch', 'Launch options'],
+]
+
+/** The run-history status as a StatusIcon tone and one word. */
+function historyStatus(runs) {
+  if (!runs || runs.length === 0) return { status: 'off', word: 'Never run' }
+  const token = runStatusToken(runs[0]?.status)
+  if (token === 'completed') return { status: 'up', word: 'Last run finished' }
+  if (token === 'failed') return { status: 'down', word: 'Last run failed' }
+  if (token === 'aborted') return { status: 'degraded', word: 'Last run aborted' }
+  if (token === 'running' || token === 'pending') return { status: 'unknown', word: 'Running' }
+  return { status: 'unknown', word: 'Last run unknown' }
+}
+
 export default function ScenarioInspector({
   scenario,
   open,
@@ -44,314 +70,348 @@ export default function ScenarioInspector({
   onClose = () => {},
   runHistory = [],
   onOpenRunEvidence = () => {},
-  onContinueToLaunch = null,
-  onOpenInComposer = null,
+  onRun = null,
+  onCustomize = null,
 }) {
   // Before the early return: a hook runs on every render.
   const uid = React.useId()
-  if (!scenario || !launch) return <aside className="inspector" />
+  const [tab, setTab] = React.useState('overview')
+  const id = scenario ? (scenario.scenario_id || scenario.id) : null
+  // A different scenario opens on its Overview.
+  React.useEffect(() => { setTab('overview') }, [id])
+  const draft = React.useMemo(() => (scenario ? draftFromScenario(scenario) : null), [scenario])
+  // Esc closes an open sheet, unless something inside it already took the key.
+  React.useEffect(() => {
+    if (!open) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
 
-  const id = scenario.scenario_id || scenario.id
+  if (!scenario || !launch) return <aside className="inspector scenario-sheet" />
+
+  const status = historyStatus(runHistory)
+  const run = onRun || launch.launch
 
   return (
-    <aside className={'inspector' + (open ? ' inspector--open' : '')}>
-      {/* ── Pinned launch CTA ───────────────────────────────────────────── */}
-      <div className="insp-launch">
-        <div className="insp-launch__label mono">
-          {id} · ready to launch
-        </div>
-        <div className="insp-launch__title">{scenario.name}</div>
-
-        <div className="insp-launch__actions">
-          {onContinueToLaunch ? (
-            // Canonical path — hand off to the dedicated ③ Launch step where
-            // the target picker + identity + consent gate live.
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={onContinueToLaunch}
-              title="Arm this scenario and continue to the Launch step"
-            >
-              <span>Continue to Launch</span>
-              <span aria-hidden="true" className="insp-launch__arrow">▸</span>
-            </button>
-          ) : (
-            // Fallback (no handoff wired, e.g. isolated render): inline launch
-            // so the drawer is still functional on its own.
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={launch.launchDisabled}
-              onClick={launch.launch}
-              title="Launch this scenario in the selected mode"
-            >
-              <span>{launch.launching ? 'Launching…' : 'Launch'}</span>
-              <span
-                className="kbd insp-launch__kbd"
-              >⌘L</span>
-            </button>
-          )}
-          <PinButton
-            pinned={pinned}
-            onToggle={onTogglePin}
-            variant="inspector"
-          />
-          {/* Library → Composer. Without this the only way to edit a chain you
-              had just read was to type #/composer?open=<id> by hand. */}
-          {onOpenInComposer && (
-            <button
-              type="button"
-              className="btn"
-              onClick={onOpenInComposer}
-              title="Open this scenario on the Composer canvas and edit its chain"
-            >
-              Edit in Composer
-            </button>
-          )}
-          <button type="button" className="btn" onClick={onClose}>Close</button>
-        </div>
-
-        {/* A launch SimCore accepted WITH a warning (offline target, unknown
-            agent OS, platform variant) is not a tick: it lists the warnings. */}
-        {launch.lastRun && launch.lastRun.status !== 'error' && (
-          launch.lastRun.warnings?.length ? (
-            <LaunchSuccessNotice result={launch.lastRun} testId="insp-launch-success" />
-          ) : (
-            <div className="mono insp-launch__status insp-launch__status--success" role="status">
-              {'\u2713 '}
-              {launch.lastRun.message}
-            </div>
-          )
-        )}
-        {/* A refused launch keeps its code and structured detail (unresolved
-            steps, missing agents) \u2014 the same rendering the Launch step uses. */}
-        <LaunchErrorNotice
-          result={launch.lastRun}
-          testId="insp-launch-error"
-          className="mono insp-launch__status insp-launch__status--missed"
-        />
-      </div>
-
-      {/* ── Mode + identity + agent (compact) ───────────────────────────── */}
-      {/* Quick-launch power path. The full guided flow (target picker +
-          consent) lives in the ③ Launch step; this stays for ⌘L muscle
-          memory and one-keystroke re-runs. */}
-      <div className="insp-section insp-section--launch-config">
-        <div className="insp-section__title">
-          Quick launch
-          <span className="mono insp-section__title-hint">⌘L · advanced</span>
-        </div>
-        <div className="insp-config">
-          {/* Mode */}
-          <div className="insp-config__row">
-            <label className="insp-config__label">Mode</label>
-            <div className="insp-segmented">
-              <button
-                type="button"
-                className={launch.mode === 'pull' ? 'is-active' : ''}
-                disabled={!launch.supportsPull}
-                onClick={() => launch.setMode('pull')}
-              >Pull</button>
-              <button
-                type="button"
-                className={launch.mode === 'push' ? 'is-active' : ''}
-                disabled={!launch.supportsPush}
-                onClick={() => launch.setMode('push')}
-              >Push</button>
-            </div>
+    <>
+      {open && <div className="scenario-sheet__scrim" aria-hidden="true" onClick={onClose} />}
+      <aside
+        className={'inspector scenario-sheet' + (open ? ' inspector--open' : '')}
+        aria-label={`Scenario ${id}`}
+      >
+        {/* ── Header: kind · id · status, the name, the action row ───────── */}
+        <div className="insp-launch scenario-sheet__head" data-testid="scenario-sheet-head">
+          <div className="scenario-sheet__kind">
+            <PageIcon icon="line-chart" />
+            <span className="scenario-sheet__kind-label">Scenario</span>
+            <span className="mono scenario-sheet__id">{id}</span>
+            <StatusIcon status={status.status} word={status.word} className="scenario-sheet__status" />
+            <span className="scenario-sheet__spacer" />
+            <PinButton pinned={pinned} onToggle={onTogglePin} variant="inspector" />
           </div>
+          <h2 className="scenario-sheet__title">{scenario.name}</h2>
 
-          {/* Identity */}
-          {launch.identityOptions.length > 0 && (
-            <div className="insp-config__row">
-              <label className="insp-config__label" htmlFor={`${uid}-identity`}>Identity</label>
-              <select
-                id={`${uid}-identity`}
-                className="insp-select"
-                value={launch.identity}
-                onChange={(e) => launch.setIdentity(e.target.value)}
-                disabled={launch.launching}
+          <div className="scenario-sheet__actions" data-testid="scenario-sheet-actions">
+            <Button
+              variant="primary"
+              onClick={run}
+              disabled={!onRun && launch.launchDisabled}
+              title={onRun ? 'Go to the launch step with this scenario loaded' : 'Launch this scenario in the selected mode'}
+            >
+              {!onRun && launch.launching ? 'Launching…' : 'Run'}
+            </Button>
+            {onCustomize && (
+              <Button
+                variant="secondary"
+                onClick={onCustomize}
+                title="Open this scenario's chain in Build a chain"
               >
-                {launch.identityOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Pull: agent */}
-          {launch.mode === 'pull' && (
-            <div className="insp-config__row">
-              <label className="insp-config__label" htmlFor={`${uid}-agent`}>Agent</label>
-              {launch.agents.length === 0 ? (
-                <span className="mono insp-config__no-agents">
-                  ! no agents connected
-                </span>
-              ) : (
-                <select
-                  id={`${uid}-agent`}
-                  className="insp-select"
-                  value={launch.selectedAgent}
-                  onChange={(e) => launch.setSelectedAgent(e.target.value)}
-                  disabled={launch.launching}
-                >
-                  {launch.agents.map((a) => (
-                    <option
-                      key={agentIdOf(a)}
-                      value={agentIdOf(a)}
-                    >
-                      {(a.hostname || agentIdOf(a)) +
-                        (a.os ? ` (${a.os})` : '')}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
-
-          {/* Push: format. `auto` lets SimCore pick .sh or .ps1 from the
-              scenario's command text; PowerShell is the Windows bundle. */}
-          {launch.mode === 'push' && (
-            <div className="insp-config__row">
-              <label className="insp-config__label">Format</label>
-              <div className="insp-segmented">
-                {PUSH_FORMATS.map((f) => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    className={launch.pushFormat === f.value ? 'is-active' : ''}
-                    aria-pressed={launch.pushFormat === f.value}
-                    title={f.label}
-                    onClick={() => launch.setPushFormat(f.value)}
-                  >{f.short}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quick-launch actions. Quick-launch is the secondary one-keystroke
-              path when the canonical ③ Launch handoff is wired (the top CTA
-              becomes "Continue to Launch"); the push-bundle download is always
-              available here. */}
-          <div className="insp-config__row insp-config__row--actions">
-            {onContinueToLaunch && (
-              <button
-                type="button"
-                className="btn btn--xs"
-                disabled={launch.launchDisabled}
-                onClick={launch.launch}
-                title="Quick-launch in the selected mode (skips the guided Launch step)"
-              >
-                {launch.launching ? 'Launching…' : 'Quick launch'}
-              </button>
+                Customize
+              </Button>
             )}
-            <button
-              type="button"
-              className="btn btn--xs"
-              onClick={launch.downloadPushBundle}
-              disabled={launch.downloading || !launch.supportsPush}
-            >
-              {launch.downloading ? 'Preparing…' : 'Push bundle'}
-            </button>
+            <span className="scenario-sheet__spacer" />
+            <button type="button" className="btn scenario-sheet__close" onClick={onClose}>Close</button>
           </div>
-          {/* Beside the button that asked: a refused bundle names its steps. */}
-          <DownloadOutcome launch={launch} scenario={scenario} testId="insp-download-result" />
-        </div>
-      </div>
 
-      {/* ── Metadata ───────────────────────────────────────────────────── */}
-      <div className="insp-section">
-        <div className="insp-section__title">Metadata</div>
-        <dl className="insp-kv">
-          <dt>Scenario ID</dt>     <dd>{id}</dd>
-          <dt>Plane</dt>           <dd>{scenario.plane || '—'}</dd>
-          <dt>Tactic</dt>          <dd>
-            {scenario.mitre_tactic} · {scenario.mitre_tactic_name}
-          </dd>
-          <dt>Technique</dt>       <dd>
-            {scenario.mitre_technique} · {scenario.mitre_technique_name}
-          </dd>
-          {scenario.threat_report && (
-            <>
-              <dt>Anchor</dt>
-              <dd title={scenario.threat_report}>
-                {truncate(scenario.threat_report, 56)}
-              </dd>
-            </>
-          )}
-          {scenario.threat_report_url && (
-            <>
-              <dt>Source</dt>
-              <dd>
-                <a href={scenario.threat_report_url} target="_blank" rel="noreferrer">
-                  view ↗
-                </a>
-              </dd>
-            </>
-          )}
-          <dt>Identity</dt>
-          <dd>{scenario.execution_identity?.default || '—'}</dd>
-          {(scenario.tags && scenario.tags.length > 0) && (
-            <>
-              <dt>Tags</dt>
-              <dd className="mono insp-tags">
-                {scenario.tags.join(' · ')}
-              </dd>
-            </>
-          )}
-        </dl>
-      </div>
-
-      {/* ── Tools & payload supply ─────────────────────────────────────── */}
-      <ScenarioToolsSection scenario={scenario} scenarioId={id} />
-
-      {/* ── Expected detection matrix ──────────────────────────────────── */}
-      <div className="insp-detection-matrix">
-        <div className="insp-section__title">Expected detection matrix</div>
-        {(scenario.steps || []).map((step, idx) => (
-          <div className="dmx-row" key={step.id || idx}>
-            <div className="dmx-step">{String(idx + 1).padStart(2, '0')}</div>
-            <div className="dmx-body">
-              <div className="dmx-body__tid">
-                {step.mitre_technique || '—'} · {step.identity || '—'}
+          {/* A launch SimCore accepted WITH a warning (offline target, unknown
+              agent OS, platform variant) is not a tick: it lists the warnings. */}
+          {launch.lastRun && launch.lastRun.status !== 'error' && (
+            launch.lastRun.warnings?.length ? (
+              <LaunchSuccessNotice result={launch.lastRun} testId="insp-launch-success" />
+            ) : (
+              <div className="mono insp-launch__status insp-launch__status--success" role="status">
+                {'✓ '}
+                {launch.lastRun.message}
               </div>
-              <div className="dmx-body__desc">{step.name || '(unnamed step)'}</div>
-            </div>
-            <div className="dmx-planes">
-              {(step.expected_detections || []).map((d, i) => (
-                <div
-                  key={i}
-                  className="plane-dot plane-dot--on"
-                  title={`${d.plane || '?'} · ${d.type || '?'} — ${d.description || ''}`}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-        {(!scenario.steps || scenario.steps.length === 0) && (
-          <div className="mono insp-matrix-empty">
-            no steps loaded — fetch detail
-          </div>
-        )}
-      </div>
+            )
+          )}
+          {/* A refused launch keeps its code and structured detail (unresolved
+              steps, missing agents) — the same rendering the Launch step uses. */}
+          <LaunchErrorNotice
+            result={launch.lastRun}
+            testId="insp-launch-error"
+            className="mono insp-launch__status insp-launch__status--missed"
+          />
+        </div>
 
-      {/* ── Run history ───────────────────────────────────────────────── */}
-      <RunHistorySection runs={runHistory} onOpenRunEvidence={onOpenRunEvidence} />
+        <div className="scenario-sheet__body">
+          {/* ── The chain, first (preview: no state, scaled to fit) ──────── */}
+          <section className="scenario-sheet__stage" aria-label="Chain">
+            <h3 className="scenario-sheet__section-title">Chain</h3>
+            <ChainStage
+              mode="preview"
+              steps={draft.steps}
+              cgo={draft.cgo}
+              plane={draft.plane}
+              teardown={draft.teardown}
+              label={`Chain of ${id}`}
+            />
+          </section>
 
-      {/* ── Footer ─────────────────────────────────────────────────────── */}
-      <div className="insp-footer">
-        <span>
-          {scenario.steps?.length || 0} steps ·{' '}
-          {countDetections(scenario)} expected detections ·{' '}
-          {(scenario.tags || []).find((t) => /^(basic|intermediate|advanced|evasive)$/.test(t)) || 'std'}
-        </span>
-        <span>
-          {scenario.pull_supported && 'pull'}
-          {scenario.pull_supported && scenario.push_supported && ' · '}
-          {scenario.push_supported && 'push'}
-        </span>
-      </div>
-    </aside>
+          <div className="scenario-sheet__tabs" role="tablist" aria-label="Scenario sections">
+            {TABS.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`${uid}-tab-${key}`}
+                aria-selected={tab === key}
+                aria-controls={`${uid}-panel`}
+                className={'scenario-sheet__tab' + (tab === key ? ' scenario-sheet__tab--on' : '')}
+                onClick={() => setTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="scenario-sheet__panel"
+            role="tabpanel"
+            id={`${uid}-panel`}
+            aria-labelledby={`${uid}-tab-${tab}`}
+          >
+            {tab === 'overview' && (
+              <>
+                <div className="insp-section">
+                  <div className="insp-section__title">Metadata</div>
+                  <dl className="insp-kv">
+                    <dt>Scenario ID</dt>     <dd>{id}</dd>
+                    <dt>Plane</dt>           <dd>{scenario.plane || '—'}</dd>
+                    <dt>Tactic</dt>          <dd>
+                      {scenario.mitre_tactic} · {scenario.mitre_tactic_name}
+                    </dd>
+                    <dt>Technique</dt>       <dd>
+                      {scenario.mitre_technique} · {scenario.mitre_technique_name}
+                    </dd>
+                    {scenario.threat_report && (
+                      <>
+                        <dt>Anchor</dt>
+                        <dd title={scenario.threat_report}>
+                          {truncate(scenario.threat_report, 56)}
+                        </dd>
+                      </>
+                    )}
+                    {scenario.threat_report_url && (
+                      <>
+                        <dt>Source</dt>
+                        <dd>
+                          <a href={scenario.threat_report_url} target="_blank" rel="noreferrer">
+                            view ↗
+                          </a>
+                        </dd>
+                      </>
+                    )}
+                    <dt>Identity</dt>
+                    <dd>{scenario.execution_identity?.default || '—'}</dd>
+                    {(scenario.tags && scenario.tags.length > 0) && (
+                      <>
+                        <dt>Tags</dt>
+                        <dd className="mono insp-tags">
+                          {scenario.tags.join(' · ')}
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                </div>
+                <ScenarioToolsSection scenario={scenario} scenarioId={id} />
+              </>
+            )}
+
+            {tab === 'detections' && (
+              <div className="insp-detection-matrix">
+                <div className="insp-section__title">Expected detection matrix</div>
+                {(scenario.steps || []).map((step, idx) => (
+                  <div className="dmx-row" key={step.id || idx}>
+                    <div className="dmx-step">{String(idx + 1).padStart(2, '0')}</div>
+                    <div className="dmx-body">
+                      <div className="dmx-body__tid">
+                        {step.mitre_technique || '—'} · {step.identity || '—'}
+                      </div>
+                      <div className="dmx-body__desc">{step.name || '(unnamed step)'}</div>
+                      {(step.expected_detections || []).map((d, i) => (
+                        <div className="mono dmx-body__det" key={i}>
+                          {d.plane || '?'} · {d.type || '?'}{d.description ? ` — ${d.description}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {(!scenario.steps || scenario.steps.length === 0) && (
+                  <div className="mono insp-matrix-empty">
+                    no steps loaded — fetch detail
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'history' && (
+              <RunHistorySection runs={runHistory} onOpenRunEvidence={onOpenRunEvidence} />
+            )}
+
+            {tab === 'launch' && (
+              <div className="insp-section insp-section--launch-config">
+                <div className="insp-section__title">
+                  Quick launch
+                  <span className="mono insp-section__title-hint">⌘L · advanced</span>
+                </div>
+                <div className="insp-config">
+                  {/* Mode */}
+                  <div className="insp-config__row">
+                    <label className="insp-config__label">Mode</label>
+                    <div className="insp-segmented">
+                      <button
+                        type="button"
+                        className={launch.mode === 'pull' ? 'is-active' : ''}
+                        disabled={!launch.supportsPull}
+                        onClick={() => launch.setMode('pull')}
+                      >Pull</button>
+                      <button
+                        type="button"
+                        className={launch.mode === 'push' ? 'is-active' : ''}
+                        disabled={!launch.supportsPush}
+                        onClick={() => launch.setMode('push')}
+                      >Push</button>
+                    </div>
+                  </div>
+
+                  {/* Identity */}
+                  {launch.identityOptions.length > 0 && (
+                    <div className="insp-config__row">
+                      <label className="insp-config__label" htmlFor={`${uid}-identity`}>Identity</label>
+                      <select
+                        id={`${uid}-identity`}
+                        className="insp-select"
+                        value={launch.identity}
+                        onChange={(e) => launch.setIdentity(e.target.value)}
+                        disabled={launch.launching}
+                      >
+                        {launch.identityOptions.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Pull: agent */}
+                  {launch.mode === 'pull' && (
+                    <div className="insp-config__row">
+                      <label className="insp-config__label" htmlFor={`${uid}-agent`}>Agent</label>
+                      {launch.agents.length === 0 ? (
+                        <span className="mono insp-config__no-agents">
+                          ! no agents connected
+                        </span>
+                      ) : (
+                        <select
+                          id={`${uid}-agent`}
+                          className="insp-select"
+                          value={launch.selectedAgent}
+                          onChange={(e) => launch.setSelectedAgent(e.target.value)}
+                          disabled={launch.launching}
+                        >
+                          {launch.agents.map((a) => (
+                            <option
+                              key={agentIdOf(a)}
+                              value={agentIdOf(a)}
+                            >
+                              {(a.hostname || agentIdOf(a)) +
+                                (a.os ? ` (${a.os})` : '')}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Push: format. `auto` lets SimCore pick .sh or .ps1 from the
+                      scenario's command text; PowerShell is the Windows bundle. */}
+                  {launch.mode === 'push' && (
+                    <div className="insp-config__row">
+                      <label className="insp-config__label">Format</label>
+                      <div className="insp-segmented">
+                        {PUSH_FORMATS.map((f) => (
+                          <button
+                            key={f.value}
+                            type="button"
+                            className={launch.pushFormat === f.value ? 'is-active' : ''}
+                            aria-pressed={launch.pushFormat === f.value}
+                            title={f.label}
+                            onClick={() => launch.setPushFormat(f.value)}
+                          >{f.short}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick launch skips the guided launch step; the push-bundle
+                      download is always available here. */}
+                  <div className="insp-config__row insp-config__row--actions">
+                    {onRun && (
+                      <button
+                        type="button"
+                        className="btn btn--xs"
+                        disabled={launch.launchDisabled}
+                        onClick={launch.launch}
+                        title="Quick-launch in the selected mode (skips the guided launch step)"
+                      >
+                        {launch.launching ? 'Launching…' : 'Quick launch'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn--xs"
+                      onClick={launch.downloadPushBundle}
+                      disabled={launch.downloading || !launch.supportsPush}
+                    >
+                      {launch.downloading ? 'Preparing…' : 'Push bundle'}
+                    </button>
+                  </div>
+                  {/* Beside the button that asked: a refused bundle names its steps. */}
+                  <DownloadOutcome launch={launch} scenario={scenario} testId="insp-download-result" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Footer ─────────────────────────────────────────────────────── */}
+          <div className="insp-footer">
+            <span>
+              {scenario.steps?.length || 0} steps ·{' '}
+              {countDetections(scenario)} expected detections ·{' '}
+              {(scenario.tags || []).find((t) => /^(basic|intermediate|advanced|evasive)$/.test(t)) || 'std'}
+            </span>
+            <span>
+              {scenario.pull_supported && 'pull'}
+              {scenario.pull_supported && scenario.push_supported && ' · '}
+              {scenario.push_supported && 'push'}
+            </span>
+          </div>
+        </div>
+      </aside>
+    </>
   )
 }
 

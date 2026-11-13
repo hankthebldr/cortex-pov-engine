@@ -91,7 +91,7 @@ describe('Library — a failed list fetch is not an empty library', () => {
     const onSurfaceMessage = vi.fn()
     render(<OperationsView onError={onError} onSurfaceMessage={onSurfaceMessage} />)
     fireEvent.click(await screen.findByText('AWS Cred Hunt'))
-    const launchBtn = await screen.findByRole('button', { name: /^Launch/ })
+    const launchBtn = await screen.findByRole('button', { name: 'Run' })
     await waitFor(() => expect(launchBtn).not.toBeDisabled())
     fireEvent.click(launchBtn)
     const inline = await screen.findByTestId('insp-launch-error')
