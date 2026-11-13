@@ -405,6 +405,13 @@ def _by_id(issues: Optional[list[dict]]) -> dict[str, dict]:
     return out
 
 
+def _name_key(value: Any) -> str:
+    """A name as the join compares it: neutralised exactly as ``tenant_text.name``
+    is (so a long or zero-width-bearing alert name still meets its issue), then
+    the matcher's own ``_norm``."""
+    return _norm(neutralise_text(value)[0])
+
+
 def _external_id(row: dict) -> Optional[str]:
     value = row.get("external_id")
     text = "" if value is None else str(value).strip()
@@ -433,10 +440,11 @@ def agreement(matcher_rows: list[dict], attributed: list[dict],
       does not fall back to a same-named issue and is ``matcher_only``.
     * class ``name_host_window`` — tried only by a row the probe did not find,
       or that has no id, or by every row when the probe failed: the row's
-      ``name`` equals the issue's ``tenant_text.name`` under the matcher's
-      ``_norm``, the row's host is the run host (``_short_host``), the issue is
-      attributed, and ``|issue.observation_time − row.observed_at| ≤
-      tolerance_seconds``. An issue already joined by id is not a candidate.
+      ``name``, neutralised as the projection neutralises tenant text, equals
+      the issue's ``tenant_text.name`` under the matcher's ``_norm``; the row's
+      host is the run host (``_short_host``); the issue is attributed; and
+      ``|issue.observation_time − row.observed_at| ≤ tolerance_seconds``. An
+      issue already joined by id is not a candidate.
     * ``ambiguous`` — more than one candidate, or a candidate that more than one
       row claims as its only one. Never resolved silently.
     * ``unjoinable`` — no ``external_id`` and no ``name``.
@@ -461,7 +469,7 @@ def agreement(matcher_rows: list[dict], attributed: list[dict],
     fallback: list[int] = []
     for n, row in enumerate(matcher_rows):
         ext = _external_id(row)
-        if ext is None and not _norm(row.get("name")):
+        if ext is None and not _name_key(row.get("name")):
             outcome[n] = "unjoinable"
             continue
         if ext is not None:
@@ -479,15 +487,16 @@ def agreement(matcher_rows: list[dict], attributed: list[dict],
         fallback.append(n)
 
     id_claimed = set(joined.values())
+    issue_names = {iid: _name_key((i.get("tenant_text") or {}).get("name")) for iid, i in window.items()}
     candidates: dict[int, list[str]] = {}
     for n in fallback:
         row = matcher_rows[n]
-        name = _norm(row.get("name"))
+        name = _name_key(row.get("name"))
         observed = coerce_utc(row.get("observed_at"))
         found: list[str] = []
         if name and want and _short_host(row.get("host")) == want and observed is not None:
             for iid, issue in window.items():
-                if iid in id_claimed or _norm((issue.get("tenant_text") or {}).get("name")) != name:
+                if iid in id_claimed or issue_names[iid] != name:
                     continue
                 at = coerce_utc(issue.get("observation_time"))
                 if at is not None and abs(at - observed) <= tolerance:

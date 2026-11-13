@@ -195,3 +195,13 @@ def test_failed_probe_reports_null_id_counts():
     assert _class_pairs(out) == [(1, "1001", "name_host_window")]
     assert out["matcher_only"] == 1
     assert out["reader_only"] == 1
+
+
+def test_matcher_name_compares_as_the_projection_stores_it():
+    # Alert and issue carry the same tenant string. The issue's tenant_text.name
+    # is neutralised (zero-width stripped, capped at 200), so the matcher's
+    # name must be read the same way or a long name never joins.
+    raw = "Suspicious​ process " + "x" * 300
+    rows = [_mrow(1, name=raw, observed_at=OBSERVED["1001"])]
+    out = agreement(rows, _attributed([_issue(0, name=raw)]), [], RUN_HOST, tolerance_seconds=TOL)
+    assert _class_pairs(out) == [(1, "1001", "name_host_window")]
