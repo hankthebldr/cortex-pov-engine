@@ -393,3 +393,132 @@ def test_auto_reconcile_reports_a_local_refusal_apart_from_quota_tripped(session
     stats = asyncio.run(go())
     assert stats["refused_locally"] is True
     assert stats["quota_tripped"] is False
+
+
+# ── round 3 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_public_get_query_results_never_claims_the_query_was_started(monkeypatch):
+    from integrations.xsiam.exceptions import XsiamQuotaError
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    ledger.acquire_request(tenant_ledger_key(BASE), per_minute=1)   # bucket empty
+    seen = []
+    client = _client(lambda r: seen.append(1) or httpx.Response(200, json={}))
+    with pytest.raises(XsiamQuotaError) as ei:
+        await client.get_query_results("never-issued-id")
+    assert seen == []
+    assert ei.value.query_started is None
+    assert "WAS started" not in ei.value.detail
+    assert "before it was sent" in ei.value.detail
+
+
+def test_path_mismatch_is_not_claimed_after_the_lookback_was_refused(monkeypatch):
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    alert = {"alert_id": "1", "name": "x", "source": "XDR BIOC",
+             "detection_timestamp": 1780000000000,
+             "mitre_technique_id_and_name": ["T1003.001 - LSASS Memory"]}
+
+    def fetcher(method, url, headers, body, timeout):
+        rows = [alert] if "/v2/" in url else []
+        return 200, json.dumps({"reply": {"alerts": rows, "total_count": len(rows),
+                                          "result_count": len(rows)}})
+
+    real = pf._pull_alternate
+
+    def refilled(*a, **k):          # a token arrives between lookback and alternate
+        ledger.reset()
+        return real(*a, **k)
+
+    monkeypatch.setattr(pf, "_pull_alternate", refilled)
+    r = pf.preflight_reconcile({"fqdn": HOST, "api_key_id": "1"}, "k", fetcher=fetcher)
+    shape = next(s for s in r.stages if s.id == "alert_shape")
+    assert shape.code != pf.PF_ALERTS_PATH_MISMATCH
+    assert shape.code == pf.PF_NOT_PROBED
+
+
+def test_case_refresh_sweep_reports_a_local_refusal_apart_from_quota_tripped(
+        session_factory):
+    from tests.connectors.test_case_ledger_sweep import seed, stored_ledger, sweep
+
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger())])
+    ledger.trip(tenant_ledger_key("api-acme.xdr.us.paloaltonetworks.com"),
+                cooldown_seconds=600)
+    out = sweep(session_factory, lambda *a: (200, "{}"))
+    assert out["refused_locally"] == 1
+    assert out["quota_tripped"] == 0
+
+
+def test_verify_sweep_records_a_local_refusal_not_a_tenant_quota_event(session_factory):
+    from connectors.service import auto_verify_once
+    from integrations.xsiam.exceptions import XsiamQuotaError
+    from models import Run
+    from sqlalchemy import select
+    from tests.connectors.test_auto_verify import _seed_run
+
+    for i in range(3):
+        _seed_run(session_factory, run_id=f"run-l{i}")
+    calls = []
+
+    async def runner(query: str) -> int:
+        calls.append(query)
+        raise XsiamQuotaError("own budget", local=True, retry_after_seconds=5)
+
+    async def go():
+        async with session_factory() as db:
+            stats = await auto_verify_once(db, lookback_seconds=86400, runner=runner,
+                                           tenant="acme-prod")
+            runs = (await db.execute(select(Run))).scalars().all()
+            return stats, [r.tc_verdict_detail for r in runs], [r.tc_verdict for r in runs]
+
+    stats, details, verdicts = asyncio.run(go())
+    assert len(calls) == 1                       # still stops the whole sweep
+    assert stats["quota_tripped"] is False and stats["refused_locally"] is True
+    for d in details:
+        v = (d or {}).get("verification")
+        if v:
+            assert v["quota_tripped"] is False and v["refused_locally"] is True
+    assert all(v not in ("pass", "fail") for v in verdicts)
+
+
+def test_pull_result_to_dict_uses_local_remediation_for_a_local_refusal():
+    from connectors.base import PullResult
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION
+
+    d = PullResult(ok=False, connector="xsiam", code="XSIAM_QUOTA_ERROR", error="x",
+                   detail={"refused_locally": True}).to_dict()
+    assert d["remediation"] == LOCAL_REFUSAL_REMEDIATION
+    t = PullResult(ok=False, connector="xsiam", code="XSIAM_QUOTA_ERROR", error="x",
+                   detail={}).to_dict()
+    assert "analysts share" in t["remediation"]
+
+
+def test_a_tenant_refusal_keeps_the_role_remediation_even_if_a_later_read_is_local(
+        monkeypatch):
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    client = _client(lambda r: httpx.Response(403, json={}))
+    report = pf.PreflightReport(tenant="t", kind="xsiam_tenant")
+    stage = asyncio.run(pf._probe_response_layer(client, report, datetime(2026, 11, 11, 12)))
+    assert "role of the xsiam_tenant API key" in (stage.remediation or "")
+
+
+@pytest.mark.asyncio
+async def test_a_refused_poll_keeps_the_daily_count_for_the_started_query(monkeypatch):
+    from integrations.xsiam.exceptions import XsiamQuotaError
+    from integrations.xsiam.guards import tenant_budget
+
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "2")
+
+    def handler(request):
+        if request.url.path.endswith("get_query_results"):
+            return httpx.Response(200, json={"reply": {"status": "PENDING"}})
+        return httpx.Response(200, json={"reply": "q1"})
+
+    client = _client(handler)
+    with pytest.raises(XsiamQuotaError) as ei:
+        async with tenant_budget(client):
+            await client.run_xql("dataset = x", {"relativeTime": 1000},
+                                 max_wait=5, interval=0)
+    assert ei.value.query_started == "q1"
+    assert _snap()["queries_last_24h"] == 1      # the start reached the tenant
+    assert _snap()["trips"] == 0

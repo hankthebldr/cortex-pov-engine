@@ -982,6 +982,7 @@ async def refresh_case_ledgers_once(
     eligible.sort()
     refreshed = skipped = queries = 0
     tripped = False
+    refused_locally = False
     for _read_at, run_id in eligible[:max_runs]:
         try:
             run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
@@ -992,9 +993,14 @@ async def refresh_case_ledgers_once(
             detail = e.detail if isinstance(e.detail, dict) else {}
             queries += int(detail.get("queries_issued") or 0)
             if _is_quota_error(e):
-                tripped = True
-                logger.warning("case-ledger refresh: tenant reported quota exhaustion (%s) "
-                               "- sweep circuit-broken", e.code)
+                if detail.get("refused_locally"):
+                    refused_locally = True
+                    logger.warning("case-ledger refresh: CortexSim's own request budget "
+                                   "refused the read (%s) - sweep stopped", e.code)
+                else:
+                    tripped = True
+                    logger.warning("case-ledger refresh: tenant reported quota exhaustion "
+                                   "(%s) - sweep circuit-broken", e.code)
                 break
             logger.debug("case-ledger refresh skip run=%s: %s", run_id, e.code)
             continue
@@ -1012,7 +1018,8 @@ async def refresh_case_ledgers_once(
         else:
             skipped += 1
     return {"refreshed": refreshed, "skipped": skipped, "queries_issued": queries,
-            "quota_tripped": int(tripped)}
+            "quota_tripped": int(tripped),
+            "refused_locally": int(refused_locally)}
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -1799,7 +1806,10 @@ async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str,
 
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
-    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False}
+    # `tripped`: the tenant reported its quota. `refused_locally`: CortexSim's own
+    # request budget / breaker refused; the tenant said nothing.
+    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False,
+            "refused_locally": False}
 
 
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
@@ -1821,19 +1831,24 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
     from integrations.xsiam.ledger import QuotaBreakerOpen  # noqa: PLC0415
 
     async def _run(query: str) -> int:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             raise _BudgetExhausted("verification query budget exhausted")
         budget["remaining"] -= 1
         budget["issued"] += 1
         try:
             return await runner(query)
-        except (XsiamQuotaError, QuotaBreakerOpen):
+        except (XsiamQuotaError, QuotaBreakerOpen) as exc:
             # The customer's analysts share this quota. Stop issuing queries for
             # the rest of THIS sweep. The cross-cycle half — the per-tenant
             # ledger and its breaker — is charged inside the runner itself
             # (`verifier._tenant_budget`) so that assertion runs, which build a
             # runner directly and never reach this wrapper, are bounded too.
-            budget["tripped"] = True
+            if isinstance(exc, QuotaBreakerOpen) or getattr(exc, "local", False):
+                # Our own budget refused: stop the sweep, but do not record a
+                # tenant quota event that never happened. The verdict stays pending.
+                budget["refused_locally"] = True
+            else:
+                budget["tripped"] = True
             raise
 
     return _run
@@ -2035,6 +2050,7 @@ async def verify_run_now(
         "queries_issued": issued,
         "counts": counts,
         "quota_tripped": bool(budget.get("tripped")),
+        "refused_locally": bool(budget.get("refused_locally")),
     })
     if window_used is not None:
         book["window"] = window_used
@@ -2046,7 +2062,9 @@ async def verify_run_now(
                                     extra_detail={"verification": book})
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
                          tenant=tenant, queries_issued=issued,
-                         reason="quota_exhausted" if budget.get("tripped") else None)
+                         reason=("quota_exhausted" if budget.get("tripped")
+                                 else "refused_locally" if budget.get("refused_locally")
+                                 else None))
 
 
 async def auto_verify_once(
@@ -2114,7 +2132,7 @@ async def auto_verify_once(
     budget = _new_budget(max_queries)
     budget["tenant"] = tenant
     for run in candidates:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             break
         skip = _verify_eligible(run, max_attempts=max_attempts,
                                 backoff_seconds=backoff_seconds, now=now)
@@ -2141,6 +2159,7 @@ async def auto_verify_once(
 
     stats["queries_issued"] = budget["issued"]
     stats["quota_tripped"] = bool(budget["tripped"])
+    stats["refused_locally"] = bool(budget["refused_locally"])
     return stats
 
 

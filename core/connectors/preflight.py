@@ -317,7 +317,7 @@ def preflight_reconcile(
                                            until=now)
                 if (alt_pull.detail or {}).get("refused_locally"):
                     lookback_refused = True
-                if alt_pull.ok and alt_pull.observations:
+                if alt_pull.ok and alt_pull.observations and not lookback_refused:
                     # The quiet failure: reconcile would "work" and match
                     # nothing. Withdraw the capability claim; the key reads
                     # alerts, just not where reconcile looks.
@@ -891,6 +891,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     shape_error: Optional[str] = None
     read_problem: Optional[str] = None
     local_problem = False  # a read was refused by CortexSim's own request budget
+    tenant_problem = False  # a read the tenant itself refused or failed
 
     # 1. installed packs
     try:
@@ -902,8 +903,10 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     except XsiamError as exc:
         _uncount_local(report, exc)
         local_problem = local_problem or _is_local(exc)
+        tenant_problem = tenant_problem or not _is_local(exc)
         read_problem = str(exc)
     except Exception as exc:  # noqa: BLE001 — transport
+        tenant_problem = True
         read_problem = str(exc)
 
     # 2. list names (a leftover-lists signal, so read even if packs failed)
@@ -917,6 +920,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     except Exception as exc:  # noqa: BLE001 — XsiamError or transport
         _uncount_local(report, exc)
         local_problem = local_problem or _is_local(exc)
+        tenant_problem = tenant_problem or not _is_local(exc)
         read_problem = read_problem or str(exc)
 
     core = packs is not None and _socfw.CORE_PACK_ID in packs
@@ -1000,7 +1004,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
         return Stage(
             "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
             read_problem or "the installed-packs read failed",
-            remediation=(_LOCAL_REMEDIATION() if local_problem else
+            remediation=(_LOCAL_REMEDIATION() if local_problem and not tenant_problem else
                          "The installed-packs read was refused or failed, so neither "
                          "present nor absent can be claimed. Check the role of the "
                          "xsiam_tenant API key: it needs Marketplace / installed-packs "

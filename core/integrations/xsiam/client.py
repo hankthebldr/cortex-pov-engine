@@ -452,11 +452,17 @@ class XsiamClient:
         return str(reply)
 
     async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
+        # Public (operator-supplied id): CortexSim cannot know the query was
+        # started on this tenant, so a local refusal never claims it was.
+        return await self._get_query_results(query_id, limit=limit, started=False)
+
+    async def _get_query_results(self, query_id: str, *, limit: int,
+                                 started: bool) -> dict[str, Any]:
         body = {"request_data": {
             "query_id": query_id, "pending_flag": True,
             "limit": limit, "format": "json",
         }}
-        async with self._client(query_id=query_id) as c:
+        async with self._client(query_id=query_id if started else None) as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else {}
@@ -482,7 +488,7 @@ class XsiamClient:
         # advances, so a permanently-PENDING tenant spun forever.
         deadline = asyncio.get_running_loop().time() + max(0.0, max_wait)
         while True:
-            reply = await self.get_query_results(query_id, limit=limit)
+            reply = await self._get_query_results(query_id, limit=limit, started=True)
             status = (reply or {}).get("status")
             if status == "SUCCESS":
                 return reply
