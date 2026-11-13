@@ -138,6 +138,25 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `canSelect(stepId, state)`, so the other live cards stay plain cards rather
   than buttons that do nothing.
 
+### Fixed — four new scenarios set Detection Accuracy bars their rows could not reach
+
+- **SIM-EDR-023, SIM-EDR-025, SIM-KOI-010 and SIM-KOI-011 read FAIL on a healthy
+  tenant.** Detection Accuracy counts only rows an alert matched, and their
+  Tier-2-verify XQL rows never become a match: verify sets only the row's KPI
+  verdict, and reconcile writes an unmatched row as missed. Their bars (80% and
+  90%) were above what their alert-backed rows can reach (75%, 33%, 43%, 67%),
+  while their text said the opposite. Each bar now counts only alert-backed
+  rows, as SIM-KOI-012's already did, and the text states the ceiling: 62.5%
+  (EDR-023, with its installed BIOCs and correlation rule, allowing the
+  rarity-based ABIOC one miss), 16.7% (EDR-025), 14.3% (KOI-010) and 16.7%
+  (KOI-011), each one built-in ABIOC. The same flaw in 43 older scenarios is
+  issue #272.
+- **SIM-EDR-025 step-03's verify query could not fail.** It matched any
+  `findmnt`, `df` or `find` on the host within the hour. It now matches `df` and
+  `find` run against the `.cortexsim-akira` staging tree. Its four XQL rows no
+  longer name card TTP-2026-0200 without a detection on it, which logged an
+  unresolved-card warning at every boot.
+
 ### Security
 
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`

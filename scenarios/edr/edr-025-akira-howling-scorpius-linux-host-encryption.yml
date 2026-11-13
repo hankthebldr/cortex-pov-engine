@@ -11,9 +11,10 @@ plane: EDR
 # Both are Low, and a Low issue never creates or joins a case, so as authored this
 # scenario yields signals, not an incident. The other four steps declare a
 # Tier-2-verify XQL row that CONFIRMS that step's own telemetry exists (the
-# SIM-EDR-023 shape): these are scored only by POST /api/runs/{id}/verify (1 h
-# lookback), NOT by the report-mode agent-detection pass, so they cannot
-# manufacture a false agent-detection miss on a healthy tenant.
+# SIM-EDR-023 shape): POST /api/runs/{id}/verify (1 h lookback) checks them, but
+# verify sets only their KPI verdict, so they never raise Detection Accuracy, and
+# a reconcile that finds no alert for them writes them missed. The threshold
+# therefore counts on the two ABIOCs alone.
 # Undeclared on purpose, kept on card TTP-2026-0200: the BTP mass-encryption
 # Prevention (in report mode, ~40 files under /var/tmp raised no behavioral
 # threat issue; what makes Linux BTP act is open product question PM-PRV-07, and
@@ -101,7 +102,7 @@ primary_kpi: "Detection Accuracy"
 threshold:
   kpi: "Detection Accuracy"
   op: "≥"
-  value: 80
+  value: 16.7
   unit: "%"
 success_criteria: |
   This is the on-host Linux variant of Akira (Howling Scorpius), distinct from
@@ -130,14 +131,16 @@ success_criteria: |
   open (PM-PRV-07). It stays on card TTP-2026-0200 as undeclared content.
   The other four steps (01 defense evasion, 03 discovery, 04 staging, 06 recovery
   inhibition) each declare ONE XQL row that only CONFIRMS that step's own
-  telemetry exists. These are scored solely by Tier-2 verify
-  (POST /api/runs/{id}/verify, 1 h lookback) — never by the report-mode
-  agent-detection pass — so they cannot manufacture a false agent-detection miss
-  on a healthy tenant. Run verify within the hour or they read pending, not fail.
-  PASS: at least 80% of the six declared step-detections are observed. Rarity
+  telemetry exists. Tier-2 verify (POST /api/runs/{id}/verify, 1 h lookback)
+  checks them; run it within the hour or they read pending, not fail. But
+  verify sets only their KPI verdict, so they never raise Detection
+  Accuracy, and a reconcile that finds no alert for them writes them missed.
+  PASS: Detection Accuracy of at least 16.7% (1 of the six declared
+  step-detections observed). Only the two ABIOCs are alert-backed, so the
+  ceiling is 33.3% (2 of 6). Rarity
   caveat: the shadow-file ABIOC judges rarity and may read missed on a host
   where that process/file pair is already baselined (it did not re-fire in the
-  2026-11-11 run window) — the 80% bar tolerates that one miss.
+  2026-11-11 run window) — the 16.7% bar tolerates that one miss.
 moat_tier: "LEAD"
 
 steps:
@@ -193,7 +196,6 @@ steps:
       - plane: EDR
         type: XQL
         description: "Validation (Tier-2 verify, 1 h lookback) — the decoy service is stopped by systemctl under the operator shell; defense-evasion telemetry, not an agent alert."
-        ttp_ref: "TTP-2026-0200"
         verification_xql: |
           dataset = xdr_data
           | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
@@ -262,13 +264,13 @@ steps:
     expected_detections:
       - plane: EDR
         type: XQL
-        description: "Validation (Tier-2 verify, 1 h lookback) — pre-impact filesystem/mount discovery (findmnt/df/find) under the operator causality chain."
-        ttp_ref: "TTP-2026-0200"
+        description: "Validation (Tier-2 verify, 1 h lookback) — pre-impact discovery: df and find run against the CortexSim staging tree."
         verification_xql: |
           dataset = xdr_data
           | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
           | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-          | filter action_process_image_name in ("findmnt", "df", "find")
+          | filter action_process_image_name in ("df", "find")
+          | filter action_process_image_command_line contains ".cortexsim-akira"
           | fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_process_image_command_line
 
   - id: step-04
@@ -297,7 +299,6 @@ steps:
       - plane: EDR
         type: XQL
         description: "Validation (Tier-2 verify, 1 h lookback) — the staged company share is archived locally with tar (double-extortion staging, no external exfiltration)."
-        ttp_ref: "TTP-2026-0200"
         verification_xql: |
           dataset = xdr_data
           | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
@@ -402,7 +403,6 @@ steps:
       - plane: EDR
         type: XQL
         description: "Validation (Tier-2 verify, 1 h lookback) — staged backup copies are deleted (recovery inhibition) in the same causality chain as the encryption."
-        ttp_ref: "TTP-2026-0200"
         verification_xql: |
           dataset = xdr_data
           | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
