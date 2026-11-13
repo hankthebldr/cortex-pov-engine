@@ -329,8 +329,8 @@ into real scored passes with **zero** additional engine work.
 | tenant registered, `capabilities` lacks `"xql"` (D-18) | `XQL_NOT_AUTHORISED` | pending | **pending** — run `reason: xql_not_authorised`, `queries_issued: 0`, no client built |
 | tenant unreachable | `TENANT_UNREACHABLE` | pending | **pending** |
 | 401 from the tenant | `PROBE_AUTH_FAILED` | pending | **pending** |
-| 429 / XQL quota | `PROBE_QUOTA_EXHAUSTED` | pending | **pending** |
-| unknown dataset / bad field / unsafe context value | `PROBE_QUERY_FAILED` | pending | **pending** |
+| 429 / XQL quota, or CortexSim's own per-tenant budget spent (breaker open, daily cap) | `PROBE_QUOTA_EXHAUSTED` | pending | **pending** |
+| unknown dataset / bad field / unsafe context value / a write stage (`\| target`) the runner refused | `PROBE_QUERY_FAILED` | pending | **pending** |
 | trigger never raised | `PRECURSOR_MISSING` | pending | **pending** |
 | ratio population below `min_population` | `POPULATION_EMPTY` | pending | **pending** |
 | a full result page the reply does not confirm is the whole answer | `PROBE_RESULT_TRUNCATED` | pending | **pending** |

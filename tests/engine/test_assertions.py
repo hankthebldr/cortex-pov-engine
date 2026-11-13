@@ -880,3 +880,34 @@ async def test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_ou
     assert out.verdict == "pending"
     assert out.checks[0].outcome.code == "PROBE_QUERY_FAILED"
     assert out.reason == "probe_query_failed"
+
+
+# CortexSim's own per-tenant budget sits around the assertion runner. When it
+# is spent, the probe never reaches the tenant: that is a quota fact, not an
+# outage, and "check network egress" is the wrong thing to tell the DC.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spend", ["breaker_open", "daily_budget_spent"])
+async def test_a_spent_query_budget_reads_as_quota_not_as_an_unreachable_tenant(
+        spend, monkeypatch):
+    from engine.assertions import run_assertion  # noqa: PLC0415
+    from integrations.xsiam.ledger import ledger  # noqa: PLC0415
+
+    tenant = "default"  # the ledger key of a client with no base URL
+    ledger.reset()
+    try:
+        if spend == "breaker_open":
+            ledger.trip(tenant, cooldown_seconds=600)
+        else:
+            monkeypatch.setattr("connectors.tuning.xsiam_max_queries_per_day",
+                                lambda *_a, **_k: 1)
+            ledger.charge(tenant, limit=1)
+        runner = _tenant_runner({"dataset in": _sources(3)})
+        out = await run_assertion(parse(), runner=runner, context={"nonce": "abc"},
+                                  scoreable=True)
+    finally:
+        ledger.reset()
+    assert out.verdict == "pending"
+    assert out.checks[0].outcome.code == "PROBE_QUOTA_EXHAUSTED"
+    assert out.reason == "probe_quota_exhausted"

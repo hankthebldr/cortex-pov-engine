@@ -165,7 +165,7 @@ REMEDIATION: dict[str, str] = {
     "PROBE_AUTH_FAILED":
         "The API key was rejected (401). Re-issue a read-only key with XQL query permission and update the integration.",
     "PROBE_QUOTA_EXHAUSTED":
-        "XQL quota or concurrency exhausted. Wait for the tenant's query slots to free and re-run; this is not a capability failure.",
+        "XQL quota or concurrency exhausted — the tenant's, or the per-tenant budget CortexSim keeps (its breaker after a quota error, or CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY). Wait for the slots or the breaker to clear and re-run; this is not a capability failure.",
     "PROBE_QUERY_FAILED":
         "The query did not execute — usually an unknown dataset or a field name this tenant does not carry. Confirm the schema and correct the assertion's query.",
     "PROBE_RESULT_TRUNCATED":
@@ -1595,7 +1595,8 @@ def _classify_exception(exc: BaseException) -> str:
 
     Most specific first: ``XqlResultTruncated`` is an ``XsiamQueryError``, and a
     write stage the runner refused is an ``XsiamConfigError``, which is the
-    assertion's query at fault, never the tenant's reachability.
+    assertion's query at fault, never the tenant's reachability. The ledger's
+    own budget errors are quota too: the query was never sent.
     """
     from integrations.xsiam.exceptions import (  # noqa: PLC0415
         XqlResultTruncated,
@@ -1604,10 +1605,14 @@ def _classify_exception(exc: BaseException) -> str:
         XsiamQueryError,
         XsiamQuotaError,
     )
+    from integrations.xsiam.ledger import (  # noqa: PLC0415
+        DailyBudgetExhausted,
+        QuotaBreakerOpen,
+    )
 
     if isinstance(exc, XsiamAuthError):
         return "PROBE_AUTH_FAILED"
-    if isinstance(exc, XsiamQuotaError):
+    if isinstance(exc, (XsiamQuotaError, QuotaBreakerOpen, DailyBudgetExhausted)):
         return "PROBE_QUOTA_EXHAUSTED"
     if isinstance(exc, XqlResultTruncated):
         return "PROBE_RESULT_TRUNCATED"

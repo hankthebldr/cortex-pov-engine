@@ -1045,6 +1045,15 @@ escape every string behind it.
   `PROBE_QUERY_FAILED`; the verdict was and stays `pending`. Guard:
   `test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_outage`,
   which failed before the change.
+- **A spent CortexSim query budget was also reported as an unreachable
+  tenant.** The per-tenant ledger around the assertion runner raises its own
+  errors when its breaker is open or its daily cap
+  (`CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY`) is spent; they are not XSIAM errors,
+  so they fell through to `TENANT_UNREACHABLE`. They now read
+  `PROBE_QUOTA_EXHAUSTED`, whose remediation names CortexSim's budget as well
+  as the tenant's. Verdict unchanged (`pending`). Guard:
+  `test_a_spent_query_budget_reads_as_quota_not_as_an_unreachable_tenant`
+  (breaker open, daily cap spent), both failed before the change.
 
 ### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
 
