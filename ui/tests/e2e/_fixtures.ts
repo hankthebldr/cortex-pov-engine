@@ -38,9 +38,10 @@ type Helpers = {
  */
 const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string>; hidden?: boolean }> = {
   'Get started': { dest: 'start' },
-  // Agents sits inside the Components submenu now (design v26 §1), which is
-  // collapsed on a fresh load, so it is addressed by route.
-  'Targets': { dest: 'agents', hidden: true },
+  // Agents is a component page now (design v26 §4.2); its agent list is the
+  // Fleet tab. It sits in the Components submenu, collapsed on a fresh load,
+  // so it is addressed by route.
+  'Targets': { dest: 'component-agents', params: { tab: 'fleet' }, hidden: true },
   // 'library' is the Scenarios rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
   // Coverage is a tab inside Results since the task-rail pass, not a rail item.
