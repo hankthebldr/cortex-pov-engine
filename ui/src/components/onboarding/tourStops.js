@@ -22,7 +22,9 @@ export const TOUR_STOPS = [
   },
   {
     id: 'agents-empty',
-    anchor: 'nav-agents',
+    // Agents is a child of Components in the rail (design v26 §1); the
+    // submenu opens by itself while an Agents page is open.
+    anchor: 'nav-component-agent',
     destination: 'agents',
     title: 'Nothing runs without a beacon',
     body: 'Agents is empty on a fresh install. Until one beacon checks in, a launch queues a task that nothing collects.',

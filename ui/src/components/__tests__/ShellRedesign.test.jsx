@@ -99,11 +99,16 @@ describe('SectionTabs — the pages inside a task', () => {
   // The flow bar (six phases + a "Next:" CTA at the foot of every page) is
   // gone. Wayfinding is the task rail plus this strip, which only exists on
   // tasks that have more than one page.
-  it('shows the Simulate pages, with the open one selected', () => {
-    render(<SectionTabs destination="composer" />)
-    expect(screen.getByTestId('section-tab-library')).toHaveTextContent('Scenarios')
-    expect(screen.getByTestId('section-tab-composer')).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByTestId('section-tab-preflight')).toHaveAttribute('aria-selected', 'false')
+  it('shows the Catalog pages, with the open one selected', () => {
+    render(<SectionTabs destination="streams" />)
+    expect(screen.getByTestId('section-tab-ttps')).toHaveTextContent('TTP cards')
+    expect(screen.getByTestId('section-tab-streams')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('section-tab-uctc')).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it("Simulate's pages are rail items now, so they carry no strip", () => {
+    const { container } = render(<SectionTabs destination="composer" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('navigates by destination id — a tab is a route, not local state', async () => {

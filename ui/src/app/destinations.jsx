@@ -17,6 +17,8 @@ import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
 import { Button } from '../components/console/kit/index.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
+import { COMPONENTS } from '../components/console/componentModel.js'
+import { componentRoute } from './componentRoutes.js'
 
 /**
  * A surface's last reported failure, visible and dismissable.
@@ -162,6 +164,8 @@ const EvidenceView = makeLazySurface(() => import('../components/console/Evidenc
 // was a thing the console already implied and never gave you a place to do.
 const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
 const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
+// The hub for the eight components (design v26 §9.2), rebuilt on real state.
+const ComponentsView = makeLazySurface(() => import('../components/console/ComponentsView.jsx'), 'Components')
 
 /** A surface that only forwards to another destination (replacing the
  *  history entry), for ids whose page was retired. */
@@ -227,8 +231,8 @@ export function useDecodedPlan(encoded) {
  *   - onExit      — OPTIONAL. () => void, passed only to immersive
  *                   destinations (`immersive: true` below); returns to the
  *                   previous non-immersive destination, with the params it
- *                   had (fallback: the destination's `navParent`, for a cold
- *                   deep link that has no previous page). Undefined for every
+ *                   had (fallback: the destination's `exitTo`, else its
+ *                   `navParent`, for a cold deep link with no previous page). Undefined for every
  *                   other surface, so a surface can render its Exit control
  *                   only when it is actually in a mode there is a way out of.
  *
@@ -359,7 +363,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Simulate</button> to begin.</>}
+              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
           </div>
         </div>
       </div>
@@ -510,8 +514,8 @@ function LastRunCard({ onOpen = () => {} }) {
   if (!shown) {
     return (
       <div className="last-run last-run--empty" data-testid="last-run-card">
-        No run has completed on this SimCore yet. Compose a chain, or open a scenario
-        from Simulate and launch it.
+        No run has completed on this SimCore yet. Build a chain, or open a scenario
+        from Scenarios and launch it.
       </div>
     )
   }
@@ -739,47 +743,63 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 //
-// THE RAIL IS A TASK LIST, NOT A MAP OF THE PRODUCT.
+// THE RAIL IS THE THREE JOBS A DC DOES, IN ORDER (design v26 §1).
 //
-// The previous rail carried 17 destinations grouped by POV phase. Every one of
-// them was real, and together they answered "what does this console contain"
-// instead of "what do I do next" — which is the only question a DC opening it
-// cold actually has. So the rail is now five tasks plus two management pages:
+//   1  Onboard & connect    Get started · Components ▸ (the eight components)
+//   2  Compose & simulate   Scenarios · Build a chain · Launch gate
+//   3  Run & observe        Runs · Results
+//      Reference            Catalog
 //
-//   Get started   the setup checklist, built on real state (default home)
-//   Simulate      pick or build a chain, check it, launch it
-//   Runs          what is executing and what just finished
-//   Results       the report, the coverage it adds up to, tenant read-back
-//   Catalog       reference content: TTP cards, packages, CLI, streams, UC/TC
-//   ── Manage ──  Agents · Tenant · Firewall
+// Every page belongs to exactly one rail item. Simulate's three tabs became
+// rail items of their own, and the Manage group became Components: an
+// expandable submenu of all eight components, each with its status.
 //
 // NOTHING WAS DELETED. Every former destination is still routable (deep links,
-// bookmarks and ⌘K resolve) and the ones that belong to a task are reachable
-// as tabs inside it. `navParent` says which rail item lights up while a hidden
-// route is open, and `SECTIONS` below is the one place the tab strips are
-// defined — the rail, the tab strip and the router all read this file.
+// bookmarks and ⌘K resolve), retired ids forward to the page that replaced
+// them, and `navParent` says which rail item lights up while an off-rail page
+// is open. `SECTIONS` below is the one place the tab strips are defined — the
+// rail, the tab strip and the router all read this file.
 //
 // `icon` is a real PANW line icon under /icons — never a Unicode glyph.
-export const DESTINATIONS = [
-  // ── The five tasks ──
-  { id: 'start',    label: 'Get started',  group: 'Tasks',  icon: 'keyboard',        Component: GetStartedView, badge: 'setupLeft' },
-  // Library keeps its id: it is the route, the data-testid and the e2e key.
-  { id: 'library',  label: 'Simulate',     group: 'Tasks',  icon: 'line-chart',      Component: LibrarySurface },
-  { id: 'runs',     label: 'Runs',         group: 'Tasks',  icon: 'donut-chart',     Component: RunsSurface,    badge: 'live' },
-  { id: 'proof',    label: 'Results',      group: 'Tasks',  icon: 'bar-chart',       Component: ProofSurface },
-  { id: 'ttps',     label: 'Catalog',      group: 'Tasks',  icon: 'threat-warning',  Component: TtpsSurface },
+export const JOURNEYS = [
+  { id: 'onboard',   num: '1', label: 'Onboard & connect' },
+  { id: 'compose',   num: '2', label: 'Compose & simulate' },
+  { id: 'observe',   num: '3', label: 'Run & observe' },
+  // Not a step in the journey: what the scenarios are made of.
+  { id: 'reference', num: '',  label: 'Reference' },
+]
 
-  // ── Manage ──
-  { id: 'agents',   label: 'Agents',       group: 'Manage', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
-  { id: 'tenants',  label: 'Tenant',       group: 'Manage', icon: 'people',          Component: TenantsSurface },
+export const DESTINATIONS = [
+  // ── 1 · Onboard & connect ──
+  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedView, badge: 'setupLeft' },
+  // `children: 'components'` makes this rail item expand into the eight
+  // components (componentModel.js), each with its live status.
+  { id: 'components', label: 'Components',    group: 'onboard',   icon: 'settings-edit',  Component: ComponentsView, badge: 'componentIssues', children: 'components' },
+
+  // ── 2 · Compose & simulate ──
+  // Library keeps its id: it is the route, the data-testid and the e2e key.
+  { id: 'library',    label: 'Scenarios',     group: 'compose',   icon: 'line-chart',     Component: LibrarySurface },
+  // Immersive: the Composer is a full-screen node-graph editor, not a page
+  // inside the rail (docs/superpowers/specs/2026-10-21-composer-mode-design.md).
+  // The rail is not drawn while it is open; a cold deep link's Exit lands on
+  // Scenarios (`exitTo`), where the chains it forks from live.
+  { id: 'composer',   label: 'Build a chain', group: 'compose',   icon: 'apps-grid',      Component: ComposerView, immersive: true, exitTo: 'library' },
+  { id: 'preflight',  label: 'Launch gate',   group: 'compose',   icon: 'user-lock',      Component: ReadinessSurface },
+
+  // ── 3 · Run & observe ──
+  { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
+  { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
+
+  // ── Reference ──
+  { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
+
+  // ── The components' own pages, reached from the Components submenu ──
+  { id: 'agents',    label: 'Agents',   hidden: true, navParent: 'components', icon: 'fingerprint-scan', Component: AgentsSurface },
+  { id: 'tenants',   label: 'Tenant',   hidden: true, navParent: 'components', icon: 'people',           Component: TenantsSurface },
   // No shield icon ships under /icons; threat-network is the existing network glyph.
-  { id: 'firewall', label: 'Firewall',     group: 'Manage', icon: 'threat-network',  Component: FirewallSurface },
+  { id: 'firewall',  label: 'Firewall', hidden: true, navParent: 'components', icon: 'threat-network',   Component: FirewallSurface },
 
   // ── Off-rail, reached as tabs or links ──
-  // Immersive: the Composer is a full-screen node-graph editor, not a page
-  // inside the rail + tab strip (docs/superpowers/specs/2026-10-21-composer-mode-design.md).
-  { id: 'composer',  label: 'Build a chain',     hidden: true, navParent: 'library', icon: 'apps-grid',      Component: ComposerView, immersive: true },
-  { id: 'preflight', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
   { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },
   { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
   // id stays 'adapters' deliberately — it is the route; only the label moved.
@@ -793,19 +813,18 @@ export const DESTINATIONS = [
   { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
   { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
   { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
-  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'agents',  icon: 'building',       Component: EnvironmentsSurface },
-  { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library', icon: 'threat-network', Component: EalSurface },
+  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
+  { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
-  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
+  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'preflight', icon: 'user-lock',      Component: ReadinessSurface },
 ]
 
 /**
- * The tab strip each task shows across the top of its pages. A tab IS a
+ * The tab strip a rail item shows across the top of its pages. A tab IS a
  * destination, so the strip navigates and holds no state of its own — the rail
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  library: [['library', 'Scenarios'], ['composer', 'Build a chain'], ['preflight', 'Launch gate']],
   proof: [['proof', 'Report'], ['coverage', 'Coverage']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
@@ -817,12 +836,12 @@ export function navOwner(id) {
   return d.navParent || d.id
 }
 
-/** The tab set for a destination, or null when its task has no tabs. */
+/** The tab set for a destination, or null when its rail item has no tabs. */
 export function sectionFor(id) {
-  const owner = id === 'readiness' ? 'library' : navOwner(id)
+  const owner = navOwner(id)
   const tabs = SECTIONS[owner]
   if (!tabs) return null
-  return { owner, tabs, active: id === 'readiness' ? 'preflight' : id }
+  return { owner, tabs, active: id }
 }
 
 export const DEFAULT_DESTINATION = 'start'
@@ -848,28 +867,45 @@ export function isValidDestination(id) {
   return BY_ID.has(id)
 }
 
-/** Grouped, nav-visible destinations in registry order. */
-export function navGroups(badges = {}) {
-  const order = []
-  const byLabel = new Map()
+/**
+ * The rail: one group per journey, in journey order, each holding its
+ * nav-visible destinations in registry order.
+ *
+ * @param {Object} badges       badge key → string | { text, variant: 'live' }
+ * @param {Object} [opts]
+ * @param {Object} [opts.components]  componentModel statuses by key; a child
+ *                                    with none reads Unknown, never a guess
+ */
+export function navGroups(badges = {}, { components = null } = {}) {
+  const byGroup = new Map()
   for (const d of DESTINATIONS) {
     if (d.hidden || !d.group) continue
-    if (!byLabel.has(d.group)) {
-      byLabel.set(d.group, { items: [] })
-      order.push(d.group)
-    }
+    if (!byGroup.has(d.group)) byGroup.set(d.group, [])
     const badgeVal = d.badge ? badges[d.badge] : null
     const isLive = badgeVal && typeof badgeVal === 'object' && badgeVal.variant === 'live'
-    byLabel.get(d.group).items.push({
+    const item = {
       id: d.id,
       label: d.label,
       icon: d.icon,
       iconUrl: iconUrl(d.icon),
       badge: isLive ? badgeVal.text : badgeVal,
       badgeVariant: isLive ? 'live' : undefined,
-    })
+    }
+    if (d.children === 'components') {
+      item.children = COMPONENTS.map((c) => {
+        const route = componentRoute(c.key)
+        return {
+          key: c.key,
+          label: c.name,
+          destination: route.destination,
+          params: route.params,
+          status: components?.[c.key] || null,
+        }
+      })
+    }
+    byGroup.get(d.group).push(item)
   }
-  // The task group is the rail's body and carries no heading; only the
-  // secondary group is labelled, which is what makes it read as secondary.
-  return order.map((label) => ({ label: label === 'Tasks' ? '' : label, items: byLabel.get(label).items }))
+  return JOURNEYS
+    .filter((j) => byGroup.has(j.id))
+    .map((j) => ({ num: j.num, label: j.label, items: byGroup.get(j.id) }))
 }

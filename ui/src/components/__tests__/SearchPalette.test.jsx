@@ -99,7 +99,7 @@ describe('⌘K search', () => {
     expect(await screen.findByTestId('ops-stub')).toHaveTextContent('SIM-EDR-001')
   })
 
-  it('opens a component where it is managed today', async () => {
+  it('opens a component where the rail opens it', async () => {
     serve()
     render(<AppConsole />)
     let dialog = await openSearch()
@@ -110,15 +110,17 @@ describe('⌘K search', () => {
     dialog = await openSearch()
     search(dialog, 'POVengine')
     fireEvent.click(within(dialog).getByRole('button', { name: /^POVengine.*Component/ }))
-    await waitFor(() => expect(window.location.hash).toBe('#/preflight'))
+    await waitFor(() => expect(window.location.hash).toBe('#/components?open=pov'))
   })
 
-  it('lists no component that has no place in the console yet', async () => {
+  it('lists every component, and each opens where the rail opens it', async () => {
     serve()
     render(<AppConsole />)
     const dialog = await openSearch()
     search(dialog, 'Cortex Engine')
-    expect(within(dialog).queryByRole('button', { name: /Cortex Engine/ })).not.toBeInTheDocument()
+    // Every component has a place now: its own page, or its row on Components.
+    fireEvent.click(within(dialog).getByRole('button', { name: /Cortex Engine.*Component/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/components?open=engine'))
   })
 
   it('closes on Escape', async () => {

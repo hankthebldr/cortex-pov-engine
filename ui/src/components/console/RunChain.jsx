@@ -79,7 +79,7 @@ export default function RunChain({ runId, run, lifecycle, onNavigate = () => {} 
         states={states}
         onOpenLane={(lane) => {
           const to = laneDestination(lane)
-          if (to) onNavigate(to)
+          if (to) onNavigate(to.destination, to.params)
         }}
         label={`Chain of run ${runId}`}
       />

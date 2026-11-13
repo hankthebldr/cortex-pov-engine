@@ -3,30 +3,61 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import React from 'react'
+import { render } from '@testing-library/react'
 import {
-  DESTINATIONS, SECTIONS, navGroups, navOwner, sectionFor, isValidDestination,
+  DESTINATIONS, SECTIONS, getDestination, navGroups, navOwner, sectionFor, isValidDestination,
 } from '../../../app/destinations.jsx'
 
+void React
+
 /**
- * The rail is a task list, and every page belongs to exactly one task.
- *
- * The rail used to carry 17 destinations grouped by POV phase, with a flow bar
- * restating the same model at the foot of the shell. It is five tasks plus a
- * Manage pair now, and every other page is a tab inside one of them. Nothing
- * DERIVES the tab strips from the rail — `SECTIONS` and `navParent` are written
- * by hand in destinations.jsx — so this file keeps them consistent: a page
- * whose parent is not on the rail, or a tab that points at nothing, renders
- * perfectly and simply strands the DC.
+ * The rail is the three jobs a DC does, in order, plus Reference (design v26
+ * §1): 1 Onboard & connect · 2 Compose & simulate · 3 Run & observe. Every page
+ * belongs to exactly one rail item. Nothing DERIVES the tab strips from the
+ * rail — `SECTIONS` and `navParent` are written by hand in destinations.jsx —
+ * so this file keeps them consistent: a page whose parent is not on the rail,
+ * or a tab that points at nothing, renders perfectly and simply strands the DC.
  */
 describe('task rail', () => {
   const rail = DESTINATIONS.filter((d) => !d.hidden && d.group)
   const railIds = new Set(rail.map((d) => d.id))
 
-  it('is the five tasks, then the Manage group', () => {
+  it('is three numbered journeys, then Reference', () => {
     const groups = navGroups()
-    expect(groups.map((g) => g.label)).toEqual(['', 'Manage'])
-    expect(groups[0].items.map((i) => i.label)).toEqual(['Get started', 'Simulate', 'Runs', 'Results', 'Catalog'])
-    expect(groups[1].items.map((i) => i.label)).toEqual(['Agents', 'Tenant', 'Firewall'])
+    expect(groups.map((g) => [g.num, g.label])).toEqual([
+      ['1', 'Onboard & connect'],
+      ['2', 'Compose & simulate'],
+      ['3', 'Run & observe'],
+      ['', 'Reference'],
+    ])
+    expect(groups[0].items.map((i) => i.label)).toEqual(['Get started', 'Components'])
+    expect(groups[1].items.map((i) => i.label)).toEqual(['Scenarios', 'Build a chain', 'Launch gate'])
+    expect(groups[2].items.map((i) => i.label)).toEqual(['Runs', 'Results'])
+    expect(groups[3].items.map((i) => i.label)).toEqual(['Catalog'])
+  })
+
+  it("Simulate's tabs are rail items now, so Scenarios has no tab strip", () => {
+    expect(SECTIONS.library).toBeUndefined()
+    for (const id of ['library', 'composer', 'preflight']) {
+      expect(sectionFor(id), id).toBeNull()
+      expect(navOwner(id), id).toBe(id)
+    }
+  })
+
+  it('Components expands into the eight components, each leading to a real page', () => {
+    const comp = navGroups().flatMap((g) => g.items).find((i) => i.id === 'components')
+    expect(comp.children.map((c) => c.label)).toEqual([
+      'POVengine', 'Agents', 'Tenant', 'HTTP collector', 'Broker VM', 'Firewall', 'XDR Collector', 'Cortex Engine',
+    ])
+    for (const child of comp.children) {
+      expect(isValidDestination(child.destination), `${child.label} leads to '${child.destination}'`).toBe(true)
+      expect(getDestination(child.destination).redirect, `${child.label} leads to a redirect`).toBeFalsy()
+    }
+  })
+
+  it('a component page lights up Components', () => {
+    for (const id of ['agents', 'tenants', 'firewall']) expect(navOwner(id), id).toBe('components')
   })
 
   it('every off-rail page names a parent that is on the rail', () => {
@@ -47,12 +78,25 @@ describe('task rail', () => {
     }
   })
 
-  it('the legacy readiness id lands on the Launch gate tab', () => {
-    expect(sectionFor('readiness')).toMatchObject({ owner: 'library', active: 'preflight' })
+  it('the legacy readiness id lights up the Launch gate', () => {
+    expect(navOwner('readiness')).toBe('preflight')
+    expect(sectionFor('readiness')).toBeNull()
   })
 
   it('tasks without tabs render no strip', () => {
-    for (const id of ['start', 'runs', 'agents', 'tenants']) expect(sectionFor(id)).toBeNull()
+    for (const id of ['start', 'components', 'runs', 'agents', 'tenants']) expect(sectionFor(id)).toBeNull()
+  })
+
+  it('retired routes forward to the page that replaced them', () => {
+    const forwards = (id) => {
+      const calls = []
+      const Redirect = getDestination(id).Component
+      render(<Redirect onNavigate={(...a) => calls.push(a)} />)
+      return calls[0]
+    }
+    expect(forwards('setup')[0]).toBe('start')
+    expect(forwards('scope')[0]).toBe('start')
+    expect(forwards('validation')[0]).toBe('proof')
   })
 
   it('every rail destination has a real icon asset, never a glyph', () => {

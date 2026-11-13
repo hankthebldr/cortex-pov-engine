@@ -5,32 +5,27 @@
  * Pure apart from the `navigate` it is handed. `icon` is a name from the
  * rail's line-icon set (/icons/<name>.png) and is drawn with PageIcon.
  *
- * COMPONENTS — the eight things a POV is built from (v26 §1). Each names the
- * page that manages it (`page`) and, while that page does not exist yet, the
- * place it is set up today (`fallback`). A component with neither is not
- * listed: a search result that leads nowhere is a button without an action.
- * When the component pages land (v26 §11 rows 3–4) only `page` changes here,
- * and the header's instance status follows POVengine's entry automatically.
+ * COMPONENTS — the eight things a POV is built from (v26 §1). ONE table:
+ * names and icons come from componentModel.js and where each opens from
+ * app/componentRoutes.js — the same two the rail's Components submenu and the
+ * Components page read — so ⌘K, the header's instance status and the rail
+ * cannot send a DC to different places for the same component.
  */
 
-export const COMPONENTS = Object.freeze([
-  { key: 'povengine', label: 'POVengine',      icon: 'settings-edit',    page: null,       fallback: 'preflight' },
-  { key: 'agents',    label: 'Agents',         icon: 'fingerprint-scan', page: 'agents',   fallback: null },
-  { key: 'tenant',    label: 'Tenant',         icon: 'people',           page: 'tenants',  fallback: null },
-  { key: 'http',      label: 'HTTP collector', icon: 'doc-search',       page: null,       fallback: 'start' },
-  { key: 'bvm',       label: 'Broker VM',      icon: 'building',         page: null,       fallback: 'start' },
-  { key: 'firewall',  label: 'Firewall',       icon: 'threat-network',   page: 'firewall', fallback: null },
-  { key: 'xdrc',      label: 'XDR Collector',  icon: 'apps-grid',        page: null,       fallback: null },
-  { key: 'engine',    label: 'Cortex Engine',  icon: 'keyboard',         page: null,       fallback: null },
-])
+import { COMPONENTS as PARTS } from './componentModel.js'
+import { componentRoute } from '../../app/componentRoutes.js'
 
-/** The destination a component opens, or null when the console has no place for it yet. */
+export const COMPONENTS = Object.freeze(PARTS.map((c) => ({ key: c.key, label: c.name, icon: c.icon })))
+
+/**
+ * Where a component opens — `{ destination, params? }` — or null when that
+ * destination is not in this build (a search result that leads nowhere is a
+ * button without an action).
+ */
 export function componentDestination(key, isValid = () => true) {
-  const c = COMPONENTS.find((x) => x.key === key)
-  if (!c) return null
-  if (c.page && isValid(c.page)) return c.page
-  if (c.fallback && isValid(c.fallback)) return c.fallback
-  return null
+  if (!PARTS.some((c) => c.key === key)) return null
+  const route = componentRoute(key)
+  return route && isValid(route.destination) ? route : null
 }
 
 /**
@@ -42,8 +37,12 @@ export function componentDestination(key, isValid = () => true) {
  * @param {Function} p.navigate      (destinationId, params?) => void
  */
 export function buildSearchItems({ destinations = [], isValid = () => true, scenarios = [], ttps = [], navigate = () => {} } = {}) {
-  // A page that IS a component's page is listed once, as the component.
-  const componentPages = new Set(COMPONENTS.map((c) => c.page).filter(Boolean))
+  // A page that IS a component's page is listed once, as the component. A
+  // component opened as a row of another page (`params`) does not hide it.
+  const componentPages = new Set(PARTS
+    .map((c) => componentRoute(c.key))
+    .filter((r) => r && !r.params)
+    .map((r) => r.destination))
 
   const pages = destinations
     .filter((d) => !d.redirect && d.id !== 'readiness' && !componentPages.has(d.id))
@@ -63,7 +62,7 @@ export function buildSearchItems({ destinations = [], isValid = () => true, scen
       title: c.label,
       kind: 'Component',
       icon: c.icon,
-      onSelect: () => navigate(to),
+      onSelect: () => (to.params ? navigate(to.destination, to.params) : navigate(to.destination)),
     }))
 
   const scenarioIcon = destinations.find((d) => d.id === 'library')?.icon || null

@@ -35,6 +35,19 @@
 .theme-console[data-theme='light'] .pov-rail__icon { filter: grayscale(1); }
 .theme-console .pov-rail__badge { color: var(--tx2); background: var(--s3); }
 .theme-console .pov-rail__group + .pov-rail__group { margin-top: 14px; }
+/* The journey numerals are wayfinding, not emphasis: neutral, like the label
+   beside them (v26 — green is the primary action and the selected state). */
+.theme-console .pov-rail__num { color: var(--tx3); }
+/* v26 §2: the rail is 232px. It carries the Components submenu now, whose
+   "N issues" count and eight names did not fit the 202px the shell had.
+   Scoped to desktop widths and to the expanded, non-immersive rail, so the
+   collapsed strip, immersive mode and the narrow-viewport reflow in
+   cortex-console.css keep their own columns. */
+@media (min-width: 1001px) {
+  .theme-console .workspace:not(.workspace--rail-collapsed):not(.pov-workspace--immersive) {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+}
 
 /* ── Task tab strip (SectionTabs) ───────────────────────────────────────── */
 .theme-console .pov-section-tabs { margin: 0 0 18px; }

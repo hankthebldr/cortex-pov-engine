@@ -17,6 +17,8 @@ import {
 import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
+import useComponentStatus from './components/console/useComponentStatus.js'
+import { componentKeyForRoute } from './app/componentRoutes.js'
 import { downloadReportBundle, getToolAdapters, getTtps } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
@@ -137,6 +139,9 @@ function ConsoleShell() {
   const shelf = useShelf({ adapters: toolAdapters })
 
   const setup = useSetupProgress()
+  // Every component's status from real state: the rail's dots and the
+  // "N issues" on Components (design v26 §5).
+  const componentStatus = useComponentStatus()
 
   // Real counts only. The rail used to badge nearly every item with a number
   // from the prototype's seed catalogs ("12 components", "0/11 verified"),
@@ -145,11 +150,17 @@ function ConsoleShell() {
   const badges = useMemo(() => ({
     // Required setup steps still open — the reason to open Get started.
     setupLeft: setup.requiredLeft > 0 ? String(setup.requiredLeft) : null,
-    agentCount: env.agents.length ? String(env.agents.length) : null,
+    // Components that are Degraded or Down. Off and Unknown are not issues.
+    componentIssues: componentStatus.issues > 0
+      ? `${componentStatus.issues} issue${componentStatus.issues === 1 ? '' : 's'}`
+      : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-  }), [setup.requiredLeft, env.agents.length, env.activeRun])
+  }), [setup.requiredLeft, componentStatus.issues, env.activeRun])
 
-  const groups = useMemo(() => navGroups(badges), [badges])
+  const groups = useMemo(
+    () => navGroups(badges, { components: componentStatus.statuses }),
+    [badges, componentStatus.statuses],
+  )
 
   // ── Header: this instance's status, uptime and live KPIs (v26 §4.5) ───────
   const instance = useMemo(() => instanceStatus({
@@ -159,14 +170,20 @@ function ConsoleShell() {
     loading: env.loading,
     errors: env.errors,
   }), [env.healthModel, env.runs, env.agents, env.loading, env.errors])
-  // The POVengine component page (v26 §4.2) is not built yet; until it is,
-  // the instance status opens the Launch gate, where this instance's
-  // readiness is shown today. searchIndex.js owns the mapping, so the header
-  // and ⌘K move together when the page lands.
-  const instanceTarget = componentDestination('povengine', isValidDestination) || 'preflight'
-  const instanceTargetLabel = getDestination(instanceTarget)?.label || 'Launch gate'
+  // The instance status opens the POVengine component wherever the rail opens
+  // it: componentRoutes.js is the one table, read by the rail, the Components
+  // page, this header and ⌘K, so they move together. The Launch gate is only
+  // the fallback for a build that has no such page.
+  const instanceRoute = useMemo(
+    () => componentDestination('pov', isValidDestination) || { destination: 'preflight' },
+    [],
+  )
+  const instanceTargetLabel = getDestination(instanceRoute.destination)?.label || 'Launch gate'
   const routerNavigate = router.navigate
-  const openInstance = useCallback(() => routerNavigate(instanceTarget), [routerNavigate, instanceTarget])
+  const openInstance = useCallback(
+    () => routerNavigate(instanceRoute.destination, instanceRoute.params),
+    [routerNavigate, instanceRoute],
+  )
 
   // TTP cards for ⌘K, fetched the first time search opens — never on load.
   // A failed fetch leaves search without cards and tries again next time.
@@ -297,6 +314,7 @@ function ConsoleShell() {
         tenant={env.tenant}
         agent={env.agent}
         activeNav={navOwner(dest.id)}
+        activeChild={componentKeyForRoute(dest.id, router.params)}
         immersive={immersive}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was

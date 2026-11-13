@@ -54,6 +54,16 @@ describe('GetStartedView', () => {
     expect(screen.getByText(/POVengine cannot check this one/)).toBeInTheDocument()
   })
 
+  it('?step= opens the step it names, so another page can send the DC to it', () => {
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, refreshAgents: vi.fn() }}>
+        <GetStartedView params={{ step: 'bvm' }} onNavigate={vi.fn()} />
+      </EnvironmentContext.Provider>,
+    )
+    expect(screen.getByTestId('gs-step-bvm').querySelector('.gs-step__body')).not.toBeNull()
+    expect(screen.getByTestId('gs-step-agent').querySelector('.gs-step__body')).toBeNull()
+  })
+
   it('hands the suggested first run to the guided launch', () => {
     const onNavigate = mount({
       agents: [ONLINE],

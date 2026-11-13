@@ -388,6 +388,8 @@ button.pov-chip:hover { border-color: var(--bd2); }
   color: var(--tx3);
   padding: 2px 4px;
   border-radius: 3px;
+  /* "2 issues" is one token; a wrapped badge doubles the row's height. */
+  white-space: nowrap;
 }
 .pov-rail__item--on .pov-rail__badge { color: var(--tx2); }
 .pov-rail__badge--live { color: var(--pos); background: var(--pos-soft); }
@@ -398,6 +400,44 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-workspace--rail-collapsed .pov-rail__hr { display: none; }
 .pov-workspace--rail-collapsed .pov-rail__head { justify-content: center; padding: 0 0 7px; }
 .pov-workspace--rail-collapsed .pov-rail__item { justify-content: center; padding: 8px 0; }
+
+/* ── Rail · Components submenu (design v26 §1, §5) ───────────────────────
+   The parent row is two buttons: the label (opens the Components page) and
+   a chevron (shows or hides the eight components). Children carry their
+   status as a 12px StatusIcon — a glyph with the word as its accessible
+   name, never a colour-only dot. */
+.pov-rail__parent-row { display: flex; align-items: stretch; }
+.pov-rail__parent-row > .pov-rail__item { flex: 1; min-width: 0; padding-right: 2px; }
+/* The label gives way before the issue count does: "2 issues" is the reason
+   to open the submenu, the word Components is not. */
+.pov-rail__parent-row .pov-rail__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pov-rail__caret {
+  flex: none; width: 26px;
+  border: 0; background: transparent;
+  color: var(--tx2); cursor: pointer;
+  font: 400 11px/1 var(--font-ui);
+}
+.pov-rail__parent--on .pov-rail__caret { background: var(--s2); }
+.pov-rail__caret:hover { color: var(--tx); background: var(--s2); }
+.pov-rail__caret:focus-visible,
+.pov-rail__kid:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.pov-rail__kids { padding: 2px 0 6px; }
+.pov-rail__kid {
+  width: 100%;
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 14px 5px 36px;
+  border: 0; background: transparent;
+  color: var(--tx2); cursor: pointer; text-align: left;
+  font: 400 12px/1.3 var(--font-ui);
+  transition: background-color 120ms ease-out;
+}
+.pov-rail__kid:hover { background: var(--s2); color: var(--tx); }
+.pov-rail__kid--on { background: var(--s2); color: var(--tx); font-weight: 600; }
+.pov-rail__kid-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pov-rail__kid-status .kit-status__icon { width: 13px; height: 13px; font-size: 8px; }
+.pov-workspace--rail-collapsed .pov-rail__kids,
+.pov-workspace--rail-collapsed .pov-rail__caret { display: none; }
+@media (prefers-reduced-motion: reduce) { .pov-rail__kid { transition: none; } }
 
 /* ── Flow bar ────────────────────────────────────────────────────────────
    Replaces BOTH the old phase bar and the old command-strip ticker. It always

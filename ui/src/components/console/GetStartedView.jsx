@@ -5,7 +5,7 @@ import { agentInstallUrl, mintEnrollmentToken } from '../../api/client.js'
 import { parseServerTime } from '../../api/time.js'
 import TenantManager from './TenantManager.jsx'
 import useSetupProgress from './useSetupProgress.js'
-import { agentIsOnline } from './setupProgress.js'
+import { agentIsOnline, STEP_IDS } from './setupProgress.js'
 import {
   attemptRole, attemptsSince, beaconShipState, installerOS, normaliseServerUrl, pullOneLiner, serverHostVerdict,
   WINDOWS_ELEVATION_LABEL,
@@ -44,10 +44,12 @@ import {
 // tenant ships with, which is what a first run needs to be.
 const FIRST_SCENARIO = 'SIM-EDR-001'
 
-export default function GetStartedView({ onNavigate = () => {} }) {
+export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
   const { steps, requiredLeft, next, ready, setStepConfirmed } = useSetupProgress()
   const requiredTotal = steps.filter((s) => s.required).length
-  const [openId, setOpenId] = useState(null)
+  // `?step=<id>` opens a named step, so another page (the Components hub's
+  // Configure on Broker VM) can send the DC straight to it.
+  const [openId, setOpenId] = useState(() => (STEP_IDS.includes(params.step) ? params.step : null))
   const current = openId || (next && next.id) || null
 
   return (
@@ -56,7 +58,7 @@ export default function GetStartedView({ onNavigate = () => {} }) {
         <h1 className="gs__title">Get started</h1>
         <p className="gs__lede">
           {ready
-            ? 'This instance is ready. Run any scenario from Simulate, or finish the optional steps to unlock network and log-source scenarios.'
+            ? 'This instance is ready. Run any scenario from Scenarios, or finish the optional steps to unlock network and log-source scenarios.'
             : 'Three steps take an empty instance to a detection you can show. Two more are optional and unlock network and third-party log scenarios.'}
         </p>
         <div className="gs__progress" aria-label={`${requiredTotal - requiredLeft} of ${requiredTotal} required steps done`}>

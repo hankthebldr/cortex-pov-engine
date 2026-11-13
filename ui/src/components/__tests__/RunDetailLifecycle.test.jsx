@@ -179,6 +179,6 @@ describe('Run detail — the chain, live (ChainStage)', () => {
     const onNavigate = vi.fn()
     mountChain(base, { onNavigate })
     fireEvent.click(await screen.findByRole('button', { name: /Open the component behind ENDPOINT RUNTIME/ }))
-    expect(onNavigate).toHaveBeenCalledWith('agents')
+    expect(onNavigate).toHaveBeenCalledWith('agents', undefined)
   })
 })

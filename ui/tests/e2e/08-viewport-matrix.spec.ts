@@ -185,10 +185,11 @@ test('the two rails share a top — a global notice must not push only one of th
   // The tolerance is `.view`'s own padding, not zero: the filter rail is inside
   // a padded scroll container and legitimately starts slightly lower.
   //
-  // The task tab strip (SectionTabs: Scenarios · Build a chain · Launch gate)
-  // is the ONE thing deliberately rendered inside `.view` above content — it
-  // is page-level wayfinding, not a notice. Its own measured height is
-  // subtracted, so an unplanned notice still fails exactly as before.
+  // The task tab strip (SectionTabs) is the ONE thing deliberately rendered
+  // inside `.view` above content — it is page-level wayfinding, not a notice.
+  // Scenarios has none since its tabs became rail items (design v26 §1); when
+  // a page does carry one, its measured height is subtracted, so an unplanned
+  // notice still fails exactly as before.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.rail--filter')
