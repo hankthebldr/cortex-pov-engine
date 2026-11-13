@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 201  (GREEN 169 · YELLOW 27 · RED 5)
+- **Scenarios:** 201  (GREEN 168 · YELLOW 28 · RED 5)
 - **Steps:** 835 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
-- **Consent-gated:** 4 scenarios
-- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 71 scenarios
+- **Consent-gated:** 5 scenarios
+- **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 72 scenarios
 - **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 169 scenarios
+## GREEN — 168 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -110,7 +110,6 @@
 | SIM-MP-034 | ANALYTICS | Analytics/XQL/Correlation | 6/6 | eal |  |
 | SIM-MP-035 | ANALYTICS | BIOC/XQL/IOC/ABIOC/Correlation | 9/9 | eal |  |
 | SIM-MP-037 | ANALYTICS | BIOC/XQL/Correlation | 7/7 | eal |  |
-| SIM-MP-038 | ANALYTICS | XQL/Correlation | 4/4 | agent |  |
 | SIM-NDR-001 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-002 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-003 | NDR | BIOC/XQL/IOC | 2/2 | eal |  |
@@ -202,7 +201,7 @@
 | SIM-EDR-020 | EDR | BIOC/ABIOC/XQL/Correlation | 1/6 | agent |  |
 | SIM-ITDR-017 | ITDR | ABIOC/BIOC/XQL/Correlation | 1/6 | agent |  |
 
-## YELLOW — 27 scenarios
+## YELLOW — 28 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -227,6 +226,7 @@
 | SIM-MP-004 | ANALYTICS | BIOC/XQL/IOC | 5/5 | agent | egress: TOOL-PACU |
 | SIM-MP-019 | ANALYTICS | XQL/BIOC/ABIOC/IOC/Correlation | 5/5 | agent | egress: TOOL-DNSRECON, TOOL-FFUF, TOOL-GOBUSTER, TOOL-HYDRA, TOOL-IMPACKET, TOOL-MASSCAN, TOOL-METASPLOIT, TOOL-NETEXEC, TOOL-NIKTO, TOOL-NMAP, TOOL-SQLMAP, TOOL-WHATWEB; consent |
 | SIM-MP-036 | ANALYTICS | BIOC/ABIOC/XQL/IOC/Correlation | 9/9 | eal | egress: TOOL-IMPACKET |
+| SIM-MP-038 | ANALYTICS | XQL/Correlation | 4/4 | eal | consent |
 | SIM-NDR-004 | NDR | BIOC/XQL | 2/2 | eal | egress: TOOL-MASSCAN, TOOL-NMAP |
 | SIM-ITDR-007 | ITDR | BIOC/XQL/Correlation | 5/6 | agent | egress: TOOL-PYPYKATZ |
 | SIM-CSPM-003 | CSPM | XQL/Correlation | 4/5 | agent | egress: TOOL-PROWLER |

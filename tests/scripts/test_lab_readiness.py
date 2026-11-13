@@ -65,6 +65,33 @@ def test_a_scan_flag_is_not_mistaken_for_a_version_flag():
     assert lr._step_produces_signal("nmap -sV target") is True
 
 
+# --- in-process EAL steps (channel: eal) ---
+
+def test_a_channel_eal_step_is_eal_delivered_and_consent_gated():
+    # A `channel: eal` step runs inside SimCore, never on the agent, and goes
+    # live only with launch consent, an authorized_by and a keyed collector
+    # target. Its command is a descriptive no-op, so the command text cannot
+    # be what decides delivery or signal. RED before: delivery "agent", GREEN,
+    # "runs offline on a provisioned target".
+    doc = {
+        "scenario_id": "SIM-TEST-EAL",
+        "steps": [
+            {"id": "step-01", "command": "dig @${LAB_RESOLVER} example.com A +short",
+             "expected_detections": [{"type": "XQL"}]},
+            {"id": "step-02", "command": "echo 'SimCore POSTs these records'",
+             "channel": "eal", "eal": {"plugin": "m365_activity_emitter", "params": {}},
+             "expected_detections": [{"type": "XQL"}]},
+        ],
+    }
+    row = lr.classify(doc, {})
+    assert row["delivery"] == "eal"
+    assert row["steps_real_signal"] == 2 and row["detection_steps_without_signal"] == 0
+    assert row["consent_gated"] is True
+    assert row["tier"] == "YELLOW"
+    assert "offline" not in row["reason"]
+    assert "consent" in row["reason"] and "collector target" in row["reason"]
+
+
 # --- corpus-level invariant ---
 
 def test_known_narration_scenarios_are_red_and_real_ones_are_not():
