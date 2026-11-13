@@ -16,6 +16,7 @@ import { launchWarningsFor } from './launchWarnings.js'
 import { runLifecycle, PHASE } from './runLifecycle.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import ReadBackNotice from './ReadBackNotice.jsx'
+import RunChain from './RunChain.jsx'
 import useReadBack from './useReadBack.jsx'
 import { resultCell } from './RunList.jsx'
 import { absoluteTime, runAgent } from './runRows.js'
@@ -530,6 +531,13 @@ export default function RunDetailView({
             <p className="run-lifecycle__why" role="status">{outcomes.get(runId).message}</p>
           )}
         </div>
+      )}
+
+      {/* The chain leads the page (design v26 §9.3): ChainStage, live, fed by
+          this run's steps, the host's record and — once read back — its
+          results. */}
+      {lifecycle && (
+        <RunChain runId={runId} run={lcRun} lifecycle={lifecycle} onNavigate={onNavigate} />
       )}
 
       {/* The run died and the console knew — say it here, once, at the top,

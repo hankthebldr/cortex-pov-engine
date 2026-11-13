@@ -10,7 +10,7 @@
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
 import RunDetailView from '../console/RunDetailView.jsx'
@@ -124,5 +124,61 @@ describe('Run detail — Abort run is an inline confirm', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Keep running' }), { key: 'Escape' })
     expect(screen.queryByText('Stop this run on the agent?')).toBeNull()
     expect(onAbort).not.toHaveBeenCalled()
+  })
+})
+
+describe('Run detail — the chain, live (ChainStage)', () => {
+  const SCENARIO = {
+    scenario_id: 'SIM-EDR-001',
+    name: 'Credential dumping',
+    plane: 'EDR',
+    steps: [
+      { id: 'step-01', name: 'Read the shadow file', command: 'cat /etc/shadow', mitre_technique: 'T1003' },
+      { id: 'step-02', name: 'Dump the process', command: 'gcore 1', mitre_technique: 'T1003.007' },
+    ],
+  }
+  const OUTCOMES = [
+    { step_id: 'step-01', termination: 'exited', rc: 0 },
+    { step_id: 'step-02', termination: 'exited', rc: 0 },
+  ]
+
+  function mountChain(run, props = {}, results = []) {
+    installRoutes({
+      'GET /api/runs/:id': { ...run, output: '', step_outcomes: OUTCOMES },
+      'GET /api/scenarios/:id': SCENARIO,
+      'GET /api/results/:id': { results },
+    })
+    return render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
+        <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
+      </EnvironmentContext.Provider>,
+    )
+  }
+
+  it('leads with the run’s chain in live mode; before a read back each step says only Ran', async () => {
+    mountChain(base)
+    const stage = await screen.findByTestId('chain-stage')
+    expect(stage).toHaveAttribute('data-mode', 'live')
+    const card = await screen.findByTestId('stage-card-step-01')
+    await waitFor(() => expect(card).toHaveAttribute('data-state', 'ran'))
+    expect(card).toHaveTextContent('Ran — not read back')
+    expect(stage).not.toHaveTextContent(/Detected|Not seen/)
+  })
+
+  it('after the read back a step whose detection was seen says Detected', async () => {
+    const read = { ...base, detected_count: 1, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }
+    mountChain(read, {}, [
+      { id: 1, step_id: 'step-01', outcome: 'detected' },
+      { id: 2, step_id: 'step-02', outcome: 'missed' },
+    ])
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-01')).toHaveAttribute('data-state', 'detected'))
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'not_seen'))
+  })
+
+  it('a lane header opens the component behind it', async () => {
+    const onNavigate = vi.fn()
+    mountChain(base, { onNavigate })
+    fireEvent.click(await screen.findByRole('button', { name: /Open the component behind ENDPOINT RUNTIME/ }))
+    expect(onNavigate).toHaveBeenCalledWith('agents')
   })
 })
