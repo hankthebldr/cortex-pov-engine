@@ -6,6 +6,7 @@ answers, with no I/O, is whether that is the dataset the library's detections re
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -23,6 +24,11 @@ TEST_CHANNEL_PRODUCT = "door_http"
 
 # Detection kinds that do not fire on a custom collector's dataset without an XDM rule.
 LIMITED_KINDS = frozenset({"biocs", "abiocs"})
+
+
+def _canonical(name: str) -> str:
+    """Lowercase, runs of non-alphanumerics as one ``_``, edge ``_`` trimmed."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
 def dataset_for(vendor: str, product: str) -> str:
@@ -83,7 +89,13 @@ def route_verdict(
     def make(verdict: str) -> RouteVerdict:
         return RouteVerdict(verdict, dataset, card_dataset, tenant, kinds)
 
-    if dataset.lower() in NATIVE_DATASETS or (card_dataset or "").lower() in NATIVE_DATASETS:
+    # Names are stored as typed; the native check also compares the canonical form, so
+    # "PANW." / "ngfw traffic" cannot slip past as a custom collector.
+    if (
+        dataset.lower() in NATIVE_DATASETS
+        or _canonical(dataset) in NATIVE_DATASETS
+        or (card_dataset or "").lower() in NATIVE_DATASETS
+    ):
         return make("native_dataset")
     if source_key == TEST_CHANNEL:
         return make("test_channel")

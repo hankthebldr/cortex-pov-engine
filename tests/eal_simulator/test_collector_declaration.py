@@ -41,6 +41,14 @@ def test_native_dataset_by_card_or_by_typed_name():
              tenant={"okta_sso_raw"}) == "native_dataset"
 
 
+def test_native_check_compares_a_canonical_form_too():
+    # lowercase, runs of non-alphanumerics collapsed to "_", edge "_" trimmed
+    assert V("okta", "panw", "ngfw-traffic", "okta_sso", tenant={"okta_sso_raw"}) == "native_dataset"
+    assert V("okta", "PANW.", "ngfw traffic", "okta_sso", tenant={"okta_sso_raw"}) == "native_dataset"
+    assert V("okta", "panw", "ngfw__traffic", "okta_sso", tenant={"okta_sso_raw"}) == "native_dataset"
+    assert V("okta", "okta", "sso", "okta_sso", tenant={"okta_sso_raw"}) == "name_disputed"
+
+
 def test_test_channel():
     assert V("test_channel", "cortexsim", "door_http", None) == "test_channel"
 
