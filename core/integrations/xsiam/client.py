@@ -250,13 +250,54 @@ class XsiamClient:
             return advanced_auth_headers(self._api_key, self._api_key_id)
         return standard_auth_headers(self._api_key, self._api_key_id)
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, *, query_id: Optional[str] = None) -> httpx.AsyncClient:
+        # Every use of this client is ONE HTTP request (`async with
+        # self._client() as c: resp = await c.<verb>(...)`), so charging here is
+        # one token per request to the tenant, XQL polls included.
+        self._charge_request(query_id=query_id)
         return httpx.AsyncClient(
             base_url=self._base,
             headers=self._build_headers(),
             transport=self._transport,
             timeout=self._timeout,
         )
+
+    def _charge_request(self, *, query_id: Optional[str] = None) -> None:
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import (  # noqa: PLC0415
+            QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
+        )
+        try:
+            ledger.acquire_request(
+                tenant_ledger_key(self._base),
+                per_minute=tuning.xsiam_max_requests_per_minute())
+        except (QuotaBreakerOpen, RequestBudgetExhausted) as exc:
+            n = max(1, int(exc.retry_after_seconds))
+            if query_id:
+                raise XsiamQuotaError(
+                    "CortexSim's own per-tenant request budget refused fetching the "
+                    f"results of XQL query {query_id}, which WAS started on the "
+                    f"tenant; retry in {n}s ({exc})",
+                    retry_after_seconds=n, local=True, query_started=query_id,
+                ) from exc
+            raise XsiamQuotaError(
+                "CortexSim's own per-tenant request budget refused this request "
+                f"before it was sent to the tenant; retry in {n}s ({exc})",
+                retry_after_seconds=n, local=True,
+            ) from exc
+
+    def _tenant_429(self) -> XsiamQuotaError:
+        """Open the shared breaker for a tenant 429; the error is marked tripped."""
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import ledger, tenant_ledger_key  # noqa: PLC0415
+        ledger.trip(tenant_ledger_key(self._base),
+                    cooldown_seconds=tuning.xsiam_breaker_cooldown())
+        err = XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)",
+                              upstream_status=429)
+        err.tripped = True
+        return err
 
     async def healthcheck(self) -> dict[str, Any]:
         async with self._client() as c:
@@ -278,6 +319,8 @@ class XsiamClient:
         """
         async with self._client() as c:
             resp = await c.get("/public_api/v1/healthcheck")
+        if resp.status_code == 429:
+            raise self._tenant_429()
         raw = resp.headers.get("date")
         if not raw:
             return None
@@ -309,7 +352,7 @@ class XsiamClient:
         if resp.status_code == 401:
             raise XsiamAuthError("XSIAM rejected the API key (HTTP 401)")
         if resp.status_code == 429:
-            raise XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)")
+            raise self._tenant_429()
         if resp.status_code >= 400:
             raise XsiamApiError(
                 f"XSIAM API error (HTTP {resp.status_code})",
@@ -409,11 +452,17 @@ class XsiamClient:
         return str(reply)
 
     async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
+        # Public (operator-supplied id): CortexSim cannot know the query was
+        # started on this tenant, so a local refusal never claims it was.
+        return await self._get_query_results(query_id, limit=limit, started=False)
+
+    async def _get_query_results(self, query_id: str, *, limit: int,
+                                 started: bool) -> dict[str, Any]:
         body = {"request_data": {
             "query_id": query_id, "pending_flag": True,
             "limit": limit, "format": "json",
         }}
-        async with self._client() as c:
+        async with self._client(query_id=query_id if started else None) as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else {}
@@ -439,7 +488,7 @@ class XsiamClient:
         # advances, so a permanently-PENDING tenant spun forever.
         deadline = asyncio.get_running_loop().time() + max(0.0, max_wait)
         while True:
-            reply = await self.get_query_results(query_id, limit=limit)
+            reply = await self._get_query_results(query_id, limit=limit, started=True)
             status = (reply or {}).get("status")
             if status == "SUCCESS":
                 return reply

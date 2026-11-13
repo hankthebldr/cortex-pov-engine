@@ -619,6 +619,36 @@
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Cloud Logging Blinded \u2014 CloudTrail and Google Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed, With a Log-Bucket Hijack Leg (victim-side audit records to an HTTP collector)",
+      "needs_target_egress": false,
+      "plane": "CDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-CDR-030",
+      "service_identities": [
+        "container-runtime"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 8,
+      "steps_total": 8,
+      "steps_with_detections": 8,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
         "BIOC",
         "XQL"
       ],
@@ -5925,15 +5955,15 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 167,
+      "GREEN": 168,
       "RED": 5,
       "YELLOW": 27
     },
     "detection_steps_without_signal": 142,
-    "eal_delivered": 70,
+    "eal_delivered": 71,
     "scenarios_consent_gated": 4,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 199,
+    "scenarios_total": 200,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5941,6 +5971,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 823
+    "total_steps": 831
   }
 }

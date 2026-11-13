@@ -271,6 +271,13 @@ def preflight_reconcile(
         filters={"limit": 1},
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
+    if (pull.detail or {}).get("refused_locally"):
+        # Raised before any byte left: the tenant answered nothing, so no stage
+        # may read ok and nothing is counted as a live call.
+        report.stages.append(_local_refusal_stage(
+            "dns_tls", pull.error or "refused by CortexSim's own request budget"))
+        _skip_rest(report, ["auth", "scope_alerts", "alert_shape"], local=True)
+        return report
     report.queries_issued += 1
 
     if pull.ok:
@@ -288,12 +295,16 @@ def preflight_reconcile(
         # ── alert_shape: will matching work on THIS tenant's alert objects? ──
         sample = pull.observations[0] if pull.observations else None
         total_count = (pull.detail or {}).get("total_count")
+        lookback_refused = False
         if sample is None:
             # Nothing in the last minute (normal). One more 1-row call over a
             # bounded lookback — still not a harvest, and priced as one query.
             probe = conn.pull(ccfg, since=now - timedelta(days=ALERT_SHAPE_LOOKBACK_DAYS),
                               until=now, filters={"limit": 1})
-            report.queries_issued += 1
+            if (probe.detail or {}).get("refused_locally"):
+                lookback_refused = True
+            else:
+                report.queries_issued += 1
             if probe.ok and probe.observations:
                 sample = probe.observations[0]
                 total_count = (probe.detail or {}).get("total_count")
@@ -304,7 +315,9 @@ def preflight_reconcile(
                 alt_pull = _pull_alternate(conn, ccfg, alt, report,
                                            since=now - timedelta(days=ALERT_SHAPE_LOOKBACK_DAYS),
                                            until=now)
-                if alt_pull.ok and alt_pull.observations:
+                if (alt_pull.detail or {}).get("refused_locally"):
+                    lookback_refused = True
+                if alt_pull.ok and alt_pull.observations and not lookback_refused:
                     # The quiet failure: reconcile would "work" and match
                     # nothing. Withdraw the capability claim; the key reads
                     # alerts, just not where reconcile looks.
@@ -318,6 +331,14 @@ def preflight_reconcile(
                                      "manufactured by the path, not by the customer's "
                                      "detections.")))
                     return report
+        if sample is None and lookback_refused:
+            # The window was never (fully) queried: do not claim there is no alert.
+            report.stages.append(_local_refusal_stage(
+                "alert_shape",
+                f"the {ALERT_SHAPE_LOOKBACK_DAYS}-day lookback was not fully read: "
+                f"CortexSim's own request budget refused it, so whether the tenant "
+                f"holds an alert to inspect is unknown"))
+            return report
         report.stages.append(_alert_shape_stage(
             sample, total_count,
             path=(pull.detail or {}).get("path") or config.get("alerts_path")))
@@ -430,6 +451,20 @@ async def preflight_tenant(
         _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
         report.capabilities_denied.append("xql")
         return report
+    except XsiamQuotaError as exc:
+        if _is_local(exc):
+            # Our own budget refused before the tenant was contacted: not a
+            # reachability finding and not a live call.
+            report.stages.append(_local_refusal_stage("auth", str(exc)))
+            _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids, local=True)
+            return report
+        report.queries_issued += 1
+        report.stages.append(Stage(
+            "auth", DEGRADED, PF_QUOTA_EXHAUSTED, str(exc),
+            remediation=("The tenant reported its rate/quota limit on /healthcheck. "
+                         "Nothing further was probed.")))
+        _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
+        return report
     except XsiamApiError as exc:
         # 403 on /healthcheck is commonly a licence gate, not a dead tenant. Say
         # so rather than reporting the whole tenant blocked on one endpoint.
@@ -466,8 +501,10 @@ async def preflight_tenant(
     xql_ok, xql_stage = await _probe_xql(client, report)
     report.stages.append(xql_stage)
     if not xql_ok:
-        _skip_rest(report, ["datasets", "clock"] + rl_ids)
-        report.capabilities_denied.append("xql")
+        local_stage = xql_stage.code == PF_NOT_PROBED
+        _skip_rest(report, ["datasets", "clock"] + rl_ids, local=local_stage)
+        if not local_stage:  # a local refusal says nothing about the key's role
+            report.capabilities_denied.append("xql")
         return report
     report.capabilities_confirmed.append("xql")
 
@@ -480,7 +517,13 @@ async def preflight_tenant(
                                      {"relativeTime": 3600 * 1000})
                 report.queries_issued += 1
                 present.append(name)
-            except XsiamQuotaError:
+            except XsiamQuotaError as qexc:
+                if _is_local(qexc):
+                    st = _local_xql_stage("datasets", qexc, report)
+                    st.detail = (f"stopped after {len(present)} of {len(datasets)} "
+                                 f"datasets: {qexc}")
+                    report.stages.append(st)
+                    break
                 report.queries_issued += 1
                 report.stages.append(Stage(
                     "datasets", DEGRADED, PF_QUOTA_EXHAUSTED,
@@ -526,6 +569,8 @@ async def _probe_xql(client: Any, report: PreflightReport) -> "tuple[bool, Stage
         return True, Stage("scope_xql", OK, PF_OK, "start_xql_query returned a result",
                            ms=int((time.monotonic() - started) * 1000))
     except XsiamQuotaError as exc:
+        if _is_local(exc):
+            return False, _local_xql_stage("scope_xql", exc, report)
         report.queries_issued += 1
         return False, Stage(
             "scope_xql", DEGRADED, PF_QUOTA_EXHAUSTED, str(exc),
@@ -600,6 +645,9 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
         tenant_time = await client.server_time()
         after = datetime.now(timezone.utc)
     except (XsiamError, httpx.HTTPError) as exc:
+        if _is_local(exc):
+            _uncount_local(report, exc)
+            return _local_refusal_stage("clock", str(exc))
         return Stage("clock", SKIPPED, PF_NOT_PROBED, str(exc),
                      remediation=("Clock skew could not be measured, so MTTD from this "
                                   "tenant is unverified. It is still reported — treat "
@@ -726,8 +774,10 @@ def _pull_alternate(conn: Any, ccfg: Any, path: str, report: PreflightReport, *,
     alt_cfg = ConnectorConfig(integration_name=ccfg.integration_name,
                               config={**(ccfg.config or {}), "alerts_path": path},
                               secret=ccfg.secret)
-    report.queries_issued += 1
-    return conn.pull(alt_cfg, since=since, until=until, filters={"limit": 1})
+    res = conn.pull(alt_cfg, since=since, until=until, filters={"limit": 1})
+    if not (res.detail or {}).get("refused_locally"):
+        report.queries_issued += 1
+    return res
 
 
 def _path_mismatch_stage(stage_id: str, configured: str, working: str,
@@ -761,6 +811,8 @@ def _http_status(exc: Exception) -> Optional[int]:
     """The tenant's HTTP status behind an XsiamError, when there was one."""
     from integrations.xsiam.exceptions import XsiamAuthError, XsiamQuotaError  # noqa: PLC0415
 
+    if _is_local(exc):
+        return None  # CortexSim's own refusal: the tenant sent no status
     status = getattr(exc, "upstream_status", None)
     if isinstance(status, int):
         return status
@@ -803,6 +855,8 @@ async def _read_list(client: Any, name: str) -> tuple[Optional[Any], Optional[st
     try:
         reply = await client.request("GET", _LIST_CONTENT_PATH.format(name=name))
     except XsiamError as exc:
+        if _is_local(exc):
+            raise  # never read as the tenant's refusal; the caller accounts for it
         reason = _list_refusal(name, exc)
         logger.info("response_layer: %s", reason)
         return None, reason
@@ -835,7 +889,12 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     sources: list[str] = []
     packs = names = tenant_config = evidence = None
     shape_error: Optional[str] = None
-    read_problem: Optional[str] = None
+    # One entry per read that did not complete, each naming the read and its own
+    # outcome: a local refusal and a tenant refusal in one stage are two facts.
+    problems: list[str] = []
+    # The local remediation for each read CortexSim's own request budget refused.
+    local_fixes: list[str] = []
+    tenant_reads: list[str] = []  # packs / list-names reads the tenant refused or failed
 
     # 1. installed packs
     try:
@@ -845,9 +904,14 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     except _socfw.ResponseLayerShapeError as exc:
         shape_error = str(exc)
     except XsiamError as exc:
-        read_problem = str(exc)
+        _uncount_local(report, exc)
+        _note_local(local_fixes, exc)
+        if not _is_local(exc):
+            tenant_reads.append("installed-packs")
+        problems.append(f"installed packs: {exc}")
     except Exception as exc:  # noqa: BLE001 — transport
-        read_problem = str(exc)
+        tenant_reads.append("installed-packs")
+        problems.append(f"installed packs: {exc}")
 
     # 2. list names (a leftover-lists signal, so read even if packs failed)
     try:
@@ -858,32 +922,45 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
         shape_error = shape_error or str(exc)
         packs = None  # a shape we cannot read: neither present nor absent
     except Exception as exc:  # noqa: BLE001 — XsiamError or transport
-        read_problem = read_problem or str(exc)
+        _uncount_local(report, exc)
+        _note_local(local_fixes, exc)
+        if not _is_local(exc):
+            tenant_reads.append("list-names")
+        problems.append(f"list names: {exc}")
 
     core = packs is not None and _socfw.CORE_PACK_ID in packs
     if core and names is not None and all(n in names for n in _socfw.CONFIG_LISTS) \
             and shape_error is None:
-        # 3. list content, both documents or neither
+        # 3. list content, both documents or neither. Each list keeps its own
+        # outcome: a tenant 403 on one and a local refusal on the other are two
+        # facts, and neither may hide the other.
         docs = []
         refusals: list[str] = []
         try:
             for list_name in _socfw.CONFIG_LISTS:
                 report.queries_issued += 1
-                doc, refusal = await _read_list(client, list_name)
+                try:
+                    doc, refusal = await _read_list(client, list_name)
+                except _socfw.ResponseLayerShapeError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — transport, or a local refusal
+                    _uncount_local(report, exc)
+                    _note_local(local_fixes, exc)
+                    docs.append(None)
+                    refusals.append(f"list {list_name}: read failed: {exc}")
+                    break  # as before: no further list read after a failed one
                 docs.append(doc)
                 if refusal:
                     refusals.append(refusal)
-            if all(d is not None for d in docs):
+            if len(docs) == len(_socfw.CONFIG_LISTS) and all(d is not None for d in docs):
                 tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
                 sources.append("list_content")
             if tenant_config is None and shape_error is None:
-                read_problem = read_problem or (
+                problems.append(
                     "list content (SOCFWTenantConfig / SOCFWConfigModes) was not readable"
                     + (": " + "; ".join(refusals) if refusals else ""))
         except _socfw.ResponseLayerShapeError as exc:
             shape_error = str(exc)
-        except Exception as exc:  # noqa: BLE001 — transport mid-read
-            read_problem = read_problem or f"list content read failed: {exc}"
 
     if core and shape_error is None:
         # 4. execution evidence
@@ -892,10 +969,14 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
             report.queries_issued += 1
             reply = await client.run_xql(RESPONSE_LAYER_XQL,
                                          {"relativeTime": RESPONSE_LAYER_TIMEFRAME_MS})
-        except XsiamQuotaError:
-            read_problem = read_problem or "XQL read: quota exhausted"
+        except XsiamQuotaError as qexc:
+            _uncount_local(report, qexc)
+            _note_local(local_fixes, qexc)
+            problems.append(
+                f"XQL read refused by CortexSim's own request budget: {qexc}"
+                if _is_local(qexc) else "XQL read: quota exhausted")
         except Exception as exc:  # noqa: BLE001 — XsiamError or transport
-            read_problem = read_problem or f"XQL read failed: {exc}"
+            problems.append(f"XQL read failed: {exc}")
             logger.info("response_layer: execution evidence unreadable: %s", exc)
         if reply is not None:
             # Any failure unwrapping or summarising a reply that ARRIVED is a
@@ -908,6 +989,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
 
     if shape_error is not None:
         packs = None
+    read_problem = "; ".join(problems) or None
     layer = _socfw.assemble_response_layer(
         packs=packs, list_names=names, tenant_config=tenant_config, evidence=evidence,
         sources_used=sources, read_at=now, shape_error=shape_error)
@@ -932,13 +1014,22 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                          f"the response layer is reported UNKNOWN."),
             ms=ms, extra=extra)
     if layer.state == "UNKNOWN":
+        # Only a failed installed-packs read leaves the layer UNKNOWN; list names
+        # is read regardless, so either read may be the one the tenant refused.
+        tenant_fix = None
+        if "installed-packs" in tenant_reads or not local_fixes:
+            tenant_fix = ("The installed-packs read was refused or failed, so neither "
+                          "present nor absent can be claimed. Check the role of the "
+                          "xsiam_tenant API key: it needs Marketplace / installed-packs "
+                          "read.")
+        elif "list-names" in tenant_reads:
+            tenant_fix = ("The tenant refused or failed the list-names read (see "
+                          "detail). Check the role of the xsiam_tenant API key: it "
+                          "needs list read.")
         return Stage(
             "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
             read_problem or "the installed-packs read failed",
-            remediation=("The installed-packs read was refused or failed, so neither "
-                         "present nor absent can be claimed. Check the role of the "
-                         "xsiam_tenant API key: it needs Marketplace / installed-packs "
-                         "read."),
+            remediation=_combined_remediation(tenant_fix, local_fixes),
             ms=ms, extra=extra)
     if layer.state == "PRESENT" and not read_problem:
         # Name every Auto Triage value that was assumed or inferred, not read.
@@ -949,19 +1040,108 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     return Stage(
         "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
         read_problem or "framework present, its config could not be read",
-        remediation=("A read against the SOC Framework did not complete (see detail), so "
-                     "part of its state is unknown. Disposition is shown for context "
-                     "only."),
+        remediation=_combined_remediation(
+            "A read against the SOC Framework did not complete (see detail), so "
+            "part of its state is unknown. Disposition is shown for context only.",
+            local_fixes),
         ms=ms, extra=extra)
 
 
-def _skip_rest(report: PreflightReport, stage_ids: list[str]) -> None:
+def _note_local(local_fixes: list[str], exc: BaseException) -> None:
+    """Record the local remediation for a read CortexSim's own budget refused.
+
+    A refused result poll of a started XQL query gets the poll text: that query
+    WAS sent, so "refused before it was sent" would be false for it.
+    """
+    from integrations.xsiam.codes import LOCAL_POLL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    if not _is_local(exc):
+        return
+    fix = (LOCAL_POLL_REFUSAL_REMEDIATION if getattr(exc, "query_started", None)
+           else _LOCAL_REMEDIATION())
+    if fix not in local_fixes:
+        local_fixes.append(fix)
+
+
+def _combined_remediation(tenant_fix: Optional[str],
+                          local_fixes: list[str]) -> Optional[str]:
+    """The tenant's fix and the local-refusal remediation(s), each when it applies.
+
+    A stage can hold both: one read refused by CortexSim's own budget, another
+    refused by the tenant. Each needs its own fix, so neither text replaces the
+    other.
+    """
+    parts = [p for p in (tenant_fix, *local_fixes) if p]
+    return " ".join(parts) or None
+
+
+def _is_local(exc: BaseException) -> bool:
+    """True when CortexSim's own budget refused before the tenant was contacted."""
+    return bool(getattr(exc, "local", False))
+
+
+def _local_unsent(exc: BaseException) -> bool:
+    """A local refusal of a call that never left (no query was started)."""
+    return _is_local(exc) and not getattr(exc, "query_started", None)
+
+
+def _uncount_local(report: "PreflightReport", exc: BaseException) -> None:
+    """Take back a ``queries_issued`` charged before a call that never left.
+
+    A result poll refused after its query was started on the tenant DID reach the
+    tenant (the start), so that one stays counted.
+    """
+    if _local_unsent(exc) and report.queries_issued > 0:
+        report.queries_issued -= 1
+
+
+def _local_refusal_stage(stage_id: str, detail: str) -> "Stage":
+    """A stage the tenant never saw: CortexSim's own budget refused the call."""
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    return Stage(stage_id, DEGRADED, PF_NOT_PROBED, detail,
+                 remediation=LOCAL_REFUSAL_REMEDIATION)
+
+
+def _LOCAL_REMEDIATION() -> str:
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    return LOCAL_REFUSAL_REMEDIATION
+
+
+def _local_xql_stage(stage_id: str, exc: BaseException,
+                     report: "PreflightReport") -> "Stage":
+    """The stage for a locally refused XQL call, counting only what left.
+
+    Refused before the start: nothing left, nothing counted. Refused on a result
+    poll: the start reached the tenant and is counted, and the stage says the
+    query was started and only the fetch of its results was refused.
+    """
+    from integrations.xsiam.codes import LOCAL_POLL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    if getattr(exc, "query_started", None):
+        report.queries_issued += 1
+        return Stage(stage_id, DEGRADED, PF_NOT_PROBED, str(exc),
+                     remediation=LOCAL_POLL_REFUSAL_REMEDIATION)
+    return _local_refusal_stage(stage_id, str(exc))
+
+
+def _skip_rest(report: PreflightReport, stage_ids: list[str], *,
+               local: bool = False) -> None:
     """Record the stages that were not attempted, rather than omitting them.
 
     An absent stage reads as "fine"; an explicit ``skipped`` reads as "unknown".
     Those are different answers and the DC needs the second one.
     """
     for sid in stage_ids:
-        report.stages.append(Stage(
-            sid, SKIPPED, PF_SKIPPED_UNREACHABLE,
-            "not attempted — an earlier stage blocked"))
+        if local:
+            # The earlier stage was not probed because CortexSim's own request
+            # budget refused it, not because the tenant blocked anything.
+            report.stages.append(Stage(
+                sid, SKIPPED, PF_NOT_PROBED,
+                "not attempted — an earlier stage was not probed (CortexSim's own "
+                "request budget refused it)"))
+        else:
+            report.stages.append(Stage(
+                sid, SKIPPED, PF_SKIPPED_UNREACHABLE,
+                "not attempted — an earlier stage blocked"))

@@ -129,7 +129,7 @@ KNOWN_DATASETS = frozenset({
     "cloud_audit_logs", "cloud_audit", "google_workspace_audit", "msft_o365",
     "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog",
     "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
-    "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
+    "cortexsim_airs_raw", "cortexsim_cloud_audit_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
     "full_mailbox", "admin_consent", "benign",
     # Plan 02 — XDM modeling-rule raw source (un-normalized container telemetry
     # the modeling rule maps into XDM fields). Registered so the modeling-rule

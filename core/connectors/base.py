@@ -365,7 +365,11 @@ class PullResult:
     incidents: list[ObservedIncident] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        from integrations.xsiam.codes import remediation_for  # noqa: PLC0415
+        from integrations.xsiam.codes import (  # noqa: PLC0415
+            LOCAL_REFUSAL_REMEDIATION, remediation_for,
+        )
+
+        local = bool((self.detail or {}).get("refused_locally"))
 
         return {
             "ok": self.ok,
@@ -374,7 +378,8 @@ class PullResult:
             "observations": [o.to_dict() for o in self.observations],
             "error": self.error,
             "code": self.code,
-            "remediation": remediation_for(self.code),
+            "remediation": (LOCAL_REFUSAL_REMEDIATION if local
+                            else remediation_for(self.code)),
             "dropped": self.dropped,
             "detail": self.detail,
             "incidents": [i.to_dict() for i in self.incidents],
