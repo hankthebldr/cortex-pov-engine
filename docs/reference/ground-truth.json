@@ -36,22 +36,22 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1551,
-    "catalog_detections": 2281,
+    "abioc_analytics_share": 0.1541,
+    "catalog_detections": 2294,
     "catalog_detections_by_kind": {
       "abioc": 172,
       "analytics": 361,
       "bioc": 382,
-      "correlation": 216,
+      "correlation": 218,
       "ioc": 475,
       "modeling": 5,
       "prevention": 3,
-      "xql": 667
+      "xql": 678
     },
-    "correlation_share": 0.1007,
+    "correlation_share": 0.1014,
     "detection_planes": 16,
     "methodology_family_counts": {
-      "F1": 136,
+      "F1": 137,
       "F10": 2,
       "F2": 29,
       "F3": 9,
@@ -63,13 +63,13 @@
       "F9": 3
     },
     "mitre_distinct_base_techniques": 128,
-    "mitre_distinct_techniques": 239,
-    "scenarios_loadable": 200,
+    "mitre_distinct_techniques": 240,
+    "scenarios_loadable": 201,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
       "AI_SPM": 7,
-      "ANALYTICS": 38,
+      "ANALYTICS": 39,
       "ASM": 6,
       "BROWSER": 6,
       "CDR": 29,
@@ -84,17 +84,17 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1420,
+    "step_detections": 1430,
     "step_detections_by_type": {
       "ABIOC": 164,
       "Analytics": 56,
       "BIOC": 374,
-      "Correlation": 143,
+      "Correlation": 145,
       "IOC": 119,
       "Prevention": 2,
-      "XQL": 562
+      "XQL": 570
     },
-    "ttp_cards": 198
+    "ttp_cards": 199
   },
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
@@ -103,11 +103,11 @@
       "G-01": 0,
       "G-02": 2,
       "G-03": 0,
-      "G-04": 1051,
+      "G-04": 1061,
       "G-05": 0
     },
-    "scenarios_analyzed": 200,
-    "step_detections_analyzed": 1420
+    "scenarios_analyzed": 201,
+    "step_detections_analyzed": 1430
   },
   "http_routes": {
     "apirouter_instances": 30,
@@ -124,10 +124,10 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1662,
+    "hq_share": 0.165,
     "hq_signals": 236,
-    "indicators": 87,
-    "indicators_not_in_band": 10,
+    "indicators": 95,
+    "indicators_not_in_band": 11,
     "leg_map": {
       "AIRS": "cloud-identity",
       "AI_ACCESS": "cloud-identity",
@@ -141,11 +141,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1179,
+    "marker_only_share": 0.1174,
     "marker_only_steps": 98,
-    "scenarios_with_indicators": 15,
-    "step_detections": 1420,
-    "steps": 831,
+    "scenarios_with_indicators": 16,
+    "step_detections": 1430,
+    "steps": 835,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -179,7 +179,7 @@
     },
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
-    "payload_resolved": 200,
+    "payload_resolved": 201,
     "payload_unresolved": 0,
     "plt_assertions": {
       "artifacts": 7,

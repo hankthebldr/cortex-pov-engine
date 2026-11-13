@@ -30,12 +30,12 @@ derived at request time: scenario, then the cards its
 `expected_detections[].ttp_ref` cite, then each card's datasets, then the
 registry entry.
 
-Counted state: **33 datasets registered, 33 datasets read by the 198 cards, 0
+Counted state: **34 datasets registered, 34 datasets read by the 199 cards, 0
 unregistered, 0 registered but unread.** 30 cards read a dataset through BIOC,
 ABIOC or correlation logic that none of their queries declare (mostly
 `xdr_data`); `esxi_syslog` is read only that way, by `TTP-2026-0006` (BIOC) and
 `TTP-2026-0123` (ABIOC). Every anchored name in the corpus is a registered
-dataset, so no anchor is excluded as a placeholder. 33 cortex-side rows, 34
+dataset, so no anchor is excluded as a placeholder. 34 cortex-side rows, 35
 source-side rows, **0 rows confirmed in a tenant.**
 
 ## What it does not prove
@@ -104,7 +104,8 @@ Both are served by `to_dict()` as `doors` (a list, empty when unknown) and
 `saas-generic`, `strata-ngfw`, `vmware-esxi`.
 
 `cortex_side[].kind`: `built_in`, `data_source`, `marketplace_pack`,
-`collector`, `broker_applet`. Today 25 rows are `data_source` and 7 are `built_in`.
+`collector`, `broker_applet`. Today 25 rows are `data_source`, 7 are `built_in`
+and 2 are `collector` (`cortexsim_cloud_audit_raw`, `cortexsim_saas_raw`).
 
 `source_side[].requirement` depends on the product:
 

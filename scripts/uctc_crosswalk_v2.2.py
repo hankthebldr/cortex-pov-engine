@@ -381,6 +381,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "PAN-OS CVE-2026-0257 VPN foothold to VMDK credential theft (Unit 42, Spikey / Tarnished Scorpius) — EDR, NGFW and identity legs"),
     "SIM-MP-037": (["TC-TH-01", "TC-NDR-01", "TC-EDR-05"], REMAP,
         "PHP2Shell (CVE-2026-109618/-109619) PHP-worker post-exploitation, validated by Unit 42 hunts — endpoint plus NGFW legs"),
+    "SIM-MP-038": (["TC-ITDR-03", "TC-ITDR-02"], REMAP,
+        "Pink (CL-CRI-1147): vishing, attacker-registered passkey, SharePoint/OneDrive exfiltration and internal extortion — "
+        "identity and SaaS legs as collector records (Tier-2 verified), plus endpoint and NGFW DNS legs. Both rows carry no "
+        "measurable threshold, so a full green reads not_applicable (evidence, not a scored pass)"),
     "SIM-APB-001": (["TC-APB-06", "TC-SOAR-02"], REMAP,
         "Governed-autonomy audit reconstruction across three structurally "
         "different action classes. TC-APB-06 is NET-NEW and is the ONLY "
