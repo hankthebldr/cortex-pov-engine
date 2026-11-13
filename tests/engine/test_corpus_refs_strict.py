@@ -66,7 +66,8 @@ def test_the_corpus_is_the_expected_size(parsed):
     """
     # 195 -> 198 on 2026-11-11: Unit42 deep-real trio SIM-EDR-025 (Akira Linux host), SIM-KOI-010 (npm supply-chain), SIM-KOI-011 (OpenClaw malicious skill).
     # 198 -> 199 on 2026-11-11: Unit 42 backlog build SIM-KOI-012 (Axios supply-chain Linux second-stage RAT).
-    assert len(parsed) == 199
+    # 199 -> 200 on 2026-11-13: Unit 42 backlog build SIM-CDR-030 (cloud logging tamper and log-bucket hijack, authored only).
+    assert len(parsed) == 200
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):
