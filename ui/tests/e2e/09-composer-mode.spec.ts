@@ -100,7 +100,7 @@ for (const { w, h } of MATRIX) {
   })
 }
 
-test('leaving composer mode gives the rail back (and entering through the tab takes it away)', async ({ page }) => {
+test('leaving composer mode gives the rail back (and entering through the rail takes it away)', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.rail--nav', { timeout: 15_000 })
@@ -111,7 +111,8 @@ test('leaving composer mode gives the rail back (and entering through the tab ta
   expect(before.rail).toBe(true)
   expect(before.mode).toBeNull()
 
-  await page.getByTestId('section-tab-composer').click()
+  // Build a chain is a rail item (design v26 §1); Scenarios has no tab strip.
+  await page.getByTestId('dest-button-composer').click()
   await page.waitForSelector('[data-testid=composer-view]')
   const inMode = await geometry(page)
   expect(inMode.mode).toBe('immersive')
@@ -122,7 +123,7 @@ test('leaving composer mode gives the rail back (and entering through the tab ta
   const after = await geometry(page)
   expect(page.url()).toMatch(/#\/library/)
   expect(after.mode).toBeNull()
-  expect(after.tabs).toBe(true)
+  expect(after.rail).toBe(true)
   const railLeft = await page.locator('.rail--nav').evaluate((el) => Math.round(el.getBoundingClientRect().left))
   expect(railLeft).toBe(0)
 })
