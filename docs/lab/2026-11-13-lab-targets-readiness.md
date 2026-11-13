@@ -43,7 +43,7 @@ as closed paths in this pass unless a source is added.
 | 6b | Applet: Windows Event Collector | **not started; no source** | The lab has no Windows Server 2012 R2+ forwarder | §5.5 |
 | 6c | Applet: Files and Folders Collector | **not started; no source** | No SMB or NFS share exists in the lab | §5.5 |
 | 6d | Applet: Database Collector | **not started; no source** | No MySQL/PostgreSQL/MSSQL/Oracle instance exists in the lab | §5.5 |
-| 7 | HTTP event collector `pov-engine-test` (tenant side) | **receiving** (created by Henry ~22:00Z for the canary session; not touched here) | `metrics_view` 7 d: `_collector_type HTTP`, `CUSTOM/custom`, 19 events, last_seen 22:00Z. `dataset = custom_custom_raw`: 18 rows, inserted 22:01:14–22:02:52Z. Canary session: JSON, **gzip required** (uncompressed body → 400), every 200 landed and no refused body did | None for the collector itself. The key was pasted into a chat: rotate it |
+| 7 | HTTP event collector `pov-engine-test` (tenant side) | **receiving** (created by Henry ~22:00Z for the canary session; not touched here) | `metrics_view` 7 d: `_collector_type HTTP`, `CUSTOM/custom`, 19 events, last_seen 22:00Z. `dataset = custom_custom_raw` over 5 d: 19 rows, inserted 22:01:14–22:02:52Z (a 24 h window shows 18: canary T4 carried a body `_time` of 2026-11-10 22:01:12Z, which the collector honours). Canary session: JSON, **gzip required** (uncompressed body → 400), every 200 landed and no refused body did | None for the collector itself. The key was pasted into a chat: rotate it |
 | 8 | SimCore collector target → that collector | **not pointed** | `GET /api/collector-targets`: `count 0`, `code NO_COLLECTOR_TARGETS`, 15 unbound emitter plugins. `:8888` predates #263: `openapi.json` has no `/arrival` or `/data-streams/{key}/detections` route. The key is in no env var or vault | §6 |
 
 ### 2. Evidence
@@ -292,6 +292,10 @@ setting (`core/eal_simulator/collector.py:271-273`). This collector refuses unco
 preflight reads `collector_rejected` even when a `compress=true` campaign lands. Prove the route with a compressed
 canary and a `custom_custom_raw` read-back, as the canary session did. Making the preflight honour `compress` is a
 SimCore fix for the canary session's follow-up list.
+
+**Count read-backs by arrival.** This collector honours a top-level `_time` in the body, so a record can land with a
+`_time` days in the past. A relative timeframe measured on `_time` then misses it. Filter on `_insert_time`, or use a
+window that reaches back past every `_time` you sent. `metrics_view` already counts by arrival.
 
 **Corrections to `docs/lab/2026-11-12-ingestion-sources-bringup.md`:**
 - B1/B2 put the Broker VM disk in `/var/lib/libvirt/images`. That is on the 56 GB-free root LV under K3s, so use
