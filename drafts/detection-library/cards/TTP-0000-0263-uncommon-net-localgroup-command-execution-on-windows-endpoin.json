@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0263",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon net localgroup command execution on Windows endpoint",
+    "summary": "An attacker executes the 'net localgroup' command to enumerate or modify local group memberships, which is uncommon for typical user behavior. Cortex should detect this activity as a deviation from no",
+    "description": "An attacker executes the 'net localgroup' command to enumerate or modify local group memberships, which is uncommon for typical user behavior. Cortex should detect this activity as a deviation from normal process execution patterns."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1069",
+        "subtechnique_id": "T1069.001",
+        "name": "T1069.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.002",
+        "name": "Valid Accounts: Domain Accounts",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "C:\\Windows\\System32\\net.exe localgroup administrators\nC:\\Windows\\System32\\net.exe localgroup \"Domain Admins\" /add user1\nC:\\Windows\\System32\\net.exe localgroup \"Backup Operators\" /add user2\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of net.exe with localgroup command",
+        "expected_value": "action_process_image_name = 'C:\\\\Windows\\\\System32\\\\net.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution with localgroup argument",
+        "expected_value": "action_process_image_name = 'C:\\\\Windows\\\\System32\\\\net.exe' and action_file_path contains 'localgroup'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon net localgroup command execution",
+        "description": "Detection of net.exe being executed with localgroup argument outside of expected context",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'C:\\\\Windows\\\\System32\\\\net.exe'\n| filter action_file_path contains 'localgroup'\n| filter not (causality_actor_process_image_name in ('explorer.exe', 'services.exe', 'svchost.exe'))",
+        "mitre_technique_ids": [
+          "T1069.001",
+          "T1059.001",
+          "T1078.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon net localgroup behavior",
+        "description": "Behavioral deviation indicating net.exe being used to manipulate local group memberships outside of normal administrative context",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'C:\\\\Windows\\\\System32\\\\net.exe'\n| filter action_file_path contains 'localgroup'\n| filter not (causality_actor_process_image_name in ('explorer.exe', 'services.exe', 'svchost.exe'))\n| filter not (agent_hostname in ('admin-host-01', 'domain-controller-01'))",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1069.001",
+          "T1059.001",
+          "T1078.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hunt for net localgroup execution",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'C:\\\\Windows\\\\System32\\\\net.exe'\n| filter action_file_path contains 'localgroup'\n| filter not (causality_actor_process_image_name in ('explorer.exe', 'services.exe', 'svchost.exe'))",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon net localgroup command execution; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-net-localgroup-command-execution"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon net localgroup command execution",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-net-localgroup-command-execution",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1069.001",
+      "url": "https://attack.mitre.org/techniques/T1069/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.002",
+      "url": "https://attack.mitre.org/techniques/T1078/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

