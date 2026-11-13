@@ -54,6 +54,7 @@ from engine.outcome import (
 )
 from engine.pairing import build_pair_delta
 from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, NO_CASE_YET_HINT, pair_merge
+from connectors.tenant_reader import safe_xdr_url as _safe_xdr_url
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, RunOutputFrame, RunTaskCompletion, Scenario, StepOutcome
@@ -290,35 +291,6 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
                 "upstream": "—",
             })
     return rows
-
-
-_XDR_HOST_SUFFIX = ".paloaltonetworks.com"
-_XDR_BAD_CHARS = set('\\()<>`|[]"\'')
-
-
-def _safe_xdr_url(url) -> Optional[str]:
-    """``xdr_url`` comes from the tenant: link it only when it is plain https on
-    a ``paloaltonetworks.com`` host. Whitespace, control characters, backslash,
-    markdown/HTML metacharacters, userinfo and an explicit port all reject; the
-    emitted string is re-serialised from the validated parts."""
-    from urllib.parse import urlsplit, urlunsplit
-    if not isinstance(url, str) or not url:
-        return None
-    if any(ord(ch) <= 32 or ord(ch) == 127 or ch in _XDR_BAD_CHARS for ch in url):
-        return None
-    try:
-        parts = urlsplit(url)
-        host = (parts.hostname or "").lower()
-        port = parts.port
-    except ValueError:
-        return None
-    if parts.scheme != "https" or port is not None or "@" in parts.netloc:
-        return None
-    if host != _XDR_HOST_SUFFIX[1:] and not host.endswith(_XDR_HOST_SUFFIX):
-        return None
-    if parts.netloc.lower() != host:
-        return None
-    return urlunsplit(parts)
 
 
 _MD_ESCAPE = set("\\|[]()<>*_#!~&")
