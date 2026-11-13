@@ -503,6 +503,7 @@ def test_arrival_records_counted_and_not_pending(db_file, monkeypatch):
     assert pending.json()["state"] == "pending" and pending.json()["found"] is None
     assert after_pending is None
     assert counted.json()["state"] == "counted" and counted.json()["found"] == 3
+    assert pending.json()["proves"] == [] and counted.json()["proves"]
     assert recorded["state"] == "counted" and recorded["found"] == 3
     assert recorded["token"] == ARRIVAL_TOKEN and recorded["checked_at"].endswith("+00:00")
     assert still == recorded
@@ -528,6 +529,19 @@ def test_arrival_on_a_target_without_a_dataset_is_not_checked(db_file, monkeypat
         r = _arrive(c)
     assert r.json()["state"] == "not_checked" and r.json()["code"] == "TARGET_HAS_NO_DATASET"
     assert stub.starts == 0
+    assert r.json()["proves"] == [] and len(r.json()["does_not_prove"]) == 3
+
+
+def test_arrival_never_pastes_a_stored_dataset_into_xql(db_file, monkeypatch):
+    evil = 'xdr_data | limit 3 | alter cortexsim_canary = "' + ARRIVAL_TOKEN + '"'
+    with _app(db_file) as (c, _, _s):
+        _put(c, dataset=evil)
+        stub = _patch_tenant(monkeypatch, {"status": "SUCCESS", "results": {"data": [
+            {"found": 3, "first_seen": 1, "last_seen": 2}]}})
+        r = _arrive(c)
+    assert (r.json()["state"], r.json()["code"], r.json()["queries_issued"]) == (
+        "not_checked", "DATASET_NOT_QUERYABLE", 0)
+    assert stub.starts == 0 and r.json()["proves"] == []
 
 
 def test_arrival_unknown_target_is_404_and_bad_body_is_422(db_file, monkeypatch):

@@ -34,7 +34,7 @@ from database import get_db
 from eal_simulator import get_default_registry
 from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
 from eal_simulator.analytics_emitter import CANARY_TOKEN_RE
-from eal_simulator.arrival import DOES_NOT_PROVE, check_arrival, proves_for
+from eal_simulator.arrival import check_arrival, not_checked_result
 from eal_simulator.collector_declaration import NATIVE_DATASETS, TEST_CHANNEL, dataset_for, route_verdict
 from eal_simulator.ingestion_routes import tenant_datasets
 from eal_simulator.target_preflight import preflight_target
@@ -90,10 +90,8 @@ class ArrivalBody(BaseModel):
 
 
 def _not_checked(body: ArrivalBody, dataset: Optional[str], code: str, reason: str) -> dict[str, Any]:
-    return {"state": "not_checked", "found": None, "delivered": body.delivered,
-            "first_seen": None, "last_seen": None, "query_id": body.query_id,
-            "queries_issued": 0, "code": code, "reason": reason,
-            "proves": proves_for(dataset), "does_not_prove": list(DOES_NOT_PROVE)}
+    return not_checked_result(dataset=dataset, delivered=body.delivered, query_id=body.query_id,
+                              code=code, reason=reason)
 
 
 def _no_dataset_result(body: ArrivalBody) -> dict[str, Any]:

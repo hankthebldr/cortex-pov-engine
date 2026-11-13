@@ -67,7 +67,8 @@ def test_counted_reads_found_and_times():
     r = run(_Stub(reply={"status": "SUCCESS", "results": {"data": [OK_ROW]}}))
     assert (r["state"], r["found"], r["queries_issued"]) == ("counted", 3, 1)
     assert (r["first_seen"], r["last_seen"], r["delivered"]) == (1, 2, 3)
-    assert r["proves"] and len(r["does_not_prove"]) == 3
+    assert r["proves"] == ["These records, sent from SimCore just now, were ingested into `d_raw`."]
+    assert len(r["does_not_prove"]) == 3
 
 
 def test_zero_rows_counts_zero_only_on_success():
@@ -106,7 +107,7 @@ class _NoXql(_Stub):
     (_Stub(start_exc=XsiamApiError("x", upstream_status=403)), "TENANT_UNAUTHORIZED"),
     (_Stub(start_exc=XsiamApiError("x", upstream_status=500)), "TENANT_ERROR"),
     (_Stub(read_exc=XsiamApiError("x", upstream_status=503)), "TENANT_ERROR"),
-    (_Stub(read_exc=XsiamQueryError("x")), "UNRECOGNISED_REPLY"),
+    (_Stub(read_exc=XsiamQueryError("x")), "QUERY_FAILED"),
 ])
 def test_every_refusal_is_not_checked_with_its_code(stub, code):
     r = run(stub)
@@ -136,9 +137,62 @@ def test_a_ledger_refusal_reads_zero_queries():
 
 
 def test_proves_names_the_queried_dataset():
-    r = run(_Stub(reply={"status": "PENDING"}), dataset="acme_okta_raw")
+    r = run(_Stub(reply={"status": "SUCCESS", "results": {"data": [OK_ROW]}}), dataset="acme_okta_raw")
     assert r["proves"] == ["These records, sent from SimCore just now, were ingested into "
                            "`acme_okta_raw`."]
+
+
+def test_a_partial_count_says_k_of_n_arrived():
+    row = {"found": 2, "first_seen": 1, "last_seen": 2}
+    r = run(_Stub(reply={"status": "SUCCESS", "results": {"data": [row]}}), dataset="acme_okta_raw")
+    assert len(r["proves"]) == 1 and "2 of the 3" in r["proves"][0] and "`acme_okta_raw`" in r["proves"][0]
+
+
+@pytest.mark.parametrize("stub", [
+    _Stub(reply={"status": "PENDING"}),
+    _Stub(reply={"status": "FAIL"}),
+    _Stub(reply={"status": "SUCCESS", "results": {"data": []}}),
+    _Stub(start_exc=XsiamApiError("x", upstream_status=500)),
+])
+def test_proves_is_empty_unless_records_were_counted(stub):
+    r = run(stub)
+    assert r["proves"] == [] and len(r["does_not_prove"]) == 3
+
+
+@pytest.mark.parametrize("dataset", [
+    'xdr_data | limit 3 | alter cortexsim_canary = "x"', "a b", "1abc", "a-b", "", "d_raw\n| limit 1",
+])
+def test_a_dataset_that_is_not_an_identifier_is_never_queried(dataset):
+    stub = _Stub(reply={"status": "SUCCESS", "results": {"data": [OK_ROW]}})
+    r = run(stub, dataset=dataset)
+    assert (r["state"], r["code"], r["found"], r["queries_issued"]) == (
+        "not_checked", "DATASET_NOT_QUERYABLE", None, 0)
+    assert stub.starts == 0 and stub.reads == 0 and r["proves"] == []
+    key = ledger_mod.tenant_ledger_key(_Stub._base)
+    assert ledger_mod.ledger.snapshot(key, limit=1000)["queries_last_24h"] == 0
+
+
+@pytest.mark.parametrize("reply", [None, [], "SUCCESS"])
+def test_a_reply_that_is_not_a_dict_is_unrecognised_and_keeps_the_charge(reply):
+    r = run(_Stub(reply=reply))
+    assert (r["state"], r["code"], r["found"], r["queries_issued"]) == (
+        "not_checked", "UNRECOGNISED_REPLY", None, 1)
+
+
+def test_a_tenant_reported_query_error_is_query_failed_not_unrecognised():
+    for stub in (_Stub(start_exc=XsiamQueryError("syntax")), _Stub(read_exc=XsiamQueryError("no dataset"))):
+        r = run(stub)
+        assert (r["state"], r["code"], r["found"]) == ("not_checked", "QUERY_FAILED", None)
+
+
+def test_a_caller_query_id_refused_locally_does_not_claim_the_query_is_running():
+    from integrations.xsiam.exceptions import XsiamQuotaError
+    exc = XsiamQuotaError("x")
+    exc.local = True
+    r = run(_Stub(read_exc=exc), query_id="q9")
+    assert r["state"] == "pending" and r["query_id"] == "q9"
+    assert "running on the tenant" not in r["reason"] and "q9" not in r["reason"]
+    assert "query id" in r["reason"]
 
 
 def test_unexpected_exception_propagates():
