@@ -1,4 +1,5 @@
-"""The tenant reader's pure half: projection, neutralisation, attribution, grouping.
+"""The tenant reader's pure half: projection, neutralisation, attribution, grouping
+and the two-class agreement join with the matcher.
 
 No I/O. The connector reads (``XsiamConnector.search_issues`` / ``issues_by_id``
 / ``search_cases`` / ``get_endpoints``) hand raw tenant rows to these functions;
@@ -26,14 +27,14 @@ frame it with ``DATA_NOTICE``. A row missing a required field raises
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from integrations.xsiam import codes
 
 from .base import coerce_utc
-from .matcher import _short_host
+from .matcher import _norm, _short_host
 from .xsiam import XsiamConnector, alert_key
 
 DATA_NOTICE = ("Values under tenant_text were written on the tenant by whoever raised "
@@ -370,6 +371,150 @@ def group_cases(attributed: list[dict], cases_by_id: Optional[dict[Any, dict]]) 
             "issue_count": case.get("issue_count"),
         })
     return rows
+
+
+# ── agreement with the matcher ───────────────────────────────────────────────
+
+#: The two match classes (§7.3), counted separately and never summed.
+CLASS_ID = "id"
+CLASS_NAME_HOST_WINDOW = "name_host_window"
+
+
+def _attributes_to(issue: dict, want: str) -> bool:
+    """The issue carries the run host among its host values. Never true for an
+    issue with no host, or with no run host to compare with (A4)."""
+    return bool(want) and want in _short_hosts(issue)
+
+
+def _by_id(issues: Optional[list[dict]]) -> dict[str, dict]:
+    """Issues keyed by their projected (string) id, first row kept."""
+    out: dict[str, dict] = {}
+    for issue in issues or []:
+        if issue.get("id") is not None:
+            out.setdefault(str(issue["id"]), issue)
+    return out
+
+
+def _external_id(row: dict) -> Optional[str]:
+    value = row.get("external_id")
+    text = "" if value is None else str(value).strip()
+    return text or None
+
+
+def agreement(matcher_rows: list[dict], attributed: list[dict],
+              probe_rows: Optional[list[dict]], run_host: Optional[str], *,
+              tolerance_seconds: int) -> dict:
+    """Join the matcher's rows to the reader's attributed issues (§7.3).
+
+    ``matcher_rows`` are ``{"result_id", "external_id", "name", "observed_at",
+    "host", "executed_at"}`` — one per ``Observation`` linked to a ``Result``.
+    ``attributed`` is :func:`attribute`'s ``attributed`` list. ``probe_rows`` is
+    the projected by-id read of the rows' external ids, or ``None`` when that
+    probe failed.
+
+    Every matcher row lands in exactly one outcome:
+
+    * class ``id`` — the probe found an issue whose id is the row's
+      ``external_id`` and that issue is attributed to ``run_host`` (the window's
+      attribution, or the probe row's own hosts when it lies outside the window).
+      Exact, so two rows sharing one alert id may both join the same issue.
+    * a probe hit on an issue NOT attributed to the run counts in
+      ``id_space.hit`` only; the hit says which issue the alert is, so the row
+      does not fall back to a same-named issue and is ``matcher_only``.
+    * class ``name_host_window`` — tried only by a row the probe did not find,
+      or that has no id, or by every row when the probe failed: the row's
+      ``name`` equals the issue's ``tenant_text.name`` under the matcher's
+      ``_norm``, the row's host is the run host (``_short_host``), the issue is
+      attributed, and ``|issue.observation_time − row.observed_at| ≤
+      tolerance_seconds``. An issue already joined by id is not a candidate.
+    * ``ambiguous`` — more than one candidate, or a candidate that more than one
+      row claims as its only one. Never resolved silently.
+    * ``unjoinable`` — no ``external_id`` and no ``name``.
+    * ``matcher_only`` — none of the above.
+
+    ``reader_only`` counts attributed issues no row joined or was ambiguous
+    over. ``id_space`` is counted per row: ``probed`` the rows carrying an id,
+    ``hit`` / ``no_hit`` those the probe did / did not find. A ``no_hit``
+    proves nothing about the ids — the issue may sit outside the window, the
+    domain or retention. A failed probe leaves ``both.id``, ``hit`` and
+    ``no_hit`` null. No issue without a host enters ``both`` (A4).
+    """
+    want = _short_host(run_host)
+    tolerance = timedelta(seconds=tolerance_seconds)
+    probe_ok = probe_rows is not None
+    probed_by_id = _by_id(probe_rows)
+    window = {iid: i for iid, i in _by_id(attributed).items() if _attributes_to(i, want)}
+
+    outcome: dict[int, str] = {}          # row index -> its one outcome
+    joined: dict[int, str] = {}           # row index -> issue id, for a row in either class
+    hit = no_hit = probed = 0
+    fallback: list[int] = []
+    for n, row in enumerate(matcher_rows):
+        ext = _external_id(row)
+        if ext is None and not _norm(row.get("name")):
+            outcome[n] = "unjoinable"
+            continue
+        if ext is not None:
+            probed += 1
+            if probe_ok:
+                hit_issue = probed_by_id.get(ext)
+                if hit_issue is not None:
+                    hit += 1
+                    if ext in window or _attributes_to(hit_issue, want):
+                        outcome[n], joined[n] = CLASS_ID, ext
+                    else:
+                        outcome[n] = "matcher_only"
+                    continue
+                no_hit += 1
+        fallback.append(n)
+
+    id_claimed = set(joined.values())
+    candidates: dict[int, list[str]] = {}
+    for n in fallback:
+        row = matcher_rows[n]
+        name = _norm(row.get("name"))
+        observed = coerce_utc(row.get("observed_at"))
+        found: list[str] = []
+        if name and want and _short_host(row.get("host")) == want and observed is not None:
+            for iid, issue in window.items():
+                if iid in id_claimed or _norm((issue.get("tenant_text") or {}).get("name")) != name:
+                    continue
+                at = coerce_utc(issue.get("observation_time"))
+                if at is not None and abs(at - observed) <= tolerance:
+                    found.append(iid)
+        candidates[n] = found
+
+    sole_claims: dict[str, int] = {}
+    for found in candidates.values():
+        if len(found) == 1:
+            sole_claims[found[0]] = sole_claims.get(found[0], 0) + 1
+    contested: set[str] = set()
+    for n, found in candidates.items():
+        if not found:
+            outcome[n] = "matcher_only"
+        elif len(found) > 1 or sole_claims[found[0]] > 1:
+            outcome[n] = "ambiguous"
+            contested.update(found)
+        else:
+            outcome[n], joined[n] = CLASS_NAME_HOST_WINDOW, found[0]
+
+    pairs = [{"result_id": matcher_rows[n]["result_id"], "issue_id": joined[n], "class": outcome[n]}
+             for n in sorted(joined)]
+    counts = {k: sum(1 for v in outcome.values() if v == k) for k in (
+        CLASS_ID, CLASS_NAME_HOST_WINDOW, "matcher_only", "unjoinable", "ambiguous")}
+    seen = set(joined.values()) | contested
+    return {
+        "both": {CLASS_ID: counts[CLASS_ID] if probe_ok else None,
+                 CLASS_NAME_HOST_WINDOW: counts[CLASS_NAME_HOST_WINDOW]},
+        "matcher_only": counts["matcher_only"],
+        "reader_only": sum(1 for iid in window if iid not in seen),
+        "unjoinable": counts["unjoinable"],
+        "ambiguous": counts["ambiguous"],
+        "id_space": {"probed": probed,
+                     "hit": hit if probe_ok else None,
+                     "no_hit": no_hit if probe_ok else None},
+        "pairs": pairs,
+    }
 
 
 def lag_seconds(issue: dict, executed_at: Optional[datetime]) -> Optional[float]:
