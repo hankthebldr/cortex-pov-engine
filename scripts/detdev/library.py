@@ -270,7 +270,7 @@ def _techniques(ids: list[str], index: dict) -> tuple[list[dict], list[str]]:
                 entry["tactic_names"] = list(known["tactic_names"])
         else:
             # Unknown to the reviewed corpus: keep the id as its own name and a
-            # placeholder tactic the staging check reports, never a guess that
+            # placeholder tactic the manifest reports, never a guess that
             # reads as a fact.
             entry["name"] = tid
             entry["tactic_ids"] = ["TA0000"]
