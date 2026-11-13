@@ -235,6 +235,10 @@
     "bash": "b10ac4c60b940cc3265627ff05211643e1d87756abb633c031d32b8fc07820f5",
     "powershell": null
   },
+  "SIM-CDR-030": {
+    "bash": "7ed3614e2b16acfc045b3f14b6d50f49c9d3a2c25cc760fd1c4f7dcb2f31297f",
+    "powershell": null
+  },
   "SIM-CLOUD-001": {
     "bash": "15d357484c72f1f19a032cb208c627b31722dec0240b3a6eb9ff11e8a87a3198",
     "powershell": null
