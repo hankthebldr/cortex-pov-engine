@@ -9,20 +9,23 @@ from drifting apart silently.
 
 | | |
 |---|---|
-| Design project | `Cortex POV Engine UI Redesign` |
+| Design project | `Cortex POV Engine UI Redesign` — moved from Claude Design to a claude.ai canvas on 2026-11-12: https://claude.ai/artifact/UtUX2baFiCdFAsrkQi5tcb |
 | Primary artifact | `POVengine Console.dc.html` (+ `support.js`) |
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-09-14T18:14:52Z · tree `a4130a9fe88a` |
-| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) |
+| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) |
+| Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
+| Current handoff | **Design v26 → `ui/src`, 2026-11-13:** `docs/design/2026-11-13-v26-design-to-code.md` |
 
-> **The development track is now AHEAD of the design track.** The minimal pass
-> (2026-10, below) collapsed the 17-surface rail to a task rail, added a
-> Get started checklist, narrowed the colour rule and removed every seed-data
-> surface. The Claude Design prototype still shows the 17-surface IA and the
-> seed numbers. Until the prototype is updated to match, treat this file — not
-> the prototype — as the source of truth for IA and colour, and port the
-> sections below back into the design project on its next sync.
+> **The design track is AHEAD again.** On 2026-11-13 the design track handed
+> off v26, rebuilt from `dev` and moved past it: three numbered journeys on the
+> rail, Components back as the hub for eight components, one Configure frame,
+> a run lifecycle with an explicit read-back step, and Cortex green as the
+> primary-action and selected colour (v26 §9). v26 is now the source of truth
+> for IA and colour; it is being implemented in its §11 build order, one PR per
+> slice. Until a slice lands, the sections below describe what the code ships,
+> not what the design wants.
 
 ## Minimal pass (2026-10)
 
@@ -41,7 +44,7 @@ Runs                         —
 Results       #/proof        Report · Coverage
 Catalog       #/ttps         TTP cards · Packages · Data streams · UC/TC index
 ── Manage
-Agents · Tenant
+Agents · Tenant · Firewall
 ```
 
 - **Get started** (`GetStartedView.jsx`, model in `setupProgress.js`) is the
@@ -52,12 +55,11 @@ Agents · Tenant
   failed first run is not "done" — the step says it stopped early and links to
   the run. The suggested first run hands off to the guided launch with the
   active online agent preselected as the target.
-- **Colour rule.** Orange = the single primary action on a screen. Green =
+- **Colour rule (minimal pass; replaced by v26 §9.1 — see "The contract
+  today" below).** Orange = the single primary action on a screen. Green =
   healthy / done / detected. Amber = a real warning; red = a real failure
   (dark `--crit` moved off salmon, which read as brand orange). Everything
-  else is neutral, and "selected" reads as brightness, not hue. Implemented at
-  the token layer (`--ac-str/-ink/-soft/-line` neutral, `--ac-brand` holds the
-  hex) plus `styles/povengine-minimal.css`, loaded last.
+  else is neutral, and "selected" reads as brightness, not hue.
 - **Chrome.** Flow bar removed. The acknowledged safety notice is a slim
   neutral line (the unacknowledged consent gate is unchanged and still loud).
   The degraded-health band is one neutral line. Theater moved into ⌘K. The
@@ -66,8 +68,10 @@ Agents · Tenant
 - **Seed data removed.** Components, CLI items, the setup/scope wizard and
   Tenant validation pages are retired (their routes redirect). The Tenant page
   shows the real registry. The Launch Gate's canned "will this chain reach the
-  target" block, the Coverage planes × doors matrix, the run-detail topology
-  and techniques tabs and the composer's seed workflow switcher are gone.
+  target" block, the Coverage planes × doors matrix and the composer's seed
+  workflow switcher are gone. The run-detail Topology and Techniques tabs left
+  as seed views and came back on live run records (e1e819de, 2026-11-02),
+  banded by signal path (34907748, 2026-11-10).
   `povdata/` is vocabulary only (lane and plane names, tints, band geometry),
   guarded by `povdata.test.js`.
 
@@ -112,10 +116,29 @@ its own header, which is why it is selected rather than fixed.
 No brand mark in this console is drawn, traced or reconstructed — the DS
 forbids it, and every mark above is the real embedded asset.
 
-## The contract that changed
+## The contract today (design v26 §9.1, 2026-11-13)
 
-> Superseded in part by the minimal pass above: orange is now the primary
-> action only, not "chrome". Selection, rules and eyebrows are neutral.
+Cortex green (`--ac`, `--br`; `#00CC66` in dark, the deep `#0A6231` fill in
+light so its white label clears 7.5:1) is the primary action, the selected
+state and the brand: the one filled button on a screen, the active rail bar,
+the active tab line, a selected item's soft fill and line. Green also means
+healthy / done / detected (`--pos`), so a status is never colour alone — it
+carries its glyph and word (`kit/StatusIcon`). Yellow (`--warn`) is the only
+warning colour; coral (`--crit`) is down / missing / broken / destructive.
+PANW orange is the NGFW family tint (`--family-ngfw`) and the categorical
+plane tints, nothing else; `--ac-brand` and the `--orange` aliases are
+retired. Implemented in `cortex-tokens.css` and `povengine-minimal.css`
+(loaded last); the shared constructs are `components/console/kit` with
+`styles/povengine-kit.css`. `ds-drift.test.js` pins `--br` and `--pos-str` to
+the DS's `--panw-green` and `--family-ngfw` to its `--panw-orange`; the DS
+itself still names orange its presentation accent, and the console
+deliberately does not follow it.
+
+## The contract that changed (2026-09 parity pass — history)
+
+> Superseded twice: by the minimal pass (orange = primary action only,
+> selection neutral) and then by v26 §9.1 above (green = primary and
+> selected).
 
 The previous token contract made **Cortex green the primary accent** and
 reserved **PANW orange for warn/gap signal**. This pass **inverts** that:
@@ -151,6 +174,7 @@ Where each surface lives in the code after the minimal pass.
 | Launch Gate | Simulate › Launch gate | `components/console/ReadinessView.jsx` |
 | Guided launch | (from Get started / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
 | Runs (list → detail) | Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `InflightView.jsx` |
+| Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
 | Report | Results › Report | `components/console/EvidenceView.jsx` |
 | Coverage | Results › Coverage | `components/console/CoverageView.jsx` |
 | TTP Cards | Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
@@ -158,10 +182,13 @@ Where each surface lives in the code after the minimal pass.
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
 | UC / TC Index | Catalog › UC / TC index | `components/console/UcTcIndexView.jsx` |
 | Agents | Manage | `components/console/TargetsView.jsx` |
-| Tenant | Manage | `components/console/TenantView.jsx` → `TenantManager.jsx` |
+| Lab | Manage › Agents (`#/environments`) | `components/console/LabView.jsx` |
+| Tenant | Manage | `components/console/TenantView.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
+| Firewall | Manage | `components/console/FirewallView.jsx` (Connect · Check · Sources steps) |
+| Traffic / EAL | (from Simulate, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` |
-| Execution timeline / lanes | — | `ExecutionTimeline.jsx` · `composerLanes.js` |
+| Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
 | Lane and plane vocabulary | — | `components/console/povdata/` |
 | Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-minimal.css` |
 
@@ -180,6 +207,43 @@ preferences. Changing one means changing it on both tracks.
 - **One tenant per instance.** The instance is deployed once for a POV and dies
   with the lab, so a tenant list was modelling something that cannot happen.
 - **Detection objects are categorical; the verdict carries the color.**
+
+## v1.2.0 parity pass (2026-11-12)
+
+The canvas moved from Claude Design to claude.ai as "Cortex POV Engine UI
+Redesign" (page "POVengine Console"). An audit compared it with the console at
+`dev@6029122d`, screen by screen with screenshots of both, token by token,
+plus an accessibility and token-adherence review of `ui/src`:
+https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig
+
+- **Already level:** the `_ds` token files, the 15 rail icons and the PANW
+  lockup are byte-identical; the canvas had the task rail, the tab strip, Get
+  started, Firewall and the immersive Composer.
+- **Design owed, superseded:** the audit's list (adopt the minimal colour rule,
+  retire Components, redraw the newer screens, strip seed data) was approved on
+  2026-11-12 and overtaken the next day by the v26 handoff, which keeps the
+  seed-data rule but reverses the colour rule and brings Components back (§9 of
+  the handoff). Components the canvas still did not draw at the audit: New POV
+  run, TTP cards and UC / TC index as their own pages, Runs · Compare, Lab, and
+  the VerdictReason chip.
+- **Code owed, fixed in this pass:**
+
+  | PR | Fix |
+  |---|---|
+  | #240 | Abort on Runs threw (no `onAbort`); the run page had no Abort; the confirm dialog mounted outside `.theme-console` and rendered unstyled |
+  | #245 | The `--cortex-*` aliases were declared on `:root` only, so they kept light values inside the dark shell (Storyline, Causality, Composer badges); Causality's dark styling followed the OS, not the console theme; `test/cssCascade.js` resolved custom properties where no browser does |
+  | #242 | Command palette: hover selected the last row and Enter ran it; the search box had no name |
+  | #244 | The skip link changed page instead of focusing the workspace |
+  | #246 | h1s that disagreed with their tab or registry label; "Tools & Payloads ▸" on the Launch gate; three h1s on New POV run |
+  | #247 | Tenant form, launch selects and the TTP editor textarea had no programmatic labels |
+  | #243 | Agent cards now show capabilities and whether steps run as their declared service accounts (the canvas drew this; the code dropped it) |
+
+- **Deferred, recorded so the next pass does not rediscover them:** orange used
+  as text and selection shown by hue in about 40 places (needs the canvas
+  colour decision first); three plane palettes and plane tints under 3:1 on
+  white; 40 font sizes, 43 radii and 52% of spacing off the 4px grid; three
+  focus colours, `role="tab"` without arrow keys, dialogs without focus traps;
+  the PENDING verdict chip's `--warn-str` text (about 1.5:1 on light).
 
 ## What is NOT at parity yet
 
@@ -227,9 +291,10 @@ the platform under test, which NOTICE already covers.
 
 **4. Seed-only design surfaces are not implemented.** The prototype's
 Components inventory, CLI items, scoping wizard, Tenant validation sheets,
-evidence collection, planes × doors matrix and run topology have no SimCore
-data behind them. Rather than render seed numbers as facts, the minimal pass
-removed them. Each can come back when an endpoint exists to back it.
+evidence collection and planes × doors matrix have no SimCore data behind
+them. Rather than render seed numbers as facts, the minimal pass removed them.
+Each can come back when an endpoint exists to back it. (The run topology was on
+this list; it came back on live run records, see the Minimal pass section.)
 
 ## Other deltas from the prototype
 

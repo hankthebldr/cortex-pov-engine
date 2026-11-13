@@ -152,6 +152,24 @@ def test_health_declares_what_it_did_not_check():
         assert item["why"] and item["checked_by"]
 
 
+def test_health_reports_how_long_this_instance_has_been_up(monkeypatch):
+    """The console header states this POVengine's uptime. It has to come from
+    SimCore's own clock: a browser cannot know when the process started, and a
+    difference of two clocks would drift by the DC laptop's skew."""
+    from datetime import datetime, timezone
+    import time
+
+    from api import health
+
+    monkeypatch.setattr(health, "_PROCESS_STARTED_MONO", time.monotonic() - 3725)
+    body = asyncio.run(health.health_payload())
+
+    assert 3725 <= body["uptime_seconds"] <= 3730
+    started = datetime.fromisoformat(body["started_at"].replace("Z", "+00:00"))
+    assert started.tzinfo is not None and started.utcoffset() == timezone.utc.utcoffset(None)
+    assert started <= datetime.now(timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # A zero is degraded, not ok — the "green on a broken deployment" class
 # ---------------------------------------------------------------------------

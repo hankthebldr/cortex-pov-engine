@@ -25,6 +25,9 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   health        — { hostname, version, sensors, tenantHealth }
  *   onAbortRun    — () => void
  *   paletteItems  — items for ⌘K
+ *   onPaletteOpen — () => void, called each time ⌘K opens (lazy loads ride it)
+ *   instance      — this POVengine's header status, from instanceStatus()
+ *   onOpenInstance / instanceTargetLabel — where the instance status leads
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
  *   immersive     — boolean (default false). The open destination is immersive
  *                   (see destinations.jsx): the header, the safety gate and the
@@ -41,7 +44,6 @@ export default function AppShell({
   onNavigate = () => {},
   navGroups = [],
   activeRun = null,
-  lastRun = null,
   health = {},
   tenant = null,
   agent = null,
@@ -51,6 +53,10 @@ export default function AppShell({
   activeNav = null,
   onAbortRun = () => {},
   paletteItems = [],
+  onPaletteOpen = null,
+  instance = null,
+  onOpenInstance = () => {},
+  instanceTargetLabel = 'Launch gate',
   onExportPOV = null,
   // Shell-level notice row (the SimCore health/degraded banner). It is a slot
   // rather than a child on purpose: rendered as a child it lands INSIDE
@@ -75,6 +81,13 @@ export default function AppShell({
     paletteOpenRef.current = paletteOpen
     helpOpenRef.current = helpOpen
   }, [paletteOpen, helpOpen])
+  // Tell the caller each time ⌘K opens, so what only search needs (the TTP
+  // card list) is fetched when someone searches, not on every console load.
+  const onPaletteOpenRef = useRef(onPaletteOpen)
+  useEffect(() => { onPaletteOpenRef.current = onPaletteOpen }, [onPaletteOpen])
+  useEffect(() => {
+    if (paletteOpen && onPaletteOpenRef.current) onPaletteOpenRef.current()
+  }, [paletteOpen])
   // Rail collapse — persisted so a DC's preference survives reloads.
   const [railCollapsed, setRailCollapsed] = useState(() => {
     try { return window.localStorage.getItem('cortexsim.railCollapsed') === 'true' } catch { return false }
@@ -226,7 +239,8 @@ export default function AppShell({
       id: 'toggle-theater',
       title: theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly',
       meta: 'larger type, hides the rail',
-      icon: '▭',
+      kind: 'View',
+      icon: 'apps-grid',
       onSelect: toggleTheater,
     },
   ]
@@ -256,10 +270,12 @@ export default function AppShell({
 
       <ConsoleHeader
         health={health}
+        instance={instance}
+        onOpenInstance={onOpenInstance}
+        instanceTargetLabel={instanceTargetLabel}
         tenant={tenant}
         agent={agent}
         activeRun={activeRun}
-        lastRun={lastRun}
         povName={povName}
         onOpenPalette={() => setPaletteOpen(true)}
         onNavigate={onNavigate}

@@ -30,12 +30,12 @@ derived at request time: scenario, then the cards its
 `expected_detections[].ttp_ref` cite, then each card's datasets, then the
 registry entry.
 
-Counted state: **32 datasets registered, 32 datasets read by the 191 cards, 0
+Counted state: **33 datasets registered, 33 datasets read by the 198 cards, 0
 unregistered, 0 registered but unread.** 30 cards read a dataset through BIOC,
 ABIOC or correlation logic that none of their queries declare (mostly
 `xdr_data`); `esxi_syslog` is read only that way, by `TTP-2026-0006` (BIOC) and
 `TTP-2026-0123` (ABIOC). Every anchored name in the corpus is a registered
-dataset, so no anchor is excluded as a placeholder. 32 cortex-side rows, 33
+dataset, so no anchor is excluded as a placeholder. 33 cortex-side rows, 34
 source-side rows, **0 rows confirmed in a tenant.**
 
 ## What it does not prove

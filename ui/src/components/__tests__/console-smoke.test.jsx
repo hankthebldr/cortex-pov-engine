@@ -97,10 +97,9 @@ describe('console-view smoke renders', () => {
   })
 
 
-  it('CommandPalette mounts closed (no overlay visible)', () => {
+  it('CommandPalette mounts closed (no overlay rendered)', () => {
     render(<CommandPalette open={false} items={[]} />)
-    // dialog is in DOM but hidden via display:none; just confirm no throw + role exists
-    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { hidden: true })).not.toBeInTheDocument()
   })
 
   it('CommandPalette renders items when open', () => {

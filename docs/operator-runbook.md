@@ -37,7 +37,7 @@ Two strips that frame the workspace:
 
 | Keys | What |
 |---|---|
-| **⌘K** | Command palette — fuzzy-search scenarios, jump to any tab. |
+| **⌘K** | Search — pages, components, scenarios and TTP cards (each result names its kind), plus export, theater and agent/tenant switches. Esc closes it. |
 | **⌘F** | Filter palette — slice scenarios by tactic, technique, actor, identity, difficulty, detection type, tag. |
 | **⌘L** | Launch the currently selected scenario (drawer must be open). |
 | **⌘E** | Export the POV report for the active or most recent run. |
