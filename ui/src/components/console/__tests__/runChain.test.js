@@ -60,8 +60,8 @@ describe('laneDestination', () => {
     expect(page('WIRE')).toBe('component-firewall')
     expect(page('CLOUD')).toBe('component-tenant')
     expect(page('ENG')).toBe('component-tenant')
-    // The HTTP collector opens its row on the Components page until slice 4
-    // gives it a page; whatever the table says, the run chain follows it.
-    expect(laneDestination('COLLECTOR')).toEqual({ destination: 'components', params: { open: 'http' } })
+    // The HTTP collector has its own page (design v26 slice 4); whatever the
+    // table says, the run chain follows it.
+    expect(laneDestination('COLLECTOR')).toEqual({ destination: 'component-http' })
   })
 })
