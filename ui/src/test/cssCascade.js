@@ -21,9 +21,15 @@
  * things done by hand are (a) computing standard CSS specificity for the
  * matching selectors and picking a winner by (specificity, source order)
  * the way a real cascade does, and (b) substituting `var(--x[, fallback])`
- * chains, always relative to the originally-queried element (per spec,
- * variable substitution uses the querying element's own inherited/cascaded
- * environment, not the element where the referencing declaration lives).
+ * chains the way a browser computes them. A real property (`color`) is
+ * substituted at the queried element. A CUSTOM property's own `var()` is
+ * substituted at the element that DECLARES it, and descendants inherit the
+ * already-substituted value: `:root { --alias: var(--s1) }` resolves
+ * against :root's `--s1`, and a `[data-theme="dark"]` subtree that redefines
+ * `--s1` still inherits the light `--alias`. This module used to substitute
+ * every link of the chain at the queried element, which is not what any
+ * browser does, and that let ~279 legacy `--cortex-*` uses render light
+ * values inside the dark console while the contrast guard reported dark.
  *
  * Scope: no @media/@supports/@layer evaluation (this app does not gate
  * theme-relevant rules behind any of those — cortex-tokens.css uses
@@ -149,15 +155,23 @@ function winningAt(node, prop) {
   return best ? best.value : null
 }
 
-/** Cascaded RAW value of `prop` at `el`, walking up for inheritance when nothing matches `el` itself. */
-function cascadedValue(el, prop) {
+/**
+ * Cascaded RAW value of `prop` at `el`, walking up for inheritance when
+ * nothing matches `el` itself, together with the element that declared it.
+ */
+function cascadedEntry(el, prop) {
   let node = el
   while (node && node.nodeType === 1) {
     const v = winningAt(node, prop)
-    if (v != null) return v
+    if (v != null) return { raw: v, at: node }
     node = node.parentElement
   }
   return null
+}
+
+function cascadedValue(el, prop) {
+  const entry = cascadedEntry(el, prop)
+  return entry ? entry.raw : null
 }
 
 /** Resolves a raw declaration value (possibly `var(--x[, fallback])`, possibly chained) relative to `el`. */
@@ -172,14 +186,15 @@ export function resolveValue(el, raw, seen = new Set()) {
   }
   const nextSeen = new Set(seen)
   nextSeen.add(varName)
-  const declared = cascadedValue(el, varName)
+  const declared = cascadedEntry(el, varName)
   if (declared == null) {
     if (fallback != null) return resolveValue(el, fallback, nextSeen)
     throw new Error(
       `cssCascade: --${varName} has no cascaded value at <${el.tagName?.toLowerCase()} class="${el.className}">`
     )
   }
-  return resolveValue(el, declared, nextSeen)
+  // The custom property's own var() chain is computed where it is declared.
+  return resolveValue(declared.at, declared.raw, nextSeen)
 }
 
 /**

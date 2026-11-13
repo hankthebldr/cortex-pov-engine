@@ -181,7 +181,9 @@ describe('design token contract (cortex-tokens.css)', () => {
     let aliases
 
     beforeAll(() => {
-      const themeRootBlock = extractBlock(themeCss, /:root\s*\{/)
+      // `:root, [data-theme] {` — the aliases are re-declared on the themed
+      // element so they compute against that element's tokens.
+      const themeRootBlock = extractBlock(themeCss, /:root(?:\s*,\s*\[data-theme\])?\s*\{/)
       expect(themeRootBlock, 'cortex-theme.css must declare a :root block').not.toBeNull()
 
       aliases = {}

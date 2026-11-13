@@ -9,7 +9,9 @@
   gap: var(--space-5, 20px);
   padding: var(--space-5, 20px);
   font-family: var(--font-primary);
-  color: #1A2B3C;
+  /* Was a literal #1A2B3C: dark ink that only read on the white card the
+     aliases used to produce in every theme. --cortex-ink is --tx. */
+  color: var(--cortex-ink);
 }
 
 /* Non-content states share a centered, roomy layout for the projector. */
@@ -48,7 +50,7 @@
   gap: var(--space-4, 16px);
   padding: var(--space-4, 16px) var(--space-5, 20px);
   background: var(--cortex-navy);
-  color: var(--cortex-white);
+  color: #FFFFFF; /* on the always-dark --cortex-navy band, like the console header */
   border-radius: var(--radius-lg, 10px);
   box-shadow: var(--shadow-md);
 }
@@ -61,7 +63,7 @@
 }
 
 .storyline-header__title h3 {
-  color: var(--cortex-white);
+  color: #FFFFFF;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -117,7 +119,7 @@
   font-size: 24px;
   font-weight: 700;
   font-family: var(--font-mono);
-  color: var(--cortex-white);
+  color: #FFFFFF;
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
@@ -239,7 +241,7 @@
 }
 
 .storyline-step--pending .storyline-step__node {
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
   border-color: var(--cortex-teal);
   box-shadow: 0 0 0 4px rgba(0, 192, 232, 0.15);
 }
@@ -277,7 +279,7 @@
 .storyline-step__title h4 {
   font-size: 15px;
   font-weight: 600;
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
 }
 
 .storyline-tid {
@@ -292,7 +294,7 @@
 .storyline-stitch {
   font-size: 11px;
   font-weight: 600;
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
   background: rgba(0, 51, 102, 0.08);
   padding: 2px 8px;
   border-radius: 10px;
@@ -473,7 +475,7 @@
 
 .storyline-detection__expected {
   font-size: 13px;
-  color: #1A2B3C;
+  color: var(--cortex-ink);
   margin: 0 0 var(--space-2, 8px);
 }
 
@@ -495,7 +497,7 @@
 
 .storyline-observed__alert {
   font-size: 12px;
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
 }
 
 .storyline-observed__clock {
@@ -551,7 +553,7 @@
   margin-top: var(--space-2, 8px);
   font-size: 12px;
   font-weight: 600;
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
   background: var(--cortex-white);
   border: 1px solid var(--cortex-border);
   border-radius: var(--radius-sm, 4px);
