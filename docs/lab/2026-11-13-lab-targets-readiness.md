@@ -280,6 +280,16 @@ sender, `_reporting_device_name` = its hostname, and `_broker_device_name` = `bv
 did not land, and no audit warning was logged for it. The wrong-source controls landed on both protocols, so the
 rows accept 192.168.122.1. Either the source network is wider than `/32`, or the restriction is not in effect. TCP
 5514 also accepts connections from ms-01, so any restriction is applied after the TCP connect, not by a firewall.
+The applet schema (§5.4.1) defaults `source_network` to `Any`, which fits.
+
+Cross-check by the canary session (one read-only XQL, −4d..+2h): all 7 rows present. The wrong-source rows carry
+`_final_reporting_device_ip` 192.168.122.1 and `_reporting_device_name` ms-01, so the broker saw the true sender.
+`_reporting_device_ip` is null on every row. On this door, `_time` is whole seconds and 4–7 s *before*
+`_collection_timestamp` (ms precision), and `_insert_time` is about 0.1 s after collection. For example, `udp514` reads
+`_time` 23:39:12, collection 23:39:18.723, insert 23:39:19. That looks like the sender's syslog header time, where
+the HTTP collector filed records at arrival unless the body carried `_time`. A back-dated header and CEF `rt` probe
+(nonces `cxsdp-040547-*`, sent 23:53:28–23:53:32Z to UDP 514 and TCP 5514, plus a truncated line and a 70 KB line
+over TCP) is out for read-back by the canary session. Until it reports, count syslog read-backs by `_insert_time`.
 
 #### 5.4.1 Applet inventory and syslog row options (tenant Broker API schema, `broker-papi.yaml`)
 
@@ -335,8 +345,11 @@ here. The tenant shows it receiving (row 7). SimCore does not point at it: `:888
 runs a build without #263's `declaration`/`arrival` routes. Henry's steps, after the `:8888` rebuild that follows
 #235:
 
-1. Rotate the `pov-engine-test` key (it was pasted into a chat), then Tenant › Collector targets › Add with the
-   collector's URL, dataset `custom_custom_raw` and **compress on**. Type the new key into the write-only field
+1. Rotate the `pov-engine-test` key (it was pasted into a chat). Rebuild `:8888` from a `dev` that includes
+   `fix/api-collector-preflight-compress` (930efd3c, not on dev at the time of writing). Without it, a collector target has no
+   compression setting and every bound step posts uncompressed, which this collector refuses with 400. Then Tenant ›
+   Collector targets › Add (or `PUT /api/collector-targets/{name}`) with the collector's URL, dataset
+   `custom_custom_raw`, `"compress": true` and `"auth_scheme": ""`. Type the new key into the write-only field
    yourself. The auth header is `Authorization` with no scheme, because a `Bearer` scheme gets 401.
 2. Claude, read-only: `GET /api/collector-targets` showing `count 1` and the target as default.
 
