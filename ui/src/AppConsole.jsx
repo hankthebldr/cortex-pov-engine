@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
+import { Toast, TOAST_MS } from './components/console/kit/index.js'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
 import ReadinessBanner from './components/console/ReadinessBanner.jsx'
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
@@ -61,7 +62,7 @@ function ConsoleShell() {
     return () => { cancelled = true }
   }, [])
 
-  const surfaceToast = useCallback((message, type = 'info', ms = 3000) => {
+  const surfaceToast = useCallback((message, type = 'info', ms = TOAST_MS) => {
     setToast({ message, type })
     setTimeout(() => setToast(null), ms)
   }, [])
@@ -351,13 +352,12 @@ function ConsoleShell() {
           confirmLabel="Abort run"
           confirmVariant="danger"
         />
+        {/* Bottom-centre confirmation (v26 §4.1 Toast). Inside the shell so it
+            takes the theme's tokens; the live region stays mounted so a screen
+            reader announces each message. */}
+        <Toast toast={toast} />
       </AppShell>
 
-      {toast && (
-        <div className={`toast toast-${toast.type} app-toast`}>
-          {toast.message}
-        </div>
-      )}
     </>
   )
 }

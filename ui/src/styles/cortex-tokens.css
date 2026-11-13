@@ -9,21 +9,30 @@
    `src/styles/__tests__/ds-drift.test.js` fails if the brand
    hexes below stop matching the vendored DS values.
 
-   ── THE CONTRACT CHANGED. Read this before editing. ──
-   The previous contract said "Cortex green is the primary accent,
-   PANW orange is reserved for warn/gap signal". That is now
-   INVERTED, and the inversion is the point of this pass:
+   ── THE CONTRACT (design v26, 2026-11-13). Read this before editing. ──
+   docs/design/2026-11-13-v26-design-to-code.md §9.1, the owner's
+   direction, replaces the minimal pass's "orange is the one primary
+   action, selection is brightness" rule:
 
-     PANW orange (--ac, #FA582D) is the ONE dominant brand color.
-       It carries chrome: active rail item, accent rules, primary
-       buttons, focus, the title accent bar.
-     Cortex green (--pos, #00CC66) is STATUS ONLY — live, confirmed,
-       observed, pass, FULL coverage. It never paints chrome.
+     Cortex green (--ac, --br; #00CC66 in dark) is the primary action,
+       the selected state and the brand: the one filled button on a
+       screen, the active rail bar, the active tab line, a selected
+       card's soft fill and line.
+     Green also means healthy, done, detected (--pos). Because one hue
+       now carries both "primary" and "healthy", health is NEVER colour
+       alone: every status carries its icon and its word (StatusIcon).
+     Yellow (--warn) is the only warning colour; coral (--crit) is down,
+       missing, broken and destructive confirm.
+     PANW orange survives only as the NGFW family tint (--family-ngfw)
+       and as the categorical plane tints below. No orange outlines,
+       bars, buttons or accents.
 
-   That is the brand's own one-dominant-color rule (see
-   `ds/colors.css`: `--color-accent: var(--panw-orange)`), and it is
-   what makes a green pill on this console mean something. Painting
-   the page green spends the only color that carries a verdict.
+   History: until 2026-10 orange was the chrome accent and green was
+   status only; the minimal pass (2026-10) narrowed orange to the
+   primary action. The DS itself (`ds/colors.css`) still names orange
+   `--color-accent`; this console deliberately does not follow it, and
+   `ds-drift.test.js` pins --br and --pos-str to the DS's --panw-green
+   and --family-ngfw to its --panw-orange instead.
 
    Sub-brand hues (yellow/cyan/green/teal + their tint families) are
    CATEGORICAL coding colors — plane tints, chart series, chips. They
@@ -46,27 +55,26 @@
            --warn 9.30  --crit 7.77  --info 6.54  --ac-ink 5.50
      light --tx 17.30  --tx2 5.98  --tx3 4.36  --ac-ink 6.51
            --warn 5.15  --crit 6.51  --info 5.63  --pos-ink 6.40
-   `--ac` itself is 4.38:1 on dark --s3 and 2.66:1 on light --s3 —
-   below the 4.5:1 text floor in BOTH themes. It is a fill/border
-   color. Anything that paints accent-colored TEXT uses --ac-ink.
-   Same split for green: --pos fills, --pos-ink inks. */
+   (Measured for the 2026-10 tokens; v26 changed --ac/--warn/--crit/
+   --info in dark — see the values' own comments for their ratios.)
+   `--ac` is a FILL: the primary button carries --ac-tx on it (dark
+   #0B1F14 on #00CC66 ≈ 9.6:1; light white on #0A6231 ≈ 7.5:1).
+   Anything that paints accent-coloured TEXT uses --ac-ink. Same split
+   for status green: --pos fills, --pos-ink inks. */
 
 /* ---- LIGHT (opt-in; the console seeds dark) ---- */
 :root {
   --s0: #F1F1F1; --s1: #FFFFFF; --s2: #FAFAFA; --s3: #EDEDED;
   --bd: #E9E9E9; --bd2: #C7C7C7; --thead: #999999; --zebra: #FAFAFA;
   --tx: #000000; --tx2: #595959; --tx3: #696969;
-  /* Minimal pass (2026-10): ORANGE IS THE PRIMARY ACTION AND NOTHING ELSE.
-     --ac fills the one primary button on a screen. Every other accent role —
-     selected tab, active rail item, eyebrow, selected card, "on" checkbox —
-     reads as BRIGHTNESS on the neutral scale, not as hue. Before this, orange
-     marked buttons, healthy agents, selected cards, section rules and page
-     eyebrows at once, so it stopped meaning anything. --ac-brand holds the
-     brand hex (the drift guard pins it to the DS) for the few places that
-     need the literal orange, e.g. the legacy --orange alias. */
-  --ac: #FA582D; --ac-str: #1A1A1A; --ac-ink: #000000; --ac-tx: #FFFFFF;
-  --ac-soft: #EDEDED; --ac-line: #8C8C8C;
-  --ac-brand: #FA582D;
+  /* v26 §9.1: green is the primary action and the selected state. Light uses
+     the DEEP green as the fill (white on it clears 7.5:1; the mid green would
+     need dark text and measures 2.1:1 against the white page as a shape).
+     --br is the brand hue itself, pinned to the DS. The soft/line pair is the
+     selected fill and border, identical to the --pos pair on purpose. */
+  --ac: #0A6231; --ac-str: #0A6231; --ac-ink: #0A6231; --ac-tx: #FFFFFF;
+  --ac-soft: #DBF8EA; --ac-line: #ADD8B1;
+  --br: #00CC66;
   /* Light --pos is the DEEP green, not the mid one. It is a fill token, and
      the one place the legacy sheet fills with it (`.badge-success`) pairs it
      with white text — #00A855 under white measures 3.12:1, short of the text
@@ -76,7 +84,7 @@
   --pos: #0A6231; --pos-str: #00CC66; --pos-ink: #0A6231;
   --pos-soft: #DBF8EA; --pos-line: #ADD8B1;
   --warn: #7D5E11; --warn-str: #FFCB06; --crit: #A51B00; --info: #00667B;
-  --orange: var(--ac-brand); --orange-ink: var(--ac-ink);
+  --warn-soft: #FDF0D0; --crit-soft: #F6E4DF;
   --ink: #1A1A1A; --ink2: #333333; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
   --shadow: 0 4px 12px rgba(0,0,0,.08);
 }
@@ -89,10 +97,10 @@
   --s0: #000000; --s1: #141414; --s2: #1F1F1F; --s3: #2B2B2B;
   --bd: #333333; --bd2: #4A4A4A; --thead: #999999; --zebra: #1F1F1F;
   --tx: #FFFFFF; --tx2: #C7C7C7; --tx3: #9A9A9A;
-  /* See the light block: orange is the primary action only; every other
-     accent role is neutral brightness. */
-  --ac: #FA582D; --ac-str: #E6E6E6; --ac-ink: #FFFFFF; --ac-tx: #1A1A1A;
-  --ac-brand: #FA582D;
+  /* v26 §3 / §9.1: Cortex green is the primary action, the selected state
+     and the brand. --ac-tx is the ink on a filled primary button. */
+  --ac: #00CC66; --ac-str: #00CC66; --ac-ink: #2FD67F; --ac-tx: #0B1F14;
+  --br: #00CC66;
   /* The soft/line fills are OPAQUE, pre-composited from the design's alphas
      over --s1 (13%/45% accent, 12%/40% green over #141414) rather than left as
      rgba(). Two reasons, and the second is the real one:
@@ -104,14 +112,17 @@
      Composited over --s1 because that is the surface these chips actually sit
      on almost everywhere (panels and cards); the drift on --s0/--s3 is under
      one ratio point, and every foreground still clears 4.5:1 there. */
-  --ac-soft: #262626; --ac-line: #5C5C5C;
+  --ac-soft: #122A1E; --ac-line: #0C6136;
   --pos: #00CC66; --pos-str: #00CC66; --pos-ink: #2FD67F;
   --pos-soft: #122A1E; --pos-line: #0C5E35;
-  /* --crit was #FDAC96, a salmon that read as brand orange at a glance — so an
-     error and a primary button looked like the same thing. It is a true red
-     now; --warn is a slightly calmer amber than the brand yellow. */
-  --warn: #E8B730; --warn-str: #FFCB06; --crit: #FF6B6B; --info: #6FB7C9;
-  --orange: var(--ac-brand); --orange-ink: var(--ac-ink);
+  /* v26 §3. --crit is coral again: the minimal pass moved it to a true red
+     because coral read as the ORANGE primary button; with green as the
+     primary that collision is gone. --warn is the brand yellow, the only
+     yellow. --info is the Prisma cyan, for informational rows only. All
+     clear 8:1 on every dark surface. Soft fills are opaque composites over
+     --s1 (13% yellow, 12% coral), like the pairs above. */
+  --warn: #FFCB06; --warn-str: #FFCB06; --crit: #FDAC96; --info: #00C0E8;
+  --warn-soft: #332C12; --crit-soft: #302624;
   --ink: #000000; --ink2: #141414; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
   --shadow: 0 12px 32px rgba(0,0,0,.5);
 }
@@ -180,11 +191,12 @@
    or improves. */
 :root {
   /* "Action" in the legacy console sheet means SELECTED / ACTIVE state (rail
-     item, active filter, chosen card), not "the button to press". It was
-     Cortex green, which made selection read as success. Neutral now. */
-  --ink-action:        #1A1A1A;
-  --ink-action-bright: #000000;
-  --ink-action-deep:   #8C8C8C;
+     item, active filter, chosen card) and the legacy .btn--primary fill. v26
+     §9.1 makes both green (the minimal pass had them neutral). Because green
+     also means healthy, a selected thing is never shown by colour alone. */
+  --ink-action:        #0A6231;
+  --ink-action-bright: #064D27;
+  --ink-action-deep:   #ADD8B1;
   --ink-signal:        #00667B;
   --ink-detected:      #1B674B;
   --ink-missed:        var(--crit);
@@ -192,9 +204,9 @@
   --ink-stitched:      var(--ink-signal);
 }
 [data-theme="dark"] {
-  --ink-action:        #E6E6E6;
-  --ink-action-bright: #FFFFFF;
-  --ink-action-deep:   #6E6E6E;
+  --ink-action:        #00CC66;
+  --ink-action-bright: #2FD67F;
+  --ink-action-deep:   #0C6136;
   --ink-signal:        #00C0E8;
   --ink-detected:      #4FD1A1;
   --ink-missed:        var(--crit);

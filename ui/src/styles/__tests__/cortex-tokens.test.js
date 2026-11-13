@@ -78,61 +78,58 @@ describe('design token contract (cortex-tokens.css)', () => {
     darkTokens = parseDeclarations(darkBlock)
   })
 
-  it('defines a complete LIGHT (:root) token set on the inverted contract', () => {
-    // THE CONTRACT INVERTED. It used to read "Cortex green is the primary
-    // accent, PANW orange is reserved for warn/gap signal". It now reads the
-    // other way round, per the brand's own one-dominant-color rule and the DS's
-    // `--color-accent: var(--panw-orange)`. These assertions are the inversion
-    // written down: if a future pass reverts it, this is what says so.
+  it('defines a complete LIGHT (:root) token set on the v26 contract', () => {
+    // Design v26 §9.1 (2026-11-13, the owner's direction): Cortex green is the
+    // primary action, the selected state and the brand; yellow is the only
+    // warning; orange is no longer an accent. Before v26 the contract read
+    // "orange = the one primary action, selected = brightness" (minimal pass)
+    // and before that "orange = chrome, green = status only". These
+    // assertions are v26 written down: if a pass reverts it, this says so.
     expect(lightTokens.s1).toBe('#FFFFFF')
-    expect(lightTokens.ac).toBe('#FA582D')      // chrome accent — PANW orange
+    // Light fills the primary with the DEEP green so white text clears 7.5:1.
+    expect(lightTokens.ac).toBe('#0A6231')
+    expect(lightTokens['ac-tx']).toBe('#FFFFFF')
+    expect(lightTokens.br).toBe('#00CC66')      // the brand hue itself
     expect(lightTokens.pos).toBe('#0A6231')     // status — Cortex green, deep
     expect(lightTokens.tx).toBe('#000000')
     expect(lightTokens.bd).toBe('#E9E9E9')
     // --warn is Strata yellow darkened for AA: #FFCB06 measures 2.69:1 against
     // --s1, short of the 4.5:1 text floor at the 9-11px this console renders
-    // warn text at. Same hue/saturation, darkened only as far as 4.5:1
-    // requires. --warn-str keeps the brand value for fills.
+    // warn text at. --warn-str keeps the brand value for fills.
     expect(lightTokens.warn).toBe('#7D5E11')
     expect(lightTokens['warn-str']).toBe('#FFCB06')
     expect(lightTokens.crit).toBe('#A51B00')
     expect(lightTokens.info).toBe('#00667B')
-    // --orange is an ALIAS of the brand orange rather than a separate signal
-    // hue. Every legacy `var(--orange)` call site keeps resolving.
-    expect(lightTokens.orange).toBe('var(--ac-brand)')
-    expect(lightTokens['ac-brand']).toBe('#FA582D')
-    // MINIMAL PASS: orange is the primary action ONLY. Every other accent role
-    // (--ac-str selected fill, --ac-ink selected text, --ac-soft / --ac-line
-    // selected surfaces) is neutral, so "selected" reads as brightness and
-    // orange keeps a single meaning. If a pass re-tints these, this fails.
-    for (const key of ['ac-str', 'ac-ink', 'ac-soft', 'ac-line']) {
+    // No orange anywhere in the accent family, and no orange alias left.
+    for (const key of ['ac', 'ac-str', 'ac-ink', 'ac-soft', 'ac-line', 'br']) {
       expect(lightTokens[key], `light --${key} must not be orange`).not.toBe('#FA582D')
     }
+    expect(lightTokens.orange).toBeUndefined()
+    expect(lightTokens['ac-brand']).toBeUndefined()
   })
 
   it('defines a complete DARK ([data-theme="dark"]) token set on the same contract', () => {
     // Dark surfaces are the DS neutrals verbatim — PANW theme dk1/dk2 plus the
-    // template's working greys. Deliberately NOT green-tinted any more: the
-    // tint competed with the status hue it sat behind.
+    // template's working greys. The accent and status values are v26 §3's.
     expect(darkTokens.s0).toBe('#000000')
     expect(darkTokens.s1).toBe('#141414')
-    expect(darkTokens.ac).toBe('#FA582D')
+    expect(darkTokens.ac).toBe('#00CC66')
+    expect(darkTokens['ac-tx']).toBe('#0B1F14')
+    expect(darkTokens.br).toBe('#00CC66')
     expect(darkTokens.pos).toBe('#00CC66')
     expect(darkTokens.tx).toBe('#FFFFFF')
     expect(darkTokens.tx2).toBe('#C7C7C7')
     expect(darkTokens.bd).toBe('#333333')
-    // --crit moved off #FDAC96: that salmon read as brand orange, so a
-    // failure and a primary button looked alike. --warn is a calmer amber than
-    // the brand yellow (which --warn-str keeps for fills); --info is muted so
-    // it stops competing with status colours.
-    expect(darkTokens.warn).toBe('#E8B730')
-    expect(darkTokens.crit).toBe('#FF6B6B')
-    expect(darkTokens.info).toBe('#6FB7C9')
-    expect(darkTokens.orange).toBe('var(--ac-brand)')
-    expect(darkTokens['ac-brand']).toBe('#FA582D')
-    for (const key of ['ac-str', 'ac-ink', 'ac-soft', 'ac-line']) {
+    // --crit is coral again: the minimal pass moved it to red because coral read
+    // as the ORANGE primary button; with a green primary that collision is gone.
+    expect(darkTokens.warn).toBe('#FFCB06')
+    expect(darkTokens.crit).toBe('#FDAC96')
+    expect(darkTokens.info).toBe('#00C0E8')
+    for (const key of ['ac', 'ac-str', 'ac-ink', 'ac-soft', 'ac-line', 'br']) {
       expect(darkTokens[key], `dark --${key} must not be orange`).not.toBe('#FA582D')
     }
+    expect(darkTokens.orange).toBeUndefined()
+    expect(darkTokens['ac-brand']).toBeUndefined()
   })
 
   it('keeps the soft chip fills OPAQUE so their contrast is well defined', () => {
@@ -146,26 +143,35 @@ describe('design token contract (cortex-tokens.css)', () => {
     }
   })
 
-  it('separates the fill hue from the text-safe ink for BOTH brand colours', () => {
-    // --ac measures 4.38:1 on dark --s3 and 2.66:1 on light --s3 — below the
-    // text floor in both themes. It is a fill. Anything painting accent TEXT
-    // uses --ac-ink, and the same split exists for green. Collapsing either
-    // pair is how the console shipped unreadable 9px labels last time.
-    expect(lightTokens['ac-ink']).not.toBe(lightTokens.ac)
-    expect(lightTokens['pos-ink']).toBeDefined()
-    expect(darkTokens['ac-ink']).not.toBe(darkTokens.ac)
-    expect(darkTokens['pos-ink']).toBeDefined()
+  it('gives every accent and status ink a text-safe value on cards in BOTH themes', () => {
+    // A fill hue is not automatically a text colour: dark --ac (#00CC66) is a
+    // fill under --ac-tx, and anything painting accent TEXT uses --ac-ink (same
+    // split for --pos / --pos-ink). Light --ac happens to be text-safe already,
+    // so the guard is the ratio itself, not "ink differs from fill".
+    const lum = (hex) => {
+      const c = hex.replace('#', '').match(/../g).map((h) => parseInt(h, 16) / 255)
+        .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    }
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05) }
+    for (const [name, t] of [['light', lightTokens], ['dark', darkTokens]]) {
+      for (const key of ['ac-ink', 'pos-ink', 'warn', 'crit', 'info', 'tx2']) {
+        expect(ratio(t[key], t.s1), `${name} --${key} on --s1`).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(ratio(t['ac-tx'], t.ac), `${name} --ac-tx on the primary fill`).toBeGreaterThanOrEqual(4.5)
+    }
   })
 
   it('actually gives light and dark two different palettes (not a copy-paste no-op)', () => {
     // If dark ever regressed to being byte-identical to light, the whole point
-    // of shipping two token sets would be silently defeated. --ac is NOT in
-    // this list any more, and that is correct: a brand colour that changed
-    // between themes would stop being the brand colour.
+    // of shipping two token sets would be silently defeated.
     for (const key of ['s0', 's1', 'tx', 'tx2', 'bd', 'ink', 'warn', 'crit']) {
       expect(darkTokens[key], `--${key} should differ between themes`).not.toBe(lightTokens[key])
     }
-    expect(darkTokens.ac, '--ac is a brand hue and must NOT differ by theme').toBe(lightTokens.ac)
+    // The BRAND hue does not change with the theme (a brand colour that did
+    // would stop being the brand colour). --ac may: light fills with the deep
+    // green so its label stays legible.
+    expect(darkTokens.br, '--br is the brand hue and must NOT differ by theme').toBe(lightTokens.br)
   })
 
   it('imports cortex-tokens.css ahead of cortex-theme.css so aliases resolve', () => {

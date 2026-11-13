@@ -1665,7 +1665,7 @@
   border: 1px solid var(--bd2);
 }
 .theme-console .composer--mode .chain-node--cgo {
-  border-left: 3px solid var(--ac-brand);
+  border-left: 3px solid var(--br);
   border-radius: 22px 10px 10px 22px;
   padding-left: 16px;
 }
