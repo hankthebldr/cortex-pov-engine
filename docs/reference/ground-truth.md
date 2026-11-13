@@ -114,10 +114,10 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 156 |
-| By HTTP method | `{"api_route": 1, "delete": 6, "get": 100, "post": 41, "put": 8}` |
-| `APIRouter()` instances | 30 |
-| Router files (`core/api/*.py`) | 28 |
+| Route decorators | 158 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 101, "post": 42, "put": 8}` |
+| `APIRouter()` instances | 31 |
+| Router files (`core/api/*.py`) | 29 |
 
 ## Strict UC/TC ref validation
 
