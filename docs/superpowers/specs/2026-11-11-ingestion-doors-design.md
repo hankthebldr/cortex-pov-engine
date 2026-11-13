@@ -92,6 +92,13 @@ scenarios (496 agent-only), `ngfw_stitch` 11 in 9 and `NO_DATASET` 223. Every
 other row above is unchanged, and so are the scenario states.
 `tests/engine/test_door_corpus.py` pins the merged numbers.
 
+**Re-measured 2026-11-13, SIM-EDR-025 step-05.** The step's BTP Prevention
+row (no dataset) became the built-in "Suspicious data encryption" ABIOC, which
+reads `xdr_data`. From the pinned tree (1,411 total, `xdr_agent` 504 in 104
+scenarios, 503 agent-only, `NO_DATASET` 224): `xdr_agent` 505 in 104 (504
+agent-only) and `NO_DATASET` 223. The total and the scenario states are
+unchanged.
+
 Four defects follow from this:
 
 1. **The XDR agent is never checked.** Get Started's "Install an agent" step

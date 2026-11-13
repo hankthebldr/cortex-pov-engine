@@ -111,3 +111,32 @@ detection:
 falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: low
+---
+title: "Akira (Howling Scorpius) Linux-Host Kill Chain \u2014 Real On-Host File Encryption \u2014 Suspicious data encryption"
+id: ttp-2026-0200-abioc-05
+status: experimental
+description: |
+  PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 in report mode (SIM-EDR-025 run 46f4394b, rule_id 30df8779-1e1e-4c5a-a9de-40cb94d837e7) one second after the openssl burst, described by the tenant as 'The process openssl used to encrypt data on the local file system' and mapped to T1486 and T1027.013, with case_ids empty. The name is the built-in alert name verbatim so the matcher keys on it. Severity is the rule's, not the policy's, so it is Low in block mode too. The logic below approximates the trigger for hunting; it is not the built-in's code.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "openssl"
+    | filter action_process_image_command_line contains " enc "
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+    - attack.t1027.013
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: low

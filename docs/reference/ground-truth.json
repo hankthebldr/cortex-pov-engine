@@ -36,10 +36,10 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1546,
-    "catalog_detections": 2280,
+    "abioc_analytics_share": 0.1551,
+    "catalog_detections": 2281,
     "catalog_detections_by_kind": {
-      "abioc": 171,
+      "abioc": 172,
       "analytics": 361,
       "bioc": 382,
       "correlation": 216,
@@ -86,12 +86,12 @@
     "scenarios_rejected": 0,
     "step_detections": 1420,
     "step_detections_by_type": {
-      "ABIOC": 163,
+      "ABIOC": 164,
       "Analytics": 56,
       "BIOC": 374,
       "Correlation": 143,
       "IOC": 119,
-      "Prevention": 3,
+      "Prevention": 2,
       "XQL": 562
     },
     "ttp_cards": 198

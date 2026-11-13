@@ -12,7 +12,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | TTP cards | 198 |
 | Detection planes | 16 |
 | Step-detections | 1420 |
-| Catalog detection objects | 2280 |
+| Catalog detection objects | 2281 |
 | ABIOC+Analytics share (step-detections) | 15.5% |
 | Correlation share (step-detections) | 10.1% |
 | Distinct MITRE techniques (base) | 239 (128) |
@@ -55,12 +55,12 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 163 |
+| ABIOC | 164 |
 | Analytics | 56 |
 | BIOC | 374 |
 | Correlation | 143 |
 | IOC | 119 |
-| Prevention | 3 |
+| Prevention | 2 |
 | XQL | 562 |
 
 ### Grouping keys (`make check-grouping`)

@@ -785,6 +785,26 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
 
+### Fixed — SIM-EDR-025 expects the encryption detection the lab saw fire
+
+`SIM-EDR-025` step-05 declared the agent's Behavioral Threat Protection
+verdict on its mass encryption (`prevention-anti-ransomware-mass-encryption`,
+module `btp`) as `outcome: detect`. On `pov-target-01` (2026-11-11, report
+mode) openssl encrypting about 40 files under `/var/tmp` raised only the
+built-in Low Analytics BIOC "Suspicious data encryption" and no behavioral
+threat issue, so a working tenant scored a miss (CONT-04/10).
+
+- **Step-05 now expects "Suspicious data encryption"** (`type: ABIOC`,
+  `abioc-suspicious-data-encryption`, new on card `TTP-2026-0200`), keyed on
+  the built-in alert name verbatim. It is Low, so it creates or joins no case:
+  the scenario's text now says the chain yields signals, not an incident.
+- **The BTP row stays on the card, undeclared.** What makes Linux BTP act on
+  mass encryption is open (PM-PRV-07). Declaring it only for the block half of
+  a paired run is not expressible: every row is seeded into every run, and a
+  report-mode run scores even an `outcome: prevent` row as a detect.
+- Counts: Prevention step-detections 3 → 2, ABIOC 163 → 164, catalog
+  detection objects 2260 → 2261; step-detections unchanged at 1411.
+
 ### Security — how 1.1.1's fixes sit on top of the beta hardening
 
 The six fixes released in [1.1.1] (below) are on this line too. Its tool-start
