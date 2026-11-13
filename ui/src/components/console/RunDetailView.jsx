@@ -13,7 +13,7 @@ import { getRun } from '../../api/client.js'
 import { hasAttestations, attestationLines } from '../../outcomes.js'
 import { parseStepTranscript } from './useRunStepTail.js'
 import { launchWarningsFor } from './launchWarnings.js'
-import { runLifecycle, PHASE } from './runLifecycle.js'
+import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import ReadBackNotice from './ReadBackNotice.jsx'
 import RunChain from './RunChain.jsx'
@@ -256,7 +256,7 @@ function stageSubs(run, lifecycle, { activeRun, isThisActive, detail }) {
     running
       ? (isThisActive && activeRun?.totalSteps ? `step ${activeRun.step} of ${activeRun.totalSteps}` : 'in progress')
       : lifecycle.phase === PHASE.NOTHING
-        ? 'no step ran'
+        ? (lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.step : 'no step ran')
         : reported ? `${reported} step${reported === 1 ? '' : 's'} reported` : 'ran',
     lifecycle.ended ? (absoluteTime(run?.completed_at) || lifecycle.ended.toLowerCase()) : 'not yet',
     lifecycle.phase === PHASE.READY ? `from ${lifecycle.readBack.from}`
@@ -272,7 +272,9 @@ function lifecycleMessage(run, lifecycle) {
     case PHASE.RUNNING:
       return `Running on ${agent}. It can be read back from the tenant once it finishes.`
     case PHASE.NOTHING:
-      return 'No step reached its agent, so there is nothing to read back. Check the agent and run it again.'
+      return lifecycle.nothing === NOTHING.NOT_EXECUTED
+        ? NOT_EXECUTED_COPY.message
+        : 'No step reached its agent, so there is nothing to read back. Check the agent and run it again.'
     case PHASE.READING:
       return 'Reading alerts back from the tenant and matching them to what this run expected…'
     case PHASE.UNREAD:

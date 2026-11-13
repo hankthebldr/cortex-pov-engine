@@ -513,6 +513,12 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   Techniques tab counts excluded rows as "never ran", because `not_executed` is not
   "not reached". The Tier-2 sweep still visits a run like this
   because `pending` is not terminal, but it sends no XQL for excluded rows.
+  The console's run lifecycle (`runLifecycle.js`: the Runs list, the run's page
+  and Report) puts a run whose reason is `not_executed` in its `nothing` phase.
+  It reads "nothing executed", offers Run instead of Read back, and says why.
+  Reconcile and verify skip rows the host says never ran, so a read back cannot
+  change that verdict. A `soak_pending` run keeps Read back, because a read back
+  after its window closes can score it.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
 rc, reason, started_at, recorded_at}]` (`started_at` = first `/output` arrival, i.e.
