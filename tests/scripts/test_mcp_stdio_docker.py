@@ -20,7 +20,10 @@ def _run(tmp_path: Path, ps_output: str, *args: str, env_extra: dict | None = No
     stub.write_text(
         "#!/bin/sh\n"
         'echo "$@" >> "$STUB_LOG"\n'
-        'if [ "$1" = "ps" ]; then printf "%s" "$STUB_PS"; fi\n'
+        'if [ "$1" = "ps" ]; then\n'
+        '  if [ -n "${STUB_PS_FAIL:-}" ]; then echo "Cannot connect to the Docker daemon" >&2; exit 1; fi\n'
+        '  printf "%s" "$STUB_PS"\n'
+        'fi\n'
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     env = {
@@ -82,3 +85,17 @@ def test_without_print_it_execs_docker(tmp_path):
     proc, log = _run(tmp_path, "abc123\n")
     assert proc.returncode == 0, proc.stderr
     assert "exec -i abc123 python -m mcp_server" in log
+
+
+def test_failing_docker_ps_is_reported_distinctly(tmp_path):
+    proc, _ = _run(tmp_path, "", "--print", env_extra={"STUB_PS_FAIL": "1"})
+    assert proc.returncode == 2
+    assert "docker ps failed" in proc.stderr
+    assert "no SimCore container" not in proc.stderr
+
+
+def test_unknown_argument_is_rejected_with_usage(tmp_path):
+    proc, log = _run(tmp_path, "abc123\n", "--bogus")
+    assert proc.returncode != 0
+    assert "usage:" in proc.stderr.lower()
+    assert log == ""

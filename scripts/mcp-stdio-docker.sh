@@ -10,8 +10,14 @@
 # stdio runs inside the container, so it needs no CORTEXSIM_MCP_TOKEN.
 set -euo pipefail
 
+# Exit codes: 0 ok (or exec), 2 no/several containers or docker unusable, 64 bad usage.
 print_only=0
-[ "${1:-}" = "--print" ] && print_only=1
+case "${1:-}" in
+  "") ;;
+  --print) print_only=1 ;;
+  *) echo "usage: $0 [--print]" >&2; exit 64 ;;
+esac
+if [ "$#" -gt 1 ]; then echo "usage: $0 [--print]" >&2; exit 64; fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker not found on PATH" >&2
@@ -23,10 +29,14 @@ if [ -n "${CORTEXSIM_COMPOSE_PROJECT:-}" ]; then
   filters+=(--filter "label=com.docker.compose.project=${CORTEXSIM_COMPOSE_PROJECT}")
 fi
 
+if ! ps_out="$(docker ps -q "${filters[@]}")"; then
+  echo "docker ps failed: is Docker running?" >&2
+  exit 2
+fi
 ids=()
 while IFS= read -r line; do
   [ -n "$line" ] && ids+=("$line")
-done < <(docker ps -q "${filters[@]}")
+done <<< "$ps_out"
 
 if [ "${#ids[@]}" -eq 0 ]; then
   echo "no SimCore container is running (docker ps found none)" >&2

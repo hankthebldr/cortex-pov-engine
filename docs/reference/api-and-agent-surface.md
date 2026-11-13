@@ -2589,7 +2589,8 @@ The MCP server holds no tenant key. Its tenant tools reach the tenant through
 SimCore's routes, with the integration credential stored at tenant onboarding:
 the same credential and per-tenant budget the run-evidence and reconcile path
 uses. `CORTEXSIM_MCP_TOKEN` only admits a client to `/mcp`. `/mcp` is
-bearer-only, not loopback-only (see Reach in §9.1).
+bearer-only, not loopback-only (see Reach in §9.1). `/api` stays
+unauthenticated: the bearer applies to `/mcp` only.
 
 Claude Code over streamable HTTP, when the mount is on. `/mcp` answers 401
 without `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, so register it with a
