@@ -317,6 +317,10 @@
 .theme-console .tools-destination .adapter-card__supply:empty {
   display: none;
 }
+/* Add to chain (v26 §4.4): every package can join a chain. */
+.theme-console .tools-destination .adapter-card__supply { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .tools-destination .adapter-card__add { padding: 5px 10px; font-size: 11.5px; }
+.theme-console .adapter-detail__actions { display: inline-flex; align-items: center; gap: 8px; }
 .theme-console .tools-destination .adapter-card__egress {
   color: var(--tx3);
   line-height: 1.5;

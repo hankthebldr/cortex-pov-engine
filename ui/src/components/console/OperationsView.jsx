@@ -7,6 +7,7 @@ import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
 import { getScenarios, getScenario, getDoorReadiness, getDoors } from '../../api/client.js'
+import { applyScenarioFilters, scenarioFilterOptions, EMPTY_SCENARIO_FILTERS } from './scenarioFilters.js'
 import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
@@ -46,6 +47,7 @@ export default function OperationsView({
   onNavigate = () => {},
   selectedPlane = null,
   onClearPlane = () => {},
+  onSelectPlane = null,
   techniqueFilter = null,
   onClearTechniqueFilter = () => {},
   requestOpenScenarioId = null,
@@ -89,10 +91,13 @@ export default function OperationsView({
   // "never run" until the user navigates away and back.
   const { historyByScenario, runsByScenario, refresh: refreshHistory } = useScenarioRunHistory()
 
-  // History-based view mode: 'all' (default) | 'never' (never run) | 'run' (already run).
-  // Sits on top of the unified filter — lets DCs target gaps without re-keying every
-  // filter criterion through the palette.
-  const [historyMode, setHistoryMode] = useState('all')
+  // The v26 filter row (§4.4): component · use case · test case · status. The
+  // plane rides the unified filter (and the rail); these sit on top of it.
+  // Status absorbs the old All / Never run / Already run strip.
+  const [rowFilters, setRowFilters] = useState(EMPTY_SCENARIO_FILTERS)
+  const setRowFilter = useCallback((key, value) => {
+    setRowFilters((prev) => ({ ...prev, [key]: value || '' }))
+  }, [])
 
   // ── Door readiness (advisory chip + opt-in "Runnable here") ─────────────
   // One fetch for the whole library, keyed on the selected target agent. A
@@ -257,16 +262,36 @@ export default function OperationsView({
     }
   }, [techniqueFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Apply unified filter, then layer history mode on top ────────────
+  // ── Apply unified filter, then the filter row on top ────────────────
   const visibleScenarios = useMemo(() => {
     const filtered = scenarioFilter.applyTo(scenarios, doorState.map)
-    if (historyMode === 'all') return filtered
-    return filtered.filter((s) => {
-      const id = s.scenario_id || s.id
-      const hasHistory = historyByScenario.has(id) && historyByScenario.get(id).count > 0
-      return historyMode === 'never' ? !hasHistory : hasHistory
-    })
-  }, [scenarios, scenarioFilter.filter, historyMode, historyByScenario, doorState.map]) // eslint-disable-line react-hooks/exhaustive-deps
+    return applyScenarioFilters(filtered, rowFilters, { readiness: doorState.map, history: historyByScenario })
+  }, [scenarios, scenarioFilter.filter, rowFilters, historyByScenario, doorState.map]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filterOptions = useMemo(
+    () => scenarioFilterOptions(scenarios, { readiness: doorState.map, doorRows: doorState.rows, history: historyByScenario }),
+    [scenarios, doorState.map, doorState.rows, historyByScenario],
+  )
+  const activePlane = selectedPlane || scenarioFilter.filter.plane || ''
+  const choosePlane = useCallback((code) => {
+    scenarioFilter.setPlane(code || null)
+    if (onSelectPlane) onSelectPlane(code || null)
+    else if (!code) onClearPlane()
+  }, [onSelectPlane, onClearPlane]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rowFiltered = !!(activePlane || rowFilters.component || rowFilters.uc || rowFilters.tc || rowFilters.status)
+  const clearRow = useCallback(() => {
+    setRowFilters(EMPTY_SCENARIO_FILTERS)
+    choosePlane(null)
+  }, [choosePlane])
+
+  // ── Card verbs (v26 §4.4) ─────────────────────────────────────────────
+  // Run: arm the scenario and hand it to the launch step. Customize: open its
+  // chain in Build a chain. Neither opens the sheet.
+  const runScenario = useCallback((id) => {
+    onArmScenario(id)
+    if (onContinueToLaunch) onContinueToLaunch(id)
+  }, [onArmScenario, onContinueToLaunch])
+  const customizeScenario = useCallback((id) => onNavigate('composer', { open: id }), [onNavigate])
 
   // ── ⌘F / Ctrl+F → open filter palette ────────────────────────────────
   useEffect(() => {
@@ -376,10 +401,16 @@ export default function OperationsView({
         </div>
       </div>
 
-      <HistoryModeStrip
-        mode={historyMode}
-        onChange={setHistoryMode}
-        counts={countByHistoryMode(scenarios, historyByScenario)}
+      <ScenarioFilterRow
+        options={filterOptions}
+        plane={activePlane}
+        onPlane={choosePlane}
+        filters={rowFilters}
+        onFilter={setRowFilter}
+        shown={visibleScenarios.length}
+        total={scenarios.length}
+        filtered={rowFiltered}
+        onClear={clearRow}
       />
 
       {loading ? (
@@ -400,6 +431,8 @@ export default function OperationsView({
           scenarios={visibleScenarios}
           selectedScenarioId={selectedId}
           onSelectScenario={handleSelect}
+          onRunScenario={onContinueToLaunch ? runScenario : null}
+          onCustomizeScenario={customizeScenario}
           isPinned={isPinned}
           onTogglePin={togglePin}
           historyByScenario={historyByScenario}
@@ -429,7 +462,7 @@ export default function OperationsView({
           ? () => {
               if (selectedId) onArmScenario(selectedId)
               setDrawerOpen(false)
-              onContinueToLaunch()
+              onContinueToLaunch(selectedId)
             }
           : null}
       />
@@ -515,46 +548,45 @@ function FilterChips({ filter, onClearOne, onClearAll }) {
   )
 }
 
-/* ─── History-mode strip (Never run / Already run / All) ──────────── */
+/* ─── Filter row (design v26 §4.4) ────────────────────────────────── */
 
 /**
- * Tally how many scenarios fall into each history bucket. Cheap O(n)
- * loop; runs every render but n is tiny.
+ * Plane · Component · Use case · Test case · Status, then "N of M shown" and
+ * Clear. Options come from `scenarioFilterOptions` — read from the loaded
+ * scenarios, the door registry and the run history, never authored here.
  */
-function countByHistoryMode(scenarios, history) {
-  const counts = { all: scenarios.length, never: 0, run: 0 }
-  if (!history || !history.get) return counts
-  for (const s of scenarios) {
-    const id = s.scenario_id || s.id
-    const h = history.get(id)
-    if (h && h.count > 0) counts.run += 1
-    else counts.never += 1
-  }
-  return counts
-}
-
-function HistoryModeStrip({ mode, onChange, counts }) {
-  const options = [
-    { id: 'all',   label: 'All',         count: counts.all   },
-    { id: 'never', label: 'Never run',   count: counts.never },
-    { id: 'run',   label: 'Already run', count: counts.run   },
-  ]
+function ScenarioFilterRow({ options, plane, onPlane, filters, onFilter, shown, total, filtered, onClear }) {
+  const uid = React.useId()
+  const field = (key, label, all, list, value, onChange) => (
+    <span className="ops-filter" key={key}>
+      <label className="ops-filter__label" htmlFor={`${uid}-${key}`}>{label}</label>
+      <select
+        id={`${uid}-${key}`}
+        className={'ops-filter__select' + (value ? ' ops-filter__select--on' : '')}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">{all}</option>
+        {list.map((o) => (
+          <option key={o.v} value={o.v} title={o.title}>{o.label}</option>
+        ))}
+      </select>
+    </span>
+  )
   return (
-    <div className="lab__segmented ops-history-strip" role="tablist" aria-label="Filter by run history">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          role="tab"
-          aria-selected={mode === o.id}
-          className={mode === o.id ? 'is-active' : ''}
-          onClick={() => onChange(o.id)}
-          title={`Show ${o.label.toLowerCase()} scenarios`}
-        >
-          {o.label}
-          <span className="kbd ops-history-strip__count">{o.count}</span>
-        </button>
-      ))}
+    <div className="ops-filter-row" data-testid="scenario-filter-row">
+      {field('plane', 'Plane', 'All planes', options.planes.map((p) => ({ v: p, label: p })), plane, onPlane)}
+      {field('component', 'Component', 'All components', options.components, filters.component, (v) => onFilter('component', v))}
+      {field('uc', 'Use case', 'All use cases', options.useCases, filters.uc, (v) => onFilter('uc', v))}
+      {field('tc', 'Test case', 'All test cases', options.testCases, filters.tc, (v) => onFilter('tc', v))}
+      {field('status', 'Status', 'Any status', options.statuses, filters.status, (v) => onFilter('status', v))}
+      <span className="ops-filter-row__spacer" />
+      <span className="ops-filter-row__count mono" data-testid="scenario-filter-count">
+        {shown} of {total} shown
+      </span>
+      {filtered && (
+        <button type="button" className="btn btn--xs" aria-label="Clear filters" onClick={onClear}>Clear</button>
+      )}
     </div>
   )
 }

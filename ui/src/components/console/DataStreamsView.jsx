@@ -4,6 +4,8 @@ import '../../styles/destinations/datastreams.css'
 import { getEalDataStreams, launchEalCampaign } from '../../api/client.js'
 import EalCampaignBuilder from '../EalCampaignBuilder.jsx'
 import EalRunProgress from '../EalRunProgress.jsx'
+import Button from './kit/Button.jsx'
+import { useChainTray, streamTrayItem } from '../../context/ChainTrayContext.jsx'
 
 /**
  * DataStreamsView — the Data Streams console destination.
@@ -42,6 +44,7 @@ const VERDICT_TONE = {
 }
 
 export default function DataStreamsView({ onMessage, onNavigate = () => {} }) {
+  const tray = useChainTray()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -151,7 +154,7 @@ export default function DataStreamsView({ onMessage, onNavigate = () => {} }) {
             total={sources.length}
           />
         )}
-        {tab === 'emitters' && <EmittersTable emitters={emitters} />}
+        {tab === 'emitters' && <EmittersTable emitters={emitters} onAdd={(e) => tray.add(streamTrayItem(e))} />}
         {tab === 'new' && <NewStreamCampaign onMessage={onMessage} />}
       </div>
     </section>
@@ -299,7 +302,7 @@ function CoverageTable({ sources, stateFilter, onStateFilter, total }) {
   )
 }
 
-function EmittersTable({ emitters }) {
+function EmittersTable({ emitters, onAdd = null }) {
   if (!emitters.length) {
     return <div className="empty-state"><p>No analytics log-streamer emitters registered.</p></div>
   }
@@ -315,6 +318,7 @@ function EmittersTable({ emitters }) {
               <th>Detectors</th>
               <th>Neg. control</th>
               <th>Last delivery</th>
+              {onAdd && <th><span className="sr-only">Chain</span></th>}
             </tr>
           </thead>
           <tbody>
@@ -342,6 +346,13 @@ function EmittersTable({ emitters }) {
                       ? <span className={`pill ${VERDICT_TONE[d.delivery_verdict] || 'pill-neutral'}`} title={`run ${d.run_id}`}>{d.delivery_verdict}</span>
                       : <span className="muted small">not run yet</span>}
                   </td>
+                  {onAdd && (
+                    <td>
+                      {/* A stream is its emitter: in Build a chain it becomes a
+                          step on the EAL channel that runs it (v26 §4.4). */}
+                      <Button variant="secondary" onClick={() => onAdd(e)}>Add to chain</Button>
+                    </td>
+                  )}
                 </tr>
               )
             })}

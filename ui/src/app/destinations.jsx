@@ -292,6 +292,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           onNavigate={onNavigate}
           selectedPlane={selectedPlane}
           onClearPlane={() => setSelectedPlane(null)}
+          onSelectPlane={(code) => setSelectedPlane(code || null)}
           techniqueFilter={techniqueFilter}
           onClearTechniqueFilter={() => setTechniqueFilter(null)}
           requestOpenScenarioId={openParam(params)}
@@ -299,7 +300,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           isPinned={isPinned}
           togglePin={togglePin}
           onArmScenario={(sid) => { armedRef.current = sid }}
-          onContinueToLaunch={() => onNavigate('guided', { arm: armedRef.current })}
+          onContinueToLaunch={(id) => onNavigate('guided', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
             onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
           onRunComplete={(run) =>

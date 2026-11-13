@@ -3,6 +3,7 @@ import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { isRunComplete } from './runStatus.js'
 import DoorChip from './doors/DoorChip.jsx'
+import Button from './kit/Button.jsx'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -21,29 +22,36 @@ const DIFFICULTY_LABEL = {
 }
 
 /**
- * ScenarioCard — single scenario card for the operations grid.
+ * ScenarioCard — the v26 card anatomy (§4.1): a header (id, technique), the
+ * title, a tag row, and a footer that carries the verbs.
+ *
+ * The body is a button that opens the scenario's sheet. The footer's Run goes
+ * to the launch step with the scenario loaded; Customize opens Build a chain
+ * with its chain loaded. Neither opens the sheet. Every tag is read from the
+ * scenario SimCore returned: its planes, its door readiness and its real
+ * use-case / test-case refs from the index.
  */
-function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, history = null, readiness, doorRows = null, doorAgentId = null, doorError = null }) {
+function ScenarioCard({
+  scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, onRun = null, onCustomize = null,
+  history = null, readiness, doorRows = null, doorAgentId = null, doorError = null,
+}) {
   const id      = scenario.scenario_id || scenario.id
+  const name    = scenario.name || '(unnamed scenario)'
   const planes  = collectPlanes(scenario)
-  const tids    = collectTechniques(scenario).slice(0, 6)
-  const actor   = scenario.threat_report
-    ? scenario.threat_report.split(/\s*[—\-]\s*/)[0]
-    : (scenario.tags && scenario.tags[0]) || '—'
+  const technique = scenario.mitre_technique || collectTechniques(scenario)[0] || null
   const difficulty = scenario.difficulty || scenario.tags?.find?.((t) => DIFFICULTY_LABEL[t]) || null
+  const steps = Array.isArray(scenario.steps) ? scenario.steps : []
+  const detections = steps.reduce((n, s) => n + (s.expected_detections || []).length, 0)
 
   return (
     <article
       data-tour-id={isFirst ? 'scenario-card-first' : undefined}
+      data-testid={`scenario-card-${id}`}
       className={
         'scenario-card' +
         (isSelected ? ' scenario-card--selected' : '') +
         (isPinned   ? ' scenario-card--pinned'   : '')
       }
-      onClick={() => onSelect(scenario)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(scenario) }}
     >
       <div className="scenario-card__corner">
         <PinButton
@@ -53,13 +61,23 @@ function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTog
         />
       </div>
 
-      <div className="sc-id">
-        {id}
-        {isPinned && <span className="sc-id__pin-marker" aria-hidden="true">◼</span>}
-      </div>
-      <div className="sc-title">{scenario.name || '(unnamed scenario)'}</div>
+      <button
+        type="button"
+        className="scenario-card__body"
+        aria-label={`Open ${name}`}
+        aria-pressed={isSelected}
+        onClick={() => onSelect(scenario)}
+      >
+        <span className="sc-head" data-testid="scenario-card-head">
+          <span className="sc-id">
+            {id}
+            {isPinned && <span className="sc-id__pin-marker" aria-hidden="true">◼</span>}
+          </span>
+          {technique && <span className="sc-technique mono">{technique}</span>}
+        </span>
+        <span className="sc-title">{name}</span>
 
-      <div className="sc-meta">
+      <span className="sc-meta sc-tags" data-testid="scenario-card-tags">
         {planes.map((p) => (
           <span
             key={p}
@@ -70,32 +88,27 @@ function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTog
           <span className="chip">{DIFFICULTY_LABEL[difficulty] || difficulty}</span>
         )}
         <DoorChip scenarioId={id} readiness={readiness} doorRows={doorRows} agentId={doorAgentId} error={doorError} />
+        {scenario.uc_ref && (
+          <span className="chip sc-ref mono" title={scenario.uc_name ? `Use case · ${scenario.uc_name}` : 'Use case'}>
+            {scenario.uc_ref}
+          </span>
+        )}
+        {scenario.tc_ref && (
+          <span className="chip sc-ref mono" title={scenario.tc_name ? `Test case · ${scenario.tc_name}` : 'Test case'}>
+            {scenario.tc_ref}
+          </span>
+        )}
+      </span>
+      </button>
+
+      <div className="sc-footer sc-foot" data-testid="scenario-card-foot">
+        <span className="sc-count">steps <strong className="mono">{steps.length}</strong></span>
+        <span className="sc-count">detections <strong className="mono">{detections}</strong></span>
+        {history && history.count > 0 && <ScenarioHistoryBadge history={history} />}
+        <span className="sc-foot__spacer" />
+        {onCustomize && <Button variant="secondary" onClick={() => onCustomize(id)}>Customize</Button>}
+        {onRun && <Button variant="primary" onClick={() => onRun(id)}>Run</Button>}
       </div>
-
-      {tids.length > 0 && (
-        <div className="sc-tids">
-          {tids.map((t) => <span key={t}>{t}</span>)}
-        </div>
-      )}
-
-      <div className="sc-footer">
-        <div className="sc-actor">
-          Anchor · <strong>{actor}</strong>
-        </div>
-        <div className="sc-planes">
-          {['EDR', 'CDR', 'NDR', 'ANALYTICS'].map((p) => (
-            <div
-              key={p}
-              className={'plane-dot' + (planes.includes(p) ? ' plane-dot--on' : '')}
-              title={`${p}${planes.includes(p) ? ' active' : ' idle'}`}
-            />
-          ))}
-        </div>
-      </div>
-
-      {history && history.count > 0 && (
-        <ScenarioHistoryBadge history={history} />
-      )}
     </article>
   )
 }
@@ -133,6 +146,8 @@ export default function ScenarioGrid({
   scenarios = [],
   selectedScenarioId = null,
   onSelectScenario = () => {},
+  onRunScenario = null,       // (id) => void — the launch step with it loaded
+  onCustomizeScenario = null, // (id) => void — Build a chain with its chain loaded
   isPinned = () => false,
   onTogglePin = () => {},
   historyByScenario = null, // Map<scenario_id, { count, lastRunAt, lastStatus }>
@@ -170,6 +185,8 @@ export default function ScenarioGrid({
             isSelected={id === selectedScenarioId}
             isPinned={isPinned(id)}
             onSelect={onSelectScenario}
+            onRun={onRunScenario}
+            onCustomize={onCustomizeScenario}
             onTogglePin={onTogglePin}
             history={history}
             readiness={doorReadiness ? doorReadiness[id] : undefined}

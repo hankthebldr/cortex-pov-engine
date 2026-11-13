@@ -26,6 +26,11 @@ import { instanceStatus } from './components/console/instanceStatus.js'
 import { ToastContext } from './components/console/useToast.js'
 import { ReadBackProvider } from './components/console/useReadBack.jsx'
 import { buildSearchItems, componentDestination } from './components/console/searchIndex.js'
+import { ChainTrayProvider } from './context/ChainTrayContext.jsx'
+import ChainTray from './components/console/ChainTray.jsx'
+
+// Where the "Your chain" bar shows: the pages you add to a chain from (v26 §4.4).
+const TRAY_PAGES = new Set(['library', 'ttps', 'adapters', 'streams', 'uctc'])
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -303,8 +308,12 @@ function ConsoleShell() {
   }, [dest, navigate])
 
   return (
+    // The chain tray wraps the whole shell: AppShell keys each page by its
+    // destination, so a tray inside the page would empty on the navigation
+    // it exists to survive ("Add to chain" here, Customize there, v26 §4.4).
     <ToastContext.Provider value={surfaceToast}>
     <ReadBackProvider>
+    <ChainTrayProvider notify={surfaceToast}>
       <AppShell
         destination={router.destination}
         onNavigate={router.navigate}
@@ -360,6 +369,8 @@ function ConsoleShell() {
             Exit (onExit) replaces the tab strip as the way back. */}
         {!immersive && <SectionTabs destination={dest.id} onNavigate={router.navigate} />}
 
+        {TRAY_PAGES.has(dest.id) && <ChainTray onNavigate={router.navigate} />}
+
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
           <Surface
             params={router.params}
@@ -403,6 +414,7 @@ function ConsoleShell() {
             reader announces each message. */}
         <Toast toast={toast} />
       </AppShell>
+    </ChainTrayProvider>
     </ReadBackProvider>
     </ToastContext.Provider>
   )

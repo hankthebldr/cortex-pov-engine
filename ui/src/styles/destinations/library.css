@@ -812,6 +812,63 @@
 .theme-console .door-chip--unknown { opacity: 0.75; }
 
 /* ═══════════════════════════════════════════════════════════════════
+   Scenario card — design v26 §4.1 anatomy: header (id, technique), title,
+   tag row, footer with the verbs. The body is a button that opens the sheet,
+   so the card itself is not one.
+   ═══════════════════════════════════════════════════════════════════ */
+.theme-console .library-layout .scenario-card {
+  display: flex; flex-direction: column;
+  cursor: default;
+}
+.theme-console .scenario-card__body {
+  all: unset;
+  box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 8px;
+  padding-right: 34px; /* clear the pin in the corner */
+  cursor: pointer;
+  border-radius: 4px;
+}
+.theme-console .scenario-card__body:focus-visible { outline: 2px solid var(--ac); outline-offset: 3px; }
+.theme-console .scenario-card__body .sc-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.theme-console .scenario-card__body .sc-id { margin-bottom: 0; flex: none; }
+.theme-console .sc-technique { font-size: 10px; color: var(--tx3); }
+.theme-console .scenario-card__body .sc-title {
+  margin-bottom: 0;
+  min-height: 2.6em; /* titles wrap to two lines; reserve them so cards align */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.theme-console .scenario-card__body:hover .sc-title { text-decoration: underline; text-underline-offset: 3px; }
+.theme-console .scenario-card__body .sc-tags { margin: 4px 0 0; }
+.theme-console .sc-ref { font-size: 10px; }
+.theme-console .library-layout .sc-foot {
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px;
+  margin-top: auto;
+}
+.theme-console .sc-count { font-size: 11px; color: var(--tx3); white-space: nowrap; }
+.theme-console .sc-count strong { color: var(--tx2); font-weight: 600; }
+.theme-console .sc-foot__spacer { flex: 1; }
+.theme-console .sc-foot .sc-history { position: static; margin: 0; }
+
+/* ── Scenarios filter row (v26 §4.4) ── */
+.theme-console .ops-filter-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  margin: 0 0 14px;
+}
+.theme-console .ops-filter { display: inline-flex; align-items: center; gap: 7px; }
+.theme-console .ops-filter__label { font-size: 12px; color: var(--tx2); white-space: nowrap; }
+.theme-console .ops-filter__select {
+  max-width: 230px; height: 30px; padding: 0 8px;
+  background: var(--s2); color: var(--tx);
+  border: 1px solid var(--bd); border-radius: 6px;
+  font: 500 12px/1 var(--font-ui);
+}
+.theme-console .ops-filter__select--on { border-color: var(--ac-line); }
+.theme-console .ops-filter__select:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+.theme-console .ops-filter-row__spacer { flex: 1; }
+.theme-console .ops-filter-row__count { font-size: 11px; color: var(--tx3); }
+
+/* ═══════════════════════════════════════════════════════════════════
    Scenario sheet — design v26 §2 (right panel, 560px, over a scrim) and
    §4.1 (kind · id · status, name, action row, then the chain, then tabs).
    It reuses the inspector's open/close slide; only its frame changes.
