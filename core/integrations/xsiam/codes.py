@@ -115,6 +115,13 @@ def code_for_status(status: int) -> str:
     return XSIAM_API_ERROR
 
 
+LOCAL_REFUSAL_REMEDIATION = (
+    "CortexSim's own per-tenant request budget refused this call and the tenant "
+    "was not contacted. Nothing was measured, so affected verdicts stay `pending`; "
+    "retry after the interval given."
+)
+
+
 def remediation_for(code: Optional[str]) -> Optional[str]:
     """Remediation text for a code, or None when the code is unknown."""
     return REMEDIATION.get(code or "")

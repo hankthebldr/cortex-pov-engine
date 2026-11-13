@@ -45,9 +45,14 @@ class XsiamQuotaError(XsiamError):
     http_status = 429
 
     def __init__(self, detail: str, *, upstream_status: Optional[int] = None,
-                 retry_after_seconds: Optional[int] = None):
+                 retry_after_seconds: Optional[int] = None, local: bool = False):
         super().__init__(detail, upstream_status=upstream_status)
         self.retry_after_seconds = retry_after_seconds
+        # True when CortexSim's OWN budget (request bucket, open breaker, daily
+        # ceiling) refused before any byte reached the tenant. A local refusal
+        # is never something the tenant did: it does not trip the breaker, is
+        # not a query issued, and does not mark the credential unverified.
+        self.local = local
         # True once the breaker has already been opened for this failure, so a
         # caller that trips on quota errors does not count one 429 twice.
         self.tripped = False

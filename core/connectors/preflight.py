@@ -271,6 +271,13 @@ def preflight_reconcile(
         filters={"limit": 1},
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
+    if (pull.detail or {}).get("refused_locally"):
+        # Raised before any byte left: the tenant answered nothing, so no stage
+        # may read ok and nothing is counted as a live call.
+        report.stages.append(_local_refusal_stage(
+            "dns_tls", pull.error or "refused by CortexSim's own request budget"))
+        _skip_rest(report, ["auth", "scope_alerts", "alert_shape"])
+        return report
     report.queries_issued += 1
 
     if pull.ok:
@@ -293,7 +300,8 @@ def preflight_reconcile(
             # bounded lookback — still not a harvest, and priced as one query.
             probe = conn.pull(ccfg, since=now - timedelta(days=ALERT_SHAPE_LOOKBACK_DAYS),
                               until=now, filters={"limit": 1})
-            report.queries_issued += 1
+            if not (probe.detail or {}).get("refused_locally"):
+                report.queries_issued += 1
             if probe.ok and probe.observations:
                 sample = probe.observations[0]
                 total_count = (probe.detail or {}).get("total_count")
@@ -430,6 +438,20 @@ async def preflight_tenant(
         _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
         report.capabilities_denied.append("xql")
         return report
+    except XsiamQuotaError as exc:
+        if _is_local(exc):
+            # Our own budget refused before the tenant was contacted: not a
+            # reachability finding and not a live call.
+            report.stages.append(_local_refusal_stage("auth", str(exc)))
+            _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
+            return report
+        report.queries_issued += 1
+        report.stages.append(Stage(
+            "auth", DEGRADED, PF_QUOTA_EXHAUSTED, str(exc),
+            remediation=("The tenant reported its rate/quota limit on /healthcheck. "
+                         "Nothing further was probed.")))
+        _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
+        return report
     except XsiamApiError as exc:
         # 403 on /healthcheck is commonly a licence gate, not a dead tenant. Say
         # so rather than reporting the whole tenant blocked on one endpoint.
@@ -480,7 +502,12 @@ async def preflight_tenant(
                                      {"relativeTime": 3600 * 1000})
                 report.queries_issued += 1
                 present.append(name)
-            except XsiamQuotaError:
+            except XsiamQuotaError as qexc:
+                if _is_local(qexc):
+                    report.stages.append(_local_refusal_stage(
+                        "datasets", f"stopped after {len(present)} of {len(datasets)} "
+                                    f"datasets: {qexc}"))
+                    break
                 report.queries_issued += 1
                 report.stages.append(Stage(
                     "datasets", DEGRADED, PF_QUOTA_EXHAUSTED,
@@ -526,6 +553,8 @@ async def _probe_xql(client: Any, report: PreflightReport) -> "tuple[bool, Stage
         return True, Stage("scope_xql", OK, PF_OK, "start_xql_query returned a result",
                            ms=int((time.monotonic() - started) * 1000))
     except XsiamQuotaError as exc:
+        if _is_local(exc):
+            return False, _local_refusal_stage("scope_xql", str(exc))
         report.queries_issued += 1
         return False, Stage(
             "scope_xql", DEGRADED, PF_QUOTA_EXHAUSTED, str(exc),
@@ -600,6 +629,9 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
         tenant_time = await client.server_time()
         after = datetime.now(timezone.utc)
     except (XsiamError, httpx.HTTPError) as exc:
+        if _is_local(exc):
+            _uncount_local(report, exc)
+            return _local_refusal_stage("clock", str(exc))
         return Stage("clock", SKIPPED, PF_NOT_PROBED, str(exc),
                      remediation=("Clock skew could not be measured, so MTTD from this "
                                   "tenant is unverified. It is still reported — treat "
@@ -726,8 +758,10 @@ def _pull_alternate(conn: Any, ccfg: Any, path: str, report: PreflightReport, *,
     alt_cfg = ConnectorConfig(integration_name=ccfg.integration_name,
                               config={**(ccfg.config or {}), "alerts_path": path},
                               secret=ccfg.secret)
-    report.queries_issued += 1
-    return conn.pull(alt_cfg, since=since, until=until, filters={"limit": 1})
+    res = conn.pull(alt_cfg, since=since, until=until, filters={"limit": 1})
+    if not (res.detail or {}).get("refused_locally"):
+        report.queries_issued += 1
+    return res
 
 
 def _path_mismatch_stage(stage_id: str, configured: str, working: str,
@@ -845,6 +879,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     except _socfw.ResponseLayerShapeError as exc:
         shape_error = str(exc)
     except XsiamError as exc:
+        _uncount_local(report, exc)
         read_problem = str(exc)
     except Exception as exc:  # noqa: BLE001 — transport
         read_problem = str(exc)
@@ -858,6 +893,7 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
         shape_error = shape_error or str(exc)
         packs = None  # a shape we cannot read: neither present nor absent
     except Exception as exc:  # noqa: BLE001 — XsiamError or transport
+        _uncount_local(report, exc)
         read_problem = read_problem or str(exc)
 
     core = packs is not None and _socfw.CORE_PACK_ID in packs
@@ -892,8 +928,11 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
             report.queries_issued += 1
             reply = await client.run_xql(RESPONSE_LAYER_XQL,
                                          {"relativeTime": RESPONSE_LAYER_TIMEFRAME_MS})
-        except XsiamQuotaError:
-            read_problem = read_problem or "XQL read: quota exhausted"
+        except XsiamQuotaError as qexc:
+            _uncount_local(report, qexc)
+            read_problem = read_problem or (
+                f"XQL read refused by CortexSim's own request budget: {qexc}"
+                if _is_local(qexc) else "XQL read: quota exhausted")
         except Exception as exc:  # noqa: BLE001 — XsiamError or transport
             read_problem = read_problem or f"XQL read failed: {exc}"
             logger.info("response_layer: execution evidence unreadable: %s", exc)
@@ -953,6 +992,25 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                      "part of its state is unknown. Disposition is shown for context "
                      "only."),
         ms=ms, extra=extra)
+
+
+def _is_local(exc: BaseException) -> bool:
+    """True when CortexSim's own budget refused before the tenant was contacted."""
+    return bool(getattr(exc, "local", False))
+
+
+def _uncount_local(report: "PreflightReport", exc: BaseException) -> None:
+    """Take back a ``queries_issued`` charged before a call that never left."""
+    if _is_local(exc) and report.queries_issued > 0:
+        report.queries_issued -= 1
+
+
+def _local_refusal_stage(stage_id: str, detail: str) -> "Stage":
+    """A stage the tenant never saw: CortexSim's own budget refused the call."""
+    from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION  # noqa: PLC0415
+
+    return Stage(stage_id, DEGRADED, PF_NOT_PROBED, detail,
+                 remediation=LOCAL_REFUSAL_REMEDIATION)
 
 
 def _skip_rest(report: PreflightReport, stage_ids: list[str]) -> None:

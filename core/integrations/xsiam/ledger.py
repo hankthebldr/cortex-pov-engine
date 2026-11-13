@@ -80,7 +80,7 @@ class QuotaBreakerOpen(RuntimeError):
 
     def __init__(self, tenant: str, retry_after_seconds: int) -> None:
         super().__init__(
-            f"XQL quota breaker open for tenant '{tenant}'; "
+            f"tenant request breaker open for tenant '{tenant}'; "
             f"retry in {retry_after_seconds}s"
         )
         self.tenant = tenant

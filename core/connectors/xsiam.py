@@ -235,11 +235,13 @@ class XsiamConnector(Connector):
                     tenant_ledger_key(base),
                     per_minute=tuning.xsiam_max_requests_per_minute())
             except (QuotaBreakerOpen, RequestBudgetExhausted) as e:
+                n = max(1, int(e.retry_after_seconds))
                 return PullResult(
                     ok=False, connector=self.kind, code=codes.XSIAM_QUOTA_ERROR,
-                    error=str(e),
-                    detail={"pages": pages, "path": path,
-                            "retry_after_seconds": max(1, int(e.retry_after_seconds))})
+                    error=("CortexSim's own per-tenant request budget refused this "
+                           f"request and the tenant was not contacted; retry in {n}s"),
+                    detail={"pages": pages, "path": path, "refused_locally": True,
+                            "retry_after_seconds": n})
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
@@ -466,7 +468,9 @@ class XsiamConnector(Connector):
         for start in range(0, len(ids), self._ID_CHUNK):
             r = one(ids[start:start + self._ID_CHUNK])
             if not r.ok:
-                r.detail = {**r.detail, "pages": merged.detail["pages"] + 1}
+                # A locally refused chunk sent no request; a failed one sent one.
+                sent = 0 if r.detail.get("refused_locally") else 1
+                r.detail = {**r.detail, "pages": merged.detail["pages"] + sent}
                 return r
             merged.incidents.extend(r.incidents)
             merged.observations.extend(r.observations)

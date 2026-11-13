@@ -67,7 +67,7 @@ from engine.outcome import (
 )
 from events import event_bus
 from connectors.xsiam import IssueReadError
-from integrations.xsiam.codes import remediation_for
+from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION, remediation_for
 from integrations.xsiam.ledger import tenant_ledger_key
 from integrations.xsiam.tenant_url import normalize_tenant_base_url
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
@@ -243,11 +243,14 @@ async def reconcile_run(
         # which GET /api/credentials/integrations returns. The connector already
         # keeps the tenant's response BODY out of that string (log only); this is
         # the second half of that boundary.
-        await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
-        await db.commit()
+        local = bool((pull.detail or {}).get("refused_locally"))
+        if not local:  # our own budget refusing says nothing about the credential
+            await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
+            await db.commit()
         detail = dict(pull.detail or {})
         detail["code"] = pull.code
-        detail["remediation"] = remediation_for(pull.code)
+        detail["remediation"] = (LOCAL_REFUSAL_REMEDIATION if local
+                                 else remediation_for(pull.code))
         raise ReconcileError("CONNECTOR_PULL_FAILED", pull.error or "pull failed",
                              detail=detail)
 
@@ -294,7 +297,7 @@ async def reconcile_run(
             ctx["incidents_truncated"] = bool((ipull.detail or {}).get("truncated"))
         else:
             ctx["incidents_error"] = {"code": ipull.code, "error": ipull.error,
-                                      "remediation": remediation_for(ipull.code)}
+                                      "remediation": _remediation_for_pull(ipull)}
 
     # The case ledger is built BEFORE scoring so ctx["merge_class"] is there for
     # the one guard that reads it; it is disposition CONTEXT and writes nothing
@@ -631,7 +634,7 @@ async def build_and_store_case_ledger(
                                   f"the case read failed ({cpull.code}); no merge claim is made",
                                   skipped)
                 ledger["case_read"] = {"code": cpull.code,
-                                       "remediation": remediation_for(cpull.code)}
+                                       "remediation": _remediation_for_pull(cpull)}
                 return ledger
             try:
                 cases = cases_from_reply(cpull.incidents, case_ids)
@@ -723,6 +726,13 @@ async def _add_bridge(db: AsyncSession, run: Run, ledger: dict,
     ledger["bridge"] = diag
     ledger["merge_reason"] = f"{ledger['merge_reason']}; ip-to-host bridge: {diag['code']}"
     return spent
+
+
+def _remediation_for_pull(pull: Any) -> Optional[str]:
+    """The remediation for a failed pull; a local refusal never blames the tenant."""
+    if (pull.detail or {}).get("refused_locally"):
+        return LOCAL_REFUSAL_REMEDIATION
+    return remediation_for(pull.code)
 
 
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
@@ -2308,10 +2318,14 @@ async def auto_reconcile_once(
                 # sweep rather than walking the remaining runs into the same wall.
                 if _is_quota_error(e):
                     breaker_tripped = True
+                    local = bool((e.detail or {}).get("refused_locally")) \
+                        if isinstance(e.detail, dict) else False
                     logger.warning(
-                        "auto-reconcile: tenant reported quota exhaustion (%s) — "
-                        "sweep circuit-broken. %s", e.code,
-                        codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
+                        "auto-reconcile: %s (%s) — sweep circuit-broken. %s",
+                        "CortexSim's own request budget refused the pull"
+                        if local else "tenant reported quota exhaustion", e.code,
+                        LOCAL_REFUSAL_REMEDIATION if local
+                        else codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
                 else:
                     logger.debug("auto-reconcile skip run=%s kind=%s: %s",
                                  run.run_id, kind, e.code)

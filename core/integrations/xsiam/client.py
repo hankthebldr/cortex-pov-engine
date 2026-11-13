@@ -273,9 +273,24 @@ class XsiamClient:
                 tenant_ledger_key(self._base),
                 per_minute=tuning.xsiam_max_requests_per_minute())
         except (QuotaBreakerOpen, RequestBudgetExhausted) as exc:
+            n = max(1, int(exc.retry_after_seconds))
             raise XsiamQuotaError(
-                str(exc), retry_after_seconds=max(1, int(exc.retry_after_seconds)),
+                "CortexSim's own per-tenant request budget refused this request "
+                f"and the tenant was not contacted; retry in {n}s ({exc})",
+                retry_after_seconds=n, local=True,
             ) from exc
+
+    def _tenant_429(self) -> XsiamQuotaError:
+        """Open the shared breaker for a tenant 429; the error is marked tripped."""
+        from connectors import tuning  # noqa: PLC0415
+
+        from .ledger import ledger, tenant_ledger_key  # noqa: PLC0415
+        ledger.trip(tenant_ledger_key(self._base),
+                    cooldown_seconds=tuning.xsiam_breaker_cooldown())
+        err = XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)",
+                              upstream_status=429)
+        err.tripped = True
+        return err
 
     async def healthcheck(self) -> dict[str, Any]:
         async with self._client() as c:
@@ -297,6 +312,8 @@ class XsiamClient:
         """
         async with self._client() as c:
             resp = await c.get("/public_api/v1/healthcheck")
+        if resp.status_code == 429:
+            raise self._tenant_429()
         raw = resp.headers.get("date")
         if not raw:
             return None
@@ -328,15 +345,7 @@ class XsiamClient:
         if resp.status_code == 401:
             raise XsiamAuthError("XSIAM rejected the API key (HTTP 401)")
         if resp.status_code == 429:
-            from connectors import tuning  # noqa: PLC0415
-
-            from .ledger import ledger, tenant_ledger_key  # noqa: PLC0415
-            ledger.trip(tenant_ledger_key(self._base),
-                        cooldown_seconds=tuning.xsiam_breaker_cooldown())
-            err = XsiamQuotaError("XSIAM rate/quota limit hit (HTTP 429)",
-                                  upstream_status=429)
-            err.tripped = True
-            raise err
+            raise self._tenant_429()
         if resp.status_code >= 400:
             raise XsiamApiError(
                 f"XSIAM API error (HTTP {resp.status_code})",

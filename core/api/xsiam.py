@@ -53,7 +53,11 @@ async def _budgeted(client: Any):
         async with tenant_budget(client):
             yield
     except (ledger_mod.QuotaBreakerOpen, ledger_mod.DailyBudgetExhausted) as exc:
-        raise XsiamQuotaError(str(exc)) from exc
+        raise XsiamQuotaError(
+            str(exc), local=True,
+            retry_after_seconds=(max(1, int(exc.retry_after_seconds))
+                                 if hasattr(exc, "retry_after_seconds") else None),
+        ) from exc
 
 
 def _ledger_snapshot(client: Any) -> dict[str, Any]:
@@ -82,8 +86,10 @@ async def test_tenant(name: str, session: AsyncSession = Depends(get_db)) -> dic
             else:
                 raise
     except XsiamError as exc:
-        await store.mark_integration_verified(name, ok=False, error=exc.detail)
-        await session.commit()
+        # A refusal by CortexSim's own budget says nothing about the credential.
+        if not getattr(exc, "local", False):
+            await store.mark_integration_verified(name, ok=False, error=exc.detail)
+            await session.commit()
         raise
     await store.mark_integration_verified(name, ok=True)
     await session.commit()
