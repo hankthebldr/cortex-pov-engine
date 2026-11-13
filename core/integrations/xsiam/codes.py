@@ -32,6 +32,7 @@ XSIAM_PARSE_ERROR = "XSIAM_PARSE_ERROR"
 XSIAM_CAPABILITY_MISSING = "XSIAM_CAPABILITY_MISSING"
 XQL_WRITE_STAGE_REFUSED = "XQL_WRITE_STAGE_REFUSED"
 XQL_REQUEST_SHAPE_INVALID = "XQL_REQUEST_SHAPE_INVALID"
+XQL_RESULT_TRUNCATED = "XQL_RESULT_TRUNCATED"
 
 ALL_CODES = (
     XSIAM_AUTH_ERROR,
@@ -44,6 +45,7 @@ ALL_CODES = (
     XSIAM_CAPABILITY_MISSING,
     XQL_WRITE_STAGE_REFUSED,
     XQL_REQUEST_SHAPE_INVALID,
+    XQL_RESULT_TRUNCATED,
 )
 
 #: What the DC should DO, and — critically — what the failure means for the
@@ -96,6 +98,12 @@ REMEDIATION: dict[str, str] = {
     ),
     XQL_REQUEST_SHAPE_INVALID: (
         "send body.request_data as an object with a non-empty string `query`"
+    ),
+    XQL_RESULT_TRUNCATED: (
+        "The query matched at least a full page of rows and the reply did not "
+        "confirm the total, so the count is unknown. Push the count into XQL "
+        "(`| comp count()`, `| dedup <field>`) so the answer fits one page. "
+        "Verdicts stay `pending` — a partial page proves nothing either way."
     ),
 }
 

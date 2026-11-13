@@ -205,7 +205,17 @@ compares it to your threshold. No probe may ever write to a tenant.
 `GET /api/assertions/probes` publishes this live, including each probe's
 `failure_conditions`.
 
-### Three probe rules worth internalising
+### Four probe rules worth internalising
+
+**Make the answer fit one page.** Probes read one page of results, fetched at
+a limit of 100 rows. A page that comes back full may be the first slice of a
+larger answer, and every probe counts, dedups, divides or takes the earliest of
+what it holds: 150 of 300 alerts read off two full pages is 100 %. So a full
+page resolves `PROBE_RESULT_TRUNCATED` → `pending`, unless the reply's
+`number_of_results` says the set is exactly that page. A larger
+`number_of_results` is not taken as the count until PM-XQL-03 confirms what the
+field counts. Push the counting into XQL (`| comp count()`,
+`| dedup <field>`) so the tenant returns the answer, not the rows behind it.
 
 **Do not put the threshold in the query.** A query ending
 `| filter sla_seconds <= 300` returns zero rows for a tenant that remediated in
@@ -319,10 +329,11 @@ into real scored passes with **zero** additional engine work.
 | tenant registered, `capabilities` lacks `"xql"` (D-18) | `XQL_NOT_AUTHORISED` | pending | **pending** — run `reason: xql_not_authorised`, `queries_issued: 0`, no client built |
 | tenant unreachable | `TENANT_UNREACHABLE` | pending | **pending** |
 | 401 from the tenant | `PROBE_AUTH_FAILED` | pending | **pending** |
-| 429 / XQL quota | `PROBE_QUOTA_EXHAUSTED` | pending | **pending** |
-| unknown dataset / bad field / unsafe context value | `PROBE_QUERY_FAILED` | pending | **pending** |
+| 429 / XQL quota, or CortexSim's own per-tenant budget spent (breaker open, daily cap) | `PROBE_QUOTA_EXHAUSTED` | pending | **pending** |
+| unknown dataset / bad field / unsafe context value / a write stage (`\| target`) the runner refused | `PROBE_QUERY_FAILED` | pending | **pending** |
 | trigger never raised | `PRECURSOR_MISSING` | pending | **pending** |
 | ratio population below `min_population` | `POPULATION_EMPTY` | pending | **pending** |
+| a full result page the reply does not confirm is the whole answer | `PROBE_RESULT_TRUNCATED` | pending | **pending** |
 | tenant lacks the required add-on | `NOT_ENTITLED` | not_applicable | **not_applicable** |
 | trigger proven, outcome absent | `OUTCOME_ABSENT` | **fail** | **fail** |
 | measured, threshold missed | `MEASURED` | **fail** | **fail** |

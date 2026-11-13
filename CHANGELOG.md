@@ -1048,6 +1048,42 @@ escape every string behind it.
 - **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
   Broker VM targets, which wait on confirmation of the applets in use.
 
+### Fixed — assertion probes no longer measure a page the API may have truncated
+
+- **A full page of XQL results was scored as the tenant's whole answer.** The
+  assertion runner fetches one page at a limit of 100 rows, and every probe
+  counts, dedups, divides or takes the earliest of what comes back. With 300
+  alerts in the population and 150 in the numerator, `xql_ratio` read
+  "100 of 100 = 100 %", a pass against a 90 % bar. `xql_rows` and
+  `xql_distinct` could never clear a bar above what one page shows, and
+  `xql_latency` could report `OUTCOME_ABSENT` (a hard fail) when the outcome
+  that followed the trigger sat past row 100. A page that comes back full now
+  resolves `PROBE_RESULT_TRUNCATED` → `pending`, unless the reply's
+  `number_of_results` equals the page. A larger `number_of_results` is not
+  taken as the count while PM-XQL-03 asks what the field counts. A count
+  pushed into XQL (`| comp count()`) is one row and is unaffected. Scenario
+  Tier-2 verification (`xsiam_query_runner`) is unchanged. Guard: the
+  truncated-page cases in `tests/engine/test_assertions.py`, which drive the
+  production runner over a tenant stand-in that pages like the API; 4 of 7
+  failed before the change.
+- **A query the runner refused was reported as an unreachable tenant.** The
+  probe failure classifier matched exception class names exactly, so a
+  subclass fell through to `TENANT_UNREACHABLE`. An assertion whose query
+  carries a `| target` write stage is refused before it is sent, yet its
+  remediation told the DC to check network egress. It now reads
+  `PROBE_QUERY_FAILED`; the verdict was and stays `pending`. Guard:
+  `test_a_write_stage_the_runner_refuses_reads_as_a_query_fault_not_an_outage`,
+  which failed before the change.
+- **A spent CortexSim query budget was also reported as an unreachable
+  tenant.** The per-tenant ledger around the assertion runner raises its own
+  errors when its breaker is open or its daily cap
+  (`CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY`) is spent; they are not XSIAM errors,
+  so they fell through to `TENANT_UNREACHABLE`. They now read
+  `PROBE_QUOTA_EXHAUSTED`, whose remediation names CortexSim's budget as well
+  as the tenant's. Verdict unchanged (`pending`). Guard:
+  `test_a_spent_query_budget_reads_as_quota_not_as_an_unreachable_tenant`
+  (breaker open, daily cap spent), both failed before the change.
+
 ### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
 
 - **The tab drew its board before the scenario request came back.** The
