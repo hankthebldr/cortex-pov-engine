@@ -231,8 +231,8 @@ function ConsoleShell() {
     const actions = [
       {
         id: 'stage-tool',
-        title: 'Stage a tool payload',
-        meta: 'pull a public tool onto this SimCore',
+        title: 'Make a tool ready',
+        meta: 'fetch a public tool onto this instance',
         kind: 'Action',
         icon: getDestination('adapters')?.icon || null,
         onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
