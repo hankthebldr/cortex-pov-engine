@@ -28,17 +28,24 @@ Field names and types are PANW's; the descriptions are ours.
   page documents it bare). The catalog client removes `reply`, so the tools read
   the inner object. A missing list key, a missing or non-integer total, or a row
   without its identifier is `XSIAM_PARSE_ERROR`, never an empty list.
-- **Projection.** Each shape keeps only its identifier, name, type or status and
-  time fields (`fields`); free text a tenant user wrote goes under
-  `row["tenant_text"]` (`tenant_text`); `required` is the identifier. Every string
+- **Projection.** Each shape keeps only its identifier, type or status and time
+  fields (`fields`). Free text a tenant user wrote goes under `row["tenant_text"]`
+  (`tenant_text`), and so does every name someone chose for an object (an asset's
+  display name, an assessment profile's or a custom standard's name), the same
+  class as the issue and case names and `assigned_prevention_policy` the reader
+  frames (spec §7.7). An identifier-like value such as `AUDIT_OWNER_EMAIL` stays a
+  field. `required` is the identifier. Every string
   is neutralised and capped as the tenant reader's are (invisible, control and
   bidi characters stripped, 200 characters; lists and objects 50 entries), with
   per-row `text_truncated` / `list_truncated`. Epoch-millisecond and ISO times
   become UTC ISO-8601 through the repo's one coercer.
 - **Framing.** Every result carries `data.data_notice`; a parse error's `detail`
   names reply keys (identifier-shaped only) and types, never a tenant value.
-- **Paging.** The tools send `{"request_data": {}}` and cap rows client-side with
-  `limit`/`offset`; `truncated` is `offset + returned < total`.
+- **Paging.** The tools send `{"request_data": {}}`, one request, and cap rows
+  client-side with `limit`/`offset` over that one reply: `offset` cannot reach past
+  the tenant's first page (audit log 100 rows, vulnerabilities 500, assets the
+  tenant's default; assessment results are not paginated). `truncated` is
+  `offset + returned < total`, so `truncated: true` says the tenant holds more.
 - **Licences.** Each page names the licence it needs; a tenant without it answers
   402, which the route maps to `XSIAM_API_ERROR`. That is a licence refusal, not
   an absence of rows.
@@ -102,7 +109,8 @@ No free text, so no `tenant_text`.
 (PANW's XSOAR integration page for `xdr-get-tenant-info` lists licence outputs
 only, too). PD9 still spends one request per tenant-evidence snapshot on this op
 and reads a top-level `version` if a tenant sends one
-(`connectors/tenant_evidence.py::TENANT_VERSION_KEY`); on a reply as documented the
+(`connectors/tenant_evidence.py::TENANT_VERSION_KEY`; a string, or a number recorded
+as its text; any other type is `null` with `XSIAM_PARSE_ERROR`); on a reply as documented the
 snapshot records `tenant_version: null` with `TENANT_VERSION_NOT_REPORTED`. The live
 check decides whether a version key exists; if none does, PD9's extra request
 records nothing and should be dropped or repointed.
@@ -152,7 +160,7 @@ records nothing and should be dropped or repointed.
 |---|---|---|
 | `xdm.asset.id` | string | `asset_id` (**required**) |
 | `xdm.asset.strong_id` | string | `strong_id` |
-| `xdm.asset.name` | string, nullable | `name` |
+| `xdm.asset.name` | string, nullable | `tenant_text.name` (a display name the resource's creator chose) |
 | `xdm.asset.type.name` | string | `type_name` |
 | `xdm.asset.type.category` | string | `type_category` |
 | `xdm.asset.type.class` | string | `type_class` |
@@ -220,10 +228,10 @@ Vulnerability records are PANW intelligence, not text a tenant user wrote: no
 | `AssessmentProfile` key | type | projected as |
 |---|---|---|
 | `id` | string | `id` (**required**) |
-| `name` | string | `name` |
+| `name` | string | `tenant_text.name` (user-named) |
 | `enabled` | boolean | `enabled` |
 | `standard_id` | string | `standard_id` |
-| `standard_name` | string | `standard_name` |
+| `standard_name` | string | `tenant_text.standard_name` (a custom standard is user-named) |
 | `asset_group_id` | integer | `asset_group_id` |
 | `report_type` | string | `report_type` |
 | `creation_time` | string (date-time) | `creation_time` (ISO-8601 UTC) |

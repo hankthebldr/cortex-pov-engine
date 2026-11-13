@@ -325,9 +325,11 @@ async def _tenant_version(read: _Read, conn: Any, cfg: Any) -> tuple[Optional[st
     if TENANT_VERSION_KEY not in res.detail["tenant_info"]:
         return None, TENANT_VERSION_NOT_REPORTED
     value = res.detail["tenant_info"][TENANT_VERSION_KEY]
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = str(value)                          # a numeric version, e.g. 3.6
     version = neutralise_text(value)[0] if isinstance(value, str) else None
     if not version or not version.strip():
-        return None, codes.XSIAM_PARSE_ERROR       # present, but not a version string
+        return None, codes.XSIAM_PARSE_ERROR       # present, but not a version string or number
     return version, OK
 
 

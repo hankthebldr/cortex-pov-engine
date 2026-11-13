@@ -337,6 +337,12 @@ def test_snapshot_records_tenant_version_or_null(client, session_factory, inject
                     force="true")
     assert (p["tenant_version"], p["tenant_version_code"]) == ("3.6.0", "OK")
 
+    # A numeric version is a version too; any other type is not one.
+    _, p = read_now(default_tenant(tenant_info={**TENANT_INFO, "version": 3.6}), force="true")
+    assert (p["tenant_version"], p["tenant_version_code"]) == ("3.6", "OK")
+    _, p = read_now(default_tenant(tenant_info={**TENANT_INFO, "version": True}), force="true")
+    assert (p["tenant_version"], p["tenant_version_code"]) == (None, "XSIAM_PARSE_ERROR")
+
     # A failed sub-read: null with its code; the request still counts.
     _, p = read_now(default_tenant(status={"tenant_info": 500}), force="true")
     assert (p["tenant_version"], p["tenant_version_code"]) == (None, "XSIAM_API_ERROR")

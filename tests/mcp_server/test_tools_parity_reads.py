@@ -80,6 +80,10 @@ async def _assert_framed(res, mcp, tool: str) -> dict:
     description = await _description(mcp, tool)
     assert DATA_NOTICE in description
     assert "no tenant key" in description and "xsiam_tenant" in description
+    if tool.endswith(".list"):
+        # One tenant request, paged client-side: an agent must not expect
+        # offset to reach rows the tenant never sent.
+        assert "offset cannot reach past" in description, description
     _never_in_sentences(res)
     return data
 
@@ -210,9 +214,10 @@ def _asset(asset_id: str = "a-1", **extra: Any) -> dict:
             "issues_breakdown": {"critical": 1}, **extra}
 
 
-ASSET_FIELDS = {"asset_id", "strong_id", "name", "type_name", "type_category", "type_class",
+ASSET_FIELDS = {"asset_id", "strong_id", "type_name", "type_category", "type_class",
                 "provider", "realm", "cloud_region", "first_observed", "last_observed",
                 "tenant_text", "text_truncated", "list_truncated"}
+ASSET_TEXT = {"name", "resource_group", "hierarchy_path"}
 
 
 @pytest.mark.asyncio
@@ -227,7 +232,9 @@ async def test_asset_list_projects_allowlisted_fields_with_tenant_text_framed(st
     assert (data["total"], data["truncated"]) == (2, True)
     (row,) = data["assets"]
     assert set(row) == ASSET_FIELDS
-    assert (row["asset_id"], row["name"], row["type_name"]) == ("a-1", "web-01", "Host")
+    assert set(row["tenant_text"]) == ASSET_TEXT
+    assert (row["asset_id"], row["type_name"]) == ("a-1", "Host")
+    assert row["tenant_text"]["name"] == "web-01"
     assert row["first_observed"] == TS_ISO
     assert row["tenant_text"]["hierarchy_path"] == "org/prod"
     assert _paths_holding(data, KOI) == [".assets[0].tenant_text.resource_group"]
@@ -260,9 +267,29 @@ async def test_asset_get_projects_allowlisted_fields_with_tenant_text_framed(stu
     assert (sent["method"], sent["path"]) == ("GET", f"{ASSETS_PATH}/a-77")
     asset = data["asset"]
     assert set(asset) == ASSET_FIELDS
+    assert set(asset["tenant_text"]) == ASSET_TEXT
     assert asset["asset_id"] == "a-77" and asset["last_observed"] == TS_ISO
     assert _paths_holding(data, KOI) == [".asset.tenant_text.resource_group"]
     assert res.structuredContent["evidence"]["truncated"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool, path, args, at", [
+    ("xsiam.asset.list", ASSETS_PATH, {}, ".assets[0].tenant_text.name"),
+    ("xsiam.asset.get", f"{ASSETS_PATH}/a-77", {"asset_id": "a-77"}, ".asset.tenant_text.name"),
+])
+async def test_planted_asset_name_lands_only_under_tenant_text(stubbed_app, tool, path, args, at):
+    """Whoever creates a resource chooses its display name: it is tenant text (§7.7)."""
+    asset = _asset("a-77", **{"xdm.asset.name": PLANTED, "xdm.asset.resource_group": "rg-1"})
+    reply = {"data": [asset], "metadata": {"total_count": 1, "filter_count": 1}}
+    res, mcp = await _read(stubbed_app, tool, path, reply, **args)
+
+    data = await _assert_framed(res, mcp, tool)
+    assert _paths_holding(data, KOI) == [at]
+    record = data["assets"][0] if tool == "xsiam.asset.list" else data["asset"]
+    name = record["tenant_text"]["name"]
+    assert len(name) == 200 and "‮" not in name and "​" not in name
+    assert record["text_truncated"] is True and "name" not in record
 
 
 @pytest.mark.asyncio
@@ -358,14 +385,31 @@ async def test_assessment_result_list_projects_allowlisted_fields_with_tenant_te
     assert (sent["method"], sent["path"]) == ("POST", ASSESSMENT_PATH)
     assert (data["total"], data["truncated"]) == (1, False)
     (row,) = data["assessment_results"]
-    assert set(row) == {"id", "name", "enabled", "standard_id", "standard_name",
-                        "asset_group_id", "report_type", "creation_time", "modification_time",
+    assert set(row) == {"id", "enabled", "standard_id", "asset_group_id", "report_type",
+                        "creation_time", "modification_time",
                         "tenant_text", "text_truncated", "list_truncated"}
-    assert (row["id"], row["standard_name"], row["enabled"]) == ("ap-1", "CIS AWS 3.0", True)
+    assert row["tenant_text"] == {"name": "CIS AWS baseline", "standard_name": "CIS AWS 3.0",
+                                  "description": row["tenant_text"]["description"]}
+    assert (row["id"], row["enabled"]) == ("ap-1", True)
     assert row["creation_time"] == "2026-11-01T10:00:00+00:00"
     assert row["modification_time"] == "2026-11-02T08:00:00+00:00"   # converted, not stripped
     assert _paths_holding(data, KOI) == [".assessment_results[0].tenant_text.description"]
     assert "a@example.com" not in json.dumps(data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["name", "standard_name"])
+async def test_planted_assessment_names_land_only_under_tenant_text(stubbed_app, key):
+    """Assessment-profile and custom standard names are user-named: tenant text (§7.7)."""
+    reply = _assessment_reply()
+    reply["data"][0].update(description="baseline", **{key: PLANTED})
+    res, mcp = await _read(stubbed_app, "xsiam.assessment_result.list", ASSESSMENT_PATH, reply)
+
+    data = await _assert_framed(res, mcp, "xsiam.assessment_result.list")
+    assert _paths_holding(data, KOI) == [f".assessment_results[0].tenant_text.{key}"]
+    (row,) = data["assessment_results"]
+    assert len(row["tenant_text"][key]) == 200 and row["text_truncated"] is True
+    assert key not in row
 
 
 @pytest.mark.asyncio

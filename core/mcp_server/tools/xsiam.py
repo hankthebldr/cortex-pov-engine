@@ -315,15 +315,17 @@ _AUDIT_FIELDS = (("audit_id", "AUDIT_ID", None), ("owner_email", "AUDIT_OWNER_EM
 _AUDIT_TEXT = (("owner_name", "AUDIT_OWNER_NAME"), ("description", "AUDIT_DESCRIPTION"),
                ("reason", "AUDIT_REASON"), ("asset_names", "AUDIT_ASSET_NAMES"))
 #: Asset rows carry flat dotted XDM keys ("xdm.asset.id" is one key, not a path).
+#: The asset's name is a display name whoever creates the resource chooses, so
+#: it is tenant text (spec §7.7), not an allowlisted field.
 _ASSET_FIELDS = (("asset_id", "xdm.asset.id", None), ("strong_id", "xdm.asset.strong_id", None),
-                 ("name", "xdm.asset.name", None), ("type_name", "xdm.asset.type.name", None),
+                 ("type_name", "xdm.asset.type.name", None),
                  ("type_category", "xdm.asset.type.category", None),
                  ("type_class", "xdm.asset.type.class", None),
                  ("provider", "xdm.asset.provider", None), ("realm", "xdm.asset.realm", None),
                  ("cloud_region", "xdm.asset.cloud.region", None),
                  ("first_observed", "xdm.asset.first_observed", "ts"),
                  ("last_observed", "xdm.asset.last_observed", "ts"))
-_ASSET_TEXT = (("resource_group", "xdm.asset.resource_group"),
+_ASSET_TEXT = (("name", "xdm.asset.name"), ("resource_group", "xdm.asset.resource_group"),
                ("hierarchy_path", "xdm.asset.hierarchy.path"))
 _VULNERABILITY_FIELDS = (("vulnerability_id", "vulnerability_id", None),
                          ("cvss_severity", "cvss_severity", None), ("cvss_score", "cvss_score", None),
@@ -332,13 +334,15 @@ _VULNERABILITY_FIELDS = (("vulnerability_id", "vulnerability_id", None),
                          ("first_published", "first_published", "ts"),
                          ("last_modified", "last_modified", "ts"))
 #: PANW documents no field of an assessment result row; these are the
-#: assessment-profile model's, provisional until a live reply is recorded.
-_ASSESSMENT_FIELDS = (("id", "id", None), ("name", "name", None), ("enabled", "enabled", None),
-                      ("standard_id", "standard_id", None), ("standard_name", "standard_name", None),
+#: assessment-profile model's, provisional until a live reply is recorded. The
+#: profile name and a custom standard's name are user-named: tenant text.
+_ASSESSMENT_FIELDS = (("id", "id", None), ("enabled", "enabled", None),
+                      ("standard_id", "standard_id", None),
                       ("asset_group_id", "asset_group_id", None), ("report_type", "report_type", None),
                       ("creation_time", "creation_time", "ts"),
                       ("modification_time", "modification_time", "ts"))
-_ASSESSMENT_TEXT = (("description", "description"),)
+_ASSESSMENT_TEXT = (("name", "name"), ("standard_name", "standard_name"),
+                    ("description", "description"))
 
 
 class _Shape(NamedTuple):
@@ -878,7 +882,9 @@ def _fields(shape: _Shape) -> str:
 def _parity_fields(shape: _Shape) -> str:
     what = (f"Returns {shape.out_key}, one object" if shape.object_reply else
             f"Returns {shape.out_key}[] capped by limit/offset (default 50, max 200) with total + "
-            f"truncated")
+            f"truncated. The tenant is read in ONE request and limit/offset page over that one "
+            f"reply, so offset cannot reach past the tenant's first page; truncated: true says "
+            f"the tenant holds more than was returned")
     text = (f"; free text only under tenant_text: {', '.join(t[0] for t in shape.tenant_text)}"
             if shape.tenant_text else "")
     return (f"{what}; allowlisted fields only: {', '.join(f[0] for f in shape.fields)}{text}. "
@@ -892,15 +898,19 @@ _PARITY_NOTES = {
     "tenant_info": ("The tenant's licence record: every documented key, verbatim (an expiration "
                     "of 0 means not licensed; units are not documented, so none is read as a "
                     "date). PANW's page documents no platform-version field in it."),
-    "audit_logs": "Console and API management actions, newest first as the tenant sorts them.",
-    "assets": "The asset inventory (POST /public_api/v1/assets); total is metadata.total_count.",
+    "audit_logs": ("Console and API management actions, newest first as the tenant sorts them; "
+                   "the tenant's page is its default 100 rows."),
+    "assets": ("The asset inventory (POST /public_api/v1/assets); total is metadata.total_count; "
+               "the tenant's page is its default (at most 1,000 assets)."),
     "asset": ("One asset by asset_id (GET /public_api/v1/assets/{id}). asset_id is one path "
               "segment: '/', '\\', '.' and '..' are refused with XSIAM_CONFIG_ERROR before any "
               "tenant call; an unknown id is the tenant's 404, XSIAM_API_ERROR."),
-    "vulnerabilities": "Vulnerability intelligence (UVEM): CVE id, CVSS, EPSS, CISA KEV, dates.",
-    "assessment_results": ("Compliance assessment-profile results. PANW documents no field of a "
-                           "result row: the allowlist follows the assessment-profile model, and "
-                           "a row without id is XSIAM_PARSE_ERROR."),
+    "vulnerabilities": ("Vulnerability intelligence (UVEM): CVE id, CVSS, EPSS, CISA KEV, dates; "
+                        "the tenant's page is its default 500 rows (its page token is not "
+                        "followed)."),
+    "assessment_results": ("Compliance assessment-profile results; the API does not paginate. "
+                           "PANW documents no field of a result row: the allowlist follows the "
+                           "assessment-profile model, and a row without id is XSIAM_PARSE_ERROR."),
 }
 
 

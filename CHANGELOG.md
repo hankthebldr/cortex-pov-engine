@@ -883,16 +883,21 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   catalog op through SimCore's executor route, on the per-tenant request budget,
   with the `xsiam_tenant` credential only; they hold no tenant key.
 - Fields are allowlisted from PANW's public API pages
-  (`docs/reference/xsiam-platform-apis/15-parity-reads.md`); free text sits
-  under `tenant_text`, every string is neutralised and capped as the tenant
-  reader's are, and every result carries `data.data_notice`. An unrecognised
-  reply is `XSIAM_PARSE_ERROR`, never an empty list or object, and its detail
-  names reply keys, never a tenant value. `asset.get` refuses an id that is not
-  one path segment with `XSIAM_CONFIG_ERROR` before any tenant call.
+  (`docs/reference/xsiam-platform-apis/15-parity-reads.md`). Free text, and any
+  name someone chose for an object (an asset's display name, an assessment
+  profile's or a custom standard's name), sits under `tenant_text`; every string
+  is neutralised and capped as the tenant reader's are, and every result carries
+  `data.data_notice`. An unrecognised reply is `XSIAM_PARSE_ERROR`, never an
+  empty list or object, and its detail names reply keys, never a tenant value.
+  `asset.get` refuses an id that is not one path segment with
+  `XSIAM_CONFIG_ERROR` before any tenant call. The list tools read the tenant
+  once and page over that reply, so `offset` cannot reach past the tenant's
+  first page; `truncated: true` says it holds more.
 - Each tenant-evidence snapshot spends one more request, last, on
   `get_tenant_info` and records `tenant_version` with `tenant_version_code`. PANW
   documents licence fields only in that reply, so a reply as documented records
-  `null` with `TENANT_VERSION_NOT_REPORTED`; a failed or refused sub-read records
+  `null` with `TENANT_VERSION_NOT_REPORTED` (a `version` the tenant does send is
+  recorded, a number as its text); a failed or refused sub-read records
   `null` with its code. It never changes the snapshot's code, status or
   completeness. `make check-mcp-boot` now fails below 52 tools.
 

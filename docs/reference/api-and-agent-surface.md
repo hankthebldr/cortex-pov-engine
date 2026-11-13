@@ -327,7 +327,7 @@ The snapshot `payload`: `reader` (the three routes this credential reads, honour
 - `endpoint` — `as_of` (`read_at`, not run time) and one `record`; `ENDPOINT_NOT_FOUND` (degraded) when none; `AMBIGUOUS_ENDPOINT_RECORDS` lists each record's `endpoint_id` and `last_seen` in `records` and claims none. Every record is projected before any is matched to the host, so a record missing `endpoint_id` or `endpoint_name` is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`.
 - `agreement` — the two-class join with the matcher (§7.3 of the tenant-reader spec): `both {id, name_host_window}`, `matcher_only`, `reader_only`, `unjoinable`, `ambiguous`, `id_space {probed, hit, no_hit, code}` and `pairs`. A failed probe leaves `both.id`, `hit` and `no_hit` null, never `no_hit`. Under `UNSCOPED` nothing can join: `both` (both classes), `matcher_only`, `reader_only` and `ambiguous` are null and `pairs` is empty, while `id_space` and `unjoinable` stay. The probe reads only observations linked to a Result.
 
-Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` reply's `version` and `OK`, or `null` with `TENANT_VERSION_NOT_REPORTED` (the tenant answered and named no version; PANW's documented reply is licence fields only, so this is the expected value until a live reply shows otherwise, see `docs/reference/xsiam-platform-apis/15-parity-reads.md`), `QUOTA_REFUSED` (either budget refused it, or an earlier request in the read was refused and it was not sent) or the sub-read's `XSIAM_*` code. Its request counts in `queries_issued`, and it never changes the snapshot's `code`, `status` or `complete`: a refusal of it is not latched onto the read. Then `tenant_verified` (copied from the Readiness surface's count, never computed here), `statement` and `data_notice`. Per-section codes: `OK`, the `XSIAM_*` codes, `ENDPOINT_NOT_FOUND`, `AMBIGUOUS_ENDPOINT_RECORDS`, `UNSCOPED`, `QUOTA_REFUSED`. `status` is `ok` only when the read's `code` and every section's code are `OK`. Tenant text appears only under `tenant_text`; no `detail` or `remediation` quotes the tenant.
+Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` reply's `version` (a string, or a number as its text; any other type is `null` with `XSIAM_PARSE_ERROR`) and `OK`, or `null` with `TENANT_VERSION_NOT_REPORTED` (the tenant answered and named no version; PANW's documented reply is licence fields only, so this is the expected value until a live reply shows otherwise, see `docs/reference/xsiam-platform-apis/15-parity-reads.md`), `QUOTA_REFUSED` (either budget refused it, or an earlier request in the read was refused and it was not sent) or the sub-read's `XSIAM_*` code. Its request counts in `queries_issued`, and it never changes the snapshot's `code`, `status` or `complete`: a refusal of it is not latched onto the read. Then `tenant_verified` (copied from the Readiness surface's count, never computed here), `statement` and `data_notice`. Per-section codes: `OK`, the `XSIAM_*` codes, `ENDPOINT_NOT_FOUND`, `AMBIGUOUS_ENDPOINT_RECORDS`, `UNSCOPED`, `QUOTA_REFUSED`. `status` is `ok` only when the read's `code` and every section's code are `OK`. Tenant text appears only under `tenant_text`; no `detail` or `remediation` quotes the tenant.
 
 > The single-run SSE route lives in the dedicated `events` router (`core/api/events.py`)
 > but its path falls under `/api/runs/{run_id}/...`; the global stream is
@@ -2778,13 +2778,21 @@ other named tools use, so it is charged to the per-tenant request budget, takes
 only an `xsiam_tenant` credential (a reconcile-only vault answers
 `NO_TENANT_CONFIGURED` before any request) and holds no tenant key.
 
-- **Allowlisted.** A row (or the one object) carries only the identifier, name,
-  type or status and time fields recorded from PANW's public pages in
-  `docs/reference/xsiam-platform-apis/15-parity-reads.md`; free text a tenant user
-  wrote sits under `tenant_text`. Every string, `tenant_text` or not, is
+- **Allowlisted.** A row (or the one object) carries only the identifier, type or
+  status and time fields recorded from PANW's public pages in
+  `docs/reference/xsiam-platform-apis/15-parity-reads.md`. Free text a tenant user
+  wrote sits under `tenant_text`, and so does any name someone chose for an object
+  (an asset's display name, an assessment profile's and a custom standard's name),
+  as the reader frames issue and case names (§7.7); an identifier-like value such
+  as the audit log's `owner_email` stays a field. Every string, `tenant_text` or not, is
   neutralised and capped as the tenant reader's are (200 characters, lists 50),
   with per-row `text_truncated` / `list_truncated`. Times are UTC ISO-8601;
   `tenant_info` values are verbatim (an expiration of 0 means not licensed).
+- **One tenant request.** The four list tools read the tenant once and page
+  client-side over that reply, so `offset` cannot reach past the tenant's first
+  page (audit log 100 rows, vulnerabilities 500, assets the tenant's default;
+  assessment results are not paginated); `truncated: true` says the tenant holds
+  more. Each description says so.
 - **Never empty by accident.** An unrecognised reply (a missing list or total key,
   a row without its identifier, a by-id reply holding no record or several) is
   `XSIAM_PARSE_ERROR` at the route's count, and its `detail` names reply keys and
