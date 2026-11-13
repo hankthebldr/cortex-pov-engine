@@ -525,6 +525,26 @@ function FitOnReady({ fitKey, onReady, softKey = null, canSoftFit = () => false 
   return null
 }
 
+/**
+ * What the soft refit follows: how many rule nodes React Flow has measured, and
+ * how far down the lowest one reaches. The count alone refit once, when the
+ * rule first appeared. But the rail sits below the tallest MEASURED step card,
+ * so a card that grows afterwards (a late font swap, a chip that arrives with
+ * its card) moved the rule down under the "+ Add step" button with no refit;
+ * CI caught it at 1024x768. Rule nodes are not draggable, so their bottom edge
+ * moves only when the layout does, never under the DC's hand.
+ */
+function ruleExtentKey(nodes) {
+  let count = 0
+  let bottom = 0
+  for (const n of nodes) {
+    if (n.type !== 'rule' || !n.measured?.height) continue
+    count += 1
+    bottom = Math.max(bottom, Math.round((n.position?.y || 0) + n.measured.height))
+  }
+  return `${count}:${bottom}`
+}
+
 // ─── Design / Lanes / Run pane ───────────────────────────────────────────────
 
 const DesignGraph = forwardRef(function DesignGraph({
@@ -1066,7 +1086,7 @@ const DesignGraph = forwardRef(function DesignGraph({
               // Counted from what React Flow has MEASURED, not from the derived
               // graph: a refit issued the render the rule is derived runs before
               // the node exists in the store, and frames the chain without it.
-              softKey={`${liveNodes.filter((n) => n.type === 'rule' && n.measured?.height).length}`}
+              softKey={ruleExtentKey(liveNodes)}
               canSoftFit={canSoftFit}
             />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
