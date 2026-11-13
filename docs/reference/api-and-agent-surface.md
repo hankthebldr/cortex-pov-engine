@@ -2703,7 +2703,7 @@ name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
 | `cortexsim.assertion.get` | `cortexsim_assertion_get` | cortexsim | read | simcore | `GET /api/assertions/{id}` |
 | `cortexsim.assertion.run` | `cortexsim_assertion_run` | cortexsim | write | tenant when live | `POST /api/assertions/{id}/run` (`dry_run` default true) |
 | `cortexsim.run.tenant_evidence.get` | `cortexsim_run_tenant_evidence_get` | cortexsim | read | simcore | `GET /api/runs/{id}/tenant-evidence` (stored snapshot, no tenant call) |
-| `cortexsim.run.tenant_evidence.read` | `cortexsim_run_tenant_evidence_read` | cortexsim | read | tenant (`xsiam` or `xsiam_tenant`, as reconcile resolves it) | `POST /api/runs/{id}/tenant-evidence[?force&integration]` (its only write is the snapshot) |
+| `cortexsim.run.tenant_evidence.read` | `cortexsim_run_tenant_evidence_read` | cortexsim | read | tenant (`xsiam` or `xsiam_tenant`, as reconcile resolves it), scope `alert.read` | `POST /api/runs/{id}/tenant-evidence[?force&integration]` (its only write is the snapshot) |
 | `xsiam.operation.list` | `xsiam_operation_list` | xsiam | read | none | `GET /api/xsiam/operations` |
 | `xsiam.operation.get` | `xsiam_operation_get` | xsiam | read | none | `GET /api/xsiam/operations/{op_id}` |
 | `xsiam.operation.execute` | `xsiam_operation_execute` | xsiam | by op | tenant (read ops) | `POST /api/xsiam/tenants/{name}/operations/{op_id}` |
@@ -2724,22 +2724,29 @@ name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
 | `xsiam.case.search` | `xsiam_case_search` | xsiam | read | tenant (`xsiam_tenant`), scope `alert.read` | `POST /api/xsiam/tenants/{name}/cases/search` |
 | `xsiam.endpoint.get` | `xsiam_endpoint_get` | xsiam | read | tenant (`xsiam_tenant`), scope `alert.read` | `POST /api/xsiam/tenants/{name}/endpoints/get` |
 
-**The tenant-reader tools (in-container tenant reader spec §7.6, §7.7).** The last
-five rows above project the run tenant-evidence routes (§1.3) and the general
-tenant reads (§1.16 Readiness, "General tenant reads"). The MCP layer never
-reaches the tenant itself and holds no tenant key.
+**The tenant-reader tools (in-container tenant reader spec §7.6, §7.7).** Five rows
+above: `cortexsim.run.tenant_evidence.get` and `.read` (after `cortexsim.assertion.run`)
+project the run tenant-evidence routes (§1.3); `xsiam.issue.search`,
+`xsiam.case.search` and `xsiam.endpoint.get` (the last three rows) project the
+general tenant reads (§1.16 Readiness, "General tenant reads"). The MCP layer
+never reaches the tenant itself and holds no tenant key.
 
 - `xsiam.issue.search`, `xsiam.case.search` and `xsiam.endpoint.get` take the
   routes' request fields (`since`/`until`, `ids`, `methods`, `severities`,
   `limit` ≤ 200, `offset`; `hostnames` 1..100) plus `tenant`, a vault name. Only
-  an `xsiam_tenant` credential serves them: a vault with only reconcile's `xsiam`
-  kind answers `NO_TENANT_CONFIGURED` before any request. `data` is the route's
-  reply, passed through; `evidence.queries_issued` is the route's count.
+  an `xsiam_tenant` credential serves them: when only reconcile's `xsiam` kind is
+  configured, the tool answers `NO_TENANT_CONFIGURED` before any request and names
+  that credential as an `xsiam` (reconcile) one. `data` is the route's reply,
+  passed through; `evidence.queries_issued` is the route's count. `data.truncated`
+  is the route's `true`/`false`/`null` verbatim (`null`: the tenant sent no count,
+  so whether rows were left behind is unknown); the boolean `evidence.truncated`
+  errs safe and is `false` only when the route says `false`.
 - `cortexsim.run.tenant_evidence.read` passes `force` and `integration` to the
   route, which resolves the credential as reconcile does. `evidence.queries_issued`
-  is `snapshot.queries_issued` when the reply says `read: true`, and 0 when it
-  says `read: false`: a `TENANT_EVIDENCE_READ_RECENTLY` reply returns an earlier
-  read's snapshot, and that read's count is not this call's. `.get` makes zero
+  is `snapshot.queries_issued` when the reply says `read: true` (a null count
+  stays `null`), and 0 when it says `read: false`: a
+  `TENANT_EVIDENCE_READ_RECENTLY` reply returns an earlier read's snapshot, and
+  that read's count is not this call's. `.get` makes zero
   tenant queries.
 - **Tenant text is data.** Every result carrying tenant rows, the five new tools
   and `xsiam.alert.list`, `xsiam.incident.list` and `xsiam.correlation_rule.list`,

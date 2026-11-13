@@ -41,7 +41,13 @@ from integrations.xsiam.queries import result_rows, row_count
 
 from ..client import SimCoreShapeUnknown, encode_segment
 from ..envelope import Envelope, _iso_utc, ledger_from_snapshot
-from ..errors import MCP_WRITE_NOT_EXECUTABLE, REMEDIATION, TOOL_NOT_BACKED, McpToolError
+from ..errors import (
+    MCP_WRITE_NOT_EXECUTABLE,
+    NO_TENANT_CONFIGURED,
+    REMEDIATION,
+    TOOL_NOT_BACKED,
+    McpToolError,
+)
 from ..registry import (
     TenantCallError,
     ToolContext,
@@ -389,10 +395,34 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
 
 
 # --- the tenant reader: issues, cases, endpoints (tenant-reader spec §7.4) -------
-#: Keys every general read route returns, on success and on its ``pending`` reply.
-_READER_KEYS = ("tenant", "total_count", "filter_count", "truncated", "unrecognised_values",
-                "excluded_non_security", "duplicate_rows", "queries_issued", "data_notice",
-                "ledger")
+#: The reply keys this layer reads; the rest of the route's reply passes through.
+_READER_KEYS = ("truncated", "queries_issued", "ledger")
+_RECONCILE_KIND = "xsiam"
+
+
+async def _reader_tenant(ctx: ToolContext, tenant: Optional[str]) -> str:
+    """The ``xsiam_tenant`` credential to read through. When none qualifies and
+    reconcile's ``xsiam`` kind is what is configured, the refusal says so and
+    names the kind these reads need, instead of an empty list of names."""
+    try:
+        return await resolve_tenant(ctx, tenant, kind=TENANT_KIND, must_exist=True)
+    except McpToolError as err:
+        if err.code != NO_TENANT_CONFIGURED:
+            raise
+        reconcile = sorted(i["name"] for i in (await readiness(ctx))["integrations"]
+                           if isinstance(i, dict) and i.get("kind") == _RECONCILE_KIND
+                           and (tenant is None or i.get("name") == tenant))
+        if not reconcile:
+            raise
+        names = ", ".join(f"'{n}'" for n in reconcile)
+        noun = (f"is an '{_RECONCILE_KIND}' (reconcile) credential" if len(reconcile) == 1
+                else f"are '{_RECONCILE_KIND}' (reconcile) credentials")
+        raise McpToolError(
+            NO_TENANT_CONFIGURED, f"{names} {noun}, not '{TENANT_KIND}'",
+            f"{names} {noun}, which serve alert read-back only; xsiam.issue.search, "
+            f"xsiam.case.search and xsiam.endpoint.get need an '{TENANT_KIND}' credential. "
+            "Nothing was queried",
+            remediation=REMEDIATION[NO_TENANT_CONFIGURED], basis="authored") from err
 
 
 async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: str) -> Envelope:
@@ -402,8 +432,10 @@ async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: s
     ``xsiam`` one is ``NO_TENANT_CONFIGURED`` before any request. The count is
     the route's. Its own ``pending`` reply (the credential changed between the
     readiness read and the call) passes through at the count it reports, 0.
+    ``data.truncated`` is the route's true/false/null verbatim; the boolean
+    ``evidence.truncated`` errs safe and is false only when the route says false.
     """
-    tenant = await resolve_tenant(ctx, args.tenant, kind=TENANT_KIND, must_exist=True)
+    tenant = await _reader_tenant(ctx, args.tenant)
     take_token(ctx)
     path = f"/api/xsiam/tenants/{encode_segment(tenant)}/{segment}"
     where = f"POST {path}"
@@ -416,7 +448,7 @@ async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: s
                                       coro=ctx.client.post(path, json=args.to_body()))
     data = {**body, "data_notice": DATA_NOTICE}
     return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=body["ledger"],
-                             truncated=body["truncated"] is True,
+                             truncated=body["truncated"] is not False,
                              answered=body.get("status") != "pending")
 
 
@@ -606,11 +638,13 @@ _TENANT = ("Tenant by vault name (kind xsiam_tenant; the only one is the default
 _NO_KEY = ("Holds no tenant key: SimCore reads with the xsiam_tenant credential stored at tenant "
            "onboarding, under the per-tenant request budget run evidence and reconcile share.")
 _READER = ("Returns the route's reply: {rows}[] (allowlisted; free text only under tenant_text), "
-           "tenant, total_count, filter_count, truncated (null when the tenant sent no count; "
-           "that is unknown, not false), "
-           "unrecognised_values, excluded_non_security, duplicate_rows, queries_issued, ledger and "
-           "data_notice. A reconcile-only xsiam credential is NO_TENANT_CONFIGURED with no call; an "
-           "unrecognised reply is XSIAM_PARSE_ERROR, never an empty list.")
+           "tenant, total_count, filter_count, truncated, unrecognised_values, "
+           "excluded_non_security, duplicate_rows, queries_issued, ledger and data_notice. "
+           "data.truncated is the route's true/false/null verbatim (null: the tenant sent no "
+           "count, so whether rows were left behind is unknown); evidence.truncated is true "
+           "unless the route says false. A reconcile-only xsiam credential is "
+           "NO_TENANT_CONFIGURED with no call; an unrecognised reply is XSIAM_PARSE_ERROR, never "
+           "an empty list.")
 
 
 def _fields(shape: _Shape) -> str:
