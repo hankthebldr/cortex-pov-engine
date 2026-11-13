@@ -16,16 +16,16 @@ from drifting apart silently.
 | Design-side last sync | 2026-09-14T18:14:52Z · tree `a4130a9fe88a` |
 | Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
+| Current handoff | **Design v26 → `ui/src`, 2026-11-13:** `docs/design/2026-11-13-v26-design-to-code.md` |
 
-> **The development track is AHEAD of the design track, and the design is now
-> catching up.** The minimal pass (2026-10, below) collapsed the 17-surface
-> rail to a task rail, added a Get started checklist, narrowed the colour rule
-> and removed every seed-data surface. By 2026-11-12 the canvas had taken the
-> task rail, the tab strip, Get started, Firewall and the immersive Composer,
-> but not the colour rule, the retirements or the pages built since. Henry
-> approved bringing it level with the code (v1.2.0 parity pass, below); until
-> that lands, this file — not the canvas — is the source of truth for IA and
-> colour.
+> **The design track is AHEAD again.** On 2026-11-13 the design track handed
+> off v26, rebuilt from `dev` and moved past it: three numbered journeys on the
+> rail, Components back as the hub for eight components, one Configure frame,
+> a run lifecycle with an explicit read-back step, and Cortex green as the
+> primary-action and selected colour (v26 §9). v26 is now the source of truth
+> for IA and colour; it is being implemented in its §11 build order, one PR per
+> slice. Until a slice lands, the sections below describe what the code ships,
+> not what the design wants.
 
 ## Minimal pass (2026-10)
 
@@ -201,14 +201,13 @@ https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig
 - **Already level:** the `_ds` token files, the 15 rail icons and the PANW
   lockup are byte-identical; the canvas had the task rail, the tab strip, Get
   started, Firewall and the immersive Composer.
-- **Design owed (Henry approved the full plan; the design agent edits the
-  canvas):** the minimal colour rule and its token values (`--ac-soft`,
-  `--ac-line`, `--warn`, `--crit`, `--info`, opaque `--pos-soft/-line`, dark
-  `--zebra`), the light theme, retiring the flow bar, phase eyebrows, Setup,
-  Components and Tenant validation, redrawing the screens built or rebuilt
-  since September, and removing the seed data. Components to add: New POV run,
-  TTP cards and UC / TC index as their own pages, Runs · Compare, Lab, and the
-  VerdictReason chip.
+- **Design owed, superseded:** the audit's list (adopt the minimal colour rule,
+  retire Components, redraw the newer screens, strip seed data) was approved on
+  2026-11-12 and overtaken the next day by the v26 handoff, which keeps the
+  seed-data rule but reverses the colour rule and brings Components back (§9 of
+  the handoff). Components the canvas still did not draw at the audit: New POV
+  run, TTP cards and UC / TC index as their own pages, Runs · Compare, Lab, and
+  the VerdictReason chip.
 - **Code owed, fixed in this pass:**
 
   | PR | Fix |
