@@ -1376,6 +1376,48 @@ escape every string behind it.
   reads the gateway key from the environment, and no longer asks the model for
   an invented hash. The new prompt has not been run against a model.
 
+### Security — a scenario's scratch directory can no longer be taken over by another local user
+
+- **What was wrong.** Twelve scenarios keep their artifacts in a fixed directory
+  under `/tmp`, `/var/tmp` or `/dev/shm` and made it with `mkdir -p`. A local
+  user who created that directory first owned it, because `mkdir -p` succeeds on
+  an existing directory and a later `chmod` does not change the owner. Steps
+  then wrote into it and ran files from it. Reproduced in a container: with the
+  directory planted, the script SIM-EDR-023's root cron entry runs was swapped
+  and ran as uid 0; racing the gap between `rm -rf` and `mkdir -p` in
+  SIM-KOI-012, the step carried on in the other user's directory in 391 of 400
+  runs.
+- **The fix.** The step that creates the directory removes whatever is at the
+  path and makes it with `mkdir` and no `-p`, so an existing entry stops the
+  step. Every other step that uses it first checks, in one `stat` lookup, that
+  it is a directory, not a symlink, with the mode the creating step gave it and
+  owned by the running user (or by root, where a service account runs inside a
+  root-made directory). After the fix the same race gave 0 of 400 runs in the
+  other user's directory: 7 ran clean and 393 stopped.
+- **Why one lookup.** A first version of the check used three tests (`-d`,
+  `! -L`, `-O`). Where root follows another user's symlink
+  (`fs.protected_symlinks` off), a user exchanging a directory and a symlink
+  between those tests got past it in 73 of 300 passes under dash and 50 of 300
+  under bash. The one-lookup form let none through in the same test.
+- **Which scenarios.** A root step used the directory in SIM-CDR-002, -005,
+  -018, SIM-EDR-023, -024, SIM-KOI-012 and SIM-MP-036. In SIM-MP-019, -024,
+  -032, -035 and -037 the directory belongs to a service account, so the
+  exposure there was that account, not root.
+- **What an operator will notice.** A step run without its creating step now
+  exits 1 with `sandbox … is missing or not ours`. Launching a scenario again
+  removes the previous run's scratch directory first. Under an active attempt
+  to plant the directory, the scenario stops instead of running.
+- **Counts are unchanged.** The guard is a `[ … ]` test over `stat` and `id`, an
+  `echo` and an `exit`: a probe, not an attack action. The lab-readiness and
+  coverage classifiers now treat it as no signal, so a narration step that
+  gained a guard is still counted as narration.
+- **Not fixed here.** Root steps in 64 scenarios write a fixed-name file
+  straight into `/tmp` or `/var/tmp` (120 steps), mostly EAL campaign files; on
+  a kernel with `fs.protected_symlinks` and `fs.protected_regular` off, a
+  planted file or link there has the same effect. Another 45 scenarios create a
+  fixed directory and were not examined. The cards' illustrative payload text
+  still shows `mkdir -p`.
+
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 
 - **A DC enters the tenant-side collectors once and every in-process consumer

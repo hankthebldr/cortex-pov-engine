@@ -296,7 +296,7 @@ steps:
       # process_lineage binds the credential burst to the exploit foothold.
       WEB="${CORTEXSIM_WEB_TARGET:-127.0.0.1}"
       DC="${CORTEXSIM_DC_TARGET:-127.0.0.1}"
-      mkdir -p /tmp/cortexsim-mp019
+      rm -rf /tmp/cortexsim-mp019 && mkdir -m 700 /tmp/cortexsim-mp019 || { echo "sandbox /tmp/cortexsim-mp019 could not be created fresh: something else is at that path" >&2; exit 1; }
       printf 'admin\nsvc-sql\n' > /tmp/cortexsim-mp019/users.txt
       printf 'password\nSummer2026!\n' > /tmp/cortexsim-mp019/pass.txt
       hydra -L /tmp/cortexsim-mp019/users.txt -P /tmp/cortexsim-mp019/pass.txt -t 2 -f "${WEB}" http-get / || true
