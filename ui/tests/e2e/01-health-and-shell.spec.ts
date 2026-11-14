@@ -67,7 +67,7 @@ test.describe('app shell', () => {
     // Catalog, plus Agents and Tenant); pages inside a task are tabs and are
     // addressed by route (see VIEW_ROUTES). gotoView handles both, which is
     // why this list survives IA changes — only how each entry is addressed.
-    for (const name of ['Get started', 'Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch']) {
+    for (const name of ['Get started', 'Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch gate']) {
       await gotoView(page, name)
     }
     // App is still alive after the full tour: the shell chrome is the thing

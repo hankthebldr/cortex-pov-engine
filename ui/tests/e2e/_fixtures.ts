@@ -28,8 +28,8 @@ type Helpers = {
  * redesign did not change. What changed is where each one lives:
  *
  *   - most are now first-class destinations in the rail;
- *   - "Launch" moved inside the guided flow (a hidden destination reachable
- *     from Library and ⌘K), so it is addressed by route rather than by rail;
+ *   - "Launch gate" is a rail item, but a spec arms a scenario with
+ *     `?arm=`, so it is reached by route;
  *   - "Live" / "Evidence" became TABS of a run, not top-level views.
  *
  * Destination-level views navigate by CLICKING the rail, so the nav itself stays
@@ -60,7 +60,9 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   // surfaces still exist and still have behaviour worth guarding. What changed
   // is how you reach them, and that is exactly what this table is for.
   'Environments': { dest: 'environments', hidden: true },
-  'Launch': { dest: 'guided', hidden: true },
+  // The Launch gate (design v33): the one place a run starts. The old
+  // 'Launch' entry pointed at the guided flow, which now redirects here.
+  'Launch gate': { dest: 'preflight' },
   'Live': { dest: 'runs', params: { tab: 'live' } },
   'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
   'EAL Plugins': { dest: 'eal', hidden: true },
