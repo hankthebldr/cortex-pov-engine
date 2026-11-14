@@ -111,6 +111,22 @@ def neutralise_text(value: Any) -> tuple[Optional[str], bool]:
     return text, False
 
 
+#: ``_STRIP`` less tab and line feed: a document keeps its lines.
+_DOC_STRIP = {cp: None for cp in _STRIP if cp not in (0x09, 0x0A)}
+
+
+def neutralise_document(value: Any) -> Optional[str]:
+    """A multi-line document a tenant user wrote (a playbook's or script's YAML),
+    neutralised as :func:`neutralise_text` neutralises a field, except that tab
+    and line feed stay and a carriage return (CR LF or lone CR) becomes a line
+    feed, so the document keeps its lines and no CR can overprint one. Not
+    capped at ``TEXT_CAP``: a document is capped by bytes where it is read.
+    ``None`` stays ``None``."""
+    if value is None:
+        return None
+    return str(value).replace("\r\n", "\n").replace("\r", "\n").translate(_DOC_STRIP)
+
+
 class _Projector:
     """Neutralises each value it is handed and remembers whether any was cut."""
 

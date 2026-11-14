@@ -980,6 +980,31 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   `null` with its code. It never changes the snapshot's code, status or
   completeness. `make check-mcp-boot` now fails below 52 tools.
 
+### Added — playbook and script ZIP reads
+
+- `playbooks/get` and `scripts/get` answer a ZIP holding the object's YAML, and
+  the executor read every reply as JSON, so `OP-PLAYBOOKS-GET` always failed with
+  "non-JSON response" and `xsiam.playbook.list` could never return a playbook.
+  Both ops (`OP-SCRIPTS-GET` is new, taking the catalog to 152 operations, 83 of
+  them reads) are tagged `zip-reply`: the executor fetches the bytes with
+  `XsiamClient.request_archive`, on the per-tenant request budget, asking for an
+  identity body (any other `Content-Encoding` is refused unread) and refusing it
+  past 4 MiB of raw bytes, and reads the archive in memory with stdlib `zipfile`,
+  never extracting it. At most 50 members; a member over 256 KiB, or past 1 MiB
+  in all, or neither stored nor deflated, is refused unread; one that inflates
+  past its declared size is never read past it; non-UTF-8 is `binary: true`. An
+  archive with no member reads as 0 members. A JSON body goes through the shared
+  application-error test, and a body that is neither ZIP nor JSON is
+  `XSIAM_PARSE_ERROR`, never an empty archive.
+- Two MCP tools, `xsiam.playbook.get` and `xsiam.script.get` (by `id` or `name`),
+  close the last two `~/cortex-mcp` parity rows, taking the server to 54 tools
+  (27 `cortexsim.*`, 27 `xsiam.*`). Each member's name and YAML sit only under
+  `tenant_text`, neutralised with line breaks kept, beside `data.data_notice`; they
+  hold no tenant key.
+- `xsiam.playbook.list` is registered, not backed: the public API has no playbook
+  listing, so it answers `TOOL_NOT_BACKED` and names `xsiam.playbook.get`.
+  `make check-mcp-boot` now fails below 54 tools.
+
 ### Fixed — Results shows each result's alert id and source
 
 - `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import re
 
-#: In order: 27 ``cortexsim.*`` then 25 ``xsiam.*``. Appendix A of the MCP server
+#: In order: 27 ``cortexsim.*`` then 27 ``xsiam.*``. Appendix A of the MCP server
 #: spec, with the tenant reader's tools (its spec §7.6) after
 #: ``cortexsim.assertion.run`` and after ``xsiam.ingest.status``, then its six
-#: named parity reads (§8.1) after ``xsiam.endpoint.get``.
+#: named parity reads (§8.1) after ``xsiam.endpoint.get``, then its two ZIP
+#: reads (§8.1) last.
 CANONICAL_IDS: tuple[str, ...] = (
     "cortexsim.health.get",
     "cortexsim.readiness.get",
@@ -66,6 +67,8 @@ CANONICAL_IDS: tuple[str, ...] = (
     "xsiam.asset.get",
     "xsiam.vulnerability.list",
     "xsiam.assessment_result.list",
+    "xsiam.playbook.get",
+    "xsiam.script.get",
 )
 
 WIRE_PATTERN = re.compile(r"^[a-z0-9_]{1,48}$")

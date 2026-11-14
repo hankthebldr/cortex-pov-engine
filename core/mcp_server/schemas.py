@@ -256,6 +256,13 @@ class AssetGetIn(TenantIn):
     asset_id: str
 
 
+class ArchiveGetIn(TenantIn):
+    """``xsiam.playbook.get`` / ``xsiam.script.get``: the vendor filter, sent as
+    ``{"request_data": {"filter": {"field": by, "value": value}}}``."""
+    by: Literal["id", "name"]
+    value: str
+
+
 class ReportIn(_In):
     run_id: str
     format: Literal["markdown"] = "markdown"
