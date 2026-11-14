@@ -357,7 +357,8 @@ def test_readiness_ready_partial_needs(catalog):
     ready = _ready(catalog, sc, {"xdr_agent:a1", "ngfw_traffic"})
     assert ready == {
         "scenario_id": "SIM-TEST-001", "state": "ready", "scorable": 2, "total": 3, "underived": 1,
-        "route_blocked": 0, "unevaluated": 0, "not_open": [], "agent_scoped_evaluated": True,
+        "route_blocked": 0, "unevaluated": 0, "not_open": [], "doors": ["ngfw_traffic", "xdr_agent"],
+        "agent_scoped_evaluated": True,
     }
 
     partial = _ready(catalog, sc, {"xdr_agent:a1"})
@@ -369,6 +370,30 @@ def test_readiness_ready_partial_needs(catalog):
     assert needs["state"] == "needs_doors" and needs["scorable"] == 0 and needs["underived"] == 1
     assert needs["not_open"] == [{"door_id": "ngfw_traffic", "detections": 1},
                                {"door_id": "xdr_agent", "detections": 1}]
+
+
+def test_readiness_doors_is_the_detection_source_whatever_the_door_state(catalog):
+    """`doors` names every door a derived detection lands on. `not_open` cannot
+    stand in for it: an open door drops out of `not_open`, and with no agent an
+    agent door is never listed there at all, so a card reading `not_open` as its
+    source would lose the source exactly when the data path works."""
+    sc = _scenario(
+        (ENDPOINT_STEP, [_det("BIOC", "TTP-EDR", "BIOC-XDR"), _det("BIOC", "TTP-EDR", "BIOC-WIN"),
+                         _det("BIOC", "TTP-EDR", "BIOC-DNS")]),
+        (COLLECTOR_STEP, [_det("BIOC", "TTP-IDP", "BIOC-OKTA")]),
+    )
+    expected = ["http_collector", "windows_events", "xdr_agent", "xdr_agent_xth"]
+    every_open = {"xdr_agent:a1", "windows_events", "xdr_agent_xth:a1", "http_collector"}
+    assert _ready(catalog, sc, every_open)["doors"] == expected
+    assert _ready(catalog, sc, set())["doors"] == expected
+    no_agent = _ready(catalog, sc, set(), agent_id=None)
+    assert no_agent["doors"] == expected
+    assert "xdr_agent" not in [d["door_id"] for d in no_agent["not_open"]]
+
+    # Every detection underived: no source, and that reads as an empty list.
+    underived = _scenario((ENDPOINT_STEP, [_det("BIOC", "TTP-EDR", "BIOC-DNS"), _det("IOC", "TTP-EDR", "IOC-1")]))
+    out = _ready(catalog, underived, set())
+    assert out["underived"] == 2 and out["doors"] == []
 
 
 def test_readiness_counts_a_detection_once_per_not_open_door(catalog):

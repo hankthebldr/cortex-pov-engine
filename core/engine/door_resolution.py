@@ -363,6 +363,13 @@ def scenario_readiness(
     each door id against the door's own state (``GET /api/doors``). A detection
     held back by two doors counts once under each, so the per-door counts can sum
     to more than the detections held back.
+
+    ``doors`` is every door id any derived detection names, whatever its state,
+    the agent and the collector route: the scenario's detection source. It does
+    not change with ``open_keys`` or ``agent_id``, so a door that opens never
+    drops out of it the way it drops out of ``not_open``. ``[]`` means no
+    detection was derived (every one is ``underived``); it never means "no
+    door needed".
     """
     if not isinstance(scenario, Mapping):
         raise DoorResolutionError(f"a scenario must be a mapping, got {type(scenario).__name__}")
@@ -371,6 +378,7 @@ def scenario_readiness(
         raise DoorResolutionError(f"scenario {scenario.get('scenario_id')!r}: steps must be a list")
     counts: Counter = Counter()
     not_open: Counter = Counter()
+    doors: set[str] = set()
     for step in steps:
         if not isinstance(step, Mapping):
             raise DoorResolutionError(
@@ -384,10 +392,11 @@ def scenario_readiness(
                 f"expected_detections must be a list")
         for det in detections:
             req = detection_requirement(step, det, catalog=catalog, registry=registry)
-            verdict, doors = _judge(req, open_keys, agent_id)
+            doors.update(door_id for element in req.all_of for door_id in element)
+            verdict, held_by = _judge(req, open_keys, agent_id)
             counts["total"] += 1
             counts[verdict] += 1
-            not_open.update(doors)
+            not_open.update(held_by)
 
     derived = counts["total"] - counts["underived"]
     judged = counts["scorable"] + counts["not_open"] + counts["route_blocked"]
@@ -409,5 +418,6 @@ def scenario_readiness(
         "unevaluated": counts["unevaluated"],
         "not_open": [{"door_id": d, "detections": n}
                      for d, n in sorted(not_open.items(), key=lambda kv: (-kv[1], kv[0]))],
+        "doors": sorted(doors),
         "agent_scoped_evaluated": agent_id is not None,
     }
