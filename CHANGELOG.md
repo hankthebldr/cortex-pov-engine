@@ -77,6 +77,33 @@ scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
 (plane, detection types, use case), and the active tab offers its most common
 tags as chips that filter the list; tags that differ only in case are one chip.
 
+### Added — a launch dry run, and a refused launch writes nothing
+
+`POST /api/runs/preflight` takes the launch body and runs every check
+`POST /api/runs` makes, in the same order, without launching. It returns
+whether the launch would go, the refusal it would get (code and HTTP status),
+every refusal at once, and each check as pass, block or skipped with a reason.
+The checks are one function shared with the launch, so the two cannot
+disagree; a test holds them to the same answer for every refusal code. Before,
+the console could predict about six of the twenty-odd refusals.
+
+Every refusal is now decided before the run row is written. Six refusals used
+to fire after it — the payload shelf, a pull launch with no target, an invalid
+stitch context, a composed run's unenrolled second endpoint, the
+container-agent gate — and left a `failed` run with `not_executed` results in
+the run list. They now leave nothing, like the consent gate always did. One
+order change comes with it: a composed run with an unenrolled endpoint is now
+refused `TARGET_AGENT_NOT_ENROLLED` before the container-agent gate judges its
+other endpoints (it could answer `AGENT_TOOL_ABSENT` first).
+
+New refusal codes: `SCENARIO_NOT_FOUND` (404; was `LAUNCH_FAILED` 422),
+`PULL_TARGET_MISSING` (422), `STITCH_CONTEXT_INVALID` (409; was only in the
+message) and, for the push cluster-consent clause, `CLUSTER_CONSENT_REQUIRED`,
+`PRIVILEGED_K8S_DISABLED` and `CLUSTER_POSTURE_REFUSED` (409). The Composer's
+draft verdict now reports `DRAFT_CHAIN_INVALID` when the chain is invalid
+(it always said `DRAFT_NOT_TC_BOUND`). Spec:
+`docs/superpowers/specs/2026-11-13-launch-gate-one-model-design.md`, slice 1.
+
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
 - **Tool readiness is said in plain words everywhere.** The launch gate row is
@@ -207,6 +234,53 @@ tags as chips that filter the list; tags that differ only in case are one chip.
   workflow legitimately needs more.
 - **New table `tenant_evidence_reads`** is created at boot; no migration step.
 
+### Added — four Linux scenarios promoted from the staged draft library
+
+Four of the seven Linux pairs that `drafts/detection-library/INDEX.md` listed
+with no content finding are now corpus content. Each was rewritten from the
+draft and the alert's reference page by `ttp-engineer`, reviewed
+adversarially by `detection-corpus-reviewer` until it passed (with
+advisories, all closed), given real ids, and landed as its own commit. Each
+draft pair was removed from staging in the same commit. Ground truth after
+the four: **205 scenarios · 203 TTP cards · 1452 step-detections ·
+Correlation 149 (10.3%)** (`docs/reference/ground-truth.md`); the staging
+library holds 362 pairs.
+
+| scenario | card | draft | targeted alert (reference page) | how it is declared |
+|---|---|---|---|---|
+| SIM-EDR-026 crond masquerade from a scratch path | TTP-2026-0552 | TTP-0000-0029 | Masquerading as the Linux crond process | the built-in alert as one ABIOC row, 3 XQL, CR-EDR-0026 |
+| SIM-EDR-027 compressed-archive exfiltration attempt over SSH | TTP-2026-0553 | TTP-0000-0033 | A compressed file was exfiltrated over SSH | alert hunt-only (no SSH session opens); 5 XQL, CR-EDR-0027 |
+| SIM-EDR-028 sudoedit burst in the CVE-2021-3156 probe form | TTP-2026-0554 | TTP-0000-0317 | Sudoedit Brute force attempt | alert hunt-only (needs a trained baseline); 4 XQL, CR-EDR-0028 |
+| SIM-EDR-029 sshpass credential-stuffing burst | TTP-2026-0555 | TTP-0000-0321 | Suspicious sshpass command execution | the built-in alert as one ABIOC row, 4 XQL, CR-EDR-0029 |
+
+- **Every step runs for real.** Each chain works inside one hidden `/var/tmp`
+  sandbox and makes no real network call: SSH clients aim at a `.invalid`
+  host and must fail at name resolution. Each chain removes its own sandbox.
+  - The sandbox is created atomically (`mkdir -m 700`, no `-p`).
+  - Every later step checks the sandbox with one `stat` of type, owner and
+    mode before it touches it. A three-test check was shown racy where
+    `fs.protected_symlinks` is off.
+  - `sshpass`, `ssh`, `scp`, `sudo` and `sudoedit` are declared in
+    `requires_interpreters` where a step needs them, so a host without them
+    reads `not_executed`, not missed.
+- **Lab runs on `pov-target-01` (2026-11-14)**, recorded in
+  `docs/lab/2026-11-14-promoted-linux-drafts-lab-run.md`:
+  - **All four completed** (SIM-EDR-029 after `sshpass` was installed on the
+    endpoint), and every declared XQL row returned rows in the tenant.
+  - **SIM-EDR-027:** step-02's gzip leg was never recorded by the agent, so
+    that row was dropped.
+  - **SIM-EDR-028:** the agent recorded the first 28 of 60 starts, above the
+    floor of 20.
+  - **Correlation rules:** CR-EDR-0026, 0027, 0028 and 0029 were accepted by
+    the tenant as queries and return their chain's row. None is installed.
+  - **Built-in alerts:** none was raised.
+- **Left in staging, with nothing a lab run can fire:**
+  - TTP-0000-0315 *Rare SSH Session* and TTP-0000-0323 *Uncommon SSH session
+    was established*: both need a real SSH session to a second host plus a
+    rarity baseline.
+  - TTP-0000-0318 *Suspicious container orchestration job*: needs a container
+    orchestrator job, and the lab is one VM with no cluster.
+
 ### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
 
 - **A Broken card on a run's chain is now a button** that opens a sheet of
@@ -263,6 +337,60 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — the Launch gate is where a run starts: one Run (design C1, v33 MVP)
+
+The Launch gate page now holds the whole launch, top to bottom: **What runs**
+(the armed scenario) › **Readiness** (its preflight checks and tools) ›
+**Where it runs** (every agent with its state, where an offline agent is
+listed but cannot be chosen, plus the offline bundle) › **What it will do**
+(steps, detections it should raise, who it runs as, "writes to Cortex or the
+firewall: never", who tears down) › an authorisation tick that starts unticked ›
+one **Run**. Run stays disabled until a target is chosen, the tick is given and
+no check blocks, and every reason is listed under it. For the offline bundle,
+Run builds and saves the bundle and records the run, which reads Staged; the
+separate "Download bundle" button is gone. This POVengine's own readiness
+follows below the panel. The "New POV run" and old readiness links land on
+the Launch gate.
+
+### Changed — the warning colour is a muted gold; greens come in shades
+
+Henry, 2026-11-13: the console's yellow is muted to an accent and green
+gets more than one shade. The warning colour is now the design system's
+gold-600 (`#C7AA47`) instead of Strata yellow, in the dark theme's text and
+in both themes' fills and borders (the light theme's warning text keeps its
+AA-dark ochre). Every selected state (tabs, filter chips, segmented buttons,
+the active rail item) now reads the same: the deep green wash with a matte
+green line (the DS panw-green-700). Before, some were white on black and some
+bright green. New tokens `--gr-matte`, `--gr-mid` and `--gr-pale` take the
+DS's panw-green-700, green-500 and green-200, and the drift guard pins them.
+
+Buttons follow one language. Every primary button (the kit's, `pov-btn` and
+the legacy `.btn`) is the same matte deep green with white text in both
+themes (`--btn` `#0A6231`, 7.5:1), with a hover a shade lighter and no glow or
+brightness filter. Secondary buttons are greyscale with a matte-green hover
+line. The error badge ("5 not ok") is greyscale and sized like a button; only
+its "!" carries the gold or coral accent, so it no longer reads as a filled
+alarm next to the action it describes.
+
+### Fixed — the ANALYTICS plane is no longer PANW orange
+
+Design v26 keeps PANW orange for the NGFW family tint alone, but the
+ANALYTICS plane (the correlation engine) still used it as its categorical
+tint, so analytics lanes, dots and chips read as firewall. ANALYTICS now uses
+the DS ink-400 (`#9A9A9A`), a neutral for the engine that sits over every
+plane rather than a sensor. The tokens and the plane vocabulary
+(`povdata/planes.js`) agree, and the drift guard now pins it and asserts it is
+not orange.
+
+### Changed — TTP cards filter by subdomain, not status or platform
+
+The TTP cards page now filters by **Subdomain** (the UC / TC index's
+subdomain for the test cases each card evidences; a card in two subdomains
+matches either) and Tactic. The Status filter, which was "active" for every
+card, and the Platform filter are gone, as are the platform count and the
+platform chips on each card. A card shows its status only when it is a
+draft or deprecated.
+
 ### Added — run detail says why a test case is pending (design C3)
 
 A run whose test-case verdict is pending with nothing scored now says why on
@@ -271,6 +399,73 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 ("nothing executed" or "detectors soaking") and the test case id, with the
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
+
+### Changed — Runs · Compare: two or three finished runs, and no claim without a read back (design C2)
+
+- **The Runs header has a primary Run beside a secondary Compare runs.** Run
+  opens the New POV run page, where Scenarios and ⌘K start every launch. The
+  design draws it as "New run"; that label is not in the console's closed verb
+  set, and Run is.
+- **Compare takes two or three finished runs**, picked as chips that say
+  whether each run has been read back. A running or staged run is not offered.
+  A fourth pick is refused with the reason. It used to list sixteen runs of any
+  status and take four.
+- **One row per expected detection, one column per run**, then four paired
+  rows: Detected, Steps that ran, Fastest detection and Workflow (the scenario
+  the run executed). Each column header carries the run's next action: Read
+  back while it has not been read back, Open results once it has. Both use the
+  console's existing Read back and Results route. Rows line up on the card's
+  detection id; before, they keyed on fields a Result row does not carry.
+- **Only a read-back run says Detected or Not seen.** Any other run says "Ran —
+  not read back" or "Did not run", even when its rows carry a hand mark or an
+  outcome, and its Detected and Fastest detection rows read a dash. The words
+  are the chain's own (`LIVE_STATES`). Before, an unread run's hand-marked row
+  read Detected, and the prevention delta for a report/block pair was drawn for
+  runs that had not been read back; it now waits until both have been. A runs
+  list or a run's results that fail to load are said to have failed, never shown
+  as empty. The coverage percentages and the new/regression flags are gone with
+  the old grid.
+
+### Added — every component page explains itself (design v33 C7)
+
+- **Each of the eight component pages now opens with four plain lines** under
+  its header: What it is · Why the POV needs it · What it unlocks · Where it
+  lives. They stay on every tab (Overview, Setup and the management tab). The
+  copy lives in one module, `ui/src/components/console/componentAbout.js`,
+  keyed by component id; a page whose id has no entry renders without the
+  block rather than borrow another component's words.
+- **The canvas copy was held to what the code does.** The Tenant and Firewall
+  lines say POVengine never writes to either. The Agents line says nearly
+  every scenario step runs on an agent (an offline bundle runs without one),
+  in place of a five-plane list. The HTTP collector line names the log
+  streams the collector-class emitters actually send; AI access and AI
+  runtime scenarios do not go through it. Read-back is described as checking a
+  run's expected detections, not as the source of every Detected result,
+  because a result can still be marked by hand. The XDR Collector and Cortex
+  Engine lines say POVengine maps no scenario to them yet (the canvas had the
+  Engine unlocking ANALYTICS scenarios), and the Cortex paths match the ones
+  their Setup steps already give.
+
+### Added — header Back / Forward and a breadcrumb (design C9)
+
+- **Back and Forward in the header** walk every page, tab, run and deep dive
+  the URL has named, in the order you opened them. ⌘[ / ⌘] on a Mac and
+  Ctrl+[ / Ctrl+] elsewhere do the same, except while focus is in a text field.
+  Each button is disabled when there is nowhere to go.
+- **The router keeps the history, not the browser.** Opening a run, a tab or a
+  card rewrites the current browser entry (`setParams` uses `replaceState`),
+  so `history.back()` could not see those steps. `useConsoleRouter` now keeps
+  its own list (`app/navHistory.js`). A change to a list filter (`q`, `status`,
+  `page`, …) rewrites the current entry rather than adding a step, a retired
+  page that only redirects is never kept, and the browser's own Back onto the
+  previous entry moves the header's position with it.
+- **A breadcrumb beside the buttons: journey › page › object.** The journey is
+  the rail group, the page is the rail item and the page itself when it is a
+  tab ("Catalog › UC / TC index"), and the object is the run, scenario, card,
+  test case, package or component the URL opens. Every crumb but the last is a
+  link; the last is the current page, drawn in the selected state. When the
+  header is crowded the outer crumbs shorten first and the bar scrolls below a
+  floor, as its other controls do.
 
 ### Changed — UC / TC index: the proof path, by tab (design C5 / C6)
 
@@ -326,6 +521,28 @@ read-back run of a scenario that evidences it saw a detection.
   detection changed. The two cards' illustrative payloads now run under
   `set -eu`, stop unless the directory they make is root's own 0700 directory,
   and install the checked entry.
+
+- **A root systemd unit and root crontab lines ran programs from `/tmp` paths
+  another user could create (SIM-CDR-006, SIM-CDR-002).** SIM-CDR-006 enabled a
+  `Restart=always` unit whose `ExecStart` was a fixed `/tmp` file the scenario
+  never created, and a root crontab watchdog that re-enabled it every 10
+  minutes. SIM-CDR-002 added a root crontab line that runs `/tmp/.xmr/xmrig`.
+  The beacon does not run a scenario's cleanup and `/tmp` is emptied at boot,
+  so these entries outlived what they pointed at. SIM-CDR-006 now makes its
+  marker in a root-owned 0700 directory, and the unit's `ExecStart` and the
+  watchdog run nothing unless one `stat` lookup reads it that way; otherwise
+  the unit disables itself and the watchdog removes itself. The check is in
+  `ExecStart` because systemd before 243 ignores `ExecCondition=`. The step that
+  makes the directory first retires a unit or watchdog left by an earlier run,
+  and the marker now retires the foothold 45 minutes after install. Both
+  SIM-CDR-002 crontab lines run the miner only from the 0755 directory step-01
+  made, and only while the miner itself is a regular 0755 file owned by the
+  same account. Step-02 extracts the archive with `--no-same-owner
+  --no-same-permissions` and sets the miner's mode, because `tar` run as root
+  otherwise keeps the archive's owner and mode. The two cards' illustrative
+  payloads run under `set -eu`, stop unless
+  the directory they make passes the same check, and install the checked
+  entries. No detection query changed.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
@@ -982,6 +1199,50 @@ read-back run of a scenario that evidences it saw a detection.
   (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
   issue read now raises on a lowercase `data` reply where it used to return
   `{}`.
+- The run read's endpoint record reads the strict `endpoints` envelope too, so a
+  lowercase `data` reply is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`. A
+  strict reply with a row that is not an object raises rather than reading as
+  fewer rows. A refused id probe records `attempted` and `refused_locally` on
+  `agreement.id_space`, as a section does. `xsiam.xql.query` and a live
+  `xsiam.operation.execute` carry a fixed `data_notice` for the tenant's raw
+  values, and a parse error on any named MCP shape names keys and types, never a
+  value. The run case ledger leaves `GET /api/runs/{id}/tenant-evidence`,
+  `cortexsim.run.tenant_evidence.get` and `cortexsim.run.get` projected: a case's
+  `resolve_comment` under `tenant_text`, a rejected `xdr_url` null with
+  `xdr_url_withheld`. `run.get` then adds `data_notice`.
+
+### Added — Results: tenant evidence panel
+
+- Results › Report shows a Tenant evidence panel below the scorecard: the
+  agreement figures with the two-reads statement, the issues credited to the
+  run's host, the issues not credited, their cases, the run's case ledger and
+  the endpoint record as of the read (with the ledger's ip-to-host bridge code).
+- Display only, and read on request only. Opening the page sends one `GET` of
+  the stored snapshot and nothing polls. The tenant is read only when the DC
+  presses the panel's refresh button, which sends one metered read per press
+  (a double click sends one) and never changes a score or verdict.
+- Every degraded state is a sentence, never an empty table: not read, no
+  credential, no run window, unscoped, zero attributed, truncated, truncation
+  unknown, quota refused and a failed section with its code and remediation.
+  Tenant-written names render as text, and a case link is followed only when it
+  is https on `paloaltonetworks.com`.
+- A quota refusal names whose budget refused the read: this instance's own (the
+  tenant was not asked), the tenant's rate limit (HTTP 429), or, when the stored
+  read does not say, neither. It also says what was counted: floors, complete
+  issue rows, rows of unknown completeness, or nothing. A read inside the minimum
+  interval says a new read is possible now rather than "in 0 s", and the case
+  panel shows "link withheld" for a case link it will not follow, never the link's
+  text.
+- The case panel's read line no longer shows the integration's name, on Results
+  and on Run detail, and a failed request renders a fixed sentence by its code,
+  never the error's own text.
+- Read back on a run that already has a verdict (Results, and the run page's
+  case panel) asks first: it reads the tenant and may change the verdict, and the
+  confirm says refreshing tenant evidence never does. Cancel posts nothing, and
+  the first focus is on Cancel. The unread phase's Read back stays one click.
+- Run detail shows the case panel once (the evidence tab no longer embeds a
+  second one), a run that has not been read back shows its tenant evidence, and
+  the scorecard's "XSIAM Stitch" tile is now "Analytics plane" (same figure).
 
 ### Changed — one per-tenant request budget; any 429 trips once
 
@@ -1021,6 +1282,9 @@ read-back run of a scenario that evidences it saw a detection.
   with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
+- API reference §9.2 now leads with the stdio launcher as the way to verify runs;
+  the HTTP `/mcp` registration is optional and its example reads the token from
+  an environment variable.
 
 ### Added — MCP tools for the tenant reader
 

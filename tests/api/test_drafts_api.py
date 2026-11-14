@@ -311,6 +311,27 @@ def test_launchable_endpoint_unbound(client):
     assert lb["reasons"]  # names the fix
 
 
+def test_launchable_names_the_chain_refusal_the_launch_returns():
+    """An invalid chain is refused ``DRAFT_CHAIN_INVALID`` by ``POST /api/runs``;
+    this verdict said ``DRAFT_NOT_TC_BOUND`` whatever the reason, so the
+    Composer named the wrong fix. A stand-in row: the save-time schema already
+    refuses an empty command, and the launch gate re-checks it anyway."""
+    from types import SimpleNamespace
+
+    from api.drafts import _launchable
+
+    row = SimpleNamespace(
+        scenario_id="SIM-DRAFT-chain", status="draft",
+        uc_ref="UCS-EDR-01", tc_ref="UNBOUND", tc_refs=None,
+        steps=[{"id": "step-01", "command": "",
+                "expected_detections": [{"detection_id": "d", "detection_type": "BIOC"}]}],
+    )
+    lb = _launchable(row)
+    assert lb["chain_valid"] is False
+    assert lb["launchable"] is False
+    assert lb["refusal_code"] == "DRAFT_CHAIN_INVALID"
+
+
 def test_launchable_endpoint_404_for_missing(client):
     resp = client.get("/api/scenarios/drafts/SIM-DRAFT-nope/launchable")
     assert resp.status_code == 404

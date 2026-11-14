@@ -103,7 +103,8 @@ describe('LaunchView — PowerShell push bundle', () => {
     installRoutes(routes(() => ps1Response('SIM-EDR-013')))
     render(<LaunchView scenario={WIN_SCENARIO} selectedTarget={PUSH_TARGET} />)
     await userEvent.selectOptions(await screen.findByLabelText(/Bundle format/i), 'powershell')
-    await userEvent.click(screen.getByRole('button', { name: /Download bundle/i }))
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }))
     await waitFor(() => expect(savedAs).toEqual(['cortexsim-SIM-EDR-013.ps1']))
     expect(formatOf(downloadUrls[0])).toBe('powershell')
   })
@@ -112,7 +113,8 @@ describe('LaunchView — PowerShell push bundle', () => {
     installRoutes(routes(() => ps1Response('SIM-EDR-013', { disposition: false })))
     render(<LaunchView scenario={WIN_SCENARIO} selectedTarget={PUSH_TARGET} />)
     await userEvent.selectOptions(await screen.findByLabelText(/Bundle format/i), 'powershell')
-    await userEvent.click(screen.getByRole('button', { name: /Download bundle/i }))
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }))
     await waitFor(() => expect(savedAs).toHaveLength(1))
     expect(savedAs[0]).toMatch(/\.ps1$/)
   })
@@ -120,7 +122,8 @@ describe('LaunchView — PowerShell push bundle', () => {
   it('the default download lets the server choose (format=auto) and names by the target it chose', async () => {
     installRoutes(routes(() => ps1Response('SIM-EDR-013', { disposition: false })))
     render(<LaunchView scenario={WIN_SCENARIO} selectedTarget={PUSH_TARGET} />)
-    await userEvent.click(await screen.findByRole('button', { name: /Download bundle/i }))
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Run' }))
     await waitFor(() => expect(savedAs).toHaveLength(1))
     expect(formatOf(downloadUrls[0])).toBe('auto')
     expect(savedAs[0]).toMatch(/\.ps1$/)
@@ -137,11 +140,21 @@ describe('LaunchView — PowerShell push bundle', () => {
 })
 
 describe('LaunchView — a refused download is visible beside the button (UI-04)', () => {
-  it('renders code and the unresolved step ids, and offers one-click PowerShell', async () => {
+  it('a bash bundle of a Windows-only scenario is stopped before the server is asked', async () => {
+    installRoutes(routes(() => ps1Response('SIM-EDR-013')))
+    render(<LaunchView scenario={WIN_SCENARIO} selectedTarget={PUSH_TARGET} />)
+    await userEvent.selectOptions(await screen.findByLabelText(/Bundle format/i), 'bash')
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await waitFor(() => expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/windows-only scenario in a non-PowerShell bundle/))
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
+    expect(savedAs).toEqual([])
+  })
+
+  it('a refusal the gate could not predict renders its code and steps beside Run', async () => {
     let n = 0
     installRoutes(routes((url) => {
       n += 1
-      if (formatOf(url) === 'bash') {
+      if (formatOf(url) === 'auto') {
         return new Response(JSON.stringify(UNSATISFIABLE_POSIX), {
           status: 409, headers: { 'content-type': 'application/json' },
         })
@@ -150,22 +163,20 @@ describe('LaunchView — a refused download is visible beside the button (UI-04)
     }))
     const onError = vi.fn()
     render(<LaunchView scenario={WIN_SCENARIO} selectedTarget={PUSH_TARGET} onError={onError} />)
-    await userEvent.selectOptions(await screen.findByLabelText(/Bundle format/i), 'bash')
-    await userEvent.click(screen.getByRole('button', { name: /Download bundle/i }))
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('BUNDLE_TARGET_UNSATISFIABLE')
     expect(alert).toHaveTextContent('step-01')
-    expect(alert).toHaveTextContent('step-02')
     expect(alert).toHaveTextContent('POSIX_COMMAND_UNAVAILABLE')
     expect(savedAs).toEqual([])
     expect(onError).toHaveBeenCalled()
-
-    await userEvent.click(within(alert).getByRole('button', { name: /Download as PowerShell/i }))
-    await waitFor(() => expect(savedAs).toEqual(['cortexsim-SIM-EDR-013.ps1']))
-    expect(n).toBe(2)
-    expect(formatOf(downloadUrls[1])).toBe('powershell')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // The server chose the target for `auto`, so there is no other format to
+    // offer in one click (bundleRetryFormat), and no run was created.
+    expect(within(alert).queryByRole('button', { name: /Download as/i })).toBeNull()
+    expect(n).toBe(1)
   })
 })
 

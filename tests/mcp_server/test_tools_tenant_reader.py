@@ -513,3 +513,78 @@ async def test_tenant_evidence_read_with_an_unrecorded_count_stays_null():
     assert ev["queries_issued"] is None                 # not known, never 0
     assert ev["tenant_answered"] is True and ev["basis"] == "reachable"
     assert "not known" in ev["statement"]
+
+
+# --- final review I-2: the run case ledger reaches the agent projected -------
+LEDGER_CASE = {
+    "case_id": "900", "status": "resolved_other", "closed_by": "socfw_auto_triage",
+    "sealed": True, "starred": False, "assigned": False, "xdr_url": "javascript:alert(1)",
+    "resolved_at": "2025-11-01T12:40:00", "resolve_comment": PLANTED,
+    "issues_from_run": 2, "issues_other": 0, "issues_closed_first": False,
+}
+LEDGER = {
+    "read_at": "2025-11-01T12:45:00", "basis": "alert_incident_ids", "merge_class": "ONE_CASE",
+    "merge_reason": "one case", "code": "CASE_LEDGER_OK", "shared_with_other_runs": False,
+    "cases": [LEDGER_CASE], "alerts": [],
+}
+
+
+def _assert_projected(ledger: dict) -> None:
+    (case,) = ledger["cases"]
+    comment = case["tenant_text"]["resolve_comment"]
+    assert comment.startswith(KOI) and len(comment) == 200
+    assert "\u202e" not in comment and "\u200b" not in comment
+    assert case["text_truncated"] is True and "resolve_comment" not in case
+    assert case["xdr_url"] is None and case["xdr_url_withheld"] is True
+    assert _paths_holding(ledger, KOI) == [".cases[0].tenant_text.resolve_comment"]
+    for key, value in LEDGER_CASE.items():
+        if key not in ("resolve_comment", "xdr_url"):
+            assert case[key] == value, key
+
+
+@pytest.mark.asyncio
+async def test_tenant_evidence_get_returns_the_case_ledger_projected(stubbed_app):
+    """Through SimCore's real GET route: the stored ledger leaves projected."""
+    from api.tenant_evidence import router
+    from mcp_server.tools.cortexsim import specs as cortexsim_specs
+    from models import Run
+
+    stubbed_app.app.include_router(router, prefix="/api")
+    gen = stubbed_app._override_db()
+    session = await gen.__anext__()
+    try:
+        session.add(Run(run_id="r1", scenario_id="SIM-X", mode="pull", status="complete",
+                        case_ledger=copy.deepcopy(LEDGER)))
+        await session.commit()
+    finally:
+        await gen.aclose()
+
+    res = await call(stubbed_app.mcp(cortexsim_specs()), "cortexsim.run.tenant_evidence.get",
+                     run_id="r1")
+
+    assert not res.isError, res.structuredContent
+    data = res.structuredContent["data"]
+    _assert_projected(data["case_ledger"])
+    assert data["data_notice"] == DATA_NOTICE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ledger, framed", [(LEDGER, True), (None, False),
+                                            ({**LEDGER, "cases": []}, False)])
+async def test_run_get_projects_the_case_ledger_and_frames_its_cases(ledger, framed):
+    run = {"run_id": "r1", "status": "complete", "case_ledger": copy.deepcopy(ledger)}
+    mcp, _ = _mcp({("GET", "/api/runs/r1"): run})
+
+    res = await call(mcp, "cortexsim.run.get", run_id="r1")
+
+    assert not res.isError, res.structuredContent
+    data = res.structuredContent["data"]
+    if framed:
+        _assert_projected(data["case_ledger"])
+        assert data["data_notice"] == DATA_NOTICE
+        description = next(t for t in await mcp.list_tools()
+                           if t.name == wire_name("cortexsim.run.get")).description
+        assert DATA_NOTICE in description
+    else:
+        assert data["case_ledger"] == ledger
+        assert "data_notice" not in data

@@ -14,6 +14,7 @@ import {
   navOwner,
 } from './app/destinations.jsx'
 import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
+import { breadcrumbFor } from './app/breadcrumb.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
 import useComponentStatus from './components/console/useComponentStatus.js'
@@ -50,11 +51,15 @@ export default function AppConsole() {
   )
 }
 
+// A retired id that only forwards: the header's Back never lands on one.
+const isRedirectDestination = (id) => getDestination(id)?.redirect === true
+
 function ConsoleShell() {
   const env = useEnvironment()
   const router = useConsoleRouter({
     defaultDestination: DEFAULT_DESTINATION,
     isValid: isValidDestination,
+    isRedirect: isRedirectDestination,
   })
 
   const [toast, setToast] = useState(null)
@@ -306,6 +311,14 @@ function ConsoleShell() {
     navigate(destination, params)
   }, [dest, navigate])
 
+  // The header's Back / Forward and breadcrumb (design C9).
+  const { back, forward, canBack, canForward } = router
+  const history = useMemo(
+    () => ({ canBack, canForward, onBack: back, onForward: forward }),
+    [canBack, canForward, back, forward],
+  )
+  const crumbs = useMemo(() => breadcrumbFor(dest.id, router.params), [dest.id, router.params])
+
   return (
     // The chain tray wraps the whole shell: AppShell keys each page by its
     // destination, so a tray inside the page would empty on the navigation
@@ -336,6 +349,8 @@ function ConsoleShell() {
         instance={instance}
         onOpenInstance={openInstance}
         instanceTargetLabel={instanceTargetLabel}
+        history={history}
+        crumbs={crumbs}
       >
         {/* Every fetcher below swallows its failure into an empty list, so a
             dead SimCore reads as "nothing configured" on all ten destinations.

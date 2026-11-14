@@ -19,7 +19,7 @@ export const PLANES = [
   ['CDR', 'Cloud runtime', '#00AEC4'],
   ['NDR', 'Network · firewall', '#6EC2D6'],
   ['ITDR', 'Identity threat', '#FFCB06'],
-  ['ANALYTICS', 'Correlation engine', '#FA582D'],
+  ['ANALYTICS', 'Correlation engine', '#9A9A9A'],
   ['CLOUD_APP', 'Cloud app security', '#FDAC96'],
   ['TIM', 'Threat intel', '#E5C148'],
   ['KOI', 'Agentic / supply chain', '#D1755F'],

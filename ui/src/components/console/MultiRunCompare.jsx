@@ -1,76 +1,371 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getRuns, getResultsForRun, getRunPair } from '../../api/client.js'
 import { runIdOf } from '../../api/ids.js'
-import { arePaired, resultStatus, isHitStatus, outcomeMeta, outcomeClass } from '../../outcomes.js'
+import { arePaired } from '../../outcomes.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import { runLifecycle, readBackOf, PHASE } from './runLifecycle.js'
+import { relativeTime, absoluteTime } from './runRows.js'
+import useReadBack from './useReadBack.jsx'
+import {
+  COMPARE_MAX, COMPARE_MIN, COMPARE_FULL, PHASE_STATUS,
+  isComparable, togglePick, buildCompare, cellMeta,
+} from './runCompare.js'
+import { Button, StatusIcon } from './kit/index.js'
+import '../../styles/destinations/run-compare.css'
+
+void React
+
+/** How many finished runs the picker shows before "Show all". */
+const CHOICES_SHOWN = 24
+
+/** The detection column's width, and the narrowest a run column may get. */
+const DET_COL_PX = 240
+const RUN_COL_MIN_PX = 190
+
+/** Results opens on the Report page for that run. */
+function openResultsByHash(id) {
+  window.location.hash = `#/proof?run=${encodeURIComponent(id)}`
+}
+
+function shortId(id) {
+  const s = String(id || '')
+  return s.length > 12 ? s.slice(0, 8) : s
+}
 
 /**
- * MultiRunCompare — side-by-side scorecard for 2-N runs.
+ * MultiRunCompare — Runs · Compare (design change C2).
  *
- * DC use case: "we changed a detection rule, did it improve coverage?"
- * Pick the before-run + the after-run, compare. The comparison view
- * also drives the POV close narrative — "across these three runs over
- * the week, coverage went from 33% → 75% → 100%."
+ * Pick two or three finished runs; each expected detection lines up across
+ * them, so a second attempt shows what changed. The model, and the honesty
+ * rule, live in runCompare.js: only a run that has been read back may say
+ * Detected or Not seen; any other run says "Ran — not read back" or "Did not
+ * run". Each column header carries the run's next action — Read back while it
+ * is unread, Open results once it is — through the console's one Read back
+ * (useReadBack) and the Results route.
  *
- * Reached via a "Compare runs" toggle in the Evidence tab header.
- *
- * Row order: union of all (tid, plane, description) tuples across the
- * picked runs, grouped by step ordering. Each cell shows the run's
- * status for that detection — detected / missed / pending / no-row.
- * Delta highlights when the most-recent run improves vs an earlier
- * one (new detection = signal-teal pulse on the cell border).
+ * Reached at Runs `?compare=1` and from the Compare toggle on Results.
  */
-export default function MultiRunCompare() {
-  const [availableRuns, setAvailableRuns] = useState([])
-  const [selectedIds, setSelectedIds]     = useState([])
-  const [resultsByRun, setResultsByRun]   = useState({})
-  const [loadingRuns, setLoadingRuns]     = useState(true)
-  const [loadingResults, setLoadingResults] = useState(false)
+export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
+  const { scenarios = [] } = useEnvironment()
+  const { reading, outcomes, readBack } = useReadBack()
+  const [runs, setRuns] = useState([])
+  const [loadState, setLoadState] = useState({ loading: true, error: null })
+  const [picked, setPicked] = useState([])
+  const [full, setFull] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+  const [results, setResults] = useState({})
+  // Runs whose read back has landed but whose fresh row has not: they keep
+  // reading as "Reading…" so the column does not flash back to Read back.
+  const [settling, setSettling] = useState(() => new Set())
 
-  // Fetch all available runs once for the picker.
-  useEffect(() => {
-    setLoadingRuns(true)
-    getRuns()
+  const loadRuns = useCallback(() => {
+    return getRuns({ fields: 'summary' })
       .then((data) => {
-        const list = Array.isArray(data) ? data : (data && data.runs) || []
-        setAvailableRuns(list)
+        setRuns(Array.isArray(data) ? data : [])
+        setLoadState({ loading: false, error: null })
       })
-      .catch(() => setAvailableRuns([]))
-      .finally(() => setLoadingRuns(false))
+      .catch((err) => setLoadState({ loading: false, error: err?.message || 'request failed' }))
   }, [])
 
-  // When the picked set changes, fetch any missing run's results.
+  useEffect(() => { loadRuns() }, [loadRuns])
+
+  const finished = useMemo(() => runs.filter(isComparable), [runs])
+  const pickedRuns = useMemo(
+    () => picked.map((id) => finished.find((r) => runIdOf(r) === id)).filter(Boolean),
+    [picked, finished],
+  )
+
+  // Fetch the results of every picked run not yet held. A read back drops a
+  // run's entry and bumps its generation, so an answer from before the read
+  // back can never land over the one after it.
+  const mounted = useRef(true)
+  const generation = useRef({})
+  const inFlight = useRef(new Set())
   useEffect(() => {
-    if (selectedIds.length === 0) return undefined
-    const missing = selectedIds.filter((id) => !resultsByRun[id])
-    if (missing.length === 0) return undefined
-    setLoadingResults(true)
-    Promise.all(
-      missing.map((id) => getResultsForRun(id).then(
-        (d) => [id, {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  useEffect(() => {
+    for (const id of picked) {
+      const gen = generation.current[id] || 0
+      const key = `${id}:${gen}`
+      if (id in results || inFlight.current.has(key)) continue
+      inFlight.current.add(key)
+      getResultsForRun(id).then(
+        (d) => ({
           rows: (d && d.results) || (Array.isArray(d) ? d : []),
           coverage: (d && !Array.isArray(d) && d.coverage) || null,
-        }],
-        ()  => [id, { rows: [], coverage: null }],
-      )),
-    ).then((pairs) => {
-      setResultsByRun((prev) => {
+        }),
+        (err) => ({ error: err?.message || 'request failed' }),
+      ).then((entry) => {
+        inFlight.current.delete(key)
+        if (!mounted.current || (generation.current[id] || 0) !== gen) return
+        setResults((prev) => ({ ...prev, [id]: entry }))
+      })
+    }
+  }, [picked, results])
+
+  // The latest pick, read synchronously: two clicks before a re-render must
+  // both count, and the fourth must still be refused.
+  const pickedRef = useRef(picked)
+  const onToggle = (id) => {
+    const next = togglePick(pickedRef.current, id)
+    setFull(next.refused)
+    if (next.refused) return
+    pickedRef.current = next.picked
+    setPicked(next.picked)
+  }
+
+  const onReadBack = async (id) => {
+    setSettling((prev) => new Set(prev).add(id))
+    try {
+      await readBack(id)
+      await loadRuns()
+      // The read back changed the run's outcomes: read its results again.
+      generation.current[id] = (generation.current[id] || 0) + 1
+      setResults((prev) => {
         const next = { ...prev }
-        for (const [id, rows] of pairs) next[id] = rows
+        delete next[id]
         return next
       })
-      setLoadingResults(false)
-    })
-  }, [selectedIds]) // eslint-disable-line react-hooks/exhaustive-deps
+    } finally {
+      setSettling((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
 
-  // Exactly two picked runs that point at each other are a report/block pair:
-  // the server builds the delta; the console only lays it out.
-  const pairedRuns = useMemo(() => {
-    if (selectedIds.length !== 2) return null
-    const [a, b] = selectedIds.map((id) => availableRuns.find((r) => runIdOf(r) === id))
-    return arePaired(a, b) ? [a, b] : null
-  }, [selectedIds, availableRuns])
-  const pairKey = pairedRuns ? pairedRuns.map(runIdOf).join('+') : null
-  const [pair, setPair] = useState(null)   // { key, delta } | { key, error }
+  const isReading = (id) => reading.has(id) || settling.has(id)
+  const lifecycleOf = (run) => runLifecycle(run, { reading: isReading(runIdOf(run)) })
+  const nameOf = (run) => scenarios.find((s) => (s.scenario_id || s.id) === run.scenario_id)?.name
+    || run.scenario_id || '(scenario unknown)'
+
+  const grid = useMemo(() => {
+    const lifecycles = {}
+    for (const r of pickedRuns) lifecycles[runIdOf(r)] = lifecycleOf(r)
+    return buildCompare({ runs: pickedRuns, lifecycles, results })
+  }, [pickedRuns, results, reading, settling]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const choices = showAll ? finished : finished.slice(0, CHOICES_SHOWN)
+
+  return (
+    <div className="run-compare" data-testid="run-compare">
+      <p className="run-compare__intro">
+        Pick two or three finished runs. Each detection lines up across them, so a second
+        attempt shows what changed. A run that has not been read back makes no detection claim.
+      </p>
+
+      <section className="run-compare__picker" aria-labelledby="run-compare-pick">
+        <h2 id="run-compare-pick" className="run-compare__label">
+          Runs to compare · <span className="mono" data-testid="run-compare-count">{pickedRuns.length}</span> of {COMPARE_MAX}
+        </h2>
+        {loadState.loading ? (
+          <p className="run-compare__note">Loading runs…</p>
+        ) : loadState.error ? (
+          <p className="run-compare__note run-compare__note--error" role="alert" data-testid="run-compare-error">
+            Runs could not be loaded: <span className="mono">{loadState.error}</span>. Nothing is
+            compared until SimCore answers.
+          </p>
+        ) : finished.length === 0 ? (
+          <p className="run-compare__note" data-testid="run-compare-none">
+            No run has finished on this POVengine yet. Compare needs two finished runs.
+          </p>
+        ) : (
+          <>
+            <div className="run-compare__chips">
+              {choices.map((r) => {
+                const id = runIdOf(r)
+                const on = picked.includes(id)
+                const ph = PHASE_STATUS[lifecycleOf(r).phase] || PHASE_STATUS[PHASE.UNREAD]
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={'run-compare__chip' + (on ? ' is-on' : '')}
+                    aria-pressed={on ? 'true' : 'false'}
+                    data-testid="run-compare-chip"
+                    data-run-id={id}
+                    onClick={() => onToggle(id)}
+                    title={absoluteTime(r.started_at) || undefined}
+                  >
+                    <span className="run-compare__chip-name">{nameOf(r)}</span>
+                    <span className="run-compare__chip-meta mono">
+                      {shortId(id)} · {relativeTime(r.started_at)} · {ph.word.toLowerCase()}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {finished.length > CHOICES_SHOWN && (
+              <button type="button" className="run-compare__more" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? `Show the newest ${CHOICES_SHOWN}` : `Show all ${finished.length} finished runs`}
+              </button>
+            )}
+            <p className="run-compare__note" role="status" data-testid="run-compare-full">
+              {full ? COMPARE_FULL : ''}
+            </p>
+            {grid.mixed && pickedRuns.length >= COMPARE_MIN && (
+              <p className="run-compare__note" data-testid="run-compare-mixed">
+                These runs come from different scenarios. Only the detections they share line up;
+                the rest read “Not in this run”.
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
+      {pickedRuns.length < COMPARE_MIN ? (
+        !loadState.loading && !loadState.error && finished.length > 0 && (
+          <p className="run-compare__empty" data-testid="run-compare-pick-more">
+            {pickedRuns.length === 1
+              ? 'Pick one more run to compare.'
+              : 'Pick at least two runs above to compare them.'}
+          </p>
+        )
+      ) : (
+        <>
+          <PairSection runs={pickedRuns} />
+          <div className="run-compare__scroll">
+            <table
+              className="run-compare__grid"
+              data-testid="run-compare-grid"
+              style={{ minWidth: `${DET_COL_PX + grid.columns.length * RUN_COL_MIN_PX}px` }}
+            >
+              <colgroup>
+                <col className="run-compare__col-det" />
+                {grid.columns.map((c) => <col key={c.id} />)}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col" className="run-compare__corner">Detection</th>
+                  {grid.columns.map((c) => (
+                    <th scope="col" key={c.id} className="run-compare__head" data-testid="run-compare-head" data-run-id={c.id}>
+                      <RunHead
+                        col={c}
+                        name={nameOf(c.run)}
+                        outcome={outcomes.get(c.id)}
+                        onReadBack={() => onReadBack(c.id)}
+                        onOpenResults={() => onOpenResults(c.id)}
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grid.rows.length === 0 && (
+                  <tr>
+                    <th scope="row" className="run-compare__det">—</th>
+                    <td colSpan={grid.columns.length} className="run-compare__cell run-compare__cell--quiet">
+                      {grid.columns.some((c) => c.loading)
+                        ? 'Loading results…'
+                        : 'None of these runs has an expected detection.'}
+                    </td>
+                  </tr>
+                )}
+                {grid.rows.map((row) => (
+                  <tr key={row.key} data-testid="run-compare-row" data-detection={row.slug}>
+                    <th scope="row" className="run-compare__det" title={row.title || undefined}>
+                      {row.type && <span className="run-compare__type mono">{row.type}</span>}
+                      <span className="run-compare__slug mono">{row.slug}</span>
+                      {row.step && <span className="run-compare__step mono">{row.step}</span>}
+                    </th>
+                    {row.cells.map((cell, i) => (
+                      <td
+                        key={grid.columns[i].id}
+                        className="run-compare__cell"
+                        data-testid="run-compare-cell"
+                        data-state={cell.key}
+                        title={cell.title || undefined}
+                      >
+                        <Cell cellKey={cell.key} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+              <tbody className="run-compare__summary">
+                {grid.summary.map((s) => (
+                  <tr key={s.key} data-testid={`run-compare-sum-${s.key}`}>
+                    <th scope="row" className="run-compare__sum-label">{s.label}</th>
+                    {s.values.map((v, i) => (
+                      <td
+                        key={grid.columns[i].id}
+                        className={'run-compare__sum mono' + (v.short ? ' run-compare__sum--short' : '')}
+                        title={v.title || undefined}
+                      >
+                        {v.text}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {grid.columns.some((c) => c.error) && (
+            <p className="run-compare__note run-compare__note--error" role="alert" data-testid="run-compare-results-error">
+              {grid.columns.filter((c) => c.error).map((c) => (
+                <span key={c.id}>Results for <span className="mono">{shortId(c.id)}</span> could not be loaded: {c.error}. </span>
+              ))}
+              Its column makes no claim until they load.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A run's column header: what it is, where it is, and its next action. */
+function RunHead({ col, name, outcome, onReadBack, onOpenResults }) {
+  const ph = PHASE_STATUS[col.phase] || PHASE_STATUS[PHASE.UNREAD]
+  // Why the last read back read nothing — only while the run is still unread.
+  const why = outcome && !outcome.ok && col.phase === PHASE.UNREAD ? outcome.message : null
+  return (
+    <div className="run-compare__head-in">
+      <span className="run-compare__head-name" title={name}>{name}</span>
+      <span className="run-compare__head-meta mono" title={absoluteTime(col.run.started_at) || undefined}>
+        {shortId(col.id)} · {relativeTime(col.run.started_at)}
+      </span>
+      <span className="run-compare__head-row">
+        <StatusIcon status={ph.status} word={ph.word} />
+        {col.phase === PHASE.UNREAD && (
+          <Button variant="primary" className="run-compare__act" onClick={onReadBack}>Read back</Button>
+        )}
+        {col.phase === PHASE.READING && (
+          <Button variant="secondary" className="run-compare__act" disabled>Reading…</Button>
+        )}
+        {col.phase === PHASE.READY && (
+          <Button variant="secondary" className="run-compare__act" onClick={onOpenResults}>Open results</Button>
+        )}
+      </span>
+      {why && <span className="run-compare__why" data-testid="run-compare-why">{why}</span>}
+    </div>
+  )
+}
+
+function Cell({ cellKey }) {
+  if (cellKey === 'loading') return <span className="run-compare__quiet">…</span>
+  if (cellKey === 'error') return <span className="run-compare__quiet">—</span>
+  const meta = cellMeta(cellKey)
+  if (!meta.status) return <span className="run-compare__quiet">{meta.word}</span>
+  return <StatusIcon status={meta.status} word={meta.word} />
+}
+
+/* ─── Prevention delta (report → block) ──────────────────────────── */
+
+/**
+ * Exactly two picked runs that point at each other are a report/block pair:
+ * the server builds the delta and the console lays it out. The delta names
+ * detected / prevented outcomes, so it is shown only once both runs have been
+ * read back — the same rule as the grid.
+ */
+function PairSection({ runs }) {
+  const pairedRuns = runs.length === 2 && arePaired(runs[0], runs[1]) ? runs : null
+  const bothRead = !!pairedRuns && pairedRuns.every((r) => readBackOf(r))
+  const pairKey = pairedRuns && bothRead ? pairedRuns.map(runIdOf).join('+') : null
+  const [pair, setPair] = useState(null) // { key, delta } | { key, error, code }
   useEffect(() => {
     if (!pairKey) { setPair(null); return undefined }
     let cancelled = false
@@ -83,203 +378,18 @@ export default function MultiRunCompare() {
     return () => { cancelled = true }
   }, [pairKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const togglePick = (id) => {
-    setSelectedIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id)
-      // Cap at 4 to keep the matrix readable.
-      if (prev.length >= 4) return prev
-      return [...prev, id]
-    })
+  if (!pairedRuns) return null
+  if (!bothRead) {
+    return (
+      <p className="run-compare__note" data-testid="pair-delta-unread">
+        These two runs are a report / block pair. The prevention delta appears once both have
+        been read back.
+      </p>
+    )
   }
-
-  // Build the merged detection table.
-  const { columns, rows, kpis } = useMemo(
-    () => buildComparison(selectedIds, availableRuns, resultsByRun),
-    [selectedIds, availableRuns, resultsByRun],
-  )
-
-  return (
-    <div className="multirun">
-      <div className="multirun__intro">
-        <p className="multirun__intro-prose">
-          Compare 2–4 runs side by side. Pick the runs you want to compare
-          from the list below — the merged detection table updates live.
-          <strong> New detections</strong> in the latest run vs earlier
-          runs are highlighted, and <strong>regressions</strong> (detected
-          before, missed now) are flagged for follow-up.
-        </p>
-      </div>
-
-      <div className="multirun__picker">
-        <div className="competitive__filter-label mono compare-runs__avail-label">
-          available runs · pick up to 4
-        </div>
-        {loadingRuns ? (
-          <div className="coverage__empty mono">loading run history…</div>
-        ) : availableRuns.length === 0 ? (
-          <div className="coverage__empty mono">no runs in history — launch a scenario first</div>
-        ) : (
-          <div className="multirun__run-list">
-            {availableRuns.slice(0, 16).map((r) => {
-              const id = runIdOf(r)
-              const picked = selectedIds.includes(id)
-              const order = picked ? selectedIds.indexOf(id) + 1 : null
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={'multirun__run-pill' + (picked ? ' is-picked' : '')}
-                  onClick={() => togglePick(id)}
-                  title={r.scenario_id || id}
-                >
-                  {picked && <span className="multirun__run-pill-order mono">#{order}</span>}
-                  <span className="multirun__run-pill-id mono">
-                    {String(id).slice(0, 10)}
-                  </span>
-                  <span className="multirun__run-pill-scenario">
-                    {r.scenario_id || '—'}
-                  </span>
-                  <span className="multirun__run-pill-status mono">
-                    {(r.status || 'unknown').slice(0, 1).toUpperCase()}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {pairKey && pair && pair.key === pairKey && (
-        <PairDelta pair={pair} />
-      )}
-
-      {selectedIds.length >= 2 ? (
-        <div className="multirun__matrix-wrap">
-          <div className="multirun__kpi-row">
-            {columns.map((c) => (
-              <div key={c.id} className="multirun__kpi">
-                <div className="multirun__kpi-runid mono">{c.label}</div>
-                <div className="multirun__kpi-coverage">
-                  <span className="multirun__kpi-pct">{c.coveragePct ?? '—'}</span>
-                  <span className="multirun__kpi-unit">%</span>
-                </div>
-                <div className="multirun__kpi-meta mono">
-                  {c.total != null ? `${c.detected} / ${c.total} detected` : 'no coverage denominator'}
-                </div>
-                {c.delta != null && (
-                  <div className={
-                    'multirun__kpi-delta mono ' +
-                    (c.delta > 0 ? 'multirun__kpi-delta--up' : c.delta < 0 ? 'multirun__kpi-delta--down' : '')
-                  }>
-                    {c.delta > 0 ? '▲ +' : c.delta < 0 ? '▼ ' : '—'}
-                    {c.delta !== 0 ? Math.abs(c.delta) + ' pts' : ''}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="multirun__matrix-scroll">
-            <table className="multirun__matrix">
-              <thead>
-                <tr>
-                  <th className="multirun__h-detection">Detection</th>
-                  {columns.map((c) => (
-                    <th key={c.id} className="multirun__h-run mono">
-                      #{c.order} · {c.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.key}>
-                    <th scope="row" className="multirun__row-detection">
-                      <div className="multirun__row-tid mono">{row.tid}</div>
-                      <div className="multirun__row-desc">{row.description}</div>
-                      <div className="multirun__row-plane mono">
-                        {row.plane}{row.detectionType && ' · ' + row.detectionType}
-                      </div>
-                    </th>
-                    {columns.map((c) => {
-                      const cell = row.byRun[c.id] || { state: 'absent' }
-                      const prev = c.order > 1 ? row.byRun[columns[c.order - 2].id] : null
-                      const isNew = isHitStatus(cell.state)
-                        && c.order > 1
-                        && !isHitStatus(prev?.state)
-                      // Only a real miss regresses: a step that never ran, or a
-                      // detector still soaking, is not Cortex losing a detection.
-                      const isRegression = cell.state === 'missed'
-                        && isHitStatus(prev?.state)
-                      return (
-                        <td
-                          key={c.id}
-                          className={
-                            'multirun__cell multirun__cell--' + outcomeClass(cell.state) +
-                            (isNew        ? ' multirun__cell--new'        : '') +
-                            (isRegression ? ' multirun__cell--regression' : '')
-                          }
-                          title={
-                            cell.state === 'absent' ? 'Not in this run'
-                            : outcomeMeta(cell.state).label
-                              + (isHitStatus(cell.state) && cell.mttd != null ? ` · ${cell.mttd}s` : '')
-                          }
-                        >
-                          <span className="multirun__cell-glyph">
-                            {cell.state === 'detected' ? '✓'
-                             : cell.state === 'missed'  ? '✗'
-                             : cell.state === 'pending' ? '○'
-                             : cell.state === 'absent'  ? '—'
-                             :                            outcomeMeta(cell.state).glyph}
-                          </span>
-                          {cell.state === 'detected' && cell.mttd != null && (
-                            <span className="multirun__cell-mttd mono">{cell.mttd}s</span>
-                          )}
-                          {isNew && <span className="multirun__flag multirun__flag--new" aria-label="New detection">+</span>}
-                          {isRegression && <span className="multirun__flag multirun__flag--reg" aria-label="Regression">!</span>}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="multirun__legend">
-            <span className="multirun__legend-item multirun__cell--detected">
-              <span className="multirun__cell-glyph">✓</span> Detected
-            </span>
-            <span className="multirun__legend-item multirun__cell--missed">
-              <span className="multirun__cell-glyph">✗</span> Missed
-            </span>
-            <span className="multirun__legend-item multirun__cell--pending">
-              <span className="multirun__cell-glyph">○</span> Pending
-            </span>
-            <span className="multirun__legend-item multirun__cell--absent">
-              <span className="multirun__cell-glyph">—</span> Not in this run
-            </span>
-            <span className="multirun__legend-item">
-              <span className="multirun__flag multirun__flag--new">+</span> New detection vs prior run
-            </span>
-            <span className="multirun__legend-item">
-              <span className="multirun__flag multirun__flag--reg">!</span> Regression vs prior run
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="coverage__empty mono">
-          {selectedIds.length === 1
-            ? 'pick at least one more run to compare'
-            : 'pick 2–4 runs above to start comparing'}
-          {loadingResults && ' · loading results'}
-        </div>
-      )}
-    </div>
-  )
+  if (!pair || pair.key !== pairKey) return null
+  return <PairDelta pair={pair} />
 }
-
-/* ─── Prevention delta (report → block) ──────────────────────────── */
 
 const DASH = '—'
 
@@ -342,79 +452,4 @@ function PairDelta({ pair }) {
       </div>
     </div>
   )
-}
-
-/* ─── Comparison builder ─────────────────────────────────────────── */
-
-function buildComparison(selectedIds, availableRuns, resultsByRun) {
-  if (selectedIds.length < 2) return { columns: [], rows: [], kpis: {} }
-
-  const runById = new Map(availableRuns.map((r) => [runIdOf(r), r]))
-
-  // Build per-run columns with summary stats.
-  const columns = selectedIds.map((id, idx) => {
-    const run = runById.get(id) || {}
-    const entry = resultsByRun[id] || { rows: [], coverage: null }
-    const results = entry.rows
-    // The server's honest denominator (is_in_denominator): rows whose step
-    // never ran, and soak-pending rows, are neither hits nor misses.
-    const cov = entry.coverage
-    const total = cov && typeof cov.denominator === 'number' ? cov.denominator : null
-    const detected = total != null ? cov.observed_in_denominator : null
-    const coveragePct = total ? Math.round(cov.pct) : null
-    return {
-      id,
-      order: idx + 1,
-      label: (run.scenario_id || id || '').toString().slice(0, 14),
-      total,
-      detected,
-      coveragePct,
-      delta: null, // filled below
-      results,
-    }
-  })
-
-  // Coverage delta vs previous column.
-  for (let i = 1; i < columns.length; i++) {
-    const [a, b] = [columns[i - 1].coveragePct, columns[i].coveragePct]
-    columns[i].delta = a != null && b != null ? b - a : null
-  }
-
-  // Merge all detection rows across runs — keyed by tid + plane +
-  // detection_type + expected_description so the same expected
-  // detection across runs collapses into one row.
-  const rowMap = new Map()
-  for (const col of columns) {
-    for (const r of col.results) {
-      const key = [
-        r.mitre_technique || r.tid || '',
-        (r.plane || '').toUpperCase(),
-        (r.detection_type || r.type || ''),
-        (r.expected_description || r.description || ''),
-      ].join('|')
-      let row = rowMap.get(key)
-      if (!row) {
-        row = {
-          key,
-          tid:           r.mitre_technique || r.tid || '—',
-          plane:         (r.plane || '').toUpperCase(),
-          detectionType: r.detection_type || r.type || '',
-          description:   r.expected_description || r.description || '(unnamed)',
-          byRun:         {},
-        }
-        rowMap.set(key, row)
-      }
-      // The server's outcome first (outcomes.js::resultStatus).
-      const state = resultStatus(r)
-      row.byRun[col.id] = { state, mttd: r.mttd_seconds ?? null, alertId: r.alert_id }
-    }
-  }
-
-  // Sort rows by tid then plane for deterministic display.
-  const rows = Array.from(rowMap.values()).sort((a, b) => {
-    if (a.tid !== b.tid) return a.tid.localeCompare(b.tid)
-    return a.plane.localeCompare(b.plane)
-  })
-
-  return { columns, rows }
 }
