@@ -154,7 +154,7 @@ def test_payload_refusal_is_a_precondition_not_a_malformed_request(
 # The refusal still terminalises the run (the lifecycle fix must survive)
 # ---------------------------------------------------------------------------
 
-def test_payload_refusal_still_leaves_the_run_terminal_failed(
+def test_payload_refusal_writes_no_run(
     client, session_factory, monkeypatch,
 ):
     from sqlalchemy import select
@@ -178,10 +178,9 @@ def test_payload_refusal_still_leaves_the_run_terminal_failed(
         async with session_factory() as db:
             return (await db.execute(select(Run))).scalars().all()
 
-    runs = asyncio.run(_read())
-    assert len(runs) == 1
-    assert runs[0].status == "failed"
-    assert "PAYLOAD_NOT_STAGED" in (runs[0].output or "")
+    # Refused before the Run row is written: no failed run, no stamped results
+    # (slice 1 of the one-model gate; the dry run reports the same refusal).
+    assert asyncio.run(_read()) == []
 
 
 # ---------------------------------------------------------------------------

@@ -438,7 +438,7 @@ def test_composed_run_resolves_each_partition_for_its_own_agent(session_factory)
 
 def test_composed_run_refuses_a_partition_its_agent_cannot_run(session_factory):
     """A composed step aimed at a Windows endpoint with only a POSIX command is
-    refused for the whole launch, and the seeded rows are stamped not_executed."""
+    refused for the whole launch, before any Run or Result row is written."""
     from engine.orchestrator import Orchestrator
     from models import QueuedTask, Result, Run
 
@@ -453,19 +453,18 @@ def test_composed_run_refuses_a_partition_its_agent_cannot_run(session_factory):
             ])
             res = await orch.launch(scenario_id="SIM-EDR-900", mode="pull", db=db,
                                     target_agent_id="lin-1")
-            run = (await db.execute(select(Run))).scalar_one()
+            runs = (await db.execute(select(Run))).scalars().all()
             rows = (await db.execute(select(Result))).scalars().all()
             tasks = (await db.execute(select(QueuedTask))).scalars().all()
-            return res, orch, run, rows, tasks
+            return res, orch, runs, rows, tasks
 
-    res, orch, run, rows, tasks = asyncio.run(_go())
+    res, orch, runs, rows, tasks = asyncio.run(_go())
     assert res.success is False
     assert res.error_code == "PULL_TARGET_UNSATISFIABLE"
     assert res.http_status == 409
     assert tasks == [] and orch.peek_queue("lin-1") == [] and orch.peek_queue("win-2") == []
-    assert run.status == "failed" and run.completed_at is not None
-    assert rows and {(r.outcome, r.outcome_reason) for r in rows} == {
-        ("not_executed", "LAUNCH_REFUSED")}
+    assert res.run_id is None
+    assert (runs, rows) == ([], [])
 
 
 # ---------------------------------------------------------------------------
