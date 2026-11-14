@@ -8,7 +8,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-11-13
+## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is
 hardened for a beta on real endpoints.** Ingestion doors, collector targets,
