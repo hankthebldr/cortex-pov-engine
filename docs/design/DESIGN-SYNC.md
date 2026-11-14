@@ -13,19 +13,75 @@ from drifting apart silently.
 | Primary artifact | `POVengine Console.dc.html` (+ `support.js`) |
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
-| Design-side last sync | 2026-09-14T18:14:52Z · tree `a4130a9fe88a` |
-| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) |
+| Design-side last sync | 2026-11-13 · canvas version `1794626399-70f5` ("v33": v26 + changes C1–C10) |
+| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) · design v33 C1–C10 + Launch gate MVP (2026-11-13, PRs #286–#308, below) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
-| Current handoff | **Design v26 → `ui/src`, 2026-11-13:** `docs/design/2026-11-13-v26-design-to-code.md` |
+| Current handoff | **Design v33 → `ui/src`, 2026-11-13:** the canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff, recorded below. v26's own handoff: `docs/design/2026-11-13-v26-design-to-code.md` |
 
-> **The design track is AHEAD again.** On 2026-11-13 the design track handed
-> off v26, rebuilt from `dev` and moved past it: three numbered journeys on the
-> rail, Components back as the hub for eight components, one Configure frame,
-> a run lifecycle with an explicit read-back step, and Cortex green as the
-> primary-action and selected colour (v26 §9). v26 is now the source of truth
-> for IA and colour; it is being implemented in its §11 build order, one PR per
-> slice. Until a slice lands, the sections below describe what the code ships,
-> not what the design wants.
+> **One design source, one review surface (2026-11-13).** The canvas above is
+> the only design source; the other console-design sessions were archived so
+> nothing drifts beside it. The code on `dev` ships what the next section
+> lists, and the owner reviews a `:8888` container rebuilt from `dev`. Where
+> the owner's live review overrode the canvas, the override is listed below
+> and the canvas is the side that has to catch up.
+
+## Design v33 — changes C1–C10 and the Launch gate MVP (2026-11-13)
+
+The canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff
+("Launch gate MVP first; then navigation, dashboards, deep-dive thesis,
+component explanations, library completeness; ANALYTICS not orange"), as
+built. All into `dev`.
+
+| Change | What the code does | PR |
+|---|---|---|
+| C1 · New POV run on the Launch gate · v33 MVP | The Launch gate (`preflight`) is the one page a run starts from: What runs › Readiness › Where it runs (agents inline with their state; an offline one listed, not choosable; the offline bundle) › What it will do › an authorisation tick that starts unticked › one **Run**, disabled with its reasons listed. Push: Run saves the bundle and records the run (Staged); no separate download. `guided` and `readiness` redirect to it, and every launch link goes straight there. | #299, #307 |
+| C2 · Runs · Compare | Runs header: primary **Run** (the verb set has no "New run") beside Compare runs. Compare picks 2–3 finished runs; only a read-back run may say Detected / Not seen; others say "Ran — not read back" / "Did not run". | #301 |
+| C2b · Lab target + WAITING runs | **Not built.** The v33 MVP keeps push runs Staged and draws no lab target. The UC/TC page reads an unreported push run as "Waiting" rather than "ran". | — |
+| C3 · VerdictReason | Run detail: a "Test case" line (PENDING + "nothing executed" / "detectors soaking" + the TC + the action sentence) and the Cortex Engine line under the chain. | #291 |
+| C4 · verb fixes | Already on `dev` before this pass. | — |
+| C5 · Catalog | TTP cards filter by **Subdomain** and Tactic (owner override, below). UC/TC: four tiles, verdict as icon + word, a Runs rollup. | #292, #305 |
+| C6 · UC/TC tabs | Index · Mechanisms · Coverage (the five-stage proof path) · Gaps (one verb per row), all from SimCore; mechanism tenant state and door checks read "Can't check" until an API reports them. | #305 |
+| C7 · component explanations | Every component page opens with What it is · Why the POV needs it · What it unlocks · Where it lives, corrected where the canvas copy claimed more than the code does. | #302 |
+| C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a read-back run. | #308 |
+| C9 · navigation | Header Back / Forward (⌘[ / ⌘]) over the router's own history, and a clickable breadcrumb journey › page › object. | #303 |
+| C10 · deep-dive thesis + verbs | Scenario, TTP and detection sheets open with "Why this matters" (Thesis · Why we simulate it · What proves it · What it needs) from the documents' own fields; actions are verbs with icons, navigation is links. | #304 |
+| v33 · library completeness + stepper | Every Scenarios card shows UC/TC · Source (its doors) · MITRE; an **Unmapped** filter with its count (205 corpus scenarios: 8 unmapped, all for underived detection sources). The extended library, the 362 staged pairs under `drafts/detection-library/`, is listed read-only (`GET /api/scenarios/staged`): not launchable, not coverage. A Scenarios › Build a chain › Launch gate › Run stepper carries the scenario / run id between the four pages. | #310 |
+| v33 · ANALYTICS tint | The ANALYTICS plane is the DS ink-400, not PANW orange. | #300 |
+
+### Owner overrides of the canvas (the canvas should follow these)
+
+Decided by the owner in live review on 2026-11-13; the code follows them.
+
+- **Colour.** The warning colour is the DS gold-600 (`#C7AA47`), muted from
+  Strata yellow (#296). Greens come in shades: one selected state everywhere
+  (deep wash `--ac-soft` + matte line `--gr-matte`), and one primary button in
+  both themes, the deep matte green `--btn` `#0A6231` with white text. Secondary
+  buttons and the error badge are greyscale; the badge's "!" alone carries the
+  tone.
+- **TTP cards.** No run-status line and no Status or Platform filter (#292);
+  Subdomain and Tactic only. No platform chips on cards.
+- **Favorites.** A ★ tab first in the Composer palette; a scenario earns the ★
+  by measurement (lab-ready, every step real telemetry, a Correlation, ≥ 4
+  detection types), not from a hand-kept list (#286).
+- **Composer.** Start / Stop are the chain's anchors (not "Launch" / "Proof"),
+  above the signal-path lanes rather than as lanes (#278).
+- **Words.** No "shelf" or "staged" for tools anywhere in the console (#281);
+  Packages is a plain catalog (#279).
+- **Launch.** One page and one Run (the v33 MVP above); C2b's lab target and
+  WAITING state are not built.
+
+### Not built, or found and left (follow-ups)
+
+- C2b (lab target, WAITING runs) — superseded by the MVP; revisit with the owner.
+- UC/TC Index keeps the use-case rail + test-case table rather than the
+  canvas's one-row-per-use-case table, because Composer and TTP cards deep-link
+  `?uc=` / `?tc=` into it.
+- The TTP card does not list ABIOC or Prevention detections (96 cards carry
+  ABIOCs, 3 carry Prevention).
+- At 375 px the nav rail draws over the lower half of the scenario sheet.
+- AIRS (`orange-500`) and DLP (`orange-900`) plane tints are still in the
+  orange family; only ANALYTICS was named.
+- Mechanism tenant state (C6) has no SimCore API yet; it reads "Can't check".
 
 ## Minimal pass (2026-10)
 
@@ -123,14 +179,22 @@ light so its white label clears 7.5:1) is the primary action, the selected
 state and the brand: the one filled button on a screen, the active rail bar,
 the active tab line, a selected item's soft fill and line. Green also means
 healthy / done / detected (`--pos`), so a status is never colour alone — it
-carries its glyph and word (`kit/StatusIcon`). Yellow (`--warn`) is the only
-warning colour; coral (`--crit`) is down / missing / broken / destructive.
+carries its glyph and word (`kit/StatusIcon`). The warning colour (`--warn`)
+is the DS **gold-600** (`#C7AA47`), muted from Strata yellow to an accent by
+Henry on 2026-11-13; coral (`--crit`) is down / missing / broken /
+destructive. Greens come in shades (2026-11-13): bright `--ac` is the one
+primary button; every selected state — tab, chip, segmented button, the
+active rail item — is the deep wash `--ac-soft` with the matte line
+`--gr-matte` (DS panw-green-700); `--gr-mid` (green-500) and `--gr-pale`
+(green-200) are the secondary greens.
 PANW orange is the NGFW family tint (`--family-ngfw`) and the categorical
 plane tints, nothing else; `--ac-brand` and the `--orange` aliases are
 retired. Implemented in `cortex-tokens.css` and `povengine-minimal.css`
 (loaded last); the shared constructs are `components/console/kit` with
 `styles/povengine-kit.css`. `ds-drift.test.js` pins `--br` and `--pos-str` to
-the DS's `--panw-green` and `--family-ngfw` to its `--panw-orange`; the DS
+the DS's `--panw-green`, `--warn-str` to `--gold-600`, the three greens to
+`--panw-green-700` / `--green-500` / `--green-200`, and `--family-ngfw` to
+its `--panw-orange`; the DS
 itself still names orange its presentation accent, and the console
 deliberately does not follow it.
 
@@ -180,6 +244,7 @@ or a link.
 | Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
 | Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
 | Component page shape + Configure frame | — | `component/ComponentPage.jsx` · `ConfigureFrame.jsx` · `checks.js` |
+| Component About lines (v33 C7: What it is · Why the POV needs it · What it unlocks · Where it lives) | every component page, every tab | `components/console/componentAbout.js` (copy, keyed by component id) → `ComponentPage.jsx` |
 | Scenarios (Library) | Compose & simulate › Scenarios | `components/console/OperationsView.jsx` · `ScenarioGrid.jsx` · `ScenarioInspector.jsx` (the scenario sheet) |
 | Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
 | Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
@@ -188,16 +253,19 @@ or a link.
 | Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
 | Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
-| Coverage | Results › Coverage | `components/console/CoverageView.jsx` |
+| Dashboards (v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from run read-back only) | Run & observe › Dashboards (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `dashboardModel.js` (read-back state, grids, ATT&CK matrix) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
 | UC / TC Index | Catalog › UC / TC index | `components/console/UcTcIndexView.jsx` |
 | "Your chain" tray | Scenarios and Catalog pages | `components/console/ChainTray.jsx` · `context/ChainTrayContext.jsx` |
 | Chain stage (editable · live · preview) | Composer Lanes lens, Run detail, scenario sheet | `components/console/ChainStage.jsx` · `chainStage.js` |
+| "Why this matters" (design v33 C10) | First on the scenario sheet, a TTP card, and an opened detection | `components/console/WhyThisMatters.jsx` · `sheetThesis.js` (every line read off the document; a missing part says "Not written for this … yet.") |
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
+| Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
 | Lane and plane vocabulary | — | `components/console/povdata/` |

@@ -143,10 +143,9 @@ export function makeLazySurface(loader, title) {
 const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Scenarios')
 const ComposerView = makeLazySurface(() => import('../components/console/ComposerView.jsx'), 'Composer')
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
-const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Agents')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
-const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Coverage')
+const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Dashboards')
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
@@ -156,6 +155,18 @@ const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'),
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
 const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
+// The compose → simulate stepper. Lazy like the surfaces: the entry chunk has a
+// size budget (composerChunkBoundary.test.js), and Scenarios and the Composer
+// already pull this module into their own chunks. No fallback: the strip is
+// navigation, and the page under it does not wait for it.
+const LazyFlowStepper = lazy(() => import('../components/console/FlowStepper.jsx'))
+function FlowStepper(props) {
+  return (
+    <Suspense fallback={null}>
+      <LazyFlowStepper {...props} />
+    </Suspense>
+  )
+}
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
@@ -299,7 +310,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
         planes={railPlanes}
         pinned={pinned}
         onSelectPlane={handleSelectPlane}
-        onSelectPinned={(id) => { armedRef.current = id; onNavigate('guided', { arm: id }) }}
+        onSelectPinned={(id) => { armedRef.current = id; onNavigate('preflight', { arm: id }) }}
         onUnpin={unpin}
       />
       <Suspense fallback={<DestinationLoading />}>
@@ -316,7 +327,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           isPinned={isPinned}
           togglePin={togglePin}
           onArmScenario={(sid) => { armedRef.current = sid }}
-          onContinueToLaunch={(id) => onNavigate('guided', { arm: id || armedRef.current })}
+          onContinueToLaunch={(id) => onNavigate('preflight', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
             onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
           onRunComplete={(run) =>
@@ -332,7 +343,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
 // ─── Guided "New POV run" flow (optional, not in primary nav) ────────────────
 // The valuable first-run demo path: pick a target, then fire the armed
 // scenario. Reachable from Library's Arm / Continue-to-Launch and from ⌘K.
-function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
+function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV run' }) {
   const armId = params.arm || null
   const [scenario, setScenario] = useState(null)
   const [selectedTarget, setSelectedTarget] = useState(null)
@@ -376,7 +387,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
     <div className="guided-flow">
       <div className="view-head">
         <div>
-          <h1>New POV run</h1>
+          <h1>{title}</h1>
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
@@ -387,15 +398,8 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 
       <SurfaceNotice notice={surface.notice} onDismiss={surface.clear} testId="guided-notice" />
 
-      <Suspense fallback={<DestinationLoading />}>
-        <TargetsView
-          embedded
-          selectedTarget={selectedTarget}
-          onSelectTarget={setSelectedTarget}
-          onGoToLab={() => onNavigate('environments')}
-        />
-      </Suspense>
-
+      {/* Where it runs is chosen inside the New POV run panel (design C1);
+          the separate target cards above it are gone. */}
       {scenario && (
         <Suspense fallback={<DestinationLoading />}>
           <LaunchView
@@ -414,9 +418,26 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
             onError={(msg) => surface.report(msg, 'warn')}
             onGoLibrary={() => onNavigate('library')}
             onGoTargets={() => {}}
+            onSelectTarget={setSelectedTarget}
           />
         </Suspense>
       )}
+    </div>
+  )
+}
+
+// ─── Launch gate (MVP, design v33) ───────────────────────────────────────────
+// The one place a run is started: the armed scenario's launch flow (What runs ›
+// Readiness › Where it runs › What it will do › authorisation › one Run), then
+// this POVengine's own readiness. The guided "New POV run" route and the old
+// readiness route both land here. The compose → simulate stepper sits on top;
+// `?arm=` is the scenario the launch is for, carried on to the other steps.
+function LaunchGateSurface({ params = {}, onNavigate = () => {} }) {
+  return (
+    <div className="launch-gate-page">
+      <FlowStepper current="preflight" scenarioId={params.arm || null} onNavigate={onNavigate} />
+      <GuidedPovFlow params={params} onNavigate={onNavigate} title="Launch gate" />
+      <ReadinessSurface embedded onNavigate={onNavigate} />
     </div>
   )
 }
@@ -443,15 +464,25 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
     return runs.find((r) => idMatches(runIdOf(r), runId)) || null
   }, [runs, runId])
 
+  // Compose → simulate: the open run's scenario rides back to the other steps
+  // (Launch gate re-arms it, Build a chain opens its chain).
+  const stepper = (
+    <FlowStepper
+      current="runs"
+      scenarioId={(selected && selected.scenario_id) || null}
+      runId={runId || null}
+      onNavigate={onNavigate}
+    />
+  )
+
   if (compare) {
     return (
       <div className="runs-surface">
-        <div className="view-head">
-          <div><h1>Runs · Compare</h1></div>
-          <button className="btn" onClick={() => setParams({ compare: null }, { replace: true })}>← Back to runs</button>
-        </div>
+        {stepper}
+        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
+        <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
-          <MultiRunCompare />
+          <MultiRunCompare onOpenResults={(id) => onNavigate('proof', { run: id })} />
         </Suspense>
       </div>
     )
@@ -460,6 +491,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   if (!runId) {
     return (
       <div className="runs-surface">
+        {stepper}
         <div className="view-head">
           <div>
             {/* "Runs", not "Runs & Proof". Proof & Export is its own
@@ -468,7 +500,13 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
             <h1>Runs</h1>
             <div className="view-head__meta"><span className="mono">{runs.length}</span> runs</div>
           </div>
-          <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
+          {/* C2: secondary Compare runs beside the primary. "New run" is not
+              in the closed verb set; Run is, and it opens the New POV run
+              page, where every launch starts. */}
+          <div className="runs-surface__actions">
+            <Button variant="secondary" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</Button>
+            <Button variant="primary" title="Launch gate" onClick={() => onNavigate('preflight')}>Run</Button>
+          </div>
         </div>
         {activeRun && <TelemetryStrip run={activeRun} onAbort={onAbortRun} />}
         {/* "What ran last" leads the page: the first question on this surface
@@ -494,6 +532,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
 
   return (
     <Suspense fallback={<DestinationLoading />}>
+      {stepper}
       <RunDetailView
         runId={runId}
         run={selected}
@@ -762,7 +801,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
 //
 //   1  Onboard & connect    Get started · Components ▸ (the eight components)
 //   2  Compose & simulate   Scenarios · Build a chain · Launch gate
-//   3  Run & observe        Runs · Results
+//   3  Run & observe        Runs · Results · Dashboards
 //      Reference            Catalog
 //
 // Every page belongs to exactly one rail item. Simulate's three tabs became
@@ -799,11 +838,14 @@ export const DESTINATIONS = [
   // The rail is not drawn while it is open; a cold deep link's Exit lands on
   // Scenarios (`exitTo`), where the chains it forks from live.
   { id: 'composer',   label: 'Build a chain', group: 'compose',   icon: 'apps-grid',      Component: ComposerView, immersive: true, exitTo: 'library' },
-  { id: 'preflight',  label: 'Launch gate',   group: 'compose',   icon: 'user-lock',      Component: ReadinessSurface },
+  { id: 'preflight',  label: 'Launch gate',   group: 'compose',   icon: 'user-lock',      Component: LaunchGateSurface },
 
   // ── 3 · Run & observe ──
   { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
   { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
+  // Design v33 C8: the global dashboards are a rail item again. The id stays
+  // 'coverage' — it is the route, and `#/coverage` links keep working.
+  { id: 'coverage',   label: 'Dashboards',    group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
 
   // ── Reference ──
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
@@ -827,8 +869,7 @@ export const DESTINATIONS = [
   { id: 'firewall',  label: 'Firewall', hidden: true, redirect: true, navParent: 'components', icon: 'threat-network',   Component: redirectTo('component-firewall', { tab: 'sources' }) },
 
   // ── Off-rail, reached as tabs or links ──
-  { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },
-  { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
+  { id: 'guided',    label: 'Launch gate',       hidden: true, redirect: true, navParent: 'preflight', icon: 'apps-grid',      Component: redirectTo('preflight') },
   // id stays 'adapters' deliberately — it is the route; only the label moved.
   { id: 'adapters',  label: 'Packages',          hidden: true, navParent: 'ttps',    icon: 'settings-edit',  Component: AdaptersSurface },
   { id: 'streams',   label: 'Data streams',      hidden: true, navParent: 'ttps',    icon: 'threat-network', Component: DataStreamsSurface },
@@ -843,7 +884,7 @@ export const DESTINATIONS = [
   { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
   { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
-  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'preflight', icon: 'user-lock',      Component: ReadinessSurface },
+  { id: 'readiness', label: 'Launch gate',       hidden: true, redirect: true, navParent: 'preflight', icon: 'user-lock',      Component: redirectTo('preflight') },
 ]
 
 /**
@@ -852,7 +893,7 @@ export const DESTINATIONS = [
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  proof: [['proof', 'Report'], ['coverage', 'Coverage']],
+  proof: [['proof', 'Report']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
 

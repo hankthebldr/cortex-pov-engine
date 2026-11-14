@@ -265,6 +265,22 @@ export async function getScenarios(params = {}) {
 }
 
 /**
+ * GET /api/scenarios/staged — the extended library: the staged draft pairs under
+ * drafts/detection-library/. Not loaded as scenarios, not launchable, not
+ * counted as coverage. `loaded: false` (with `code`) means the directory is not
+ * on this SimCore; it is not an empty library. An unrecognised envelope raises.
+ * @returns {Promise<{loaded: boolean, code: string|null, detail: string|null, scenarios: Array, total: number}>}
+ */
+export async function getStagedScenarios() {
+  const data = await request('/api/scenarios/staged')
+  if (!data || typeof data.loaded !== 'boolean' || !Array.isArray(data.scenarios)) {
+    throw apiError('/api/scenarios/staged returned an unrecognised shape: expected {loaded, scenarios[]}',
+      { code: 'STAGED_SHAPE_UNRECOGNISED', detail: { path: '/api/scenarios/staged' } })
+  }
+  return data
+}
+
+/**
  * GET /api/scenarios/:id
  *
  * The Scenario.to_dict() response now carries an optional Phase-2

@@ -52,7 +52,7 @@ const TITLES = {
   'component-engine': /^cortex engine$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
-  coverage: /coverage/i,
+  coverage: /^dashboards$/i,
   adapters: /^packages$/i,
   streams: /data\s*streams/i,
   uctc: /uc \/ tc index/i,
@@ -103,13 +103,14 @@ describe('every destination renders itself, and only itself', () => {
 
   it('the rail is the three journeys plus Reference', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Catalog'],
+      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Dashboards', 'Catalog'],
     )
   })
 
   it('retired seed pages redirect instead of rendering', () => {
     const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
-    expect(retired).toEqual(['agents', 'cli', 'firewall', 'scope', 'setup', 'tenants', 'validation'])
+    // guided and readiness land on the Launch gate (the MVP merged them into it).
+    expect(retired).toEqual(['agents', 'cli', 'firewall', 'guided', 'readiness', 'scope', 'setup', 'tenants', 'validation'])
   })
 
   it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {

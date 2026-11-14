@@ -11,7 +11,7 @@ test('ATT&CK Coverage renders with MITRE coverage data', async ({ page, api }) =
   await page.goto('/')
 
   // Arm the response listener BEFORE navigating — the fetch fires as soon
-  // as CoverageView mounts.
+  // as the Dashboards MITRE ATT&CK tab mounts.
   const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
   await gotoView(page, 'ATT&CK Coverage')
   const resp = await respPromise

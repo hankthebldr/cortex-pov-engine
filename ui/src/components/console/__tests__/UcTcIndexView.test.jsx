@@ -12,6 +12,8 @@ import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import UcTcIndexView from '../UcTcIndexView.jsx'
+import { EnvironmentContext, DEFAULT_ENV } from '../../../context/EnvironmentContext.jsx'
+import { VERBS } from '../kit/index.js'
 import { installRoutes } from '../../../test/mockFetch.js'
 
 void React
@@ -292,7 +294,7 @@ const rowIds = () =>
 /* ─── tests ─────────────────────────────────────────────────────────── */
 
 describe('UcTcIndexView', () => {
-  it('renders the loading state, then every index row and the stat tiles', async () => {
+  it('renders the loading state, then every index row and the use-case tiles', async () => {
     happyRoutes()
     render(<Harness />)
 
@@ -302,10 +304,9 @@ describe('UcTcIndexView', () => {
     expect(screen.getByTestId('uctc-rowcount')).toHaveTextContent('4 of 4 test cases')
     expect(rowIds()).toEqual(['TC-EDR-03', 'TC-EDR-05', 'TC-NDR-06', 'TC-TH-05'])
 
-    // Stat tiles come from /summary: 4 TCs, 3 DET/HNT, 1 evidenced, 2 open gaps.
-    const stats = document.querySelector('.adapter-registry__stats')
-    expect(stats).toHaveTextContent('DET / HNT')
-    expect(stats).toHaveTextContent('open gaps')
+    // Three use cases; 4 test cases under them, 3 of them detections.
+    expect(screen.getByTestId('uctc-tile-use-cases')).toHaveTextContent('3')
+    expect(screen.getByTestId('uctc-tile-use-cases')).toHaveTextContent('4 test cases under them, 3 of them detections')
   })
 
   it('narrows the table with the validation-class chip and clears again', async () => {
@@ -475,52 +476,6 @@ describe('UcTcIndexView', () => {
     expect(screen.getByTestId('uctc-detail-noevidence')).toBeInTheDocument()
   })
 
-  it('gaps mode lists the unevidenced detection test cases with the P1 headline', async () => {
-    happyRoutes()
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('uctc-mode-gaps')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-mode-gaps'))
-    await waitFor(() => expect(screen.getByTestId('uctc-gaps')).toBeInTheDocument())
-    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toBeInTheDocument())
-
-    expect(screen.getByTestId('uctc-gaps-p1')).toHaveTextContent('1')
-    expect(screen.getByTestId('uctc-gap-TC-TH-05')).toBeInTheDocument()
-    // The evidenced TC never appears in the gap list.
-    expect(screen.queryByTestId('uctc-gap-TC-EDR-03')).toBeNull()
-
-    // Excluding unscoreable rows drops the qualitative HNT case.
-    fireEvent.click(screen.getByTestId('uctc-gaps-unscoreable'))
-    await waitFor(() => expect(screen.queryByTestId('uctc-gap-TC-TH-05')).toBeNull())
-    expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toBeInTheDocument()
-  })
-
-  it('falls back to a locally derived gap list when /gaps is unavailable', async () => {
-    happyRoutes({
-      'GET /api/uctc/gaps': () =>
-        new Response(JSON.stringify({ detail: 'boom' }), { status: 500 }),
-    })
-    render(<Harness initialParams={{ tab: 'gaps' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toBeInTheDocument())
-    expect(screen.getByTestId('uctc-gap-TC-TH-05')).toBeInTheDocument()
-    expect(screen.queryByTestId('uctc-gap-TC-EDR-03')).toBeNull()
-  })
-
-  it('coverage mode sorts use cases worst-first and jumps back into the index', async () => {
-    happyRoutes()
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('uctc-mode-coverage')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-mode-coverage'))
-    await waitFor(() => expect(screen.getByTestId('uctc-cov-UC-NDR')).toBeInTheDocument())
-
-    const bars = screen.getAllByTestId(/^uctc-cov-/).map((el) => el.dataset.testid)
-    expect(bars[bars.length - 1]).toBe('uctc-cov-UC-EDR')  // best covered last
-
-    fireEvent.click(screen.getByTestId('uctc-cov-UC-NDR'))
-    await waitFor(() => expect(rowIds()).toEqual(['TC-NDR-06']))
-  })
-
   it('renders the degraded state — not "0 test cases" — when the snapshot is missing', async () => {
     happyRoutes({
       'GET /api/uctc/test-cases': { index_loaded: false, index_version: null, test_cases: [], total: 0, index_total: 0 },
@@ -532,9 +487,12 @@ describe('UcTcIndexView', () => {
     await waitFor(() => expect(screen.getByTestId('uctc-degraded')).toBeInTheDocument())
     expect(screen.getByTestId('uctc-degraded')).toHaveTextContent('docs/uc_tc_mapping/_v2.2-source/')
     expect(screen.queryByTestId('uctc-rowcount')).toBeNull()
-    // Every numeric tile reads as an em-dash, never a fabricated zero.
-    const stats = document.querySelector('.adapter-registry__stats')
-    expect(stats.textContent).not.toMatch(/0/)
+    // No tile renders, and every tab count reads as an em-dash, never a zero.
+    expect(screen.queryByTestId('uctc-tiles')).toBeNull()
+    for (const id of ['index', 'mechanisms', 'coverage', 'gaps']) {
+      expect(screen.getByTestId(`uctc-mode-${id}`).textContent).not.toMatch(/\d/)
+    }
+    expect(screen.getByTestId('uctc-lede').textContent).not.toMatch(/\d/)
   })
 
   it('surfaces a fetch error without blanking the surface', async () => {
@@ -556,7 +514,7 @@ describe('UcTcIndexView', () => {
     await waitFor(() => expect(screen.getByTestId('uctc-goto-coverage')).toBeInTheDocument())
 
     fireEvent.click(screen.getByTestId('uctc-goto-coverage'))
-    expect(onNavigate).toHaveBeenCalledWith('coverage')
+    expect(onNavigate).toHaveBeenCalledWith('coverage', { tab: 'mitre' })
 
     fireEvent.click(screen.getByTestId('uctc-goto-ttps'))
     expect(onNavigate).toHaveBeenCalledWith('ttps')
@@ -678,62 +636,7 @@ function mechRoutes(overrides = {}) {
   })
 }
 
-describe('UcTcIndexView — coverage by validation class', () => {
-  it('breaks the headline into one cell per class, each naming its mechanism', async () => {
-    mechRoutes()
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('uctc-classstrip')).toBeInTheDocument())
-
-    const strip = screen.getByTestId('uctc-classstrip')
-    // DET/HNT are proven by scenarios, POS/PLT by assertions — and the cell
-    // says so, because "18/110" is meaningless without it.
-    expect(within(strip).getByTestId('uctc-class-DET')).toHaveTextContent('Attack scenario')
-    expect(within(strip).getByTestId('uctc-class-POS')).toHaveTextContent('Posture assertion')
-    expect(within(strip).getByTestId('uctc-class-PLT')).toHaveTextContent('Platform assertion')
-    // PLT is 1/1 — proven by the assertion, with no scenario anywhere near it.
-    expect(within(strip).getByTestId('uctc-class-PLT')).toHaveTextContent('1/1')
-    // POS is 0 of 2: one row is measurable today, the other is blocked on a
-    // data path, and the strip must not fuse those.
-    expect(within(strip).getByTestId('uctc-class-POS')).toHaveTextContent('0/2')
-  })
-
-  it('keeps the header tiles agreeing with the class strip', async () => {
-    // /api/uctc/summary counts SCENARIO evidence only. If the tiles read from
-    // it while the strip counts assertions too, the two disagree by exactly the
-    // assertion-proven rows — and the tile is the number a DC reads out loud.
-    mechRoutes()
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('uctc-classstrip')).toBeInTheDocument())
-
-    const stats = document.querySelector('.adapter-registry__stats')
-    // 6 rows: TC-EDR-03 (scenario) + TC-IR-08 (assertion) each have an artifact
-    // BOUND. The tile must not call that "evidenced" — TC-IR-08's assertion has
-    // never been run, so the number is authorship, not proof.
-    expect(stats).toHaveTextContent('2artifact bound')
-    expect(stats).not.toHaveTextContent('2evidenced')
-    // …and the proof half is reported separately, and is zero until a tenant run
-    // records a pass or fail. This pair is the anti-inflation guard on the tile.
-    expect(stats).toHaveTextContent('0tenant-measured')
-    // TC-CSPM-01 is blocked on ingest, so it is NOT counted as an open gap…
-    expect(stats).toHaveTextContent('3open gaps')
-    // …it is counted, separately and visibly, as needing a data path.
-    expect(stats).toHaveTextContent('1need a data path')
-    expect(screen.getByTestId('uctc-classstrip')).toHaveTextContent('2 of 6 have an artifact bound')
-  })
-
-  it('scopes the table to one class when a cell is clicked, and toggles back', async () => {
-    mechRoutes()
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('uctc-class-DET')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-class-DET'))
-    await waitFor(() => expect(rowIds()).toEqual(['TC-EDR-03', 'TC-NDR-06']))
-    expect(screen.getByTestId('uctc-class-DET')).toHaveAttribute('aria-pressed', 'true')
-
-    fireEvent.click(screen.getByTestId('uctc-class-DET'))
-    await waitFor(() => expect(rowIds()).toHaveLength(6))
-  })
-
+describe('UcTcIndexView — evidence and reach in the table', () => {
   it('marks a blocked row "needs a data path" instead of an empty dash', async () => {
     mechRoutes()
     render(<Harness />)
@@ -775,38 +678,7 @@ describe('UcTcIndexView — coverage by validation class', () => {
   })
 })
 
-describe('UcTcIndexView — mechanisms mode', () => {
-  it('states what proves each class and the ceiling the engine can reach', async () => {
-    mechRoutes()
-    render(<Harness initialParams={{ tab: 'mechanisms' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-mechanisms')).toBeInTheDocument())
-
-    const det = screen.getByTestId('uctc-mech-DET')
-    expect(det).toHaveTextContent('Attack scenario')
-    expect(det).toHaveTextContent('scenarios/{plane}/*.yml')
-
-    const pos = screen.getByTestId('uctc-mech-POS')
-    expect(pos).toHaveTextContent('Posture assertion')
-    // Authored is not measured, and the card must not blur the two.
-    expect(pos).toHaveTextContent('authored claims awaiting a run')
-    expect(pos).toHaveTextContent('assertions/pos/*.yml')
-    // Both POS fixtures are qualitative, so NEITHER can ever return a pass —
-    // the ceiling the surface must state rather than imply otherwise.
-    expect(pos).toHaveTextContent('0 of 2')
-    expect(pos).toHaveTextContent('can ever return a machine')
-    // …and the console that blocks the open row is named, not hand-waved.
-    expect(screen.getByTestId('uctc-datapath-POS')).toHaveTextContent('Cortex Cloud Posture Dashboard')
-  })
-
-  it('keeps the unscoreable verdict cap visible per class', async () => {
-    mechRoutes()
-    render(<Harness initialParams={{ tab: 'mechanisms' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-mech-PLT')).toBeInTheDocument())
-
-    expect(screen.getByTestId('uctc-mech-PLT')).toHaveTextContent('not_applicable')
-    expect(screen.getByTestId('uctc-mech-PLT')).toHaveTextContent('no measurable threshold')
-  })
-
+describe('UcTcIndexView — the assertion mechanism stays sayable', () => {
   it('shows the loader-refused assertions — a guard nobody can see is no guard', async () => {
     mechRoutes()
     render(<Harness initialParams={{ tab: 'mechanisms' }} />)
@@ -817,24 +689,13 @@ describe('UcTcIndexView — mechanisms mode', () => {
     expect(rejected).toHaveTextContent('can never fail')
   })
 
-  it('jumps from a class card into the filtered index', async () => {
-    mechRoutes()
-    render(<Harness initialParams={{ tab: 'mechanisms' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-mech-open-DET')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-mech-open-DET'))
-    await waitFor(() => expect(rowIds()).toEqual(['TC-EDR-03', 'TC-NDR-06']))
-  })
-
   it('says "mechanism not deployed" — not "0 covered" — when /api/assertions is absent', async () => {
     // No route for /api/assertions: mockFetch answers 404, exactly like a
     // SimCore built before that router landed.
     happyRoutes({ 'GET /api/uctc/test-cases': wideTestCaseList })
     render(<Harness initialParams={{ tab: 'mechanisms' }} />)
     await waitFor(() => expect(screen.getByTestId('uctc-assertions-absent')).toBeInTheDocument())
-
     expect(screen.getByTestId('uctc-assertions-absent')).toHaveTextContent('/api/assertions')
-    expect(screen.getByTestId('uctc-mech-POS')).toHaveTextContent('NOT DEPLOYED')
   })
 
   it('says "deployed, nothing authored" when the catalog is empty', async () => {
@@ -843,51 +704,16 @@ describe('UcTcIndexView — mechanisms mode', () => {
     })
     render(<Harness initialParams={{ tab: 'mechanisms' }} />)
     await waitFor(() => expect(screen.getByTestId('uctc-assertions-empty')).toBeInTheDocument())
-    expect(screen.getByTestId('uctc-mech-PLT')).toHaveTextContent('no assertion artifacts authored yet')
-  })
-})
-
-describe('UcTcIndexView — the honest backlog', () => {
-  it('splits the gap list by which mechanism closes it', async () => {
-    mechRoutes()
-    render(<Harness initialParams={{ tab: 'gaps' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toBeInTheDocument())
-
-    // Default scope: the scenario backlog only.
-    expect(screen.queryByTestId('uctc-gap-TC-CSPM-01')).toBeNull()
-
-    fireEvent.click(screen.getByTestId('uctc-gapscope-assertion'))
-    // TC-IR-08 is already proven by an assertion, so it is NOT a gap — even
-    // though /api/uctc/gaps (which only knows scenarios) still returns it.
-    await waitFor(() => expect(screen.queryByTestId('uctc-gap-TC-NDR-06')).toBeNull())
-    expect(screen.queryByTestId('uctc-gap-TC-IR-08')).toBeNull()
   })
 
-  it('sizes the blocked rows apart from the work that can start today', async () => {
-    mechRoutes()
-    render(<Harness initialParams={{ tab: 'gaps' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-gaps')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-gapscope-assertion'))
-    await waitFor(() => expect(screen.getByTestId('uctc-gaps-blocked')).toBeInTheDocument())
-
-    const blocked = screen.getByTestId('uctc-gaps-blocked')
-    expect(blocked).toHaveTextContent('blocked on a data path')
-    expect(within(blocked).getByTestId('uctc-blockedgap-TC-CSPM-01')).toBeInTheDocument()
-    // …and it never appears in the closable list above it.
-    expect(screen.queryByTestId('uctc-gap-TC-CSPM-01')).toBeNull()
-  })
-
-  it('warns that assertion gaps are unclosable when the mechanism is absent', async () => {
+  it('names the absent mechanism in the drawer of a row only an assertion can prove', async () => {
     happyRoutes({
       'GET /api/uctc/test-cases': wideTestCaseList,
-      'GET /api/uctc/gaps': { ...gapsPayload, gaps: [TC_CSPM_01, TC_IR_08], total: 2 },
+      'GET /api/uctc/test-cases/:id': detailRoute,
     })
-    render(<Harness initialParams={{ tab: 'gaps' }} />)
-    await waitFor(() => expect(screen.getByTestId('uctc-gaps')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByTestId('uctc-gapscope-assertion'))
-    await waitFor(() => expect(screen.getByTestId('uctc-gaps-noassertions')).toBeInTheDocument())
+    render(<Harness initialParams={{ tc: 'TC-IR-08' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-detail-needs-assertion')).toBeInTheDocument())
+    expect(screen.getByTestId('uctc-detail-needs-assertion')).toHaveTextContent('not deployed here')
   })
 })
 
@@ -974,5 +800,375 @@ describe('UcTcIndexView — the detail drawer names its proof', () => {
     // Not blocked — the engine still generates the signal — just not auto-reconciled.
     expect(screen.queryByTestId('uctc-detail-datapath')).toBeNull()
     expect(screen.getByTestId('uctc-detail-manual')).toHaveTextContent('Manual verification only')
+  })
+})
+
+/* ─── the proof path (design C5 / C6) ───────────────────────────────────
+ *
+ * Every number on these tabs comes from a SimCore API: scenarios and their
+ * tc_refs (/api/scenarios), door readiness (/api/doors/readiness + /api/doors),
+ * runs (/api/runs) and read back (readBackOf). Only a read-back run that saw
+ * a detection makes a test case covered, and a source that did not load reads
+ * "Can't check", never zero, never green.
+ */
+
+const SCENARIOS = [
+  {
+    scenario_id: 'SIM-EDR-001', tc_ref: 'TC-EDR-03', tc_refs: ['TC-EDR-03'],
+    steps: [{ id: 'step-01', expected_detections: [{ type: 'BIOC' }, { type: 'XQL' }] }],
+  },
+  {
+    scenario_id: 'SIM-EDR-002', tc_ref: 'TC-EDR-03', tc_refs: ['TC-EDR-03'],
+    steps: [{ id: 'step-01', expected_detections: [{ type: 'ABIOC' }] }],
+  },
+  {
+    scenario_id: 'SIM-TH-001', tc_ref: 'TC-TH-05', tc_refs: ['TC-TH-05'],
+    steps: [{ id: 'step-01', expected_detections: [{ type: 'XQL' }] }],
+  },
+]
+
+const runRow = (over) => ({
+  mode: 'pull', status: 'complete', delivered_at: '2026-11-13T10:00:05',
+  started_at: '2026-11-13T10:00:00', tc_verdict: 'pending',
+  tc_verdict_detail: { source: 'complete' }, expected_detections: 2, detected_count: 0,
+  ...over,
+})
+
+const RUNS = [
+  // Read back from the tenant, and it saw detections: TC-EDR-03 is covered.
+  runRow({
+    run_id: 'r-1', scenario_id: 'SIM-EDR-001', tc_verdict: 'pass', detected_count: 2,
+    tc_verdict_detail: { source: 'reconcile:xsiam:acme', scored_at: '2026-11-13T11:00:00' },
+  }),
+  // Finished, never read back — whatever its count says, it proves nothing yet.
+  runRow({ run_id: 'r-2', scenario_id: 'SIM-TH-001', detected_count: 3 }),
+]
+
+const needsDoor = (id, doorId, n = 1) => ({
+  scenario_id: id, state: 'needs_doors', scorable: 0, total: n, not_open: [{ door_id: doorId, detections: n }],
+})
+
+const READINESS = {
+  registry_loaded: true,
+  scenarios: {
+    'SIM-EDR-001': needsDoor('SIM-EDR-001', 'xdr_agent', 2),
+    'SIM-EDR-002': needsDoor('SIM-EDR-002', 'xdr_agent'),
+    'SIM-TH-001': needsDoor('SIM-TH-001', 'ngfw_traffic'),
+  },
+}
+
+const DOORS = {
+  doors: [
+    { key: 'xdr_agent', door_id: 'xdr_agent', label: 'XDR agent', scope: 'agent', state: 'unknown', rung: 'authored' },
+    { key: 'ngfw_traffic', door_id: 'ngfw_traffic', label: 'NGFW traffic logs', scope: 'tenant', state: 'unknown', rung: 'authored' },
+  ],
+}
+
+function proofRoutes(overrides = {}) {
+  return happyRoutes({
+    'GET /api/doors/readiness': READINESS,
+    'GET /api/doors': DOORS,
+    ...overrides,
+  })
+}
+
+const ENV = { scenarios: SCENARIOS, runs: RUNS, errors: {}, loading: {} }
+
+function EnvHarness({ env = ENV, ...props }) {
+  return (
+    <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, ...env }}>
+      <Harness {...props} />
+    </EnvironmentContext.Provider>
+  )
+}
+
+describe('UC / TC Index — tiles, Verdict and the Runs rollup (C5)', () => {
+  it('rolls use cases up into the four tiles from read-back runs only', async () => {
+    proofRoutes()
+    render(<EnvHarness />)
+    await waitFor(() => expect(screen.getByTestId('uctc-tiles')).toBeInTheDocument())
+
+    expect(screen.getByTestId('uctc-tile-use-cases')).toHaveTextContent('3')
+    // UC-EDR: its one detection test case was detected in a read-back run.
+    expect(screen.getByTestId('uctc-tile-partial')).toHaveTextContent('1')
+    expect(screen.getByTestId('uctc-tile-partial')).toHaveTextContent('1 fully')
+    // UC-NDR (no scenario) and UC-TH (run not read back) are pending.
+    expect(screen.getByTestId('uctc-tile-pending')).toHaveTextContent('2')
+    // No door has been checked, so "0 blocked" would be a guess.
+    expect(screen.getByTestId('uctc-tile-blocked')).toHaveTextContent('—')
+    expect(screen.getByTestId('uctc-tile-blocked')).toHaveTextContent("Can't check")
+  })
+
+  it('shows each test case verdict as an icon and a word', async () => {
+    proofRoutes()
+    render(<EnvHarness />)
+    await waitFor(() => expect(screen.getByTestId('uctc-verdict-TC-EDR-03')).toBeInTheDocument())
+
+    const verdict = (id) => screen.getByTestId(`uctc-verdict-${id}`)
+    expect(within(verdict('TC-EDR-03')).getByRole('img', { name: 'Detected' })).toHaveTextContent('✓')
+    expect(within(verdict('TC-NDR-06')).getByRole('img', { name: 'No scenario' })).toBeInTheDocument()
+    // Ran, never read back: Pending, not Detected, however many it counted.
+    expect(within(verdict('TC-TH-05')).getByRole('img', { name: 'Pending' })).toBeInTheDocument()
+    // A posture row is proven by an assertion, not by this path.
+    expect(screen.getByTestId('uctc-row-TC-EDR-05').closest('tr')).toHaveTextContent('by assertion')
+    // The rail carries the use case's verdict too.
+    expect(within(screen.getByTestId('uctc-uc-verdict-UC-EDR')).getByRole('img', { name: 'Proven' })).toBeInTheDocument()
+  })
+
+  it('rolls the runs up per test case, with the VerdictReason chip for runs that tested nothing', async () => {
+    proofRoutes()
+    const runs = [...RUNS, runRow({
+      run_id: 'r-3', scenario_id: 'SIM-EDR-002', delivered_at: null,
+      tc_verdict_detail: { source: 'complete', reason: 'not_executed' },
+    })]
+    render(<EnvHarness env={{ ...ENV, runs }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toBeInTheDocument())
+
+    expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toHaveTextContent('2 runs · 1 read back')
+    const chip = screen.getByTestId('uctc-runs-reason-TC-EDR-03-not_executed')
+    expect(chip).toHaveTextContent('1 nothing executed')
+    expect(chip.className).toContain('verdict-reason--warn')
+    expect(screen.getByTestId('uctc-runs-TC-TH-05')).toHaveTextContent('1 run · 1 not read back')
+    expect(screen.getByTestId('uctc-runs-TC-NDR-06')).toHaveTextContent('No runs')
+  })
+
+  it('says "Can\'t check" — never "No runs" — when the run list did not load', async () => {
+    proofRoutes()
+    render(<EnvHarness env={{ ...ENV, runs: [], errors: { runs: 'SimCore restarting' } }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toBeInTheDocument())
+
+    expect(within(screen.getByTestId('uctc-runs-TC-EDR-03')).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+    expect(within(screen.getByTestId('uctc-verdict-TC-EDR-03')).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+    expect(screen.getByTestId('uctc-tile-partial')).toHaveTextContent('—')
+    expect(screen.getByTestId('uctc-tile-pending')).toHaveTextContent('—')
+  })
+})
+
+describe('UC / TC tabs — the strip (C6)', () => {
+  it('marks the selected tab and counts each view', async () => {
+    proofRoutes()
+    render(<EnvHarness initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-coverage')).toBeInTheDocument())
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual(['Index3', 'Mechanisms5', 'Coverage1/3', 'Gaps2'])
+    expect(screen.getByTestId('uctc-mode-coverage')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('uctc-mode-coverage').className).toContain('is-active')
+    expect(screen.getByTestId('uctc-mode-index')).toHaveAttribute('aria-selected', 'false')
+  })
+})
+
+describe('UC / TC Mechanisms (C6)', () => {
+  it('draws one card per mechanism, never claiming the tenant has it', async () => {
+    proofRoutes()
+    render(<EnvHarness initialParams={{ tab: 'mechanisms' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-mech-BIOC')).toBeInTheDocument())
+
+    for (const m of ['BIOC', 'ABIOC', 'XQL', 'Correlation', 'IOC']) {
+      expect(within(screen.getByTestId(`uctc-mech-${m}`)).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+    }
+    // XQL: TC-EDR-03 (via SIM-EDR-001) and TC-TH-05 rely on it; 2 objects.
+    expect(screen.getByTestId('uctc-mech-XQL')).toHaveTextContent('2test cases rely on it · 2 objects')
+    expect(screen.getByTestId('uctc-mech-BIOC')).toHaveTextContent('1test cases rely on it · 1 objects')
+    expect(screen.getByTestId('uctc-mech-Correlation')).toHaveTextContent('0test cases rely on it · 0 objects')
+    expect(screen.queryByRole('img', { name: 'Present' })).toBeNull()
+    expect(screen.queryByRole('img', { name: 'Up' })).toBeNull()
+  })
+
+  it('lists each test case with its mechanisms and the component its signal comes from', async () => {
+    proofRoutes()
+    const onNavigate = vi.fn()
+    render(<EnvHarness initialParams={{ tab: 'mechanisms' }} onNavigate={onNavigate} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-mech-row-TC-EDR-03')).toBeInTheDocument())
+
+    const row = screen.getByTestId('uctc-mech-row-TC-EDR-03')
+    expect(row).toHaveTextContent('BIOC')
+    expect(row).toHaveTextContent('ABIOC')
+    expect(row).toHaveTextContent('XQL')
+    expect(within(row).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('uctc-mech-component-TC-EDR-03'))
+    expect(onNavigate).toHaveBeenCalledWith('component-agents', undefined)
+    expect(screen.getByTestId('uctc-mech-component-TC-TH-05')).toHaveTextContent('Firewall')
+    // TC-NDR-06 has no scenario, so it relies on nothing yet.
+    expect(screen.queryByTestId('uctc-mech-row-TC-NDR-06')).toBeNull()
+    expect(screen.getByTestId('uctc-mech-noscenario')).toHaveTextContent('1 detection test case has no scenario yet')
+  })
+})
+
+describe('UC / TC Coverage (C6)', () => {
+  it('counts the five stages, and only a read back counts as Detected', async () => {
+    proofRoutes()
+    render(<EnvHarness initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-funnel')).toBeInTheDocument())
+
+    const step = (s) => screen.getByTestId(`uctc-funnel-${s}`)
+    expect(step('scenario')).toHaveTextContent('2of 3Has a scenario')
+    // No door has been checked: no number, and it says so.
+    expect(step('components')).toHaveTextContent('—of 3Components ready')
+    expect(step('components')).toHaveTextContent("2 can't check")
+    expect(step('ran')).toHaveTextContent('2of 3Ran')
+    expect(step('readBack')).toHaveTextContent('1of 3Read back')
+    // r-2 counted 3 detections but was never read back: it does not count.
+    expect(step('detected')).toHaveTextContent('1of 3Detected')
+  })
+
+  it('draws a status per stage, stopping where each test case stalls', async () => {
+    proofRoutes()
+    render(<EnvHarness initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-cov-row-TC-EDR-03')).toBeInTheDocument())
+
+    const cell = (tc, stage) => screen.getByTestId(`uctc-cov-${tc}-${stage}`)
+    expect(within(cell('TC-EDR-03', 'detected')).getByRole('img', { name: 'Detected' })).toBeInTheDocument()
+    expect(within(cell('TC-EDR-03', 'components')).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+    expect(within(cell('TC-NDR-06', 'scenario')).getByRole('img', { name: 'None' })).toBeInTheDocument()
+    expect(cell('TC-NDR-06', 'ran')).toHaveTextContent('—')
+    expect(within(cell('TC-TH-05', 'readBack')).getByRole('img', { name: 'Not read back' })).toBeInTheDocument()
+    expect(cell('TC-TH-05', 'detected')).toHaveTextContent('—')
+    // Posture rows are not on the detection path.
+    expect(screen.queryByTestId('uctc-cov-row-TC-EDR-05')).toBeNull()
+  })
+
+  it('says a staged push bundle is waiting, not running and not ran', async () => {
+    proofRoutes()
+    const runs = [RUNS[0], runRow({
+      run_id: 'r-s', scenario_id: 'SIM-TH-001', mode: 'push', status: 'staged',
+      delivered_at: null, tc_verdict: null, tc_verdict_detail: null,
+    })]
+    render(<EnvHarness env={{ ...ENV, runs }} initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-cov-row-TC-TH-05')).toBeInTheDocument())
+
+    expect(within(screen.getByTestId('uctc-cov-TC-TH-05-ran')).getByRole('img', { name: 'Waiting' })).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('uctc-mode-index'))
+    await waitFor(() => expect(screen.getByTestId('uctc-runs-TC-TH-05')).toHaveTextContent('1 run · 1 waiting'))
+  })
+
+  it('carries the VerdictReason chip where a test case stalls', async () => {
+    proofRoutes()
+    const runs = [RUNS[0], runRow({
+      run_id: 'r-2', scenario_id: 'SIM-TH-001',
+      tc_verdict_detail: { source: 'reconcile:xsiam:acme', reason: 'soak_pending' },
+    })]
+    render(<EnvHarness env={{ ...ENV, runs }} initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-cov-reason-TC-TH-05')).toBeInTheDocument())
+
+    const cell = screen.getByTestId('uctc-cov-TC-TH-05-detected')
+    expect(within(cell).getByRole('img', { name: 'Not seen yet' })).toBeInTheDocument()
+    expect(screen.getByTestId('uctc-cov-reason-TC-TH-05')).toHaveTextContent('detectors soaking')
+  })
+
+  it('names the sources it could not read instead of drawing zeros', async () => {
+    proofRoutes({
+      'GET /api/doors/readiness': () => new Response(JSON.stringify({ detail: 'boom' }), { status: 500 }),
+    })
+    render(<EnvHarness env={{ ...ENV, runs: [], errors: { runs: 'SimCore restarting' } }} initialParams={{ tab: 'coverage' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-source-notice')).toHaveTextContent('Component readiness did not load'))
+
+    expect(screen.getByTestId('uctc-source-notice')).toHaveTextContent('The run list did not load (SimCore restarting)')
+    expect(screen.getByTestId('uctc-funnel-ran')).toHaveTextContent('—of 3')
+    expect(screen.getByTestId('uctc-funnel-detected')).toHaveTextContent('—of 3')
+    expect(screen.getByTestId('uctc-mode-coverage')).toHaveTextContent('—')
+  })
+})
+
+describe('UC / TC Gaps (C6)', () => {
+  it('lists every test case not yet detected, earliest stall first, with counts per kind', async () => {
+    proofRoutes()
+    render(<EnvHarness initialParams={{ tab: 'gaps' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-gaplist')).toBeInTheDocument())
+
+    const order = within(screen.getByTestId('uctc-gaplist')).getAllByRole('listitem').map((li) => li.dataset.testid)
+    expect(order).toEqual(['uctc-gap-TC-NDR-06', 'uctc-gap-TC-TH-05'])
+    expect(screen.queryByTestId('uctc-gap-TC-EDR-03')).toBeNull()
+
+    expect(screen.getByTestId('uctc-gapfilter-all')).toHaveTextContent('All2')
+    expect(screen.getByTestId('uctc-gapfilter-no_scenario')).toHaveTextContent('No scenario1')
+    expect(screen.getByTestId('uctc-gapfilter-component')).toHaveTextContent('Component not ready0')
+    expect(screen.getByTestId('uctc-gapfilter-never_ran')).toHaveTextContent('Never ran0')
+    expect(screen.getByTestId('uctc-gapfilter-not_read_back')).toHaveTextContent('Not read back1')
+    expect(screen.getByTestId('uctc-gapfilter-not_seen')).toHaveTextContent('Not seen yet0')
+    // "Can't check" appears only when something could not be checked.
+    expect(screen.queryByTestId('uctc-gapfilter-unknown')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('uctc-gapfilter-not_read_back'))
+    expect(screen.getByTestId('uctc-gapfilter-not_read_back')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByTestId('uctc-gap-TC-NDR-06')).toBeNull()
+    expect(screen.getByTestId('uctc-gap-why-TC-TH-05')).toHaveTextContent('Run r-2 finished but has not been read back')
+  })
+
+  it('offers no verb for "No scenario", only the link to Build a chain', async () => {
+    proofRoutes()
+    const onNavigate = vi.fn()
+    render(<EnvHarness initialParams={{ tab: 'gaps' }} onNavigate={onNavigate} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toBeInTheDocument())
+
+    const row = screen.getByTestId('uctc-gap-TC-NDR-06')
+    expect(within(row).getByRole('img', { name: 'No scenario' })).toBeInTheDocument()
+    const buttons = within(row).getAllByRole('button').map((b) => b.textContent)
+    expect(buttons).toEqual(['TC-NDR-06', 'Build a chain ›'])
+    fireEvent.click(within(row).getByText('Build a chain ›'))
+    expect(onNavigate).toHaveBeenCalledWith('composer')
+  })
+
+  it('reads a finished run back from the gap row', async () => {
+    const fetchMock = proofRoutes({ 'POST /api/runs/:id/reconcile': { observed: 1, denominator: 1, queries_issued: 2 } })
+    render(<EnvHarness initialParams={{ tab: 'gaps' }} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-TH-05')).toBeInTheDocument())
+
+    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-TH-05')).getByRole('button', { name: 'Read back' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u, init]) => String(u).includes('/api/runs/r-2/reconcile')
+      && init && init.method === 'POST')).toBe(true))
+  })
+
+  it('offers Run, Configure and Open results from the closed verb set where each fits', async () => {
+    const onNavigate = vi.fn()
+    const TC_NDR_07 = { ...TC_NDR_06, tc_id: 'TC-NDR-07', title: 'Second NDR detection' }
+    proofRoutes({
+      'GET /api/uctc/test-cases': { ...testCaseList, test_cases: [...testCaseList.test_cases, TC_NDR_07] },
+      'GET /api/doors/readiness': {
+        ...READINESS,
+        scenarios: {
+          ...READINESS.scenarios,
+          'SIM-NDR-001': needsDoor('SIM-NDR-001', 'ngfw_traffic'),
+          'SIM-NDR-002': needsDoor('SIM-NDR-002', 'xdr_agent'),
+        },
+      },
+      'GET /api/doors': { doors: [
+        { key: 'ngfw_traffic', door_id: 'ngfw_traffic', label: 'NGFW traffic logs', state: 'closed', rung: 'authored' },
+        { key: 'xdr_agent', door_id: 'xdr_agent', label: 'XDR agent', state: 'unknown', rung: 'authored' },
+      ] },
+    })
+    const scenarios = [
+      ...SCENARIOS,
+      { scenario_id: 'SIM-NDR-001', tc_ref: 'TC-NDR-06', tc_refs: ['TC-NDR-06'], steps: [] },
+      { scenario_id: 'SIM-NDR-002', tc_ref: 'TC-NDR-07', tc_refs: ['TC-NDR-07'], steps: [] },
+    ]
+    const runs = [RUNS[0], runRow({
+      run_id: 'r-2', scenario_id: 'SIM-TH-001',
+      tc_verdict_detail: { source: 'reconcile:xsiam:acme', scored_at: '2026-11-13T11:00:00' },
+    })]
+    render(<EnvHarness env={{ ...ENV, scenarios, runs }} initialParams={{ tab: 'gaps' }} onNavigate={onNavigate} />)
+    await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-NDR-06')).toHaveAttribute('data-kind', 'component'))
+
+    // A checked, closed door: Configure opens that component's setup.
+    expect(screen.getByTestId('uctc-gap-why-TC-NDR-06')).toHaveTextContent('Firewall: NGFW traffic logs is checked and closed')
+    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-NDR-06')).getByRole('button', { name: 'Configure' }))
+    expect(onNavigate).toHaveBeenCalledWith('component-firewall', { tab: 'setup' })
+
+    // An unchecked door is not "not ready": it never ran, so the verb is Run.
+    expect(screen.getByTestId('uctc-gap-TC-NDR-07')).toHaveAttribute('data-kind', 'never_ran')
+    expect(screen.getByTestId('uctc-gap-why-TC-NDR-07')).toHaveTextContent("whether its components are ready can't be checked yet")
+    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-NDR-07')).getByRole('button', { name: 'Run' }))
+    expect(onNavigate).toHaveBeenCalledWith('preflight', { arm: 'SIM-NDR-002' })
+
+    // Read back, nothing seen yet: Open results.
+    expect(screen.getByTestId('uctc-gap-TC-TH-05')).toHaveAttribute('data-kind', 'not_seen')
+    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-TH-05')).getByRole('button', { name: 'Open results' }))
+    expect(onNavigate).toHaveBeenCalledWith('proof', { run: 'r-2' })
+
+    // Every verb on the page is from the closed set.
+    const verbs = screen.getAllByRole('button').filter((b) => b.className.includes('kit-btn')).map((b) => b.textContent)
+    expect(verbs.length).toBeGreaterThan(0)
+    for (const v of verbs) expect(VERBS).toContain(v)
   })
 })

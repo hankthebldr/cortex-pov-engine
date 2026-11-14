@@ -13,6 +13,8 @@ import {
   BINDING_STATUS, GROUP_OPTIONS, SORT_OPTIONS, MEMBERSHIP_OPTIONS,
   parseOrganize, organizeUrlPatch, organizeCards, bindingSearchText, detectionTotal,
 } from './catalogBindings.js'
+import WhyThisMatters from './WhyThisMatters.jsx'
+import { ttpThesis, detectionThesis } from './sheetThesis.js'
 import '../../styles/destinations/ttps.css'
 
 // Maps a card detection-family key to the canonical detection-type chip token
@@ -66,9 +68,8 @@ export default function TtpBrowserView({
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedRuns, setSelectedRuns]     = useState(null)
 
-  const [filterStatus, setFilterStatus]     = useState('all')
+  const [filterSubdomain, setFilterSubdomain] = useState('all')
   const [filterTactic, setFilterTactic]     = useState('all')
-  const [filterPlatform, setFilterPlatform] = useState('all')
   const [query, setQuery]                   = useState('')
 
   // Group / sort by the UC / TC index. The join loads beside the corpus and
@@ -142,16 +143,17 @@ export default function TtpBrowserView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTtpId, loading])
 
-  const statuses = useMemo(
-    () => Array.from(new Set(ttps.map((t) => t.status))).sort(),
-    [ttps],
-  )
+  // Subdomain is the index's fy27_subdomain over the cards' bindings, so it is
+  // offered once the UC / TC join has loaded. A card evidencing test cases in
+  // two subdomains matches either.
+  const subdomains = useMemo(() => {
+    if (!bindingsReady) return []
+    const all = new Set()
+    for (const list of bindings.byCard.values()) for (const b of list) if (b.subdomain) all.add(b.subdomain)
+    return Array.from(all).sort()
+  }, [bindings, bindingsReady])
   const tactics = useMemo(
     () => Array.from(new Set(ttps.flatMap((t) => t.tactic_ids || []))).sort(),
-    [ttps],
-  )
-  const platforms = useMemo(
-    () => Array.from(new Set(ttps.flatMap((t) => t.platforms || []))).sort(),
     [ttps],
   )
 
@@ -163,9 +165,9 @@ export default function TtpBrowserView({
     // narrows by AND across tokens.
     const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     return ttps.filter((t) => {
-      if (filterStatus   !== 'all' && t.status !== filterStatus)         return false
+      if (filterSubdomain !== 'all'
+        && !(bindings.byCard.get(t.id) || []).some((b) => b.subdomain === filterSubdomain)) return false
       if (filterTactic   !== 'all' && !(t.tactic_ids || []).includes(filterTactic))   return false
-      if (filterPlatform !== 'all' && !(t.platforms  || []).includes(filterPlatform)) return false
       if (tokens.length > 0) {
         const haystack = [
           t.id, t.name, t.summary,
@@ -178,16 +180,14 @@ export default function TtpBrowserView({
       }
       return true
     })
-  }, [ttps, filterStatus, filterTactic, filterPlatform, query, bindings])
+  }, [ttps, filterSubdomain, filterTactic, query, bindings])
 
   const hasActiveFilters =
-    filterStatus !== 'all' || filterTactic !== 'all' ||
-    filterPlatform !== 'all' || query.trim() !== ''
+    filterSubdomain !== 'all' || filterTactic !== 'all' || query.trim() !== ''
 
   const resetFilters = () => {
-    setFilterStatus('all')
+    setFilterSubdomain('all')
     setFilterTactic('all')
-    setFilterPlatform('all')
     setQuery('')
     setPage(0)
   }
@@ -253,7 +253,7 @@ export default function TtpBrowserView({
         <div>
           <h1>TTP cards</h1>
           <div className="view-head__meta">
-            {ttps.length} TTPs · {tactics.length} tactics · {platforms.length} platforms · {visible.length} visible
+            {ttps.length} TTPs · {tactics.length} tactics · {visible.length} visible
           </div>
         </div>
       </div>
@@ -275,10 +275,6 @@ export default function TtpBrowserView({
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{tactics.length}</div>
           <div className="ttpb-stat__label">tactics</div>
-        </div>
-        <div className="ttpb-stat">
-          <div className="ttpb-stat__value mono">{platforms.length}</div>
-          <div className="ttpb-stat__label">platforms</div>
         </div>
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{visible.length}</div>
@@ -322,9 +318,10 @@ export default function TtpBrowserView({
       </div>
 
       <div className="ttpb-filters">
-        <FilterRow label="status"   active={filterStatus}   options={statuses}  onChange={setFilterStatus} />
+        {subdomains.length > 0 && (
+          <FilterRow label="subdomain" active={filterSubdomain} options={subdomains} onChange={setFilterSubdomain} />
+        )}
         <FilterRow label="tactic"   active={filterTactic}   options={tactics}   onChange={setFilterTactic} />
-        <FilterRow label="platform" active={filterPlatform} options={platforms} onChange={setFilterPlatform} />
       </div>
 
       {/* Organizes the GRID, so it leaves with it: no corpus, or a card open
@@ -724,7 +721,6 @@ function CardIndexRow({ id, bindings, placedBy }) {
 function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false, bindings, placedBy }) {
   const techniques = ttp.technique_ids || []
   const tactics    = ttp.tactic_ids    || []
-  const platforms  = ttp.platforms     || []
   const counts     = ttp.detection_counts || {}
   const totalDetections = detectionTotal(ttp)
 
@@ -741,7 +737,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
       <div className="ttpb-row__head" data-testid="ttpb-card-head">
         <span className="ttpb-row__id mono">{ttp.id}</span>
         {techniques[0] && <span className="ttpb-chip--tag mono ttpb-card__technique">{techniques[0]}</span>}
-        <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        {/* Every shipped card is active; only a draft or deprecated card says so. */}
+        {ttp.status && ttp.status !== 'active' && (
+          <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        )}
       </div>
       <div className="ttpb-row__name ttpb-card__title">{ttp.name}</div>
       <div className="ttpb-row__cat mono">
@@ -763,13 +762,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
             )}
           </div>
         )}
-        {(tactics.length > 0 || platforms.length > 0) && (
+        {tactics.length > 0 && (
           <div className="ttpb-row__chips">
             {tactics.map((t) => (
               <span key={t} className="ttpb-chip--tag ttpb-chip--tag-signal mono">{t}</span>
-            ))}
-            {platforms.map((p) => (
-              <span key={p} className="ttpb-chip--tag ttpb-chip--tag-muted mono">{p}</span>
             ))}
           </div>
         )}
@@ -876,6 +872,9 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
 
   const teardown = execution?.cleanup?.code || execution?.cleanup || null
 
+  // Design v33 C10: the card opens with why it matters, read off the card.
+  const thesis = ttpThesis(detail)
+
   return (
     <aside className="ttpb-detail" data-testid="ttp-detail">
       {/* THE WAY BACK. The `Close` further down is a btn--xs floated far right —
@@ -906,37 +905,36 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
         <button type="button" className="btn ttpb-btn--xs" onClick={onClose}>Close</button>
       </div>
 
-      <div className="ttpb-detail__actions">
-        {onAddToChain && <Button variant="primary" onClick={onAddToChain}>Add to chain</Button>}
-        <button
-          type="button"
-          className="btn ttpb-btn--sm ttpb-btn--accent"
+      {/* Design v33 C10: actions are verbs from the closed set, each with its
+          icon. The Navigator layer is a file, not an action, so it reads as a
+          link. */}
+      <div className="ttpb-detail__actions" data-testid="ttp-detail-actions">
+        {onAddToChain && <Button variant="primary" verb="Add to chain" onClick={onAddToChain} />}
+        <Button
+          variant="secondary"
+          verb="Run"
           data-testid="ttp-launch-all"
-          title="Launch every scenario whose expected_detections cite this TTP"
+          title="Run the scenarios whose expected detections cite this card: pick them, then launch"
           onClick={() => setLauncherOpen(true)}
-        >
-          Launch all&hellip;
-        </button>
+        />
+        {onEdit && (
+          <Button
+            variant="secondary"
+            verb="Customize"
+            data-testid="ttp-edit"
+            onClick={onEdit}
+            title="Open this card in the authoring editor"
+          />
+        )}
         {techniques.length > 0 && (
           <button
             type="button"
-            className="btn ttpb-btn--sm"
+            className="sheet-link"
             data-testid="ttp-export-navigator"
-            title="Download a MITRE ATT&CK Navigator layer scoped to this TTP — paste into the customer's Navigator for the briefing"
+            title="Download a MITRE ATT&CK Navigator layer scoped to this card — paste into the customer's Navigator for the briefing"
             onClick={() => downloadTtpLayer(detail)}
           >
-            Export ATT&amp;CK layer
-          </button>
-        )}
-        {onEdit && (
-          <button
-            type="button"
-            className="btn ttpb-btn--sm"
-            data-testid="ttp-edit"
-            onClick={onEdit}
-            title="Open this TTP in the authoring editor"
-          >
-            Edit&hellip;
+            ATT&amp;CK Navigator layer ↓
           </button>
         )}
       </div>
@@ -947,6 +945,8 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
           onClose={() => setLauncherOpen(false)}
         />
       )}
+
+      <WhyThisMatters parts={thesis} headingLevel={4} testId="ttp-why-matters" />
 
       {identity.summary && (
         <DetailSection label="Summary">
@@ -1075,7 +1075,7 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
       )}
 
       <DetailSection label="Detection coverage">
-        <DetectionsBreakdown detections={detections} />
+        <DetectionsBreakdown detections={detections} card={detail} />
       </DetailSection>
 
       {products.length > 0 && (
@@ -1304,7 +1304,7 @@ function formatMttd(seconds) {
  * filesystem. Closes the "show me the actual detection" gap PR #50
  * left as a follow-up.
  */
-function DetectionsBreakdown({ detections }) {
+function DetectionsBreakdown({ detections, card = null }) {
   const kinds = [
     { key: 'biocs',             label: 'BIOCs',        bodyKey: 'logic' },
     { key: 'xql_queries',       label: 'XQL queries',  bodyKey: 'query' },
@@ -1340,6 +1340,7 @@ function DetectionsBreakdown({ detections }) {
                 index={idx}
                 item={item}
                 bodyKey={bodyKey}
+                card={card}
               />
             ))}
           </div>
@@ -1349,7 +1350,7 @@ function DetectionsBreakdown({ detections }) {
   )
 }
 
-function DetectionItem({ kind, index, item, bodyKey }) {
+function DetectionItem({ kind, index, item, bodyKey, card = null }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied]     = useState(false)
 
@@ -1407,11 +1408,14 @@ function DetectionItem({ kind, index, item, bodyKey }) {
       </button>
       {expanded && (
         <div className="ttpb-det-item__body">
-          {desc && (
-            <p className="ttpb-det-item__desc">
-              {desc}
-            </p>
-          )}
+          {/* Design v33 C10: an opened detection starts with why it matters.
+              Its description, purpose or context is read into those parts,
+              so it is not repeated as a paragraph here. */}
+          <WhyThisMatters
+            parts={detectionThesis(kind, item, card)}
+            headingLevel={5}
+            testId={`ttp-det-why-${kind}-${index}`}
+          />
           {body ? (
             <>
               <div className="ttpb-det-item__body-head">

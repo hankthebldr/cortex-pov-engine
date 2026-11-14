@@ -11,6 +11,14 @@
  *   plus     add to the chain
  *   sliders  the inspector (a step's settings)
  *   star     one of the system's best scenarios (Favorites)
+ *   check    Test (the verb), and "What proves it"
+ *   gear     Configure (the verb), and "What it needs"
+ *   pencil   Customize (the verb)
+ *   rotate   Read back (the verb)
+ *   external Open results (the verb)
+ *   target   a deep dive's thesis ("Why this matters")
+ *   back     the header's Back: the previous place in the console's history
+ *   forward  the header's Forward: the next place, after a Back
  */
 import React from 'react'
 
@@ -38,6 +46,40 @@ const SHAPES = {
       <circle cx="6.25" cy="11" r="1.75" />
     </g>
   ),
+  check: <path d="M3 8.5l3.2 3.2L13 4.8" {...STROKE} />,
+  gear: (
+    <g {...STROKE}>
+      <circle cx="8" cy="8" r="2.4" />
+      <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6L5 5M11 11l1.4 1.4M3.6 12.4L5 11M11 5l1.4-1.4" />
+    </g>
+  ),
+  pencil: (
+    <g {...STROKE}>
+      <path d="M10.6 2.6l2.8 2.8L6 12.8H3.2V10z" />
+      <path d="M9 4.2L11.8 7" />
+    </g>
+  ),
+  rotate: (
+    <g {...STROKE}>
+      <path d="M3.4 8a4.6 4.6 0 1 0 1.5-3.4" />
+      <path d="M3.2 2.4v2.8H6" />
+    </g>
+  ),
+  external: (
+    <g {...STROKE}>
+      <path d="M9.2 2.8h4v4" />
+      <path d="M13.2 2.8L7.6 8.4" />
+      <path d="M11.4 9.4v3.8H2.8V4.6h3.8" />
+    </g>
+  ),
+  target: (
+    <g {...STROKE}>
+      <circle cx="8" cy="8" r="5.6" />
+      <circle cx="8" cy="8" r="2.2" />
+    </g>
+  ),
+  back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
+  forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

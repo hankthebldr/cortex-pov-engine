@@ -78,8 +78,8 @@ const TABS_CHEATSHEET = [
     body: 'Generate IaC bundles for the target environment. Pick provider + modules, fill required params, Generate Bundle → download tar.gz with Terraform. Modules auto-select their dependencies (e.g. picking cdr also picks base + tim).',
   },
   {
-    name: 'ATT&CK Coverage (More ▾)',
-    body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Scenarios →" jumps to Scenarios pre-filtered to the ones exercising that technique.',
+    name: 'Dashboards (Run & observe)',
+    body: 'Every scenario in the library counted three ways: detection source × use case, MITRE ATT&CK, and planes × doors. Open a cell or technique to list the scenarios behind it; each opens its sheet on Scenarios. Detected means a run of the scenario was read back from the tenant and detected something; a scenario that is only authored is never counted as covered.',
   },
 ]
 

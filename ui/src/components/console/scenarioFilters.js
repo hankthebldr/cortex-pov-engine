@@ -14,10 +14,13 @@
  *              two scenarios evidence matches both
  *   status     ready to run (readiness `ready`) · needs a component (some door
  *              not open) · never run · already run
+ *   unmapped   missing a UC/TC, a detection source or a MITRE technique, as
+ *              `scenarioMapping.js` reads them from the API (never inferred)
  */
 import { notOpenDoorIds, readinessKind } from './doors/doorModel.js'
+import { mappingFor } from './scenarioMapping.js'
 
-export const EMPTY_SCENARIO_FILTERS = Object.freeze({ component: '', uc: '', tc: '', status: '' })
+export const EMPTY_SCENARIO_FILTERS = Object.freeze({ component: '', uc: '', tc: '', status: '', unmapped: false })
 
 const idOf = (s) => s.scenario_id || s.id
 
@@ -40,11 +43,12 @@ export function matchesScenarioFilters(s, f, { readiness = null, history = null 
   if (f.status === 'needs' && notOpenDoorIds(r).length === 0) return false
   if (f.status === 'never' && hasHistory(history, id)) return false
   if (f.status === 'run' && !hasHistory(history, id)) return false
+  if (f.unmapped && !mappingFor(s, r).unmapped) return false
   return true
 }
 
 export function applyScenarioFilters(list, f, ctx) {
-  if (!f || (!f.component && !f.uc && !f.tc && !f.status)) return list
+  if (!f || (!f.component && !f.uc && !f.tc && !f.status && !f.unmapped)) return list
   return list.filter((s) => matchesScenarioFilters(s, f, ctx))
 }
 

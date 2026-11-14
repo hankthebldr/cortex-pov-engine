@@ -92,13 +92,14 @@ describe('LaunchView preflight', () => {
       expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/beacon offline/i)
     })
     // …and the button the DC would have clicked is dead, with the reason next to it.
-    expect(screen.getByRole('button', { name: /Launch run/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
   })
 
   it('does NOT disable launch for a mere warning — ceremony is not safety', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
     await waitFor(() => expect(screen.getByTestId('preflight-tools')).toHaveAttribute('data-status', 'warn'))
-    expect(screen.getByRole('button', { name: /Launch run/i })).not.toBeDisabled()
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    expect(screen.getByRole('button', { name: 'Run' })).not.toBeDisabled()
   })
 
   it('surfaces a failed door readiness fetch in the Data path check instead of "not reported"', async () => {
@@ -155,7 +156,8 @@ describe('LaunchView — refused pull launch renders code and detail', () => {
       }),
     }))
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    const btn = await screen.findByRole('button', { name: /Launch run/i })
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    const btn = await screen.findByRole('button', { name: 'Run' })
     await waitFor(() => expect(btn).not.toBeDisabled())
     fireEvent.click(btn)
     const alert = await screen.findByRole('alert')
@@ -176,7 +178,8 @@ describe('LaunchView — refused pull launch renders code and detail', () => {
       }),
     }))
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    const btn = await screen.findByRole('button', { name: /Launch run/i })
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    const btn = await screen.findByRole('button', { name: 'Run' })
     await waitFor(() => expect(btn).not.toBeDisabled())
     fireEvent.click(btn)
     const alert = await screen.findByRole('alert')

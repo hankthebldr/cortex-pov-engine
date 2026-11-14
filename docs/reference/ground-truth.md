@@ -7,15 +7,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 201 |
+| Loadable scenarios | 205 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 199 |
+| TTP cards | 203 |
 | Detection planes | 16 |
-| Step-detections | 1430 |
-| Catalog detection objects | 2294 |
-| ABIOC+Analytics share (step-detections) | 15.4% |
-| Correlation share (step-detections) | 10.1% |
-| Distinct MITRE techniques (base) | 240 (128) |
+| Step-detections | 1452 |
+| Catalog detection objects | 2336 |
+| ABIOC+Analytics share (step-detections) | 15.3% |
+| Correlation share (step-detections) | 10.3% |
+| Distinct MITRE techniques (base) | 241 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
 
@@ -33,7 +33,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | CLOUD_APP | 10 |
 | CSPM | 5 |
 | DLP | 5 |
-| EDR | 25 |
+| EDR | 29 |
 | EMAIL | 5 |
 | ITDR | 20 |
 | KOI | 12 |
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1430 (16.5%) |
-| Marker-only steps | 98/835 (11.7%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1452 (16.2%) |
+| Marker-only steps | 98/850 (11.5%) |
 | Scenarios with indicators | 16 |
 | Indicators (in-band) | 95 |
 | Indicators (not in-band) | 11 |
@@ -55,24 +55,24 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 164 |
+| ABIOC | 166 |
 | Analytics | 56 |
 | BIOC | 374 |
-| Correlation | 145 |
+| Correlation | 149 |
 | IOC | 119 |
 | Prevention | 2 |
-| XQL | 570 |
+| XQL | 586 |
 
 ### Grouping keys (`make check-grouping`)
 
-1430 step-detections in 201 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+1452 step-detections in 205 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
 
 | Code | Outcome | Count |
 |---|---|---:|
 | G-01 | WARN: Medium+ detections share no native key | 0 |
 | G-02 | WARN: stitched step carries only below-Medium detections | 2 |
 | G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
-| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1061 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1083 |
 | G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters
@@ -114,8 +114,8 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 163 |
-| By HTTP method | `{"api_route": 1, "delete": 6, "get": 102, "post": 46, "put": 8}` |
+| Route decorators | 165 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 103, "post": 47, "put": 8}` |
 | `APIRouter()` instances | 31 |
 | Router files (`core/api/*.py`) | 29 |
 

@@ -473,7 +473,7 @@ function SimulateStep({ step, onNavigate }) {
       <div className="gs-row">
         {first && (
           <button type="button" className="pov-btn pov-btn--primary" data-testid="gs-simulate-launch"
-            onClick={() => onNavigate('guided', { arm: first.scenario_id || first.id })}>
+            onClick={() => onNavigate('preflight', { arm: first.scenario_id || first.id })}>
             Set up this run
           </button>
         )}

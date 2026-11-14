@@ -122,6 +122,40 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "ABIOC (TC-EDR-03) with full causality (TC-EDR-05). The host-impact counterpart to the ESXi "
         "path (SIM-EDR-019) and to the SAFE-MODE non-encrypting variant (SIM-EDR-008); all three rows "
         "already evidenced — depth, not new index breadth."),
+    "SIM-EDR-026": (["TC-EDR-03", "TC-EDR-05"], REMAP,
+        "crond masquerade — the shell is really copied and renamed to crond in a /var/tmp scratch "
+        "directory and run from there. Declares the built-in single-event Analytics BIOC "
+        "'Masquerading as the Linux crond process' (TC-EDR-03, the behavioural method) on the basis "
+        "of its reference page, with the crond-named parent and its discovery children as the "
+        "process chain (TC-EDR-05). Nothing has been run on an endpoint. Both rows already "
+        "evidenced — depth, not new index breadth."),
+    "SIM-EDR-027": (["TC-EDR-05"], REMAP,
+        "Archive-then-SSH-client exfiltration attempt on Linux — a decoy tree archived with tar, "
+        "then named to scp and piped to ssh at a .invalid host, so the transfer fails by design and "
+        "no data leaves the host. The claim is the process chain (archiver, then SSH client, one "
+        "host), not a verdict. It is declared as five Tier-2 XQL rows plus operator-installed "
+        "CR-EDR-0027. Two lab pull runs on pov-target-01 (2026-11-14) ran all five steps to exit 0 "
+        "and the five XQL rows returned rows; step-02's gzip -9 leg was not recorded by the agent "
+        "in either run, so it is not declared. CR-EDR-0027's XQL and its fallback were accepted as "
+        "queries and returned the chain's row; the rule itself is not installed, so no issue has "
+        "been observed. The built-in alert 'A compressed file was exfiltrated over SSH' is hunt "
+        "content only (no SSH session is opened; Informational) and was not raised. TC-EDR-05 is "
+        "already evidenced — depth, not new index breadth. TC-DLP-01 is left off on purpose: "
+        "nothing here inspects content."),
+    "SIM-EDR-028": (["TC-EDR-05"], REMAP,
+        "Sudoedit execution burst — sixty real starts of the harmless CVE-2021-3156 probe form "
+        "(sudoedit -s /) on one causality chain, declared as process-start validation rows plus the "
+        "operator-installed count correlation CR-EDR-0028, not a malware verdict (so TC-EDR-03 is "
+        "not claimed). The built-in 'Sudoedit Brute force attempt' alert is hunt-only: it judges the "
+        "count against a trained baseline. TC-EDR-05 is already evidenced — depth, not new index "
+        "breadth."),
+    "SIM-EDR-029": (["TC-EDR-03", "TC-EDR-05"], REMAP,
+        "sshpass credential-stuffing burst at a .invalid name — six real sshpass runs around the "
+        "OpenSSH client, declared against the built-in single-event Analytics BIOC 'Suspicious "
+        "sshpass command execution'. sshpass is a packaged binary, so the behavioral method is what "
+        "flags it (TC-EDR-03); the shell to sshpass to ssh chain is the causality claim (TC-EDR-05). "
+        "The burst has not been run anywhere (it needs the sshpass package on the endpoint). Both "
+        "rows already evidenced — depth, not new index breadth."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,

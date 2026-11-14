@@ -177,17 +177,25 @@ def _run_path(run_id: str, suffix: str = "") -> str:
     return f"/api/runs/{encode_segment(run_id)}{suffix}"
 
 
+def _project_run(run: Any) -> tuple[Any, bool]:
+    """``run`` with its case ledger projected (``project_case_ledger``), and
+    whether that ledger has cases. A run without a ledger is returned as is."""
+    if isinstance(run, dict) and run.get("case_ledger") is not None:
+        ledger = project_case_ledger(run["case_ledger"])
+        framed = (isinstance(ledger, dict) and isinstance(ledger.get("cases"), list)
+                  and bool(ledger["cases"]))
+        return {**run, "case_ledger": ledger}, framed
+    return run, False
+
+
 async def run_get(ctx: ToolContext, args: RunIdIn) -> Envelope:
     """The run as SimCore returns it, with its case ledger projected
     (``project_case_ledger``): a case's ``resolve_comment`` sits under
     ``tenant_text`` and a rejected ``xdr_url`` is withheld. A ledger with
     cases adds ``data_notice``."""
-    body = await ctx.client.get(_run_path(args.run_id))
-    if isinstance(body, dict) and body.get("case_ledger") is not None:
-        ledger = project_case_ledger(body["case_ledger"])
-        body = {**body, "case_ledger": ledger}
-        if isinstance(ledger, dict) and isinstance(ledger.get("cases"), list) and ledger["cases"]:
-            body["data_notice"] = DATA_NOTICE
+    body, framed = _project_run(await ctx.client.get(_run_path(args.run_id)))
+    if framed:
+        body["data_notice"] = DATA_NOTICE
     return await _simcore(ctx, body, "simcore")
 
 
@@ -200,9 +208,13 @@ async def run_list(ctx: ToolContext, args: RunListIn) -> Envelope:
         limit=args.limit, offset=args.offset or None))
     _require(body, where, "runs")
     total = _int(body, where, "total")
-    page = body["runs"][:args.limit]
+    projected = [_project_run(r) for r in body["runs"][:args.limit]]
+    page = [r for r, _ in projected]
     truncated = args.offset + len(page) < total
-    return await _simcore(ctx, {"runs": page, "total": total, "truncated": truncated}, "simcore", truncated)
+    data = {"runs": page, "total": total, "truncated": truncated}
+    if any(framed for _, framed in projected):
+        data["data_notice"] = DATA_NOTICE
+    return await _simcore(ctx, data, "simcore", truncated)
 
 
 async def run_results(ctx: ToolContext, args: RunResultsIn) -> Envelope:
@@ -220,7 +232,13 @@ async def run_report(ctx: ToolContext, args: ReportIn) -> Envelope:
 
 
 async def run_pair(ctx: ToolContext, args: RunIdIn) -> Envelope:
-    return await _simcore(ctx, await ctx.client.get(_run_path(args.run_id, "/pair")), "simcore")
+    body = await ctx.client.get(_run_path(args.run_id, "/pair"))
+    if isinstance(body, dict) and isinstance(body.get("runs"), list):
+        projected = [_project_run(r) for r in body["runs"]]
+        body = {**body, "runs": [r for r, _ in projected]}
+        if any(framed for _, framed in projected):
+            body["data_notice"] = DATA_NOTICE
+    return await _simcore(ctx, body, "simcore")
 
 
 async def run_abort(ctx: ToolContext, args: RunIdIn) -> Envelope:
@@ -459,15 +477,22 @@ def specs() -> list[ToolSpec]:
           "on paloaltonetworks.com is null with xdr_url_withheld: true. A ledger with cases adds "
           f"data_notice: {DATA_NOTICE} {_SIMCORE_ONLY}"),
         s("cortexsim.run.list", RunListIn, run_list, "read", "simcore",
-          f"GET /api/runs filtered by status/scenario_id, newest first; capped with truncated + total. "
-          f"{_SIMCORE_ONLY}"),
+          "GET /api/runs filtered by status/scenario_id, newest first; capped with truncated + total. "
+          "Each row's case_ledger.cases[] come projected like cortexsim.run.get (resolve_comment under "
+          "tenant_text, a rejected xdr_url null with xdr_url_withheld: true); a ledger with cases on any "
+          f"row adds data_notice: {DATA_NOTICE} {_SIMCORE_ONLY}"),
         s("cortexsim.run.results", RunResultsIn, run_results, "read", "simcore",
           "GET /api/results/{run_id}, capped with truncated + total: each Result keeps its outcome axis verbatim (prevented needs two "
           f"witnesses; a lost beacon reads pending). {_SIMCORE_ONLY}"),
         s("cortexsim.run.report", ReportIn, run_report, "read", "simcore",
-          f"GET /api/runs/{{id}}/report?format=markdown, capped at 256 KiB with truncated. {_SIMCORE_ONLY}"),
+          "GET /api/runs/{id}/report?format=markdown, capped at 256 KiB with truncated. The Markdown "
+          "report only: its case table renders no ledger free text, escapes every tenant string and "
+          f"withholds a rejected link. {_SIMCORE_ONLY}"),
         s("cortexsim.run.pair", RunIdIn, run_pair, "read", "simcore",
-          f"GET /api/runs/{{id}}/pair: the paired report/block run and the per-detection delta. {_SIMCORE_ONLY}"),
+          "GET /api/runs/{id}/pair: the paired report/block run and the per-detection delta. Each "
+          "run's case_ledger.cases[] come projected like cortexsim.run.get (resolve_comment under "
+          "tenant_text, a rejected xdr_url null with xdr_url_withheld: true); merge carries only the "
+          f"merge class, reason and basis. A ledger with cases adds data_notice: {DATA_NOTICE} {_SIMCORE_ONLY}"),
         s("cortexsim.run.abort", RunIdIn, run_abort, "destructive", "host",
           "POST /api/runs/{id}/abort: kills the run's process group on the host. Idempotent; an abort "
           "can only reduce what runs."),

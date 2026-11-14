@@ -6,55 +6,80 @@ import {
   getUcTcUseCase,
   getUcTcTestCases,
   getUcTcTestCase,
-  getUcTcCoverage,
-  getUcTcGaps,
   getAssertions,
   getAssertionRuns,
+  getDoorReadiness,
+  getDoors,
 } from '../../api/client.js'
+import { agentIdOf } from '../../api/ids.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import { componentConfigure, componentRoute } from '../../app/componentRoutes.js'
 import {
   MECHANISM,
   REACH,
   assertionAvailability,
-  classCoverage,
-  coverageTotals,
   indexAssertionRuns,
   indexAssertions,
   latestVerdict,
   proofScope,
   readPath,
 } from './uctcMechanisms.js'
+import {
+  GAP_CELL_WORDS,
+  GAP_KINDS,
+  GAP_LABELS,
+  GAP_STAGE,
+  GAP_STATUS,
+  STAGES,
+  STAGE_DONE_WORDS,
+  anyDoorChecked,
+  buildProofPaths,
+  funnel,
+  gapCounts,
+  gaps as gapList,
+  indexTiles,
+  isDetectionTestCase,
+  mechanismModel,
+  pathsByUseCase,
+  runFacts,
+  runsByScenario,
+  scenariosByTc,
+  sourceState,
+  useCaseVerdict,
+} from './uctcProofPath.js'
+import { Button, StatusIcon } from './kit/index.js'
+import { COMPONENTS } from './componentModel.js'
+import DetectionTypeChip from './DetectionTypeChip.jsx'
 import VerdictReason from './VerdictReason.jsx'
 import { verdictReason } from './verdictReason.js'
+import useReadBack from './useReadBack.jsx'
 import './UcTcIndexView.css'
 import '../../styles/destinations/uctc.css'
 
+void React
+
 /**
- * UcTcIndexView — read-only browser over the FY27 v2.2 master
- * Use-Case / Test-Case index, joined to the engine's own evidence.
+ * UcTcIndexView — the FY27 v2.2 master Use-Case / Test-Case index, joined to
+ * what this SimCore has actually done about each row.
  *
- * The index (docs/uc_tc_mapping/_v2.2-source/) is the customer-facing
- * methodology: 49 use cases → 203 UCS groups → 266 test cases, each with a
- * validation class (DET / HNT / POS / PLT / AUT), a differentiation tier, a
- * primary KPI and a threshold. CortexSim's 161 scenarios evidence a subset of
- * it. This surface makes BOTH halves visible: what is proven, and — just as
- * important — what is not.
+ * Four tabs, persisted in the hash router as ``?tab=`` (design C5 / C6):
+ *   index      — four use-case tiles, the UC rail, the filterable test-case
+ *                table with a Verdict and a Runs rollup per row, and the
+ *                per-TC / per-UC drawers.
+ *   mechanisms — one card per detection mechanism (BIOC · ABIOC · XQL ·
+ *                Correlation · IOC): how many test cases rely on it, how many
+ *                objects their scenarios declare, and what the tenant shows.
+ *   coverage   — the proof path as five counts, then one row per test case
+ *                with a status per stage.
+ *   gaps       — every test case not yet detected, earliest stall first, each
+ *                with one sentence and one verb.
  *
- * Four modes, persisted in the hash router as ``?tab=``:
- *   index      — UC rail (grouped by FY27 subdomain) → filterable TC table →
- *                per-TC detail with measurement contract, entitlements, the
- *                artifacts that evidence it, and their run verdicts.
- *   mechanisms — coverage BY VALIDATION CLASS, with the mechanism that proves
- *                each class, the verdict ceiling, and what still blocks it.
- *   coverage   — per-UC coverage bars (worst first) + class / tier / plane rollups.
- *   gaps       — the UNEVIDENCED test cases, P1 first, split by whether the
- *                engine can close them at all.
- *
- * The whole-index question this surface answers is NOT "what is the number".
- * It is five different questions, because the 266 rows split five ways by
- * validation class and each class is proven by a different mechanism:
- * DET/HNT by attack scenarios, POS/PLT/AUT by assertions. A flat 84/266 fuses
- * them and misleads. ``uctcMechanisms.js`` carries that arithmetic; this file
- * only renders it.
+ * AUTHORED IS NOT PROVEN. A test case is covered only once a read-back run of
+ * a scenario that evidences it saw a detection (uctcProofPath.js). Every
+ * number comes from a SimCore API; a source that did not load reads "Can't
+ * check", never zero and never green. No SimCore API reports whether a
+ * mechanism's content is present in the tenant, so every mechanism reads
+ * "Can't check".
  *
  * Deep-linkable: ``#/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03``.
  *
@@ -113,17 +138,30 @@ function evidenceOf(tc) {
   return (tc && tc.evidence) || {}
 }
 
-function isDetectionBackable(tc) {
-  return DET_CLASSES.includes(tc?.validation_class)
+const TABS = [
+  { id: 'index', label: 'Index' },
+  { id: 'mechanisms', label: 'Mechanisms' },
+  { id: 'coverage', label: 'Coverage' },
+  { id: 'gaps', label: 'Gaps' },
+]
+
+const COMPONENT_NAME = Object.fromEntries(COMPONENTS.map((c) => [c.key, c.name]))
+
+/** What each source is called when it did not load. */
+const SOURCE_NAMES = {
+  scenarios: 'The scenario list',
+  runs: 'The run list',
+  readiness: 'Component readiness',
+  doors: 'Door states',
 }
 
-/** Stable sort key: priority P1→P3, then UC, then TC id. */
-function gapSort(a, b) {
-  const p = String(a.priority || 'P9').localeCompare(String(b.priority || 'P9'))
-  if (p !== 0) return p
-  const u = String(a.uc_id || '').localeCompare(String(b.uc_id || ''))
-  if (u !== 0) return u
-  return String(a.tc_id || '').localeCompare(String(b.tc_id || ''))
+function shortRun(id) {
+  const s = String(id || '')
+  return s.length > 12 ? s.slice(0, 8) : s
+}
+
+function isStaged(run) {
+  return String((run && run.status) || '').toLowerCase() === 'staged'
 }
 
 /* ─── surface ───────────────────────────────────────────────────────── */
@@ -133,11 +171,11 @@ export default function UcTcIndexView({
   setParams = () => {},
   onNavigate = () => {},
 }) {
-  const tab = ['index', 'mechanisms', 'coverage', 'gaps'].includes(params.tab)
-    ? params.tab
-    : 'index'
+  const tab = TABS.some((t) => t.id === params.tab) ? params.tab : 'index'
   const selectedUc = params.uc || null
   const selectedTc = params.tc || null
+  const env = useEnvironment()
+  const { reading, readBack } = useReadBack()
 
   const [summary, setSummary] = useState(null)
   const [useCases, setUseCases] = useState([])
@@ -210,9 +248,71 @@ export default function UcTcIndexView({
     return () => { cancelled = true }
   }, [])
 
+  // ── door readiness: one fetch for every scenario, keyed on the selected
+  //    target agent (as the Library does). A failure is "Can't check" for the
+  //    Components stage, never "not ready".
+  const doorAgentId = agentIdOf(env.agent)
+  const [doorState, setDoorState] = useState({ map: null, rows: null, error: null, loading: true })
+  useEffect(() => {
+    let cancelled = false
+    setDoorState((s) => ({ ...s, loading: true }))
+    Promise.all([getDoorReadiness(doorAgentId), getDoors()])
+      .then(([ready, doors]) => {
+        if (!cancelled) setDoorState({ map: ready.scenarios, rows: doors.doors, error: null, loading: false })
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setDoorState({ map: null, rows: null, error: err?.message || 'door readiness failed', loading: false })
+        }
+      })
+    return () => { cancelled = true }
+  }, [doorAgentId])
+
   const indexLoaded = envelope ? envelope.index_loaded !== false : true
 
-  /* ── the mechanism model: five classes, five different stories ── */
+  /* ── the proof path: every stage from its own source ── */
+  const envLoading = env.loading || {}
+  const envErrors = env.errors || {}
+  const sources = useMemo(() => ({
+    scenarios: sourceState({
+      loading: envLoading.scenarios, error: envErrors.scenarios, data: env.scenarios, emptyIsFault: true,
+    }),
+    runs: sourceState({ loading: envLoading.runs, error: envErrors.runs, data: env.runs }),
+    readiness: doorState.loading ? 'loading' : (doorState.map ? 'ok' : 'error'),
+    doors: doorState.loading ? 'loading' : (doorState.rows ? 'ok' : 'error'),
+  }), [env.scenarios, env.runs, envLoading.scenarios, envLoading.runs, envErrors.scenarios,
+    envErrors.runs, doorState])
+  const sourceErrors = { scenarios: envErrors.scenarios, runs: envErrors.runs, readiness: doorState.error, doors: doorState.error }
+
+  const paths = useMemo(() => buildProofPaths(testCases, {
+    scenarios: env.scenarios || [],
+    runs: env.runs || [],
+    readiness: doorState.map,
+    doorRows: doorState.rows,
+    sources,
+  }), [testCases, env.scenarios, env.runs, doorState.map, doorState.rows, sources])
+  const pathByTc = useMemo(() => new Map(paths.map((p) => [p.tcId, p])), [paths])
+  const pathsByUc = useMemo(() => pathsByUseCase(paths), [paths])
+
+  // The Runs rollup covers every row, detection or not: it is what ran.
+  const scenIdx = useMemo(() => scenariosByTc(env.scenarios || []), [env.scenarios])
+  const runIdx = useMemo(() => runsByScenario(env.runs || []), [env.runs])
+  const rollupFor = useCallback((tcId) => runFacts(
+    (scenIdx.get(tcId) || []).flatMap((s) => runIdx.get(s.scenario_id) || []),
+  ), [scenIdx, runIdx])
+
+  const useCaseIds = useMemo(() => (useCases.length
+    ? useCases.map((u) => u.uc_id)
+    : Array.from(new Set(testCases.map((t) => t.uc_id).filter(Boolean)))), [useCases, testCases])
+  const tiles = useMemo(() => indexTiles({
+    useCaseIds, testCases, paths, sources, doorsChecked: anyDoorChecked(doorState.rows),
+  }), [useCaseIds, testCases, paths, sources, doorState.rows])
+  const mech = useMemo(() => mechanismModel(paths, env.scenarios || []), [paths, env.scenarios])
+  const counts = useMemo(() => gapCounts(paths), [paths])
+  const reachKnown = sources.scenarios === 'ok' && sources.runs === 'ok'
+  const covered = paths.filter((p) => p.covered).length
+
+  /* ── the assertion mechanism (drawer + the Mechanisms footnote) ── */
   const assertionsByTc = useMemo(
     () => indexAssertions(assertionPayload), [assertionPayload],
   )
@@ -223,56 +323,6 @@ export default function UcTcIndexView({
   const runsByAssertion = useMemo(
     () => indexAssertionRuns(assertionRuns), [assertionRuns],
   )
-  const classRows = useMemo(
-    () => classCoverage(testCases, assertionsByTc, runsByAssertion),
-    [testCases, assertionsByTc, runsByAssertion],
-  )
-  const mechanismTotals = useMemo(() => coverageTotals(classRows), [classRows])
-
-  /* ── derived stats (fall back to the rows on screen when /summary is
-        unavailable, so the tiles can never disagree with the table) ── */
-  const derived = useMemo(() => {
-    const detBackable = testCases.filter(isDetectionBackable)
-    const evidenced = testCases.filter((t) => evidenceOf(t).evidenced)
-    const detEvidenced = detBackable.filter((t) => evidenceOf(t).evidenced)
-    return {
-      total: testCases.length,
-      detection_backable: detBackable.length,
-      evidenced: evidenced.length,
-      evidenced_detection_backable: detEvidenced.length,
-      gaps: detBackable.length - detEvidenced.length,
-      unscoreable: detBackable.filter((t) => t.is_scoreable === false).length,
-    }
-  }, [testCases])
-
-  const stats = useMemo(() => {
-    const ev = summary?.evidence || {}
-    const tot = summary?.totals || {}
-    // The evidenced / open numbers come from the CLASS model, not from
-    // /summary: the server counts scenario evidence only, so a row proven by an
-    // assertion would make the tile and the class strip disagree by one — and
-    // the tile is the number a DC reads out loud.
-    const haveClasses = classRows.length > 0
-    return {
-      total: tot.test_cases ?? envelope?.index_total ?? derived.total,
-      detection_backable: ev.detection_backable ?? derived.detection_backable,
-      evidenced: haveClasses ? mechanismTotals.proven : (ev.evidenced ?? derived.evidenced),
-      evidenced_detection_backable:
-        ev.evidenced_detection_backable ?? derived.evidenced_detection_backable,
-      // "Open" means open AND closable. Rows the engine has no read path to are
-      // counted separately, because planning work against them is wasted work.
-      gaps: haveClasses
-        ? mechanismTotals.open_direct
-        : (ev.detection_backable != null && ev.evidenced_detection_backable != null
-          ? ev.detection_backable - ev.evidenced_detection_backable
-          : derived.gaps),
-      needs_data_path: haveClasses ? mechanismTotals.open_needs_data_path : null,
-      // The count of rows with a RECORDED tenant verdict. Zero until an
-      // AssertionRun returns pass or fail, which is the honest state today.
-      measured: haveClasses ? mechanismTotals.measured : null,
-      version: envelope?.index_version || summary?.index_version || '—',
-    }
-  }, [summary, envelope, derived, classRows, mechanismTotals])
 
   /* ── filter option vocabularies, derived from the payload ── */
   const options = useMemo(() => {
@@ -291,14 +341,14 @@ export default function UcTcIndexView({
     return testCases.filter((t) => {
       const ev = evidenceOf(t)
       const asserts = assertionsByTc.get(t.tc_id) || []
-      const proven = Boolean(ev.evidenced) || asserts.length > 0
+      const bound = Boolean(ev.evidenced) || asserts.length > 0
       if (selectedUc && t.uc_id !== selectedUc) return false
       if (fClass !== 'all' && t.validation_class !== fClass) return false
       if (fTier !== 'all' && t.differentiation_tier !== fTier) return false
       if (fPriority !== 'all' && t.priority !== fPriority) return false
       if (fSheet !== 'all' && t.tc_sheet !== fSheet) return false
-      if (fEvidence === 'evidenced' && !proven) return false
-      if (fEvidence === 'unevidenced' && proven) return false
+      if (fEvidence === 'evidenced' && !bound) return false
+      if (fEvidence === 'unevidenced' && bound) return false
       if (fEvidence === 'scenario' && !ev.evidenced) return false
       if (fEvidence === 'assertion' && !asserts.length) return false
       if (fScoreable === 'scoreable' && t.is_scoreable === false) return false
@@ -390,69 +440,6 @@ export default function UcTcIndexView({
     return () => { cancelled = true }
   }, [selectedUc, selectedTc])
 
-  /* ── coverage mode (lazy) ── */
-  const [coverage, setCoverage] = useState(null)
-  const [coverageError, setCoverageError] = useState(null)
-  useEffect(() => {
-    if (tab !== 'coverage' || coverage || coverageError) return undefined
-    let cancelled = false
-    getUcTcCoverage()
-      .then((d) => { if (!cancelled) setCoverage(d) })
-      .catch((e) => { if (!cancelled) setCoverageError(e?.message || 'Failed to load coverage') })
-    return () => { cancelled = true }
-  }, [tab, coverage, coverageError])
-
-  /* ── gaps mode (lazy, with a client-side fallback) ── */
-  const [includeUnscoreable, setIncludeUnscoreable] = useState(true)
-  // Which mechanism's backlog is on screen. DET/HNT gaps are closed by
-  // authoring a scenario; POS/PLT/AUT gaps are closed by authoring an
-  // assertion. Showing them in one undifferentiated list is what makes 140
-  // rows look like "write more attack scenarios".
-  const [gapScope, setGapScope] = useState('scenario')
-  const [gaps, setGaps] = useState(null)
-  const [gapsTried, setGapsTried] = useState(false)
-  useEffect(() => {
-    if (tab !== 'gaps' || gapsTried) return undefined
-    let cancelled = false
-    setGapsTried(true)
-    // Ask for every class: the mode now covers the whole index, and the server
-    // default (DET,HNT) would silently amputate the assertion backlog.
-    getUcTcGaps({ validation_class: 'DET,HNT,POS,PLT,AUT' })
-      .then((d) => { if (!cancelled) setGaps(Array.isArray(d?.gaps) ? d.gaps : []) })
-      // The gap list is fully derivable from the rows already on screen, so a
-      // /gaps failure degrades to the local derivation rather than an error.
-      .catch(() => { if (!cancelled) setGaps(null) })
-    return () => { cancelled = true }
-  }, [tab, gapsTried])
-
-  const gapBuckets = useMemo(() => {
-    // /uctc/gaps only knows about SCENARIO evidence, so a row an assertion
-    // already proves would otherwise be reported as an open gap.
-    const source = (gaps || testCases.filter((t) => !evidenceOf(t).evidenced))
-      .filter((t) => !(assertionsByTc.get(t.tc_id) || []).length)
-      .filter((t) => (gapScope === 'all'
-        ? true
-        : gapScope === 'scenario'
-          ? isDetectionBackable(t)
-          : !isDetectionBackable(t)))
-      .filter((t) => (includeUnscoreable ? true : t.is_scoreable !== false))
-      .filter((t) => (selectedUc ? t.uc_id === selectedUc : true))
-      .slice()
-      .sort(gapSort)
-
-    const closable = []
-    const blocked = []
-    for (const t of source) {
-      // "blocked" is a prerequisite (ingest the source), not an impossibility —
-      // listed apart so the backlog count above is work that can start today.
-      if (proofScope(t).blocked) blocked.push(t)
-      else closable.push(t)
-    }
-    return { closable, blocked }
-  }, [gaps, testCases, assertionsByTc, gapScope, includeUnscoreable, selectedUc])
-
-  const p1Gaps = gapBuckets.closable.filter((t) => t.priority === 'P1').length
-
   /* ── handlers ── */
   const selectUc = useCallback((ucId) => {
     setParams({ uc: selectedUc === ucId ? null : ucId, tc: null })
@@ -461,9 +448,33 @@ export default function UcTcIndexView({
   const openTc = useCallback((tcId) => { setParams({ tc: tcId }) }, [setParams])
   const closeTc = useCallback(() => { setParams({ tc: null }) }, [setParams])
   const setTab = useCallback((next) => { setParams({ tab: next }) }, [setParams])
+  const openComponent = useCallback((key) => {
+    const r = componentRoute(key)
+    onNavigate(r.destination, r.params)
+  }, [onNavigate])
 
-  // A missing snapshot is NOT zero coverage — never render it as a number.
-  const dash = (v) => (indexLoaded ? v : '—')
+  // The four verbs a gap can offer, plus the two links where no verb fits.
+  const actions = useMemo(() => ({
+    buildChain: () => onNavigate('composer'),
+    configure: (key) => {
+      const r = componentConfigure(key) || componentRoute(key)
+      onNavigate(r.destination, r.params)
+    },
+    run: (scenarioId) => onNavigate('preflight', { arm: scenarioId }),
+    readBack: (runId) => readBack(runId),
+    openResults: (runId) => onNavigate('proof', { run: runId }),
+    openRun: (runId) => onNavigate('runs', { run: runId }),
+  }), [onNavigate, readBack])
+
+  // A missing snapshot is no index, not an empty one: no tab shows a number.
+  const tabCounts = !indexLoaded || loading
+    ? { index: '—', mechanisms: '—', coverage: '—', gaps: '—' }
+    : {
+      index: String(useCaseIds.length),
+      mechanisms: String(mech.cards.length),
+      coverage: reachKnown ? `${covered}/${paths.length}` : '—',
+      gaps: reachKnown ? String(counts.all) : '—',
+    }
 
   /* ── render ── */
   return (
@@ -474,75 +485,31 @@ export default function UcTcIndexView({
             redesigned destination (M-4) — not group+destination-name. */}
         <h1 className="uctc__pagehead-title">UC / TC index</h1>
       </div>
-      <div className="adapter-registry__intro">
-        <p className="adapter-registry__intro-prose">
-          The FY27 master <strong>Use-Case / Test-Case index</strong> —{' '}
-          {indexLoaded ? (
-            <>
-              <span className="mono">{stats.total}</span> test cases across{' '}
-              <span className="mono">{summary?.totals?.use_cases ?? useCases.length}</span>{' '}
-              use cases. A row is bound by an attack <strong>scenario</strong>{' '}
-              (DET/HNT) or by an <strong>assertion</strong> (POS/PLT/AUT) — two
-              different mechanisms, two different ceilings. A binding is not a
-              verdict: only a recorded tenant run makes a row measured. The rest is the
-              honest gap — separated from the rows that need a data source
-              onboarded first, and from the rows no threshold can ever score.
-            </>
-          ) : (
-            <>the snapshot is not present on this SimCore, so nothing can be
-              joined to the engine&rsquo;s evidence.</>
-          )}
-        </p>
-        <div className="adapter-registry__stats">
-          <Stat value={dash(stats.total)} label="test cases" />
-          <Stat value={dash(stats.detection_backable)} label="DET / HNT" />
-          {/* "artifact bound" is NOT "evidenced". This tile counts rows a scenario
-              OR an assertion binds; an assertion binding is authorship, not proof,
-              until a tenant run records a pass/fail (assertions.md §10). Labelling
-              it "evidenced" moved the number a DC reads out loud from 86 to 94 on
-              authorship alone — the exact inflation this surface exists to expose.
-              The two fields ship side by side so neither can be read as the other. */}
-          <Stat value={dash(stats.evidenced)} label="artifact bound" tone="detected" />
-          {stats.measured !== null && (
-            <Stat value={dash(stats.measured)} label="tenant-measured" tone={stats.measured ? 'detected' : 'pending'} />
-          )}
-          <Stat value={dash(stats.evidenced_detection_backable)} label="DET/HNT evidenced" tone="detected" />
-          <Stat value={dash(stats.gaps)} label="open gaps" tone="pending" />
-          {stats.needs_data_path !== null && (
-            <Stat value={dash(stats.needs_data_path)} label="need a data path" />
-          )}
-          <Stat value={indexLoaded ? `v${String(stats.version).replace(/^v/, '')}` : '—'} label="index" />
-        </div>
-      </div>
-
-      {indexLoaded && classRows.length > 0 && (
-        <ClassStrip
-          rows={classRows}
-          totals={mechanismTotals}
-          activeClass={fClass}
-          onPick={(cls) => {
-            setFClass((cur) => (cur === cls ? 'all' : cls))
-            setParams({ tab: 'index' })
-          }}
-          onExplain={() => setTab('mechanisms')}
-        />
-      )}
+      <p className="uctc__lede" data-testid="uctc-lede">
+        {loading ? 'Loading the FY27 Use-Case / Test-Case index…' : indexLoaded ? (
+          <>
+            The FY27 Use-Case / Test-Case index{' '}
+            <span className="mono">v{String(envelope?.index_version || summary?.index_version || '—').replace(/^v/, '')}</span>:{' '}
+            <span className="mono">{summary?.totals?.test_cases ?? envelope?.index_total ?? testCases.length}</span> test cases
+            across <span className="mono">{summary?.totals?.use_cases ?? useCases.length}</span> use cases.
+            A test case counts as covered only once a read-back run detected it.
+          </>
+        ) : (
+          <>The UC/TC index snapshot is not present on this SimCore, so nothing can
+            be joined to what it has run.</>
+        )}
+      </p>
 
       {error && (
         <div className="adapter-registry__error mono" role="alert">{error}</div>
       )}
 
       <div className="uctc__modebar">
-        <div className="lab__segmented" role="tablist" aria-label="UC/TC index view mode">
-          <ModeTab id="index" active={tab} onChange={setTab} title="Browse the index use case by use case">Index</ModeTab>
-          <ModeTab id="mechanisms" active={tab} onChange={setTab} title="Coverage by validation class — what proves each class, what it can ever certify, and what blocks the rest">Mechanisms</ModeTab>
-          <ModeTab id="coverage" active={tab} onChange={setTab} title="Per-use-case coverage rollups">Coverage</ModeTab>
-          <ModeTab id="gaps" active={tab} onChange={setTab} title="Test cases no artifact evidences, split by whether the engine can close them">Gaps</ModeTab>
-        </div>
+        <TabStrip active={tab} counts={tabCounts} onChange={setTab} />
         <div className="uctc__modebar-meta mono">
           methodology coverage — for MITRE ATT&amp;CK technique coverage see{' '}
-          <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage')}>
-            Coverage →
+          <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage', { tab: 'mitre' })}>
+            Dashboards →
           </button>
           {' · '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-ttps" onClick={() => onNavigate('ttps')}>
@@ -560,112 +527,114 @@ export default function UcTcIndexView({
           from the deploy. This is not zero coverage; it is no index.
         </div>
       ) : tab === 'mechanisms' ? (
-        <MechanismsMode
-          rows={classRows}
-          totals={mechanismTotals}
+        <MechanismsTab
+          model={mech}
+          paths={paths}
+          sources={sources}
+          sourceErrors={sourceErrors}
           availability={availability}
-          onPickClass={(cls) => { setFClass(cls); setParams({ tab: 'index' }) }}
-          onPickOutOfScope={(cls) => {
-            setFClass(cls); setFReach('needs-data-path'); setFEvidence('unevidenced')
-            setParams({ tab: 'index' })
-          }}
+          onOpenTc={openTc}
+          onOpenComponent={openComponent}
         />
       ) : tab === 'coverage' ? (
-        <CoverageMode
-          coverage={coverage}
-          error={coverageError}
-          useCases={useCases}
-          onPickUc={(ucId) => setParams({ tab: 'index', uc: ucId, tc: null })}
+        <CoverageTab
+          paths={paths}
+          sources={sources}
+          sourceErrors={sourceErrors}
+          onOpenTc={openTc}
         />
       ) : tab === 'gaps' ? (
-        <GapsMode
-          rows={gapBuckets.closable}
-          blocked={gapBuckets.blocked}
-          p1={p1Gaps}
-          scope={gapScope}
-          onScope={setGapScope}
-          availability={availability}
-          includeUnscoreable={includeUnscoreable}
-          onToggleUnscoreable={() => setIncludeUnscoreable((v) => !v)}
-          scopedUc={activeUc}
-          onClearUc={() => setParams({ uc: null })}
-          onOpen={openTc}
+        <GapsTab
+          paths={paths}
+          counts={counts}
+          sources={sources}
+          sourceErrors={sourceErrors}
+          reading={reading}
+          actions={actions}
+          onOpenTc={openTc}
         />
       ) : (
-        <div className="uctc__split">
-          <UcRail
-            groups={ucGroups}
-            selected={selectedUc}
-            onSelect={selectUc}
-          />
-          <div className="uctc__main">
-            <div className="adapter-registry__search">
-              <input
-                type="search"
-                className="adapter-registry__search-input mono"
-                data-testid="uctc-search"
-                placeholder="Search tc id · title · use case · KPI · detection source · scenario id…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search the UC/TC index"
+        <>
+          <IndexTiles tiles={tiles} sources={sources} />
+          <div className="uctc__split">
+            <UcRail
+              groups={ucGroups}
+              selected={selectedUc}
+              onSelect={selectUc}
+              verdictFor={(ucId) => useCaseVerdict(pathsByUc.get(ucId) || [])}
+            />
+            <div className="uctc__main">
+              <div className="adapter-registry__search">
+                <input
+                  type="search"
+                  className="adapter-registry__search-input mono"
+                  data-testid="uctc-search"
+                  placeholder="Search tc id · title · use case · KPI · detection source · scenario id…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Search the UC/TC index"
+                />
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    className="btn uctc__btn--clear"
+                    data-testid="uctc-clear-filters"
+                    onClick={resetFilters}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <FilterRow label="class" active={fClass} options={options.classes} onChange={setFClass} titles={CLASS_HINT} />
+              <FilterRow label="tier" active={fTier} options={options.tiers} onChange={setFTier} titles={TIER_HINT} />
+              <FilterRow label="priority" active={fPriority} options={options.priorities} onChange={setFPriority} />
+              <FilterRow
+                label="evidence"
+                active={fEvidence}
+                options={['evidenced', 'unevidenced', 'scenario', 'assertion']}
+                onChange={setFEvidence}
+                titles={EVIDENCE_HINT}
               />
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  className="btn uctc__btn--clear"
-                  data-testid="uctc-clear-filters"
-                  onClick={resetFilters}
-                >
-                  Clear
-                </button>
+              <FilterRow
+                label="scoreable"
+                active={fScoreable}
+                options={['scoreable', 'qualitative']}
+                onChange={setFScoreable}
+                titles={SCOREABLE_HINT}
+              />
+              <FilterRow
+                label="engine reach"
+                active={fReach}
+                options={['xql-direct', 'needs-data-path']}
+                onChange={setFReach}
+                titles={REACH_HINT}
+              />
+              {options.planes.length > 0 && (
+                <FilterRow label="plane" active={fPlane} options={options.planes} onChange={setFPlane} />
               )}
+              {options.sheets.length > 1 && (
+                <FilterRow label="sheet" active={fSheet} options={options.sheets} onChange={setFSheet} />
+              )}
+
+              <TestCaseTable
+                rows={visible}
+                assertionsByTc={assertionsByTc}
+                pathByTc={pathByTc}
+                rollupFor={rollupFor}
+                sources={sources}
+                total={testCases.length}
+                groupByUcs={Boolean(selectedUc)}
+                selectedTc={selectedTc}
+                onOpen={openTc}
+                hasActiveFilters={hasActiveFilters}
+                onResetFilters={resetFilters}
+                activeUc={activeUc}
+                onSeeGaps={() => setParams({ tab: 'gaps' })}
+              />
             </div>
-
-            <FilterRow label="class" active={fClass} options={options.classes} onChange={setFClass} titles={CLASS_HINT} />
-            <FilterRow label="tier" active={fTier} options={options.tiers} onChange={setFTier} titles={TIER_HINT} />
-            <FilterRow label="priority" active={fPriority} options={options.priorities} onChange={setFPriority} />
-            <FilterRow
-              label="evidence"
-              active={fEvidence}
-              options={['evidenced', 'unevidenced', 'scenario', 'assertion']}
-              onChange={setFEvidence}
-              titles={EVIDENCE_HINT}
-            />
-            <FilterRow
-              label="scoreable"
-              active={fScoreable}
-              options={['scoreable', 'qualitative']}
-              onChange={setFScoreable}
-              titles={SCOREABLE_HINT}
-            />
-            <FilterRow
-              label="engine reach"
-              active={fReach}
-              options={['xql-direct', 'needs-data-path']}
-              onChange={setFReach}
-              titles={REACH_HINT}
-            />
-            {options.planes.length > 0 && (
-              <FilterRow label="plane" active={fPlane} options={options.planes} onChange={setFPlane} />
-            )}
-            {options.sheets.length > 1 && (
-              <FilterRow label="sheet" active={fSheet} options={options.sheets} onChange={setFSheet} />
-            )}
-
-            <TestCaseTable
-              rows={visible}
-              assertionsByTc={assertionsByTc}
-              total={testCases.length}
-              groupByUcs={Boolean(selectedUc)}
-              selectedTc={selectedTc}
-              onOpen={openTc}
-              hasActiveFilters={hasActiveFilters}
-              onResetFilters={resetFilters}
-              activeUc={activeUc}
-              onSeeGaps={() => setParams({ tab: 'gaps' })}
-            />
           </div>
-        </div>
+        </>
       )}
 
       {selectedTc && indexLoaded && (
@@ -696,132 +665,146 @@ export default function UcTcIndexView({
   )
 }
 
-/* ─── stat tile ─────────────────────────────────────────────────────── */
+/* ─── tab strip (design C6: selected = green wash + line) ──────────── */
 
-function Stat({ value, label, tone }) {
+function TabStrip({ active, counts, onChange }) {
   return (
-    <div className="stack-coverage__stat">
-      <div
-        className={'stack-coverage__stat-value mono' + (tone ? ` uctc__tone-${tone}` : '')}
-      >
-        {value}
-      </div>
-      <div className="stack-coverage__stat-label">{label}</div>
+    <div className="uctc__tabs" role="tablist" aria-label="UC / TC views">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={active === t.id}
+          className={'uctc__tab' + (active === t.id ? ' is-active' : '')}
+          data-testid={`uctc-mode-${t.id}`}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+          <span className="uctc__tab-count mono">{counts[t.id]}</span>
+        </button>
+      ))}
     </div>
   )
 }
 
-/* ─── class strip — the five numbers that replace the one ───────────── */
+/* ─── which sources could not be read, and what that hides ─────────── */
 
-/**
- * Always-on breakdown by validation class.
- *
- * Each cell reads ``proven / total`` over a three-segment bar:
- *   green  — an artifact binds it (a binding, not yet a measured verdict)
- *   amber  — open, and an artifact can measure it against XQL today
- *   steel  — open, and the index points at a console outside XQL: real work,
- *            but it needs that source ingested first, so it must not be
- *            counted in the same breath as the amber rows
- *
- * The mechanism name sits under each cell because "18/110" means nothing until
- * you know that closing one means authoring an assertion, not a scenario.
- */
-function ClassStrip({ rows, totals, activeClass, onPick, onExplain }) {
+function SourceNotice({ sources, errors = {}, need }) {
+  // Readiness and door states arrive in one fetch: say it once.
+  const down = need.filter((k) => sources[k] !== 'ok' && !(k === 'doors' && sources.readiness !== 'ok'))
+  if (!down.length) return null
+  const lines = down.map((k) => {
+    const st = sources[k]
+    if (st === 'loading') return `${SOURCE_NAMES[k]} is still loading.`
+    if (st === 'empty') return 'SimCore listed no scenarios. An empty catalog is a fault, not zero coverage.'
+    return `${SOURCE_NAMES[k]} did not load${errors[k] ? ` (${errors[k]})` : ''}.`
+  })
   return (
-    <section className="uctc__classstrip" data-testid="uctc-classstrip"
-      aria-label="Coverage by validation class">
-      <div className="uctc__classstrip-head mono">
-        <span>
-          coverage by validation class — <strong>{totals.proven}</strong> of{' '}
-          <strong>{totals.total}</strong> have an artifact bound · only{' '}
-          <strong>{totals.certifiable}</strong> ({totals.certifiable_pct}%) carry a
-          threshold that can ever return a machine{' '}
-          <span className="mono">pass</span> · <strong>
-            {totals.open_needs_data_path}
-          </strong> open rows need a data source onboarded first
-        </span>
-        <button
-          type="button"
-          className="uctc__link"
-          data-testid="uctc-classstrip-explain"
-          onClick={onExplain}
-        >
-          what proves each class →
-        </button>
-      </div>
-      <div className="uctc__classstrip-cells">
-        {rows.map((r) => {
-          const isActive = activeClass === r.validation_class
-          return (
-            <button
-              key={r.validation_class}
-              type="button"
-              className={'uctc__classcell' + (isActive ? ' is-active' : '')}
-              data-testid={`uctc-class-${r.validation_class}`}
-              aria-pressed={isActive}
-              title={`${r.validation_class} — ${CLASS_HINT[r.validation_class] || ''}. `
-                + `Proven by: ${r.mechanism ? r.mechanism.label : 'no mechanism'}. `
-                + `${r.measured} carry a recorded tenant verdict. `
-                + `${r.certifiable} of ${r.total} can ever return a machine pass; `
-                + `${r.open_needs_data_path} open row(s) need a data path first.`}
-              onClick={() => onPick(r.validation_class)}
-            >
-              <span className="uctc__classcell-head mono">
-                <span className="uctc__classcell-id">{r.validation_class}</span>
-                <span className="uctc__classcell-num">{r.proven}/{r.total}</span>
-              </span>
-              <span className="coverage__summary-bar uctc__classcell-bar">
-                {r.proven > 0 && (
-                  <span className="coverage__summary-seg uctc__bar-seg--detected"
-                    style={{ width: `${pct(r.proven, r.total)}%` }} />
-                )}
-                {r.open_direct > 0 && (
-                  <span className="coverage__summary-seg uctc__bar-seg--pending"
-                    style={{ width: `${pct(r.open_direct, r.total)}%` }} />
-                )}
-                {r.open_needs_data_path > 0 && (
-                  <span className="coverage__summary-seg uctc__bar-seg--hairline"
-                    style={{ width: `${pct(r.open_needs_data_path, r.total)}%` }} />
-                )}
-              </span>
-              <span className="uctc__classcell-mech mono">
-                {r.mechanism ? r.mechanism.label : 'no mechanism'}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="uctc__classstrip-legend mono">
-        <LegendKey tone="detected" label="an artifact binds it" />
-        <LegendKey tone="pending" label="open — measurable over XQL today" />
-        <LegendKey tone="hairline" label="open — needs a data path first" />
-      </div>
-    </section>
+    <div className="uctc__notice" role="status" data-testid="uctc-source-notice">
+      {`${lines.join(' ')} What depends on it reads Can't check.`}
+    </div>
   )
 }
 
-function LegendKey({ tone, label }) {
+/* ─── Index: four use-case tiles ────────────────────────────────────── */
+
+function IndexTiles({ tiles, sources }) {
+  const dash = (v) => (v == null ? '—' : v)
+  const cant = sources.scenarios !== 'ok' || sources.runs !== 'ok'
+  const cells = [
+    {
+      key: 'use-cases', value: tiles.useCases, label: 'Use cases',
+      sub: `${tiles.testCases} test cases under them, ${tiles.detectionTestCases} of them detections`,
+    },
+    {
+      key: 'partial', value: dash(tiles.partlyProven), label: 'Partly proven', tone: 'partial',
+      sub: tiles.partlyProven == null
+        ? "Can't check — runs or scenarios did not load"
+        : `at least one test case detected in a read-back run${tiles.proven ? ` · ${tiles.proven} fully` : ''}`,
+    },
+    {
+      key: 'pending', value: dash(tiles.pending), label: 'Pending',
+      sub: cant ? "Can't check — runs or scenarios did not load" : 'no read-back detection yet',
+    },
+    {
+      key: 'blocked', value: dash(tiles.blocked), label: 'Blocked', tone: 'blocked',
+      sub: tiles.blocked == null
+        ? "Can't check — no component's doors have been checked yet"
+        : 'a component they need is checked and not ready',
+    },
+  ]
   return (
-    <span className="uctc__legendkey">
-      <span className={`uctc__legendswatch uctc__legendswatch--${tone}`} aria-hidden="true" />
-      {label}
+    <div className="uctc__tiles" data-testid="uctc-tiles">
+      {cells.map((c) => (
+        <div key={c.key} className="uctc__tile" data-testid={`uctc-tile-${c.key}`}>
+          <div className={'uctc__tile-value mono' + (c.tone && c.value !== '—' ? ` uctc__tile-value--${c.tone}` : '')}>
+            {c.value}
+          </div>
+          <div className="uctc__tile-label">{c.label}</div>
+          <div className="uctc__tile-sub">{c.sub}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ─── Index: a test case's verdict, and its runs ────────────────────── */
+
+const UC_VERDICT = {
+  proven: { status: 'up', word: 'Proven' },
+  partial: { status: 'degraded', word: 'Partly proven' },
+  blocked: { status: 'down', word: 'Blocked' },
+  pending: { status: 'off', word: 'Pending' },
+  unknown: { status: 'unknown', word: "Can't check" },
+}
+
+function TcVerdict({ tc, path }) {
+  if (!isDetectionTestCase(tc) || !path) {
+    return (
+      <span className="uctc__tone-muted" title="Posture, platform and automation test cases are proven by an assertion run, not by a detection.">
+        by assertion
+      </span>
+    )
+  }
+  let status = 'off'
+  let word = 'Pending'
+  if (path.covered) { status = 'up'; word = 'Detected' }
+  else if (path.stall === 'unknown') { status = 'unknown'; word = "Can't check" }
+  else if (path.stall === 'component') { status = 'down'; word = 'Blocked' }
+  else if (path.stall === 'not_seen') { status = 'degraded'; word = 'Not seen yet' }
+  else if (path.stall === 'no_scenario') { status = 'off'; word = 'No scenario' }
+  return (
+    <span data-testid={`uctc-verdict-${tc.tc_id}`}>
+      <StatusIcon status={status} word={word} />
     </span>
   )
 }
 
-function ModeTab({ id, active, onChange, title, children }) {
+function RunsRollup({ tcId, facts, sources }) {
+  if (sources.scenarios !== 'ok' || sources.runs !== 'ok') {
+    return (
+      <span data-testid={`uctc-runs-${tcId}`} title="The run or scenario list did not load.">
+        <StatusIcon status="unknown" word="Can't check" />
+      </span>
+    )
+  }
+  if (!facts.total) {
+    return <span className="uctc__tone-muted" data-testid={`uctc-runs-${tcId}`}>No runs</span>
+  }
+  const unread = facts.executed.length - facts.readBack.length
+  const parts = [`${facts.total} run${facts.total === 1 ? '' : 's'}`]
+  if (facts.running.length) parts.push(`${facts.running.length} in progress`)
+  if (facts.waiting.length) parts.push(`${facts.waiting.length} waiting`)
+  if (unread > 0) parts.push(`${unread} not read back`)
+  if (facts.readBack.length) parts.push(`${facts.readBack.length} read back`)
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active === id}
-      className={active === id ? 'is-active' : ''}
-      data-testid={`uctc-mode-${id}`}
-      title={title}
-      onClick={() => onChange(id)}
-    >
-      {children}
-    </button>
+    <span className="uctc__runs" data-testid={`uctc-runs-${tcId}`}>
+      <span>{parts.join(' · ')}</span>
+      {Object.entries(facts.pendingReasons).map(([k, v]) => (
+        <VerdictReason key={k} reason={k} count={v} testId={`uctc-runs-reason-${tcId}-${k}`} />
+      ))}
+    </span>
   )
 }
 
@@ -856,7 +839,7 @@ function FilterRow({ label, active, options, onChange, titles = {} }) {
 
 /* ─── UC rail ───────────────────────────────────────────────────────── */
 
-function UcRail({ groups, selected, onSelect }) {
+function UcRail({ groups, selected, onSelect, verdictFor = () => 'none' }) {
   if (!groups.length) {
     return (
       <nav className="uctc__rail" aria-label="Use cases">
@@ -878,6 +861,7 @@ function UcRail({ groups, selected, onSelect }) {
             )
             const rest = Math.max(0, total - evidenced - detOpen)
             const isActive = selected === uc.uc_id
+            const verdict = UC_VERDICT[verdictFor(uc.uc_id)]
             return (
               <button
                 key={uc.uc_id}
@@ -886,17 +870,22 @@ function UcRail({ groups, selected, onSelect }) {
                 data-testid={`uctc-uc-${uc.uc_id}`}
                 aria-pressed={isActive}
                 onClick={() => onSelect(uc.uc_id)}
-                title={`${uc.uc_id} — ${evidenced}/${total} test cases evidenced`}
+                title={`${uc.uc_id} — ${evidenced}/${total} test cases bound by a scenario or assertion`}
               >
                 <div className="uctc__rail-item-head">
                   <span className="mono uctc__rail-id">{uc.uc_id}</span>
                   <span className="mono uctc__rail-count">{evidenced}/{total}</span>
                 </div>
                 <div className="uctc__rail-name">{uc.use_case || uc.uc_id}</div>
+                {verdict && (
+                  <div className="uctc__rail-verdict" data-testid={`uctc-uc-verdict-${uc.uc_id}`}>
+                    <StatusIcon status={verdict.status} word={verdict.word} />
+                  </div>
+                )}
                 <div className="coverage__summary-bar uctc__rail-bar">
                   {evidenced > 0 && (
                     <div
-                      className="coverage__summary-seg uctc__bar-seg--detected"
+                      className="coverage__summary-seg uctc__bar-seg--bound"
                       style={{ width: `${pct(evidenced, total)}%` }}
                     />
                   )}
@@ -927,7 +916,8 @@ function UcRail({ groups, selected, onSelect }) {
 function TestCaseTable({
   rows, total, groupByUcs, selectedTc, onOpen,
   hasActiveFilters, onResetFilters, activeUc, onSeeGaps,
-  assertionsByTc = new Map(),
+  assertionsByTc = new Map(), pathByTc = new Map(), rollupFor = () => runFacts([]),
+  sources = {},
 }) {
   if (!rows.length) {
     if (activeUc && !hasActiveFilters) {
@@ -984,6 +974,8 @@ function TestCaseTable({
               <th scope="col">Primary KPI</th>
               <th scope="col">Threshold</th>
               <th scope="col">Evidence</th>
+              <th scope="col">Verdict</th>
+              <th scope="col">Runs</th>
             </tr>
           </thead>
           <tbody>
@@ -994,7 +986,7 @@ function TestCaseTable({
                 <React.Fragment key={tc.tc_id}>
                   {headerFor.has(tc.tc_id) && (
                     <tr className="uctc__table-groupheader">
-                      <th colSpan={8} scope="colgroup">
+                      <th colSpan={10} scope="colgroup">
                         <span className="mono">{tc.ucs_id}</span>
                         {tc.ucs_name ? ` · ${tc.ucs_name}` : ''}
                       </th>
@@ -1027,6 +1019,12 @@ function TestCaseTable({
                     <td className="mono uctc__cell-evidence">
                       <EvidenceCell tc={tc} evidence={ev} assertions={asserts} />
                     </td>
+                    <td className="uctc__cell-verdict">
+                      <TcVerdict tc={tc} path={pathByTc.get(tc.tc_id)} />
+                    </td>
+                    <td className="uctc__cell-runs">
+                      <RunsRollup tcId={tc.tc_id} facts={rollupFor(tc.tc_id)} sources={sources} />
+                    </td>
                   </tr>
                 </React.Fragment>
               )
@@ -1050,7 +1048,7 @@ function EvidenceCell({ tc, evidence, assertions }) {
   const scenarioCount = evidence.scenario_count || (evidence.scenario_ids || []).length
   if (evidence.evidenced || assertions.length) {
     return (
-      <span className="uctc__tone-detected">
+      <span className="uctc__tone-bound">
         {evidence.evidenced && (
           <span title={(evidence.scenario_ids || []).join(', ')}>
             {scenarioCount} scenario{scenarioCount === 1 ? '' : 's'}
@@ -1079,6 +1077,7 @@ function EvidenceCell({ tc, evidence, assertions }) {
   }
   return <span className="uctc__tone-muted">—</span>
 }
+
 
 function ClassChip({ value }) {
   if (!value) return <span className="mono">—</span>
@@ -1716,203 +1715,6 @@ function KV({ k, v, mono }) {
   )
 }
 
-/* ─── mechanisms mode ───────────────────────────────────────────────── */
-
-/**
- * The whole-index answer: for each validation class, what proves it, how much
- * is proven, and — the part a flat percentage destroys — how much the engine
- * could ever prove.
- *
- * Three separations are load-bearing here and none may be collapsed:
- *   · open-and-reachable  vs  out-of-engine-scope     (backlog vs not)
- *   · mechanism deployed  vs  content authored        (0 ≠ 0)
- *   · scoreable           vs  qualitative             (pass possible vs never)
- */
-function MechanismsMode({ rows, totals, availability, onPickClass, onPickOutOfScope }) {
-  if (!rows.length) {
-    return <div className="coverage__empty mono" data-testid="uctc-mech-empty">no test cases to classify</div>
-  }
-  return (
-    <div className="uctc__mech" data-testid="uctc-mechanisms">
-      <p className="uctc__mech-prose">
-        The index is not one population. Its {totals.total} test cases split five
-        ways by validation class, and each class is proven by a{' '}
-        <strong>different mechanism</strong>. DET and HNT rows are proven by an
-        attack scenario firing a detection. POS, PLT and AUT rows are not
-        detections at all — a posture finding must be <em>discovered</em>, a
-        platform capability must be <em>present</em>, an automation outcome must{' '}
-        <em>occur inside a budget</em> — so they are proven by an assertion.
-        Authoring more attack scenarios cannot close a single one of them.
-      </p>
-
-      {rows.map((r) => (
-        <MechanismCard
-          key={r.validation_class}
-          row={r}
-          availability={availability}
-          onPickClass={onPickClass}
-          onPickOutOfScope={onPickOutOfScope}
-        />
-      ))}
-
-      <AssertionCatalogPanel availability={availability} />
-    </div>
-  )
-}
-
-function MechanismCard({ row, availability, onPickClass, onPickOutOfScope }) {
-  const m = row.mechanism || {}
-  const isAssertion = m.id === 'assertion'
-  // For the assertion classes the mechanism can be absent from the deployment
-  // entirely. That is a different sentence from "nothing authored yet", and
-  // both are different from "covered".
-  const mechState = !isAssertion
-    ? {
-      tone: 'detected',
-      text: row.by_scenario
-        ? `deployed · ${row.by_scenario} row(s) bound by the scenario corpus`
-        : 'deployed · no scenario binds a row of this class yet',
-    }
-    : availability.endpoint === 'absent'
-      ? { tone: 'missed', text: 'NOT DEPLOYED on this SimCore — /api/assertions is absent' }
-      : availability.endpoint === 'error'
-        ? { tone: 'missed', text: `unavailable — ${availability.detail}` }
-        : availability.authored === 0
-          ? { tone: 'pending', text: 'deployed · no assertion artifacts authored yet' }
-          : { tone: 'detected', text: `deployed · ${availability.authored} assertion(s) loaded` }
-
-  return (
-    <section className="uctc__mechcard" data-testid={`uctc-mech-${row.validation_class}`}>
-      <header className="uctc__mechcard-head">
-        <div>
-          <div className="uctc__mechcard-eyebrow mono">
-            <ClassChip value={row.validation_class} />{' '}
-            {CLASS_HINT[row.validation_class] || row.validation_class}
-          </div>
-          <h3 className="uctc__mechcard-title">{m.label || 'no mechanism'}</h3>
-          <p className="uctc__mechcard-proves">proves {m.proves || '—'}</p>
-        </div>
-        <div className="uctc__mechcard-score mono">
-          <span className="uctc__mechcard-score-num">{row.proven}</span>
-          <span className="uctc__mechcard-score-den">/ {row.total}</span>
-          <span className="uctc__mechcard-score-label">artifact bound</span>
-        </div>
-      </header>
-
-      <div className="coverage__summary-bar uctc__mechcard-bar">
-        {row.proven > 0 && (
-          <span className="coverage__summary-seg uctc__bar-seg--detected"
-            style={{ width: `${pct(row.proven, row.total)}%` }} />
-        )}
-        {row.open_direct > 0 && (
-          <span className="coverage__summary-seg uctc__bar-seg--pending"
-            style={{ width: `${pct(row.open_direct, row.total)}%` }} />
-        )}
-        {row.open_needs_data_path > 0 && (
-          <span className="coverage__summary-seg uctc__bar-seg--hairline"
-            style={{ width: `${pct(row.open_needs_data_path, row.total)}%` }} />
-        )}
-      </div>
-
-      <dl className="cov-detail__kv uctc__mechcard-kv">
-        <dt className="mono">artifact</dt>
-        <dd className="mono">{m.artifact || '—'}</dd>
-        <dt className="mono">how it is scored</dt>
-        <dd className="mono">{m.verdictPath || '—'}</dd>
-        <dt className="mono">mechanism status</dt>
-        <dd className={`mono uctc__tone-${mechState.tone}`}>{mechState.text}</dd>
-        <dt className="mono">measured</dt>
-        <dd className="mono">
-          {isAssertion
-            ? (
-              <span className={row.measured ? 'uctc__tone-detected' : 'uctc__tone-pending'}>
-                {row.measured} of {row.proven} bound row(s) carry a recorded tenant
-                verdict — the rest are authored claims awaiting a run
-              </span>
-            )
-            : 'per-run, on the Runs & Proof surface — a binding here is not a verdict'}
-        </dd>
-        <dt className="mono">verdict ceiling</dt>
-        <dd className="mono">
-          {row.certifiable} of {row.total} ({row.certifiable_pct}%) can ever
-          return a machine <span className="mono">pass</span> — the rest carry no
-          measurable threshold in the index and are clamped to{' '}
-          <span className="chip uctc__chip-qual">not_applicable</span>
-        </dd>
-        {row.manual_only > 0 && (
-          <>
-            <dt className="mono">read-back</dt>
-            <dd className="mono">
-              {row.manual_only} of {row.total} have no XQL read path — the
-              detection is confirmed in the vendor console and the Result is
-              validated by hand, not auto-reconciled
-            </dd>
-          </>
-        )}
-        {row.open_needs_data_path > 0 && (
-          <>
-            <dt className="mono">blocked on ingest</dt>
-            <dd className="mono">
-              {row.open_needs_data_path} open row(s) point at a console outside
-              XQL — a probe reaches them once that source is onboarded as a
-              queryable dataset
-            </dd>
-          </>
-        )}
-      </dl>
-
-      <div className="uctc__mechcard-actions">
-        <button
-          type="button"
-          className="btn"
-          data-testid={`uctc-mech-open-${row.validation_class}`}
-          onClick={() => onPickClass(row.validation_class)}
-        >
-          {row.open_direct} open · measurable today →
-        </button>
-        {row.open_needs_data_path > 0 && (
-          <button
-            type="button"
-            className="btn"
-            data-testid={`uctc-mech-datapath-${row.validation_class}`}
-            onClick={() => onPickOutOfScope(row.validation_class)}
-          >
-            {row.open_needs_data_path} need a data path →
-          </button>
-        )}
-        {row.class_mismatch > 0 && (
-          <span className="chip uctc__chip-delta mono"
-            title="These rows are bound by an attack scenario, but the index asks for a posture / platform / automation assertion (loader code S-14). Counted as evidence, but the artifact type does not match the claim.">
-            {row.class_mismatch} bound by a scenario, not an assertion
-          </span>
-        )}
-      </div>
-
-      {row.open_needs_data_path > 0 && (
-        <div className="uctc__mechcard-oos" data-testid={`uctc-datapath-${row.validation_class}`}>
-          <div className="competitive__detail-label mono">
-            open, but blocked on a data path
-          </div>
-          <p className="uctc__mechcard-oosprose">
-            Every probe queries XQL
-            (<span className="mono">core/integrations/xsiam</span>), and the index
-            points these rows at a console outside it. They are measurable once
-            that source is ingested as a queryable dataset — sized separately
-            because the onboarding is real work a DC should not discover in front
-            of a customer.
-          </p>
-          <ul className="uctc__oos-list mono">
-            {row.needs_data_path_surfaces.map((s) => (
-              <li key={s.surface}>
-                <span className="mono uctc__oos-count">{s.count}</span> {s.surface}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
-  )
-}
 
 /**
  * The assertion catalog, including what the loader REFUSED.
@@ -1993,290 +1795,359 @@ function AssertionCatalogPanel({ availability }) {
   )
 }
 
-/* ─── coverage mode ─────────────────────────────────────────────────── */
 
-function CoverageMode({ coverage, error, useCases, onPickUc }) {
-  // The /coverage payload is a convenience rollup; when it is unavailable the
-  // per-UC counts already on the use-case list carry the same numbers.
-  const rows = useMemo(() => {
-    if (Array.isArray(coverage?.by_use_case) && coverage.by_use_case.length) {
-      return coverage.by_use_case.slice().sort((a, b) => (a.coverage_pct || 0) - (b.coverage_pct || 0))
-    }
-    return useCases
-      .map((uc) => ({
-        uc_id: uc.uc_id,
-        use_case: uc.use_case,
-        test_cases: uc.counts?.test_cases || 0,
-        detection_backable: uc.counts?.detection_backable || 0,
-        evidenced: uc.counts?.evidenced || 0,
-        evidenced_detection_backable: uc.counts?.evidenced_detection_backable || 0,
-        coverage_pct: uc.coverage_pct ?? pct(uc.counts?.evidenced || 0, uc.counts?.test_cases || 0),
-        det_coverage_pct: uc.det_coverage_pct ?? pct(
-          uc.counts?.evidenced_detection_backable || 0, uc.counts?.detection_backable || 0,
-        ),
-      }))
-      .sort((a, b) => (a.coverage_pct || 0) - (b.coverage_pct || 0))
-  }, [coverage, useCases])
+/* ─── Mechanisms (design C6) ────────────────────────────────────────── */
 
-  if (!rows.length) {
-    return <div className="coverage__empty mono">no coverage data</div>
-  }
-
+/**
+ * Which detection mechanisms each test case relies on, and what the tenant
+ * shows about them.
+ *
+ * The mechanisms come from the expected detections the evidencing scenarios
+ * declare (GET /api/scenarios). The tenant column is "Can't check" for every
+ * mechanism: no SimCore API reports whether a mechanism's content is present
+ * in the tenant, and a green here would be an assumption.
+ */
+function MechanismsTab({ model, paths, sources, sourceErrors, availability, onOpenTc, onOpenComponent }) {
+  const known = sources.scenarios === 'ok'
+  const noScenario = paths.filter((p) => p.stall === 'no_scenario').length
   return (
-    <div className="uctc__coverage" data-testid="uctc-coverage">
-      {error && <div className="adapter-registry__error mono" role="alert">{error}</div>}
-      <div className="uctc__coverage-hint mono">
-        worst-covered use case first — click a bar to open it in the index
-      </div>
-      {rows.map((r) => {
-        const total = r.test_cases || 0
-        const evidenced = r.evidenced || 0
-        const detOpen = Math.max(0, (r.detection_backable || 0) - (r.evidenced_detection_backable || 0))
-        const rest = Math.max(0, total - evidenced - detOpen)
-        return (
-          <button
-            key={r.uc_id}
-            type="button"
-            className="uctc__covrow"
-            data-testid={`uctc-cov-${r.uc_id}`}
-            onClick={() => onPickUc(r.uc_id)}
-          >
-            <span className="mono uctc__covrow-id">{r.uc_id}</span>
-            <span className="uctc__covrow-name">{r.use_case || r.uc_id}</span>
-            <span className="coverage__summary-bar uctc__covrow-bar">
-              {evidenced > 0 && <span className="coverage__summary-seg uctc__bar-seg--detected" style={{ width: `${pct(evidenced, total)}%` }} />}
-              {detOpen > 0 && <span className="coverage__summary-seg uctc__bar-seg--pending" style={{ width: `${pct(detOpen, total)}%` }} />}
-              {rest > 0 && <span className="coverage__summary-seg uctc__bar-seg--hairline" style={{ width: `${pct(rest, total)}%` }} />}
-            </span>
-            <span className="mono uctc__covrow-num">
-              {evidenced}/{total} · {Math.round(r.det_coverage_pct || 0)}% DET
-            </span>
-          </button>
-        )
-      })}
+    <div className="uctc__tabpanel" data-testid="uctc-mechanisms" role="tabpanel" aria-label="Mechanisms">
+      <p className="uctc__tab-lede">
+        The detection mechanisms each test case relies on, from the detections its
+        scenarios declare, and what the tenant shows about them. POVengine has no
+        read of rule or query content from the tenant yet, so every mechanism{' '}
+        {"reads Can't check."}
+      </p>
+      <SourceNotice sources={sources} errors={sourceErrors} need={['scenarios']} />
 
-      {Array.isArray(coverage?.by_validation_class) && coverage.by_validation_class.length > 0 && (
-        <RollupTable title="by validation class" keyName="validation_class" rows={coverage.by_validation_class} />
-      )}
-      {Array.isArray(coverage?.by_tier) && coverage.by_tier.length > 0 && (
-        <RollupTable title="by differentiation tier" keyName="tier" rows={coverage.by_tier} />
-      )}
-      {Array.isArray(coverage?.by_plane) && coverage.by_plane.length > 0 && (
-        <div className="uctc__rollup">
-          <div className="competitive__detail-label mono">by detection plane</div>
-          <div className="uctc__tablewrap">
-            <table className="uctc__table uctc__table--compact">
-              <thead>
-                <tr><th scope="col">Plane</th><th scope="col">Scenarios</th><th scope="col">TCs evidenced</th></tr>
-              </thead>
-              <tbody>
-                {coverage.by_plane.map((p) => (
-                  <tr key={p.plane}>
-                    <td className="mono">{p.plane}</td>
-                    <td className="mono">{p.scenarios}</td>
-                    <td className="mono">{p.test_cases_evidenced}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RollupTable({ title, keyName, rows }) {
-  return (
-    <div className="uctc__rollup">
-      <div className="competitive__detail-label mono">{title}</div>
-      <div className="uctc__tablewrap">
-        <table className="uctc__table uctc__table--compact">
-          <thead>
-            <tr>
-              <th scope="col">{keyName}</th>
-              <th scope="col">Total</th>
-              <th scope="col">Evidenced</th>
-              <th scope="col">Coverage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r[keyName] || r.label}>
-                <td className="mono">{r[keyName] || r.label}</td>
-                <td className="mono">{r.total}</td>
-                <td className="mono">{r.evidenced}</td>
-                <td className="mono">{Math.round(r.coverage_pct || 0)}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/* ─── gaps mode ─────────────────────────────────────────────────────── */
-
-const GAP_SCOPE = [
-  { id: 'scenario', label: 'DET / HNT', hint: 'closed by authoring an attack scenario' },
-  { id: 'assertion', label: 'POS / PLT / AUT', hint: 'closed by authoring an assertion' },
-  { id: 'all', label: 'all classes', hint: 'the whole index backlog' },
-]
-
-function GapsMode({
-  rows, blocked = [], p1, scope = 'scenario', onScope = () => {},
-  availability = {}, includeUnscoreable, onToggleUnscoreable,
-  scopedUc, onClearUc, onOpen,
-}) {
-  const active = GAP_SCOPE.find((s) => s.id === scope) || GAP_SCOPE[0]
-  return (
-    <div className="uctc__gaps" data-testid="uctc-gaps">
-      <div className="uctc__gaps-scope" role="group" aria-label="Gap backlog scope">
-        {GAP_SCOPE.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={'competitive__filter' + (scope === s.id ? ' is-active' : '')}
-            data-testid={`uctc-gapscope-${s.id}`}
-            aria-pressed={scope === s.id}
-            title={s.hint}
-            onClick={() => onScope(s.id)}
-          >
-            {s.label}
-          </button>
+      <div className="uctc__mechgrid">
+        {model.cards.map((c) => (
+          <section key={c.type} className="uctc__mech-card" data-testid={`uctc-mech-${c.type}`}
+            aria-label={`${c.type} mechanism`}>
+            <div className="uctc__mech-card-head">
+              <DetectionTypeChip type={c.type} />
+              <span className="uctc__mech-card-num mono">{known ? c.tcs : '—'}</span>
+            </div>
+            <div className="uctc__mech-card-sub">
+              test cases rely on it · {known ? c.objects : '—'} objects in their scenarios
+            </div>
+            <div className="uctc__mech-card-state">
+              <StatusIcon status="unknown" word="Can't check" />
+            </div>
+            <div className="uctc__mech-card-note">
+              No SimCore API reads this from the tenant yet.
+            </div>
+          </section>
         ))}
-        <span className="uctc__muted mono">— {active.hint}</span>
       </div>
 
-      {scope !== 'scenario' && availability.endpoint === 'absent' && (
-        <div className="uctc__banner mono" data-testid="uctc-gaps-noassertions">
-          These rows are closed by an assertion, and this SimCore does not serve{' '}
-          <span className="mono">/api/assertions</span> — the mechanism is not
-          deployed here, so none of them is closable on this box today.
-        </div>
-      )}
-
-      <div className="uctc__gaps-head">
-        <div className="uctc__gaps-headline">
-          <span className="mono" data-testid="uctc-gaps-p1">{p1}</span>{' '}
-          P1 test cases with no engine artifact
-          <span className="uctc__muted mono">
-            {' '}· {rows.length} open in {active.label} an artifact can measure today
-          </span>
-        </div>
-        <div className="uctc__gaps-actions">
-          {scopedUc && (
-            <button type="button" className="btn" onClick={onClearUc}>
-              scoped to {scopedUc.uc_id} — clear
-            </button>
-          )}
-          <label className="uctc__toggle mono">
-            <input
-              type="checkbox"
-              checked={includeUnscoreable}
-              data-testid="uctc-gaps-unscoreable"
-              onChange={onToggleUnscoreable}
-            />
-            include unscoreable
-          </label>
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <div className="coverage__empty mono" data-testid="uctc-gaps-empty">
-          no unevidenced test cases an artifact can measure today in this scope
-        </div>
-      ) : (
-        <div className="uctc__tablewrap">
-          <table className="uctc__table">
+      {known && (
+        <div className="uctc__tablewrap uctc__tablewrap--panel">
+          <table className="uctc__table" data-testid="uctc-mech-rows">
             <thead>
               <tr>
-                <th scope="col">TC</th>
-                <th scope="col">Use case</th>
-                <th scope="col">Title</th>
-                <th scope="col">Pri</th>
-                <th scope="col">Class</th>
-                <th scope="col">Tier</th>
-                <th scope="col">Threshold</th>
-                <th scope="col">Detection source</th>
+                <th scope="col">Test case</th>
+                <th scope="col">What it asserts</th>
+                <th scope="col">Mechanisms</th>
+                <th scope="col">Signal comes from</th>
+                <th scope="col">In the tenant</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((tc) => (
-                <tr key={tc.tc_id} className="uctc__table-row" onClick={() => onOpen(tc.tc_id)}>
+              {model.rows.map(({ path, mechanisms }) => (
+                <tr key={path.tcId} data-testid={`uctc-mech-row-${path.tcId}`}>
                   <td>
-                    <button
-                      type="button"
-                      className="uctc__idbtn mono"
-                      data-testid={`uctc-gap-${tc.tc_id}`}
-                      onClick={(e) => { e.stopPropagation(); onOpen(tc.tc_id) }}
-                    >
-                      {tc.tc_id}
+                    <button type="button" className="uctc__idbtn mono" onClick={() => onOpenTc(path.tcId)}>
+                      {path.tcId}
                     </button>
                   </td>
-                  <td className="mono">{tc.uc_id || '—'}</td>
-                  <td className="uctc__cell-title" title={tc.title || ''}>{tc.title || '—'}</td>
-                  <td className="mono">{tc.priority || '—'}</td>
-                  <td><ClassChip value={tc.validation_class} /></td>
-                  <td><TierChip value={tc.differentiation_tier} /></td>
-                  <td className="mono">
-                    {tc.is_scoreable === false
-                      ? <span className="chip uctc__chip-qual">qualitative</span>
-                      : (tc.threshold || '—')}
+                  <td className="uctc__cell-title" title={path.tc.title || ''}>{path.tc.title || '—'}</td>
+                  <td>
+                    <span className="uctc__mech-chips">
+                      {mechanisms.map((m) => <DetectionTypeChip key={m} type={m} />)}
+                    </span>
                   </td>
-                  <td className="mono uctc__cell-kpi">{tc.detection_source || '—'}</td>
+                  <td>
+                    {path.component ? (
+                      <button
+                        type="button"
+                        className="uctc__complink"
+                        data-testid={`uctc-mech-component-${path.tcId}`}
+                        title={path.door ? `via ${path.door.label || path.door.door_id}` : undefined}
+                        onClick={() => onOpenComponent(path.component)}
+                      >
+                        {COMPONENT_NAME[path.component] || path.component} ›
+                      </button>
+                    ) : (
+                      <span className="uctc__tone-muted"
+                        title={sources.readiness === 'ok' ? 'no door is listed for its scenarios' : 'component readiness did not load'}>
+                        —
+                      </span>
+                    )}
+                  </td>
+                  <td><StatusIcon status="unknown" word="Can't check" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {noScenario > 0 && (
+            <p className="uctc__tab-foot" data-testid="uctc-mech-noscenario">
+              {noScenario} detection test case{noScenario === 1 ? ' has' : 's have'} no scenario yet, so
+              {noScenario === 1 ? ' it relies' : ' they rely'} on no mechanism. They are listed under Gaps.
+            </p>
+          )}
+        </div>
+      )}
+
+      <AssertionCatalogPanel availability={availability} />
+    </div>
+  )
+}
+
+/* ─── Coverage (design C6) ──────────────────────────────────────────── */
+
+/** One stage's cell on a test case's row: an icon and a word, or a dash. */
+function StageCell({ path, stage }) {
+  const state = path.stages[stage]
+  if (state === 'done') return <StatusIcon status="up" word={STAGE_DONE_WORDS[stage]} />
+  if (state === 'unknown') return <StatusIcon status="unknown" word="Can't check" />
+  if (state === 'na') return <span className="uctc__tone-muted" aria-label="not reached">—</span>
+  // todo
+  if (path.stall && GAP_STAGE[path.stall] === stage) {
+    let word = GAP_CELL_WORDS[path.stall]
+    if (path.stall === 'never_ran' && path.inFlight) {
+      // A staged push bundle is waiting to be run (design C2b), not running.
+      word = isStaged(path.run) ? 'Waiting' : 'In progress'
+    }
+    return (
+      <span className="uctc__stall">
+        <StatusIcon status={GAP_STATUS[path.stall]} word={word} />
+        {path.reason && (
+          <VerdictReason reason={path.reason} testId={`uctc-cov-reason-${path.tcId}`} />
+        )}
+      </span>
+    )
+  }
+  // A door checked and closed now, on a test case that already got further.
+  if (stage === 'components') return <StatusIcon status="degraded" word="Not ready" />
+  return <span className="uctc__tone-muted" aria-label="not reached">—</span>
+}
+
+function CoverageTab({ paths, sources, sourceErrors, onOpenTc }) {
+  const steps = funnel(paths)
+  return (
+    <div className="uctc__tabpanel" data-testid="uctc-coverage" role="tabpanel" aria-label="Coverage">
+      <p className="uctc__tab-lede">
+        How far each detection test case has got along the proof path. Only
+        Detected, after a read back, counts as covered: authored is not proven.
+        Posture, platform and automation test cases are proven by an assertion
+        run instead, so they are not on this path.
+      </p>
+      <SourceNotice sources={sources} errors={sourceErrors} need={['scenarios', 'readiness', 'doors', 'runs']} />
+
+      <ol className="uctc__funnel" aria-label="Proof path" data-testid="uctc-funnel">
+        {steps.map((s) => (
+          <li key={s.stage} className="uctc__funnel-step" data-testid={`uctc-funnel-${s.stage}`}>
+            <div className="uctc__funnel-figure">
+              <span className={'uctc__funnel-num mono' + (s.stage === 'detected' && s.done ? ' uctc__funnel-num--detected' : '')}>
+                {s.done == null ? '—' : s.done}
+              </span>
+              <span className="uctc__funnel-of mono">of {s.of}</span>
+            </div>
+            <div className="uctc__funnel-label">{s.label}</div>
+            <div className="uctc__funnel-bar" aria-hidden="true">
+              <div
+                className={'uctc__funnel-fill' + (s.stage === 'detected' ? ' uctc__funnel-fill--detected' : '')}
+                style={{ width: `${s.done && s.of ? Math.round((s.done / s.of) * 100) : 0}%` }}
+              />
+            </div>
+            {s.unknown > 0 && (
+              <div className="uctc__funnel-cant">{`${s.unknown} can't check`}</div>
+            )}
+          </li>
+        ))}
+      </ol>
+
+      {paths.length === 0 ? (
+        <div className="coverage__empty mono">the index carries no detection test cases</div>
+      ) : (
+        <div className="uctc__tablewrap uctc__tablewrap--panel">
+          <table className="uctc__table" data-testid="uctc-cov-rows">
+            <thead>
+              <tr>
+                <th scope="col">Test case</th>
+                <th scope="col">Use case · title</th>
+                <th scope="col">Scenario</th>
+                <th scope="col">Components</th>
+                <th scope="col">Ran</th>
+                <th scope="col">Read back</th>
+                <th scope="col">Detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paths.map((p) => (
+                <tr key={p.tcId} data-testid={`uctc-cov-row-${p.tcId}`}>
+                  <td>
+                    <button type="button" className="uctc__idbtn mono" onClick={() => onOpenTc(p.tcId)}>
+                      {p.tcId}
+                    </button>
+                  </td>
+                  <td className="uctc__cell-title" title={p.tc.title || ''}>
+                    <span className="uctc__cov-uc mono">{p.ucId}</span>
+                    <span className="uctc__cov-title">{p.tc.title || '—'}</span>
+                  </td>
+                  {STAGES.map((stage) => (
+                    <td key={stage} data-testid={`uctc-cov-${p.tcId}-${stage}`}>
+                      <StageCell path={p} stage={stage} />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  )
+}
 
-      {blocked.length > 0 && (
-        <section className="uctc__gaps-oos" data-testid="uctc-gaps-blocked">
-          <div className="competitive__detail-label mono">
-            blocked on a data path ({blocked.length}) — real work, with a prerequisite
-          </div>
-          <p className="uctc__mechcard-oosprose">
-            The index points these rows at a console outside XQL. An assertion
-            probe reaches them only once that source is ingested as a queryable
-            dataset, so they are sized apart from the backlog above rather than
-            mixed into a number that implies they can start today.
-          </p>
-          <div className="uctc__tablewrap">
-            <table className="uctc__table uctc__table--compact">
-              <thead>
-                <tr>
-                  <th scope="col">TC</th>
-                  <th scope="col">Title</th>
-                  <th scope="col">Class</th>
-                  <th scope="col">Evidence lives in</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blocked.map((tc) => (
-                  <tr key={tc.tc_id} className="uctc__table-row" onClick={() => onOpen(tc.tc_id)}>
-                    <td>
-                      <button
-                        type="button"
-                        className="uctc__idbtn mono"
-                        data-testid={`uctc-blockedgap-${tc.tc_id}`}
-                        onClick={(e) => { e.stopPropagation(); onOpen(tc.tc_id) }}
-                      >
-                        {tc.tc_id}
-                      </button>
-                    </td>
-                    <td className="uctc__cell-title" title={tc.title || ''}>{tc.title || '—'}</td>
-                    <td><ClassChip value={tc.validation_class} /></td>
-                    <td className="mono uctc__cell-kpi">{tc.detection_source || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+/* ─── Gaps (design C6) ──────────────────────────────────────────────── */
+
+/** Why a test case stalls where it does, in one sentence. */
+function gapWhy(p) {
+  const first = p.scenarioIds[0]
+  const run = shortRun(p.runId)
+  switch (p.stall) {
+    case 'no_scenario':
+      return 'No scenario exercises this test case yet.'
+    case 'component': {
+      const where = COMPONENT_NAME[p.component] || 'A component'
+      const door = (p.door && (p.door.label || p.door.door_id)) || 'a door it needs'
+      return `${where}: ${door} is checked and closed, so the detections behind it cannot fire.`
+    }
+    case 'never_ran':
+      if (p.inFlight) {
+        return isStaged(p.run)
+          ? `Run ${run} is a staged push bundle that has not reported running.`
+          : `Run ${run} has not finished yet.`
+      }
+      if (p.run) return `Its last run (${run}) executed no step that carries a detection.`
+      return p.stages.components === 'unknown'
+        ? `${first} has never run, and whether its components are ready can't be checked yet.`
+        : `${first} has never run.`
+    case 'not_read_back':
+      return `Run ${run} finished but has not been read back, so it has no result.`
+    case 'not_seen':
+      return `Run ${run} was read back and the tenant has shown none of its detections yet.`
+    case 'unknown':
+      if (p.unknownSource === 'scenarios-empty') return 'SimCore listed no scenarios, so how far this got can\'t be checked.'
+      if (p.unknownSource === 'scenarios') return 'The scenario list did not load, so how far this got can\'t be checked.'
+      if (p.unknownSource === 'runs') return 'The run list did not load, so how far this got can\'t be checked.'
+      if (p.unknownSource === 'counts') return `Run ${run} was read back, but SimCore did not report how many detections it saw.`
+      return 'How far this got can\'t be checked.'
+    default:
+      return ''
+  }
+}
+
+/** The one thing to do about a gap: a verb from the closed set, or a link. */
+function GapAction({ p, reading, actions }) {
+  if (p.stall === 'no_scenario') {
+    return (
+      <button type="button" className="uctc__gaplink" onClick={actions.buildChain}>
+        Build a chain ›
+      </button>
+    )
+  }
+  if (p.stall === 'component' && p.component) {
+    return <Button onClick={() => actions.configure(p.component)}>Configure</Button>
+  }
+  if (p.stall === 'never_ran') {
+    if (p.inFlight && p.runId) {
+      return (
+        <button type="button" className="uctc__gaplink" onClick={() => actions.openRun(p.runId)}>
+          Open run ›
+        </button>
+      )
+    }
+    return p.scenarioIds[0] ? <Button onClick={() => actions.run(p.scenarioIds[0])}>Run</Button> : null
+  }
+  if (p.stall === 'not_read_back' && p.runId) {
+    const busy = reading && reading.has && reading.has(p.runId)
+    return (
+      <Button onClick={() => actions.readBack(p.runId)} disabled={busy} aria-busy={busy || undefined}>
+        Read back
+      </Button>
+    )
+  }
+  if ((p.stall === 'not_seen' || (p.stall === 'unknown' && p.unknownSource === 'counts')) && p.runId) {
+    return <Button onClick={() => actions.openResults(p.runId)}>Open results</Button>
+  }
+  return null
+}
+
+function GapsTab({ paths, counts, sources, sourceErrors, reading, actions, onOpenTc }) {
+  const [kind, setKind] = useState('all')
+  const all = gapList(paths)
+  const shown = kind === 'all' ? all : all.filter((p) => p.stall === kind)
+  // "Can't check" is listed only when something could not be checked: it is
+  // not a kind of gap, it is the absence of an answer.
+  const kinds = GAP_KINDS.filter((k) => k !== 'unknown' || counts.unknown > 0)
+  return (
+    <div className="uctc__tabpanel" data-testid="uctc-gaps" role="tabpanel" aria-label="Gaps">
+      <p className="uctc__tab-lede">
+        Every detection test case not yet detected in a read-back run, the earliest
+        stall first. Each says why in one sentence and offers one thing to do.
+      </p>
+      <SourceNotice sources={sources} errors={sourceErrors} need={['scenarios', 'readiness', 'doors', 'runs']} />
+
+      <div className="uctc__gapfilters" role="group" aria-label="Filter gaps by kind">
+        {['all', ...kinds].map((k) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={kind === k}
+            className={'uctc__gapfilter' + (kind === k ? ' is-active' : '')}
+            data-testid={`uctc-gapfilter-${k}`}
+            onClick={() => setKind(k)}
+          >
+            {k === 'all' ? 'All' : GAP_LABELS[k]}
+            <span className="uctc__gapfilter-count mono">{counts[k]}</span>
+          </button>
+        ))}
+      </div>
+
+      <ul className="uctc__gaplist" data-testid="uctc-gaplist">
+        {shown.map((p) => (
+          <li key={p.tcId} className="uctc__gaprow" data-testid={`uctc-gap-${p.tcId}`} data-kind={p.stall}>
+            <span className="uctc__gaprow-kind">
+              <StatusIcon status={GAP_STATUS[p.stall]} word={GAP_LABELS[p.stall]} />
+            </span>
+            <span className="uctc__gaprow-body">
+              <span className="uctc__gaprow-head">
+                <button type="button" className="uctc__idbtn mono" onClick={() => onOpenTc(p.tcId)}>
+                  {p.tcId}
+                </button>
+                <span className="uctc__gaprow-title">{p.tc.title || '—'}</span>
+                {p.reason && <VerdictReason reason={p.reason} testId={`uctc-gap-reason-${p.tcId}`} />}
+              </span>
+              <span className="uctc__gaprow-why" data-testid={`uctc-gap-why-${p.tcId}`}>{gapWhy(p)}</span>
+            </span>
+            <span className="uctc__gaprow-act">
+              <GapAction p={p} reading={reading} actions={actions} />
+            </span>
+          </li>
+        ))}
+        {shown.length === 0 && (
+          <li className="uctc__gaprow uctc__gaprow--empty" data-testid="uctc-gaps-none">
+            {paths.length === 0
+              ? 'The index carries no detection test cases.'
+              : all.length === 0
+                ? 'Every detection test case was detected in a read-back run.'
+                : 'No gaps of this kind.'}
+          </li>
+        )}
+      </ul>
     </div>
   )
 }

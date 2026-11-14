@@ -35,6 +35,7 @@ import ComposerRuleInspector from './ComposerRuleInspector.jsx'
 import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
 import Icon from './kit/Icon.jsx'
+import FlowStepper from './FlowStepper.jsx'
 import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
@@ -537,6 +538,12 @@ export default function ComposerView({
   // too, or Launch would run the save while the canvas shows the original.
   const viaSavedRow = edited || !!savedScenarioId
   const launchTarget = viaSavedRow ? savedDetail : originDetail
+  // The scenario the stepper carries to the Launch gate: the row a launch from
+  // here would run. An edited chain that is not saved (or has drifted since its
+  // save) has no such row yet, so nothing is carried rather than the origin.
+  const flowLaunchId = viaSavedRow
+    ? (savedScenarioId && !dirty ? savedScenarioId : null)
+    : (draft.originId || null)
   // A launch from the canvas is FOLLOWED here, in the Active run pane, instead
   // of bouncing the DC to the Runs page (UX review §A finding 6: the Composer's
   // panes pointed away from the canvas). `Follow ▸` in that pane is still the
@@ -1221,6 +1228,22 @@ export default function ComposerView({
       go()
     }
   }, [setParams])
+
+  // The compose → simulate stepper leaves the Composer for another page, so it
+  // asks first when the chain has unsaved edits, the same way Exit does.
+  const leaveTo = useCallback((dest, params) => {
+    const go = () => onNavigate(dest, params)
+    if (unsavedRef.current && stepsRef.current.length) {
+      setPendingConfirm({
+        title: 'Leave the Composer?',
+        body: 'This chain has unsaved edits. Leaving the Composer discards them — save the draft first to keep them. (SimCore only ever runs a saved chain, never the canvas.)',
+        confirmLabel: 'Discard and leave',
+        onConfirm: go,
+      })
+    } else {
+      go()
+    }
+  }, [onNavigate])
   const openScenarioRef = React.useRef(openScenario)
   openScenarioRef.current = openScenario
 
@@ -1429,6 +1452,17 @@ export default function ComposerView({
           {launch.launching ? 'Starting…' : `Start on ${agentName || 'agent'}`}
         </button>
       </div>
+
+      {/* ── Compose → simulate: where this chain goes next ── */}
+      <FlowStepper
+        current="composer"
+        className="flow-stepper--bar"
+        scenarioId={draft.originId || null}
+        launchId={flowLaunchId}
+        launchTitle="Save the chain to carry it to the Launch gate: SimCore runs a saved chain, never the canvas"
+        runFor={scenarioId}
+        onNavigate={leaveTo}
+      />
 
       {/* ── What this draft proves, and whether it can run ── */}
       <div className="composer__proves">

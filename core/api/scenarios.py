@@ -3,6 +3,7 @@ CortexSim API — /api/scenarios router.
 
 Endpoints:
   GET  /api/scenarios                            — list all (optional ?plane= and ?uc_ref= filters)
+  GET  /api/scenarios/staged                     — the extended library: staged draft pairs, read only
   GET  /api/scenarios/{scenario_id}              — single scenario detail
   GET  /api/scenarios/{scenario_id}/infra-hints  — adapter_refs + iac_modules a scenario implies
   GET  /api/scenarios/{scenario_id}/download     — download an UNGATED bundle
@@ -50,7 +51,8 @@ from engine.push_generator import (
     push_not_supported,
     resolve_target,
 )
-from engine import tenant_content
+from engine import staged_library, tenant_content
+from engine.dataset_requirements import DatasetRequirementsError
 from engine.lab_readiness import favorites as corpus_favorites
 from engine.ttp_catalog import catalog as ttp_catalog
 from models import Scenario
@@ -222,6 +224,86 @@ async def list_scenarios(
     return {
         "scenarios": [_slim_scenario(s, favorites) for s in scenarios],
         "total": len(scenarios),
+        "projection": "summary",
+    }
+
+
+#: The corpus row's keys a staged scenario file can carry, read as written.
+_STAGED_ROW_KEYS = (
+    "scenario_id", "name", "version", "status", "plane", "detection_types",
+    "uc_ref", "uc_name", "tc_ref", "tc_name", "pov_scenario_id",
+    "mitre_tactic", "mitre_tactic_name", "mitre_technique", "mitre_technique_name",
+    "additional_techniques", "threat_report", "threat_report_url", "execution_identity", "tags",
+)
+
+
+def _staged_row(pair: dict) -> dict:
+    """A staged pair as a summary row in the corpus row's shape, plus what staging adds."""
+    doc = pair["scenario"]
+    row: dict[str, Any] = {k: doc.get(k) for k in _STAGED_ROW_KEYS}
+    tc_refs = doc.get("tc_refs")
+    row["tc_refs"] = list(tc_refs) if isinstance(tc_refs, list) else ([doc["tc_ref"]] if doc.get("tc_ref") else [])
+    steps = doc.get("steps")
+    row["steps"] = [_slim_step(s) for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+    row["doors"] = pair["doors"]
+    row["doors_code"] = pair["doors_code"]
+    row["doors_detail"] = pair["doors_detail"]
+    row["staged"] = {
+        "card": pair["card"], "platform": pair["platform"], "source": pair["source"],
+        "findings": pair["findings"], "launchable": False,
+    }
+    return row
+
+
+@router.get("/staged")
+async def list_staged_scenarios():
+    """The extended library: the staged draft pairs under ``drafts/detection-library/``.
+
+    Read only, from local files, zero outbound calls. A staged pair is NOT corpus
+    content: it is not loaded as a scenario, cannot be launched (``GET
+    /api/scenarios/{id}`` does not know it) and is not counted as coverage. Each
+    row is the corpus summary shape read from the pair's scenario file, with:
+
+      * ``doors`` — the ingestion doors its detections land on, derived exactly
+        as ``GET /api/doors/readiness`` derives them for the corpus; ``null`` with
+        ``doors_code`` when they could not be derived (``REGISTRY_ABSENT``,
+        ``DOOR_DERIVATION_FAILED`` with ``doors_detail``), never ``[]`` for that.
+      * ``staged`` — its card id, platform, recorded source and the manifest's
+        findings, and ``launchable: false``.
+
+    UC/TC refs are what the file says. A staged pair is generated without them,
+    so they read null; nothing fills them in.
+
+    When the staging directory is absent (the image does not ship ``drafts/``)
+    the answer is 200 with ``loaded: false`` and ``code: STAGED_LIBRARY_ABSENT``:
+    degraded, never "the extended library is empty".
+    """
+    from config import settings  # noqa: PLC0415
+
+    try:
+        data = await asyncio.to_thread(staged_library.read, settings.CORTEXSIM_BASE_DIR)
+    except DatasetRequirementsError as exc:
+        raise HTTPException(status_code=500, detail={
+            "error": "Dataset requirement registry is malformed",
+            "code": "DATASET_REGISTRY_MALFORMED", "detail": str(exc),
+        })
+    except staged_library.StagedLibraryError as exc:
+        raise HTTPException(status_code=500, detail={
+            "error": "The staged library could not be read",
+            "code": "STAGED_LIBRARY_UNREADABLE", "detail": str(exc),
+        })
+    rows = [_staged_row(p) for p in data["pairs"]]
+    logger.info("list_staged_scenarios loaded=%s count=%d", data["loaded"], len(rows))
+    return {
+        "loaded": data["loaded"],
+        "code": data["code"],
+        "detail": data["detail"],
+        "registry_loaded": data["registry_loaded"],
+        "source": staged_library.STAGING_RELPATH.as_posix(),
+        "launchable": False,
+        "counted_as_coverage": False,
+        "scenarios": rows,
+        "total": len(rows),
         "projection": "summary",
     }
 
