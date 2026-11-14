@@ -45,7 +45,7 @@ built. All into `dev`.
 | C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a read-back run. | #308 |
 | C9 · navigation | Header Back / Forward (⌘[ / ⌘]) over the router's own history, and a clickable breadcrumb journey › page › object. | #303 |
 | C10 · deep-dive thesis + verbs | Scenario, TTP and detection sheets open with "Why this matters" (Thesis · Why we simulate it · What proves it · What it needs) from the documents' own fields; actions are verbs with icons, navigation is links. | #304 |
-| v33 · library completeness + stepper | See the PR. | (pending) |
+| v33 · library completeness + stepper | Every Scenarios card shows UC/TC · Source (its doors) · MITRE; an **Unmapped** filter with its count (205 corpus scenarios: 8 unmapped, all for underived detection sources). The extended library, the 362 staged pairs under `drafts/detection-library/`, is listed read-only (`GET /api/scenarios/staged`): not launchable, not coverage. A Scenarios › Build a chain › Launch gate › Run stepper carries the scenario / run id between the four pages. | #310 |
 | v33 · ANALYTICS tint | The ANALYTICS plane is the DS ink-400, not PANW orange. | #300 |
 
 ### Owner overrides of the canvas (the canvas should follow these)
