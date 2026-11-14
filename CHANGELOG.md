@@ -532,7 +532,7 @@ read-back run of a scenario that evidences it saw a detection.
 ### Added — Scenarios: the extended library, a mapping on every card, and a compose → simulate stepper
 
 - **The extended library is listed below the corpus.** The extended library
-  is the staged draft pairs under `drafts/detection-library/` (366 today). A
+  is the staged draft pairs under `drafts/detection-library/` (362 today). A
   new read-only route, `GET /api/scenarios/staged`, serves them in the corpus
   row's shape. They are still not loaded as scenarios, cannot be opened, pinned
   or run, and are not counted as coverage. Each card shows its card id,
