@@ -408,11 +408,11 @@
     "powershell": null
   },
   "SIM-EDR-023": {
-    "bash": "039f2b5c6dca95a9d2315858a860f16435949ac965b4d50db06b6392f9ddfc60",
+    "bash": "e57977c1b0ae243c1839cddb72f523cbb587ed0b48fd6e3afdc5dd8c5949d4fa",
     "powershell": null
   },
   "SIM-EDR-024": {
-    "bash": "8d0c01cddc19f009c6c1c8c8a92d83051638992ab2d9e02524574f6a0fa4421d",
+    "bash": "c49de01f72ab5c305f303c2552b1f5325210b5578e74f5445b69dd766a94126a",
     "powershell": null
   },
   "SIM-EDR-025": {

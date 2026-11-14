@@ -265,6 +265,22 @@ viewport test at 375 px and 845 px guards both and fails without the fix.
 
 ### Security
 
+- **A leftover cron entry or systemd timer could run another user's script as
+  root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
+  runs a script from a fixed directory under `/var/tmp` every five minutes, and
+  the job can outlive the directory: the beacon does not run a scenario's
+  cleanup, and a tmp cleaner or a partial cleanup can remove it. A local user
+  could then recreate the directory with a script of their own. The cron line
+  and the unit's `ExecStart` now run nothing from the directory unless one
+  `stat` lookup reads it as root's own 0700 directory; otherwise the cron entry
+  deletes itself and the unit disables its timer. The check is in `ExecStart`
+  because systemd before 243 ignores `ExecCondition=`. The step that recreates
+  the directory first removes a cron entry or timer left by an earlier run. The
+  re-executions keep the command-line path the cards' BIOCs match, so no
+  detection changed. The two cards' illustrative payloads now run under
+  `set -eu`, stop unless the directory they make is root's own 0700 directory,
+  and install the checked entry.
+
 - **A root systemd unit and root crontab lines ran programs from `/tmp` paths
   another user could create (SIM-CDR-006, SIM-CDR-002).** SIM-CDR-006 enabled a
   `Restart=always` unit whose `ExecStart` was a fixed `/tmp` file the scenario

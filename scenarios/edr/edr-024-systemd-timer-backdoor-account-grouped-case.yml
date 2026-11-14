@@ -144,6 +144,13 @@ steps:
       U=cortexsim-svc
       H=/home/$U
       K=/var/tmp/.cortexsim-sshd
+      # A timer left by an earlier run must not fire while $K is replaced:
+      # disable it, stop its service (which ends a run in progress), and
+      # remove both units before the directory goes.
+      systemctl disable --now cortexsim-sync.timer >/dev/null 2>&1 || true
+      systemctl stop cortexsim-sync.service >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/cortexsim-sync.service /etc/systemd/system/cortexsim-sync.timer
+      systemctl daemon-reload >/dev/null 2>&1 || true
       rm -rf "$K"
       mkdir -m 700 "$K"
       mkdir -p "$H/.ssh"
@@ -171,11 +178,22 @@ steps:
     name: "Install a self-expiring systemd timer that re-runs a hidden payload every five minutes"
     # What the sensor records: FILE_CREATE_NEW/WRITE of the .service and
     # .timer under /etc/systemd/system by the step shell. Then, starting one
-    # minute later and every five minutes after that, a PROCESS_START of
-    # `/bin/sh /var/tmp/.cortexsim-sshd/sync.sh` whose parent is the systemd
-    # executor (actor "9" in this tenant). The timer is enabled under
-    # timers.target with OnBootSec, so it re-arms after a reboot. The payload
-    # disables its own timer 45 minutes after install.
+    # minute later and every five minutes after that, a PROCESS_START of the
+    # unit's `/bin/sh -c` command line, which names
+    # /var/tmp/.cortexsim-sshd/sync.sh, whose parent is the systemd executor
+    # (actor "9" in this tenant). The timer is enabled under timers.target
+    # with OnBootSec, so it re-arms after a reboot. The payload disables its
+    # own timer 45 minutes after install.
+    # The timer outlives the directory if the run is never cleaned up (the
+    # beacon does not run cleanup.commands) or a tmp cleaner removes it, and
+    # then any local user could create the directory and the script in it. So
+    # ExecStart runs nothing from the directory unless one lstat reads it as
+    # root's own 0700 directory; otherwise it disables the timer. /var/tmp is
+    # sticky, so a directory that passes cannot be replaced by another user.
+    # The check is in ExecStart, not ExecCondition=: systemd before 243
+    # (RHEL 8, Amazon Linux 2, Debian 10) ignores ExecCondition= with a log
+    # warning and would run the payload unchecked. In the unit file `%` is
+    # written `%%` and `$` is written `$$`, or systemd expands them.
     command: |
       set -eu
       sleep 40   # dwell
@@ -201,7 +219,8 @@ steps:
       Description=CortexSim SIM-EDR-024 foothold (self-expiring lab artefact)
       [Service]
       Type=oneshot
-      ExecStart=/bin/sh /var/tmp/.cortexsim-sshd/sync.sh
+      # Runs only while /var/tmp/.cortexsim-sshd is root's own 0700 directory; otherwise it disables the timer
+      ExecStart=/bin/sh -c '[ "$$(stat -c %%F:%%u:%%a /var/tmp/.cortexsim-sshd 2>/dev/null)" = "directory:0:700" ] && /bin/sh /var/tmp/.cortexsim-sshd/sync.sh || systemctl disable --now cortexsim-sync.timer'
       EOF
       cat > /etc/systemd/system/cortexsim-sync.timer <<'EOF'
       [Unit]
