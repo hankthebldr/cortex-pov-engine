@@ -10,11 +10,13 @@ import { sectionFor } from '../../app/destinations.jsx'
  * could miss. Every tab is a real destination, so the strip navigates and owns
  * no state — it cannot disagree with the rail about where you are.
  *
- * Renders nothing for a task without tabs (Get started, Runs, Agents, Tenant).
+ * Renders nothing for a task without tabs (Get started, Runs, Agents, Tenant),
+ * or with one page: a strip with a single tab is not a choice. Results is one
+ * page since its Coverage tab became the Dashboards rail item.
  */
 export default function SectionTabs({ destination, onNavigate = () => {} }) {
   const section = sectionFor(destination)
-  if (!section) return null
+  if (!section || section.tabs.length < 2) return null
   return (
     <div className="pov-tabs pov-section-tabs" data-testid="section-tabs" role="tablist" aria-label="Pages in this task">
       {section.tabs.map(([id, label]) => {

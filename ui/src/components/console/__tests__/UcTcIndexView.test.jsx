@@ -514,7 +514,7 @@ describe('UcTcIndexView', () => {
     await waitFor(() => expect(screen.getByTestId('uctc-goto-coverage')).toBeInTheDocument())
 
     fireEvent.click(screen.getByTestId('uctc-goto-coverage'))
-    expect(onNavigate).toHaveBeenCalledWith('coverage')
+    expect(onNavigate).toHaveBeenCalledWith('coverage', { tab: 'mitre' })
 
     fireEvent.click(screen.getByTestId('uctc-goto-ttps'))
     expect(onNavigate).toHaveBeenCalledWith('ttps')

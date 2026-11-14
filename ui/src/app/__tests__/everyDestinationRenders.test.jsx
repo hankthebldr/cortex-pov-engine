@@ -52,7 +52,7 @@ const TITLES = {
   'component-engine': /^cortex engine$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
-  coverage: /coverage/i,
+  coverage: /^dashboards$/i,
   adapters: /^packages$/i,
   streams: /data\s*streams/i,
   uctc: /uc \/ tc index/i,
@@ -103,7 +103,7 @@ describe('every destination renders itself, and only itself', () => {
 
   it('the rail is the three journeys plus Reference', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Catalog'],
+      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Dashboards', 'Catalog'],
     )
   })
 
