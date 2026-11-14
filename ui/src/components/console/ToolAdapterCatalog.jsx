@@ -257,7 +257,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
           candidateScenarioIds={candidateScenarioIds}
           initialScenarioId={params.scenario || null}
           onClose={() => setParams({ panel: null })}
-          onArm={(scenarioId, plan) => onNavigate('guided', {
+          onArm={(scenarioId, plan) => onNavigate('preflight', {
             arm: scenarioId,
             plan: encodePlan(scenarioId, plan),
           })}

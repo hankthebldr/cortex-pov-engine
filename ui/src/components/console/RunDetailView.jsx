@@ -517,7 +517,7 @@ export default function RunDetailView({
             <Button variant="primary" onClick={() => onNavigate('proof', { run: runId })}>Open results</Button>
           )}
           {lifecycle?.phase === PHASE.NOTHING && descriptor.scenarioId && (
-            <Button variant="primary" onClick={() => onNavigate('guided', { arm: descriptor.scenarioId })}>Run</Button>
+            <Button variant="primary" onClick={() => onNavigate('preflight', { arm: descriptor.scenarioId })}>Run</Button>
           )}
         </div>
       </div>

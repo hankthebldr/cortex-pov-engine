@@ -222,7 +222,7 @@ function ConsoleShell() {
           kind: 'Pinned',
           icon: getDestination('preflight')?.icon || null,
           shortcut: ['⌘', 'L'],
-          onSelect: () => router.navigate('guided', { arm: pid }),
+          onSelect: () => router.navigate('preflight', { arm: pid }),
         }
       })
       .filter(Boolean)
