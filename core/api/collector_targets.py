@@ -70,6 +70,8 @@ class TargetPut(BaseModel):
     dataset: Optional[str] = Field(default=None, max_length=200)
     auth_header: str = Field(default="Authorization", min_length=1, max_length=100)
     auth_scheme: str = Field(default="", max_length=40)
+    # The collector instance's Compression setting; gzip = true.
+    compress: bool = False
     plugins: list[str] = Field(default_factory=list)
     is_default: bool = False
     token: Optional[SecretStr] = None
@@ -225,7 +227,7 @@ async def put_target(name: str, body: TargetPut,
         TargetSpec(name=name, kind=body.kind, url=body.url, dataset=dataset,
                    auth_header=body.auth_header, auth_scheme=body.auth_scheme,
                    plugins=tuple(body.plugins), is_default=body.is_default,
-                   has_token=will_have_key)
+                   has_token=will_have_key, compress=body.compress)
     except TargetSpecError as exc:
         raise _err(422, "TARGET_INVALID", "Invalid collector target", str(exc)) from exc
 
@@ -245,6 +247,7 @@ async def put_target(name: str, body: TargetPut,
         auth_header=body.auth_header, auth_scheme=body.auth_scheme,
         plugins=list(dict.fromkeys(body.plugins)), is_default=body.is_default,
         token=token, clear_token=body.clear_token, declaration=declaration,
+        compress=body.compress,
     )
     out = _public(row)
     out["previous_default"] = previous_default

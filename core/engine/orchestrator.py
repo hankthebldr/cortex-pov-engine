@@ -188,6 +188,86 @@ class LaunchResult:
 
 
 # ---------------------------------------------------------------------------
+# Launch checks: one evaluation, two callers (launch and its dry run)
+# ---------------------------------------------------------------------------
+#
+# Every reason a launch can be refused is judged in ``Orchestrator._evaluate_launch``
+# BEFORE the Run row exists. ``launch()`` stops at the first refusal and returns
+# it; ``preflight()`` runs the same checks to the end and reports all of them,
+# writing nothing. One implementation, so the gate the console shows is the gate
+# the launch enforces (docs/superpowers/specs/2026-11-13-launch-gate-one-model-design.md
+# §4.2).
+
+
+@dataclass
+class LaunchCheck:
+    """One launch precondition as ``POST /api/runs/preflight`` reports it.
+
+    ``verdict`` is ``pass`` (judged, would not refuse), ``block`` (the launch
+    refuses with ``code``) or ``skipped`` (could not be judged because something
+    it depends on is missing or already refused; ``reason`` says what). A
+    skipped check is not a pass.
+    """
+
+    id: str
+    verdict: str
+    code: Optional[str] = None
+    error: Optional[str] = None
+    detail: Any = None
+    http_status: Optional[int] = None
+    reason: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"id": self.id, "verdict": self.verdict}
+        if self.verdict == "block":
+            out.update(code=self.code, http_status=self.http_status,
+                       error=self.error, detail=self.detail)
+        if self.reason:
+            out["reason"] = self.reason
+        return out
+
+
+@dataclass
+class _PreparedPull:
+    """What the pull dispatch needs, worked out before the Run row exists."""
+
+    artifacts: list[dict[str, Any]]
+    binding: Any
+    steps: list[dict[str, Any]]
+    output_markers: list[str]
+    dispatch_warnings: list[str]
+    gate_warnings: list[Any]
+    egress_warnings: list[tuple[str, str]]
+
+
+@dataclass
+class LaunchEvaluation:
+    """The outcome of every launch check for one launch request."""
+
+    checks: list[LaunchCheck] = field(default_factory=list)
+    #: The first refusal, exactly as ``launch()`` returns it. None = launchable.
+    refusal: Optional[LaunchResult] = None
+    scenario: Any = None
+    block_mode_status: Optional[str] = None
+    runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
+    #: launch()'s own reservations (an offline target).
+    launch_warnings: list[str] = field(default_factory=list)
+    prepared_pull: Optional[_PreparedPull] = None
+    #: SOC Framework Auto Triage advisories (dry run only; a launch appends its
+    #: own through Orchestrator._with_socfw_advisories).
+    advisories: list[Any] = field(default_factory=list)
+
+    @property
+    def warnings(self) -> list[Any]:
+        """The advisory warnings a launch would return, in launch order."""
+        out: list[Any] = list(self.launch_warnings)
+        p = self.prepared_pull
+        if p is not None:
+            out += p.dispatch_warnings + p.output_markers + list(p.gate_warnings)
+        return out + list(self.advisories)
+
+
+# ---------------------------------------------------------------------------
 # Pull-mode platform gate (BEACON-01 / CONT-01)
 # ---------------------------------------------------------------------------
 #
@@ -652,122 +732,41 @@ class Orchestrator:
         consent gate and before the Run row exists, so a refused pair
         (``PAIR_INVALID``) seeds nothing.
 
-        Missing consent aborts the launch with a structured error and creates
-        no Run record.
+        Every refusal is decided by :meth:`_evaluate_launch` before the Run row
+        exists, so a refused launch returns a structured error and creates no
+        Run, no Result and no task. :meth:`preflight` runs the same checks
+        without launching.
         """
         from config import settings as _settings  # noqa: PLC0415
-        from models import Agent, Run, Scenario  # noqa: PLC0415
-        from engine.runtime_preflight import evaluate_runtime_readiness  # noqa: PLC0415
+        from models import Run  # noqa: PLC0415
 
-        # Fetch scenario
-        result = await db.execute(
-            select(Scenario).where(Scenario.scenario_id == scenario_id)
+        # The run id exists before the checks because the stitch binding is
+        # seeded with it (deterministic per run). Nothing is written until every
+        # check has passed, so a refused launch leaves no Run, no Result and no
+        # task — the same rule the consent gate has always followed.
+        run_id = str(uuid.uuid4())
+        evaluation = await self._evaluate_launch(
+            scenario_id=scenario_id,
+            mode=mode,
+            db=db,
+            target_agent_id=target_agent_id,
+            consent=consent,
+            paired_with_run_id=paired_with_run_id,
+            canary_run_id=canary_run_id,
+            allow_missing_tools=allow_missing_tools,
+            agent_profile_mode=agent_profile_mode,
+            run_id=run_id,
+            collect_all=False,
         )
-        scenario: Optional[Scenario] = result.scalar_one_or_none()
-        if scenario is None:
-            return LaunchResult(
-                success=False,
-                error=f"Scenario '{scenario_id}' not found",
-            )
-
-        # The launch consent gate. Refuse to create the Run record if the
-        # scenario uses a gated adapter, or would stage a Kubernetes workload
-        # that plants gated cluster capabilities, without the matching consent.
-        gate_error = _check_launch_consent(scenario, consent or {}, mode=mode)
-        if gate_error is not None:
+        if evaluation.refusal is not None:
+            refusal = evaluation.refusal
             logger.warning(
-                "Launch refused scenario=%s code=%s reason=%s",
-                scenario_id, _refusal_code(gate_error), gate_error,
+                "Launch refused scenario=%s code=%s target=%s detail=%s",
+                scenario_id, refusal.error_code, target_agent_id,
+                refusal.error_detail,
             )
-            return LaunchResult(
-                success=False,
-                error=str(gate_error),
-                error_code=_refusal_code(gate_error),
-                error_detail=_refusal_detail(gate_error),
-            )
-
-        # Pair validation: after consent, before any Run row, so a refused pair
-        # leaves the database untouched.
-        if paired_with_run_id:
-            from engine.pairing import validate_pair  # noqa: PLC0415
-
-            first = (await db.execute(
-                select(Run).where(Run.run_id == paired_with_run_id)
-            )).scalar_one_or_none()
-            if first is None:
-                pair_error: Optional[str] = (
-                    f"paired_with_run_id '{paired_with_run_id}' does not match any run"
-                )
-            else:
-                pair_error = validate_pair(
-                    first,
-                    scenario_id=scenario_id,
-                    target_agent_id=target_agent_id,
-                    agent_profile_mode=agent_profile_mode,
-                )
-                if pair_error is None:
-                    other = (await db.execute(
-                        select(Run.run_id).where(
-                            Run.paired_with_run_id == paired_with_run_id
-                        ).limit(1)
-                    )).scalar_one_or_none()
-                    if other is not None:
-                        pair_error = (
-                            f"first run {paired_with_run_id} is already paired with {other}"
-                        )
-            if pair_error is not None:
-                logger.warning(
-                    "Launch refused scenario=%s code=PAIR_INVALID reason=%s",
-                    scenario_id, pair_error,
-                )
-                return LaunchResult(
-                    success=False,
-                    error="Run pairing refused",
-                    error_code="PAIR_INVALID",
-                    error_detail=pair_error,
-                )
-
-        # Canary validation: same position and refusal shape as the pair check.
-        block_mode_status: Optional[str] = None
-        if canary_run_id:
-            from engine import canary  # noqa: PLC0415
-            from models import Result  # noqa: PLC0415
-
-            canary_run = (await db.execute(
-                select(Run).where(Run.run_id == canary_run_id)
-            )).scalar_one_or_none()
-            canary_error: Optional[str] = None
-            if canary_run is None:
-                canary_error = f"canary_run_id '{canary_run_id}' does not match any run"
-            elif canary_run.scenario_id != canary.canary_scenario_id("linux"):
-                canary_error = (
-                    f"run {canary_run_id} is scenario '{canary_run.scenario_id}', "
-                    "not the configured canary scenario"
-                )
-            elif canary_run.target != target_agent_id:
-                canary_error = (
-                    f"canary run {canary_run_id} targeted '{canary_run.target}', "
-                    f"not this launch's target '{target_agent_id}'"
-                )
-            elif canary_run.status == "aborted":
-                canary_error = f"canary run {canary_run_id} was aborted and proves nothing"
-            elif not canary.is_terminal(canary_run):
-                canary_error = f"canary run {canary_run_id} has not finished"
-            if canary_error is not None:
-                logger.warning(
-                    "Launch refused scenario=%s code=CANARY_INVALID reason=%s",
-                    scenario_id, canary_error,
-                )
-                return LaunchResult(
-                    success=False,
-                    error="Canary run refused",
-                    error_code="CANARY_INVALID",
-                    error_detail=canary_error,
-                )
-            canary_results = (await db.execute(
-                select(Result).where(Result.run_id == canary_run_id)
-            )).scalars().all()
-            block_mode_status = canary.block_mode_status_from(canary_run, canary_results)
+            return refusal
+        scenario = evaluation.scenario
 
         # Two-key gate — same posture as CORTEXSIM_XSIAM_ALLOW_WRITE. A single
         # mis-set request body can never authorize a target mutation on its own.
@@ -775,45 +774,6 @@ class Orchestrator:
             allow_runtime_install and _settings.CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL
         )
 
-        # ADVISORY preflight (docs/design/agent-runtime-dependencies.md):
-        # visible before dispatch, never the enforcement. Only meaningful for a
-        # pull-mode launch against a known agent; push mode and an unresolved
-        # target record no gaps here (None, not [] — "not checked", not
-        # "checked and clean").
-        runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
-        pull_plan: Optional[_PullPlan] = None
-        launch_warnings: list[str] = []
-        if mode == "pull" and target_agent_id:
-            agent_row = (await db.execute(
-                select(Agent).where(Agent.agent_id == target_agent_id)
-            )).scalar_one_or_none()
-            # The platform gate and the enrollment check run BEFORE the Run
-            # row exists, so a launch that cannot be dispatched seeds nothing.
-            planned = self._plan_single_endpoint_pull(
-                scenario, target_agent_id, agent_row,
-            )
-            if isinstance(planned, LaunchResult):
-                logger.warning(
-                    "Launch refused scenario=%s code=%s target=%s detail=%s",
-                    scenario_id, planned.error_code, target_agent_id,
-                    planned.error_detail,
-                )
-                return planned
-            pull_plan = planned
-            if agent_row is not None:
-                offline = _offline_warning(agent_row, datetime.utcnow())
-                if offline:
-                    launch_warnings.append(offline)
-                readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
-                runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
-                if readiness.gaps:
-                    logger.warning(
-                        "Runtime-dependency preflight gap scenario=%s agent=%s gaps=%s "
-                        "(advisory — the beacon still checks live at execution time)",
-                        scenario_id, target_agent_id, runtime_dependency_gaps,
-                    )
-
-        run_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
         # The profile mode is itself an attestation, as is any attestation field.
@@ -834,7 +794,7 @@ class Orchestrator:
             status="pending",
             started_at=now,
             runtime_install_authorized=runtime_install_authorized,
-            runtime_dependency_gaps=runtime_dependency_gaps,
+            runtime_dependency_gaps=evaluation.runtime_dependency_gaps,
             agent_profile_mode=agent_profile_mode,
             bas_mode_attested=bas_mode_attested,
             soakless_attested=soakless_attested,
@@ -842,7 +802,7 @@ class Orchestrator:
             attested_at=now if attested else None,
             paired_with_run_id=paired_with_run_id,
             canary_run_id=canary_run_id,
-            block_mode_status=block_mode_status,
+            block_mode_status=evaluation.block_mode_status,
             module_modes=module_modes,
         )
         db.add(run)
@@ -880,27 +840,440 @@ class Orchestrator:
             launched = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
-                pull_plan=pull_plan,
-                launch_warnings=launch_warnings,
-                allow_missing_tools=allow_missing_tools,
+                prepared=evaluation.prepared_pull,
+                launch_warnings=evaluation.launch_warnings,
                 eal_authorized_by=eal_authorized_by,
             )
             # Launch-time warnings first (offline target), then whatever the
             # dispatch itself had to say (variants, unknown OS, the
             # container-agent gate's advisory notices), then the SOC Framework
             # Auto Triage advisories.
-            launched.warnings = launch_warnings + launched.warnings
+            launched.warnings = evaluation.launch_warnings + launched.warnings
             return await self._with_socfw_advisories(
                 launched, db, scenario, paired_with_run_id, agent_profile_mode)
-        elif mode == "push":
-            result = await self._handle_push(run_id, scenario, db)
-            return await self._with_socfw_advisories(
-                result, db, scenario, paired_with_run_id, agent_profile_mode)
-        else:
-            return await self._refuse_after_seed(
-                db, run_id,
-                error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
+        result = await self._handle_push(run_id, scenario, db)
+        return await self._with_socfw_advisories(
+            result, db, scenario, paired_with_run_id, agent_profile_mode)
+
+    async def preflight(
+        self,
+        scenario_id: str,
+        mode: str,
+        db: AsyncSession,
+        *,
+        target_agent_id: Optional[str] = None,
+        consent: Optional[dict[str, bool]] = None,
+        paired_with_run_id: Optional[str] = None,
+        canary_run_id: Optional[str] = None,
+        allow_missing_tools: bool = False,
+        agent_profile_mode: str = "unknown",
+    ) -> LaunchEvaluation:
+        """Run every launch check for this request without launching.
+
+        The checks :meth:`launch` runs, in the same order, carried on past the
+        first refusal so the operator sees all of them at once. Reads only: no
+        Run, no Result, no task, no event. ``evaluation.refusal`` is the refusal
+        :meth:`launch` would return for the same request, and
+        ``evaluation.warnings`` the advisories it would carry: a launchable
+        request also gets the SOC Framework advisories, from the same read-only
+        function the launch calls.
+        """
+        evaluation = await self._evaluate_launch(
+            scenario_id=scenario_id,
+            mode=mode,
+            db=db,
+            target_agent_id=target_agent_id,
+            consent=consent,
+            paired_with_run_id=paired_with_run_id,
+            canary_run_id=canary_run_id,
+            allow_missing_tools=allow_missing_tools,
+            agent_profile_mode=agent_profile_mode,
+            run_id=str(uuid.uuid4()),
+            collect_all=True,
+        )
+        if evaluation.refusal is None and evaluation.scenario is not None:
+            probe = await self._with_socfw_advisories(
+                LaunchResult(success=True), db, evaluation.scenario,
+                paired_with_run_id, agent_profile_mode,
             )
+            evaluation.advisories = list(probe.warnings)
+        return evaluation
+
+    async def _evaluate_launch(
+        self,
+        *,
+        scenario_id: str,
+        mode: str,
+        db: AsyncSession,
+        target_agent_id: Optional[str],
+        consent: Optional[dict[str, bool]],
+        paired_with_run_id: Optional[str],
+        canary_run_id: Optional[str],
+        allow_missing_tools: bool,
+        agent_profile_mode: str,
+        run_id: str,
+        collect_all: bool,
+    ) -> LaunchEvaluation:
+        """Judge every reason this launch could be refused, before any write.
+
+        Order is the refusal order a launch has always had: mode, scenario,
+        consent, pair, canary, then for pull the target, payloads, stitch
+        context, composed targets and the container-agent gate. Push refuses
+        nothing past canary at launch; its target is judged at ``/download``.
+
+        ``collect_all=False`` (:meth:`launch`) returns at the first refusal.
+        ``collect_all=True`` (:meth:`preflight`) records every check. A check
+        whose input an earlier refusal took away is recorded ``skipped`` with
+        that reason, never as a pass.
+        """
+        from models import Agent, Result, Run, Scenario  # noqa: PLC0415
+        from engine.payload_shelf import PayloadResolutionError  # noqa: PLC0415
+        from engine.runtime_preflight import evaluate_runtime_readiness  # noqa: PLC0415
+        from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+        ev = LaunchEvaluation()
+
+        def passed(check_id: str) -> None:
+            ev.checks.append(LaunchCheck(id=check_id, verdict="pass"))
+
+        def skipped(check_id: str, reason: str) -> None:
+            ev.checks.append(LaunchCheck(id=check_id, verdict="skipped", reason=reason))
+
+        def blocked(check_id: str, refusal: LaunchResult) -> bool:
+            """Record a refusal. True when the caller must stop here."""
+            ev.checks.append(LaunchCheck(
+                id=check_id, verdict="block", code=refusal.error_code,
+                error=refusal.error, detail=refusal.error_detail,
+                http_status=refusal.http_status,
+            ))
+            if ev.refusal is None:
+                ev.refusal = refusal
+            return not collect_all
+
+        if mode not in ("pull", "push"):
+            blocked("launch.mode", LaunchResult(
+                success=False,
+                error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
+                error_code="INVALID_MODE",
+                error_detail={"mode": mode},
+                http_status=400,
+            ))
+            return ev
+
+        scenario = (await db.execute(
+            select(Scenario).where(Scenario.scenario_id == scenario_id)
+        )).scalar_one_or_none()
+        if scenario is None:
+            blocked("launch.scenario", LaunchResult(
+                success=False,
+                error=f"Scenario '{scenario_id}' not found",
+                error_code="SCENARIO_NOT_FOUND",
+                error_detail={"scenario_id": scenario_id},
+                http_status=404,
+            ))
+            return ev
+        ev.scenario = scenario
+        passed("launch.scenario")
+
+        # The launch consent gate: a gated adapter, or a Kubernetes workload
+        # that plants gated cluster capabilities, without the matching consent.
+        gate_error = _check_launch_consent(scenario, consent or {}, mode=mode)
+        if gate_error is not None:
+            if blocked("launch.consent", LaunchResult(
+                success=False,
+                error=str(gate_error),
+                error_code=_refusal_code(gate_error),
+                error_detail=_refusal_detail(gate_error),
+            )):
+                return ev
+        else:
+            passed("launch.consent")
+
+        if paired_with_run_id:
+            from engine.pairing import validate_pair  # noqa: PLC0415
+
+            first = (await db.execute(
+                select(Run).where(Run.run_id == paired_with_run_id)
+            )).scalar_one_or_none()
+            if first is None:
+                pair_error: Optional[str] = (
+                    f"paired_with_run_id '{paired_with_run_id}' does not match any run"
+                )
+            else:
+                pair_error = validate_pair(
+                    first,
+                    scenario_id=scenario_id,
+                    target_agent_id=target_agent_id,
+                    agent_profile_mode=agent_profile_mode,
+                )
+                if pair_error is None:
+                    other = (await db.execute(
+                        select(Run.run_id).where(
+                            Run.paired_with_run_id == paired_with_run_id
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                    if other is not None:
+                        pair_error = (
+                            f"first run {paired_with_run_id} is already paired with {other}"
+                        )
+            if pair_error is not None:
+                if blocked("launch.pair", LaunchResult(
+                    success=False,
+                    error="Run pairing refused",
+                    error_code="PAIR_INVALID",
+                    error_detail=pair_error,
+                )):
+                    return ev
+            else:
+                passed("launch.pair")
+
+        if canary_run_id:
+            from engine import canary  # noqa: PLC0415
+
+            canary_run = (await db.execute(
+                select(Run).where(Run.run_id == canary_run_id)
+            )).scalar_one_or_none()
+            canary_error: Optional[str] = None
+            if canary_run is None:
+                canary_error = f"canary_run_id '{canary_run_id}' does not match any run"
+            elif canary_run.scenario_id != canary.canary_scenario_id("linux"):
+                canary_error = (
+                    f"run {canary_run_id} is scenario '{canary_run.scenario_id}', "
+                    "not the configured canary scenario"
+                )
+            elif canary_run.target != target_agent_id:
+                canary_error = (
+                    f"canary run {canary_run_id} targeted '{canary_run.target}', "
+                    f"not this launch's target '{target_agent_id}'"
+                )
+            elif canary_run.status == "aborted":
+                canary_error = f"canary run {canary_run_id} was aborted and proves nothing"
+            elif not canary.is_terminal(canary_run):
+                canary_error = f"canary run {canary_run_id} has not finished"
+            if canary_error is not None:
+                if blocked("launch.canary", LaunchResult(
+                    success=False,
+                    error="Canary run refused",
+                    error_code="CANARY_INVALID",
+                    error_detail=canary_error,
+                )):
+                    return ev
+            else:
+                passed("launch.canary")
+                canary_results = (await db.execute(
+                    select(Result).where(Result.run_id == canary_run_id)
+                )).scalars().all()
+                ev.block_mode_status = canary.block_mode_status_from(
+                    canary_run, canary_results)
+
+        if mode == "push":
+            return ev
+
+        # ── pull: the target ─────────────────────────────────────────────────
+        steps_raw = list(getattr(scenario, "steps", None) or [])
+        composed = any(
+            effective_channel(s) != "agent" or s.get("target") for s in steps_raw
+        )
+        agent_row: Optional[Any] = None
+        pull_plan: Optional[_PullPlan] = None
+        unjudged: Optional[str] = None  # why the target-shaped checks cannot run
+        if not target_agent_id:
+            if blocked("pull.target", LaunchResult(
+                success=False,
+                error="target_agent_id is required for pull mode",
+                error_code="PULL_TARGET_MISSING",
+                error_detail={"field": "target_agent_id"},
+                http_status=422,
+            )):
+                return ev
+            unjudged = "no target agent was named"
+        else:
+            agent_row = (await db.execute(
+                select(Agent).where(Agent.agent_id == target_agent_id)
+            )).scalar_one_or_none()
+            # The platform gate and the enrollment check: a launch that cannot
+            # be dispatched to this target.
+            planned = self._plan_single_endpoint_pull(
+                scenario, target_agent_id, agent_row,
+            )
+            if isinstance(planned, LaunchResult):
+                if blocked("pull.target", planned):
+                    return ev
+                unjudged = "the target agent cannot run this scenario"
+            elif composed and agent_row is None:
+                # A composed run's endpoints, the launch target included, are
+                # judged together under pull.composed_targets.
+                skipped("pull.target",
+                        "a composed run's endpoints are judged under pull.composed_targets")
+            else:
+                passed("pull.target")
+                pull_plan = planned
+                if agent_row is not None:
+                    offline = _offline_warning(agent_row, datetime.utcnow())
+                    if offline:
+                        ev.launch_warnings.append(offline)
+                    # ADVISORY (docs/design/agent-runtime-dependencies.md):
+                    # visible before dispatch, never the enforcement.
+                    readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
+                    ev.runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
+                    if readiness.gaps and not collect_all:
+                        logger.warning(
+                            "Runtime-dependency preflight gap scenario=%s agent=%s gaps=%s "
+                            "(advisory — the beacon still checks live at execution time)",
+                            scenario_id, target_agent_id, ev.runtime_dependency_gaps,
+                        )
+
+        # ── pull: the payload shelf ──────────────────────────────────────────
+        # THE link the shelf turns on: a scenario wired to a shelf artifact must
+        # never reach a target without its tool, or its absent detection reads
+        # in the POV report as "Cortex missed it". Forward the shelf's OWN code,
+        # payload and status (`to_error()` is the shelf route's own envelope).
+        artifacts: list[dict[str, Any]] = []
+        egress: list[tuple[str, str]] = []
+        try:
+            artifacts = _compose_artifacts(scenario)
+            egress = _egress_warnings(scenario)
+        except PayloadResolutionError as exc:
+            if blocked("pull.payloads", LaunchResult(
+                success=False,
+                error=f"{exc.code}: {exc.detail}",
+                error_code=exc.code,
+                error_detail=exc.to_error(),
+                http_status=exc.http_status,
+            )):
+                return ev
+        else:
+            passed("pull.payloads")
+
+        later = ["pull.stitch_context"] if getattr(scenario, "stitch_context", None) else []
+        later += (["pull.composed_targets"] if composed else []) + ["pull.container_gate"]
+        if unjudged is not None:
+            for check_id in later:
+                skipped(check_id, unjudged)
+            return ev
+
+        # ── pull: the Phase-2 Composer stitch context ───────────────────────
+        # Resolve the authored `stitch_context` to the run's concrete shared
+        # entities. A spec that no longer validates refuses here rather than
+        # inject a half-resolved binding onto a customer endpoint (Gate A5).
+        # `seed=run_id` makes the binding deterministic per run.
+        from engine.stitch_context import (  # noqa: PLC0415
+            StitchContextValidationError,
+            resolve_stitch_context,
+        )
+
+        stitch_spec = getattr(scenario, "stitch_context", None)
+        binding: Any = None
+        binding_ok = True
+        try:
+            binding = resolve_stitch_context(
+                stitch_spec, seed=run_id, target=agent_row if stitch_spec else None,
+            )
+        except StitchContextValidationError as exc:
+            if blocked("pull.stitch_context", LaunchResult(
+                success=False,
+                error=f"STITCH_CONTEXT_INVALID: {exc}",
+                error_code="STITCH_CONTEXT_INVALID",
+                error_detail={
+                    "reason": str(exc),
+                    "key": getattr(exc, "key", None),
+                    "directive": getattr(exc, "directive", None),
+                },
+                http_status=409,
+            )):
+                return ev
+            # The composed-target check does not need the binding, so it is
+            # still judged; only the container gate (rendered steps) waits.
+            binding_ok = False
+        else:
+            if stitch_spec:
+                passed("pull.stitch_context")
+
+        # ── pull: every endpoint of a composed run ──────────────────────────
+        # A single-endpoint plan was decided above. A composed run is checked
+        # all-or-nothing: every distinct target must be enrolled (a phantom
+        # second endpoint is refused, never a task nothing will collect), then
+        # each partition is resolved for its own agent's OS.
+        output_markers: list[str] = list(pull_plan.output_markers) if pull_plan else []
+        dispatch_warnings: list[str] = []
+        if pull_plan is not None:
+            raw_steps = pull_plan.steps
+        else:
+            partitions, _eal_steps = _partition_channels(steps_raw, target_agent_id)
+            missing: list[str] = []
+            for tgt in partitions:
+                row = (await db.execute(
+                    select(Agent).where(Agent.agent_id == tgt)
+                )).scalar_one_or_none()
+                if row is None:
+                    missing.append(tgt)
+            refusal: Optional[LaunchResult] = None
+            if missing:
+                refusal = LaunchResult(
+                    success=False,
+                    error=(
+                        "TARGET_AGENT_NOT_ENROLLED: composed step target(s) "
+                        f"{sorted(missing)} are not enrolled — enroll them or "
+                        "retarget the step(s) before launch"
+                    ),
+                    error_code="TARGET_AGENT_NOT_ENROLLED",
+                    error_detail={
+                        "missing_agents": sorted(missing),
+                        "referencing_steps": {
+                            tgt: [s.get("id") for s in partitions[tgt]]
+                            for tgt in missing
+                        },
+                    },
+                    http_status=409,
+                )
+            else:
+                raw_steps, refusal = await self._resolve_composed_partitions(
+                    scenario, target_agent_id, db, output_markers, dispatch_warnings,
+                )
+            if refusal is not None:
+                if blocked("pull.composed_targets", refusal):
+                    return ev
+                skipped("pull.container_gate",
+                        "an endpoint of this composed run cannot run its steps")
+                return ev
+            passed("pull.composed_targets")
+
+        if not binding_ok:
+            skipped("pull.container_gate", "the stitch context did not resolve")
+            return ev
+
+        # ── pull: the container-agent gate ───────────────────────────────────
+        # Render the steps the beacon will receive ({adapter:*} then {stitch:*})
+        # and judge each container target on its fixed posture and tool roster.
+        adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
+            raw_steps
+        )
+        steps = _resolve_stitch_placeholders(adapter_steps, binding)
+        # The beacon refuses a step whose binary is not on PATH (not_run /
+        # TOOL_ABSENT); this is the server half that fills the list. Written
+        # only when non-empty, like `platforms` (the beacon field is omitempty).
+        for s_ in steps:
+            req = required_binaries.get(s_.get("id"))
+            if req:
+                s_["required_binaries"] = list(req)
+        gate_warnings, gate_refusal = await self._container_agent_gate(
+            db, scenario, steps, target_agent_id, allow_missing_tools,
+        )
+        if gate_refusal is not None:
+            blocked("pull.container_gate", gate_refusal)
+            return ev
+        passed("pull.container_gate")
+
+        ev.prepared_pull = _PreparedPull(
+            artifacts=artifacts,
+            binding=binding,
+            steps=steps,
+            output_markers=output_markers,
+            dispatch_warnings=dispatch_warnings,
+            gate_warnings=list(gate_warnings),
+            egress_warnings=egress,
+        )
+        return ev
 
     # ------------------------------------------------------------------
     # pull pre-flight: enrollment + platform gate, before any Run row
@@ -1010,70 +1383,6 @@ class Orchestrator:
         except Exception:  # noqa: BLE001
             logger.warning("socfw advisory skipped run_id=%s", result.run_id, exc_info=True)
         return result
-
-    # ------------------------------------------------------------------
-    # refusal after the Run row exists
-    # ------------------------------------------------------------------
-
-    async def _refuse_after_seed(
-        self,
-        db: AsyncSession,
-        run_id: str,
-        *,
-        error: str,
-        error_code: str = "LAUNCH_FAILED",
-        error_detail: Optional[dict[str, Any]] = None,
-        http_status: Optional[int] = None,
-    ) -> LaunchResult:
-        """Refuse a launch whose Run row is already committed, leaving it TERMINAL.
-
-        ``launch()`` creates the Run and seeds its Result rows before several
-        checks that can still refuse. Returning from one of those without
-        touching the row left it in ``pending`` — a NON-terminal state that
-        means, everywhere else in this engine, *work still owed*. A refused
-        launch owes nothing. It is finished, and the only honest record of it is
-        a ``failed`` run carrying the reason.
-
-        Left ``pending`` the row is also swept by :meth:`rehydrate` on the next
-        restart and stamped as an orphan whose "queued task was lost" — a
-        SimCore failure that never happened, written into a record a DC exports.
-
-        The seeded Result rows are deliberately KEPT: they record what the
-        scenario expected to detect, and a failed run with its expectations
-        intact is evidence. They are stamped ``not_executed`` /
-        ``LAUNCH_REFUSED`` (OPS-01): nothing ran, so no alert can ever be
-        credited to them and they leave every efficacy denominator.
-
-        Refusals that fire BEFORE the row is committed (the launch consent gate)
-        must keep creating no run at all — a ``failed`` run would read as "we
-        tried", and an unauthorized launch never did.
-        """
-        from models import Run  # noqa: PLC0415
-
-        run: Optional[Run] = (await db.execute(
-            select(Run).where(Run.run_id == run_id)
-        )).scalar_one_or_none()
-        if run is not None:
-            run.status = "failed"
-            run.completed_at = datetime.utcnow()
-            run.output = (run.output or "") + (
-                f"\n--- LAUNCH REFUSED — {error} ---\n"
-            )
-            await stamp_not_executed(db, run_id, REASON_LAUNCH_REFUSED, commit=False)
-            await db.commit()
-            await _publish_run_status(run_id, "failed")
-
-        logger.warning(
-            "Launch refused after seeding run_id=%s reason=%s", run_id, error
-        )
-        return LaunchResult(
-            success=False,
-            run_id=run_id,
-            error=error,
-            error_code=error_code,
-            error_detail=error_detail or {},
-            http_status=http_status,
-        )
 
     # ------------------------------------------------------------------
     # pull path
@@ -1322,10 +1631,11 @@ class Orchestrator:
         ``PULL_TARGET_*`` LaunchResult when any partition cannot run on its
         agent — all-or-nothing, the same posture as the enrollment check.
 
-        A partition whose agent is NOT enrolled is left unresolved and the raw
-        steps are returned: :meth:`_handle_pull`'s existing check refuses that
-        launch as ``TARGET_AGENT_NOT_ENROLLED``, which stays the first answer an
-        operator gets for a phantom endpoint.
+        :meth:`_evaluate_launch` refuses an unenrolled endpoint
+        (``TARGET_AGENT_NOT_ENROLLED``) before calling this, so that stays the
+        first answer an operator gets for a phantom endpoint. A partition whose
+        agent is still missing here is left unresolved and the raw steps are
+        returned, rather than guessed at.
         """
         from models import Agent  # noqa: PLC0415
 
@@ -1373,139 +1683,33 @@ class Orchestrator:
         identity: Optional[str],
         db: AsyncSession,
         runtime_install_authorized: bool = False,
-        pull_plan: Optional[_PullPlan] = None,
+        prepared: Optional[_PreparedPull] = None,
         launch_warnings: Optional[list[str]] = None,
-        allow_missing_tools: bool = False,
         eal_authorized_by: Optional[str] = None,
     ) -> LaunchResult:
-        """``launch_warnings`` are launch()'s own reservations (an offline
+        """Build and queue the pull task(s) for a launch every check has cleared.
+
+        ``prepared`` is what :meth:`_evaluate_launch` worked out before the Run
+        row existed: the composed artifacts, the stitch binding, the rendered
+        steps and the dispatch markers. Nothing here refuses; a launch that
+        could be refused never reaches this method.
+
+        ``launch_warnings`` are launch()'s own reservations (an offline
         target). They are written onto Run.output with the dispatch markers; the
-        caller still returns them in ``warnings``, so they are not added here.
+        caller still returns them in ``warnings``, so they are not added here."""
+        from models import Run  # noqa: PLC0415
 
-        ``allow_missing_tools`` turns off ONLY the container-agent gate's tool
-        refusal (``AGENT_TOOL_ABSENT``); a posture gap is never overridable."""
-        from models import Agent, Run  # noqa: PLC0415
-
-        if not target_agent_id:
-            return await self._refuse_after_seed(
-                db, run_id,
-                error="target_agent_id is required for pull mode",
-            )
-        output_markers: list[str] = list(pull_plan.output_markers) if pull_plan else []
+        if prepared is None:  # pragma: no cover - launch() always prepares a pull
+            raise RuntimeError("pull dispatch without a prepared plan")
 
         execution_identity = getattr(scenario, "execution_identity", None) or {}
-
-        # THE link the whole payload shelf turns on: the console stages a public
-        # tool, this resolves a digest-bound plan, and the beacon fetches and
-        # verifies it before any step runs. Without this call every other piece
-        # is built and unreachable — the task carries no artifacts, the beacon
-        # stages nothing, and a scenario wired to a shelf artifact runs its steps
-        # with no tooling. The absent detection then reads in the POV report as
-        # "Cortex missed it", which is a false negative manufactured by us and
-        # shown to a customer.
-        from engine.payload_shelf import PayloadResolutionError  # noqa: PLC0415
-
-        try:
-            artifacts = _compose_artifacts(scenario)
-        except PayloadResolutionError as exc:
-            # Refuse at LAUNCH, not on the target. A run that cannot be tooled
-            # must never reach a customer endpoint half-armed, and the operator
-            # is still at the console to read why.
-            # Forward the shelf's OWN code, structured payload and status.
-            # Rebuilding the refusal by hand collapsed all of it: the operator
-            # got a flat 422 saying their launch body was malformed, when the
-            # body was fine and the fix is ./scripts/build-payloads.sh on this
-            # host. `to_error()` is the exact envelope the shelf route returns,
-            # so a console parses both refusals with one code path.
-            return await self._refuse_after_seed(
-                db, run_id,
-                error=f"{exc.code}: {exc.detail}",
-                error_code=exc.code,
-                error_detail=exc.to_error(),
-                http_status=exc.http_status,
-            )
-
-        # Phase-2 Composer Stitch Context. When the scenario carries an authored
-        # `stitch_context`, resolve it to the run's concrete shared entities and
-        # substitute {stitch:*} into every step's command AFTER the adapter pass,
-        # so each step (and, in Phase 3, each channel) emits the SAME 5-tuple /
-        # principal / host / container / cloud resource and the signals correlate.
-        # The launch target (the Agent row, exposing `.hostname`) feeds `from_agent`.
-        # A scenario with NO stitch_context yields `binding = None` and every
-        # {stitch:*} is left verbatim — byte-identical to today. `seed=run_id` makes
-        # the binding deterministic and reproducible, never random.
-        from engine.stitch_context import (  # noqa: PLC0415
-            StitchContextValidationError,
-            resolve_stitch_context,
-        )
-
-        stitch_spec = getattr(scenario, "stitch_context", None)
-        target_agent: Optional[Agent] = None
-        if stitch_spec:
-            agent_result = await db.execute(
-                select(Agent).where(Agent.agent_id == target_agent_id)
-            )
-            target_agent = agent_result.scalar_one_or_none()
-        try:
-            binding = resolve_stitch_context(
-                stitch_spec, seed=run_id, target=target_agent
-            )
-        except StitchContextValidationError as exc:
-            # A persisted spec that no longer validates must refuse at LAUNCH,
-            # not inject a half-resolved binding onto a customer endpoint. The
-            # operator is still at the console to read why (fail-closed, Gate A5).
-            return await self._refuse_after_seed(
-                db, run_id,
-                error=f"STITCH_CONTEXT_INVALID: {exc}",
-            )
-
-        egress_warnings = _egress_warnings(scenario)
-
-        # ── Platform gate (BEACON-01) ───────────────────────────────────────
-        # Choose, per step, the command text the target OS can actually run —
-        # BEFORE {adapter:*} / {stitch:*} rendering, on the same raw document
-        # the push generator judges. The single-endpoint plan was decided (and
-        # refusals issued) before the Run existed; a composed run is resolved
-        # here, per target agent, once every target is known to be enrolled.
-        dispatch_warnings: list[str] = []
-        if pull_plan is not None:
-            raw_steps = pull_plan.steps
-        else:
-            raw_steps, refusal = await self._resolve_composed_partitions(
-                scenario, target_agent_id, db, output_markers, dispatch_warnings,
-            )
-            if refusal is not None:
-                return await self._refuse_after_seed(
-                    db, run_id,
-                    error=refusal.error,
-                    error_code=refusal.error_code,
-                    error_detail=refusal.error_detail,
-                    http_status=refusal.http_status,
-                )
-
-        adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
-            raw_steps
-        )
-        steps = _resolve_stitch_placeholders(adapter_steps, binding)
-        # The beacon refuses a step whose binary is not on PATH (not_run /
-        # TOOL_ABSENT); this is the server half that fills the list. Written
-        # only when non-empty, like `platforms` (the beacon field is omitempty).
-        for s_ in steps:
-            req = required_binaries.get(s_.get("id"))
-            if req:
-                s_["required_binaries"] = list(req)
-
-        # Container-agent launch gate (engine/agent_launch_gate.py). A pod has one
-        # fixed posture and tool roster; refuse HERE rather than let a step fail
-        # for lack of privilege/tooling and read as a Cortex miss. Every agent
-        # target of a composed run is gated on its own facts. A host / VM /
-        # legacy agent, or a container beacon the manifest did not deploy (no
-        # posture profile), is a no-op.
-        gate_warnings = await self._container_agent_gate(
-            db, run_id, scenario, steps, target_agent_id, allow_missing_tools
-        )
-        if isinstance(gate_warnings, LaunchResult):
-            return gate_warnings
+        artifacts = prepared.artifacts
+        binding = prepared.binding
+        steps = prepared.steps
+        output_markers = list(prepared.output_markers)
+        dispatch_warnings = list(prepared.dispatch_warnings)
+        gate_warnings = list(prepared.gate_warnings)
+        egress_warnings = list(prepared.egress_warnings)
 
         # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
         # A run is "multichannel" the moment ANY step carries a non-agent
@@ -1561,42 +1765,6 @@ class Orchestrator:
             # beacon task to complete it). n_tasks counts only beacon tasks, so
             # it is 0 for an all-EAL run.
             n_tasks = len(agent_partitions)
-
-            # All-or-nothing: verify every distinct target endpoint is enrolled
-            # BEFORE enqueuing anything. A step that names a phantom second
-            # endpoint is refused honestly (TARGET_AGENT_NOT_ENROLLED), never a
-            # silent no-op or a task nothing will ever collect (Gate A5).
-            missing: list[str] = []
-            for tgt in agent_partitions:
-                row = (await db.execute(
-                    select(Agent).where(Agent.agent_id == tgt)
-                )).scalar_one_or_none()
-                if row is None:
-                    missing.append(tgt)
-            if missing:
-                referencing = {
-                    tgt: [s.get("id") for s in agent_partitions[tgt]]
-                    for tgt in missing
-                }
-                logger.warning(
-                    "Launch refused run_id=%s code=TARGET_AGENT_NOT_ENROLLED missing=%s",
-                    run_id, sorted(missing),
-                )
-                # Terminate the seeded run so a refused multichannel launch
-                # does not leave an orphaned run stuck at its initial state.
-                return await self._refuse_after_seed(
-                    db, run_id,
-                    error=(
-                        "TARGET_AGENT_NOT_ENROLLED: composed step target(s) "
-                        f"{sorted(missing)} are not enrolled — enroll them or "
-                        "retarget the step(s) before launch"
-                    ),
-                    error_code="TARGET_AGENT_NOT_ENROLLED",
-                    error_detail={
-                        "missing_agents": sorted(missing),
-                        "referencing_steps": referencing,
-                    },
-                )
 
             # Enqueue ONE Task per distinct target agent, each carrying only its
             # own steps and the artifacts those steps need. Every endpoint shares
@@ -1732,18 +1900,18 @@ class Orchestrator:
     async def _container_agent_gate(
         self,
         db: AsyncSession,
-        run_id: str,
         scenario: Any,
         steps: list[dict[str, Any]],
         target_agent_id: str,
         allow_missing_tools: bool,
-    ) -> "list[dict[str, Any]] | LaunchResult":
+    ) -> "tuple[list[dict[str, Any]], Optional[LaunchResult]]":
         """Run the container-agent gate for every agent target of the run.
 
         Thin: loads each target's ``runtime_facts`` and hands off to
         :func:`agent_launch_gate.evaluate_launch`, which judges each target on its
-        own facts and steps and stamps ``required_binaries``. Returns the advisory
-        warnings, or a refused ``LaunchResult`` (run row already ``failed``).
+        own facts and steps and stamps ``required_binaries``. Returns
+        ``(advisory warnings, None)``, or ``([], refusal)``. Reads only, so the
+        launch's dry run calls it too.
         """
         from models import Agent  # noqa: PLC0415
         from engine import agent_launch_gate as gate  # noqa: PLC0415
@@ -1756,7 +1924,7 @@ class Orchestrator:
             )).scalar_one_or_none()
             facts_by_agent[agent_id] = getattr(agent, "runtime_facts", None) if agent else None
         if not any(gate.is_gated(f) for f in facts_by_agent.values()):
-            return []
+            return [], None
 
         posture = gate.scenario_view(scenario, [])["cluster_posture"]
         result = gate.evaluate_launch(
@@ -1765,14 +1933,14 @@ class Orchestrator:
         )
         if result.refusal is not None:
             r = result.refusal
-            return await self._refuse_after_seed(
-                db, run_id,
+            return [], LaunchResult(
+                success=False,
                 error=f"{r.code}: {r.error}",
                 error_code=r.code,
                 error_detail=r.detail,
                 http_status=409,
             )
-        return result.warnings
+        return result.warnings, None
 
     # ------------------------------------------------------------------
     # push path
@@ -2252,8 +2420,10 @@ def _egress_warnings(scenario: Any) -> list[tuple[str, str]]:
     already carry (the shelf has nothing staged for it).
 
     A separate call from :func:`_compose_artifacts` so that function keeps its
-    one-argument contract. Only reached after ``_compose_artifacts`` succeeded,
-    so ``compose`` cannot raise a resolution error here.
+    one-argument contract. ``Orchestrator._evaluate_launch`` calls both inside
+    the same ``PayloadResolutionError`` handler, so a resolution error from
+    either one is the launch's ``pull.payloads`` refusal, never an exception
+    out of the dry run.
     """
     from engine.payload_shelf import compose  # noqa: PLC0415 — import cycle
 
@@ -2412,9 +2582,11 @@ def _check_cluster_launch_consent(
     try:
         posture = km.parse_posture({"cluster_posture": raw})
     except Exception as exc:  # a posture the model refuses outright
-        return (
+        return LaunchRefusal(
             f"Scenario {scenario_id} declares a cluster_posture this engine "
-            f"refuses regardless of consent: {exc}"
+            f"refuses regardless of consent: {exc}",
+            code="CLUSTER_POSTURE_REFUSED",
+            detail={"scenario_id": scenario_id, "reason": str(exc)},
         )
     if posture is None:
         return None
@@ -2424,7 +2596,19 @@ def _check_cluster_launch_consent(
             allow_privileged_k8s=allow_privileged_k8s(),
         )
     except km.ClusterConsentRequired as exc:
-        return _cluster_refusal_text(exc)
+        # Two different fixes, so two codes: a consent key the operator can
+        # set, or a deployment setting no consent key changes.
+        if exc.disabled_by_deployment:
+            return LaunchRefusal(
+                _cluster_refusal_text(exc),
+                code="PRIVILEGED_K8S_DISABLED",
+                detail={**exc.to_error(), "setting": "CORTEXSIM_ALLOW_PRIVILEGED_K8S"},
+            )
+        return LaunchRefusal(
+            _cluster_refusal_text(exc),
+            code="CLUSTER_CONSENT_REQUIRED",
+            detail={**exc.to_error(), "required_consent": list(exc.missing)},
+        )
     return None
 
 

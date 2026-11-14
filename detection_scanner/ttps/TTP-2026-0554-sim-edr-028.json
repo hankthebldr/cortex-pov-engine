@@ -1,0 +1,355 @@
+{
+  "id": "TTP-2026-0554",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-13T00:00:00+00:00",
+    "updated_at": "2026-11-14T02:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "linux",
+      "privilege-escalation",
+      "sudoedit",
+      "cve-2021-3156-probe-form",
+      "process-burst",
+      "analytics-alert-hunt-only",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 160,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Sudoedit Execution Burst on a Linux Host — the CVE-2021-3156 Probe Form (sudoedit -s /) Repeated",
+    "summary": "The Cortex alert 'Sudoedit Brute force attempt' describes an unusual amount of sudoedit commands in a short period; its page gives no count and no duration. SIM-EDR-028 chooses sixty starts in about a minute, each the harmless probe form sudoedit -s /. No exploit is attempted. The built-in alert is hunt only.",
+    "description": "SUBJECT. The Cortex analytics alert 'Sudoedit Brute force attempt'. Its reference page, read 2026-11-13, says: 'An unusual amount of sudoedit commands executed in a short period of time. This may indicate an attempt to exploit CVE-2021-3156.' The page gives Activation Period 14 Days, Training Period 30 Days, Test Period 1 Hour, Deduplication Period 1 Day, Required Data XDR Agent, Severity Medium, and ATT&CK TA0004 Privilege Escalation / T1068 Exploitation for Privilege Escalation. It publishes no trigger predicate, no threshold, no count, no duration, no field name and no indicator, and it names no actor or campaign, so this card carries none. It does not say why the count is high, and this card does not guess. BACKGROUND, reference only. CVE-2021-3156 is a heap-based buffer overflow in sudo's command-line unescaping, published by the sudo project on 2021-01-26 and exploitable by any local user. The project's advisory lists sudo 1.7.7 through 1.7.10p9, 1.8.2 through 1.8.31p2 and 1.9.0 through 1.9.5p1 as affected and 1.8.32 and 1.9.5p2 as fixed. It says the bug is reached by running sudoedit with the -s or -i option and an argument that ends in an unescaped backslash. The same advisory publishes a harmless test, sudoedit -s /: a patched sudo prints its usage statement, and a vulnerable one prompts for a password or prints 'sudoedit: /: not a regular file'. WHAT SIM-EDR-028 DOES. No exploit is written or run. Three steps run as root inside /var/tmp/.cortexsim-sudoedit: sudo --version is recorded; sudoedit -s / is started sixty times, one second apart, with SUDO_EDITOR, VISUAL and EDITOR set to /bin/true; the attempts are tallied. The only argument ever passed is the single character /. It never ends in a backslash and is never padded, so the overflow is not reachable on an unpatched sudo either, and / is a directory, so nothing can be edited. /var/tmp is world-writable, so step-01 creates the sandbox root atomically at mode 700 and the later steps stop unless it is a real directory, owned by the running user, at mode 700, read with one stat call that does not follow a symbolic link. Step-02 classifies the host's answer on its whole text and prints the classification with the answer's first lines, which tells the operator whether that sudo is patched. Sixty starts, one per second, and the count of 20 in the rule are this scenario's choices, not published values. A real attempt comes from an unprivileged local user and the lab runs as root, so nothing here keys on a user name. On the lab VM sudo is 1.9.15p5 and /usr/bin/sudoedit is a symbolic link to sudo (read back 2026-11-13). Every query matches the command line and none the image name, so none depends on whether a sensor reports the image as sudo or as sudoedit; the lab agent reported sudoedit. WHAT IS DECLARED. Four XQL validation rows over xdr_data, scored by Tier-2 verify only, and one operator-installed correlation, CR-EDR-0028, the only row an alert can back. The two count rows and the rule need the sensor to record 20 of the sixty identical process starts. Verify is run no sooner than six minutes after the run completes, because the agent uploads endpoint telemetry in batches about five minutes apart (measured on the lab endpoint on 2026-11-14). LAB RUN. One pull run on pov-target-01 (Ubuntu 24.04, Cortex XDR agent 9.4.0.470, report mode, identity root, beacon pov-target-01-4dcdce): 5c500f71, 2026-11-14 01:42:44 to 01:45:06 UTC. All three steps exited 0. Step-02 made 60 sudoedit -s / starts in 60 s, and all 60 were answered with the usage text a patched sudo prints (classified patched-form; the host's sudo is 1.9.15p5). Step-03 wrote attempts_made=60, and the sandbox was removed after the run. Read back with the read-back query on this card at 01:52 and again at 01:54:43, the sensor recorded 28 of the 60: the FIRST 28, one per second, 01:43:25.166 to 01:43:52.527, with no gap. None of the remaining 32 (01:43:53 to about 01:44:25) arrived in any later upload; the uploads seen were at 01:43:43.8 (19 events) and 01:48:43.9 (9 events). The recorded image name is sudoedit, not sudo; the parent is timeout; all 28 share one actor_causality_id. The cause of the cut-off is not established. In the same lab, on SIM-EDR-027 step-02, the agent recorded a burst of tar events and then nothing for the rest of the step, and earlier ten dig runs made back to back in one loop reached xdr_data as 1 of 10 (cause not established). The floor of 20 held with 28. A host whose agent records fewer than 20 of the sixty would fail the two count rows and would not fire the rule; the read-back query, compared with attempts_made, is how to check. SimCore's Tier-2 verify at 01:55:09 (about 10 minutes after the run completed) issued 4 queries and all four XQL rows passed. CR-EDR-0028's XQL was accepted by the tenant as an ordinary query (the figures are under the rule); the rule was not installed, so it has not run on a schedule, raised no issue, and its suppression setting is unexercised. The built-in alert was not raised (SimCore's reconcile at 01:55 pulled 1 alert for the run window and matched 0). WHAT IS HUNT ONLY. The built-in alert itself. The page's 1 Hour test period and the words 'an unusual amount' describe a count judged against a trained baseline (30 Days training), which a one-shot run cannot supply. It is the one Medium alert of this build, the other six alert pages read for it being Low or Informational, so if a lab run does raise it, it is worth promoting to a declared row then.",
+    "severity": "medium",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": []
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1518",
+        "name": "Software Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-028 — sudoedit execution burst with the CVE-2021-3156 probe form, run as root by the CortexSim beacon inside /var/tmp/.cortexsim-sudoedit. A real attempt needs only a local unprivileged account.",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint (lab: 9.4.0.470 on Ubuntu 24.04, report mode).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "sudo and its sudoedit link on the endpoint, plus coreutils and grep (timeout, stat, id, wc, head, tail, cut, sort, uniq, readlink). The lab VM has them: read back 2026-11-13, sudo 1.9.15p5, /usr/bin/sudoedit a symbolic link to sudo, timeout present. Without sudo or sudoedit a pull run is refused by the beacon before the step runs. A push bundle does not stop: step-01 removes any sandbox an earlier run left and exits 127, step-02 and step-03 exit 1 on the sandbox test, and the bundle still ends with exit code 0.",
+        "check_command": "command -v sudo && command -v sudoedit && command -v timeout"
+      },
+      {
+        "description": "Correlation CR-EDR-0028 from this card installed in the tenant at Medium before the run, with alert suppression of one issue per agent per hour and with the MITRE mapping left empty. Without the rule the one alert-backed row cannot fire.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > Correlations'"
+      },
+      {
+        "description": "At least 75 minutes since the previous SIM-EDR-028 run was launched on this endpoint, or CR-EDR-0028 disabled between runs. For an hour the earlier starts are still inside the rule's time frame: with suppression on the rule raises nothing for the new run until that hour is over, and without it an issue raised from the earlier starts would be credited to the new run by rule name.",
+        "check_command": "echo 'confirm the launch time of the last SIM-EDR-028 run on this endpoint is more than 75 minutes ago'"
+      }
+    ],
+    "payload": {
+      "interpreter": "sh",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-028-sudoedit-burst-cve-2021-3156-probe.yml is the delivery path\n# (three steps, 40 s apart, each with its own guards). This is the shape only.\nD=/var/tmp/.cortexsim-sudoedit\n# 1  rm -rf \"$D\"; mkdir -m 700 \"$D\"\n#    No -p: the sandbox root is created atomically, owned by the running user, and the step fails if\n#    anything is at the path after the remove.\n#    sudo --version > \"$D/sudo-version.txt\"\n# Steps 2 and 3 begin with the ownership test and stop unless it passes. It is ONE stat call that does not\n# follow a symbolic link, so type, owner and mode come from one inode:\n#    [ \"$(stat -c %F:%u:%a \"$D\" 2>/dev/null)\" = \"directory:$(id -u):700\" ] || exit 1\n# 2  sixty times, one second apart, with SUDO_EDITOR, VISUAL and EDITOR set to /bin/true:\n#        timeout -k 2 5 sudoedit -s /\n#    The only argument is the single character /. Never an argument that ends in a backslash, never padding.\n# 3  wc -l \"$D/attempts.log\"   and the tally written to \"$D/burst-summary.txt\"",
+      "input_variables": [],
+      "timeout_seconds": 150
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "step-01: sudo reports its version (one process start).",
+        "expected_value": "action_process_image_command_line ~= \"(^|/)sudo +--version( |$)\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "step-01: the version text written inside the sandbox.",
+        "expected_value": "action_file_path = \"/var/tmp/.cortexsim-sudoedit/sudo-version.txt\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-02: sixty process starts of the probe form, one second apart, each the child of a timeout process. A sensor may report the image name as sudo or as sudoedit. In lab run 5c500f71 (2026-11-14) the agent recorded 28 of the sixty, the first 28, with image name sudoedit and parent timeout.",
+        "expected_value": "action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "step-02: the attempt log (one line per start) and the first probe answer (its classification, then its first three lines), inside the sandbox. Not scored.",
+        "expected_value": "/var/tmp/.cortexsim-sudoedit/attempts.log and /var/tmp/.cortexsim-sudoedit/probe-answer.txt"
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-03: wc counts the attempt log; the tally is written to burst-summary.txt inside the sandbox. Bookkeeping, not scored.",
+        "expected_value": "action_process_image_command_line ~= \"(^|/)wc +-l +/var/tmp/[.]cortexsim-sudoedit/attempts[.]log( |$)\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "sh",
+      "code": "# Nothing is left running and there is no pidfile to read. rm -rf removes a symbolic link at this path, not what it points to.\n# A pull run executes no cleanup: run this by hand afterwards, or let step-01 of the next run remove it.\nrm -rf /var/tmp/.cortexsim-sudoedit"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-028 Sudo Version Queried And Answer Recorded In Sandbox",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and (action_process_image_command_line ~= \"(^|/)sudo +--version( |$)\" or action_process_image_command_line contains \"/var/tmp/.cortexsim-sudoedit/sudo-version.txt\"))\n   or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path = \"/var/tmp/.cortexsim-sudoedit/sudo-version.txt\")\n| alter leg = if(event_type = ENUM.PROCESS and action_process_image_command_line ~= \"(^|/)sudo +--version( |$)\", \"version_queried\", \"answer_in_sandbox\")\n| comp count_distinct(leg) as legs, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs = 2",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-028 Sudoedit Started With Shell Flag",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_name, action_process_image_path, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-028 Twenty Sudoedit Shell Flag Starts Within Five Minutes",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\"\n| comp count() as sudoedit_starts, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| alter span_seconds = timestamp_diff(last_seen, first_seen, \"SECOND\")\n| filter sudoedit_starts >= 20 and span_seconds <= 300",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-028 Sudoedit Shell Flag Starts Share One Causality Chain",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\"\n| comp count() as sudoedit_starts, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id, actor_causality_id, causality_actor_process_image_name\n| filter sudoedit_starts >= 20",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "investigation",
+        "name": "EDR-028 Read-Back — Recorded Sudoedit -s Starts Per Endpoint In The Last Hour (compare recorded_starts with attempts_made in the step-03 output: the two count rows and CR-EDR-0028 need 20; image_names shows whether the sensor reports sudo or sudoedit)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\"\n| comp count() as recorded_starts, count_distinct(actor_causality_id) as causality_chains, values(action_process_image_name) as image_names, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "investigation",
+        "name": "EDR-028 Attempt Log Tallied In Sandbox (step-03 bookkeeping; no scenario row references it)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)wc +-l +/var/tmp/[.]cortexsim-sudoedit/attempts[.]log( |$)\"\n| fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_process_image_command_line",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-028 Hunt — Sudoedit Started With -s Or -i, Per Endpoint Per Five Minutes (any Linux endpoint, 7 days; use before the correlation rule is installed)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-[is]( |$)\"\n| alter started_at = _time\n| bin _time span = 5m\n| comp count() as sudoedit_starts, count_distinct(action_process_image_command_line) as distinct_command_lines, min(started_at) as first_seen, max(started_at) as last_seen by agent_hostname, agent_id, _time\n| sort desc sudoedit_starts",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-028 Hunt — All Sudoedit Starts Per Endpoint Per Hour, 30 Days (what a per-endpoint baseline for the built-in alert's subject looks like)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 2592000\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit( |$)\"\n| bin _time span = 1h\n| comp count() as sudoedit_starts by agent_hostname, agent_id, _time\n| sort desc sudoedit_starts",
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-028 Sudoedit Execution Burst On One Host",
+        "rule_id": "CR-EDR-0028",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Install it as follows. Alert name EXACTLY as this rule's name. Severity Medium (only Medium or higher opens or joins a case). Scheduled, every 10 minutes, query time frame 1 hour. Alert suppression on: one issue per agent per hour (suppression duration 1 hour, suppression field agent_id), so one burst raises one issue and not one on each of the six scheduled runs that still see it. Alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID (the mapped artifacts are what let a correlation issue join a case). MITRE mapping: leave it EMPTY while SIM-EDR-028 is being scored, even though the generated export file for this card lists MITRE techniques beside the rule. Every row of a step shares the step's technique, so an issue tagged T1068 would also be credited to the XQL validation rows of step-02. Outside a scored run the natural tag is T1068. TESTED AS A QUERY, NOT AS A RULE. On 2026-11-14 the XQL below was run in the lab tenant as an ordinary query over a one-hour time frame. At 01:34 UTC, before any run that hour, it was accepted and returned 0 rows. At 01:56 UTC, after SIM-EDR-028 run 5c500f71 (01:42:44 to 01:45:06), it was accepted and returned one row for pov-target-01 with sudoedit_starts 44: that run's 28 recorded starts plus about 16 from an earlier attempt in the same hour, run 328b3e45 at 01:39:56, which was cut off in step-02 after 55 s. SimCore had answered one of the beacon's control polls with HTTP 500 ('database is locked', while another client's tenant call held the database), and the beacon treated that as an abort: a SimCore defect being fixed separately, not a fault of this scenario. The rule has not been installed (no tenant write was made), so it has not run on a schedule, has raised no issue, and its suppression setting has not been exercised. Its comp-then-filter shape follows CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11. It reads only process-start events, the one kind SIM-EDR-028 step-02 produces sixty times on one host, and it matches the command line, not the image name, because sudoedit is normally a symbolic link to sudo and the sensor may report the image as sudo. It fires for an endpoint with 20 or more sudoedit -s process starts inside the rule's one-hour time frame. Its output is the two host fields and the count. There is no _time column and no time bucket, so nothing in the row can date the issue before the run that caused it: which timestamp an issue carries is an open question in this repository, and a result match is accepted only at or after the launch. The count of 20 is this scenario's choice: the alert page publishes no threshold. In run 5c500f71 the agent recorded 28 of the sixty starts (the first 28, then none; cause not established), so the floor held. On a host whose agent records fewer than 20 of the sixty the rule does not fire; the read-back query on this card is how to check. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(^|/)sudoedit +-s( |$)\"\n| comp count() as sudoedit_starts by agent_hostname, agent_id\n| filter sudoedit_starts >= 20"
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Sudoedit Brute force attempt",
+        "validated": false,
+        "note": "Hunt only; SIM-EDR-028 does not declare it. Reference page, read 2026-11-13: Activation Period 14 Days, Training Period 30 Days, Test Period 1 Hour, Deduplication Period 1 Day, Required Data XDR Agent, Severity Medium, ATT&CK TA0004 Privilege Escalation / T1068 Exploitation for Privilege Escalation. Page description: 'An unusual amount of sudoedit commands executed in a short period of time. This may indicate an attempt to exploit CVE-2021-3156.' Why it is not scored: the 1 Hour test period and the words 'an unusual amount' describe a count judged against a trained baseline (30 Days training), which a one-shot run cannot supply. The page publishes no trigger predicate, threshold, count, duration or field name, and it was not raised for lab run 5c500f71 on pov-target-01 (2026-11-14 UTC): SimCore's reconcile at 01:55 pulled 1 alert for the run window and matched 0. It is the one Medium alert of this build (the other six alert pages read for it are Low or Informational), and only Medium-or-higher issues open or join a case, so if a lab run does raise it, it is worth promoting to a declared row then. It would correspond to step-02, the sixty sudoedit starts. If it does fire, the 1 Day deduplication period means a second run on the same endpoint within a day may not raise it again."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "endpoint-process-telemetry",
+        "coverage_tier": "investigation",
+        "evidence_query": "The four validation queries on this card, over xdr_data process-start events (and one file event) on the endpoint. Tier-2 verify only; none raises an issue. Run verify no sooner than six minutes after the run completes, and run the read-back query first: it returns how many of the sixty starts the tenant recorded. In lab run 5c500f71 (2026-11-14) it returned 28, and SimCore's verify at 01:55:09 issued the four validation queries and all four passed."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0028"
+        ],
+        "evidence_query": "Issue 'EDR-028 Sudoedit Execution Burst On One Host' (operator-installed correlation, Medium) on the endpoint. The only alert-backed row of SIM-EDR-028. Being Medium, it opens a case of its own. The rule was not installed for lab run 5c500f71 (2026-11-14), so this issue has not been observed; its XQL was accepted there as an ordinary query and returned this chain's row."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "Sudoedit Brute force attempt"
+        ],
+        "evidence_query": "HUNT. Not scored by SIM-EDR-028. The built-in alert is raised by the product, not by a query on this card: look for an issue named exactly 'Sudoedit Brute force attempt' (Medium) on the endpoint. To see what its subject looks like in this tenant, use the two hunt queries on this card: sudoedit -s or -i starts per endpoint per 5 minutes, and all sudoedit starts per endpoint per hour over 30 days."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-028",
+        "name": "Sudoedit Started Sixty Times in a Minute on One Host, Counted and Correlated",
+        "description": "Run the harmless CVE-2021-3156 probe form sixty times and check two things: the endpoint recorded the stages on one causality chain, and an operator-installed correlation turns the count into one Medium issue.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-028A",
+            "objective": "The sudo version query and the sudoedit -s starts are recorded on the endpoint, counted, and tied to one causality chain.",
+            "preconditions": [
+              "Linux endpoint with the Cortex XDR agent, sudo and its sudoedit link."
+            ],
+            "steps": [
+              "Record what sudo --version prints inside the sandbox.",
+              "Start sudoedit -s / sixty times, one second apart, with the editor variables set to /bin/true.",
+              "Read the probe answer in the step output: usage text for a patched sudo, 'not a regular file' for an unpatched one.",
+              "Run the read-back query and compare the recorded starts with attempts_made in the step-03 output."
+            ],
+            "success_criteria": [
+              "XQL `EDR-028 Sudo Version Queried And Answer Recorded In Sandbox` returns a row.",
+              "XQL `EDR-028 Sudoedit Started With Shell Flag` returns rows.",
+              "XQL `EDR-028 Twenty Sudoedit Shell Flag Starts Within Five Minutes` returns a row.",
+              "XQL `EDR-028 Sudoedit Shell Flag Starts Share One Causality Chain` returns a row.",
+              "These rows are scored by Tier-2 verify only; none is backed by an alert. Run verify no sooner than six minutes after the run completes. The two count rows need the sensor to have recorded 20 of the sixty starts; in lab run 5c500f71 (2026-11-14) it recorded 28, the first 28."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-EDR-028B",
+            "objective": "The operator-installed correlation raises one Medium issue for the burst.",
+            "preconditions": [
+              "CR-EDR-0028 installed at Medium, scheduled every 10 minutes over a 1 hour time frame, with alert suppression of one issue per agent per hour and an empty MITRE mapping.",
+              "No SIM-EDR-028 run launched on this endpoint in the previous 75 minutes."
+            ],
+            "steps": [
+              "Tally the attempt log inside the sandbox (bookkeeping, not scored).",
+              "Wait for the next scheduled run of the rule."
+            ],
+            "success_criteria": [
+              "Issue `EDR-028 Sudoedit Execution Burst On One Host` (Medium) from CR-EDR-0028 within 1800 seconds of launch: alert-backed, and only if the operator installed the rule.",
+              "Not a criterion: the built-in alert `Sudoedit Brute force attempt`. It was not raised for lab run 5c500f71 (2026-11-14), and it is hunt content until a lab run raises it."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Install the fixed sudo. The sudo project's advisory gives no workaround: sudo 1.8.32, 1.9.5p2 or a patched vendor-supported version must be installed.",
+      "Check a host with the advisory's own test, sudoedit -s /. A usage statement means patched. 'sudoedit: /: not a regular file' or a password prompt means it is not. Do not read the version number alone: distributions backport fixes without changing it.",
+      "Keep local shell access to servers narrow. The flaw is local and the advisory says any local user can exploit it, so every account that can run a command can try."
+    ],
+    "detection_engineering": [
+      "Match sudoedit on the command line, not on the image name. sudoedit is normally a symbolic link to sudo, so the sensor may report the image as sudo. The read-back query on this card returns the image names the tenant recorded; on the lab endpoint (agent 9.4.0.470, run 5c500f71 on 2026-11-14) it was sudoedit.",
+      "sudoedit has no use for -s or -i: a patched sudo rejects both with its usage text. One start with either flag is already worth a look; the count is what separates a probe from an attempt. The advisory names both flags. SIM-EDR-028 produces only -s, so the rule and the validation rows match -s and the first hunt query matches both.",
+      "A real attempt passes an argument that ends in a backslash. This chain passes one fixed argument, /, so its sixty command lines are identical. The first hunt query reports the number of distinct command lines per bucket for that reason.",
+      "Do not assume a count rule sees every start. In lab run 5c500f71 (pov-target-01, 2026-11-14) the agent recorded 28 of sixty sudoedit -s / starts made one second apart: the first 28, then none of the remaining 32 in any later upload (cause not established). In the same lab ten dig runs made back to back in one loop reached xdr_data as 1 of 10 (cause not established), and on 2026-11-14, on SIM-EDR-027 step-02, the agent recorded a burst of tar events (a tar of 5 MB) and then nothing for the rest of the step. Read the recorded count back before setting or trusting a floor.",
+      "Run Tier-2 verify no sooner than six minutes after the run completes. Measured on the lab endpoint on 2026-11-14 with two sibling scenarios: the agent uploads endpoint telemetry in batches about five minutes apart (events from 00:54 to 00:56 UTC all carried one insert time of 00:58:38). A verify run sooner than that reads rows that are not ingested yet and writes fail on them.",
+      "The within-five-minutes validation row measures the span from the first to the last sudoedit -s start on the endpoint, not a clock-aligned bucket, so it needs 20 of the sixty starts wherever the burst falls. Any other sudoedit -s start on the same endpoint inside the verify window stretches that span.",
+      "Keep _time out of a scheduled correlation's output. CR-EDR-0028 returns the host fields and the count only: a row that carried a time bucket could date the issue before the run that caused it, and an issue dated before the launch is not credited to the run.",
+      "CR-EDR-0028 uses a fixed count because a one-shot run has no baseline. The built-in alert's page describes 'an unusual amount', a judgement against a trained baseline, so the two will not always agree.",
+      "Leave the MITRE mapping of CR-EDR-0028 empty while SIM-EDR-028 is being scored, even though the generated export lists techniques beside the rule. A tagged correlation issue would also be credited to the validation rows of the steps that share the technique.",
+      "Keep the rule at Medium or higher and map agent_hostname and agent_id in its alert fields. A Low issue never creates or joins a case, and a correlation issue groups only through mapped artifacts.",
+      "Use actor_causality_id, not a bare causality_id, and timestamp_diff(current_time(), _time, \"SECOND\") for time windows: the lab tenant rejected the other forms on 2026-11-11.",
+      "Not declared (built-in XDR Analytics BIOC, Low, seen in this lab on other chains): 'Uncommon Linux shell command execution'. It is rarity-based, and whether sixty sudoedit -s / starts raise it is unknown. A Low issue never joins a case."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference — Sudoedit Brute force attempt",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/sudoedit-brute-force-attempt",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "REFERENCE ONLY — Sudo Project security advisory: Buffer overflow in command line unescaping (CVE-2021-3156); affected and fixed versions, and the sudoedit -s / test",
+      "url": "https://www.sudo.ws/security/advisories/unescape_overflow/",
+      "publisher": "Sudo Project",
+      "published_date": "2021-01-26"
+    },
+    {
+      "title": "REFERENCE ONLY — NVD CVE-2021-3156",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-3156",
+      "publisher": "NIST National Vulnerability Database"
+    },
+    {
+      "title": "REFERENCE ONLY — Qualys: CVE-2021-3156 Heap-Based Buffer Overflow in Sudo (Baron Samedit); the same sudoedit -s / test",
+      "url": "https://blog.qualys.com/vulnerabilities-threat-research/2021/01/26/cve-2021-3156-heap-based-buffer-overflow-in-sudo-baron-samedit",
+      "publisher": "Qualys",
+      "published_date": "2021-01-26"
+    },
+    {
+      "title": "MITRE ATT&CK — T1068 Exploitation for Privilege Escalation",
+      "url": "https://attack.mitre.org/techniques/T1068/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Case grouping (Medium-or-higher issues group; shared artifacts and causality chain)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

@@ -13,19 +13,21 @@ export const CASE_DISCLAIMER =
   'Tenant disposition is shown for context. It is not detection evidence.'
 
 /**
- * NO_CASE_YET advances only on a reconcile: a refresh re-reads the cases a
+ * NO_CASE_YET advances only on a Read back: a refresh re-reads the cases a
  * ledger names, and this one names none. Keep identical to `NO_CASE_YET_HINT`
  * in core/connectors/case_ledger.py.
  */
 export const NO_CASE_YET_HINT =
-  'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the ' +
+  'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the ' +
   'tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.'
 
 /**
  * xdr_url comes from the tenant: link only plain https on paloaltonetworks.com.
- * Mirrors the backend (core/api/runs.py::_safe_xdr_url): whitespace, control
- * characters, backslash, markup metacharacters, userinfo and a port all reject
- * (`new URL` alone would accept a backslash and read userinfo past it).
+ * The backend's check is core/connectors/tenant_reader.py::safe_xdr_url, which
+ * is stricter still (printable ASCII only, at most 200 characters). Here
+ * whitespace, control characters, backslash, markup metacharacters, userinfo
+ * and a port all reject (`new URL` alone would accept a backslash and read
+ * userinfo past it). A rejected url is never printed: the row says "link withheld".
  */
 export function safeXdrUrl(url) {
   if (typeof url !== 'string' || !url) return null
@@ -54,12 +56,31 @@ export function ledgerUnreadableReason(l) {
   return null
 }
 
-export default function RunCasePanel({ ledger = null }) {
+/** True when the panel itself carries the Read back action (its empty state, or NO_CASE_YET). */
+export function caseOffersReadBack(ledger) {
+  if (!ledger || typeof ledger !== 'object') return true
+  return !ledgerUnreadableReason(ledger) && ledger.merge_class === 'NO_CASE_YET'
+}
+
+/**
+ * `headingLevel` (2–6, default 2): a page that nests the panel under its own
+ * h2 (the Results tenant evidence panel) passes 3 so the outline stays a tree.
+ *
+ * `reconcileAction` (a node, normally a ReadBackButton): offered beside the
+ * empty-state text and the NO_CASE_YET hint, the two states only a read back
+ * advances. The panel never posts anything itself.
+ */
+export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcileAction = null }) {
+  const level = Number.isInteger(headingLevel) && headingLevel >= 2 && headingLevel <= 6 ? headingLevel : 2
+  const H = `h${level}`
   if (!ledger || typeof ledger !== 'object') {
     return (
       <section className="run-case" aria-label="Case" data-testid="run-case">
-        <h2 className="run-case__h">Case</h2>
-        <p className="run-case__empty">Not read yet — reconcile the run.</p>
+        <H className="run-case__h">Case</H>
+        <div className="run-case__action-row">
+          <p className="run-case__empty">Not read yet — Read back the run.</p>
+          {reconcileAction}
+        </div>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>
     )
@@ -68,9 +89,9 @@ export default function RunCasePanel({ ledger = null }) {
   if (unreadable) {
     return (
       <section className="run-case" aria-label="Case" data-testid="run-case">
-        <h2 className="run-case__h">Case</h2>
+        <H className="run-case__h">Case</H>
         <p className="run-case__warn" role="alert" data-testid="run-case-unreadable">
-          Ledger unreadable: {unreadable}. Reconcile the run to rebuild it.
+          Ledger unreadable: {unreadable}. Read back the run to rebuild it.
         </p>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>
@@ -83,18 +104,22 @@ export default function RunCasePanel({ ledger = null }) {
 
   return (
     <section className="run-case" aria-label="Case" data-testid="run-case">
-      <h2 className="run-case__h">Case</h2>
+      <H className="run-case__h">Case</H>
       <div className="run-case__merge">
         <span className="run-case__chip mono">{ledger.merge_class}</span>
         <span className="run-case__reason">{ledger.merge_reason || '—'}</span>
       </div>
       <p className="run-case__meta mono">
-        {/* Stored timestamps are naive UTC ISO strings: say so where they are shown. */}
-        read {ledger.read_at ? `${ledger.read_at} UTC` : '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
+        {/* Stored timestamps are naive UTC ISO strings: say so where they are shown.
+            The integration's name is internal and is never shown: the console says "the tenant". */}
+        read {ledger.read_at ? `${ledger.read_at} UTC` : '—'} · {ledger.basis || '—'}
       </p>
 
       {ledger.merge_class === 'NO_CASE_YET' && (
-        <p className="run-case__meta" data-testid="run-case-no-case-yet">{NO_CASE_YET_HINT}</p>
+        <div className="run-case__action-row">
+          <p className="run-case__meta" data-testid="run-case-no-case-yet">{NO_CASE_YET_HINT}</p>
+          {reconcileAction}
+        </div>
       )}
       {ledger.code !== 'CASE_LEDGER_OK' && (
         <p className="run-case__warn" role="status">
@@ -133,9 +158,7 @@ export default function RunCasePanel({ ledger = null }) {
                   <td>
                     {safe ? (
                       <a href={safe} target="_blank" rel="noopener noreferrer">open in XSIAM</a>
-                    ) : c.xdr_url ? (
-                      <span className="mono">{String(c.xdr_url)}</span>
-                    ) : '—'}
+                    ) : c.xdr_url || c.xdr_url_withheld ? 'link withheld' : '—'}
                   </td>
                 </tr>
               )

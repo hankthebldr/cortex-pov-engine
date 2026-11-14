@@ -29,6 +29,10 @@ module never talks to a tenant. Four rules hold everywhere:
   keys, never quotes a tenant value. The two ZIP reads (``playbook.get``,
   ``script.get``) put each archive member's name and text under ``tenant_text``
   only; the text keeps its lines (``neutralise_document``) and is capped by bytes.
+  ``xql.query`` rows and a live ``operation.execute`` reply are the tenant's raw
+  values, with no ``tenant_text`` to point at: they carry
+  ``data["data_notice"] = RAW_DATA_NOTICE`` instead. Every parse error names
+  reply keys and types only, never a tenant value.
 
 The REST routes own every gate (capability, XQL write stage, traversal,
 budget); their codes pass through unchanged (D-1).
@@ -41,7 +45,13 @@ import shlex
 import time
 from typing import Any, NamedTuple, Optional
 
-from connectors.tenant_reader import DATA_NOTICE, LIST_CAP, neutralise_document, neutralise_text
+from connectors.tenant_reader import (
+    DATA_NOTICE,
+    LIST_CAP,
+    RAW_DATA_NOTICE,
+    neutralise_document,
+    neutralise_text,
+)
 from connectors.xsiam import _key_names  # the envelope rule: identifier-shaped key names only
 from integrations.xsiam.codes import XSIAM_PARSE_ERROR, XSIAM_QUERY_ERROR, remediation_for
 from integrations.xsiam.exceptions import XsiamError
@@ -259,7 +269,8 @@ async def operation_execute(ctx: ToolContext, args: OperationExecuteIn) -> Envel
                                  ledger=None, basis="preview")
     text, truncated, total = cap_text(json.dumps(ex.body["reply"], sort_keys=True))
     data = {"op_id": ex.op["op_id"], "access_class": ex.op["access_class"], "dry_run": False,
-            "reply": text, "truncated": truncated, "bytes": total}
+            "reply": text, "truncated": truncated, "bytes": total,
+            "data_notice": RAW_DATA_NOTICE}
     return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
                              ledger=ex.ledger, truncated=truncated, answered=ex.answered)
 
@@ -431,13 +442,10 @@ class _Clean:
         return value
 
 
-def _seen(value: Any, parity: bool) -> str:
-    """What came back, for a parse error's detail. The older shapes quote up to
-    200 characters of it; a parity read names only its type and identifier-shaped
-    key names (the connector's envelope rule), so a planted tenant value never
-    rides in an error."""
-    if not parity:
-        return str(value)[:200]
+def _seen(value: Any) -> str:
+    """What came back, for a parse error's detail: its type and identifier-shaped
+    key names only (the connector's envelope rule), for every shape, so a
+    planted tenant value never rides in an error."""
     if isinstance(value, dict):
         return f"an object with keys {_key_names(value)}"
     if isinstance(value, list):
@@ -474,10 +482,10 @@ def _project(row: Any, shape: _Shape, ex: Executed, where: str) -> dict:
     if shape.required is None:
         if not isinstance(row, dict) or not any(key in row for _, key, _ in shape.fields):
             raise _parse_error(ex, where, f"the {shape.out_key} reply is not an object carrying "
-                                          f"a documented key: {_seen(row, parity)}")
+                                          f"a documented key: {_seen(row)}")
     elif not isinstance(row, dict) or shape.required not in row:
         raise _parse_error(ex, where, f"a {shape.out_key} row has no {shape.required!r}: "
-                                      f"{_seen(row, parity)}")
+                                      f"{_seen(row)}")
     if not parity:
         return {name: _convert(row.get(key), conv) for name, key, conv in shape.fields}
     clean = _Clean()
@@ -503,13 +511,12 @@ async def _named_list(ctx: ToolContext, args: TenantListIn, shape: _Shape) -> En
         rows, total = None, None
     if not isinstance(rows, list):
         raise _parse_error(ex, where, f"expected a list at {shape.rows_key or 'reply'}, "
-                                      f"got {_seen(reply, parity)}")
+                                      f"got {_seen(reply)}")
     if shape.total_key is None:
         total = len(rows)
     elif isinstance(total, bool) or not isinstance(total, int):
-        got = _seen(total, True) if parity else repr(total)
         raise _parse_error(ex, where, f"{_key_label(shape.total_key)} is missing or not an integer "
-                                      f"({got}); the list's size is unknown, not {len(rows)}")
+                                      f"({_seen(total)}); the list's size is unknown, not {len(rows)}")
     page, _ = cap_list(rows, limit=args.limit, offset=args.offset)
     truncated = args.offset + len(page) < total
     data = {shape.out_key: [_project(r, shape, ex, where) for r in page], "total": total,
@@ -540,7 +547,7 @@ async def _named_object(ctx: ToolContext, shape: _Shape, *, tenant: Optional[str
     if shape.rows_key is not None:
         rows = reply.get(shape.rows_key) if isinstance(reply, dict) else None
         if not isinstance(rows, list) or len(rows) != 1:
-            got = _seen(reply if rows is None else rows, True)
+            got = _seen(reply if rows is None else rows)
             raise _parse_error(ex, where, f"expected exactly one record in a list at "
                                           f"{shape.rows_key}, got {got}")
         obj = rows[0]
@@ -607,7 +614,7 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
     reply = ex.body["reply"]
     status = reply.get("status") if isinstance(reply, dict) else reply
     if not isinstance(status, str):
-        raise _parse_error(ex, "OP-HEALTHCHECK reply", f"no string status in {str(reply)[:200]}")
+        raise _parse_error(ex, "OP-HEALTHCHECK reply", f"no string status in {_seen(reply)}")
     return await _tenant_env(ctx, {"license_gated": False, "status": status}, tenant=ex.tenant,
                              queries=ex.queries_issued, ledger=ex.ledger, answered=ex.answered)
 
@@ -647,15 +654,15 @@ async def _archive_get(ctx: ToolContext, args: ArchiveGetIn, op_id: str) -> Enve
     where, reply = f"{op_id} reply", ex.body["reply"]
     expected = "an object with members[], an integer member_count and a boolean members_truncated"
     if not isinstance(reply, dict):
-        raise _not_a_listing(ex, where, f"got {_seen(reply, True)}; expected {expected}")
+        raise _not_a_listing(ex, where, f"got {_seen(reply)}; expected {expected}")
     members, count, cut = (reply.get("members"), reply.get("member_count"),
                            reply.get("members_truncated"))
     if (not isinstance(members, list) or isinstance(count, bool) or not isinstance(count, int)
             or not isinstance(cut, bool)):
-        raise _not_a_listing(ex, where, f"got {_seen(reply, True)}; expected {expected}")
+        raise _not_a_listing(ex, where, f"got {_seen(reply)}; expected {expected}")
     for m in members:
         if not isinstance(m, dict) or any(k not in m for k in _MEMBER_KEYS):
-            raise _not_a_listing(ex, where, f"a member is {_seen(m, True)}; expected the keys "
+            raise _not_a_listing(ex, where, f"a member is {_seen(m)}; expected the keys "
                                             f"{', '.join(_MEMBER_KEYS)}")
     out = [_archive_member(m) for m in members]
     data = {"op_id": op_id, "filter": flt, "members": out, "member_count": count,
@@ -806,8 +813,9 @@ async def xql_query(ctx: ToolContext, args: XqlQueryIn) -> Envelope:
         ctx, tenant=args.tenant, query=args.query, timeframe=args.timeframe, limit=args.limit,
         max_wait=args.max_wait_seconds, interval=args.poll_interval_seconds)
     # _xql returns only after the start came back with a query_id: the tenant answered.
-    return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=ledger,
-                             truncated=data["truncated"], answered=True)
+    return await _tenant_env(ctx, {**data, "data_notice": RAW_DATA_NOTICE}, tenant=tenant,
+                             queries=queries, ledger=ledger, truncated=data["truncated"],
+                             answered=True)
 
 
 async def dataset_schema(ctx: ToolContext, args: DatasetSchemaIn) -> Envelope:
@@ -1050,7 +1058,8 @@ def specs() -> list[ToolSpec]:
           "with the preview attached. Path params are single segments (the executor's guard). A "
           "zip-reply op (OP-PLAYBOOKS-GET, OP-SCRIPTS-GET) replies with SimCore's in-memory "
           "reading of the archive (members[], member_count, members_truncated), its text not "
-          "framed; xsiam.playbook.get / xsiam.script.get frame it.",
+          "neutralised; xsiam.playbook.get / xsiam.script.get neutralise it under tenant_text. A "
+          f"live reply carries data_notice: {RAW_DATA_NOTICE}",
           idempotent=False),
         s("xsiam.session.index", EmptyInput, session_index, "read", "none",
           "From GET /api/readiness only: tenant_bound, tenant, scopes_held (from config.capabilities: "
@@ -1076,7 +1085,7 @@ def specs() -> list[ToolSpec]:
           "polls ride on it); ledger-charged. A `target type = dataset|lookup` stage is refused "
           "(XQL_WRITE_STAGE_REFUSED); rows are capped by limit (<= 1000), never by rewriting the "
           "query; refused with XSIAM_CAPABILITY_MISSING when the credential lacks xql. "
-          f"{_TENANT}", scopes=("xql.execute",)),
+          f"{_TENANT} data_notice: {RAW_DATA_NOTICE}", scopes=("xql.execute",)),
         named("xsiam.incident.list", "incidents", ("alert.read",)),
         not_backed("xsiam.playbook.list"),
         s("xsiam.healthcheck", TenantIn, healthcheck, "read", "tenant",
