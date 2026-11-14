@@ -250,7 +250,9 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   because systemd before 243 ignores `ExecCondition=`. The step that recreates
   the directory first removes a cron entry or timer left by an earlier run. The
   re-executions keep the command-line path the cards' BIOCs match, so no
-  detection changed.
+  detection changed. The two cards' illustrative payloads now run under
+  `set -eu`, stop unless the directory they make is root's own 0700 directory,
+  and install the checked entry.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the

@@ -21,12 +21,17 @@ The rule these tests hold:
   - the payload still expires on its own, and the scenario cleanup still
     removes the entry;
   - each re-execution still carries the hidden /var/tmp path the card's BIOC
-    keys on.
+    keys on;
+  - the cards' illustrative payloads, which a DC may paste into a root shell,
+    follow the same rules: they stop (``set -eu``) unless the directory they
+    just made reads ``directory:0:700``, before they download into it or run
+    anything from it, and they install the checked entry, not the old one.
 
-The static tests read the scenario text and run anywhere. The behaviour tests
-run the installed cron command and the unit's ExecStart against planted
-directories. They need root and GNU stat, so they run only inside a container
-(the CI image), like the behaviour tests in test_scenario_sandbox_ownership.py.
+The static tests read the scenario and card text and run anywhere. The
+behaviour tests run the installed cron command, the unit's ExecStart and the
+card payloads against planted directories. They need root and GNU stat, so
+they run only inside a container (the CI image), like the behaviour tests in
+test_scenario_sandbox_ownership.py.
 """
 from __future__ import annotations
 
@@ -211,10 +216,14 @@ def test_the_payload_still_expires_and_the_cleanup_still_removes_the_entry():
     assert "rm -f /etc/systemd/system/cortexsim-sync.service /etc/systemd/system/cortexsim-sync.timer" in cleanup
 
 
+def _card(sid: str) -> dict:
+    ref = _scenario(sid)["steps"][0]["expected_detections"][0]["ttp_ref"]
+    (path,) = (REPO_ROOT / "detection_scanner" / "ttps").glob(f"{ref}-*.json")
+    return json.loads(path.read_text())
+
+
 def _bioc_command_line_pattern(sid: str) -> str:
-    doc = _scenario(sid)
-    card = next((REPO_ROOT / "detection_scanner" / "ttps").glob(f"{doc['steps'][0]['expected_detections'][0]['ttp_ref']}-*.json"))
-    biocs = json.loads(card.read_text())["detections"]["biocs"]
+    biocs = _card(sid)["detections"]["biocs"]
     logic = next(b["logic"] for b in biocs if b["name"].endswith("Runs Payload From Hidden Var Tmp Directory"))
     return re.search(r'action_process_image_command_line ~= "([^"]+)"', logic).group(1)
 
@@ -225,6 +234,59 @@ def test_each_re_execution_still_carries_the_path_the_bioc_keys_on():
     assert re.search(_bioc_command_line_pattern(CRON["sid"]), command), command
     (start,) = [_systemd_argv(v) for k, v in _service() if k == "ExecStart"]
     assert re.search(_bioc_command_line_pattern(UNIT["sid"]), " ".join(start)), start
+
+
+# --------------------------------------------------------------------------- card payloads
+
+SPEC = {CRON["sid"]: CRON, UNIT["sid"]: UNIT}
+
+
+def _payload(sid: str) -> str:
+    return _card(sid)["execution"]["payload"]["code"]
+
+
+def _sandbox_var(code: str, sandbox: str) -> str | None:
+    m = re.search(rf"(?:^|[;\s])([A-Za-z_]\w*)={re.escape(sandbox)}(?=[;\s]|$)", code)
+    return m.group(1) if m else None
+
+
+def _uses(code: str, sandbox: str) -> list[str]:
+    """Every spelling of a path inside the sandbox the payload can use."""
+    var = _sandbox_var(code, sandbox)
+    return [sandbox + "/"] + ([f'"${var}/', f"${var}/"] if var else [])
+
+
+def _payload_head(code: str, sandbox: str) -> str:
+    """The payload up to the first line that uses something inside the sandbox."""
+    lines = code.splitlines()
+    for i, line in enumerate(lines):
+        if any(use in line for use in _uses(code, sandbox)):
+            return "\n".join(lines[:i])
+    return code
+
+
+@pytest.mark.parametrize("sid", sorted(SPEC))
+def test_a_card_payload_stops_before_it_uses_a_directory_it_does_not_own(sid):
+    code, sandbox = _payload(sid), SPEC[sid]["sandbox"]
+    head = _payload_head(code, sandbox)
+    assert re.search(r"(?m)^set -eu$", head), "the payload must stop at the first failing command"
+    var = _sandbox_var(head, sandbox)
+    assert var, f"the payload never makes {sandbox} before it uses it"
+    assert f"mkdir -p {sandbox}" not in code and f'mkdir -p "${var}"' not in code
+    assert re.search(rf'rm -rf "\${var}"[;\n]\s*mkdir -m 700 "\${var}"', head), "the directory is not made exclusively"
+    assert re.search(rf'\[ "\$\(stat -c %F:%u:%a "\${var}" 2>/dev/null\)" = "directory:0:700" \] '
+                     rf'\|\| \{{[^\n]*exit 1; \}}', head), "no one-lookup ownership check before the first use"
+
+
+def test_the_card_payloads_install_the_checked_entry():
+    cron_line = next(line for line in _written(_scenario(CRON["sid"]), CRON["entry"]).splitlines()
+                     if line.startswith("*/5 "))
+    assert cron_line in _payload(CRON["sid"])
+    code = _payload(UNIT["sid"])
+    start = next(line for line in _written(_scenario(UNIT["sid"]), UNIT["entry"]).splitlines()
+                 if line.startswith("ExecStart="))
+    assert start in code, "the payload enables a timer without writing the checked unit"
+    assert code.index(start) < code.index("systemctl enable --now cortexsim-sync.timer")
 
 
 # --------------------------------------------------------------------------- behaviour
@@ -367,5 +429,58 @@ def test_the_unit_runs_root_s_own_directory_and_the_payload_still_expires(tmp_pa
         done = _unit_run(tmp_path)
         assert f"disable --now {UNIT['timer']}" in log.read_text(), done
         assert "expired" in (sandbox / "runs.log").read_text(), done
+    finally:
+        _clean(tmp_path)
+
+
+def _stub(tmp: Path, name: str, body: str = "exit 0\n") -> None:
+    (tmp / "bin").mkdir(exist_ok=True)
+    stub = tmp / "bin" / name
+    stub.write_text("#!/bin/sh\n" + body)
+    stub.chmod(0o755)
+
+
+def _payload_run(sid: str, tmp: Path) -> subprocess.CompletedProcess:
+    """The payload up to its first use of the directory, then a marker."""
+    for tool in ("useradd", "systemctl", "ssh-keygen", "curl"):
+        _stub(tmp, tool)
+    head = _localise(_payload_head(_payload(sid), SPEC[sid]["sandbox"]), SPEC[sid], tmp)
+    return _sh(["/bin/bash", "-c", head + "\necho REACHED\n"], tmp)
+
+
+@needs_root_in_a_container
+@pytest.mark.parametrize("race", ["recreated-after-rm", "recreated-and-mkdir-skipped"])
+@pytest.mark.parametrize("sid", sorted(SPEC))
+def test_a_card_payload_stops_when_another_user_owns_the_directory(sid, race, tmp_path):
+    """Another user holds the path when the payload makes its directory: it stops before using it.
+
+    The rm stub models a user who recreates the directory between the payload's
+    ``rm -rf`` and its ``mkdir``; skipping mkdir as well leaves the ownership
+    check as the only thing between the payload and that user's directory.
+    """
+    sandbox = tmp_path / "sandbox"
+    real = {tool: shutil.which(tool) for tool in ("rm", "mkdir", "chown")}
+    _stub(tmp_path, "rm", f'{real["rm"]} "$@"\nfor a in "$@"; do last=$a; done\n'
+                          f'if [ "$last" = "{sandbox}" ]; then {real["mkdir"]} -m 755 "$last"; '
+                          f'{real["chown"]} {OTHER_UID}:{OTHER_UID} "$last"; fi\n')
+    if race == "recreated-and-mkdir-skipped":
+        _stub(tmp_path, "mkdir")
+    sandbox.mkdir()                                   # planted before the payload runs
+    os.chown(sandbox, OTHER_UID, OTHER_UID)
+    try:
+        done = _payload_run(sid, tmp_path)
+        assert "REACHED" not in done.stdout and done.returncode != 0, (race, done)
+    finally:
+        _clean(tmp_path)
+
+
+@needs_root_in_a_container
+@pytest.mark.parametrize("sid", sorted(SPEC))
+def test_a_card_payload_makes_its_own_directory_and_carries_on(sid, tmp_path):
+    try:
+        done = _payload_run(sid, tmp_path)
+        assert "REACHED" in done.stdout, done
+        st = os.lstat(tmp_path / "sandbox")
+        assert (st.st_uid, st.st_mode & 0o7777) == (0, 0o700), done
     finally:
         _clean(tmp_path)
