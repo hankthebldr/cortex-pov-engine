@@ -14,7 +14,6 @@ import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecy
 import useReadBack from '../components/console/useReadBack.jsx'
 import ResultOfBar from '../components/console/ResultOfBar.jsx'
 import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
-import FlowStepper from '../components/console/FlowStepper.jsx'
 import { Button } from '../components/console/kit/index.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
@@ -156,6 +155,18 @@ const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'),
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
 const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
+// The compose → simulate stepper. Lazy like the surfaces: the entry chunk has a
+// size budget (composerChunkBoundary.test.js), and Scenarios and the Composer
+// already pull this module into their own chunks. No fallback: the strip is
+// navigation, and the page under it does not wait for it.
+const LazyFlowStepper = lazy(() => import('../components/console/FlowStepper.jsx'))
+function FlowStepper(props) {
+  return (
+    <Suspense fallback={null}>
+      <LazyFlowStepper {...props} />
+    </Suspense>
+  )
+}
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the

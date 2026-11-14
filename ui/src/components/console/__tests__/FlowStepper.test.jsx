@@ -85,13 +85,14 @@ describe('FlowStepper', () => {
 
 describe('FlowStepper on the Launch gate and Run pages', () => {
   const surface = (id) => DESTINATIONS.find((d) => d.id === id).Component
-  const stepper = () => screen.getByRole('navigation', { name: 'Compose to simulate' })
+  // The stepper is a lazy chunk on these pages, so it is awaited.
+  const stepper = () => screen.findByRole('navigation', { name: 'Compose to simulate' })
 
   it('the Launch gate is the current step and carries ?arm= on', async () => {
     installRoutes({ 'GET /api/health': { status: 'ok' }, 'GET /api/agents': [], 'GET /api/runs': { runs: [] } })
     const Preflight = surface('preflight')
     withEnv(<Preflight params={{ arm: 'SIM-EDR-001' }} setParams={() => {}} onNavigate={() => {}} />)
-    expect(stepper().querySelector('[aria-current="step"]')).toHaveTextContent('Launch gate')
+    expect((await stepper()).querySelector('[aria-current="step"]')).toHaveTextContent('Launch gate')
     expect(link('Build a chain')).toHaveAttribute('href', '#/composer?open=SIM-EDR-001')
     expect(link('Run')).toHaveAttribute('href', '#/runs?run=r-new&tab=live')
   })
@@ -100,7 +101,7 @@ describe('FlowStepper on the Launch gate and Run pages', () => {
     installRoutes({ 'GET /api/health': { status: 'ok' }, 'GET /api/agents': [], 'GET /api/runs': { runs: RUNS } })
     const Runs = surface('runs')
     withEnv(<Runs params={{ run: 'r-old', tab: 'live' }} setParams={() => {}} onNavigate={() => {}} />)
-    expect(stepper().querySelector('[aria-current="step"]')).toHaveTextContent('Run')
+    expect((await stepper()).querySelector('[aria-current="step"]')).toHaveTextContent('Run')
     expect(link('Launch gate')).toHaveAttribute('href', '#/preflight?arm=SIM-EDR-001')
     expect(link('Scenarios')).toHaveAttribute('href', '#/library?open=SIM-EDR-001')
   })
