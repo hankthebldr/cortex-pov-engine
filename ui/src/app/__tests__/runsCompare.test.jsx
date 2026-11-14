@@ -37,7 +37,7 @@ function mount(params, { onNavigate = vi.fn(), setParams = vi.fn() } = {}) {
 }
 
 describe('Runs header', () => {
-  it('has a secondary Compare runs beside a primary Run that opens the New POV run page', () => {
+  it('has a secondary Compare runs beside a primary Run that opens the Launch gate', () => {
     installRoutes({})
     const { onNavigate, setParams } = mount({})
     const compare = screen.getByRole('button', { name: 'Compare runs' })
@@ -49,7 +49,7 @@ describe('Runs header', () => {
     expect(compare.compareDocumentPosition(runBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     fireEvent.click(runBtn)
-    expect(onNavigate).toHaveBeenCalledWith('guided')
+    expect(onNavigate).toHaveBeenCalledWith('preflight')
     fireEvent.click(compare)
     expect(setParams).toHaveBeenCalledWith({ compare: '1' }, { replace: true })
   })

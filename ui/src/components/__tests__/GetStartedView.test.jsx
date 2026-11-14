@@ -72,7 +72,7 @@ describe('GetStartedView', () => {
       scenarios: [{ scenario_id: 'SIM-CDR-001', plane: 'CDR', name: 'Cloud' }, { scenario_id: 'SIM-EDR-001', plane: 'EDR', name: 'Credential Dumping' }],
     })
     fireEvent.click(screen.getByTestId('gs-simulate-launch'))
-    expect(onNavigate).toHaveBeenCalledWith('guided', { arm: 'SIM-EDR-001' })
+    expect(onNavigate).toHaveBeenCalledWith('preflight', { arm: 'SIM-EDR-001' })
   })
 
   it('an agent the installer only enrolled does not finish the step (UI-05)', () => {
