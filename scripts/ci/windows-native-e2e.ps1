@@ -1438,10 +1438,12 @@ function Invoke-PhaseCollect {
 # install) runs or loads in a folder with a fixed name, under C:\ProgramData or
 # %TEMP%, where any account can create a folder or a junction first. Each first
 # step makes the folder itself: rmdir (which removes a junction, not its
-# target), an exclusive mkdir, then a protected ACL of SYSTEM, Administrators
-# and a marker ACE no other folder carries. Every later step checks it with one
-# Get-Acl. A planted folder fails on its owner; a junction, followed or not,
-# fails on its owner or its missing marker, so swapping the two cannot pass.
+# target), then one CreateDirectory call that gives the folder its protected ACL
+# as it is made (SYSTEM, Administrators, the running account and a marker ACE no
+# other folder carries), so no other account can open it in between; a Get-Acl
+# then refuses anything that was already there. Every later step checks it with
+# the same Get-Acl. A planted folder fails on its owner; a junction, followed or
+# not, fails on its owner or its missing marker, so swapping the two cannot pass.
 
 $script:SandboxSpecs = @(
     @{ Sid = 'SIM-MP-023'; Path = 'C:\ProgramData\cortexsim-mp023'; Marker = 'S-1-9-4243-23'; Create = 'step-01'; Checks = @('step-03', 'step-04') },
@@ -1450,13 +1452,46 @@ $script:SandboxSpecs = @(
 )
 $script:PlantUser = 'cortexsim-ci-plant'
 
-function Get-CsGuard {
-    # The step's guard exactly as rendered: every line up to the last one that
-    # refuses with "sandbox ...", then a line that says the step went on.
+function Get-CsStepText {
+    # The step as the render phase wrote it. The render phase writes only the
+    # scenarios that resolve for Windows as a whole; SIM-MP-023, -026 and -029
+    # do not yet (some of their steps have no Windows variant), so a step of
+    # theirs is read from the scenario: its Windows variant, which is the text
+    # a Windows host would be sent once the rest of the scenario resolves.
     param([string]$Sid, [string]$StepId)
     $file = Join-Path $script:RenderDir ('steps\' + $Sid + '\' + $StepId + '.ps1')
-    if (-not (Test-Path -LiteralPath $file)) { throw ('no rendered step ' + $Sid + ' ' + $StepId + ': the render phase did not write it') }
-    $lines = [System.IO.File]::ReadAllText($file) -split "`r?`n"
+    if (Test-Path -LiteralPath $file) { return [System.IO.File]::ReadAllText($file) }
+    $helper = Join-Path $script:ProofDir 'sandbox-step-text.py'
+    $code = @(
+        'import pathlib, sys, yaml',
+        'for p in sorted(pathlib.Path("scenarios").rglob("*.yml")):',
+        '    d = yaml.safe_load(p.read_text(encoding="utf-8"))',
+        '    if isinstance(d, dict) and d.get("scenario_id") == sys.argv[1]:',
+        '        for s in d.get("steps") or []:',
+        '            if s.get("id") == sys.argv[2]:',
+        '                sys.stdout.write((s.get("platform_variants") or {}).get("windows") or "")'
+    ) -join "`n"
+    [System.IO.File]::WriteAllText($helper, $code, (New-Object System.Text.UTF8Encoding($false)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = (Get-Command python -ErrorAction Stop).Source
+    $psi.Arguments = '"' + $helper + '" ' + $Sid + ' ' + $StepId
+    $psi.WorkingDirectory = $script:Workspace
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $text = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    if ($p.ExitCode -ne 0 -or -not $text) { throw ('no rendered step and no Windows variant for ' + $Sid + ' ' + $StepId + ' (python exit ' + $p.ExitCode + ')') }
+    return $text
+}
+
+function Get-CsGuard {
+    # The step's guard exactly as the host gets it: every line up to the last one
+    # that refuses with "sandbox ...", then a line that says the step went on.
+    param([string]$Sid, [string]$StepId)
+    $lines = (Get-CsStepText -Sid $Sid -StepId $StepId) -split "`r?`n"
     $end = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match 'Write-Error "sandbox ') { $end = $i }
