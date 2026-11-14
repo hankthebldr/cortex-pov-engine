@@ -123,14 +123,22 @@ light so its white label clears 7.5:1) is the primary action, the selected
 state and the brand: the one filled button on a screen, the active rail bar,
 the active tab line, a selected item's soft fill and line. Green also means
 healthy / done / detected (`--pos`), so a status is never colour alone — it
-carries its glyph and word (`kit/StatusIcon`). Yellow (`--warn`) is the only
-warning colour; coral (`--crit`) is down / missing / broken / destructive.
+carries its glyph and word (`kit/StatusIcon`). The warning colour (`--warn`)
+is the DS **gold-600** (`#C7AA47`), muted from Strata yellow to an accent by
+Henry on 2026-11-13; coral (`--crit`) is down / missing / broken /
+destructive. Greens come in shades (2026-11-13): bright `--ac` is the one
+primary button; every selected state — tab, chip, segmented button, the
+active rail item — is the deep wash `--ac-soft` with the matte line
+`--gr-matte` (DS panw-green-700); `--gr-mid` (green-500) and `--gr-pale`
+(green-200) are the secondary greens.
 PANW orange is the NGFW family tint (`--family-ngfw`) and the categorical
 plane tints, nothing else; `--ac-brand` and the `--orange` aliases are
 retired. Implemented in `cortex-tokens.css` and `povengine-minimal.css`
 (loaded last); the shared constructs are `components/console/kit` with
 `styles/povengine-kit.css`. `ds-drift.test.js` pins `--br` and `--pos-str` to
-the DS's `--panw-green` and `--family-ngfw` to its `--panw-orange`; the DS
+the DS's `--panw-green`, `--warn-str` to `--gold-600`, the three greens to
+`--panw-green-700` / `--green-500` / `--green-200`, and `--family-ngfw` to
+its `--panw-orange`; the DS
 itself still names orange its presentation accent, and the console
 deliberately does not follow it.
 
