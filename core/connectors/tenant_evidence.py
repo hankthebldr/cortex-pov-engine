@@ -84,6 +84,7 @@ from .tenant_reader import (
     group_cases,
     lag_seconds,
     neutralise_text,
+    project_case_ledger,
     project_endpoint,
     project_issue,
     run_issue_filters,
@@ -781,8 +782,11 @@ async def latest_tenant_evidence(db: AsyncSession, run_id: str) -> dict:
 
     ``{"run_id", "status", "code", "snapshot", "history", "case_ledger"}``:
     the latest snapshot (any integration), the last ten reads newest first
-    (``id``, ``read_at``, ``code``) and Part B's stored case ledger. A run never
-    read is ``snapshot: null`` / ``TENANT_EVIDENCE_NOT_READ``.
+    (``id``, ``read_at``, ``code``) and Part B's stored case ledger, projected
+    (:func:`~connectors.tenant_reader.project_case_ledger`: each case's
+    ``resolve_comment`` under ``tenant_text``, ``xdr_url`` validated or
+    withheld; the stored ledger is unchanged). A run never read is
+    ``snapshot: null`` / ``TENANT_EVIDENCE_NOT_READ``.
     """
     rows = await _snapshots(db, run_id)
     run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
@@ -795,5 +799,5 @@ async def latest_tenant_evidence(db: AsyncSession, run_id: str) -> dict:
         "code": code,
         "snapshot": latest.to_dict() if latest else None,
         "history": [{"id": r.id, "read_at": _iso(r.read_at), "code": r.code} for r in rows],
-        "case_ledger": run.case_ledger if run is not None else None,
+        "case_ledger": project_case_ledger(run.case_ledger) if run is not None else None,
     }
