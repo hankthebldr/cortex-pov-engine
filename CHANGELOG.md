@@ -236,6 +236,16 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
   failure on #258, #260 and #270.
 
+### Fixed — Results at phone width
+
+At 375 px the "Result of" bar on Results squeezed its text column to about
+one character, so the run's facts wrapped a letter per line. The run switcher
+and the Open button kept their full widths in a three-column grid. The bar is
+now a wrapping row: the text keeps at least 240 px, and the switcher and Open
+drop below it. The Report header (This run / Compare runs, Validate all,
+Export) now wraps instead of running past the view, where it was clipped. A
+viewport test at 375 px and 845 px guards both and fails without the fix.
+
 ### Security
 
 - **A path override on a tenant credential could send the tenant's API key to
