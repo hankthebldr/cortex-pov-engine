@@ -273,6 +273,16 @@ plane rather than a sensor. The tokens and the plane vocabulary
 (`povdata/planes.js`) agree, and the drift guard now pins it and asserts it is
 not orange.
 
+||||||| 331d9dd2
+### Added — run detail says why a test case is pending (design C3)
+
+A run whose test-case verdict is pending with nothing scored now says why on
+its own page, not only on the Topology and Techniques tabs. Under the
+lifecycle strip a "Test case" line shows PENDING, the reason chip
+("nothing executed" or "detectors soaking") and the test case id, with the
+action as a visible sentence. Under the chain, the Cortex Engine terminal
+states the same verdict and reason. A verdict without a reason draws neither.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
