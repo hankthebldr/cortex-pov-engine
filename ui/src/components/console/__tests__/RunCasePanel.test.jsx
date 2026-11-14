@@ -142,4 +142,20 @@ describe('RunCasePanel', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, cases: 'oops' }} />)
     expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()
   })
+
+  // The console says "the tenant", never the integration's internal name.
+  it('the read line never names the integration', () => {
+    const { container } = render(<RunCasePanel ledger={{ ...LEDGER, integration: 'lab-deathstar' }} />)
+    expect(container.textContent).not.toMatch(/lab-deathstar/)
+    expect(screen.getByText(/read 2026-11-11T10:00:00\+00:00 UTC · alert_incident_ids/)).toBeTruthy()
+  })
+
+  it('its heading is an h2 unless the page nests it deeper', () => {
+    const { unmount } = render(<RunCasePanel ledger={LEDGER} />)
+    expect(screen.getByRole('heading', { name: 'Case', level: 2 })).toBeTruthy()
+    unmount()
+    render(<RunCasePanel ledger={null} headingLevel={3} />)
+    expect(screen.getByRole('heading', { name: 'Case', level: 3 })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+  })
 })

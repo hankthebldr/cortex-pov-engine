@@ -14,7 +14,9 @@
  *   - a count the read did not measure is "unknown", never 0;
  *   - tenant-written text (issue, case and policy names) renders as text, and
  *     a tenant link is linked only through safeXdrUrl;
- *   - the integration's name never appears: the page says "the tenant".
+ *   - no internal name appears: the page says "this instance" and "the tenant",
+ *     never the integration's name, and never a request error's own text
+ *     (it can quote the credential store); errors render by code.
  */
 import React from 'react'
 import useTenantEvidence from './useTenantEvidence.js'
@@ -35,7 +37,11 @@ export const TENANT_EVIDENCE_SENTENCES = Object.freeze({
   NO_ATTRIBUTED_ISSUES:
     "The tenant answered, but no issue names this run's host in this window. Check ingestion latency, "
     + 'the hostname, the window and the Security domain filter before drawing any conclusion about detection.',
-  NO_RUN_WINDOW: 'This run has no executed step, so there is no window to read.',
+  // True for both causes SimCore answers it for: no step with an execution
+  // time, and a push run (refused before its steps are looked at).
+  NO_RUN_WINDOW:
+    'This run has no execution window this instance can read: no step has an execution time, '
+    + 'or it is a push run whose bundle ran offline. Nothing was read from the tenant.',
   TRUNCATED: 'The tenant holds more issues in this window than were read; counts are floors.',
   TRUNCATION_UNKNOWN: 'Truncation unknown: the tenant sent no FILTER_COUNT.',
   QUOTA_REFUSED: (n) => `The request budget for this tenant refused the read; ${
@@ -46,6 +52,12 @@ export const TENANT_EVIDENCE_SENTENCES = Object.freeze({
   TENANT_EVIDENCE_READ_RECENTLY: (n) => `This run was read from the tenant recently, so that read is shown. ${
     n == null ? 'A new read is possible shortly.' : `A new read is possible in ${n} s.`
   }`,
+  // Request failures, by code. Never the error's own text.
+  CREDENTIAL_ERROR: 'The tenant credential on this instance could not be opened, so nothing was read from the tenant.',
+  INTEGRATION_NOT_FOUND: 'The tenant credential this read names is not on this instance, so nothing was read from the tenant.',
+  RUN_NOT_FOUND: 'This instance has no record of this run.',
+  REQUEST_TIMEOUT: 'This instance did not answer the read in time. It may still finish it, so the stored read is reloaded.',
+  LOAD_FAILED_LINE: 'The stored read could not be loaded, so whether this run was read from the tenant is unknown.',
 })
 
 const S = TENANT_EVIDENCE_SENTENCES
@@ -55,6 +67,21 @@ const ANSWERED = new Set(['OK', 'UNSCOPED', 'ENDPOINT_NOT_FOUND', 'AMBIGUOUS_END
 const QUOTA = 'QUOTA_REFUSED'
 /** POST answers that read nothing and stored nothing: the GET after them cannot say why. */
 const NOTHING_STORED = new Set(['NO_TENANT_CONFIGURED', 'NO_RUN_WINDOW'])
+
+/**
+ * One fixed sentence for a failed request, from its code (or HTTP status).
+ * `during` is 'read' (the POST) or 'load' (the GET of the stored read).
+ */
+function errorSentence(err, during) {
+  if (!err) return null
+  const code = err.code === 'NO_INTEGRATION' ? 'NO_TENANT_CONFIGURED' : err.code
+  if (code === 'RUN_NOT_FOUND') return S.RUN_NOT_FOUND
+  if (during === 'read' && code && typeof S[code] === 'string') return S[code]
+  const ref = code || (err.status ? `HTTP ${err.status}` : 'no answer from this instance')
+  return during === 'read'
+    ? `The read from the tenant failed (${ref}).`
+    : `Loading the stored read failed (${ref}).`
+}
 
 /** A count the read did not measure is unknown, never 0. */
 function count(n) {
@@ -84,11 +111,13 @@ function headStatus(p) {
   return { status: 'unknown', word: 'Unknown' }
 }
 
-function notesFor(data, payload, lastRead, error) {
+function notesFor(data, payload, lastRead, readError, loadError) {
   const notes = []
-  if (error) notes.push(`The last tenant-evidence request failed: ${error}`)
+  for (const n of [errorSentence(readError, 'read'), errorSentence(loadError, 'load')]) {
+    if (n && !notes.includes(n)) notes.push(n)
+  }
   if (payload === undefined && data) {
-    notes.push('SimCore sent tenant evidence in a shape this console does not recognise, so none of it is shown.')
+    notes.push('This instance sent tenant evidence in a shape this console does not recognise, so none of it is shown.')
     return notes
   }
   const attempt = lastRead && lastRead.read === false ? lastRead : null
@@ -96,7 +125,7 @@ function notesFor(data, payload, lastRead, error) {
     if (NOTHING_STORED.has(attempt.code)) notes.push(S[attempt.code])
     else if (attempt.code === 'TENANT_EVIDENCE_READ_RECENTLY') {
       notes.push(S.TENANT_EVIDENCE_READ_RECENTLY(attempt.retry_after_seconds))
-    } else notes.push(`SimCore made no new read of the tenant (${attempt.code}).`)
+    } else notes.push(`This instance made no new read of the tenant (${attempt.code}).`)
   }
   if (!payload) {
     if (data && !(attempt && NOTHING_STORED.has(attempt.code))) notes.push(S.TENANT_EVIDENCE_NOT_READ)
@@ -133,16 +162,19 @@ export default function TenantEvidencePanel({ runId, showCaseLedger = true, onSc
   // `onScored` is for an action that may change the run's score (Reconcile,
   // Task 11). The read here never does, so it never calls it.
   void onScored
-  const { data, lastRead, loading, reading, error, read } = useTenantEvidence(runId)
+  const { data, lastRead, loading, reading, readError, loadError, read } = useTenantEvidence(runId)
   if (!runId) return null
 
   const payload = payloadOf(data)
-  const notes = notesFor(data, payload, lastRead, error)
+  const notes = notesFor(data, payload, lastRead, readError, loadError)
+  // Unknown is not "never read": with no stored answer and a failed GET, say so.
   const line = reading
     ? 'Reading from the tenant…'
     : payload
       ? `Read from the tenant at ${utc(payload.read_at)} UTC · display only, does not change the verdict`
-      : loading && !data ? 'Loading…' : 'Not read from the tenant yet'
+      : !data && loadError
+        ? S.LOAD_FAILED_LINE
+        : loading && !data ? 'Loading…' : 'Not read from the tenant yet'
 
   return (
     <section className="tenant-evidence" aria-labelledby="tenant-evidence-title" data-testid="tenant-evidence">
@@ -178,7 +210,7 @@ export default function TenantEvidencePanel({ runId, showCaseLedger = true, onSc
       )}
       {showCaseLedger && data && payload !== undefined && (
         <div className="tenant-evidence__block tenant-evidence__block--case">
-          <RunCasePanel ledger={data.case_ledger ?? null} />
+          <RunCasePanel ledger={data.case_ledger ?? null} headingLevel={3} />
         </div>
       )}
       {payload && (

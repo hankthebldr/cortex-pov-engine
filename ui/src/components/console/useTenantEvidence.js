@@ -2,23 +2,40 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTenantEvidence, readTenantEvidence } from '../../api/client.js'
 
 /**
+ * A failed request as `{code, status}` only. The message is never kept: an
+ * error's text can quote what the credential store said (CREDENTIAL_ERROR
+ * carries it verbatim), and that can name the integration.
+ */
+function failure(err) {
+  return {
+    code: typeof err?.code === 'string' && err.code ? err.code : null,
+    status: typeof err?.status === 'number' ? err.status : null,
+  }
+}
+
+/**
  * useTenantEvidence — a run's tenant evidence, read on request only (spec §7.5).
  *
  * Sends ONE `GET /api/runs/{id}/tenant-evidence` (the stored snapshot; SimCore
  * makes no outbound call for it) when `runId` changes, and another after a
- * read. It sets NO interval and never reads the tenant on its own (A7): the
- * only POST is `read()`, which the operator triggers.
+ * read, whether the read answered or failed: a read that timed out on this
+ * side can still finish on the instance, and the GET shows it. It sets NO
+ * interval and never reads the tenant on its own (A7): the only POST is
+ * `read()`, which the operator triggers.
  *
  * `read()` is single-flight: a second call while one is in flight (a double
  * click, two handlers in one tick) returns the same promise and sends nothing.
  *
- * Returns `{ data, lastRead, loading, reading, error, read(opts), reload() }`:
- *   data      the GET answer `{code, status, snapshot, history, case_ledger}`
- *   lastRead  the latest POST answer for this run. It matters when the read
- *             stored nothing (`NO_TENANT_CONFIGURED`, `NO_RUN_WINDOW`) or was
- *             answered from the stored read (`TENANT_EVIDENCE_READ_RECENTLY`):
- *             the GET that follows cannot say either.
- *   error     the message of the last failed request, or null.
+ * Returns `{ data, lastRead, loading, reading, loadError, readError, error,
+ * read(opts), reload() }`:
+ *   data       the GET answer `{code, status, snapshot, history, case_ledger}`
+ *   lastRead   the latest POST answer for this run. It matters when the read
+ *              stored nothing (`NO_TENANT_CONFIGURED`, `NO_RUN_WINDOW`) or was
+ *              answered from the stored read (`TENANT_EVIDENCE_READ_RECENTLY`):
+ *              the GET that follows cannot say either.
+ *   loadError  `{code, status}` of the last failed GET, cleared by the next good one
+ *   readError  `{code, status}` of the last failed read, cleared by the next read
+ *   error      readError, else loadError, else null
  *
  * @param {string|null} runId
  */
@@ -27,7 +44,8 @@ export default function useTenantEvidence(runId) {
   const [lastRead, setLastRead] = useState(null)
   const [loading, setLoading] = useState(false)
   const [reading, setReading] = useState(false)
-  const [error, setError] = useState(null)
+  const [loadError, setLoadError] = useState(null)
+  const [readError, setReadError] = useState(null)
 
   // The run whose answers may land. A switch from run A to run B while A's
   // request is in flight must not put A's evidence under B.
@@ -47,11 +65,11 @@ export default function useTenantEvidence(runId) {
       const body = await getTenantEvidence(id)
       if (seq !== seqRef.current || runRef.current !== id) return null
       setData(body)
-      setError(null)
+      setLoadError(null)
       return body
     } catch (err) {
       if (seq !== seqRef.current || runRef.current !== id) return null
-      setError(err?.message || String(err))
+      setLoadError(failure(err))
       return null
     } finally {
       if (seq === seqRef.current) setLoading(false)
@@ -68,11 +86,16 @@ export default function useTenantEvidence(runId) {
         const body = await readTenantEvidence(id, opts)
         if (runRef.current !== id) return null
         setLastRead(body)
-        setError(null)
+        setReadError(null)
         await reload()
         return body
       } catch (err) {
-        if (runRef.current === id) setError(err?.message || String(err))
+        if (runRef.current !== id) return null
+        setLastRead(null)
+        setReadError(failure(err))
+        // The instance may still have finished the read (a client timeout does
+        // not stop it): show what it stored. A GET, so no tenant request.
+        await reload()
         return null
       } finally {
         // Only this read's own slot: a run switch may have started another.
@@ -88,11 +111,15 @@ export default function useTenantEvidence(runId) {
   useEffect(() => {
     setData(null)
     setLastRead(null)
-    setError(null)
+    setLoadError(null)
+    setReadError(null)
     setReading(false)
     inFlightRef.current = null
     reload()
   }, [reload])
 
-  return { data, lastRead, loading, reading, error, read, reload }
+  return {
+    data, lastRead, loading, reading, loadError, readError,
+    error: readError || loadError, read, reload,
+  }
 }

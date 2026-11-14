@@ -909,6 +909,9 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   unknown, quota refused and a failed section with its code and remediation.
   Tenant-written names render as text, and a case link is followed only when it
   is https on `paloaltonetworks.com`.
+- The case panel's read line no longer shows the integration's name, on Results
+  and on Run detail, and a failed request renders a fixed sentence by its code,
+  never the error's own text.
 
 ### Changed — one per-tenant request budget; any 429 trips once
 

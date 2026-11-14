@@ -54,11 +54,17 @@ export function ledgerUnreadableReason(l) {
   return null
 }
 
-export default function RunCasePanel({ ledger = null }) {
+/**
+ * `headingLevel` (2–6, default 2): a page that nests the panel under its own
+ * h2 (the Results tenant evidence panel) passes 3 so the outline stays a tree.
+ */
+export default function RunCasePanel({ ledger = null, headingLevel = 2 }) {
+  const level = Number.isInteger(headingLevel) && headingLevel >= 2 && headingLevel <= 6 ? headingLevel : 2
+  const H = `h${level}`
   if (!ledger || typeof ledger !== 'object') {
     return (
       <section className="run-case" aria-label="Case" data-testid="run-case">
-        <h2 className="run-case__h">Case</h2>
+        <H className="run-case__h">Case</H>
         <p className="run-case__empty">Not read yet — reconcile the run.</p>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>
@@ -68,7 +74,7 @@ export default function RunCasePanel({ ledger = null }) {
   if (unreadable) {
     return (
       <section className="run-case" aria-label="Case" data-testid="run-case">
-        <h2 className="run-case__h">Case</h2>
+        <H className="run-case__h">Case</H>
         <p className="run-case__warn" role="alert" data-testid="run-case-unreadable">
           Ledger unreadable: {unreadable}. Reconcile the run to rebuild it.
         </p>
@@ -83,14 +89,15 @@ export default function RunCasePanel({ ledger = null }) {
 
   return (
     <section className="run-case" aria-label="Case" data-testid="run-case">
-      <h2 className="run-case__h">Case</h2>
+      <H className="run-case__h">Case</H>
       <div className="run-case__merge">
         <span className="run-case__chip mono">{ledger.merge_class}</span>
         <span className="run-case__reason">{ledger.merge_reason || '—'}</span>
       </div>
       <p className="run-case__meta mono">
-        {/* Stored timestamps are naive UTC ISO strings: say so where they are shown. */}
-        read {ledger.read_at ? `${ledger.read_at} UTC` : '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
+        {/* Stored timestamps are naive UTC ISO strings: say so where they are shown.
+            The integration's name is internal and is never shown: the console says "the tenant". */}
+        read {ledger.read_at ? `${ledger.read_at} UTC` : '—'} · {ledger.basis || '—'}
       </p>
 
       {ledger.merge_class === 'NO_CASE_YET' && (

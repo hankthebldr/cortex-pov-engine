@@ -202,7 +202,10 @@ const DEGRADED = [
     name: 'no run window',
     get: NOT_READ,
     post: postNothingRead('NO_RUN_WINDOW', 'degraded'),
-    sentence: S.NO_RUN_WINDOW,
+    // True for a run with no timed step AND for a push run, which SimCore
+    // refuses before it looks at steps (tenant_evidence.py, NO_RUN_WINDOW).
+    sentence: 'This run has no execution window this instance can read: no step has an execution '
+      + 'time, or it is a push run whose bundle ran offline. Nothing was read from the tenant.',
   },
   {
     name: 'unscoped',
@@ -379,12 +382,19 @@ describe('xdr_url is linked only through safeXdrUrl', () => {
 
 describe('the header says when the tenant was read and that it is display only', () => {
   it('names the read time in UTC, never the integration, and keeps the statement by the agreement', async () => {
-    installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(payload()) })
+    // A reconciled run: its case ledger names the integration too.
+    const ledger = {
+      read_at: '2026-11-13T20:10:00', basis: 'alert_incident_ids', integration: 'deathstar',
+      merge_class: 'ONE_CASE', merge_reason: 'one case', code: 'CASE_LEDGER_OK',
+      shared_with_other_runs: false, cases: [], alerts: [],
+    }
+    installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(payload(), ledger) })
     render(<TenantEvidencePanel runId="r1" />)
     await waitFor(() => expect(within(panel()).getByText(
       'Read from the tenant at 2026-11-13 20:31 UTC · display only, does not change the verdict',
     )).toBeInTheDocument())
     expect(within(panel()).getByRole('heading', { name: 'Tenant evidence' })).toBeInTheDocument()
+    expect(within(panel()).getByTestId('run-case')).toBeInTheDocument()
     expect(panel().textContent).not.toMatch(/deathstar|xsiam_tenant|tenant-verified/i)
     const agreement = within(panel()).getByTestId('te-agreement')
     expect(within(agreement).getByText(STATEMENT)).toBeInTheDocument()
@@ -446,6 +456,15 @@ describe('the endpoint card is "as of read" and shows a stored bridge code', () 
     expect(within(card).getByText('UNBRIDGED_IP_HOST')).toBeInTheDocument()
   })
 
+  it('nests the case heading under the panel heading', async () => {
+    installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(payload()) })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByTestId('run-case')).toBeInTheDocument())
+    expect(within(panel()).getByRole('heading', { name: 'Tenant evidence', level: 2 })).toBeInTheDocument()
+    expect(within(panel()).getByRole('heading', { name: 'Case', level: 3 })).toBeInTheDocument()
+    expect(within(panel()).getAllByRole('heading', { level: 2 })).toHaveLength(1)
+  })
+
   it('embeds the case panel unless the page already shows it', async () => {
     installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(payload()) })
     const { unmount } = render(<TenantEvidencePanel runId="r1" />)
@@ -454,5 +473,91 @@ describe('the endpoint card is "as of read" and shows a stored bridge code', () 
     render(<TenantEvidencePanel runId="r1" showCaseLedger={false} />)
     await waitFor(() => expect(within(panel()).getByTestId('te-endpoint')).toBeInTheDocument())
     expect(within(panel()).queryByTestId('run-case')).toBeNull()
+  })
+})
+
+// ─── no internal names, and an unknown state is never "never read" ──────────
+
+const failWith = (status, body) => () => new Response(JSON.stringify(body), {
+  status, headers: { 'content-type': 'application/json' },
+})
+
+describe('the panel says "this instance" and "the tenant", never internal names', () => {
+  it('an answer this console does not recognise names neither SimCore nor the integration', async () => {
+    installRoutes({ 'GET /api/runs/r1/tenant-evidence': { run_id: 'r1', snapshot: 'odd' } })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByText(/does not recognise/)).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/SimCore/)
+  })
+
+  it('a read that made no new read for an unknown reason does not say SimCore', async () => {
+    installRoutes({
+      'GET /api/runs/r1/tenant-evidence': NOT_READ,
+      'POST /api/runs/r1/tenant-evidence': postNothingRead('SOME_FUTURE_CODE', 'pending'),
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    fireEvent.click(refreshButton())
+    await waitFor(() => expect(within(panel()).getByText(/SOME_FUTURE_CODE/)).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/SimCore/)
+  })
+
+  it('a failed read whose error text names the integration renders a fixed sentence without it', async () => {
+    installRoutes({
+      'GET /api/runs/r1/tenant-evidence': NOT_READ,
+      'POST /api/runs/r1/tenant-evidence': failWith(500, { detail: {
+        error: "integration 'deathstar' secret could not be decrypted with the master key",
+        code: 'CREDENTIAL_ERROR', detail: null,
+      } }),
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    fireEvent.click(refreshButton())
+    await waitFor(() => expect(within(panel()).getByText(TENANT_EVIDENCE_SENTENCES.CREDENTIAL_ERROR)).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/deathstar|decrypted/)
+  })
+
+  it('an error with an unknown code names the code or status, never its message', async () => {
+    installRoutes({
+      'GET /api/runs/r1/tenant-evidence': failWith(503, { detail: {
+        error: "integration 'deathstar' is locked", code: 'DB_LOCKED', detail: null,
+      } }),
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByText(/DB_LOCKED/)).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/deathstar|locked'/)
+  })
+})
+
+describe('a stored read that could not be loaded is unknown, not "never read"', () => {
+  it('a failed GET says the stored read could not be loaded', async () => {
+    installRoutes({
+      'GET /api/runs/r1/tenant-evidence': failWith(500, { error: 'boom', code: 'INTERNAL', detail: null }),
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByText(
+      'The stored read could not be loaded, so whether this run was read from the tenant is unknown.',
+    )).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/Not read from the tenant yet/)
+    expect(panel().textContent).not.toMatch(/Refresh reads it once/)
+  })
+})
+
+describe('a read that failed or timed out reloads the stored read', () => {
+  it('a rejected POST is followed by one GET and no second POST', async () => {
+    const handler = installRoutes({
+      'GET /api/runs/r1/tenant-evidence': NOT_READ,
+      'POST /api/runs/r1/tenant-evidence': failWith(502, { detail: {
+        error: 'pull failed', code: 'CONNECTOR_PULL_FAILED', detail: null,
+      } }),
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(calls(handler)).toEqual(['GET /api/runs/r1/tenant-evidence']))
+    fireEvent.click(refreshButton())
+    await waitFor(() => expect(refreshButton()).not.toBeDisabled())
+    await waitFor(() => expect(calls(handler)).toEqual([
+      'GET /api/runs/r1/tenant-evidence',
+      'POST /api/runs/r1/tenant-evidence',
+      'GET /api/runs/r1/tenant-evidence',
+    ]))
+    expect(within(panel()).getByText(/CONNECTOR_PULL_FAILED/)).toBeInTheDocument()
   })
 })
