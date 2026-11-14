@@ -128,9 +128,12 @@ describe('HTTP collector', () => {
     expect(await screen.findByTestId('collector-targets')).toBeInTheDocument()
   })
 
-  it('"Choose format and dataset" says uncompressed JSON and names the dataset from vendor and product', () => {
+  it('"Choose format and dataset" asks for gzip JSON and names the dataset from vendor and product', () => {
     mount(HttpCollectorComponent, { params: { tab: 'setup', step: 'format' } })
-    expect(panel()).toHaveTextContent(/uncompressed/i)
+    // XSIAM HTTP collectors created gzip-only reject uncompressed POSTs; the
+    // page used to recommend uncompressed, which is exactly that failure.
+    expect(panel()).toHaveTextContent(/Compression\s*gzip/)
+    expect(panel()).toHaveTextContent(/gzip-only reject uncompressed/)
     expect(panel()).toHaveTextContent('JSON')
     fireEvent.change(within(panel()).getByLabelText('Vendor'), { target: { value: 'Duo' } })
     fireEvent.change(within(panel()).getByLabelText('Product'), { target: { value: 'auth' } })
@@ -152,12 +155,32 @@ describe('HTTP collector', () => {
     expect(JSON.parse(put[1].body)).toMatchObject({
       kind: 'xsiam_http_collector', url: 'https://api-lab.xdr.us.paloaltonetworks.com/logs/v1/event',
       auth_header: 'Authorization', auth_scheme: '', token: 'secret-key-1',
+      // On by default, and always sent: the API defaults it off.
+      compress: true,
     })
     const pf = f.mock.calls.find(([u, i]) => i?.method === 'POST' && String(u).includes('/preflight'))
     expect(JSON.parse(pf[1].body)).toEqual({ write_canary: false })
     // The key is write-only: once stored it is not on screen.
     expect(within(panel()).getByLabelText('API key')).toHaveValue('')
     expect(panel()).not.toHaveTextContent('secret-key-1')
+  })
+
+  it('"Add it to POVengine" sends compress off only when the DC turns it off', async () => {
+    const f = routes({
+      'PUT /api/collector-targets/:name': { name: 'plain', kind: 'xsiam_http_collector', has_key: false, warnings: [] },
+      'POST /api/collector-targets/:name/preflight': { verdict: 'reachable', rungs: [] },
+    })
+    mount(HttpCollectorComponent, { params: { tab: 'setup', step: 'add' } })
+    const tick = within(panel()).getByTestId('hc-compress')
+    expect(tick).toBeChecked()
+    fireEvent.click(tick)
+    expect(panel()).toHaveTextContent(/Compression\s*none/)
+    fireEvent.change(within(panel()).getByLabelText('Target name'), { target: { value: 'plain' } })
+    fireEvent.change(within(panel()).getByLabelText('Collector URL'), { target: { value: 'https://api-lab.xdr.us.paloaltonetworks.com/logs/v1/event' } })
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Test' }))
+    await waitFor(() => expect(f.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+    const put = f.mock.calls.find(([, i]) => i?.method === 'PUT')
+    expect(JSON.parse(put[1].body).compress).toBe(false)
   })
 
   it('"Add it to POVengine" is not passed while the store warns', async () => {

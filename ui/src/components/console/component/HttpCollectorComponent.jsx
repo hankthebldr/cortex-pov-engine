@@ -89,11 +89,11 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
     {
       id: 'format',
       title: 'Choose format and dataset',
-      why: 'POVengine\'s emitters send uncompressed JSON; a collector set to CEF, LEEF or Raw answers 500 to every record. Vendor and Product name the dataset — a record\'s own dataset field routes nothing.',
+      why: 'POVengine sends JSON, gzip-compressed by default to match the collector\'s Compression setting: XSIAM HTTP collectors created gzip-only reject uncompressed POSTs. A collector set to CEF, LEEF or Raw answers 500 to every record. Vendor and Product name the dataset — a record\'s own dataset field routes nothing.',
       where: 'the same dialog',
       verifier: 'you',
       fields: ({ shared }) => [
-        ['Compression', 'uncompressed'],
+        ['Compression', 'gzip'],
         ['Log format', 'JSON'],
         ['Dataset', datasetName(shared.vendor, shared.product) || '<vendor>_<product>_raw'],
       ],
@@ -121,7 +121,10 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
       title: 'Add it to POVengine',
       why: 'Test stores the URL and key as a collector target, then checks — without writing — that POVengine can reach it. The key goes to the encrypted vault and is never shown again.',
       verifier: 'pov',
-      fields: [['Header', 'Authorization (the bare key — a Bearer scheme gets 401)']],
+      fields: ({ draft }) => [
+        ['Header', 'Authorization (the bare key — a Bearer scheme gets 401)'],
+        ['Compression', (draft.compress ?? true) ? 'gzip' : 'none'],
+      ],
       body: ({ draft, setDraft, shared }) => (
         <div className="cfg-inputs">
           <Field label="Target name">
@@ -136,6 +139,12 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
             <input className="cfg-input__box mono" type="password" autoComplete="new-password" value={draft.token || ''}
               onChange={(e) => setDraft({ token: e.target.value })} />
           </Field>
+          <label className="cfg__tick">
+            <input type="checkbox" checked={draft.compress ?? true} data-testid="hc-compress"
+              onChange={(e) => setDraft({ compress: e.target.checked })} />
+            <span>Send gzip-compressed, to match the collector's Compression setting</span>
+          </label>
+          <p className="cfg__note">XSIAM HTTP collectors created gzip-only reject uncompressed POSTs. Turn this off only for a collector created uncompressed.</p>
           <label className="cfg__tick">
             <input type="checkbox" checked={!!draft.isDefault} onChange={(e) => setDraft({ isDefault: e.target.checked })} />
             <span>Use as the default target</span>
@@ -153,6 +162,9 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
           dataset: datasetName(shared.vendor, shared.product),
           auth_header: 'Authorization',
           auth_scheme: '',
+          // Sent every time: PUT replaces the target, and the API defaults it
+          // off, so leaving it out would turn compression off on each Test.
+          compress: draft.compress ?? true,
           is_default: !!draft.isDefault,
         }
         if (draft.token) body.token = draft.token
@@ -185,7 +197,7 @@ export default function HttpCollectorComponent({ params = {}, setParams = () => 
       why: 'Test posts one canary record. 2xx is delivered; 401 a wrong key or a disabled collector; 404 a wrong URL; 413 too large; 429 rate limited; 500 a format mismatch. Delivered is not ingested — confirm it in the next step.',
       verifier: 'pov',
       fields: ({ shared }) => [['Target', shared.target || defaultTarget?.name || 'store one in step 4']],
-      command: 'curl -sS -o /dev/null -w \'%{http_code}\\n\' -X POST "$URL" -H "Authorization: $KEY" -H "Content-Type: application/json" -d \'{"povengine":"canary"}\'',
+      command: 'printf \'{"povengine":"canary"}\' | gzip | curl -sS -o /dev/null -w \'%{http_code}\\n\' -X POST "$URL" -H "Authorization: $KEY" -H "Content-Type: application/json" -H "Content-Encoding: gzip" --data-binary @-',
       test: async ({ shared }) => {
         const name = shared.target || defaultTarget?.name
         if (!name) return { state: 'pending', detail: 'Store a collector target first (step 4).' }

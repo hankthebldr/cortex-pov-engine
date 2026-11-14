@@ -663,6 +663,23 @@ read-back run of a scenario that evidences it saw a detection.
   under its scenario's tactic; the page says so. A technique under a tactic id
   that is not one of the 14 gets its own column instead of vanishing.
 
+### Fixed — an HTTP collector target keeps gzip, and the page says to use it
+
+- **Saving a collector target turned compression off.** The API's
+  `compress` defaults to false and a `PUT` replaces the target, and neither
+  the Collector targets form nor the HTTP collector page's **Test** sent the
+  field. So every save or edit stored `compress: false`, and an XSIAM HTTP
+  collector created gzip-only rejected every POST that followed. Both forms
+  now have a **Send gzip-compressed** tick, on by default, with a note that
+  gzip-only collectors reject uncompressed POSTs, and they always send the
+  value. An edit keeps the target's own setting.
+- **The HTTP collector page recommended uncompressed JSON.** "Choose format
+  and dataset" now asks for gzip to match the collector's Compression
+  setting, and the example `curl` on the send step gzips its body with
+  `Content-Encoding: gzip`.
+- **A target row shows its compression**: `gzip`, or `none` with a warning
+  that a gzip-only collector rejects these.
+
 ### Security
 
 - **`cortexsim.run.list` and `cortexsim.run.pair` handed an agent the tenant's

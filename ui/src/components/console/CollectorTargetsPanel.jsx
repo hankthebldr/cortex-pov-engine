@@ -38,6 +38,8 @@ const VERDICT = {
 const BLANK = {
   name: '', kind: 'xsiam_http_collector', url: '', dataset: '',
   auth_header: 'Authorization', auth_scheme: '', plugins: [], is_default: false,
+  // On by default: XSIAM HTTP collectors created gzip-only reject uncompressed POSTs.
+  compress: true,
   token: '', clear_token: false,
 }
 
@@ -89,6 +91,9 @@ function TargetForm({ initial, editing, collectorPlugins, onCancel, onSaved }) {
       kind: v.kind, url: v.url.trim(), dataset: v.dataset.trim() || null,
       auth_header: v.auth_header.trim() || 'Authorization', auth_scheme: v.auth_scheme.trim(),
       plugins: v.plugins, is_default: v.is_default,
+      // Always sent: PUT replaces the target and the API defaults it off, so
+      // an edit that left it out would turn compression off.
+      compress: Boolean(v.compress),
     }
     if (v.token) body.token = v.token
     else if (editing && v.clear_token) body.clear_token = true
@@ -149,6 +154,14 @@ function TargetForm({ initial, editing, collectorPlugins, onCancel, onSaved }) {
           </label>
         ))}
       </fieldset>
+
+      <div className="ct-form__row">
+        <label className="ct-check">
+          <input type="checkbox" checked={Boolean(v.compress)} onChange={set('compress')} data-testid="ct-compress" />
+          <span>Send gzip-compressed (the collector's Compression setting)</span>
+        </label>
+      </div>
+      <p className="ct-note">XSIAM HTTP collectors created gzip-only reject uncompressed POSTs. Turn this off only for a collector created uncompressed.</p>
 
       <div className="ct-form__row">
         <label className="ct-check">
@@ -218,6 +231,8 @@ function TargetRow({ target, onEdit, onChanged }) {
         <span className="ct-row__k">Dataset</span><span className="ct-row__v">{target.dataset || '—'}</span>
         <span className="ct-row__k">Serves</span>
         <span className="ct-row__v ct-mono">{target.plugins.length ? target.plugins.join(', ') : (target.is_default ? 'any emitter no other target serves' : 'nothing yet')}</span>
+        <span className="ct-row__k">Compression</span>
+        <span className="ct-row__v" data-testid={`ct-row-compress-${target.name}`}>{target.compress ? 'gzip' : 'none — a gzip-only collector rejects these'}</span>
         <span className="ct-row__k">Key</span>
         <span className="ct-row__v">{target.has_key ? `Key stored (${target.auth_header}${target.auth_scheme ? `: ${target.auth_scheme} …` : ''})` : 'No key'}</span>
       </div>
