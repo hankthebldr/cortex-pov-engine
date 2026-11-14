@@ -5,7 +5,11 @@
      green   — the primary action (one per screen), the selected state, the
                brand; ALSO healthy / done / detected, so health always
                carries its icon and its word (StatusIcon), never colour alone
-     yellow  — a real warning, and the only yellow
+     gold    — a real warning, muted to an accent (Henry, 2026-11-13: the
+               DS gold-600, not Strata yellow)
+     greens  — bright --ac for the one primary button; the matte line
+               (--gr-matte) and the deep wash (--ac-soft) for every
+               selected state
      coral   — down, missing, broken, destructive confirm
      neutral — everything else
    Orange is the NGFW family tint and nothing else. The token layer carries
@@ -24,7 +28,7 @@
 /* ── Rail ───────────────────────────────────────────────────────────────── */
 .theme-console .pov-rail__item--on {
   border-left-color: var(--ac);
-  background: var(--s2);
+  background: var(--ac-soft);
   color: var(--tx);
 }
 .theme-console .pov-rail__item--on .pov-rail__text { font-weight: 600; }
@@ -102,3 +106,30 @@
 .theme-console .pov-rail__icon { opacity: .7; }
 .theme-console .pov-rail__item--on .pov-rail__icon { opacity: 1; }
 .theme-console .coverage-kicker { display: none; }
+
+/* ── One selected state (Henry, 2026-11-13: "more shades of green") ─────────
+   Selected tabs, chips and segmented buttons painted three different ways:
+   white on black, a bright green fill, or a soft wash. They are all the same
+   state, so they read the same: the deep green wash, the matte green line,
+   the page's own text. Bright green is left to the one primary button.
+   `:root` lifts these above the destination sheets, which load lazily AFTER
+   this file and would otherwise win every tie. */
+:root .theme-console .composer-bench__tab--active,
+:root .theme-console .canvas-view--on,
+:root .theme-console .coverage .lab__segmented button.is-active,
+:root .theme-console .lab__segmented button.is-active,
+:root .theme-console .uctc .lab__segmented button.is-active,
+:root .theme-console .evidence .evidence__mode-toggle button.is-active,
+:root .theme-console .library-layout .insp-segmented button.is-active,
+:root .theme-console .library-layout .ops-history-strip button.is-active,
+:root .theme-console .ttpb-chip.is-active,
+:root .theme-console .tools-destination .competitive__filter.is-active,
+:root .theme-console .uctc .competitive__filter.is-active,
+:root .theme-console .scenario-sheet__tab--on,
+:root .theme-console .cmp-tab--on,
+:root .theme-console .cfg__step--on,
+:root .theme-console .cfg__seg-opt--on {
+  background: var(--ac-soft);
+  border-color: var(--gr-matte);
+  color: var(--tx);
+}

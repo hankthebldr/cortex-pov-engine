@@ -263,6 +263,19 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — the warning colour is a muted gold; greens come in shades
+
+Henry, 2026-11-13: the console's yellow is muted to an accent and green
+gets more than one shade. The warning colour is now the design system's
+gold-600 (`#C7AA47`) instead of Strata yellow, in the dark theme's text and
+in both themes' fills and borders (the light theme's warning text keeps its
+AA-dark ochre). Every selected state (tabs, filter chips, segmented buttons,
+the active rail item) now reads the same: the deep green wash with a matte
+green line (the DS panw-green-700). Before, some were white on black and some
+bright green. Bright green is left to the one primary button. New tokens
+`--gr-matte`, `--gr-mid` and `--gr-pale` take the DS's panw-green-700,
+green-500 and green-200, and the drift guard pins them.
+
 ### Security
 
 - **A path override on a tenant credential could send the tenant's API key to
