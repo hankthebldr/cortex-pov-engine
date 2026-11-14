@@ -223,14 +223,6 @@
   "scenario_file": "scenarios/edr/edr-049-linux-possible-brute-force-on-sudo-user.yml",
   "scenario_id": "SIM-EDR-049"
  },
- "TTP-0000-0029": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0212-sim-edr-050.json",
-  "card_id": "TTP-2026-0212",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-050-linux-masquerading-as-the-linux-crond-proc.yml",
-  "scenario_id": "SIM-EDR-050"
- },
  "TTP-0000-0030": {
   "card_file": "detection_scanner/ttps/TTP-2026-0213-sim-edr-051.json",
   "card_id": "TTP-2026-0213",

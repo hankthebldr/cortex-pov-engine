@@ -7,12 +7,12 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 202 |
+| Loadable scenarios | 203 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 200 |
+| TTP cards | 201 |
 | Detection planes | 16 |
-| Step-detections | 1437 |
-| Catalog detection objects | 2305 |
+| Step-detections | 1442 |
+| Catalog detection objects | 2315 |
 | ABIOC+Analytics share (step-detections) | 15.3% |
 | Correlation share (step-detections) | 10.2% |
 | Distinct MITRE techniques (base) | 240 (128) |
@@ -33,7 +33,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | CLOUD_APP | 10 |
 | CSPM | 5 |
 | DLP | 5 |
-| EDR | 26 |
+| EDR | 27 |
 | EMAIL | 5 |
 | ITDR | 20 |
 | KOI | 12 |
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1437 (16.4%) |
-| Marker-only steps | 98/840 (11.7%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1442 (16.4%) |
+| Marker-only steps | 98/844 (11.6%) |
 | Scenarios with indicators | 16 |
 | Indicators (in-band) | 95 |
 | Indicators (not in-band) | 11 |
@@ -55,24 +55,24 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 164 |
+| ABIOC | 165 |
 | Analytics | 56 |
 | BIOC | 374 |
-| Correlation | 146 |
+| Correlation | 147 |
 | IOC | 119 |
 | Prevention | 2 |
-| XQL | 576 |
+| XQL | 579 |
 
 ### Grouping keys (`make check-grouping`)
 
-1437 step-detections in 202 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+1442 step-detections in 203 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
 
 | Code | Outcome | Count |
 |---|---|---:|
 | G-01 | WARN: Medium+ detections share no native key | 0 |
 | G-02 | WARN: stitched step carries only below-Medium detections | 2 |
 | G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
-| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1068 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1073 |
 | G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters

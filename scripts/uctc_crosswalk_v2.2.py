@@ -122,6 +122,13 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "ABIOC (TC-EDR-03) with full causality (TC-EDR-05). The host-impact counterpart to the ESXi "
         "path (SIM-EDR-019) and to the SAFE-MODE non-encrypting variant (SIM-EDR-008); all three rows "
         "already evidenced — depth, not new index breadth."),
+    "SIM-EDR-026": (["TC-EDR-03", "TC-EDR-05"], REMAP,
+        "crond masquerade — the shell is really copied and renamed to crond in a /var/tmp scratch "
+        "directory and run from there. Declares the built-in single-event Analytics BIOC "
+        "'Masquerading as the Linux crond process' (TC-EDR-03, the behavioural method) on the basis "
+        "of its reference page, with the crond-named parent and its discovery children as the "
+        "process chain (TC-EDR-05). Nothing has been run on an endpoint. Both rows already "
+        "evidenced — depth, not new index breadth."),
     "SIM-EDR-027": (["TC-EDR-05"], REMAP,
         "Archive-then-SSH-client exfiltration attempt on Linux — a decoy tree archived with tar and "
         "gzip, then named to scp and piped to ssh at a .invalid host, so the transfer fails by design "

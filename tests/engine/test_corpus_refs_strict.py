@@ -69,7 +69,8 @@ def test_the_corpus_is_the_expected_size(parsed):
     # 199 -> 200 on 2026-11-13: Unit 42 backlog build SIM-CDR-030 (cloud logging tamper and log-bucket hijack, authored only).
     # 200 -> 201 on 2026-11-13: SIM-MP-038 Pink CL-CRI-1147 (binds already-evidenced TC-ITDR-03/TC-ITDR-02; evidenced pins unchanged).
     # 201 -> 202 on 2026-11-13: SIM-EDR-027 (compressed-archive exfiltration attempt over SSH, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
-    assert len(parsed) == 202
+    # 202 -> 203 on 2026-11-13: SIM-EDR-026 (crond masquerade from a scratch path, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
+    assert len(parsed) == 203
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):
