@@ -130,14 +130,18 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "process chain (TC-EDR-05). Nothing has been run on an endpoint. Both rows already "
         "evidenced — depth, not new index breadth."),
     "SIM-EDR-027": (["TC-EDR-05"], REMAP,
-        "Archive-then-SSH-client exfiltration attempt on Linux — a decoy tree archived with tar and "
-        "gzip, then named to scp and piped to ssh at a .invalid host, so the transfer fails by design "
-        "and no data leaves the host. The claim is the process chain (archiver, then SSH client, one "
-        "host), not a verdict. It is declared as six Tier-2 XQL rows plus operator-installed "
-        "CR-EDR-0027; nothing has been run on an endpoint. The built-in alert 'A compressed file "
-        "was exfiltrated over SSH' is hunt content only (no SSH session is opened; Informational). "
-        "TC-EDR-05 is already evidenced — depth, not new index breadth. TC-DLP-01 is left off on "
-        "purpose: nothing here inspects content."),
+        "Archive-then-SSH-client exfiltration attempt on Linux — a decoy tree archived with tar, "
+        "then named to scp and piped to ssh at a .invalid host, so the transfer fails by design and "
+        "no data leaves the host. The claim is the process chain (archiver, then SSH client, one "
+        "host), not a verdict. It is declared as five Tier-2 XQL rows plus operator-installed "
+        "CR-EDR-0027. Two lab pull runs on pov-target-01 (2026-11-14) ran all five steps to exit 0 "
+        "and the five XQL rows returned rows; step-02's gzip -9 leg was not recorded by the agent "
+        "in either run, so it is not declared. CR-EDR-0027's XQL and its fallback were accepted as "
+        "queries and returned the chain's row; the rule itself is not installed, so no issue has "
+        "been observed. The built-in alert 'A compressed file was exfiltrated over SSH' is hunt "
+        "content only (no SSH session is opened; Informational) and was not raised. TC-EDR-05 is "
+        "already evidenced — depth, not new index breadth. TC-DLP-01 is left off on purpose: "
+        "nothing here inspects content."),
     "SIM-EDR-028": (["TC-EDR-05"], REMAP,
         "Sudoedit execution burst — sixty real starts of the harmless CVE-2021-3156 probe form "
         "(sudoedit -s /) on one causality chain, declared as process-start validation rows plus the "

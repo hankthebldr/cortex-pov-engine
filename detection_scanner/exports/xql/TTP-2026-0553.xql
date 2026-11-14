@@ -21,17 +21,6 @@ dataset = xdr_data
 | filter action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz"
 | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
 
-## VALIDATION — EDR-027 Gzip Compresses One Collected File
-# purpose: validation
-# dataset: xdr_data
-
-dataset = xdr_data
-| filter timestamp_diff(current_time(), _time, "SECOND") < 3600
-| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter action_process_image_name = "gzip" and action_process_image_command_line contains "-9"
-| filter action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/ledger-all.csv"
-| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
-
 ## VALIDATION — EDR-027 Scp Started With The Archive And A Remote Destination
 # purpose: validation
 # dataset: xdr_data
@@ -98,4 +87,16 @@ dataset = xdr_data
 | filter action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil" or action_process_image_command_line contains "cortexsim-canary.invalid"
 | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_name, action_process_image_command_line
 | sort asc _time
+
+## VALIDATION — EDR-027 Investigation — Gzip -9 Of The Collected File (not declared: no event recorded on the lab endpoint)
+# purpose: investigation
+# dataset: xdr_data
+
+// Not declared: in both lab runs on pov-target-01 (2026-11-14) the agent recorded no event for this gzip start, so this query returned 0 rows and a row on it would read fail on a healthy tenant.
+dataset = xdr_data
+| filter timestamp_diff(current_time(), _time, "SECOND") < 3600
+| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+| filter action_process_image_name = "gzip" and action_process_image_command_line contains "-9"
+| filter action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/ledger-all.csv"
+| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
 

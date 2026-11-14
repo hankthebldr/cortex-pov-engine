@@ -11,10 +11,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Scenarios rejected at load | 0 |
 | TTP cards | 203 |
 | Detection planes | 16 |
-| Step-detections | 1453 |
+| Step-detections | 1452 |
 | Catalog detection objects | 2336 |
 | ABIOC+Analytics share (step-detections) | 15.3% |
-| Correlation share (step-detections) | 10.2% |
+| Correlation share (step-detections) | 10.3% |
 | Distinct MITRE techniques (base) | 241 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
@@ -45,7 +45,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1453 (16.2%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1452 (16.2%) |
 | Marker-only steps | 98/850 (11.5%) |
 | Scenarios with indicators | 16 |
 | Indicators (in-band) | 95 |
@@ -61,18 +61,18 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Correlation | 149 |
 | IOC | 119 |
 | Prevention | 2 |
-| XQL | 587 |
+| XQL | 586 |
 
 ### Grouping keys (`make check-grouping`)
 
-1453 step-detections in 205 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+1452 step-detections in 205 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
 
 | Code | Outcome | Count |
 |---|---|---:|
 | G-01 | WARN: Medium+ detections share no native key | 0 |
 | G-02 | WARN: stitched step carries only below-Medium detections | 2 |
 | G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
-| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1084 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1083 |
 | G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters

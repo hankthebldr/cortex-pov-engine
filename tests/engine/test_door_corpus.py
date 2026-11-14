@@ -72,6 +72,10 @@ steps and need the agent alone: total 1,448 -> 1,453, xdr_agent 524 -> 529
 (108 -> 109 scenarios), XDR_AGENT_SOLE 523 -> 528. No collector, door or
 underived count moves. With every door open it reads ``ready`` (154 -> 155);
 with none, ``needs_doors`` (196 -> 197).
+
+Re-pinned 2026-11-14: SIM-EDR-027 drops its step-02 gzip row after two lab runs
+on pov-target-01 recorded no event for that command (total 1,453 -> 1,452,
+xdr_agent 529 -> 528, XDR_AGENT_SOLE 528 -> 527; scenarios and states unchanged).
 """
 from __future__ import annotations
 
@@ -119,7 +123,7 @@ def corpus():
 # doors counts once under each. Collector-route and underived detections are
 # counted below, not here.
 DOOR_COUNTS: dict[str, tuple[int, int]] = {
-    "xdr_agent": (529, 109),
+    "xdr_agent": (528, 109),
     "ngfw_traffic": (136, 49),
     "cloud_aws": (67, 21),
     "saas_okta": (24, 14),
@@ -159,11 +163,11 @@ COLLECTOR_BY_TYPE: dict[str, int] = {
 # The beta merge removed 5 agent-only detections and SIM-KOI-012 added 7 (see the
 # module docstring); measured on the merged tree. SIM-EDR-025 step-05's ABIOC
 # adds 1 (2026-11-13) and SIM-MP-038 step-01 one more.
-# SIM-EDR-027 adds 7 (2026-11-13).
+# SIM-EDR-027 adds 6 (2026-11-13; its gzip row was dropped after the 2026-11-14 lab runs).
 # SIM-EDR-026 adds 5 (2026-11-13).
 # SIM-EDR-029 adds 6 (2026-11-13).
 # SIM-EDR-028 adds 5 (2026-11-13).
-XDR_AGENT_SOLE = 528
+XDR_AGENT_SOLE = 527
 
 
 def test_corpus_door_counts(corpus):
@@ -190,12 +194,12 @@ def test_corpus_door_counts(corpus):
                 for door in {d for element in req.all_of for d in element}:
                     door_dets[door] += 1
                     door_scen.setdefault(door, set()).add(sc["scenario_id"])
-    assert total == 1453
+    assert total == 1452
     assert collector == 216
-    assert door_dets["xdr_agent"] == 529, (
+    assert door_dets["xdr_agent"] == 528, (
         "509 (514 xdr_data less the 5 on collector steps) less 5 the beta merge removed, "
         "plus SIM-EDR-025 step-05's ABIOC and SIM-MP-038 step-01"
-        ", plus SIM-EDR-027's 7"
+        ", plus SIM-EDR-027's 6"
         ", plus SIM-EDR-026's 5"
         ", plus SIM-EDR-029's 6"
         ", plus SIM-EDR-028's 5")
@@ -225,11 +229,11 @@ def test_corpus_readiness(corpus):
         for key in ("total", "scorable", "underived", "route_blocked", "unevaluated"):
             sums[key] += out[key]
         none_open[scenario_readiness(sc, set(), agent_id="a1", catalog=cat, registry=registry)["state"]] += 1
-    assert sums["total"] == 1453
+    assert sums["total"] == 1452
     assert sums["route_blocked"] == 216
     assert sums["unevaluated"] == 0
     assert sums["underived"] == sum(UNDERIVED.values())
     # Every derived detection off the collector route is scorable when every door is open.
-    assert sums["scorable"] == 1453 - 216 - sum(UNDERIVED.values())
+    assert sums["scorable"] == 1452 - 216 - sum(UNDERIVED.values())
     assert dict(all_open) == ALL_OPEN_STATES
     assert dict(none_open) == NONE_OPEN_STATES

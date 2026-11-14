@@ -36,7 +36,7 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.153,
+    "abioc_analytics_share": 0.1531,
     "catalog_detections": 2336,
     "catalog_detections_by_kind": {
       "abioc": 174,
@@ -48,7 +48,7 @@
       "prevention": 3,
       "xql": 709
     },
-    "correlation_share": 0.1025,
+    "correlation_share": 0.1026,
     "detection_planes": 16,
     "methodology_family_counts": {
       "F1": 141,
@@ -84,7 +84,7 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1453,
+    "step_detections": 1452,
     "step_detections_by_type": {
       "ABIOC": 166,
       "Analytics": 56,
@@ -92,7 +92,7 @@
       "Correlation": 149,
       "IOC": 119,
       "Prevention": 2,
-      "XQL": 587
+      "XQL": 586
     },
     "ttp_cards": 203
   },
@@ -103,11 +103,11 @@
       "G-01": 0,
       "G-02": 2,
       "G-03": 0,
-      "G-04": 1084,
+      "G-04": 1083,
       "G-05": 0
     },
     "scenarios_analyzed": 205,
-    "step_detections_analyzed": 1453
+    "step_detections_analyzed": 1452
   },
   "http_routes": {
     "apirouter_instances": 30,
@@ -124,7 +124,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1624,
+    "hq_share": 0.1625,
     "hq_signals": 236,
     "indicators": 95,
     "indicators_not_in_band": 11,
@@ -144,7 +144,7 @@
     "marker_only_share": 0.1153,
     "marker_only_steps": 98,
     "scenarios_with_indicators": 16,
-    "step_detections": 1453,
+    "step_detections": 1452,
     "steps": 850,
     "stitched_chain_ids": [
       "SIM-MP-023",
