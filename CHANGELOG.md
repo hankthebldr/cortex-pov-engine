@@ -8,7 +8,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-11-12
+## [1.2.0] - 2026-11-13
 
 **SimCore learns what a POV's tenant can receive before the run, and is
 hardened for a beta on real endpoints.** Ingestion doors, collector targets,
@@ -80,6 +80,44 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > Windows run has reached them. The job is not a required check (decision
 > DOCS-12).
 > **`tenant-verified` is still 0.**
+
+### Changed — the console follows design v26 (#250, #252–#254, #257–#261, #265, #277–#281)
+
+- **One colour rule.** Cortex green is the primary action (one filled button
+  per screen), the selected state and the brand. Yellow is the only warning
+  colour, coral means down or broken, and PANW orange is only the NGFW family
+  tint. Every status shows an icon and a word. Buttons use a closed set of
+  verbs: Configure · Test · Run · Customize · Add to chain · Read back ·
+  Open results · Abort run.
+- **The rail follows what a DC does, in order.** **Onboard & connect** (Get
+  started, Components) · **Compose & simulate** (Scenarios, Build a chain,
+  Launch gate) · **Run & observe** (Runs, Results) · **Reference** (Catalog:
+  TTP cards, Packages, Data streams, UC / TC index). The header shows the
+  instance's status, a **Running** pill only while a run is live, and ⌘K
+  search with page icons.
+- **Components.** A hub and eight pages: POVengine (with an API tab generated
+  from OpenAPI), Agents, Tenant, HTTP collector, Broker VM, Firewall, XDR
+  Collector and Cortex Engine. Broker VM, XDR Collector and Cortex Engine have
+  no SimCore API, so they show what you confirmed, or Unknown.
+- **Scenarios.** A card opens a sheet with a chain preview and **Customize** /
+  **Run**. Filters are Plane · Component · Use case · Test case · Status. TTP
+  cards, packages and data-stream emitters have **Add to chain**, which feeds a
+  "Your chain" tray on Scenarios and Catalog (the tray is not saved).
+- **Runs and Results.** A lifecycle strip reads Launched → Running →
+  Finished / Failed / Aborted → Read back → Results. Until Read back (the
+  reconcile pull) runs, steps say only Ran or Did not run. Run detail draws
+  the live chain; a lane header opens its component page; a Broken step opens
+  a troubleshooting sheet with the likely causes in the order to check them;
+  Abort is an inline confirm. Results always names its run in a "Result of"
+  bar, with a switcher across read-back runs, and never shows without a run.
+- **Where things moved.** `#/agents`, `#/tenants` and `#/firewall` open the
+  Agents, Tenant and Firewall component pages (their Fleet, Read-back and
+  Sources tabs); `#/setup` and `#/scope` open Get started; `#/validation` opens
+  Results; `#/readiness` opens the Launch gate (`#/preflight`). Scenarios keeps
+  its `#/library` route, so old links still work.
+- **Accessibility and theming.** Dark-theme aliases follow `[data-theme]`;
+  a skip link and palette focus order; a page title and form labels on every
+  page; agent capabilities shown on their cards.
 
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
@@ -868,7 +906,7 @@ both.
   is refused in the console too, with the reason. The header's agent chip says
   whether the beacon is polling, in words and shape as well as colour. Beacon
   availability is read per architecture, so an amd64-only shelf names the
-  missing Apple-silicon beacon. The deploy modal traps Tab, names what each
+  missing Apple-silicon beacon. The deploy modal (Components › Agents › Fleet) traps Tab, names what each
   Copy button copies, fits the viewport and scrolls inside itself; with
   Windows selected it had grown past the screen with nothing scrolling.
 - **A Windows install path that does not pipe a download into `iex` (UI-17,
@@ -1092,12 +1130,12 @@ both.
 - `collector_targets` gains `declaration` and `last_arrival` columns, added at boot.
 - The email emitter carries a `canary_token` on its records.
 
-### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
+### Added — ingestion doors, phase 1 (read API, scenario-card chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
   `/api/scenarios/{id}/doors`): for each scenario, which of its detections can
   fire given which data doors are open. Read-only, zero outbound calls.
-- **Library chip** on every scenario card: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
+- **Doors chip** on every scenario card in Scenarios: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
   or `NOT CHECKED`, plus an opt-in **Runnable here** filter that is off by
   default, so nothing is hidden.
 - **Data path** as a sixth launch preflight check. Advisory only: it warns, it
@@ -1268,7 +1306,7 @@ escape every string behind it.
   (`response_layer`, `response_layer_read_at`; migration added) with the
   stage's own verdict (`stage: {status, code, detail}`), returned as a
   `response_layer` block by `GET /api/readiness` with a 24 h staleness flag, and
-  rendered as a SOC Framework row on the console Readiness page. The row is
+  rendered as a SOC Framework row on the console's Launch gate page. The row is
   green only for a `PRESENT` layer whose stored stage is `ok`. A failed store
   returns the report with `stored: false` instead of a 500, and re-registering
   the integration clears the stored read. `GET /api/health` lists
@@ -1317,6 +1355,25 @@ escape every string behind it.
 - **Counts:** 195 scenarios, 193 cards, 1392 step-detections, Correlation
   share 10.1% (141). `tenant-verified` is still 0; nothing here has run
   against the tenant.
+
+### Added — three deep Linux-endpoint scenarios from the Unit 42 backlog (#188)
+
+Each runs for real (not SAFE-MODE) inside a staged decoy tree under
+`/var/tmp`, with full `cleanup`; every beacon targets a `.invalid` host with a
+2 s timeout.
+
+- **SIM-EDR-025** (`TTP-2026-0200`): Akira (Howling Scorpius) Linux
+  ransomware. `openssl` AES-256 encrypts a staged victim tree, adds the
+  `.akira` extension and ransom note, reads `/etc/shadow` and inhibits
+  recovery.
+- **SIM-KOI-010** (`TTP-2026-0201`): npm supply-chain credential theft on a
+  developer endpoint. A real `preinstall` hook runs from a slopsquatted package
+  against a `.invalid` registry, and `node` harvests staged decoy secrets. The
+  target needs `node` (`requires_interpreters: [node]`).
+- **SIM-KOI-011** (`TTP-2026-0202`): a malicious OpenClaw/ClawHub marketplace
+  skill. A padded README evades scanners, a base64 `curl|bash` dropper calls a
+  `.invalid` canary, and an infostealer reads staged credentials. It reuses
+  `cortex-malicious-agentic-pack`.
 
 ### Added — Unit 42 backlog: a triage, two scenarios and eight log-tampering presets
 
@@ -1801,7 +1858,7 @@ escape every string behind it.
 
 ### Added — read-only NGFW (PAN-OS) connection
 
-- **Read-only NGFW (PAN-OS) connection and a Firewall wizard under Manage.** A
+- **Read-only NGFW (PAN-OS) connection and a Firewall page under Components.** A
   firewall is registered as integration kind `panos_ngfw`, by pasting an API key
   (`PUT /api/credentials/integrations`) or with `POST /api/ngfw/keygen`, which
   exchanges an admin login for a key. `POST /api/connectors/panos_ngfw/preflight`
@@ -1818,8 +1875,8 @@ escape every string behind it.
   shape the parser does not know blocks its own stage (`PN_SHAPE_UNRECOGNISED`)
   rather than reading as empty, and `queries_issued` counts the calls actually sent.
   `PUT /api/ngfw/{name}/sources/{agent_id}` sets the per-agent addresses, and
-  `GET /api/ngfw` lists firewalls. The console destination is **Firewall**
-  (`#/firewall`): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
+  `GET /api/ngfw` lists firewalls. The console destination is **Components ›
+  Firewall** (`#/component-firewall`; `#/firewall` opens its Sources tab): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
   fixtures only. A green firewall preflight proves firewall configuration, not
   ingestion or stitching: **`tenant-verified` is still 0**. Every `PN_` code is in
   `docs/reference/api-and-agent-surface.md` §1.17. New settings:
