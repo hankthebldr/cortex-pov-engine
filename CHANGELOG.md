@@ -945,6 +945,17 @@ states the same verdict and reason. A verdict without a reason draws neither.
   (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
   issue read now raises on a lowercase `data` reply where it used to return
   `{}`.
+- The run read's endpoint record reads the strict `endpoints` envelope too, so a
+  lowercase `data` reply is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`. A
+  strict reply with a row that is not an object raises rather than reading as
+  fewer rows. A refused id probe records `attempted` and `refused_locally` on
+  `agreement.id_space`, as a section does. `xsiam.xql.query` and a live
+  `xsiam.operation.execute` carry a fixed `data_notice` for the tenant's raw
+  values, and a parse error on any named MCP shape names keys and types, never a
+  value. The run case ledger leaves `GET /api/runs/{id}/tenant-evidence`,
+  `cortexsim.run.tenant_evidence.get` and `cortexsim.run.get` projected: a case's
+  `resolve_comment` under `tenant_text`, a rejected `xdr_url` null with
+  `xdr_url_withheld`. `run.get` then adds `data_notice`.
 
 ### Changed — one per-tenant request budget; any 429 trips once
 
@@ -984,6 +995,9 @@ states the same verdict and reason. A verdict without a reason draws neither.
   with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
+- API reference §9.2 now leads with the stdio launcher as the way to verify runs;
+  the HTTP `/mcp` registration is optional and its example reads the token from
+  an environment variable.
 
 ### Added — MCP tools for the tenant reader
 
