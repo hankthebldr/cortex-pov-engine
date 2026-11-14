@@ -228,13 +228,31 @@ RUNS_AS_BEACON = {"root", "direct", "container-runtime"}
 # this one): no step creates them, every step checks them.
 OPERATOR_STAGED = {"/var/lib/cortexsim/edr-007"}
 # Windows: scenario id -> (the folder as the step spells it, its marker SID, the
-# creating step, the checking steps). See scripts/ci/windows-native-e2e.ps1
-# -Phase sandbox, which runs these guards on Windows PowerShell 5.1.
+# creating step, the checking steps). Markers are S-1-9-4243-N, N unique: the MP
+# number for SIM-MP, 1000 + n for SIM-EDR-n, 2000 + n for SIM-ITDR-n, 3000 + n for
+# SIM-TIM-n. See scripts/ci/windows-native-e2e.ps1 -Phase sandbox, which runs these
+# guards on Windows PowerShell 5.1.
+_EDR006 = "Join-Path $(if ($env:TEMP -match '\\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'"
 WINDOWS_SANDBOXES = {
+    "SIM-EDR-003": ("Join-Path $env:TEMP 'cortexsim-edr003'", "S-1-9-4243-1003", "step-04", []),
+    "SIM-EDR-004": ("Join-Path $env:TEMP 'cortexsim-edr004'", "S-1-9-4243-1004", "step-03", []),
+    "SIM-EDR-006": (_EDR006, "S-1-9-4243-1006", "step-01", ["step-02", "step-03"]),
+    "SIM-EDR-013": ("Join-Path $env:TEMP 'cortexsim-edr-013'", "S-1-9-4243-1013", "step-01", []),
+    "SIM-EDR-017": ("Join-Path $env:TEMP 'cortexsim-edr-017'", "S-1-9-4243-1017", "step-01", ["step-02"]),
+    "SIM-ITDR-002": ("Join-Path $env:TEMP 'cortexsim-itdr-002'", "S-1-9-4243-2002", "step-02", []),
+    "SIM-ITDR-003": ("Join-Path $env:TEMP 'cortexsim-itdr-003'", "S-1-9-4243-2003", "step-02", []),
+    "SIM-ITDR-004": ("Join-Path $env:TEMP 'cortexsim-itdr-004'", "S-1-9-4243-2004", "step-02", []),
+    "SIM-ITDR-005": ("Join-Path $env:TEMP 'cortexsim-itdr-005'", "S-1-9-4243-2005", "step-02", []),
+    "SIM-ITDR-006": ("Join-Path $env:TEMP 'cortexsim-itdr006'", "S-1-9-4243-2006", "step-02", ["step-03"]),
+    "SIM-MP-014": ("Join-Path $env:TEMP 'cortexsim-mp014'", "S-1-9-4243-14", "step-01", []),
     "SIM-MP-023": ("'C:\\ProgramData\\cortexsim-mp023'", "S-1-9-4243-23", "step-01", ["step-03", "step-04"]),
+    "SIM-MP-025": ("Join-Path $env:TEMP 'cortexsim-mp025'", "S-1-9-4243-25", "step-01", []),
     "SIM-MP-026": ("'C:\\ProgramData\\cortexsim-mp026'", "S-1-9-4243-26", "step-01",
                    ["step-02", "step-03", "step-06", "step-07", "step-08", "step-09"]),
     "SIM-MP-029": ("Join-Path $env:TEMP 'cortexsim-mp-029'", "S-1-9-4243-29", "step-01", ["step-02", "step-03"]),
+    "SIM-MP-035": ("Join-Path $env:TEMP 'cortexsim-mp-035'", "S-1-9-4243-35", "step-07", []),
+    "SIM-MP-036": ("Join-Path $env:TEMP 'cortexsim-mp-036'", "S-1-9-4243-36", "step-03", ["step-04"]),
+    "SIM-TIM-002": ("Join-Path $env:TEMP 'cortexsim-tim-002'", "S-1-9-4243-3002", "step-03", []),
 }
 OTHER_UID = 4242  # stands in for another local user
 
@@ -385,8 +403,14 @@ def test_a_single_step_file_lives_in_a_directory_the_step_makes(sid, name):
         assert 0 <= made < text.find("$C/"), f"{step['id']} uses $C before it makes it"
 
 
+def _windows_text(step: dict) -> str:
+    """What a Windows host runs: the step's Windows variant, else its own command
+    (the Windows-only scenarios are written in PowerShell)."""
+    return (step.get("platform_variants") or {}).get("windows") or step.get("command") or ""
+
+
 def _windows(doc: dict, step_id: str) -> str:
-    return (next(s for s in doc["steps"] if s["id"] == step_id).get("platform_variants") or {})["windows"]
+    return _windows_text(next(s for s in doc["steps"] if s["id"] == step_id))
 
 
 @pytest.mark.parametrize("sid", sorted(WINDOWS_SANDBOXES))
@@ -411,11 +435,29 @@ def test_a_windows_step_makes_or_checks_its_fixed_folder_first(sid):
         head = check[:check.index("did not complete")]
         assert "$acl = Get-Acl -LiteralPath $sandbox" in head and f"($ids -contains '{marker}')" in head, step_id
         assert "AreAccessRulesProtected" in head and "GetOwner(" in head, step_id
-    # PowerShell 5.1's Remove-Item -Recurse walks into a junction's target; cmd's rd does not.
+    # PowerShell 5.1's Remove-Item -Recurse walks into a junction's target; cmd's rd
+    # and [System.IO.Directory]::Delete do not.
     folder = path.split("'")[-2]
-    texts = [v for s in doc["steps"] for k, v in (s.get("platform_variants") or {}).items() if k == "windows"]
-    texts += doc["cleanup"]["commands"]
-    assert not [t for t in texts if "Remove-Item -Recurse" in t and folder in t], folder
+    texts = [_windows_text(s) for s in doc["steps"]] + doc["cleanup"]["commands"]
+    for text in texts:
+        names = [re.escape(folder)] + [re.escape(a) + r"\b" for a in
+                                       ["$sandbox", *re.findall(r"(?m)^\s*(\$\w+) = \$sandbox\s*$", text)]]
+        recursive = [line for line in text.splitlines()
+                     if "Remove-Item" in line and "-Recurse" in line and any(re.search(n, line) for n in names)]
+        assert not recursive, recursive
+
+
+def test_an_interrupted_edr_003_restores_authorized_keys_only_from_its_own_folder():
+    """SIM-EDR-003's cleanup copies a saved authorized_keys back over the account's
+    file when step-04 was cut short. A folder another account planted at that path
+    would hand it their key, so the copy runs only when the folder passes the same
+    Get-Acl as a checking step."""
+    cleanup = _corpus()["SIM-EDR-003"]["cleanup"]["commands"]
+    restore = [c for c in cleanup if "authorized_keys" in c]
+    assert len(restore) == 1, restore
+    line = restore[0]
+    assert line.index("($ids -contains 'S-1-9-4243-1003')") < line.index("Copy-Item") < line.index("} elseif (Test-Path -LiteralPath $sandbox)")
+    assert "AreAccessRulesProtected" in line and "GetOwner(" in line
 
 
 # --------------------------------------------------------------------------- behaviour
