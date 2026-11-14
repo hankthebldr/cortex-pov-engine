@@ -252,7 +252,7 @@ describe('R4: an outcome-less unvalidated row is awaiting reconcile, never misse
 // ─── Residual R1: the Analytics plane tile uses the one denominator rule ───────
 // The live run a04023ce… read "0 / 3": its denominator counted the
 // not_reached row. Rows that never ran (and soak-pending rows) leave it.
-describe('R1: the XSIAM STITCH denominator excludes rows that never ran or are soaking', () => {
+describe('R1: the Analytics plane denominator excludes rows that never ran or are soaking', () => {
   const stitchTile = () => Array.from(document.querySelectorAll('.kpi'))
     .find((k) => k.querySelector('.kpi__label').textContent === 'Analytics plane')
 

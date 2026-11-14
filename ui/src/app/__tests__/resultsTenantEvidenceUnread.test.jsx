@@ -35,11 +35,12 @@ it('an unread run on Results renders Tenant evidence with one GET and zero POSTs
     </EnvironmentContext.Provider>,
   )
   await screen.findByText('Tenant evidence')
-  const calls = h.mock.calls.map(([i, init = {}]) => {
+  const callsNow = () => h.mock.calls.map(([i, init = {}]) => {
     const url = typeof i === 'string' ? i : i.url
     return `${(init.method || 'GET').toUpperCase()} ${new URL(url, 'http://localhost').pathname}`
   })
-  await waitFor(() => expect(calls).toContain('GET /api/runs/run-unread-3/tenant-evidence'))
+  await waitFor(() => expect(callsNow()).toContain('GET /api/runs/run-unread-3/tenant-evidence'))
+  const calls = callsNow()
   expect(calls.filter((c) => c === 'GET /api/runs/run-unread-3/tenant-evidence')).toHaveLength(1)
   expect(calls.filter((c) => c.startsWith('POST '))).toEqual([])
 })

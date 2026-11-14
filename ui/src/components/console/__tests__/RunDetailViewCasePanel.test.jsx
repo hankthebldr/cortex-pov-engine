@@ -9,7 +9,7 @@
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 import RunDetailView from '../RunDetailView.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
 
@@ -48,10 +48,22 @@ describe('RunDetailView', () => {
   })
 
   it('the run page offers Read back beside its case panel, behind a confirm', async () => {
-    routes()
+    const h = routes()
     render(<RunDetailView runId="r1" run={READ} subTab="live" />)
     const panel = await screen.findByTestId('run-case')
-    expect(panel.querySelector('button')).toHaveTextContent('Read back')
+    const button = panel.querySelector('button')
+    expect(button).toHaveTextContent('Read back')
+    fireEvent.click(button)
+    expect(screen.getByRole('dialog')).toHaveTextContent('Refreshing tenant evidence never does.')
+    expect(seen(h).filter((c) => c.startsWith('POST '))).toEqual([])
+  })
+
+  it('a READY run on the evidence tab has exactly one Read back', async () => {
+    routes()
+    render(<RunDetailView runId="r1" run={READ} subTab="evidence" />)
+    await screen.findByTestId('tenant-evidence')
+    await waitFor(() => expect(screen.getByTestId('tenant-evidence')).toHaveTextContent('Refresh reads it once'))
+    expect(screen.getAllByRole('button', { name: 'Read back' })).toHaveLength(1)
   })
 
   it('an unread run shows tenant evidence: one GET, no POST on mount', async () => {

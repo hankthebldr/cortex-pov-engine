@@ -13,12 +13,12 @@ export const CASE_DISCLAIMER =
   'Tenant disposition is shown for context. It is not detection evidence.'
 
 /**
- * NO_CASE_YET advances only on a reconcile: a refresh re-reads the cases a
+ * NO_CASE_YET advances only on a Read back: a refresh re-reads the cases a
  * ledger names, and this one names none. Keep identical to `NO_CASE_YET_HINT`
  * in core/connectors/case_ledger.py.
  */
 export const NO_CASE_YET_HINT =
-  'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the ' +
+  'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the ' +
   'tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.'
 
 /**
@@ -76,7 +76,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
         <div className="run-case__action-row">
-          <p className="run-case__empty">Not read yet — reconcile the run.</p>
+          <p className="run-case__empty">Not read yet — Read back the run.</p>
           {reconcileAction}
         </div>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
@@ -89,7 +89,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
         <p className="run-case__warn" role="alert" data-testid="run-case-unreadable">
-          Ledger unreadable: {unreadable}. Reconcile the run to rebuild it.
+          Ledger unreadable: {unreadable}. Read back the run to rebuild it.
         </p>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>

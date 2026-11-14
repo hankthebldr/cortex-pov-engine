@@ -18,7 +18,7 @@
  *     never the integration's name, and never a request error's own text
  *     (it can quote the credential store); errors render by code.
  */
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import useTenantEvidence from './useTenantEvidence.js'
 import RunCasePanel, { safeXdrUrl, caseOffersReadBack } from './RunCasePanel.jsx'
 import { Button, Icon, StatusIcon } from './kit/index.js'
@@ -29,7 +29,7 @@ void React
 /** One sentence per degraded state (spec §7.5). The templates take the numbers. */
 export const TENANT_EVIDENCE_SENTENCES = Object.freeze({
   TENANT_EVIDENCE_NOT_READ:
-    'Not read from the tenant yet. Refresh reads it once; nothing is read automatically.',
+    'Refresh reads it once; nothing is read automatically.',
   NO_TENANT_CONFIGURED:
     "No tenant credential is configured, so nothing was read. This says nothing about the customer's coverage.",
   UNSCOPED:
@@ -159,22 +159,43 @@ function notesFor(data, payload, lastRead, readError, loadError) {
 }
 
 /**
- * `reconcileAction` is a function `({ onDone }) => node` (normally rendering a
- * ReadBackButton): the panel's own hook owns the stored read, so it hands the
- * action an `onDone` that reloads that read and then calls `onScored`. The
+ * `reconcileAction` is a render function `({ onDone }) => node` or a plain node
+ * (normally a ReadBackButton). The panel's own hook owns the stored read, so a
+ * function is handed an `onDone` that reloads that read and then calls
+ * `onScored`; a plain node gets neither. `onDone` does nothing once the panel
+ * has unmounted: under the real provider a run that is being read back leaves
+ * the READY phase, so this panel can be gone before the read resolves. The
  * refresh button here never calls `onScored`: it cannot change a score.
  */
 export default function TenantEvidencePanel({
   runId, showCaseLedger = true, onScored = () => {}, reconcileAction = null,
 }) {
   const { data, lastRead, loading, reading, readError, loadError, read, reload } = useTenantEvidence(runId)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   if (!runId) return null
   const action = typeof reconcileAction === 'function'
-    ? reconcileAction({ onDone: async () => { await reload(); onScored() } })
-    : null
+    ? reconcileAction({
+      onDone: async () => {
+        if (!mounted.current) return
+        await reload()
+        if (mounted.current) onScored()
+      },
+    })
+    : reconcileAction
 
   const payload = payloadOf(data)
   const notes = notesFor(data, payload, lastRead, readError, loadError)
+  // The one rule for where Read back lives. The case panel is embedded only once
+  // an answer of a known shape is in; it carries the button in the two states a
+  // read back advances (no ledger, NO_CASE_YET). Otherwise the head carries it.
+  // While the first GET is pending and the case panel will embed, neither shows
+  // it, so it does not jump between the two when the GET lands.
+  const embedsCase = showCaseLedger && !!data && payload !== undefined
+  const awaitingEmbed = showCaseLedger && !data && !loadError
+  const headAction = embedsCase
+    ? (caseOffersReadBack(data.case_ledger ?? null) ? null : action)
+    : (awaitingEmbed ? null : action)
   // Unknown is not "never read": with no stored answer and a failed GET, say so.
   const line = reading
     ? 'Reading from the tenant…'
@@ -200,9 +221,7 @@ export default function TenantEvidencePanel({
         >
           <Icon name="repeat" size={14} />
         </Button>
-        {/* One Read back per run on screen: the embedded case panel carries it in
-            the two states only a read back advances, so the head carries it otherwise. */}
-        {!(showCaseLedger && data && caseOffersReadBack(data.case_ledger ?? null)) && action}
+        {headAction}
       </div>
       <p className="tenant-evidence__line">{line}</p>
 
@@ -219,7 +238,7 @@ export default function TenantEvidencePanel({
           <Cases cases={payload.cases} />
         </>
       )}
-      {showCaseLedger && data && payload !== undefined && (
+      {embedsCase && (
         <div className="tenant-evidence__block tenant-evidence__block--case">
           <RunCasePanel ledger={data.case_ledger ?? null} headingLevel={3} reconcileAction={action} />
         </div>

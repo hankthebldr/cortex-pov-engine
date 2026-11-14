@@ -527,6 +527,16 @@ describe('the panel says "this instance" and "the tenant", never internal names'
   })
 })
 
+describe('an unread panel says "not read" once', () => {
+  it('the quiet line carries it; the sentence below only says what Refresh does', async () => {
+    installRoutes({ 'GET /api/runs/r1/tenant-evidence': NOT_READ })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByText(S.TENANT_EVIDENCE_NOT_READ)).toBeInTheDocument())
+    expect(S.TENANT_EVIDENCE_NOT_READ).toBe('Refresh reads it once; nothing is read automatically.')
+    expect(panel().textContent.match(/Not read from the tenant yet/g)).toHaveLength(1)
+  })
+})
+
 describe('a stored read that could not be loaded is unknown, not "never read"', () => {
   it('a failed GET says the stored read could not be loaded', async () => {
     installRoutes({

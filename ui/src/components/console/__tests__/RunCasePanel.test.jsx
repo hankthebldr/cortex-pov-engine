@@ -115,15 +115,15 @@ describe('RunCasePanel', () => {
     expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
   })
 
-  it('NO_CASE_YET says the next reconcile advances it, not a refresh', () => {
+  it('NO_CASE_YET says the next Read back advances it, not a refresh', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [],
       shared_with_other_runs: false }} />)
     const hint = screen.getByTestId('run-case-no-case-yet')
-    expect(hint.textContent).toMatch(/the next reconcile/)
+    expect(hint.textContent).toMatch(/the next Read back/)
     expect(hint.textContent).toMatch(/A refresh re-reads cases only/)
     // Identical to NO_CASE_YET_HINT in core/connectors/case_ledger.py.
     expect(NO_CASE_YET_HINT).toBe(
-      'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
+      'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
   })
 
   it('renders read_at as UTC', () => {
@@ -179,5 +179,17 @@ describe('RunCasePanel Read back action', () => {
     expect(screen.queryByRole('button')).toBeNull()
     rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
     expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+describe('RunCasePanel names the console verb, not "reconcile"', () => {
+  it('its empty, no-case and unreadable copy says Read back', () => {
+    const { container, rerender } = render(<RunCasePanel ledger={null} />)
+    expect(container.textContent).toContain('Not read yet — Read back the run.')
+    rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
+    expect(container.textContent).not.toMatch(/reconcile/i)
+    rerender(<RunCasePanel ledger={{ ...LEDGER, code: undefined }} />)
+    expect(screen.getByTestId('run-case-unreadable').textContent).toContain('Read back the run to rebuild it.')
+    expect(container.textContent).not.toMatch(/reconcile/i)
   })
 })

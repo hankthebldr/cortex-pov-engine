@@ -9,6 +9,7 @@ import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
 import ReadBackButton from '../ReadBackButton.jsx'
+import { ReadBackProvider } from '../useReadBack.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
 
 void React
@@ -40,26 +41,42 @@ describe('ReadBackButton', () => {
     expect(posts(handler)).toEqual([])
   })
 
-  it('confirm posts /api/runs/r1/reconcile?connector=xsiam once, even when confirmed twice', async () => {
-    let release
-    const gate = new Promise((r) => { release = r })
-    const handler = installRoutes({ 'POST /api/runs/r1/reconcile': async () => { await gate; return SUMMARY } })
+  it('confirm posts /api/runs/r1/reconcile?connector=xsiam once', async () => {
+    const handler = installRoutes({ 'POST /api/runs/r1/reconcile': SUMMARY })
     const onDone = vi.fn()
     render(<ReadBackButton runId="r1" onDone={onDone} />)
     fireEvent.click(screen.getByRole('button', { name: 'Read back' }))
-    const confirm = screen.getByRole('dialog').querySelector('.btn--primary')
-    fireEvent.click(confirm)
-    fireEvent.click(confirm)
-    // While the read is in flight the button says so and cannot be used.
-    const busy = await screen.findByRole('button', { name: 'Reading…' })
-    expect(busy).toBeDisabled()
-    release()
+    fireEvent.click(screen.getByRole('dialog').querySelector('.btn--primary'))
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
     const sent = posts(handler)
     expect(sent).toHaveLength(1)
     expect(sent[0].url.pathname).toBe('/api/runs/r1/reconcile')
     expect(sent[0].url.searchParams.get('connector')).toBe('xsiam')
     expect(onDone.mock.calls[0][0]).toMatchObject({ ok: true })
+  })
+
+  it('two buttons for one run under one provider, both confirmed in flight, post once', async () => {
+    let release
+    const gate = new Promise((r) => { release = r })
+    const handler = installRoutes({ 'POST /api/runs/r1/reconcile': async () => { await gate; return SUMMARY } })
+    render(
+      <ReadBackProvider>
+        <ReadBackButton runId="r1" />
+        <ReadBackButton runId="r1" />
+      </ReadBackProvider>,
+    )
+    const [first, second] = screen.getAllByRole('button', { name: 'Read back' })
+    // Open both confirms before either is confirmed, then confirm both.
+    fireEvent.click(first)
+    fireEvent.click(second)
+    const confirms = screen.getAllByRole('dialog').map((d) => d.querySelector('.btn--primary'))
+    expect(confirms).toHaveLength(2)
+    fireEvent.click(confirms[0])
+    fireEvent.click(confirms[1])
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Reading…' })).toHaveLength(2))
+    release()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Read back' })).toHaveLength(2))
+    expect(posts(handler)).toHaveLength(1)
   })
 
   it('opens with Cancel focused, so a reflexive Enter changes no verdict', async () => {
