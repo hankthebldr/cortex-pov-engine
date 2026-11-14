@@ -77,8 +77,6 @@ scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
 (plane, detection types, use case), and the active tab offers its most common
 tags as chips that filter the list; tags that differ only in case are one chip.
 
-||||||| parent of 2ce787e5 (docs(docs): document the launch dry run and refusals that write nothing)
-
 ### Added — a launch dry run, and a refused launch writes nothing
 
 `POST /api/runs/preflight` takes the launch body and runs every check
@@ -339,6 +337,21 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — the Launch gate is where a run starts: one Run (design C1, v33 MVP)
+
+The Launch gate page now holds the whole launch, top to bottom: **What runs**
+(the armed scenario) › **Readiness** (its preflight checks and tools) ›
+**Where it runs** (every agent with its state, where an offline agent is
+listed but cannot be chosen, plus the offline bundle) › **What it will do**
+(steps, detections it should raise, who it runs as, "writes to Cortex or the
+firewall: never", who tears down) › an authorisation tick that starts unticked ›
+one **Run**. Run stays disabled until a target is chosen, the tick is given and
+no check blocks, and every reason is listed under it. For the offline bundle,
+Run builds and saves the bundle and records the run, which reads Staged; the
+separate "Download bundle" button is gone. This POVengine's own readiness
+follows below the panel. The "New POV run" and old readiness links land on
+the Launch gate.
+
 ### Changed — the warning colour is a muted gold; greens come in shades
 
 Henry, 2026-11-13: the console's yellow is muted to an accent and green
@@ -359,8 +372,6 @@ line. The error badge ("5 not ok") is greyscale and sized like a button; only
 its "!" carries the gold or coral accent, so it no longer reads as a filled
 alarm next to the action it describes.
 
-||||||| c4528ab2
-||||||| 5874d974
 ### Changed — TTP cards filter by subdomain, not status or platform
 
 The TTP cards page now filters by **Subdomain** (the UC / TC index's
@@ -370,7 +381,6 @@ card, and the Platform filter are gone, as are the platform count and the
 platform chips on each card. A card shows its status only when it is a
 draft or deprecated.
 
-||||||| c4528ab2
 ### Added — run detail says why a test case is pending (design C3)
 
 A run whose test-case verdict is pending with nothing scored now says why on
