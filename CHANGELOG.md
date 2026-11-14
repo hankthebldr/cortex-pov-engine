@@ -372,6 +372,16 @@ line. The error badge ("5 not ok") is greyscale and sized like a button; only
 its "!" carries the gold or coral accent, so it no longer reads as a filled
 alarm next to the action it describes.
 
+### Fixed — the ANALYTICS plane is no longer PANW orange
+
+Design v26 keeps PANW orange for the NGFW family tint alone, but the
+ANALYTICS plane (the correlation engine) still used it as its categorical
+tint, so analytics lanes, dots and chips read as firewall. ANALYTICS now uses
+the DS ink-400 (`#9A9A9A`), a neutral for the engine that sits over every
+plane rather than a sensor. The tokens and the plane vocabulary
+(`povdata/planes.js`) agree, and the drift guard now pins it and asserts it is
+not orange.
+
 ### Changed — TTP cards filter by subdomain, not status or platform
 
 The TTP cards page now filters by **Subdomain** (the UC / TC index's
@@ -415,6 +425,47 @@ states the same verdict and reason. A verdict without a reason draws neither.
   list or a run's results that fail to load are said to have failed, never shown
   as empty. The coverage percentages and the new/regression flags are gone with
   the old grid.
+
+### Added — every component page explains itself (design v33 C7)
+
+- **Each of the eight component pages now opens with four plain lines** under
+  its header: What it is · Why the POV needs it · What it unlocks · Where it
+  lives. They stay on every tab (Overview, Setup and the management tab). The
+  copy lives in one module, `ui/src/components/console/componentAbout.js`,
+  keyed by component id; a page whose id has no entry renders without the
+  block rather than borrow another component's words.
+- **The canvas copy was held to what the code does.** The Tenant and Firewall
+  lines say POVengine never writes to either. The Agents line says nearly
+  every scenario step runs on an agent (an offline bundle runs without one),
+  in place of a five-plane list. The HTTP collector line names the log
+  streams the collector-class emitters actually send; AI access and AI
+  runtime scenarios do not go through it. Read-back is described as checking a
+  run's expected detections, not as the source of every Detected result,
+  because a result can still be marked by hand. The XDR Collector and Cortex
+  Engine lines say POVengine maps no scenario to them yet (the canvas had the
+  Engine unlocking ANALYTICS scenarios), and the Cortex paths match the ones
+  their Setup steps already give.
+
+### Added — header Back / Forward and a breadcrumb (design C9)
+
+- **Back and Forward in the header** walk every page, tab, run and deep dive
+  the URL has named, in the order you opened them. ⌘[ / ⌘] on a Mac and
+  Ctrl+[ / Ctrl+] elsewhere do the same, except while focus is in a text field.
+  Each button is disabled when there is nowhere to go.
+- **The router keeps the history, not the browser.** Opening a run, a tab or a
+  card rewrites the current browser entry (`setParams` uses `replaceState`),
+  so `history.back()` could not see those steps. `useConsoleRouter` now keeps
+  its own list (`app/navHistory.js`). A change to a list filter (`q`, `status`,
+  `page`, …) rewrites the current entry rather than adding a step, a retired
+  page that only redirects is never kept, and the browser's own Back onto the
+  previous entry moves the header's position with it.
+- **A breadcrumb beside the buttons: journey › page › object.** The journey is
+  the rail group, the page is the rail item and the page itself when it is a
+  tab ("Catalog › UC / TC index"), and the object is the run, scenario, card,
+  test case, package or component the URL opens. Every crumb but the last is a
+  link; the last is the current page, drawn in the selected state. When the
+  header is crowded the outer crumbs shorten first and the bar scrolls below a
+  floor, as its other controls do.
 
 ### Added — Dashboards on the rail (design C8)
 

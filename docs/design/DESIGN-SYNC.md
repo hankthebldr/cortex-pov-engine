@@ -188,6 +188,7 @@ or a link.
 | Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
 | Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
 | Component page shape + Configure frame | — | `component/ComponentPage.jsx` · `ConfigureFrame.jsx` · `checks.js` |
+| Component About lines (v33 C7: What it is · Why the POV needs it · What it unlocks · Where it lives) | every component page, every tab | `components/console/componentAbout.js` (copy, keyed by component id) → `ComponentPage.jsx` |
 | Scenarios (Library) | Compose & simulate › Scenarios | `components/console/OperationsView.jsx` · `ScenarioGrid.jsx` · `ScenarioInspector.jsx` (the scenario sheet) |
 | Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
 | Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
@@ -206,6 +207,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
+| Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
 | Lane and plane vocabulary | — | `components/console/povdata/` |
