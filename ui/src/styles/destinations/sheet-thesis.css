@@ -1,0 +1,104 @@
+/* ============================================================
+   Deep-dive sheets — design v33, change C10.
+   Component: ui/src/components/console/WhyThisMatters.jsx
+   Used by:   ScenarioInspector (scenario sheet), TtpBrowserView's
+              TtpDetail (TTP card) and its DetectionItem (one detection).
+
+   1. "Why this matters": Thesis · Why we simulate it · What proves it ·
+      What it needs, a 2 × 2 grid of tiles divided by hairlines, one
+      column on a phone. A part the document has not written reads in
+      the muted ink, never in the colour of a real answer.
+   2. .sheet-link: an action that only navigates is a link with a
+      trailing arrow, never dressed as a button.
+   Tokens only (cortex-tokens.css); no hex.
+   ============================================================ */
+
+/* ── 1. Why this matters ──────────────────────────────────────────── */
+.why-matters { margin: 0 0 16px; }
+.why-matters__title {
+  margin: 0 0 9px;
+  font: 600 13px/1 var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .why-matters__title { font-size: 13px; font-weight: 600; letter-spacing: 0; line-height: 1; }
+.why-matters__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bd);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.why-matters__part {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 13px;
+  background: var(--s1);
+}
+.why-matters__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--s3);
+  color: var(--tx2);
+}
+.why-matters__part--thesis .why-matters__glyph { background: var(--ac-soft); color: var(--ac-ink); }
+.why-matters__part--why    .why-matters__glyph { background: var(--s3);      color: var(--tx); }
+.why-matters__part--proves .why-matters__glyph { background: var(--pos-soft); color: var(--pos-ink); }
+.why-matters__part--needs  .why-matters__glyph { background: var(--s3);      color: var(--tx2); }
+.why-matters__body { min-width: 0; }
+.why-matters__label {
+  display: block;
+  margin: 2px 0 6px;
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.why-matters__line {
+  margin: 0 0 4px;
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+.why-matters__line:last-child { margin-bottom: 0; }
+.why-matters__part--unwritten .why-matters__line { color: var(--tx3); }
+
+@media (max-width: 640px) {
+  .why-matters__grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Where each sheet places it: first in the body, above the chain (scenario),
+   above the summary (TTP card), at the top of an opened detection. */
+.theme-console .scenario-sheet__thesis { padding: 14px 18px 0; }
+.theme-console .scenario-sheet__thesis .why-matters { margin-bottom: 4px; }
+.ttpb-detail .why-matters { margin: 14px 0 0; }
+.ttpb-det-item__body .why-matters { margin: 0 0 10px; }
+
+/* ── 2. Navigation-only actions are links ─────────────────────────── *
+   A file to save (the TTP card's Navigator layer) reads the same way,
+   with ↓ in place of →: it is not one of the verbs. */
+.sheet-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 500 12px/1.2 var(--font-ui);
+  color: var(--info);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sheet-link:hover { text-decoration: underline; }
+.sheet-link:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; border-radius: 2px; }
+.ttpb-detail__actions .sheet-link { align-self: center; margin-left: 4px; }

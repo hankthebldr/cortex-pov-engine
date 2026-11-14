@@ -38,7 +38,7 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
     expect(labels(breadcrumbFor('runs', { compare: '1' }))).toEqual(['Run & observe', 'Runs', 'Compare runs'])
   })
 
-  it('an open scenario, from Scenarios, the Composer and the guided launch', () => {
+  it('an open scenario, from Scenarios, the Composer and the Launch gate', () => {
     expect(labels(breadcrumbFor('library', { open: 'SIM-EDR-001' })))
       .toEqual(['Compose & simulate', 'Scenarios', 'Scenario SIM-EDR-001'])
     expect(labels(breadcrumbFor('composer', { from: 'SIM-EDR-001' })))
@@ -48,6 +48,10 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
     const guided = breadcrumbFor('guided', { arm: 'SIM-EDR-001' })
     expect(labels(guided)).toEqual(['Compose & simulate', 'Launch gate', 'Scenario SIM-EDR-001'])
     expect(targets(guided)).toEqual(['library', 'guided', null])
+    // The launch is the Launch gate (#299); the old guided route only redirects there.
+    const gate = breadcrumbFor('preflight', { arm: 'SIM-EDR-001' })
+    expect(labels(gate)).toEqual(['Compose & simulate', 'Launch gate', 'Scenario SIM-EDR-001'])
+    expect(targets(gate)).toEqual(['library', 'preflight', null])
   })
 
   it('a component: its page sits under Components, in Onboard & connect', () => {

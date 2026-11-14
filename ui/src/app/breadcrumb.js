@@ -22,7 +22,7 @@ function journeyHome(groupId) {
   return DESTINATIONS.find((d) => d.group === groupId && !d.hidden)?.id || null
 }
 
-const SCENARIO_PAGES = { library: [], composer: ['from'], guided: ['arm'] }
+const SCENARIO_PAGES = { library: [], composer: ['from'], preflight: ['arm'], guided: ['arm'] }
 
 // A run id is a UUID; the crumb shows its first eight characters, as the run
 // list and the "Result of" bar do, and keeps the whole id in its title.
