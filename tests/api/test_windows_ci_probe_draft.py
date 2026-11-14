@@ -76,7 +76,7 @@ PROBE_SHELLS = {
 #: Every phase the job must run, in order. Kept here AND in the script's
 #: ValidateSet AND in ci.yml; the tests below hold the three equal.
 PHASES = [
-    "floor", "go", "build", "render", "parse", "pssa", "boot",
+    "floor", "go", "build", "render", "parse", "pssa", "sandbox", "boot",
     "install", "pull", "abort", "push", "uninstall", "collect",
 ]
 
