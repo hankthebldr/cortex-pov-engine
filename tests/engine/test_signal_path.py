@@ -147,7 +147,10 @@ def test_corpus_signal_paths():
 
     SIM-MP-038 on 2026-11-13: ENDPOINT 533 -> 534 (step-01, dig on the
     beacon host) and COLLECTOR 97 -> 100 (steps 02-04, the corpus's first
-    ``channel: eal`` steps, placed by their collector plugins)."""
+    ``channel: eal`` steps, placed by their collector plugins).
+
+    SIM-EDR-027 on 2026-11-13: ENDPOINT 534 -> 539 (its 5 steps, all
+    commands on the beacon host)."""
     counts: dict[str, int] = {}
     unplaced = []
     for sid, step in _corpus_steps():
@@ -156,4 +159,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 534, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 539, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}

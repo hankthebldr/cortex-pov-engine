@@ -1,13 +1,13 @@
 {
  "generated_by": "scripts/detdev/manifest.py",
  "summary": {
-  "pairs": 366,
+  "pairs": 365,
   "by_platform": {
-   "linux": 56,
+   "linux": 55,
    "windows": 310
   },
   "by_source": {
-   "cortex analytics alert": 306,
+   "cortex analytics alert": 305,
    "not recorded": 60
   },
   "declared_rows": {
@@ -15,7 +15,7 @@
    "Prevention": 0,
    "ABIOC": 80,
    "Analytics": 43,
-   "BIOC": 876,
+   "BIOC": 873,
    "XQL": 9
   },
   "pairs_by_finding": {
@@ -33,7 +33,6 @@
   },
   "pairs_with_no_finding": [
    "TTP-0000-0029",
-   "TTP-0000-0033",
    "TTP-0000-0315",
    "TTP-0000-0317",
    "TTP-0000-0318",
@@ -699,25 +698,6 @@
     "technique not named by the reviewed corpus: T1027.001",
     "commands name a routable host: example.com"
    ]
-  },
-  {
-   "card": "TTP-0000-0033",
-   "scenario": "SIM-DRAFT-033",
-   "name": "SSH Exfiltration of Compressed Data",
-   "platform": "linux",
-   "source": {
-    "alert": "A compressed file was exfiltrated over SSH",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compressed-file-was-exfiltrated-over-ssh"
-   },
-   "techniques": [
-    "T1048",
-    "T1560"
-   ],
-   "steps": 3,
-   "rows": {
-    "BIOC": 3
-   },
-   "findings": []
   },
   {
    "card": "TTP-0000-0034",

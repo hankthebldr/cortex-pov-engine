@@ -122,6 +122,15 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "ABIOC (TC-EDR-03) with full causality (TC-EDR-05). The host-impact counterpart to the ESXi "
         "path (SIM-EDR-019) and to the SAFE-MODE non-encrypting variant (SIM-EDR-008); all three rows "
         "already evidenced — depth, not new index breadth."),
+    "SIM-EDR-027": (["TC-EDR-05"], REMAP,
+        "Archive-then-SSH-client exfiltration attempt on Linux — a decoy tree archived with tar and "
+        "gzip, then named to scp and piped to ssh at a .invalid host, so the transfer fails by design "
+        "and no data leaves the host. The claim is the process chain (archiver, then SSH client, one "
+        "host), not a verdict. It is declared as six Tier-2 XQL rows plus operator-installed "
+        "CR-EDR-0027; nothing has been run on an endpoint. The built-in alert 'A compressed file "
+        "was exfiltrated over SSH' is hunt content only (no SSH session is opened; Informational). "
+        "TC-EDR-05 is already evidenced — depth, not new index breadth. TC-DLP-01 is left off on "
+        "purpose: nothing here inspects content."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,

@@ -255,14 +255,6 @@
   "scenario_file": "scenarios/edr/edr-053-linux-possible-binary-padding-using-dd.yml",
   "scenario_id": "SIM-EDR-053"
  },
- "TTP-0000-0033": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0216-sim-edr-054.json",
-  "card_id": "TTP-2026-0216",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-054-linux-a-compressed-file-was-exfiltrated-ov.yml",
-  "scenario_id": "SIM-EDR-054"
- },
  "TTP-0000-0034": {
   "card_file": "detection_scanner/ttps/TTP-2026-0217-sim-edr-055.json",
   "card_id": "TTP-2026-0217",

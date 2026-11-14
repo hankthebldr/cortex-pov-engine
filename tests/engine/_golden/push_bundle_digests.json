@@ -419,6 +419,10 @@
     "bash": "79cc3ff99dee26a25efff1502bb7aaec9c9f5ff7327ebda55239d8e0e73cd5df",
     "powershell": null
   },
+  "SIM-EDR-027": {
+    "bash": "207780c4def2ef0c0b359822685b5eaffba02a357cb991579885473d62e8af7b",
+    "powershell": null
+  },
   "SIM-EMAIL-001": {
     "bash": "1b672530c35eb89c279c2e0b223a42dde42f6a9b5a1b45c228fc92c176eb7200",
     "powershell": null
