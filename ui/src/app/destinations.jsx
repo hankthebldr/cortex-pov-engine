@@ -298,7 +298,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
         planes={railPlanes}
         pinned={pinned}
         onSelectPlane={handleSelectPlane}
-        onSelectPinned={(id) => { armedRef.current = id; onNavigate('guided', { arm: id }) }}
+        onSelectPinned={(id) => { armedRef.current = id; onNavigate('preflight', { arm: id }) }}
         onUnpin={unpin}
       />
       <Suspense fallback={<DestinationLoading />}>
@@ -315,7 +315,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           isPinned={isPinned}
           togglePin={togglePin}
           onArmScenario={(sid) => { armedRef.current = sid }}
-          onContinueToLaunch={(id) => onNavigate('guided', { arm: id || armedRef.current })}
+          onContinueToLaunch={(id) => onNavigate('preflight', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
             onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
           onRunComplete={(run) =>
@@ -478,7 +478,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
               page, where every launch starts. */}
           <div className="runs-surface__actions">
             <Button variant="secondary" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</Button>
-            <Button variant="primary" title="New POV run" onClick={() => onNavigate('guided')}>Run</Button>
+            <Button variant="primary" title="Launch gate" onClick={() => onNavigate('preflight')}>Run</Button>
           </div>
         </div>
         {activeRun && <TelemetryStrip run={activeRun} onAbort={onAbortRun} />}
