@@ -263,6 +263,15 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Added — run detail says why a test case is pending (design C3)
+
+A run whose test-case verdict is pending with nothing scored now says why on
+its own page, not only on the Topology and Techniques tabs. Under the
+lifecycle strip a "Test case" line shows PENDING, the reason chip
+("nothing executed" or "detectors soaking") and the test case id, with the
+action as a visible sentence. Under the chain, the Cortex Engine terminal
+states the same verdict and reason. A verdict without a reason draws neither.
+
 ### Security
 
 - **A path override on a tenant credential could send the tenant's API key to
