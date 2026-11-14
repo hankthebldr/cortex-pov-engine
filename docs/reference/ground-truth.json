@@ -115,10 +115,10 @@
       "api_route": 1,
       "delete": 6,
       "get": 102,
-      "post": 46,
+      "post": 47,
       "put": 8
     },
-    "decorator_count": 163,
+    "decorator_count": 164,
     "router_files": 29
   },
   "iac_modules_aws": 11,

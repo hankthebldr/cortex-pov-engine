@@ -309,6 +309,7 @@ stamp `severity: "high"` on every rule.
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
 | POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
@@ -378,9 +379,26 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   `[OUTPUT CHUNK TRUNCATED: N of M bytes kept …]` is appended. The cut runs in a
   worker thread. Stored output is capped at 32 MiB per run, and past the cap the
   same frame and integrity lines still survive.
-- **Never executed is never matched (OPS-01).** A launch refused after seeding
-  (`LAUNCH_REFUSED`) and an orphan failed by `rehydrate()` (`TASK_LOST_ON_RESTART`)
-  have their Results stamped `not_executed`. The same holds for a run still
+- **A refused launch writes nothing, and its dry run says so first (2026-11-13).**
+  Every launch refusal is decided in `Orchestrator._evaluate_launch` before the
+  Run row exists, so a refused launch creates no Run, no Result, no task and no
+  `run.status` frame (the consent gate's rule, now every refusal's).
+  `POST /api/runs/preflight` runs the same function to the end and reports all
+  of them. Refusals that used to leave a `failed` run (payload shelf, missing
+  target, stitch context, a composed run's second endpoint, the container-agent
+  gate) no longer do. A composed run's endpoint enrollment is now judged before
+  the container-agent gate, so an unenrolled endpoint is the first answer. The
+  dry run's `warnings[]` include the SOC Framework advisories a launch would
+  carry. New codes: `SCENARIO_NOT_FOUND` (404, was `LAUNCH_FAILED`
+  422), `PULL_TARGET_MISSING` (422), `STITCH_CONTEXT_INVALID` (409, was in the
+  prose only), and for the push cluster clause `CLUSTER_CONSENT_REQUIRED`,
+  `PRIVILEGED_K8S_DISABLED`, `CLUSTER_POSTURE_REFUSED` (409). That clause reads
+  `Scenario.cluster_posture`, which is not an ORM column, so it does not fire at
+  launch today; the bundle download is where posture is gated.
+- **Never executed is never matched (OPS-01).** An orphan failed by `rehydrate()`
+  (`TASK_LOST_ON_RESTART`) has its Results stamped `not_executed`, as do the rows
+  of a launch refused after seeding on a build before 2026-11-13
+  (`LAUNCH_REFUSED`; current code no longer writes such rows). The same holds for a run still
   queued or aborted before delivery, because reconcile drops beacon-step rows
   whose task no beacon collected (`delivered_at` NULL). An alert pasted into
   `/observations` for such a run is never credited.
@@ -3067,7 +3085,11 @@ pwsh 7 / injected transports only. Round 2's additions are in §11.
 | `PULL_TARGET_OS_UNRECOGNISED` (409) | `POST /api/runs` (pull) | The agent reports no OS SimCore can target. |
 | `TARGET_AGENT_NOT_ENROLLED` (409) | `POST /api/runs` | Single-endpoint pull at an unenrolled agent, or a composed run's per-step `target`. |
 | `RUN_ALREADY_TERMINAL` (409) | `POST /api/runs/{id}/complete` | Late or duplicate `/complete`; nothing applied (was a 200). |
-| `LAUNCH_REFUSED` | Result `outcome_reason` | Launch refused after seeding; Results `not_executed`, never matched. |
+| `SCENARIO_NOT_FOUND` (404) | `POST /api/runs`, `/preflight` | No scenario with that id (was `LAUNCH_FAILED` 422). |
+| `PULL_TARGET_MISSING` (422) | `POST /api/runs` (pull), `/preflight` | Pull launch with no `target_agent_id`; nothing written (it used to leave a `failed` run). |
+| `STITCH_CONTEXT_INVALID` (409) | `POST /api/runs` (pull), `/preflight` | The stored `stitch_context` no longer validates; nothing written. |
+| `CLUSTER_CONSENT_REQUIRED` · `PRIVILEGED_K8S_DISABLED` · `CLUSTER_POSTURE_REFUSED` (409) | `POST /api/runs` (push), `/preflight` | Cluster-posture clause: a consent key to set, the deployment switch, or a posture no key unlocks. Not reachable at launch until `cluster_posture` is an ORM column. |
+| `LAUNCH_REFUSED` | Result `outcome_reason` | Historical: a launch refused after seeding on a build before 2026-11-13. Results `not_executed`, never matched. Current code writes no row for a refused launch. |
 | `TASK_LOST_ON_RESTART` | Result `outcome_reason` | Orphan failed by `rehydrate()`; Results `not_executed`, never matched. |
 | `BEACON_ABANDONED_TASK` | run marker | Delivered run whose `/complete` never arrived; reaped under the four conditions in §1.3. |
 | `UNSCOPED_MATCH` | Result `outcome_reason` | A reconcile match with no host to scope against stays `pending`, no MTTD (§1.15). |
