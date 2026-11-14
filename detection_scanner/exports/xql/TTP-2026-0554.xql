@@ -46,7 +46,7 @@ dataset = xdr_data
 | comp count() as sudoedit_starts, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id, actor_causality_id, causality_actor_process_image_name
 | filter sudoedit_starts >= 20
 
-## VALIDATION — EDR-028 Read-Back — Recorded Sudoedit -s Starts Per Endpoint In The Last Hour (run this on the first lab run and compare with attempts_made in the step-03 output before trusting the floor of 20; image_names shows whether the sensor reports sudo or sudoedit)
+## VALIDATION — EDR-028 Read-Back — Recorded Sudoedit -s Starts Per Endpoint In The Last Hour (compare recorded_starts with attempts_made in the step-03 output: the two count rows and CR-EDR-0028 need 20; image_names shows whether the sensor reports sudo or sudoedit)
 # purpose: investigation
 # dataset: xdr_data
 

@@ -56,7 +56,17 @@
 #
 # Timing. Steps are spaced 40 s apart because back-to-back steps lost
 # telemetry in this lab on 2026-11-11. The chain takes a little over two
-# minutes.
+# minutes. The agent uploaded telemetry in batches about five minutes apart
+# in this lab, so verify no sooner than six minutes after the run completes
+# (success_criteria).
+#
+# Lab run. One pull run on pov-target-01 (Ubuntu 24.04, Cortex XDR agent
+# 9.4.0.470, report mode, identity root, beacon pov-target-01-4dcdce) on
+# 2026-11-14 UTC: 7714f4ce (00:50:47 to 00:52:57). All four steps exited 0.
+# SimCore's Tier-2 verify at 00:57:30 issued 3 queries and all three XQL rows
+# passed. CR-EDR-0026's XQL, run as an ordinary query at 01:11, was accepted
+# and returned the chain's row; the rule was not installed, so no issue was
+# raised from it. The built-in alert was not raised (success_criteria).
 scenario_id: SIM-EDR-026
 name: "Linux crond Masquerade — the Shell Copied and Renamed to crond in a Scratch Directory, Then Run From That Path"
 version: "1.0"
@@ -168,8 +178,21 @@ success_criteria: |
   deduplication period and XDR Agent as the required data. The page publishes
   no trigger predicate, so step-01 performs both readings of that sentence:
   cp straight to the name crond, and cp under another name followed by mv to
-  crond. This alert has not been observed in a lab run, and this scenario has
-  not been run on the lab endpoint or against the tenant.
+  crond.
+  Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC, 00:50:47 to 00:52:57):
+  the alert was NOT raised. No endpoint issue appeared in the tenant between
+  00:50 and 01:55, and SimCore's reconcile at 01:45 pulled 1 alert for the
+  run window (an unrelated firewall alert) and matched 0. The engine holds
+  this row pending with reason ANALYTICS_ACTIVATION_PERIOD, as designed, so
+  it reads neither missed nor detected. Context, with no conclusion drawn:
+  the agent was first seen in the tenant on 2026-11-10, so it was 4 days
+  into the 14-day activation period the page states; yet "Suspicious data
+  encryption", whose page states the same periods, fired on this endpoint
+  on 2026-11-11, one day after install
+  (docs/lab/2026-11-11-unit42-deep-real-verification.md). The cause is not
+  established. The row stays declared. A re-run after 2026-11-24 (14 days
+  after the agent's install), or a run on an endpoint whose agent is older,
+  would settle whether this chain raises it.
   Reading this row: the matcher credits it on the ATT&CK technique and on
   shared words as well as on the exact name. An Analytics BIOC issue with a
   different name on the same endpoint also marks it detected when it is
@@ -184,13 +207,27 @@ success_criteria: |
   a duration of 1 hour on the field agent_id, agent_hostname mapped to Host
   Name and agent_id mapped to Agent ID, and NO MITRE tag (an issue tagged
   T1036 would also be credited to the XQL rows on step-01 and step-02, which
-  share that technique). CortexSim never writes it to the tenant, and its XQL
-  has not been run in any tenant.
+  share that technique). CortexSim never writes it to the tenant. Its XQL,
+  the not in lists and the !~= regex included, was run as an ordinary
+  read-only query over a one-hour time frame at 01:11 UTC on 2026-11-14 and
+  the tenant accepted it. It returned one row for pov-target-01: legs 3,
+  events 30, first_seen 00:50:55.117, last_seen 00:52:55.267 (run
+  7714f4ce). The rule itself was not installed (no tenant write was made),
+  so it has not run on a schedule, no issue was raised from it, and this
+  row has not been observed as an issue.
   Tier-2-verify-only (3 of 5): the XQL rows on step-01, step-02 and step-03.
   They are scored by POST /api/runs/{id}/verify and never by an alert, so
   they never raise Detection Accuracy. For a pull run verify queries the
   run's own time window; for a push run it looks back one hour from when it
-  is called, so verify within the hour.
+  is called, so verify within the hour. In lab run 7714f4ce SimCore's
+  verify at 00:57:30 UTC, about 4.5 minutes after the run completed, issued
+  3 queries and all three rows passed.
+  Verify timing: call verify no sooner than six minutes after the run
+  completes. Measured on the lab endpoint on 2026-11-14 with SIM-EDR-027:
+  the agent uploads endpoint telemetry in batches about five minutes apart
+  (that run's events from 00:54:15 to 00:56:15 UTC all carried one insert
+  time of 00:58:38), and a verify called 97 s after that run ended wrote
+  fail on rows whose events were not ingested yet.
   The run verdict needs two things: Detection Accuracy of at least 20%, and
   the three XQL rows through verify.
   Detection Accuracy counts only alert-backed observations, so its ceiling is
@@ -216,9 +253,10 @@ success_criteria: |
   nothing else here is Medium to join it. With the suppression
   above it is raised once per endpoint per hour, so one run gives one issue;
   that is the documented behaviour of issue suppression and has not been
-  exercised in this lab. Without suppression the rule raises a new issue on
-  every 10-minute run while the events stay inside the hour, up to six for
-  one run. Whether such repeats share a case has not been observed.
+  exercised in this lab, where the rule was not installed for run 7714f4ce.
+  Without suppression the rule raises a new issue on every 10-minute run
+  while the events stay inside the hour, up to six for one run. Whether such
+  repeats share a case has not been observed.
   Spacing: the built-in alert is deduplicated for one day, so a second run on
   the same endpoint within a day may raise no second issue. Launch at least
   75 minutes after the previous run on the same endpoint. Inside that time
@@ -236,9 +274,9 @@ moat_tier: "PARITY"
 steps:
   - id: step-01
     name: "Copy the shell to a file named crond, and copy-then-rename a second one, in a scratch directory"
-    # What the sensor is expected to record (this chain has not been run):
-    # PROCESS_START of cp twice and of mv once, with these paths on the command
-    # line, and file events on the two crond files. In this lab on 2026-11-11
+    # What the step produces for the sensor: PROCESS_START of cp twice and of
+    # mv once, with these paths on the command line, and file events on the
+    # two crond files. In this lab on 2026-11-11
     # FILE_CREATE_NEW and FILE_WRITE were recorded for files under /var/tmp and
     # FILE_RENAME was not seen, so the validation row accepts either a file
     # event on one of the two crond paths or the cp / mv process start that
@@ -247,6 +285,9 @@ steps:
     # This step performs both readings of the reference page's sentence
     # "Copies a file and renames it as crond.", which is why the built-in
     # alert's row sits here. This is the root step.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0 and
+    # the declared XQL row passed SimCore's Tier-2 verify. The built-in alert
+    # was not raised; success_criteria says what that does and does not show.
     command: |
       # REAL file copies and a REAL rename. Nothing here reads or writes cron:
       # no crontab, no /etc/cron*, no /usr/sbin/cron, no systemd unit.
@@ -312,6 +353,9 @@ steps:
     # (SIM-EDR-023 step-02). The last command inside the copy is a shell
     # builtin, so all three tools are forked children and none replaces the
     # crond process.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the copy ran id, uname
+    # and hostname as root, the step exited 0, and the declared XQL row passed
+    # SimCore's Tier-2 verify.
     # Exit code: 1 when the sandbox root is not a directory owned by the
     # running user with mode 700 (missing, a symlink, another user's, another
     # mode); nothing under it is executed then. Otherwise
@@ -360,6 +404,10 @@ steps:
     # the bundle's pipes. With the causality contract the beacon runs every
     # step under one anchor shell, so the instance survives into step-04; the
     # beacon also ends the anchor's process group when the run ends.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0; the
+    # lingering instance ran as pid 191326, name crond, exe
+    # /var/tmp/.cortexsim-crond/renamed/crond; the declared XQL row passed
+    # SimCore's Tier-2 verify.
     # Exit code: 1 when the sandbox root is not a directory owned by the
     # running user with mode 700 (nothing under it is executed then), when the
     # instance cannot start (its error is printed from its log), when it does
@@ -423,6 +471,11 @@ steps:
     # push_supported).
     # This step carries the operator-installed correlation, whose three legs
     # were all produced on this one host by step-01, step-02 and step-03.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0,
+    # stopped the lingering instance and removed the sandbox. CR-EDR-0026's
+    # XQL, run as an ordinary query over one hour at 01:11 UTC, was accepted
+    # and returned one row for pov-target-01 (legs 3, events 30); the rule was
+    # not installed, so no issue was raised from it.
     # Exit code: 1 when the sandbox root is not a directory owned by the
     # running user with mode 700 (the pidfile is not read then), when the
     # instance did not survive from step-03, or when it does not stop within
@@ -483,7 +536,7 @@ cleanup:
 
 author: "Henry Reed"
 created: "2026-11-13"
-last_updated: "2026-11-13"
+last_updated: "2026-11-14"
 tags:
   - edr
   - linux
