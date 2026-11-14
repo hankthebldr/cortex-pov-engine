@@ -1536,6 +1536,33 @@ escape every string behind it.
   `tests/connectors/test_issues_api_fields.py` (15 failures before the change).
   Nothing here ran against a tenant: tenant-verified is still 0.
 
+### Fixed — a collector target carries its Compression, and the preflight sends it
+
+- **Both collector preflights sent an uncompressed body whatever the step was
+  set to.** The campaign preflight and a collector target's "Send test record"
+  go through `preflight_collector`, which never read `compress`. In the
+  deathstar lab (PMA-2026-11-13), a collector set to gzip answered every
+  uncompressed POST with 400 `gzip compression error (invalid header)` and
+  ingested nothing. So against a gzip collector the preflight read `refused`
+  for a door a `compress: true` campaign used, and against an uncompressed one
+  it read `accepted` while a `compress: true` campaign got 400. The preflight
+  now gzips when the target says so.
+- **A collector target records its instance's Compression setting.**
+  `PUT /api/collector-targets/{name}` takes `compress` (default `false`, which
+  is what every target sent until now), reports it back, and applies it to its
+  own test record and to every bound step whose plugin can gzip, overriding
+  the step's inline value, the same way it already overrides URL and key. A
+  change of `compress` discards the stored check. `email_emitter` has no gzip
+  transport, so it is left alone. The startup migration adds the column, and
+  existing targets read as uncompressed.
+- **The remediation for `collector_rejected` names what the lab saw.** It used
+  to point at the content type, which the collector ignores. It now names
+  invalid JSON and a compression mismatch (400), a wrong path (404), and a
+  record over 5 MiB decompressed or a POST over 10 MiB on the wire (413). The
+  `collector_error` text keeps the documented 500 for a Log Format mismatch
+  and says that the two mismatches the lab tried came back as 400. The
+  offline bundle's copy says the same.
+
 ### Fixed — EAL collector emitters send the XSIAM API key bare
 
 - **The 14 collector emitters defaulted `auth_scheme` to `"Bearer"`,** so a
