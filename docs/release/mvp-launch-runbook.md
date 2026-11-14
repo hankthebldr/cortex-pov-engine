@@ -349,7 +349,7 @@ says the same:
 - **`tenant-verified` is 0.** No run and no assertion in this repo has been
   executed against a live Cortex tenant. Every green above comes from an
   injected transport. **Authored is not proven** — do not report the two as one
-  number. The console's Readiness surface states this verbatim.
+  number. The console's Launch gate states this verbatim.
 - **Windows pull has run only on a CI runner; it is not proven on a customer
   host.** The image serves a correct `PE32+` and a PowerShell installer. The
   `windows-2022` CI job ran green at `d7f4f29` (2026-11-10) and on the round-2

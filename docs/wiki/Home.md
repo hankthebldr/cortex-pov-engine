@@ -25,26 +25,26 @@ substrate and cross-plane stitching.
 
 ***tenant-verified is 0.*** Every green in the test suite and the console comes
 from an injected transport. **Authored is not proven.** The console's
-*Readiness* surface states this verbatim and renders the connector ladder as
+*Launch gate* states this verbatim and renders the connector ladder as
 four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
 
 ## Current state — counted, not estimated
 
-Copied **2026-11-12** (the 1.2.0 release) from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
+Copied **2026-11-13** (the 1.2.0 release) from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
 which `make ground-truth` regenerates from the real loader and registries, and
 which CI diffs on every push. This page is **not** gated; where it disagrees
 with `ground-truth.md`, that file wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **199** across **16 planes** |
-| Steps · step-detections | **823 · 1411** |
-| TTP detection cards | **197** |
+| Loadable scenarios | **201** across **16 planes** |
+| Steps · step-detections | **835 · 1430** |
+| TTP detection cards | **199** |
 | Assertion artifacts (POS/PLT/AUT) | **28** (18 · 7 · 3) |
 | EAL simulator plugins | **27** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
-| HTTP routes | **156** decorators · **166** served at boot |
+| HTTP routes | **163** decorators · **173** served at boot |
 | MITRE ATT&CK tactics | **14** |
 
 ```bash

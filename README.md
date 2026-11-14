@@ -5,9 +5,9 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-199-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-201-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1411-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1430-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **199 scenarios across 16 detection planes** through either a pull-model
+It runs **201 scenarios across 16 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -77,7 +77,7 @@ not free text.
 
 > [!WARNING]
 > **A meaningful slice of the corpus is placeholder.**
-> 98 of the corpus's 823 steps are marker-only, pure `echo`/`printf` a sensor
+> 98 of the corpus's 835 steps are marker-only, pure `echo`/`printf` a sensor
 > cannot see (`signal_quality` in
 > [`ground-truth.md`](docs/reference/ground-truth.md)), and the
 > [lab-readiness manifest](docs/reference/lab-readiness.md) counts 142
@@ -214,7 +214,7 @@ installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
 CortexSim ships as tagged GitHub Releases — **v1.2.0** is the release this
-tree describes, cut 2026-11-12 and tagged by `tag-on-main.yml` when it merges
+tree describes, cut 2026-11-13 and tagged by `tag-on-main.yml` when it merges
 to `main` (until that tag exists, **v1.1.1** is the latest published) — and
 the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
@@ -258,8 +258,8 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>199 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>197 TTP cards"]
+        SC["scenarios/<br/>201 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>199 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
@@ -695,8 +695,8 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 
 | Plane | Cortex engine | Scenarios | Primary driver |
 |---|---|---:|---|
-| CDR | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
-| Analytics | XSIAM Correlation Engine | 38 | multi-plane stitching |
+| CDR | Cortex Cloud / Prisma Cloud Compute | 29 | container-runtime exec · K8s manifests |
+| Analytics | XSIAM Correlation Engine | 39 | multi-plane stitching |
 | EDR | Cortex XDR Agent | 25 | identity harness · signalbench |
 | ITDR | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
 | NDR | Network Security / Firewall Analytics | 12 | EAL network plugins |
@@ -711,12 +711,12 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **199** | |
+| **Total** | | **201** | |
 
-**1,411 step-level expected detections** resolve against **2,260 catalog
+**1,430 step-level expected detections** resolve against **2,294 catalog
 detection objects** across the seven-value `detection_type` vocabulary
-(`Prevention` is the seventh, with 3 step-detections today), covering
-**239 MITRE techniques (128 base)**. XDM modeling rules are a normalization
+(`Prevention` is the seventh, with 2 step-detections today), covering
+**240 MITRE techniques (128 base)**. XDM modeling rules are a normalization
 *substrate*: surfaced and exported, counted informationally, not a detection type.
 
 <details>
@@ -724,14 +724,14 @@ detection objects** across the seven-value `detection_type` vocabulary
 
 | Type | Count | What it is |
 |---|---:|---|
-| `XQL` | 554 | query-defined detection |
+| `XQL` | 570 | query-defined detection |
 | `BIOC` | 374 | behavioral IOC |
-| `ABIOC` | 163 | PANW-authored, auto-tuned behavioral ML with a causality chain |
-| `Correlation` | 142 | multi-source stitched rule |
+| `ABIOC` | 164 | PANW-authored, auto-tuned behavioral ML with a causality chain |
+| `Correlation` | 145 | multi-source stitched rule |
 | `IOC` | 119 | atomic indicator |
 | `Analytics` | 56 | baseline-deviation analytic |
-| `Prevention` | 3 | agent prevention-module block (two-witness rule) |
-| **Total** | **1411** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
+| `Prevention` | 2 | agent prevention-module block (two-witness rule) |
+| **Total** | **1430** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
 
 </details>
 
@@ -1083,9 +1083,9 @@ cortex-pov-engine/
 │   └── models.py               20 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 199 scenario YAML, per plane
+├── scenarios/                ← 201 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 197 TTP cards → 2,260 detection objects
+├── detection_scanner/ttps/   ← 199 TTP cards → 2,294 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules
@@ -1134,7 +1134,7 @@ without evidence**.
 Two of these are load-bearing in a non-obvious way:
 
 - **The Windows cross-compile arm.** The beacon once silently could not compile
-  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 199 do
+  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 201 do
   today). Compiling is not executing: only the `windows` job runs the beacon on
   Windows. Every third-party action in every workflow is pinned to a commit
   SHA.
@@ -1180,7 +1180,7 @@ make test-agent-cross   # beacon cross-compile gate
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
   — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0** and **v1.1.1** are published.
-  **v1.2.0** is the release this tree describes, cut 2026-11-12; `tag-on-main.yml`
+  **v1.2.0** is the release this tree describes, cut 2026-11-13; `tag-on-main.yml`
   tags it from the first `## [x.y.z]` heading in `CHANGELOG.md` when the release
   PR merges to `main`, and until then **v1.1.1** (a security hotfix) is the
   latest. Releases up to v1.1.1 attached `install.sh`, `stage2-linux.tar.gz`,

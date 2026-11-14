@@ -1613,7 +1613,7 @@ measured value.
 (default `/public_api/v1/alerts/get_alerts_multi_events`), `incidents_path`
 (default `/public_api/v1/incidents/get_incidents`).
 
-> **Wire caveat (open as of 2026-08-06).** The console's Readiness surface calls
+> **Wire caveat (open as of 2026-08-06).** The console's Launch gate calls
 > `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`. **That
 > route does not exist** — it returns **405**, which the client's 404-only
 > fallback does not catch, so the DC sees `preflight failed: Method Not Allowed`.
@@ -1696,8 +1696,8 @@ Errors use the top-level `{"error", "code", "detail"}` shape.
 
 Added 2026-11-10 (branch `feature/api-ngfw-connection`). Spec:
 [`2026-11-10-ngfw-connection-wizard-design.md`](../superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md)
-(§12 lists where the build departs from it). Console: **Firewall** under *Manage*
-(`#/firewall`, `ui/src/components/console/FirewallView.jsx` + `firewall/*`).
+(§12 lists where the build departs from it). Console: **Components › Firewall**
+(`#/component-firewall`, `ui/src/components/console/component/FirewallComponent.jsx`; `#/firewall` redirects to its Sources tab).
 
 **Opt-in and read-only toward the firewall.** Nothing here is polled; every call to a
 firewall is an operator action. `core/integrations/panos/client.py::PanosClient` builds
