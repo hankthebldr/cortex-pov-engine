@@ -543,10 +543,15 @@ async def _read(db: AsyncSession, run: Run, results: list[Result], executed: lis
                                include_fields=ISSUE_INCLUDE_FIELDS) if ids else None
         probe_rows: Optional[list[dict]] = []
         probe_code = OK
+        probe_quota: dict[str, Any] = {}
         if ids:
             failed = _section_for(pres, read, "issue id")
             if failed is not None:
                 probe_rows, probe_code = None, failed["code"]
+                if probe_code == QUOTA_REFUSED:
+                    # Whose budget refused the probe, as a section records it.
+                    probe_quota = {"attempted": failed["attempted"],
+                                   "refused_locally": failed["refused_locally"]}
             else:
                 try:
                     probe_rows = [project_issue(r) for r in pres.observations]
@@ -555,7 +560,7 @@ async def _read(db: AsyncSession, run: Run, results: list[Result], executed: lis
         agreement_out = agreement(
             matcher_rows, attributed, probe_rows, run_host,
             tolerance_seconds=settings.CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS)
-        agreement_out["id_space"]["code"] = probe_code
+        agreement_out["id_space"].update(code=probe_code, **probe_quota)
         agreement_out = _scope_agreement(agreement_out, unscoped=unscoped,
                                          partial_window=partial_window)
         pairs = agreement_out["pairs"]
