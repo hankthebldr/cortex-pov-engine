@@ -452,14 +452,75 @@ tenant read is read-only. XQL calls count against the deathstar query budget, an
 | G4 | Re-run probe 1 (`SIM-DRAFT-lab-readiness-probe-pov-target-01-targets-20261113`, §2.1): `POST /api/runs` `{"scenario_id":"<that id>","mode":"pull","target_agent_id":"pov-target-01-4dcdce"}` | 12 identities `RUNUSER_OK`; leftovers section empty |
 | G5 | `ssh -J henry@192.168.1.110 henry@192.168.122.77 'systemctl is-active xdr-collector traps_pmd'` and `ssh henry@192.168.1.110 'virsh -c qemu:///system list'` | collector and agent `active`; `bvm-01` and `pov-target-01` running |
 
-Rebuild prerequisites: `fix/api-collector-preflight-compress` (930efd3c) must be merged into `dev` before the
-rebuild, or check 8.4 cannot pass. Drafts and runs live in the SimCore DB volume, so the probe drafts survive the
-rebuild.
+Rebuild prerequisite: `fix/api-collector-preflight-compress` (pushed at af15537e, PR pending) must be merged into
+`dev` before the rebuild, or check 8.4 cannot pass.
 
-**How a probe step runs** (8.2, 8.3). One `identity: root` draft step through the beacon, as in §2.1.
-`POST /api/scenarios/drafts` with the body shape of `SIM-DRAFT-lab-door-probe-xdr-collector-filestream-on-pov-target-01-bec86c`
-(one step, `tc_ref: TC-EDR-05`, one XQL expected detection marked diagnostic) and the command below, then
-`POST /api/runs`. Each probe gets a fresh nonce: `H=$(openssl rand -hex 3)`.
+**Run G1–G5 after 8.0a.** If the rebuild keeps the DB volume, 8.0a reduces to F2 (8.4's target) and the probe drafts
+still exist. Each POV starts from a blank engine (Henry, 2026-11-14), so plan for 8.0a in full.
+
+#### 8.0a Fresh instance (blank DB volume)
+
+A blank DB holds no tenant credential, no collector target, no agent row and no drafts. Credentials stay saved in
+the instance for the run. **Henry types every secret**; none goes into chat or a committed file.
+
+| # | Who | Step | Pass |
+|---|---|---|---|
+| F1 | Henry | Re-enter the deathstar credential, either in the console's tenant credential form or from his own terminal (the key is read without echo, so it never reaches shell history): `read -rs DS_KEY && DS_KEY="$DS_KEY" python3 -c 'import json,os;print(json.dumps({"name":"deathstar","kind":"xsiam_tenant","plaintext_secret":os.environ["DS_KEY"],"config":{"base_url":"https://api-deathstar-xsiam.xdr.us.paloaltonetworks.com","region":"US","auth_mode":"standard","api_key_id":"60","capabilities":["xql"]}}))' \| curl -s -X PUT localhost:8888/api/credentials/integrations -H 'content-type: application/json' --data @- && unset DS_KEY`. Config values are the ones the current instance holds (read 2026-11-14) | then G3 passes |
+| F2 | Henry | Declare the HTTP collector target: 8.4 step 1, with the rotated key in the write-only field | 8.4 step 2 reads `accepted` |
+| F3 | — | Beacon: after the rebuild the beacon gets a 404 on `/tasks` for its unknown id and re-registers itself with the same id (`agent/beacon/client.go` `reRegister`, GAP-AGENT-003) | G2 shows `pov-target-01-4dcdce` online within 2 min. If not, Henry mints an enrollment token (console, agents) and re-runs the installer one-liner on the VM, and every `target_agent_id` below becomes the new id |
+| F4 | Claude | Recreate the probe drafts with the `probe` helper below: probe 1 (G4) from the script in this section, and 8.2 and 8.3 from their own scripts | each prints a `run_id` |
+
+**Probe helper** (Mac, repo venv Python, stdlib only). It creates one `identity: root` draft from a script file and
+launches it on the beacon:
+
+```bash
+probe() {  # probe "<unique draft name>" <script file> [agent id]  -> prints the run_id
+  python3 - "$1" "$2" "${3:-pov-target-01-4dcdce}" <<'PY'
+import json, sys, urllib.request
+name, script, agent = sys.argv[1], open(sys.argv[2]).read(), sys.argv[3]
+det = [{"plane": "EDR", "type": "XQL", "outcome": "detect",
+        "description": "Diagnostic only - read back by hand, nothing is scored"}]
+body = {"name": name, "plane": "EDR", "detection_types": ["XQL"], "uc_ref": "UCS-EDR-03",
+        "tc_ref": "TC-EDR-05", "tc_refs": ["TC-EDR-05"], "mitre_tactic": "TA0007",
+        "mitre_technique": "T1082", "execution_identity": {"default": "root", "options": ["root"]},
+        "tags": ["composer-draft", "lab-readiness"], "author": "composer",
+        "steps": [{"id": "step-01", "name": name, "command": script, "identity": "root",
+                   "mitre_technique": "T1082", "platforms": ["linux"], "expected_detections": det}]}
+def post(path, data):
+    req = urllib.request.Request("http://localhost:8888" + path, json.dumps(data).encode(),
+                                 {"content-type": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=30))
+sid = post("/api/scenarios/drafts", body)["scenario_id"]
+print(post("/api/runs", {"scenario_id": sid, "mode": "pull", "target_agent_id": agent})["run_id"])
+PY
+}
+```
+
+Read a probe's output with `curl -s localhost:8888/api/runs/<run_id> | python3 -c 'import json,sys;print(json.load(sys.stdin)["output"])'`.
+
+**Probe 1** (G4; save as `probe1.sh`; read-only):
+
+```bash
+echo "== beacon"; systemctl is-active cortexsim-agent; grep -o -e "--server [^ ]*" -e "--id [^ ]*" /etc/systemd/system/cortexsim-agent.service
+echo "== agent + collector"; systemctl is-active traps_pmd xdr-collector; /opt/traps/bin/cytool runtime query 2>&1 | awk 'NR>1{print $1, $4}' | tr '\n' ' '; echo
+echo "== identities"
+for u in www-data nobody svc-backup node postgres mysql python3 app developer runner vertex-agent user; do
+  e=$(getent passwd "$u") || { echo "$u: ABSENT"; continue; }
+  printf '%s: shell=%s ' "$u" "$(echo "$e" | cut -d: -f7)"; timeout 5 runuser -l "$u" -c 'echo RUNUSER_OK' 2>&1 | tail -n 1
+done
+echo "== leftovers (beacon binary, unit and artifact cache excluded)"
+find /tmp /var/tmp /dev/shm /etc /root /home /usr/local -xdev -maxdepth 4 \( -iname '*cortexsim*' -o -iname '*atomic*' -o -iname 'T1[0-9][0-9][0-9]*' \) 2>/dev/null \
+  | grep -v -e '^/etc/systemd/system/cortexsim-agent.service$' -e '^/usr/local/bin/cortexsim-agent$' -e 'multi-user.target.wants/cortexsim-agent.service$' -e '^/home/henry/.cortexsim$' -e '^/var/log/cortexsim' | head -n 40
+echo "== users uid>=1000"; awk -F: '$3>=1000 && $3<65534 {print $1, $3}' /etc/passwd | tr '\n' ' '; echo
+echo "== cron.d"; ls /etc/cron.d; echo "== custom units"; find /etc/systemd/system -maxdepth 1 -type f \( -name '*.service' -o -name '*.timer' \) -printf '%p\n'
+```
+
+Pass: 12 lines end `RUNUSER_OK`; the leftovers list is empty; the uid ≥ 1000 users are `henry` and the eleven
+provisioned accounts; `/etc/cron.d` holds only `e2scrub_all` and `sysstat`; the custom units are `cortexsim-agent`
+and `traps_pmd`.
+
+**How a probe step runs** (8.2, 8.3): save the step command with a fresh nonce substituted (`H=$(openssl rand -hex 3)`,
+then `sed "s/\$H/$H/g"`), then run `probe "lab door probe <door> $H" <file>`.
 
 #### 8.1 XDR agent: identity-harness scenario, reconcile and tenant evidence
 
@@ -538,18 +599,44 @@ collector honours a body `_time` (§6). **Quota:** step 2 0 XQL (one POST to the
 **Clean-up:** the canary rows stay in `custom_custom_raw` (the dataset cannot be deleted from here). Keep the target
 for the pass. The campaign stays as a record.
 
-#### 8.5 MCP: side-by-side read (only if Henry approves `/mcp` registration)
+#### 8.5 MCP: verify 8.1's results through the stdio MCP, then one side-by-side read
+
+Henry's decision (2026-11-14): no HTTP `/mcp` token and no 1Password. MCP's job is to make the API calls that verify
+run results, and it uses the stdio server already on `dev`: `scripts/mcp-stdio-docker.sh`, which runs
+`docker exec -i <simcore> python -m mcp_server` inside the SimCore container. That needs no secret, and it reads the
+instance's own saved credential. Wire names are the dotted ids with `.` replaced by `_` (`core/mcp_server/naming.py`).
+
+A shell helper that sends one tool call over stdio (initialize, initialized, `tools/call`) and prints the reply:
+
+```bash
+mcp_call() {  # mcp_call <wire tool name> '<arguments JSON>'
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"lab-test-plan","version":"1"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}" \
+  | timeout 120 scripts/mcp-stdio-docker.sh | tail -n 1
+}
+```
 
 | Step | Who | Command | Expected |
 |---|---|---|---|
-| 1 | Henry | Enable the mount on the rebuilt stack (`CORTEXSIM_MCP_HTTP=1` and `CORTEXSIM_MCP_TOKEN` in `.env`, per #255), then `claude mcp add --transport http cortexsim http://localhost:8888/mcp` with the token header | `/mcp` lists the tenant-reader tools (#275, #282) |
-| 2 | Claude | Same read on both: endpoint lookup for `pov-target-01` through the new tool and through `~/cortex-mcp`'s `get_filtered_endpoints` | identical `endpoint_id` (`0ad53c90…`), status, version and policy; a difference is a finding |
+| 0 | Claude | `scripts/mcp-stdio-docker.sh --print` | prints the one `docker exec` command for the single SimCore container (exit 2 means none or several) |
+| 1 | Claude | `mcp_call cortexsim_run_get "{\"run_id\":\"$RUN\"}"` and `mcp_call cortexsim_run_results "{\"run_id\":\"$RUN\"}"` (8.1's run) | the same status, step outcomes and result rows as `GET /api/runs/$RUN` and the console |
+| 2 | Claude | `mcp_call cortexsim_run_tenant_evidence_get "{\"run_id\":\"$RUN\"}"` | the snapshot stored by 8.1 step 5; no outbound call |
+| 3 | Claude | `mcp_call xsiam_endpoint_get '{"tenant":"deathstar","hostnames":["pov-target-01"]}'` | one endpoint record |
+| 4 | Claude | `get_filtered_endpoints` (hostname `pov-target-01`) through `~/cortex-mcp` | one endpoint record |
 
-**Pass:** both reads agree field by field on the endpoint record. **Quota:** 2 API reads, 0 XQL. **Clean-up:** keep
-or `claude mcp remove cortexsim`, Henry's call.
+Input schemas (`core/mcp_server/schemas.py`): `cortexsim.run.get` and `cortexsim.run.tenant_evidence.get` take
+`RunIdIn` (`run_id`); `cortexsim.run.results` takes `RunResultsIn` (`run_id`, optional `limit`);
+`xsiam.endpoint.get` takes `EndpointGetIn` (`hostnames`, optional `tenant`).
+
+**Pass:** steps 1–2 agree with the REST reads of the same run, and steps 3 and 4 agree field by field on
+`endpoint_id` (`0ad53c90…`), `endpoint_status`, `endpoint_version`, `assigned_prevention_policy`, `ip` and
+`last_seen` (within a minute). A difference is a finding. Either side can be wrong. **Quota:** steps 1–2 make no tenant call (SimCore's
+own DB); steps 3 and 4 make 1 API read each; 0 XQL. **Clean-up:** none. Nothing is registered and nothing persists.
 
 #### 8.6 Budget and order
 
-Order: 8.0 → 8.2 → 8.3 → 8.4 → 8.1 → 8.5. The cheap door probes go first, so a broken door is known before the
-scenario run, which needs a 10-minute wait. Total tenant reads: about 6 XQL, 4 API reads and 8 preflight calls, plus
-about 10 XQL if Tier-2 verify runs in 8.1.
+Order: 8.0a → 8.0 → 8.2 → 8.3 → 8.4 → 8.1 → 8.5. The cheap door probes go first, so a broken door is known before the
+scenario run, which needs a 10-minute wait. 8.5 reads 8.1's run, so it comes last. Total tenant reads: about 6 XQL,
+5 API reads and 8 preflight calls, plus about 10 XQL if Tier-2 verify runs in 8.1.
