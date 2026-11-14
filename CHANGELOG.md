@@ -272,6 +272,27 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
 
+### Added — header Back / Forward and a breadcrumb (design C9)
+
+- **Back and Forward in the header** walk every page, tab, run and deep dive
+  the URL has named, in the order you opened them. ⌘[ / ⌘] on a Mac and
+  Ctrl+[ / Ctrl+] elsewhere do the same, except while focus is in a text field.
+  Each button is disabled when there is nowhere to go.
+- **The router keeps the history, not the browser.** Opening a run, a tab or a
+  card rewrites the current browser entry (`setParams` uses `replaceState`),
+  so `history.back()` could not see those steps. `useConsoleRouter` now keeps
+  its own list (`app/navHistory.js`). A change to a list filter (`q`, `status`,
+  `page`, …) rewrites the current entry rather than adding a step, a retired
+  page that only redirects is never kept, and the browser's own Back onto the
+  previous entry moves the header's position with it.
+- **A breadcrumb beside the buttons: journey › page › object.** The journey is
+  the rail group, the page is the rail item and the page itself when it is a
+  tab ("Catalog › UC / TC index"), and the object is the run, scenario, card,
+  test case, package or component the URL opens. Every crumb but the last is a
+  link; the last is the current page, drawn in the selected state. When the
+  header is crowded the outer crumbs shorten first and the bar scrolls below a
+  floor, as its other controls do.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
