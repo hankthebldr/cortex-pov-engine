@@ -60,6 +60,23 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Added — ★ Favorites: the system's best scenarios, first in the Composer palette
+
+The Composer palette has a new first tab, **★ Favorites**, and opens on it
+whenever the library has any. A scenario earns the ★ by measurement, not by a
+list anyone keeps: it is lab-ready (GREEN: no tool fetched from the internet,
+no launch consent gate), every step makes real telemetry, it raises a
+Correlation, and it spans at least four detection types. That is 27 of 201
+scenarios today, 12 of them the stitched Unit 42 chains. The rule lives once,
+in `core/engine/lab_readiness.py` (`favorite_reasons`), beside the
+GREEN/YELLOW/RED classifier it reads; `scripts/lab_readiness.py` now renders
+the manifest from that module and its output is byte-for-byte unchanged.
+`GET /api/scenarios` rows and `GET /api/scenarios/{id}` carry `favorite` and
+`favorite_why` (the four reasons, shown as the ★'s tooltip). Starred
+scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
+(plane, detection types, use case), and the active tab offers its most common
+tags as chips that filter the list; tags that differ only in case are one chip.
+
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
 - **Tool readiness is said in plain words everywhere.** The launch gate row is
@@ -236,7 +253,42 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
   failure on #258, #260 and #270.
 
+### Fixed — Results at phone width
+
+At 375 px the "Result of" bar on Results squeezed its text column to about
+one character, so the run's facts wrapped a letter per line. The run switcher
+and the Open button kept their full widths in a three-column grid. The bar is
+now a wrapping row: the text keeps at least 240 px, and the switcher and Open
+drop below it. The Report header (This run / Compare runs, Validate all,
+Export) now wraps instead of running past the view, where it was clipped. A
+viewport test at 375 px and 845 px guards both and fails without the fix.
+
+### Added — run detail says why a test case is pending (design C3)
+
+A run whose test-case verdict is pending with nothing scored now says why on
+its own page, not only on the Topology and Techniques tabs. Under the
+lifecycle strip a "Test case" line shows PENDING, the reason chip
+("nothing executed" or "detectors soaking") and the test case id, with the
+action as a visible sentence. Under the chain, the Cortex Engine terminal
+states the same verdict and reason. A verdict without a reason draws neither.
+
 ### Security
+
+- **A leftover cron entry or systemd timer could run another user's script as
+  root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
+  runs a script from a fixed directory under `/var/tmp` every five minutes, and
+  the job can outlive the directory: the beacon does not run a scenario's
+  cleanup, and a tmp cleaner or a partial cleanup can remove it. A local user
+  could then recreate the directory with a script of their own. The cron line
+  and the unit's `ExecStart` now run nothing from the directory unless one
+  `stat` lookup reads it as root's own 0700 directory; otherwise the cron entry
+  deletes itself and the unit disables its timer. The check is in `ExecStart`
+  because systemd before 243 ignores `ExecCondition=`. The step that recreates
+  the directory first removes a cron entry or timer left by an earlier run. The
+  re-executions keep the command-line path the cards' BIOCs match, so no
+  detection changed. The two cards' illustrative payloads now run under
+  `set -eu`, stop unless the directory they make is root's own 0700 directory,
+  and install the checked entry.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
