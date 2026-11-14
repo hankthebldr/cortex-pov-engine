@@ -279,7 +279,11 @@ viewport test at 375 px and 845 px guards both and fails without the fix.
   makes the directory first retires a unit or watchdog left by an earlier run,
   and the marker now retires the foothold 45 minutes after install. Both
   SIM-CDR-002 crontab lines run the miner only from the 0755 directory step-01
-  made. The two cards' illustrative payloads run under `set -eu`, stop unless
+  made, and only while the miner itself is a regular 0755 file owned by the
+  same account. Step-02 extracts the archive with `--no-same-owner
+  --no-same-permissions` and sets the miner's mode, because `tar` run as root
+  otherwise keeps the archive's owner and mode. The two cards' illustrative
+  payloads run under `set -eu`, stop unless
   the directory they make passes the same check, and install the checked
   entries. No detection query changed.
 

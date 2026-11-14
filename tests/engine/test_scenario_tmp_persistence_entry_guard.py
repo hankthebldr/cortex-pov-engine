@@ -217,17 +217,41 @@ def test_the_card_iocs_still_name_what_the_run_creates():
 # --------------------------------------------------------------------------- static: SIM-CDR-002
 
 
-def test_the_miner_cron_lines_check_the_directory_before_they_run_the_miner():
+def _file_gate(path: str, owner: str) -> str:
+    """The same lookup for the program itself: a regular file (not a symlink), this owner, this mode."""
+    return (rf'\[ "\$\(stat -c %F:%u:%a {re.escape(path)} 2>/dev/null\)" = '
+            rf'"regular file:{owner}:(?P<fmode>[0-7]{{3}})" \]')
+
+
+def test_the_miner_cron_lines_check_the_directory_and_the_program_before_they_run_it():
+    """The miner comes out of a downloaded archive, so the program's own owner and mode are checked too."""
     jobs = _miner_jobs()
     assert len(jobs) == 2, jobs           # root's crontab, then nobody's spool file
-    root = re.fullmatch(rf"if {_gate(XMR['sandbox'], MY_OWNER)}; then (?P<then>.+); "
+    binary = f"{XMR['sandbox']}/{XMR['binary']}"
+    root = re.fullmatch(rf"if {_gate(XMR['sandbox'], MY_OWNER)} && {_file_gate(binary, MY_OWNER)}; then (?P<then>.+); "
                         r"else crontab -l \| grep -v xmrig \| crontab -; fi", _job_command(jobs[0]))
-    assert root and root.group("mode") == "755", f"root's line must check its own 0755 directory first: {jobs[0]!r}"
-    nobody = re.fullmatch(rf"if {_gate(XMR['sandbox'], ROOT_OWNER)}; then (?P<then>.+); fi", _job_command(jobs[1]))
-    assert nobody and nobody.group("mode") == "755", f"nobody's line must check root's 0755 directory first: {jobs[1]!r}"
+    assert root, f"root's line must check its own 0755 directory and its own program first: {jobs[0]!r}"
+    nobody = re.fullmatch(rf"if {_gate(XMR['sandbox'], ROOT_OWNER)} && {_file_gate(binary, ROOT_OWNER)}; "
+                          r"then (?P<then>.+); fi", _job_command(jobs[1]))
+    assert nobody, f"nobody's line must check root's 0755 directory and root's program first: {jobs[1]!r}"
     for m in (root, nobody):
+        assert m.group("mode") == "755"
+        assert int(m.group("fmode"), 8) & 0o022 == 0, "a program others can write to would still run"
         # The XMRig execution BIOC keys on "xmrig" in the command line cron starts.
-        assert f"{XMR['sandbox']}/{XMR['binary']}" in m.group("then")
+        assert binary in m.group("then")
+
+
+def _tar_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if re.search(r"\btar -x", line)]
+
+
+def test_the_miner_is_extracted_as_the_running_user_with_a_set_mode():
+    """GNU tar run as root keeps the archive's owner and mode unless told not to."""
+    for where, text in (("SIM-CDR-002 step-02", _step(XMR["sid"], "step-02")),
+                        ("TTP-2026-0023 payload", _card(XMR["sid"])["execution"]["payload"]["code"])):
+        (line,) = _tar_lines(text)
+        assert "--no-same-owner" in line and "--no-same-permissions" in line, (where, line)
+        assert re.search(rf"chmod 755 (?:{re.escape(XMR['sandbox'])}|\"\$D)/{XMR['binary']}\b", text), where
 
 
 # --------------------------------------------------------------------------- static: card payloads
@@ -422,6 +446,60 @@ def test_the_miner_cron_lines_run_the_miner_only_from_root_s_own_directory(which
         assert ran.exists() == (plant == "roots-own"), (which, plant, done)
         if which == "root-crontab" and plant != "roots-own":
             assert "-" in _log(logs["crontab"]).split(), ("the line must remove itself", plant, done)
+    finally:
+        _clean(tmp_path)
+
+
+@needs_root_in_a_container
+@pytest.mark.parametrize("program", ["other-owned", "group-writable", "writable-by-others", "symlink"])
+@pytest.mark.parametrize("which", ["root-crontab", "nobody-spool"])
+def test_the_miner_cron_lines_refuse_a_program_root_does_not_control(which, program, tmp_path):
+    """Root's own 0755 directory, but the program in it is not root's alone: it does not run."""
+    logs, ran = _stubs(tmp_path), tmp_path / "ran"
+    _plant("roots-own", tmp_path, 0o755, {})
+    binary = tmp_path / "sandbox" / XMR["binary"]
+    if program == "symlink":                   # to a root-owned 0755 program, which would itself pass
+        (tmp_path / "real-xmrig").write_text(_marker(ran))
+        (tmp_path / "real-xmrig").chmod(0o755)
+        binary.symlink_to(tmp_path / "real-xmrig")
+    else:
+        binary.write_text(_marker(ran))
+        binary.chmod({"other-owned": 0o755, "group-writable": 0o775, "writable-by-others": 0o777}[program])
+        if program == "other-owned":
+            os.chown(binary, OTHER_UID, OTHER_UID)
+    job = _miner_jobs()[0 if which == "root-crontab" else 1]
+    try:
+        done = _sh(["/bin/sh", "-c", _localise(_job_command(job), tmp_path)], tmp_path)
+        assert not ran.exists(), (which, program, done)
+        if which == "root-crontab":
+            assert "-" in _log(logs["crontab"]).split(), ("the line must remove itself", program, done)
+    finally:
+        _clean(tmp_path)
+
+
+@needs_root_in_a_container
+def test_the_extracted_miner_belongs_to_the_extracting_user_and_nobody_else_can_write_it(tmp_path):
+    """Run step-02 against an archive whose member belongs to uid 4242 with mode 0777."""
+    import tarfile                                                    # noqa: PLC0415
+    member = tmp_path / "member"
+    member.write_text("#!/bin/sh\nexit 0\n")
+    archive = tmp_path / "xmrig.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tar.gettarinfo(str(member), arcname="xmrig-6.21.0/xmrig")
+        info.uid = info.gid = OTHER_UID
+        info.uname = info.gname = ""             # so tar maps the numeric uid, not a name
+        info.mode = 0o777
+        with member.open("rb") as fh:
+            tar.addfile(info, fh)
+    _stubs(tmp_path)
+    curl = tmp_path / "bin" / "curl"            # "downloads" the archive above to the -o path
+    curl.write_text(f'#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\ncp {archive} "$out"\n')
+    (tmp_path / "bin" / "tar").unlink()         # the real tar does the extraction
+    _plant("roots-own", tmp_path, 0o755, {})
+    try:
+        done = _sh(["/bin/sh", "-c", _localise(_step(XMR["sid"], "step-02"), tmp_path)], tmp_path)
+        st = os.lstat(tmp_path / "sandbox" / XMR["binary"])
+        assert st.st_uid == 0 and st.st_mode & 0o022 == 0, (oct(st.st_mode), st.st_uid, done)
     finally:
         _clean(tmp_path)
 
