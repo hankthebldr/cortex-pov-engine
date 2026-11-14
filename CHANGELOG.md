@@ -1939,6 +1939,60 @@ Each runs for real (not SAFE-MODE) inside a staged decoy tree under
   fixed directory and were not examined. The cards' illustrative payload text
   still shows `mkdir -p`.
 
+### Security — the remaining scratch paths: directories in 47 more scenarios and 146 fixed-name files
+
+- **What was wrong.** The two classes the entry above left open. Recounted on
+  that tree: 49 more scenarios create a fixed directory under `/tmp`,
+  `/var/tmp` or `/dev/shm` (counting directories named through a variable or
+  made as the parent of `mkdir -p P/sub`), and 186 root, `container-runtime`
+  or `direct` steps in 91 scenarios write a fixed-name file straight into
+  `/tmp`, 157 of them in 83 scenarios then running or reading it. Reproduced as
+  root in the CI image with `fs.protected_symlinks` on: with another user's
+  `/tmp/aiacc-001.yml` in place, SIM-AIACC-001 handed the EAL CLI a file that
+  user owned in 40 of 40 runs, and their content in 10. SIM-AIRS-001's cleanup
+  sourced `/tmp/airs-001.env` as root, so a planted file there ran as uid 0.
+  SIM-EDR-008 read its list of files to rewrite and delete from
+  `/tmp/cortexsim_targetlist.txt`.
+- **Directories (47 scenarios, 50 directories).** The same rule as above: the
+  creating step makes the directory with `mkdir -m` and no `-p`, and every other
+  step checks it in one `stat` lookup first. Two additions. Where a second
+  account runs inside it the mode is 755 and the check also accepts the
+  creating account (`$(id -u www-data)`, or root). A step that also runs on
+  macOS adds `|| stat -f %HT:%u:%Lp` inside the same substitution, which on
+  Linux can never print a passing value. SIM-CDR-008's per-run exfil directory
+  is now made with `mktemp -d`. SIM-CDR-030 is unchanged: every step already
+  makes its directory with `set -eu`, `umask 077` and `mkdir` without `-p`.
+- **Files (143 steps in 76 scenarios, 146 names).** A file only the writing
+  step uses now lives in `C=$(mktemp -d /tmp/cortexsim.XXXXXX)`, which the step
+  removes on exit; the old cleanup lines for those names are gone. A file a
+  later step reads moved into a new sandbox under the directory rule (12
+  scenarios: SIM-AIRS-001, -003, -004, SIM-AISPM-001, -002, -004, -005, -006,
+  SIM-CDR-004, -010, SIM-EDR-008, SIM-MP-034). Cleanup that sources or rewrites
+  through such a path now checks ownership first (SIM-AIRS-001, SIM-EDR-008).
+  No detection, card query or test keyed on the old file paths; the cards'
+  illustrative payload text still shows them.
+- **What an operator will notice.** EAL campaign files, staged crontabs and the
+  like no longer appear in `/tmp` after a step: they live in
+  `/tmp/cortexsim.XXXXXX` for the step's lifetime only. A step whose creating
+  step did not run exits 1 with `sandbox … is missing or not ours` (or `not
+  owned by <account>`). On macOS, SIM-BROWSER-001 to -004 step-02 now write
+  their own campaign file instead of running a `/tmp` file no macOS step wrote.
+  The Windows bundles of SIM-NDR-005 and SIM-NDR-007 no longer list a POSIX
+  cleanup residue, so they run without `CORTEXSIM_ACCEPT_RESIDUE=1`.
+- **Counts are unchanged.** The lab-readiness and coverage classifiers now also
+  treat a stored lookup (`s=$(stat ...)`) and the macOS fallback as no signal;
+  `ground-truth` and `lab-readiness` regenerate with no diff.
+- **Not fixed here.** SIM-CDR-006 enables a root systemd unit whose `ExecStart`
+  is `/tmp/.cortexsim_node_beacon`, with a cron watchdog, and SIM-EDR-003's
+  macOS variant appends a `/tmp/.cortexsim_beacon` launcher to root's
+  `~/.zshrc` that cleanup does not remove: until cleanup, a planted file at
+  either path runs as root. SIM-EDR-007 runs `ansible-playbook` on
+  `/tmp/pov-encrypt.yml`, an operator-staged file no step writes. Root steps
+  still write about 40 output-only files to fixed `/tmp` names, and SIM-CDR-001
+  keeps `/tmp/linpeas.sh` and `/tmp/deepce.sh`, the payload shelf's
+  `stage_path`. Service-account steps (SIM-MP-028's EAL files, SIM-EDR-011's
+  target list) were not in scope.
+
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 
 - **A DC enters the tenant-side collectors once and every in-process consumer
