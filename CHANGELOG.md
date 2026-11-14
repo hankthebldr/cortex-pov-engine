@@ -272,6 +272,32 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
 
+### Changed — Runs · Compare: two or three finished runs, and no claim without a read back (design C2)
+
+- **The Runs header has a primary Run beside a secondary Compare runs.** Run
+  opens the New POV run page, where Scenarios and ⌘K start every launch. The
+  design draws it as "New run"; that label is not in the console's closed verb
+  set, and Run is.
+- **Compare takes two or three finished runs**, picked as chips that say
+  whether each run has been read back. A running or staged run is not offered.
+  A fourth pick is refused with the reason. It used to list sixteen runs of any
+  status and take four.
+- **One row per expected detection, one column per run**, then four paired
+  rows: Detected, Steps that ran, Fastest detection and Workflow (the scenario
+  the run executed). Each column header carries the run's next action: Read
+  back while it has not been read back, Open results once it has. Both use the
+  console's existing Read back and Results route. Rows line up on the card's
+  detection id; before, they keyed on fields a Result row does not carry.
+- **Only a read-back run says Detected or Not seen.** Any other run says "Ran —
+  not read back" or "Did not run", even when its rows carry a hand mark or an
+  outcome, and its Detected and Fastest detection rows read a dash. The words
+  are the chain's own (`LIVE_STATES`). Before, an unread run's hand-marked row
+  read Detected, and the prevention delta for a report/block pair was drawn for
+  runs that had not been read back; it now waits until both have been. A runs
+  list or a run's results that fail to load are said to have failed, never shown
+  as empty. The coverage percentages and the new/regression flags are gone with
+  the old grid.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
