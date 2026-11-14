@@ -26,6 +26,7 @@ and under which header, never the token itself.
 from __future__ import annotations
 
 import dataclasses
+import gzip
 import json
 import time
 from typing import Any, Callable, Optional
@@ -278,6 +279,11 @@ async def preflight_collector(
     if auth_token and target.auth_header:
         scheme = (target.auth_scheme or "").strip()
         headers[target.auth_header] = f"{scheme} {auth_token}".strip()
+    # Send what the campaign will send: a collector set to gzip refuses an
+    # uncompressed body with 400, and one set to uncompressed cannot read gzip.
+    if target.compress:
+        body = gzip.compress(body)
+        headers["content-encoding"] = "gzip"
 
     started = time.monotonic()
     client = factory(target.request_timeout, verify_tls)

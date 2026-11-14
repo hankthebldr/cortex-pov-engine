@@ -32,10 +32,10 @@ const base = {
   tc_verdict_detail: { source: 'complete' },
 }
 
-function mount(run, props = {}) {
+function mount(run, props = {}, env = {}) {
   installRoutes({ 'GET /api/runs/:id': { ...run, output: '' } })
   return render(
-    <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
+    <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run], ...env }}>
       <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
     </EnvironmentContext.Provider>,
   )
@@ -261,5 +261,38 @@ describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
     mountBroken(base)
     await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'ran'))
     expect(screen.getByTestId('stage-card-step-02').tagName).toBe('DIV')
+  })
+})
+
+describe('Run detail — a pending test case says why (design C3)', () => {
+  const nothingRan = {
+    ...base,
+    tc_verdict: 'pending',
+    tc_verdict_detail: { source: 'complete', reason: 'not_executed' },
+  }
+  const scenarios = [{ scenario_id: 'SIM-EDR-001', name: 'Credential Dumping', tc_ref: 'TC-EDR-01' }]
+
+  it('the header names the test case, PENDING, the reason chip and what to do', () => {
+    mount(nothingRan, {}, { scenarios })
+    const line = screen.getByTestId('run-verdict-header')
+    expect(within(line).getByText('Test case')).toBeInTheDocument()
+    expect(within(line).getByTestId('run-verdict-header-verdict')).toHaveTextContent(/pending/i)
+    expect(within(line).getByTestId('run-verdict-header-reason')).toHaveTextContent('nothing executed')
+    expect(line).toHaveTextContent('TC-EDR-01')
+    // The action is visible text, not a tooltip.
+    expect(line).toHaveTextContent(/Re-run the scenario/)
+  })
+
+  it('the Cortex Engine terminal under the chain states the same verdict and reason', () => {
+    mount({ ...nothingRan, tc_verdict_detail: { source: 'complete', reason: 'soak_pending' } }, {}, { scenarios })
+    const engine = screen.getByTestId('run-verdict-engine')
+    expect(engine).toHaveTextContent('CORTEX ENGINE')
+    expect(within(engine).getByTestId('run-verdict-engine-reason')).toHaveTextContent('detectors soaking')
+  })
+
+  it('a verdict with no reason draws neither line', () => {
+    mount({ ...base, tc_verdict: 'pass' }, {}, { scenarios })
+    expect(screen.queryByTestId('run-verdict-header')).toBeNull()
+    expect(screen.queryByTestId('run-verdict-engine')).toBeNull()
   })
 })

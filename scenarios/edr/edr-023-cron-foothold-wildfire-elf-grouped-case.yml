@@ -122,6 +122,13 @@ steps:
       # test ELF, a benign file built to be classified malicious.
       set -eu
       D=/var/tmp/.cortexsim-ice
+      # A cron entry left by an earlier run must not fire while $D is replaced:
+      # remove it, then let a job it already started finish (a run ends within
+      # ~20 s) before the directory goes.
+      if [ -e /etc/cron.d/cortexsim-ice ]; then
+        rm -f /etc/cron.d/cortexsim-ice
+        sleep 25
+      fi
       rm -rf "$D"
       mkdir -m 700 "$D"
       curl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o "$D/kworker-ice"
@@ -205,10 +212,18 @@ steps:
     name: "Plant a self-expiring cron drop-in that re-runs the payload every five minutes"
     # What the sensor records: FILE_CREATE_NEW/WRITE on /etc/cron.d/cortexsim-ice
     # by the step shell, then — every five minutes for 45 minutes — cron
-    # spawning `sh -c /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh`. In this lab
-    # cron-run jobs record actor_process_image_name = cron and
-    # causality_actor_process_image_name = cron. The job deletes its own cron
-    # file when its deadline passes, so a forgotten run cleans itself up.
+    # spawning `/bin/sh -c` with the entry's command line, which names
+    # /var/tmp/.cortexsim-ice/ice-run.sh. In this lab cron-run jobs record
+    # actor_process_image_name = cron and causality_actor_process_image_name =
+    # cron. The job deletes its own cron file when its deadline passes, so a
+    # forgotten run cleans itself up.
+    # The entry outlives the directory if the run is never cleaned up (the
+    # beacon does not run cleanup.commands) or a tmp cleaner removes it, and
+    # then any local user could create the directory and the script in it. So
+    # the entry runs nothing from the directory unless one lstat reads it as
+    # root's own 0700 directory; otherwise it removes itself. /var/tmp is
+    # sticky, so a directory that passes cannot be replaced by another user.
+    # `%` is written `\%` because a bare `%` ends a crontab command.
     command: |
       set -eu
       sleep 40   # dwell
@@ -232,7 +247,8 @@ steps:
       chmod 700 "$D/ice-run.sh"
       cat > /etc/cron.d/cortexsim-ice <<'EOF'
       # CortexSim SIM-EDR-023 foothold: self-expires 45 min after install; the scenario cleanup removes it
-      */5 * * * * root /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh
+      # Runs only while /var/tmp/.cortexsim-ice is root's own 0700 directory; otherwise it removes itself
+      */5 * * * * root [ "$(stat -c \%F:\%u:\%a /var/tmp/.cortexsim-ice 2>/dev/null)" = "directory:0:700" ] && /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh || rm -f /etc/cron.d/cortexsim-ice
       EOF
       chmod 644 /etc/cron.d/cortexsim-ice
       cat /etc/cron.d/cortexsim-ice

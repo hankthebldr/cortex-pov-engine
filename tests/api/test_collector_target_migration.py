@@ -51,3 +51,21 @@ def test_migration_skips_a_missing_table(tmp_path):
         _migrate_collector_target_columns(conn)
         assert "collector_targets" not in inspect(conn).get_table_names()
     engine.dispose()
+
+
+def test_migration_adds_compress_and_an_old_row_reads_uncompressed(tmp_path):
+    from database import _migrate_collector_target_columns
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as conn:
+        conn.execute(text(OLD_DDL))
+        conn.execute(text(
+            "INSERT INTO collector_targets (name, kind, url, auth_header, auth_scheme,"
+            " plugins, is_default, created_at, updated_at) VALUES"
+            " ('t', 'xsiam_http_collector', 'https://x.test', 'Authorization', '', '[]', 0,"
+            " '2026-01-01', '2026-01-01')"))
+        _migrate_collector_target_columns(conn)
+        _migrate_collector_target_columns(conn)
+        row = conn.execute(text("SELECT compress FROM collector_targets")).one()
+    assert row[0] in (0, False)
+    engine.dispose()

@@ -32,6 +32,7 @@ def to_spec(row: CollectorTargetConfig) -> TargetSpec:
         auth_header=row.auth_header or "Authorization", auth_scheme=row.auth_scheme or "",
         plugins=tuple(row.plugins or ()), is_default=bool(row.is_default),
         has_token=row.secret_name is not None, last_check=row.last_check,
+        compress=bool(row.compress),
     )
 
 
@@ -85,6 +86,7 @@ async def upsert(
     db: AsyncSession, name: str, *, kind: str, url: str, dataset: Optional[str],
     auth_header: str, auth_scheme: str, plugins: list[str], is_default: bool,
     token: Optional[str], clear_token: bool, declaration: Optional[dict] = None,
+    compress: bool = False,
 ) -> tuple[CollectorTargetConfig, Optional[str]]:
     """Create or replace a target. Returns ``(row, previous_default)``.
 
@@ -108,8 +110,8 @@ async def upsert(
         changed = True
         dataset_changed = True
     else:
-        changed = (row.url, row.kind, row.auth_header, row.auth_scheme) != (
-            url, kind, auth_header, auth_scheme)
+        changed = (row.url, row.kind, row.auth_header, row.auth_scheme, bool(row.compress)) != (
+            url, kind, auth_header, auth_scheme, bool(compress))
         dataset_changed = row.dataset != dataset
     if declaration is not None:
         row.declaration = declaration
@@ -118,7 +120,7 @@ async def upsert(
     # Every NOT NULL field is set before the row joins the session: the vault
     # write below flushes, and a half-built row would fail that flush.
     row.kind, row.url, row.dataset = kind, url, dataset
-    row.auth_header, row.auth_scheme = auth_header, auth_scheme
+    row.auth_header, row.auth_scheme, row.compress = auth_header, auth_scheme, bool(compress)
     row.plugins, row.is_default, row.updated_at = list(plugins), bool(is_default), now
     db.add(row)
 

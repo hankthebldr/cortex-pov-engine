@@ -97,9 +97,12 @@ FAILURE_CODES = frozenset({
 #: meeting should not have to read Python to know what to fix.
 REMEDIATION: dict[str, str] = {
     COLLECTOR_REJECTED: (
-        "Collector answered but refused the payload — check the collector URL "
-        "path (XSIAM native collector expects /logs/v1/event), the content-type, "
-        "and whether the target dataset/HTTP-collector instance exists."
+        "Collector answered but refused the payload; nothing was ingested and the "
+        "response body names the cause. On the XSIAM HTTP log collector: 400 is a "
+        "body that is not one JSON object per line, or gzip vs uncompressed not "
+        "matching the instance's Compression setting; 404 is a wrong URL path "
+        "(expect /logs/v1/event); 413 is a record over 5 MiB decompressed or a "
+        "POST over 10 MiB on the wire, so lower the batch size."
     ),
     COLLECTOR_UNAUTHORIZED: (
         "Collector rejected the credential — check auth_token, auth_header and "
@@ -124,10 +127,10 @@ REMEDIATION: dict[str, str] = {
         "response is JSON."
     ),
     COLLECTOR_ERROR: (
-        "Collector returned a server error — the records were not ingested. For "
-        "the XSIAM HTTP log collector a 500 means the body does not match the "
-        "collector's Log Format (JSON vs Raw/CEF/LEEF); otherwise inspect the "
-        "forwarder's logs."
+        "Collector returned a server error — the records were not ingested. The "
+        "XSIAM HTTP log collector documents 500 for a body that does not match its "
+        "Log Format (JSON vs Raw/CEF/LEEF); invalid JSON and a compression "
+        "mismatch come back as 400 instead. Otherwise inspect the forwarder's logs."
     ),
     COLLECTOR_UNAVAILABLE: (
         "Collector reported itself unavailable — confirm the HTTP log collector "
