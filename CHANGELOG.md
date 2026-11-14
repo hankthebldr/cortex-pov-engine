@@ -115,6 +115,57 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   so. A Windows step of SIM-MP-023, -026 or -029 whose first step did not run
   exits 1 with `sandbox … is missing or not ours`.
 
+### Security — a Windows step no longer runs, loads or feeds a file another account can plant
+
+- **What was wrong.** Six scenarios that a Windows host does run kept their
+  scratch files in a folder with a fixed name under `%TEMP%`, which is
+  `C:\Windows\Temp` (writable by every account) for the SYSTEM beacon. Each made
+  the folder with `New-Item -Force`, which accepts a folder or junction someone
+  else made first. SIM-EDR-013 compiled a DLL there and loaded it; SIM-EDR-017
+  ran `cmd.exe` with that folder as its working directory, so a planted
+  `makecab.bat` ran as SYSTEM, and unpacked a CAB into a subfolder a junction
+  could point anywhere; SIM-EDR-006 wrote LSASS dumps straight into `%TEMP%`
+  under fixed names, so an account that created the name first owned the file
+  ProcDump wrote LSASS memory into; SIM-ITDR-006 wrote AS-REP and Kerberoast
+  hashes into its folder; SIM-EDR-004 copied an executable into its folder and
+  set its timestamps; SIM-EDR-003's interrupted-run cleanup copied a saved
+  `authorized_keys` back from its folder without asking who made it. Each also
+  removed the folder with `Remove-Item -Recurse`, which Windows PowerShell 5.1
+  follows into a junction's target. Nine more scenarios have the same shape in
+  Windows variants that no Windows host is sent yet, because other steps of
+  theirs have none: SIM-ITDR-002..005 and SIM-TIM-002 write the EAL campaign
+  file they hand to the EAL CLI with `--live`, SIM-MP-025 builds its lure in
+  one, SIM-MP-035 runs a `.vbs` and SIM-MP-036 an `.exe` from one, and
+  SIM-MP-014 copies Chrome's cookie store to a fixed name.
+- **The fix.** All fifteen use the Windows sandbox from the entry above: a
+  folder per scenario, same name as before where detections key on it
+  (`\Temp\` in a module path for SIM-EDR-013, `Boat.pst` for SIM-EDR-017),
+  made by its first step with `rmdir` and one `CreateDirectory` call that sets
+  its ACL, and checked by every later step with one `Get-Acl`. SIM-EDR-006's
+  dumps move into its folder, which sits in the system Temp directory when
+  `%TEMP%` has a space, as before. In-step removals use
+  `[System.IO.Directory]::Delete`, which neither follows a junction nor
+  touches `$LASTEXITCODE`, so a native command that failed earlier in the step
+  still fails it. Cleanup lines use `rd /s /q`, and SIM-EDR-003's restore runs
+  only when its folder passes the same check.
+- **How it is proven.** The text test pins the create and check forms for all
+  eighteen Windows folders and fails 16 cases on the old text. The `windows`
+  CI job's `sandbox` phase runs every creating step's guard against a planted
+  folder, a junction and an empty path, every checking step's guard against
+  five plants, and races a folder against a junction on one folder under
+  `C:\ProgramData` and one under `%TEMP%`. It has not run on Windows until that
+  job runs on this change. `make check-powershell` parses all 13 Windows
+  bundles and 35 rendered steps, the six changed scenarios' included.
+- **Not fixed here.** Steps that only write output to a fixed name and never
+  run or read it back: SIM-MP-001's downloaded stage page, SIM-MP-020's zip,
+  SIM-EDR-004's `svchost.exe` copy, SIM-BROWSER-006, SIM-EDR-012, -016, -018,
+  SIM-KOI-007 and SIM-MP-016. SIM-MP-030 stages in `C:\Users\Public\Music`
+  because that is the technique, and resolves for no target.
+- **What an operator will notice.** SIM-EDR-006 steps 02 and 03 and
+  SIM-EDR-017 step 02 need step 01, and SIM-ITDR-006 step 03 needs step 02,
+  to have made the folder: run alone, they exit 1 with
+  `sandbox … is missing or not ours`.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is
