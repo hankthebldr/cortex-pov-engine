@@ -114,28 +114,28 @@ describe('useTimelineData / NarrativeTimeline read the outcome axis', () => {
 })
 
 describe('MultiRunCompare reads the outcome axis', () => {
-  it('a not_reached cell is not "Missed" and is not flagged as a regression', async () => {
+  it('a not_reached cell reads "Did not run", never "Not seen" or "Missed"', async () => {
     const before = { results: [ROW(1, 'step-05', 'detected', null, true)],
       coverage: { ...COVERAGE, denominator: 1, observed_in_denominator: 1, pct: 100.0 } }
     const after = { results: [ROW(1, 'step-05', 'not_reached', 'UPSTREAM_SEVERED', false)],
       coverage: { ...COVERAGE, denominator: 0, observed_in_denominator: 0, pct: 0.0 } }
     after.results[0].expected_detection = before.results[0].expected_detection
+    // Both runs read back, so the grid is allowed to claim.
+    const readBack = { source: 'reconcile:xsiam:lab' }
     installRoutes({
-      'GET /api/runs': [{ id: 'r-1', scenario_id: 'SIM-AX', status: 'complete' },
-                        { id: 'r-2', scenario_id: 'SIM-AX', status: 'complete' }],
+      'GET /api/runs': [{ id: 'r-1', scenario_id: 'SIM-AX', status: 'complete', delivered_at: 'x', tc_verdict_detail: readBack },
+                        { id: 'r-2', scenario_id: 'SIM-AX', status: 'complete', delivered_at: 'x', tc_verdict_detail: readBack }],
       'GET /api/results/r-1': before,
       'GET /api/results/r-2': after,
     })
-    const { container } = render(<MultiRunCompare />)
-    await waitFor(() => expect(container.querySelectorAll('.multirun__run-pill').length).toBe(2))
-    const pills = container.querySelectorAll('.multirun__run-pill')
-    fireEvent.click(pills[0])
-    fireEvent.click(pills[1])
-    await waitFor(() => expect(container.querySelectorAll('.multirun__cell').length).toBe(2))
-    const cells = container.querySelectorAll('.multirun__cell')
-    expect(cells[1].getAttribute('title')).not.toMatch(/Missed/)
-    expect(cells[1].getAttribute('title')).toMatch(/Not reached/)
-    expect(container.querySelector('td .multirun__flag--reg')).toBeNull()
+    render(<MultiRunCompare />)
+    await waitFor(() => expect(screen.getAllByTestId('run-compare-chip')).toHaveLength(2))
+    for (const c of screen.getAllByTestId('run-compare-chip')) fireEvent.click(c)
+    await waitFor(() => expect(screen.getAllByTestId('run-compare-cell')).toHaveLength(2))
+    const cells = screen.getAllByTestId('run-compare-cell')
+    expect(cells[0].dataset.state).toBe('detected')
+    expect(cells[1].dataset.state).toBe('did_not_run')
+    expect(cells[1].textContent).not.toMatch(/Missed|Not seen/)
   })
 })
 
