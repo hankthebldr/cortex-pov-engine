@@ -957,6 +957,39 @@ states the same verdict and reason. A verdict without a reason draws neither.
   `resolve_comment` under `tenant_text`, a rejected `xdr_url` null with
   `xdr_url_withheld`. `run.get` then adds `data_notice`.
 
+### Added — Results: tenant evidence panel
+
+- Results › Report shows a Tenant evidence panel below the scorecard: the
+  agreement figures with the two-reads statement, the issues credited to the
+  run's host, the issues not credited, their cases, the run's case ledger and
+  the endpoint record as of the read (with the ledger's ip-to-host bridge code).
+- Display only, and read on request only. Opening the page sends one `GET` of
+  the stored snapshot and nothing polls. The tenant is read only when the DC
+  presses the panel's refresh button, which sends one metered read per press
+  (a double click sends one) and never changes a score or verdict.
+- Every degraded state is a sentence, never an empty table: not read, no
+  credential, no run window, unscoped, zero attributed, truncated, truncation
+  unknown, quota refused and a failed section with its code and remediation.
+  Tenant-written names render as text, and a case link is followed only when it
+  is https on `paloaltonetworks.com`.
+- A quota refusal names whose budget refused the read: this instance's own (the
+  tenant was not asked), the tenant's rate limit (HTTP 429), or, when the stored
+  read does not say, neither. It also says what was counted: floors, complete
+  issue rows, rows of unknown completeness, or nothing. A read inside the minimum
+  interval says a new read is possible now rather than "in 0 s", and the case
+  panel shows "link withheld" for a case link it will not follow, never the link's
+  text.
+- The case panel's read line no longer shows the integration's name, on Results
+  and on Run detail, and a failed request renders a fixed sentence by its code,
+  never the error's own text.
+- Read back on a run that already has a verdict (Results, and the run page's
+  case panel) asks first: it reads the tenant and may change the verdict, and the
+  confirm says refreshing tenant evidence never does. Cancel posts nothing, and
+  the first focus is on Cancel. The unread phase's Read back stays one click.
+- Run detail shows the case panel once (the evidence tab no longer embeds a
+  second one), a run that has not been read back shows its tenant evidence, and
+  the scorecard's "XSIAM Stitch" tile is now "Analytics plane" (same figure).
+
 ### Changed — one per-tenant request budget; any 429 trips once
 
 - Every SimCore request to a tenant now spends one per-tenant request bucket
