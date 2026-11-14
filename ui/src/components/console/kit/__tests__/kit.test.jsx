@@ -105,7 +105,7 @@ describe('Icon', () => {
       expect(svg).toHaveAttribute('aria-hidden', 'true')
       unmount()
     }
-    expect(ICONS).toEqual(['play', 'stop', 'repeat', 'plus', 'sliders'])
+    expect(ICONS).toEqual(['play', 'stop', 'repeat', 'plus', 'star', 'sliders'])
   })
 
   it('renders nothing for a name outside the set', () => {

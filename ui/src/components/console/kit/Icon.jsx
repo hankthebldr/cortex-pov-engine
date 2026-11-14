@@ -10,6 +10,7 @@
  *   repeat   run again
  *   plus     add to the chain
  *   sliders  the inspector (a step's settings)
+ *   star     one of the system's best scenarios (Favorites)
  */
 import React from 'react'
 
@@ -29,6 +30,7 @@ const SHAPES = {
     </g>
   ),
   plus: <path d="M8 3v10M3 8h10" {...STROKE} />,
+  star: <polygon points="8,1.6 9.9,5.8 14.5,6.2 11,9.3 12.1,13.8 8,11.4 3.9,13.8 5,9.3 1.5,6.2 6.1,5.8" fill="currentColor" />,
   sliders: (
     <g {...STROKE}>
       <path d="M2.5 5h5M12 5h1.5M2.5 11h1.5M8.5 11h5" />
