@@ -11,6 +11,8 @@
  *   plus     add to the chain
  *   sliders  the inspector (a step's settings)
  *   star     one of the system's best scenarios (Favorites)
+ *   back     the header's Back: the previous place in the console's history
+ *   forward  the header's Forward: the next place, after a Back
  */
 import React from 'react'
 
@@ -38,6 +40,8 @@ const SHAPES = {
       <circle cx="6.25" cy="11" r="1.75" />
     </g>
   ),
+  back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
+  forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

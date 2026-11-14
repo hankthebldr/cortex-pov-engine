@@ -29,6 +29,9 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   instance      — this POVengine's header status, from instanceStatus()
  *   onOpenInstance / instanceTargetLabel — where the instance status leads
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
+ *   history       — { canBack, canForward, onBack, onForward } for the
+ *                   header's Back / Forward (the router's history)
+ *   crumbs        — the header breadcrumb (app/breadcrumb.js)
  *   immersive     — boolean (default false). The open destination is immersive
  *                   (see destinations.jsx): the header, the safety gate and the
  *                   `banner` slot stay; the DestinationNav rail is not rendered
@@ -68,6 +71,8 @@ export default function AppShell({
   // apart. It is also a statement about SimCore, not about whichever
   // destination happens to be open, so the shell is where it belongs.
   banner = null,
+  history = null,
+  crumbs = null,
   immersive = false,
   children,
 }) {
@@ -285,6 +290,8 @@ export default function AppShell({
         tourSeen={readTourSeen()}
         colorTheme={colorTheme}
         onToggleColorTheme={toggleColorTheme}
+        history={history}
+        crumbs={crumbs}
       />
 
       {banner}

@@ -1,6 +1,8 @@
 import React from 'react'
 import { agentLiveness, LIVENESS } from './setupProgress.js'
 import { StatusIcon, STATUS } from './kit/index.js'
+import HistoryNav from './HistoryNav.jsx'
+import Breadcrumb from './Breadcrumb.jsx'
 
 // The agent chip's dot per liveness state. Colour is never the only signal:
 // each state has its own SHAPE (disc / ring / square / small grey disc, see
@@ -24,9 +26,10 @@ const AGENT_TONE = {
 /**
  * ConsoleHeader — the persistent global bar.
  *
- * Left→right: the Cortex product mark + POVengine wordmark + version, then
- * (pushed right) the bound tenant, the active agent, the run pill, ⌘K, help,
- * the theme toggle and the account chip.
+ * Left→right: the Cortex product mark + POVengine wordmark + version, Back /
+ * Forward and the breadcrumb, the instance status, then (pushed right) the
+ * bound tenant, the active agent, the run pill, ⌘K, help, the theme toggle and
+ * the account chip.
  *
  * Deliberately sparse. The evidence-collection pill ("Acme Financial · FY27
  * Q3 · UNEXPORTED") is gone — it named a POV this instance never had, from
@@ -88,8 +91,16 @@ const AGENT_TONE = {
  * answer "what has this done", and the pill appears when there is something
  * live to open. It opens that run's detail.
  *
+ * BACK / FORWARD AND THE BREADCRUMB (design C9). Beside the brand: two icon
+ * buttons that walk the console's own history (HistoryNav, ⌘[ / ⌘]), then
+ * journey › page › object (Breadcrumb, from app/breadcrumb.js). The breadcrumb
+ * is the one header child allowed to shrink, down to a floor: the outer crumbs
+ * ellipsize first and the current one last (povengine-shell.css).
+ *
  * Props:
  *   health        — { hostname, version, ... }
+ *   history       — { canBack, canForward, onBack, onForward } | null
+ *   crumbs        — breadcrumbFor() output | null
  *   instance      — { status, uptime, kpis[] } from instanceStatus() | null
  *   onOpenInstance — () => void
  *   instanceTargetLabel — where onOpenInstance lands, named in the control
@@ -117,6 +128,8 @@ export default function ConsoleHeader({
   userInitials = 'DC',
   colorTheme = 'dark',
   onToggleColorTheme = null,
+  history = null,
+  crumbs = null,
   povName,
 }) {
   // NOT derived from window.location. The previous env pill fell back to the
@@ -145,6 +158,16 @@ export default function ConsoleHeader({
         </div>
         <span className="pov-brand__version brand__version mono">{version}</span>
       </div>
+
+      {history && (
+        <HistoryNav
+          canBack={history.canBack}
+          canForward={history.canForward}
+          onBack={history.onBack}
+          onForward={history.onForward}
+        />
+      )}
+      {crumbs && crumbs.length > 0 && <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />}
 
       {instance && (
         <InstanceStatus instance={instance} onOpen={onOpenInstance} targetLabel={instanceTargetLabel} />
