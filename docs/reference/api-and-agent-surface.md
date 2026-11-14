@@ -44,12 +44,15 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **165 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
-  below, on `feature/api-ingestion-doors`; not re-counted against a built image).
-  Routers under `/api`, plus the app-level `GET /api/health` and a static file mount
-  at `/`, plus 4 FastAPI-owned docs/openapi routes. The walker reads 162 on dev
-  `8c90739` (the 161 that stood here was 1 stale); the ingestion doors read API adds 3
-  (§1.16b). Per-prefix breakdown: run the walker; a quoted breakdown went stale twice.
+- **175 HTTP routes total** (counted 2026-11-13 with the walker below on the
+  1.2.0 release tree after `dev` was merged in, on the host venv). Routers under `/api`,
+  plus the app-level `GET /api/health` and a static file mount at `/`, plus 4
+  FastAPI-owned docs/openapi routes. The ground truth's static count is 165 route
+  decorators; the walker adds the 4 docs routes and the 6 shelf artifact routes that
+  `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
+  `/api/shelf` without a decorator. On 2026-11-12, before the tenant reader merged,
+  the walker read 166. Per-prefix breakdown: run
+  the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
 > here was two content passes stale, and the 133 after it was 20 stale. The
@@ -1640,7 +1643,7 @@ measured value.
 (default `/public_api/v1/alerts/get_alerts_multi_events`), `incidents_path`
 (default `/public_api/v1/incidents/get_incidents`).
 
-> **Wire caveat (open as of 2026-08-06).** The console's Readiness surface calls
+> **Wire caveat (open as of 2026-08-06).** The console's Launch gate calls
 > `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`. **That
 > route does not exist** — it returns **405**, which the client's 404-only
 > fallback does not catch, so the DC sees `preflight failed: Method Not Allowed`.
@@ -1727,8 +1730,8 @@ Errors use the top-level `{"error", "code", "detail"}` shape.
 
 Added 2026-11-10 (branch `feature/api-ngfw-connection`). Spec:
 [`2026-11-10-ngfw-connection-wizard-design.md`](../superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md)
-(§12 lists where the build departs from it). Console: **Firewall** under *Manage*
-(`#/firewall`, `ui/src/components/console/FirewallView.jsx` + `firewall/*`).
+(§12 lists where the build departs from it). Console: **Components › Firewall**
+(`#/component-firewall`, `ui/src/components/console/component/FirewallComponent.jsx`; `#/firewall` redirects to its Sources tab).
 
 **Opt-in and read-only toward the firewall.** Nothing here is polled; every call to a
 firewall is an operator action. `core/integrations/panos/client.py::PanosClient` builds

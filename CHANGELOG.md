@@ -8,7 +8,28 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-This section carries two lines of work, merged with `git merge` (no rebase):
+## [1.2.0] - 2026-11-14
+
+**SimCore learns what a POV's tenant can receive before the run, and is
+hardened for a beta on real endpoints.** Ingestion doors, collector targets,
+the dataset requirement registry and a read-only NGFW (PAN-OS) connection say
+which detections can fire; an MCP server whose tenant writes only preview, a
+Kubernetes container agent and a read-only SOC Framework layer are added; and
+two beta-readiness rounds, weighted to Windows, close a verified
+unauthenticated root command-execution path, fix Windows push bundles that had
+been silent no-ops and give the Windows beacon a service handler. 1.1.1's six
+security fixes are carried. Counted on this tree: 199
+scenarios · 197 TTP cards · 27 EAL plugins · 1411 step-detections · 2260
+catalog detection objects · 28 assertion artifacts · 156 route decorators (166
+served routes); lab-readiness GREEN 167 · YELLOW 27 · RED 5.
+
+**`tenant-verified` is still 0.** Nothing in this release has executed against
+a live Cortex tenant. The Windows path has run only in the `windows-2022` CI job
+against CI probe scenarios, never a shipped scenario or a customer host; the
+Kubernetes container agent and the MCP server are authored, not
+tenant-verified. Authored is not proven.
+
+This release carries two lines of work, merged with `git merge` (no rebase):
 the **beta-readiness pass** summarised next, and the **features merged to
 `dev` after 1.1.0** (PRs #169–#212), among them ingestion doors, collector
 targets, the read-only NGFW connection, the MCP server, the Kubernetes
@@ -59,6 +80,44 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > Windows run has reached them. The job is not a required check (decision
 > DOCS-12).
 > **`tenant-verified` is still 0.**
+
+### Changed — the console follows design v26 (#250, #252–#254, #257–#261, #265, #277–#281)
+
+- **One colour rule.** Cortex green is the primary action (one filled button
+  per screen), the selected state and the brand. Yellow is the only warning
+  colour, coral means down or broken, and PANW orange is only the NGFW family
+  tint. Every status shows an icon and a word. Buttons use a closed set of
+  verbs: Configure · Test · Run · Customize · Add to chain · Read back ·
+  Open results · Abort run.
+- **The rail follows what a DC does, in order.** **Onboard & connect** (Get
+  started, Components) · **Compose & simulate** (Scenarios, Build a chain,
+  Launch gate) · **Run & observe** (Runs, Results) · **Reference** (Catalog:
+  TTP cards, Packages, Data streams, UC / TC index). The header shows the
+  instance's status, a **Running** pill only while a run is live, and ⌘K
+  search with page icons.
+- **Components.** A hub and eight pages: POVengine (with an API tab generated
+  from OpenAPI), Agents, Tenant, HTTP collector, Broker VM, Firewall, XDR
+  Collector and Cortex Engine. Broker VM, XDR Collector and Cortex Engine have
+  no SimCore API, so they show what you confirmed, or Unknown.
+- **Scenarios.** A card opens a sheet with a chain preview and **Customize** /
+  **Run**. Filters are Plane · Component · Use case · Test case · Status. TTP
+  cards, packages and data-stream emitters have **Add to chain**, which feeds a
+  "Your chain" tray on Scenarios and Catalog (the tray is not saved).
+- **Runs and Results.** A lifecycle strip reads Launched → Running →
+  Finished / Failed / Aborted → Read back → Results. Until Read back (the
+  reconcile pull) runs, steps say only Ran or Did not run. Run detail draws
+  the live chain; a lane header opens its component page; a Broken step opens
+  a troubleshooting sheet with the likely causes in the order to check them;
+  Abort is an inline confirm. Results always names its run in a "Result of"
+  bar, with a switcher across read-back runs, and never shows without a run.
+- **Where things moved.** `#/agents`, `#/tenants` and `#/firewall` open the
+  Agents, Tenant and Firewall component pages (their Fleet, Read-back and
+  Sources tabs); `#/setup` and `#/scope` open Get started; `#/validation` opens
+  Results; `#/readiness` opens the Launch gate (`#/preflight`). Scenarios keeps
+  its `#/library` route, so old links still work.
+- **Accessibility and theming.** Dark-theme aliases follow `[data-theme]`;
+  a skip link and palette focus order; a page title and form labels on every
+  page; agent capabilities shown on their cards.
 
 ### Added — ★ Favorites: the system's best scenarios, first in the Composer palette
 
@@ -159,18 +218,30 @@ draft verdict now reports `DRAFT_CHAIN_INVALID` when the chain is invalid
   (named "Add to chain" and "Inspector" for assistive tech). A shared `Icon`
   set (play, stop, repeat, plus, sliders) joins the kit.
 
-### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
+### Upgrading from 1.1.x (read before you re-run `dev-up.sh` on a jumpbox)
+
+1.1.1 carries 1.1.0's schema code unchanged (`git diff v1.1.0 v1.1.1 --
+core/models.py core/database.py` is empty), so everything below applies to
+both.
 
 - **Back up the database volume first, and roll back only by restoring it.**
-  A database created or migrated by this release cannot be used by 1.1.0 or
-  older code: `runs.agent_profile_mode` and `results.expected_outcome` are
-  `NOT NULL` with no SQL default, so every launch from older code fails with a
-  500 that does not name the schema (OPS-17, open). There is no schema stamp.
-  Columns added since 1.0.0 are added automatically at boot; do not run the
-  `ALTER TABLE` lines older notes mention, because SQLite rejects a duplicate
-  column. The procedure is in `docs/release/mvp-launch-runbook.md` §8.5.
+  A database *created* by 1.1.0 or later code cannot be used by 1.0.2 or older
+  code: `runs.agent_profile_mode` and `results.expected_outcome` are
+  `NOT NULL` with no SQL default, so every launch from that older code fails
+  with a 500 that does not name the schema (OPS-17, open). There is no schema
+  stamp. Probed on 2026-11-12 through each version's own `init_db` and ORM
+  (one Scenario, Run and Result inserted and read back), not through a launch:
+  1.2.0 upgraded a database 1.1.1 created and one 1.0.2 created; 1.1.1 then
+  wrote to a database 1.2.0 created and to one it upgraded, because every
+  column 1.2.0 adds to an existing table is nullable; 1.0.2 wrote to the
+  database 1.2.0 upgraded (the migration gives `agent_profile_mode` a SQL
+  default) and failed on the one 1.2.0 created (`NOT NULL constraint failed:
+  runs.agent_profile_mode`). Columns added since 1.0.0 are added automatically
+  at boot; do not run the `ALTER TABLE` lines older notes mention, because
+  SQLite rejects a duplicate column. The procedure is in
+  `docs/release/mvp-launch-runbook.md` §8.5.
 - **Re-running `scripts/dev-up.sh` over an existing `.env` (RG-GUARD-01).** A
-  1.1.0 `.env` has no `CORTEXSIM_ALLOWED_HOSTS`, so after this release's Host
+  1.1.x `.env` has no `CORTEXSIM_ALLOWED_HOSTS`, so after this release's Host
   guard every request by the jumpbox's name would get
   `400 HOST_NOT_ALLOWED`. `dev-up.sh` now warns, starts compose with this
   host's short and fully qualified names for that bring-up only, and leaves
@@ -1252,7 +1323,7 @@ read-back run of a scenario that evidences it saw a detection.
   is refused in the console too, with the reason. The header's agent chip says
   whether the beacon is polling, in words and shape as well as colour. Beacon
   availability is read per architecture, so an amd64-only shelf names the
-  missing Apple-silicon beacon. The deploy modal traps Tab, names what each
+  missing Apple-silicon beacon. The deploy modal (Components › Agents › Fleet) traps Tab, names what each
   Copy button copies, fits the viewport and scrolls inside itself; with
   Windows selected it had grown past the screen with nothing scrolling.
 - **A Windows install path that does not pipe a download into `iex` (UI-17,
@@ -1523,12 +1594,12 @@ read-back run of a scenario that evidences it saw a detection.
 - `collector_targets` gains `declaration` and `last_arrival` columns, added at boot.
 - The email emitter carries a `canary_token` on its records.
 
-### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
+### Added — ingestion doors, phase 1 (read API, scenario-card chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
   `/api/scenarios/{id}/doors`): for each scenario, which of its detections can
   fire given which data doors are open. Read-only, zero outbound calls.
-- **Library chip** on every scenario card: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
+- **Doors chip** on every scenario card in Scenarios: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
   or `NOT CHECKED`, plus an opt-in **Runnable here** filter that is off by
   default, so nothing is hidden.
 - **Data path** as a sixth launch preflight check. Advisory only: it warns, it
@@ -1699,7 +1770,7 @@ escape every string behind it.
   (`response_layer`, `response_layer_read_at`; migration added) with the
   stage's own verdict (`stage: {status, code, detail}`), returned as a
   `response_layer` block by `GET /api/readiness` with a 24 h staleness flag, and
-  rendered as a SOC Framework row on the console Readiness page. The row is
+  rendered as a SOC Framework row on the console's Launch gate page. The row is
   green only for a `PRESENT` layer whose stored stage is `ok`. A failed store
   returns the report with `stored: false` instead of a 500, and re-registering
   the integration clears the stored read. `GET /api/health` lists
@@ -1748,6 +1819,25 @@ escape every string behind it.
 - **Counts:** 195 scenarios, 193 cards, 1392 step-detections, Correlation
   share 10.1% (141). `tenant-verified` is still 0; nothing here has run
   against the tenant.
+
+### Added — three deep Linux-endpoint scenarios from the Unit 42 backlog (#188)
+
+Each runs for real (not SAFE-MODE) inside a staged decoy tree under
+`/var/tmp`, with full `cleanup`; every beacon targets a `.invalid` host with a
+2 s timeout.
+
+- **SIM-EDR-025** (`TTP-2026-0200`): Akira (Howling Scorpius) Linux
+  ransomware. `openssl` AES-256 encrypts a staged victim tree, adds the
+  `.akira` extension and ransom note, reads `/etc/shadow` and inhibits
+  recovery.
+- **SIM-KOI-010** (`TTP-2026-0201`): npm supply-chain credential theft on a
+  developer endpoint. A real `preinstall` hook runs from a slopsquatted package
+  against a `.invalid` registry, and `node` harvests staged decoy secrets. The
+  target needs `node` (`requires_interpreters: [node]`).
+- **SIM-KOI-011** (`TTP-2026-0202`): a malicious OpenClaw/ClawHub marketplace
+  skill. A padded README evades scanners, a base64 `curl|bash` dropper calls a
+  `.invalid` canary, and an infostealer reads staged credentials. It reuses
+  `cortex-malicious-agentic-pack`.
 
 ### Added — Unit 42 backlog: a triage, two scenarios and eight log-tampering presets
 
@@ -2259,7 +2349,7 @@ escape every string behind it.
 
 ### Added — read-only NGFW (PAN-OS) connection
 
-- **Read-only NGFW (PAN-OS) connection and a Firewall wizard under Manage.** A
+- **Read-only NGFW (PAN-OS) connection and a Firewall page under Components.** A
   firewall is registered as integration kind `panos_ngfw`, by pasting an API key
   (`PUT /api/credentials/integrations`) or with `POST /api/ngfw/keygen`, which
   exchanges an admin login for a key. `POST /api/connectors/panos_ngfw/preflight`
@@ -2276,8 +2366,8 @@ escape every string behind it.
   shape the parser does not know blocks its own stage (`PN_SHAPE_UNRECOGNISED`)
   rather than reading as empty, and `queries_issued` counts the calls actually sent.
   `PUT /api/ngfw/{name}/sources/{agent_id}` sets the per-agent addresses, and
-  `GET /api/ngfw` lists firewalls. The console destination is **Firewall**
-  (`#/firewall`): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
+  `GET /api/ngfw` lists firewalls. The console destination is **Components ›
+  Firewall** (`#/component-firewall`; `#/firewall` opens its Sources tab): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
   fixtures only. A green firewall preflight proves firewall configuration, not
   ingestion or stitching: **`tenant-verified` is still 0**. Every `PN_` code is in
   `docs/reference/api-and-agent-surface.md` §1.17. New settings:
@@ -2549,6 +2639,94 @@ escape every string behind it.
 - Reconcile counts the page a failed read died on as a query.
 - Pins: `uvicorn[standard]` 0.29.0 to 0.31.1 and `httpx` 0.27.0 to 0.27.2
   (forced by the MCP SDK).
+
+### Fixed — Tier-2 verify queries the run's own window (#230)
+
+- **A late verify no longer reads as a miss, and an early one cannot pass on
+  another run's records.** `POST /api/runs/{id}/verify` and the
+  `CORTEXSIM_AUTO_VERIFY` sweep sent every `verification_xql` with a
+  `relativeTime` counted back from *now* (3600 s by default), so verifying a
+  run more than an hour after it ran found 0 rows and scored `fail`. A pull run
+  is now queried over `{from, to}` in epoch ms: `from` is the run start minus
+  300 s, minus the most negative `eal.params.event_time_offset_seconds` its
+  steps declare; `to` is the run end plus `max(correlation window, 300 s)`,
+  clamped to now (`core/connectors/verify_window.py`). The window is recorded
+  at `tc_verdict_detail.verification.window`.
+- A push run keeps the `relativeTime` lookback and records `window: null` with
+  `window_reason: "push_execution_time_unknown"`: its `completed_at` is when
+  the bundle was generated, and SimCore never learns when the bundle ran. An
+  explicit `timeframe_seconds` is still a full override.
+- The fix covers pull runs of 12 of the 14 scenarios that carry
+  `verification_xql`. `SIM-EDR-018` step-04 and `SIM-EDR-025` filter on
+  `current_time()` inside their own queries and keep the old behaviour.
+
+### Fixed — scenario lint on `channel: eal` steps (#232, #233)
+
+- **S-25 now scans `eal.params`.** The loader rule and its mirror in
+  `.claude/hooks/lint-scenario.py` checked step commands, `platform_variants`
+  and `cleanup` for published indicator values, but not a `channel: eal`
+  step's `eal.params`, so a scenario could point `c2_http_beacon` at actor
+  infrastructure and load, and SimCore would send that traffic from its own
+  process. Both now walk `eal.params` recursively (dicts, lists, strings); an
+  `ipv4` / `ipv6` / `domain` / `url` indicator value, or a url's host, found
+  there is S-25 unless the plugin is a collector-POST plugin, where it is a
+  record field value rather than a peer. The message names the dotted path
+  (for example `eal.params.extra.hosts.0`).
+- **A `channel: eal` step is never marker-only.** Such a step carries a
+  descriptive no-op `command` because `command` is required, and
+  `coverage_report.is_marker_only_step` and the hook's marker-only warning
+  counted it as emitting nothing. Neither does now. The corpus count is
+  unchanged on this tree (98 marker-only steps of 823).
+
+### Added — a scenario run's collector steps can send live, behind consent and keys (#231)
+
+- **Before:** a run's `channel: eal` steps were dispatched in SimCore's own
+  process but hard-wired to dry-run, so a scenario could never deliver its
+  collector records in the same run as its agent steps, a dry-run ledger entry
+  carried `code: null`, and undelivered steps stayed in the scoring
+  denominator, so a later Tier-2 verify could read `fail` for records that
+  were never sent.
+- **Now:** the in-process campaign runs live only when the launch carries
+  `consent.simulation_authorized` **and** a non-blank `authorized_by` (new on
+  `LaunchRequest`), every eal step is registered, validates and resolves to a
+  keyed, non-failing collector target, and the steps' total sleep is ≤ 30 s.
+  Otherwise the whole campaign stays dry-run (never half-live), and each step
+  records why: `EAL_DRY_RUN_NO_CONSENT`, `_NOT_COLLECTOR`,
+  `_TARGET_UNRESOLVED`, `_TARGET_NO_KEY`, `_TARGET_FAILING`, `_SLEEP_CAP`,
+  `_HELD`, or `EAL_STEP_INVALID`.
+- Keys are decrypted only on the sending path and never reach the ledger.
+  `Result.executed_at` comes from each step's real start; a step that delivered
+  no record seeds its results as `outcome: not_executed` with the code as the
+  reason, so it leaves the denominator.
+- The MCP launch tool does not take `authorized_by`, so only a human operator
+  calling the REST launch can start a live send. `tenant-verified` is still 0.
+
+### Added — idp and m365 emitters gain the Pink chain shapes (#234)
+
+For IOC-driven SaaS chains such as Unit 42's Pink (CL-CRI-1147: vishing,
+Entra passkey enrolment, M365 exfiltration, internal extortion). No scenario
+in this release uses them yet.
+
+- **`idp_signin_emulator`**: `source_ip` replaces every attacker-side IP (the
+  `us-west` home baseline is unchanged); `event_time_offset_seconds` (≤ 0, at
+  most a day) back-dates record body times; pattern
+  `vishing_passkey_enrollment` (Microsoft only) emits an interactive sign-in
+  with an approved number-matched push and, 90 s later from the same IP, a
+  "User registered security info" passkey record. Under `canary_token` the
+  passkey record's `initiatedBy.user` follows the canary principal, so one
+  person never reads as two. `docs/reference/eal-plugin-catalog.md` now lists
+  all nine presets.
+- **`m365_activity_emitter`**: `source_ip`; `user_agents`, written to each
+  record's `UserAgent` and never to SimCore's POST header; `storage_targets`
+  (`onedrive` / `sharepoint`, default `[onedrive]`); `event_time_offset_seconds`;
+  and pattern `internal_extortion_notice`, an Exchange `Send` to N internal
+  recipients followed by N Teams `MessageSent` records, each 3 s after the
+  Send. Per-record timestamps are kept.
+- Shared helper `analytics_emitter.body_time(offset_seconds, *, plus_seconds)`.
+  Record shapes are taken from the Microsoft Graph `signIn` / `directoryAudit`
+  documentation and the Office 365 Management Activity API schema, not
+  observed in a tenant. With none of the new params set, every existing record
+  keeps its shape.
 
 ## [1.1.1] - 2026-11-12
 
@@ -3417,7 +3595,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2

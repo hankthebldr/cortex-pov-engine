@@ -349,7 +349,7 @@ says the same:
 - **`tenant-verified` is 0.** No run and no assertion in this repo has been
   executed against a live Cortex tenant. Every green above comes from an
   injected transport. **Authored is not proven** — do not report the two as one
-  number. The console's Readiness surface states this verbatim.
+  number. The console's Launch gate states this verbatim.
 - **Windows pull has run only on a CI runner; it is not proven on a customer
   host.** The image serves a correct `PE32+` and a PowerShell installer. The
   `windows-2022` CI job ran green at `d7f4f29` (2026-11-10) and on the round-2
@@ -592,7 +592,7 @@ are the beta-readiness review's; quote them when you report.
 | **Abort evidence before round 2** | An aborted step's `step_outcomes` read `termination` / `rc` empty, on the Linux lab VM and in the `windows` job | Fixed on the server in round 2 (RG-RUNS-01): a late `/complete` on an aborted, delivered pull run now records `steps[]`. Pinned by a host test, and observed on Windows in run 43037077022 (`termination=aborted rc=130`); not re-run on the lab VM. A beacon that dies before its `/complete` still leaves the row unjudged, but since `271320d` no alert is credited to a step its host never reported: the row stays `pending`. |
 | **Glued step frames before round 2** | `--- exit_code=0 duration=10ms ---=== STEP 2/4 …`, so anything matching `^=== STEP` saw only the first step | Fixed in the beacon (every frame ends with a newline). Runs recorded by an older beacon keep the glued text. |
 | **`docker ps` healthy is liveness only** | `healthy` while `/api/health` reads degraded | The image `HEALTHCHECK` checks that the process answers, and Docker does not restart an unhealthy container. Read `/api/health` for faults. *(Authored; no container ran in this pass.)* |
-| **Rollback is not symmetric** (OPS-17) | After a rollback to 1.1.0 or older, every launch is a 500 | Back up the volume before upgrading; roll back by restoring it (§8.5). |
+| **Rollback is not symmetric** (OPS-17) | After a rollback to 1.0.2 or older over a database 1.1.0 or later code created, every launch is a 500 | Back up the volume before upgrading; roll back by restoring it (§8.5). |
 | **Host test runs are not the image's stack** (OPS-20) | — | The repo venv has uvicorn 0.31.1 / httpx 0.27.2; the image pins 0.29.0 / 0.27.0. Trust the in-image backend job for server-lifecycle behaviour. |
 | **Unsigned Windows beacon** (CI-06) | Quarantine / block | Exclusion plus published sha256 (§7.1). |
 | **Correlation share is exactly at its floor** | — | 10.0% (137 of 1369). The next scenario without a Correlation row turns `coverage-strict` red. |
@@ -725,10 +725,19 @@ tests. Attach the installer's `stage=` / `code=` line, `agent.log`, `sc.exe qc`
 the columns added since 1.0.0 are added at boot by `database._migrate_*`. Do
 **not** run the `ALTER TABLE … ADD COLUMN` lines older notes mention: SQLite
 rejects a duplicate column (OPS-18). Rolling back is the risk. A database
-created or migrated by current code has `runs.agent_profile_mode` and
-`results.expected_outcome` as `NOT NULL` with no SQL default, so 1.1.0 or older
+*created* by 1.1.0 or later code has `runs.agent_profile_mode` and
+`results.expected_outcome` as `NOT NULL` with no SQL default, so 1.0.2 or older
 code fails every launch against it, with a 500 that does not name the schema.
-There is no schema stamp (OPS-17, open).
+A database that pre-1.1.0 code created and newer code *migrated* gets a SQL
+default for both columns instead. There is no schema stamp (OPS-17, open).
+
+*Probed 2026-11-12 through each version's own `init_db` and ORM (one Scenario,
+Run and Result inserted and read back), not through a launch:* 1.2.0 upgraded
+databases created by 1.1.1 and by 1.0.2; 1.1.1 then wrote to a database 1.2.0
+created and to one it upgraded, because every column 1.2.0 adds to an existing
+table is nullable; 1.0.2 wrote to the database 1.2.0 upgraded and failed on the
+one 1.2.0 created (`NOT NULL constraint failed: runs.agent_profile_mode`). 1.1.1
+carries 1.1.0's schema code unchanged.
 
 1. **No run in flight.** `GET /api/runs?fields=summary` must show nothing
    `running` or `queued`. An upgrade mid-run loses the run (§3, OPS-03/04).
