@@ -899,7 +899,27 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # stays right for any caller that drops it.
     "PULL_TARGET_UNSATISFIABLE",
     "PULL_TARGET_OS_UNRECOGNISED",
+    # The scenario's stored stitch_context no longer validates: the body is
+    # fine, the content it names is not launchable as stored.
+    "STITCH_CONTEXT_INVALID",
+    # Push launch of a scenario whose cluster_posture plants gated cluster
+    # capabilities: a consent key to set, a deployment switch that is off, or
+    # a posture no consent unlocks.
+    "CLUSTER_CONSENT_REQUIRED",
+    "PRIVILEGED_K8S_DISABLED",
+    "CLUSTER_POSTURE_REFUSED",
 })
+
+
+def _refusal_status(code: Optional[str], http_status: Optional[int]) -> int:
+    """The HTTP status a launch refusal surfaces as: ONE mapping for
+    ``POST /api/runs``, ``POST /api/runs/canary`` and the dry run, so they
+    cannot disagree.
+
+    A refusal that already knows its status says so (the payload-shelf family
+    is NOT uniformly 409: PayloadDestRefused is 400). Otherwise the code
+    decides: a precondition not met is 409, anything else 422."""
+    return http_status or (409 if code in _LAUNCH_PRECONDITION_CODES else 422)
 
 
 async def _safe_publish(run_id: Optional[str], event: dict) -> None:
@@ -946,44 +966,32 @@ async def _draft_launch_gate(scenario_id: str, db: AsyncSession) -> None:
     if db is None:
         return
 
+    _is_draft, refusals = await _draft_refusals(scenario_id, db)
+    if refusals:
+        raise HTTPException(status_code=409, detail=refusals[0])
+
+
+async def _draft_refusals(
+    scenario_id: str, db: AsyncSession,
+) -> tuple[bool, list[dict[str, str]]]:
+    """``(is_draft, refusal bodies in launch order)`` for one scenario id.
+
+    Not a draft (or not found): ``(False, [])``. The orchestrator owns the
+    not-found answer, and active / deprecated corpus rows never see this gate.
+    """
     # Local import: keep one predicate implementation (the drafts router) and
     # avoid any import-order coupling at module load. Matches the repo's
     # local-import house style for cross-router reuse.
-    from api.drafts import _chain_valid, _tc_bound  # noqa: PLC0415
+    from api.drafts import draft_launch_refusals  # noqa: PLC0415
 
     row = (
         await db.execute(
             select(Scenario).where(Scenario.scenario_id == scenario_id)
         )
     ).scalar_one_or_none()
-
-    # Not a draft (or not found): the existing launch path handles it. Active
-    # and deprecated corpus rows never see this gate.
     if row is None or row.status != "draft":
-        return
-
-    chain_ok, chain_reasons = _chain_valid(row)
-    if not chain_ok:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "draft chain is not launchable",
-                "code": "DRAFT_CHAIN_INVALID",
-                "detail": "; ".join(chain_reasons),
-            },
-        )
-
-    tc_ok, _tc_reasons = _tc_bound(row)
-    if not tc_ok:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "draft is not launchable",
-                "code": "DRAFT_NOT_TC_BOUND",
-                "detail": "bind a real test case from the UC/TC Index before launching",
-            },
-        )
-
+        return False, []
+    return True, draft_launch_refusals(row)
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -1050,11 +1058,8 @@ async def _launch_run_impl(
         #    posture as every other precondition a launch can fail on, and the
         #    structured detail means a console offers the exact checkbox
         #    instead of regexing the sentence for a key name.
-        status = result.http_status or (
-            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
-        )
         raise HTTPException(
-            status_code=status,
+            status_code=_refusal_status(result.error_code, result.http_status),
             detail={
                 "error": result.error,
                 "code": result.error_code,
@@ -1089,6 +1094,70 @@ async def launch_run(
 ):
     """Launch a scenario run in pull or push mode. (POST /api/runs)"""
     return await _launch_run_impl(body, db)
+
+
+@router.post("/preflight")
+async def launch_preflight(
+    body: LaunchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Dry run of ``POST /api/runs``: every check the launch makes, nothing
+    written. (POST /api/runs/preflight)
+
+    Same body as the launch. Answers 200 with ``launchable``, the refusal the
+    launch would return (``would_refuse_with``, with its HTTP status), EVERY
+    refusal in launch order (``refusals``), each check judged (``checks``:
+    pass / block / skipped with a reason) and the advisory ``warnings`` a
+    launch would carry. The checks are the launch's own functions, run in the
+    launch's order (engine.orchestrator.Orchestrator._evaluate_launch), so the
+    answer here is the answer the launch gives.
+    """
+    checks: list[dict[str, Any]] = []
+    if body.mode not in ("pull", "push"):
+        checks.append({
+            "id": "launch.mode", "verdict": "block", "code": "INVALID_MODE",
+            "http_status": 400, "error": "Invalid mode",
+            "detail": "mode must be 'pull' or 'push'",
+        })
+        return _preflight_response(checks, [])
+
+    is_draft, draft_refusals = await _draft_refusals(body.scenario_id, db)
+    for refusal in draft_refusals:
+        checks.append({"id": "draft", "verdict": "block", "http_status": 409, **refusal})
+    if is_draft and not draft_refusals:
+        checks.append({"id": "draft", "verdict": "pass"})
+
+    evaluation = await orchestrator.preflight(
+        scenario_id=body.scenario_id,
+        mode=body.mode,
+        db=db,
+        target_agent_id=body.target_agent_id,
+        consent=body.consent,
+        paired_with_run_id=body.paired_with_run_id,
+        canary_run_id=body.canary_run_id,
+        allow_missing_tools=body.allow_missing_tools,
+        agent_profile_mode=body.agent_profile_mode,
+    )
+    for check in evaluation.checks:
+        row = check.to_dict()
+        if check.verdict == "block":
+            row["http_status"] = _refusal_status(check.code, check.http_status)
+        checks.append(row)
+    return _preflight_response(checks, evaluation.warnings)
+
+
+def _preflight_response(checks: list[dict[str, Any]], warnings: list[Any]) -> dict:
+    refusals = [c for c in checks if c["verdict"] == "block"]
+    first = refusals[0] if refusals else None
+    return {
+        "launchable": first is None,
+        "would_refuse_with": None if first is None else {
+            k: first.get(k) for k in ("code", "http_status", "error", "detail")
+        },
+        "refusals": refusals,
+        "checks": checks,
+        "warnings": list(warnings),
+    }
 
 
 @compat_router.post("/run", deprecated=True)
@@ -1137,11 +1206,8 @@ async def launch_canary(
         agent_profile_mode="block",
     )
     if not result.success:
-        status = result.http_status or (
-            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
-        )
         raise HTTPException(
-            status_code=status,
+            status_code=_refusal_status(result.error_code, result.http_status),
             detail={
                 "error": result.error,
                 "code": result.error_code,

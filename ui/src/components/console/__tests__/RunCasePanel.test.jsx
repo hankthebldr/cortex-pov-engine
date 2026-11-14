@@ -77,7 +77,30 @@ describe('RunCasePanel', () => {
     expect(a.getAttribute('href')).toBe('https://acme.xdr.us.paloaltonetworks.com/incidents/900')
     expect(a.getAttribute('rel')).toMatch(/noopener/)
     expect(within(rows[1]).queryByRole('link')).toBeNull()
-    expect(within(rows[1]).getByText('http://evil.example.com/x')).toBeTruthy()
+    expect(within(rows[1]).getByText('link withheld')).toBeTruthy()
+    expect(rows[1].textContent).not.toMatch(/evil\.example/)
+  })
+
+  it.each([
+    ['a javascript: url', 'javascript:alert(document.cookie)', /javascript/],
+    ['a non-PANW host', 'https://evil.example.com/case/901', /evil\.example/],
+  ])('a rejected xdr_url (%s) reads "link withheld" and its text is not printed', (_, url, raw) => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [{ ...LEDGER.cases[0], xdr_url: url }] }} />)
+    const row = screen.getByTestId('run-case-row')
+    expect(within(row).queryByRole('link')).toBeNull()
+    expect(within(row).getByText('link withheld')).toBeTruthy()
+    expect(row.textContent).not.toMatch(raw)
+  })
+
+  it('a url the instance withheld reads "link withheld"; no url reads a dash', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [
+      { ...LEDGER.cases[0], case_id: '902', xdr_url: null, xdr_url_withheld: true },
+      { ...LEDGER.cases[0], case_id: '903', xdr_url: null, xdr_url_withheld: false },
+    ] }} />)
+    const rows = screen.getAllByTestId('run-case-row')
+    expect(within(rows[0]).getByText('link withheld')).toBeTruthy()
+    expect(within(rows[1]).queryByText('link withheld')).toBeNull()
+    expect(within(rows[1]).getByText('—')).toBeTruthy()
   })
 
   it('shows a non-OK code and a failed issue read', () => {
@@ -115,15 +138,15 @@ describe('RunCasePanel', () => {
     expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
   })
 
-  it('NO_CASE_YET says the next reconcile advances it, not a refresh', () => {
+  it('NO_CASE_YET says the next Read back advances it, not a refresh', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [],
       shared_with_other_runs: false }} />)
     const hint = screen.getByTestId('run-case-no-case-yet')
-    expect(hint.textContent).toMatch(/the next reconcile/)
+    expect(hint.textContent).toMatch(/the next Read back/)
     expect(hint.textContent).toMatch(/A refresh re-reads cases only/)
     // Identical to NO_CASE_YET_HINT in core/connectors/case_ledger.py.
     expect(NO_CASE_YET_HINT).toBe(
-      'No case yet: the next reconcile re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
+      'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
   })
 
   it('renders read_at as UTC', () => {
@@ -141,5 +164,55 @@ describe('RunCasePanel', () => {
   it('ledger with wrong-typed cases renders unreadable', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, cases: 'oops' }} />)
     expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()
+  })
+
+  // The console says "the tenant", never the integration's internal name.
+  it('the read line never names the integration', () => {
+    const { container } = render(<RunCasePanel ledger={{ ...LEDGER, integration: 'lab-deathstar' }} />)
+    expect(container.textContent).not.toMatch(/lab-deathstar/)
+    expect(screen.getByText(/read 2026-11-11T10:00:00\+00:00 UTC · alert_incident_ids/)).toBeTruthy()
+  })
+
+  it('its heading is an h2 unless the page nests it deeper', () => {
+    const { unmount } = render(<RunCasePanel ledger={LEDGER} />)
+    expect(screen.getByRole('heading', { name: 'Case', level: 2 })).toBeTruthy()
+    unmount()
+    render(<RunCasePanel ledger={null} headingLevel={3} />)
+    expect(screen.getByRole('heading', { name: 'Case', level: 3 })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+  })
+})
+
+describe('RunCasePanel Read back action', () => {
+  const ACTION = <button type="button">Read back</button>
+
+  it('RunCasePanel offers Read back in its empty state and under NO_CASE_YET', () => {
+    const { rerender } = render(<RunCasePanel ledger={null} reconcileAction={ACTION} />)
+    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    rerender(<RunCasePanel
+      ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }}
+      reconcileAction={ACTION}
+    />)
+    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    expect(screen.getByTestId('run-case-no-case-yet').textContent).toBe(NO_CASE_YET_HINT)
+  })
+
+  it('with no reconcileAction it renders no button', () => {
+    const { rerender } = render(<RunCasePanel ledger={null} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+describe('RunCasePanel names the console verb, not "reconcile"', () => {
+  it('its empty, no-case and unreadable copy says Read back', () => {
+    const { container, rerender } = render(<RunCasePanel ledger={null} />)
+    expect(container.textContent).toContain('Not read yet — Read back the run.')
+    rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
+    expect(container.textContent).not.toMatch(/reconcile/i)
+    rerender(<RunCasePanel ledger={{ ...LEDGER, code: undefined }} />)
+    expect(screen.getByTestId('run-case-unreadable').textContent).toContain('Read back the run to rebuild it.')
+    expect(container.textContent).not.toMatch(/reconcile/i)
   })
 })

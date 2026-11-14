@@ -554,3 +554,47 @@ def test_arrival_unknown_target_is_404_and_bad_body_is_422(db_file, monkeypatch)
         negative = _arrive(c, delivered=-1)
     assert missing.status_code == 404
     assert bad.status_code == 422 and negative.status_code == 422
+
+
+def test_a_gzip_target_round_trips_and_its_test_record_is_gzipped(db_file):
+    import gzip
+
+    seen = []
+
+    def factory(timeout, verify_tls):
+        def handler(req):
+            seen.append(req)
+            if req.headers.get("content-encoding") != "gzip":
+                return httpx.Response(400, json={"error": "gzip compression error (invalid header)"})
+            return httpx.Response(200, json={"error": "false"})
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def ok_connect(*a):
+        return None
+
+    with _app(db_file) as (c, app, _s):
+        assert _put(c, compress=True).status_code == 200
+        assert c.get("/api/collector-targets/okta-hec").json()["compress"] is True
+        from api import collector_targets as ct_api
+        app.dependency_overrides[ct_api.preflight_transports] = lambda: (ok_connect, factory)
+        out = c.post("/api/collector-targets/okta-hec/preflight", json={"write_canary": True})
+    assert out.json()["verdict"] == "accepted", out.text
+    assert json.loads(gzip.decompress(seen[0].content))["cortexsim_preflight"] is True
+
+
+def test_changing_compression_discards_the_stored_check(db_file):
+    def factory(timeout, verify_tls):
+        return httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(202)))
+
+    async def ok_connect(*a):
+        return None
+
+    with _app(db_file) as (c, app, _s):
+        _put(c)
+        from api import collector_targets as ct_api
+        app.dependency_overrides[ct_api.preflight_transports] = lambda: (ok_connect, factory)
+        c.post("/api/collector-targets/okta-hec/preflight", json={"write_canary": True})
+        assert c.get("/api/collector-targets/okta-hec").json()["last_check"] is not None
+        _put(c, compress=True)
+        after = c.get("/api/collector-targets/okta-hec").json()
+    assert after["compress"] is True and after["last_check"] is None

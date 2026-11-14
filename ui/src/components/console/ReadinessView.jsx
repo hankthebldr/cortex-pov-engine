@@ -24,14 +24,14 @@ import { newestRun, triStateLabel } from '../../outcomes.js'
  * and a catalog that loaded 0 entries is degraded even when the server called
  * it healthy.
  */
-export default function ReadinessView({ onNavigate = () => {} }) {
+export default function ReadinessView({ onNavigate = () => {}, embedded = false }) {
   const env = useEnvironment()
   const r = useReadiness({ scenarios: env.scenarios, runs: env.runs })
 
   if (r.loading && !r.health) {
     return (
       <div className="readiness" data-testid="readiness-view">
-        <ViewHead onRefresh={r.refresh} refreshing />
+        <ViewHead onRefresh={r.refresh} refreshing embedded={embedded} />
         <div className="readiness__loading" role="status" aria-live="polite">
           probing SimCore…
         </div>
@@ -44,6 +44,7 @@ export default function ReadinessView({ onNavigate = () => {} }) {
   return (
     <div className="readiness" data-testid="readiness-view">
       <ViewHead
+        embedded={embedded}
         onRefresh={r.refresh}
         model={r.health}
         ladder={r.ladder}
@@ -79,12 +80,14 @@ export default function ReadinessView({ onNavigate = () => {} }) {
 
 // ─── Header ──────────────────────────────────────────────────────────────────
 
-function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, lastRefreshedAt = null }) {
+function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, lastRefreshedAt = null, embedded = false }) {
   const status = model ? model.overall : HS.UNKNOWN
   return (
     <header className="view-head">
       <div>
-        <h1>Launch gate</h1>
+        {/* Inside the Launch gate page (embedded) this POVengine's own
+            readiness is a section under the page's one h1. */}
+        {embedded ? <h2>This POVengine</h2> : <h1>Launch gate</h1>}
         <div className="view-head__meta">
           <span className={HS_CHIP[status] || 'chip'} data-testid="readiness-overall">
             {HS_LABEL[status] || 'UNKNOWN'}
