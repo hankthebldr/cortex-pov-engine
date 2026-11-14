@@ -397,10 +397,14 @@ def test_a_windows_step_makes_or_checks_its_fixed_folder_first(sid):
     doc = _corpus()[sid]
     create = _windows(doc, creator)
     assert create.startswith(f"$sandbox = {path}\n"), create[:120]
-    for line in ('if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }',
-                 'cmd.exe /c mkdir "$sandbox"', f"(A;;0x1;;;{marker})", "Set-Acl -LiteralPath $sandbox",
-                 "if (Get-ChildItem -LiteralPath $sandbox -Force)"):
-        assert line in create, line
+    head = create[:create.index("is not empty: something else is at that path")]
+    made = head.index("$null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)")
+    assert head.index('if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }') < made
+    assert f"(A;OICI;FA;;;$me)(A;;0x1;;;{marker})" in head[:made]
+    # The ACL arrives with the folder: a mkdir followed by Set-Acl leaves the folder
+    # open to every account that may add files to its parent until the Set-Acl lands.
+    assert "Set-Acl" not in head and "mkdir" not in head.replace("rmdir", "")
+    assert made < head.index(f"($ids -contains '{marker}')") < head.index("if (Get-ChildItem -LiteralPath $sandbox -Force)")
     for step_id in checkers:
         check = _windows(doc, step_id)
         assert check.startswith(f"$sandbox = {path}\n"), (step_id, check[:120])
