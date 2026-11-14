@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from connectors.tenant_reader import DATA_NOTICE
+from connectors.tenant_reader import DATA_NOTICE, project_case_ledger
 
 from ..client import SimCoreError, SimCoreShapeUnknown, encode_segment
 from ..envelope import Envelope
@@ -178,7 +178,17 @@ def _run_path(run_id: str, suffix: str = "") -> str:
 
 
 async def run_get(ctx: ToolContext, args: RunIdIn) -> Envelope:
-    return await _simcore(ctx, await ctx.client.get(_run_path(args.run_id)), "simcore")
+    """The run as SimCore returns it, with its case ledger projected
+    (``project_case_ledger``): a case's ``resolve_comment`` sits under
+    ``tenant_text`` and a rejected ``xdr_url`` is withheld. A ledger with
+    cases adds ``data_notice``."""
+    body = await ctx.client.get(_run_path(args.run_id))
+    if isinstance(body, dict) and body.get("case_ledger") is not None:
+        ledger = project_case_ledger(body["case_ledger"])
+        body = {**body, "case_ledger": ledger}
+        if isinstance(ledger, dict) and isinstance(ledger.get("cases"), list) and ledger["cases"]:
+            body["data_notice"] = DATA_NOTICE
+    return await _simcore(ctx, body, "simcore")
 
 
 async def run_list(ctx: ToolContext, args: RunListIn) -> Envelope:
@@ -443,7 +453,11 @@ def specs() -> list[ToolSpec]:
           "settable; c2/cluster/node consents, allow_runtime_install and the agent-profile attestations "
           "are refused before any call. The effect lands on a customer host. Push mode returns "
           "{run_id, mode, download_url}, never a script body.", idempotent=False),
-        s("cortexsim.run.get", RunIdIn, run_get, "read", "simcore", f"GET /api/runs/{{id}}. {_SIMCORE_ONLY}"),
+        s("cortexsim.run.get", RunIdIn, run_get, "read", "simcore",
+          f"GET /api/runs/{{id}}. case_ledger.cases[] come projected: a case's resolve_comment sits "
+          "under tenant_text (neutralised, capped, text_truncated) and an xdr_url that is not https "
+          "on paloaltonetworks.com is null with xdr_url_withheld: true. A ledger with cases adds "
+          f"data_notice: {DATA_NOTICE} {_SIMCORE_ONLY}"),
         s("cortexsim.run.list", RunListIn, run_list, "read", "simcore",
           f"GET /api/runs filtered by status/scenario_id, newest first; capped with truncated + total. "
           f"{_SIMCORE_ONLY}"),
@@ -482,7 +496,9 @@ def specs() -> list[ToolSpec]:
         s("cortexsim.run.tenant_evidence.get", RunIdIn, tenant_evidence_get, "read", "simcore",
           "GET /api/runs/{id}/tenant-evidence: the latest stored tenant-evidence snapshot (issues, "
           "cases, endpoint record, agreement with the matcher), history[] (last 10: id, read_at, "
-          "code) and case_ledger; never read is snapshot: null with TENANT_EVIDENCE_NOT_READ. "
+          "code) and case_ledger (projected: a case's resolve_comment under tenant_text, a "
+          "rejected xdr_url null with xdr_url_withheld); never read is snapshot: null with "
+          "TENANT_EVIDENCE_NOT_READ. "
           "Holds no tenant key and makes no tenant call: it returns what SimCore stored. "
           f"data_notice: {DATA_NOTICE}"),
         s("cortexsim.run.tenant_evidence.read", TenantEvidenceReadIn, tenant_evidence_read, "read",

@@ -1,0 +1,158 @@
+/* run-compare.css — Runs · Compare (design change C2).
+   ---------------------------------------------------------------------------
+   The run chips (aria-pressed), the detection × run grid and its paired
+   summary rows. Tokens only; no hex. A selected chip is the green wash and
+   line (--ac-soft fill, --ac-line border). Every state in the grid is a
+   StatusIcon (glyph + word), never colour alone. */
+
+.theme-console .run-compare { max-width: 100%; }
+
+.theme-console .run-compare__intro {
+  margin: 0 0 16px;
+  max-width: 700px;
+  font: 400 12.5px/1.6 var(--font-ui);
+  color: var(--tx2);
+}
+
+/* ── Picker ────────────────────────────────────────────────────────────── */
+.theme-console .run-compare__picker { margin-bottom: 16px; }
+.theme-console .run-compare__label {
+  margin: 0 0 8px;
+  font: 600 11px/1 var(--font-ui);
+  color: var(--tx3);
+}
+.theme-console .run-compare__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-console .run-compare__chip {
+  display: flex; flex-direction: column; gap: 4px;
+  max-width: 240px; min-width: 0;
+  padding: 8px 11px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+.theme-console .run-compare__chip:hover { border-color: var(--bd2); }
+.theme-console .run-compare__chip:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .run-compare__chip.is-on { background: var(--ac-soft); border-color: var(--ac-line); }
+.theme-console .run-compare__chip-name {
+  max-width: 216px;
+  font: 600 11.5px/1.25 var(--font-ui);
+  color: var(--tx);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .run-compare__chip-meta { font: 500 10px/1 var(--font-mono); color: var(--tx3); }
+.theme-console .run-compare__more {
+  margin-top: 8px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font: 500 12px/1 var(--font-ui);
+  color: var(--tx2);
+  cursor: pointer;
+}
+.theme-console .run-compare__more:hover { color: var(--tx); text-decoration: underline; }
+.theme-console .run-compare__more:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+
+.theme-console .run-compare__note {
+  margin: 10px 0 0;
+  font: 400 11.5px/1.5 var(--font-ui);
+  color: var(--tx2);
+}
+.theme-console .run-compare__note:empty { display: none; }
+.theme-console .run-compare__note--error { color: var(--crit); }
+.theme-console .run-compare__empty {
+  margin: 0;
+  padding: 22px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  font: 400 12.5px/1.5 var(--font-ui);
+  color: var(--tx2);
+}
+
+/* ── Grid ──────────────────────────────────────────────────────────────── */
+.theme-console .run-compare__scroll {
+  overflow-x: auto;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+}
+.theme-console .run-compare__grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;   /* run columns share the width; long names clamp */
+}
+.theme-console .run-compare__col-det { width: 240px; }
+.theme-console .run-compare__grid th,
+.theme-console .run-compare__grid td {
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  vertical-align: middle;
+}
+.theme-console .run-compare__grid tr:last-child th,
+.theme-console .run-compare__grid tr:last-child td { border-bottom: 0; }
+
+.theme-console .run-compare__corner {
+  padding: 12px 16px;
+  vertical-align: bottom;
+  font: 600 11px/1 var(--font-ui);
+  color: var(--tx3);
+}
+.theme-console .run-compare__head {
+  padding: 12px 14px;
+  border-left: 1px solid var(--bd);
+  font-weight: 400;
+}
+.theme-console .run-compare__head-in { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.theme-console .run-compare__head-name {
+  font: 600 12px/1.3 var(--font-ui);
+  color: var(--tx);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.theme-console .run-compare__head-meta { font: 500 10px/1.4 var(--font-mono); color: var(--tx3); }
+.theme-console .run-compare__head-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 6px;
+}
+.theme-console .run-compare__act { padding: 5px 8px; font-size: 10.5px; }
+.theme-console .run-compare__why {
+  margin-top: 4px;
+  font: 400 10.5px/1.4 var(--font-ui);
+  color: var(--tx2);
+  white-space: normal;
+}
+
+.theme-console .run-compare__det { padding: 10px 16px; font-weight: 400; }
+.theme-console .run-compare__type {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: var(--s3);
+  color: var(--tx2);
+  font: 700 8.5px/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.theme-console .run-compare__slug { font: 500 10.5px/1.35 var(--font-mono); color: var(--tx2); overflow-wrap: anywhere; }
+.theme-console .run-compare__step { display: block; margin-top: 3px; font: 500 9.5px/1 var(--font-mono); color: var(--tx3); }
+
+.theme-console .run-compare__cell { padding: 10px 14px; border-left: 1px solid var(--bd); }
+.theme-console .run-compare__cell--quiet,
+.theme-console .run-compare__quiet { font: 500 11px/1.3 var(--font-ui); color: var(--tx3); }
+
+/* Paired summary: the same four rows per run, or an honest dash. */
+.theme-console .run-compare__summary th,
+.theme-console .run-compare__summary td { background: var(--s2); }
+.theme-console .run-compare__summary tr:first-child th,
+.theme-console .run-compare__summary tr:first-child td { border-top: 1px solid var(--bd2); }
+.theme-console .run-compare__sum-label { padding: 9px 16px; font: 600 11px/1.3 var(--font-ui); color: var(--tx2); }
+.theme-console .run-compare__sum {
+  padding: 9px 14px;
+  border-left: 1px solid var(--bd);
+  font: 600 12px/1.2 var(--font-mono);
+  color: var(--tx);
+}
+.theme-console .run-compare__sum--short { color: var(--warn); }

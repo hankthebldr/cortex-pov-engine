@@ -128,7 +128,7 @@
     "powershell": null
   },
   "SIM-CDR-002": {
-    "bash": "b2cdfe9461e96e31f5c2cca0086ace93d8086fe07b5ce335646e6680196d44cd",
+    "bash": "7473645168e54512f93c51f02e8e2ac318458471f3610844e6b9c64844f8aaa0",
     "powershell": null
   },
   "SIM-CDR-003": {
@@ -144,7 +144,7 @@
     "powershell": null
   },
   "SIM-CDR-006": {
-    "bash": "0a40e38432e34d591346e58b32664292dcb400d04b0a273d2eb5c43a690305fb",
+    "bash": "9583680d01f88e92a9f482f9a6f274958c7b64e50fe0041e628a77630776ee1c",
     "powershell": null
   },
   "SIM-CDR-007": {
@@ -417,6 +417,22 @@
   },
   "SIM-EDR-025": {
     "bash": "43e8f0011214ca09f6e65fc2ea9be8953b2375b9de6ec5b017ef74b5cd25cb3f",
+    "powershell": null
+  },
+  "SIM-EDR-026": {
+    "bash": "182cd2ad4e3099d32954784a17901989ad5802608c4c7f90506bf56d6a9b5ded",
+    "powershell": null
+  },
+  "SIM-EDR-027": {
+    "bash": "ffbf263cc34f126ba4610fe9fdb5e7893766457e0f26df6276224e5798417081",
+    "powershell": null
+  },
+  "SIM-EDR-028": {
+    "bash": "f5d40c8f00b23cd8dca15548d15fa7ed7fd6ce273904a7dff4a32f8ac6234bcd",
+    "powershell": null
+  },
+  "SIM-EDR-029": {
+    "bash": "7093b802032895f66562990f9330246630c208da0d6e568854f4f6630f19685f",
     "powershell": null
   },
   "SIM-EMAIL-001": {

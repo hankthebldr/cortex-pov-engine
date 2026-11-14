@@ -464,3 +464,41 @@ def test_waiter_returns_the_read_that_finished_while_it_waited(session_factory, 
     # read that finished while the request waited is reused.
     again = asyncio.run(_read(session_factory, slow))
     assert again["read"] is True
+
+
+# ── final review ───────────────────────────────────────────────────────────
+
+def test_endpoint_reply_in_lowercase_data_is_a_parse_error_not_not_found(session_factory):
+    """I-1: an endpoint reply this reader does not recognise is never "no record"."""
+    seed(session_factory)
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), cases=copy.deepcopy(CASES),
+                      replies={"endpoints": {"reply": {"data": [], "total_count": 0}}})
+    endpoint = read(session_factory, fake)["snapshot"]["payload"]["endpoint"]
+    assert endpoint["code"] == "XSIAM_PARSE_ERROR"
+    assert endpoint["record"] is None
+
+
+def test_probe_refused_locally_records_whose_budget_on_the_id_space(session_factory, monkeypatch):
+    """Q2: a refused id probe says whose budget refused it, as a section does."""
+    seed(session_factory, observations=[_OBS_1001])
+    # One token: the window read takes it, so the probe is refused before it is sent.
+    monkeypatch.setenv("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", "1")
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), cases=copy.deepcopy(CASES),
+                      endpoints=copy.deepcopy(ENDPOINTS))
+    out = read(session_factory, fake)
+    p = out["snapshot"]["payload"]
+    assert out["code"] == "QUOTA_REFUSED"
+    assert len(fake.calls["issues"]) == 1 and len(fake.calls["issues_by_id"]) == 0
+    id_space = p["agreement"]["id_space"]
+    assert id_space["code"] == "QUOTA_REFUSED"
+    assert id_space["attempted"] is True and id_space["refused_locally"] is True
+    # The sections after it were never tried: they do not say whose budget it was.
+    assert (p["cases"]["attempted"], p["cases"]["refused_locally"]) == (False, None)
+
+
+def test_probe_refused_by_the_tenant_records_it_was_the_tenant(session_factory):
+    seed(session_factory, observations=[_OBS_1001])
+    fake = FakeTenant(issues=copy.deepcopy(ISSUES), status={"issues_by_id": 429})
+    id_space = read(session_factory, fake)["snapshot"]["payload"]["agreement"]["id_space"]
+    assert id_space["code"] == "QUOTA_REFUSED"
+    assert id_space["attempted"] is True and id_space["refused_locally"] is False

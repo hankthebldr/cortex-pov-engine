@@ -1,0 +1,372 @@
+{
+  "id": "TTP-2026-0555",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-13T00:00:00+00:00",
+    "updated_at": "2026-11-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "linux",
+      "credential-access",
+      "credential-stuffing",
+      "brute-force",
+      "sshpass",
+      "openssh-client",
+      "analytics-bioc",
+      "severity-low"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 110,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "sshpass Credential-Stuffing Burst Against an Unreachable Host",
+    "summary": "A root shell on a Linux endpoint stages six lab user and password pairs, then runs the real sshpass binary six times around the OpenSSH client against one .invalid name, with -p and with -f. No session opens. Declares the built-in 'Suspicious sshpass command execution' Analytics BIOC (Low), four XQL validation rows and one operator-installed correlation.",
+    "description": "SUBJECT. The Cortex XDR Analytics BIOC 'Suspicious sshpass command execution'. Its reference page (fetched 2026-11-13) describes it in one sentence: 'The sshpass command was executed, This could be an attempt to check for credential stuffing.' The page lists activation period 14 Days, training period 30 Days, test period N/A (single event), deduplication period 1 Day, required data XDR Agent, severity Low, ATT&CK tactic Credential Access (TA0006) and technique Brute Force: Credential Stuffing (T1110.004). It publishes no trigger predicate, threshold, field name, hash, domain or address, and names no actor or campaign, so this card carries no IOC and no threat attribution. WHAT SIM-EDR-029 DOES. Three root-run steps on one Linux endpoint, 40 s apart, all inside /var/tmp/.cortexsim-sshpass. Step-01 creates that directory with mkdir and no -p, so a directory someone else made at the predictable path is never adopted, and writes a list of six user and password pairs. They are lab strings written for this scenario: not credentials, and not published by anyone. Step-02 runs the real sshpass binary six times, each run wrapping the OpenSSH client against one name under .invalid; three runs pass the password with -p and three with -f. The name cannot resolve. An attempt counts only when it ended 255 and ssh itself printed that it could not resolve the hostname; anything else stops the step. ssh runs with BatchMode=yes, so it never prompts: no session opens and no pair can be offered to anything. Step-01 and step-02 both check first that the name has no address, and no sshpass is run if it has one. Each attempt is stopped by a watchdog after 10 s, and a stopped attempt is never counted. Step-02, step-03 and the cleanup go on only when one lstat of the sandbox path says: a directory, owned by the running user, mode 700. That is a check of the path, made once per step, so it holds where /var/tmp is sticky (mode 1777, as read back on the lab endpoint); run one instance of this scenario per endpoint at a time. Step-03 removes the list, the password files and the directory. The order of the steps and the removal step are our composition, not the page's, and T1070.004 on step-03 is our mapping. WHAT IS DECLARED. One ABIOC row for the built-in alert, on step-02, on the basis of the reference page: a single-event detector whose described trigger the step performs for real. The alert has not been observed in a lab run. Four XQL validation rows, scored by Tier-2 verify only. One operator-installed correlation, CR-EDR-0029 (Medium), the only other row an alert can back. WHAT IS HUNT ONLY. The two fleet hunts and the read-back query on this card. DEPENDENCY. sshpass is ABSENT on the lab endpoint (read back 2026-11-13: the package is not installed; the OpenSSH 9.6p1 client is present). The operator installs the package sshpass before the run; no step installs anything and nothing stands in for the binary. The burst has not been run anywhere yet. Step-01 and step-02 declare requires_interpreters [sshpass, ssh]: on an endpoint that lacks either, the beacon runs nothing and reports RUNTIME_DEPENDENCY_MISSING with exit 127, so all six rows read not_executed, not missed. The advisory preflight is not a check for this scenario: GET /api/agents/{id}/preflight and Run.runtime_dependency_gaps report ready: false with sshpass and ssh missing on every endpoint, including one that has both, because the beacon advertises only python, perl, ruby and node. WHAT IT CANNOT SHOW. A case from the built-in alert: it is Low, and a Low issue never creates or joins a case.",
+    "severity": "low",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": []
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.004",
+        "name": "Brute Force: Credential Stuffing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.004",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Deletion"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-029 — three root-run steps delivered by the CortexSim beacon, 40 s apart; scenarios/edr/edr-029-sshpass-credential-stuffing-burst.yml is the delivery path. Nothing in the chain needs root: the lab endpoint has no service accounts, so root is the identity the harness can honour there.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint, reporting to a tenant with the built-in Analytics BIOCs enabled (lab: 9.4.0.470 on Ubuntu 24.04, report mode).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "sshpass on the endpoint's PATH: package sshpass (1.09-1 on Ubuntu 24.04). It is ABSENT on the lab endpoint (read back 2026-11-13 23:47 UTC: the package is not installed), so the burst has not been run anywhere yet. Check that it is present without running it. Do not run sshpass by hand on the endpoint before the scenario, not even to print its version: an execution may raise the built-in alert then and start its one-day deduplication period.",
+        "check_command": "command -v sshpass",
+        "remediation": "apt-get install -y sshpass, by the operator, before the run. No step of SIM-EDR-029 installs it."
+      },
+      {
+        "description": "The OpenSSH client on the endpoint's PATH (package openssh-client). Present on the lab endpoint: OpenSSH 9.6p1 (read back 2026-11-13 23:47 UTC).",
+        "check_command": "command -v ssh",
+        "remediation": "apt-get install -y openssh-client, by the operator, before the run."
+      },
+      {
+        "description": "A resolver that gives no address for a name under .invalid, and a sticky /var/tmp. Read back from the lab endpoint on 2026-11-13 23:47 UTC: resolver 127.0.0.53 with search '.', getent hosts on a .invalid name returns 2 at once, /var/tmp is mode 1777 without noexec. Step-01 and step-02 make the lookup check themselves and stop with exit 10 otherwise. The sandbox guard is a check of the path, so it holds only where /var/tmp is sticky.",
+        "check_command": "getent hosts ssh-gw.cortexsim-canary.invalid; test $? -eq 2 && test \"$(stat -c %a /var/tmp)\" = 1777"
+      },
+      {
+        "description": "One run of this scenario per endpoint at a time. Every run uses the same sandbox path, and a step checks that the sandbox is its own only once, when it starts.",
+        "check_command": "test ! -e /var/tmp/.cortexsim-sshpass"
+      },
+      {
+        "description": "Use the two check commands above, on the endpoint, to confirm the tools. Do not use the advisory preflight for this scenario: GET /api/agents/{id}/preflight and Run.runtime_dependency_gaps report ready: false with missing ['sshpass', 'ssh'] on EVERY endpoint, including a prepared one, because the beacon's advertised roster is fixed to python, perl, ruby and node. The launch is not refused; the beacon's own check at run time decides, and it looks both names up on the endpoint's PATH.",
+        "check_command": "command -v sshpass ssh"
+      },
+      {
+        "description": "Correlation CR-EDR-0029 from this card installed in the tenant at Medium before the run. Without it the correlation row cannot fire.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > Correlations'"
+      },
+      {
+        "description": "No earlier execution of sshpass on this endpoint in the previous 24 hours (the built-in alert's deduplication period is 1 Day; the page does not say what it is keyed on), and at least 75 minutes since the previous SIM-EDR-029 run was launched on it: CR-EDR-0029 looks back one hour on a 10-minute schedule, so for that long it can still raise an issue for the earlier run, which would be credited to the new run by rule name.",
+        "check_command": "echo 'confirm the last sshpass execution on this endpoint is more than 24 hours ago'"
+      }
+    ],
+    "payload": {
+      "interpreter": "sh",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-029-sshpass-credential-stuffing-burst.yml is the delivery path\n# (three steps, 40 s apart, with the dependency check, the fail-closed name lookup in step-01\n# and step-02, a 10 s watchdog on each attempt, and the exit-code and stderr checks). Shape only:\nD=/var/tmp/.cortexsim-sshpass; H=ssh-gw.cortexsim-canary.invalid\n# step-01: the sandbox root is created atomically; a directory someone else made is never adopted\nrm -rf \"$D\"; mkdir -m 700 \"$D\"\n# step-02 and step-03 begin with the ownership guard: one lstat gives type, owner and mode\n[ \"$(stat -c %F:%u:%a \"$D\" 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox $D is missing or not ours: step-01 did not complete\" >&2; exit 1; }\nset -- -F /dev/null -o BatchMode=yes -o ConnectTimeout=3 -o ConnectionAttempts=1 \\\n  -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \\\n  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null \\\n  -o IdentityAgent=none -o IdentityFile=/dev/null -o LogLevel=ERROR\n# each run is started in the background by the step shell, watched for 10 s, then waited for\nsshpass -p \"$secret\" ssh \"$@\" -- \"$user@$H\" true < /dev/null 2> \"$D/attempt.err\" &\nsshpass -f \"$D/pw-$n.txt\" ssh \"$@\" -- \"$user@$H\" true < /dev/null 2> \"$D/attempt.err\" &\n# a run counts only when it ended 255 AND attempt.err holds ssh's own\n# \"Could not resolve hostname\" line; a run the watchdog stopped is never counted",
+      "input_variables": [],
+      "timeout_seconds": 150
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "step-01: the candidate pair list, written by the step shell and cat inside the sandbox (mode 0600 in a 0700 directory).",
+        "expected_value": "action_file_path = \"/var/tmp/.cortexsim-sshpass/candidates.txt\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-02: six sshpass process starts, three with -p <password> and three with -f <password file>, each naming the .invalid host. The step shell starts each one in the background and is its parent.",
+        "expected_value": "action_process_image_name = \"sshpass\" and action_process_image_command_line contains \"cortexsim-canary.invalid\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-02: six OpenSSH client process starts whose parent is sshpass. Each prints 'Could not resolve hostname' and exits 255.",
+        "expected_value": "action_process_image_name = \"ssh\" and actor_process_image_name = \"sshpass\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "step-01 and step-02: failed name lookups of the one .invalid host (one by getent in each step, then one per ssh). Not scored: whether the agent records a failed lookup has not been observed, and no connection follows it.",
+        "expected_value": "ssh-gw.cortexsim-canary.invalid"
+      },
+      {
+        "artifact_type": "process",
+        "description": "step-03: rm removes the candidate list and the three password files, then the sandbox directory.",
+        "expected_value": "action_process_image_name = \"rm\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshpass/candidates.txt\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "sh",
+      "code": "# step-03 removes the sandbox when the chain completes; step-01 and step-02 remove it when they\n# stop with a non-zero code. Run this by hand after a pull run whose step was killed outright\n# or stopped during its dwell (a pull run executes no cleanup); a push bundle runs it on exit.\n# The pidfile is read only when one lstat of the sandbox path says: a directory, owned by the\n# running user, mode 700. The pid is stopped, and killed 2 s later if it is still there, only\n# while its command line still names the .invalid host. rm -rf removes a symlink at the path,\n# never its target.\nD=/var/tmp/.cortexsim-sshpass; if [ \"$(stat -c %F:%u:%a \"$D\" 2>/dev/null)\" = \"directory:$(id -u):700\" ] && [ -f \"$D/attempt.pid\" ]; then p=\"$(cat \"$D/attempt.pid\")\"; if grep -qF cortexsim-canary.invalid \"/proc/$p/cmdline\" 2>/dev/null; then kill \"$p\" 2>/dev/null; sleep 2; if grep -qF cortexsim-canary.invalid \"/proc/$p/cmdline\" 2>/dev/null; then kill -9 \"$p\" 2>/dev/null; fi; fi; fi\nrm -rf /var/tmp/.cortexsim-sshpass"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Suspicious sshpass command execution",
+        "description": "PANW built-in XDR Analytics BIOC. The name is the built-in alert name verbatim so the matcher keys on it. From its reference page (https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-sshpass-command-execution, fetched 2026-11-13): activation period 14 Days, training period 30 Days, test period N/A (single event), deduplication period 1 Day, required data XDR Agent, severity Low, ATT&CK Credential Access (TA0006) and Brute Force: Credential Stuffing (T1110.004). The page's description, verbatim: 'The sshpass command was executed, This could be an attempt to check for credential stuffing.' The page publishes no trigger predicate, threshold or field name. SIM-EDR-029 declares it on step-02 on that basis: a single-event detector whose described trigger the step performs for real, six times. It has not been observed in a lab run. Low issues never create or join a case. suppression_window_seconds carries the page's one-day deduplication period; the page does not say what the deduplication is keyed on. The logic below approximates the trigger for hunting; it is not the built-in's code.",
+        "logic": "dataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\"",
+        "severity": "low",
+        "mitre_technique_ids": [
+          "T1110.004"
+        ],
+        "causality_anchor": "Not published. In the lab the chain is the CortexSim beacon, the root operator shell, sshpass, then the OpenSSH client that sshpass starts.",
+        "suppression_window_seconds": 86400
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-029 Candidate Pair List Written In The Sandbox",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path = \"/var/tmp/.cortexsim-sshpass/candidates.txt\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-029 Sshpass Starts Naming The Canary",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\" and action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-029 OpenSSH Client Started By Sshpass",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"ssh\" and actor_process_image_name = \"sshpass\"\n| filter action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-029 Candidate List And Password Files Removed",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"rm\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-sshpass/candidates.txt\"\n| fields _time, agent_hostname, actor_causality_id, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "investigation",
+        "name": "EDR-029 Read-Back — Sshpass Starts Per Password Form (one full run is three inline and three from a file)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\" and action_process_image_command_line contains \"cortexsim-canary.invalid\"\n| alter password_form = if(action_process_image_command_line ~= \"sshpass +-f \", \"file\", \"inline\")\n| comp count() as starts, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id, password_form",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-029 Hunt — Sshpass With The Password On The Command Line, Per Endpoint And Parent (7 days)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\" and action_process_image_command_line ~= \"sshpass +-p\"\n| comp count() as starts, count_distinct(action_process_image_command_line) as distinct_lines, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id, actor_process_image_name\n| sort desc distinct_lines",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-029 Hunt — Remote-Access Clients Started By Sshpass Across The Fleet (7 days)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"sshpass\" and action_process_image_name in (\"ssh\", \"scp\", \"sftp\", \"rsync\")\n| comp count() as starts, count_distinct(action_process_image_command_line) as distinct_lines, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id, action_process_image_name\n| sort desc distinct_lines",
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-029 Repeated Sshpass Launches With Differing Arguments",
+        "rule_id": "CR-EDR-0029",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name EXACTLY as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID; NO MITRE tag (the matcher reads an XQL row and a correlation issue as one engine family, so a tagged issue would also be credited to this scenario's validation rows on the shared technique). UNTESTED: this XQL has not been run in any tenant. Its filter, comp, then filter shape and its functions (count, count_distinct, min, max) follow CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11. It is built only from events SIM-EDR-029 produces on one host: sshpass process starts. It fires for one agent with at least four sshpass starts that carry at least four different command lines inside the time frame. SIM-EDR-029 produces six starts with six different command lines, so a floor of four tolerates two lost events. Expect it to fire again on every scheduled run while the events stay inside the one-hour time frame; alert suppression is the operator's choice. It also matches legitimate automation that wraps ssh in sshpass against varying targets: scope it by host before using it outside a lab. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\"\n| comp count() as starts, count_distinct(action_process_image_command_line) as distinct_lines, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter starts >= 4 and distinct_lines >= 4"
+      }
+    ],
+    "analytics_modules": [
+      "Not declared: the SSH-session analytics alerts ('Rare SSH Session', 'Uncommon SSH session was established') need a real SSH session. This chain opens none, because its only destination is a name under .invalid, so neither can fire from it.",
+      "Not declared: other built-in Low Analytics BIOCs that judge rarity (for example 'Uncommon Linux shell command execution', observed on this lab endpoint from other chains) may or may not fire on the step shell. They are not expectations of this chain and never join a case."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "Suspicious sshpass command execution"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue 'Suspicious sshpass command execution' on the endpoint (an XDR Analytics BIOC, Low), raised by the sshpass runs of step-02. Declared from the alert's reference page; not yet observed in a lab run."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0029"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Issue 'EDR-029 Repeated Sshpass Launches With Differing Arguments' (operator-installed correlation, Medium) on the endpoint. It is the chain's only Medium-or-higher issue: nothing else in the chain can join a case it opens."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "xql-search",
+        "coverage_tier": "investigation",
+        "evidence_query": "The four validation queries on this card, over xdr_data. Tier-2 verify only; none raises an issue."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-029",
+        "name": "sshpass Credential-Stuffing Burst From One Linux Endpoint",
+        "description": "Stage a candidate list, drive the real sshpass binary at one unreachable name in both password forms, remove the traces, and check two things: the built-in single-event Analytics BIOC fires on the sshpass execution, and an operator-installed correlation ties the repeated launches into one Medium issue.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-029A",
+            "objective": "The sshpass execution raises the built-in Analytics BIOC and its telemetry is queryable.",
+            "preconditions": [
+              "Linux endpoint with the Cortex XDR agent; sshpass and the OpenSSH client installed by the operator.",
+              "No sshpass execution on the endpoint in the previous 24 hours."
+            ],
+            "steps": [
+              "Write the six candidate pairs into the sandbox (step-01).",
+              "Run sshpass six times around the OpenSSH client against the .invalid name, three with -p and three with -f (step-02).",
+              "Remove the list, the password files and the sandbox (step-03)."
+            ],
+            "success_criteria": [
+              "Issue `Suspicious sshpass command execution` (Low) on the endpoint: alert-backed, declared from the reference page, not yet observed in a lab run.",
+              "XQL `EDR-029 Candidate Pair List Written In The Sandbox` returns a row.",
+              "XQL `EDR-029 Sshpass Starts Naming The Canary` returns a row.",
+              "XQL `EDR-029 OpenSSH Client Started By Sshpass` returns a row.",
+              "XQL `EDR-029 Candidate List And Password Files Removed` returns a row.",
+              "The four XQL rows are scored by Tier-2 verify only and never raise Detection Accuracy.",
+              "Not a criterion: a case. The built-in alert is Low, and a Low issue never creates or joins one."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-EDR-029B",
+            "objective": "The operator-installed correlation ties the repeated sshpass launches into one Medium issue.",
+            "preconditions": [
+              "CR-EDR-0029 installed at Medium, scheduled every 10 minutes over a 1 hour time frame, with no MITRE tag.",
+              "At least 75 minutes since the previous SIM-EDR-029 run on the endpoint."
+            ],
+            "steps": [
+              "Run the chain once.",
+              "Wait for the next scheduled run of the rule (up to 10 minutes)."
+            ],
+            "success_criteria": [
+              "Issue `EDR-029 Repeated Sshpass Launches With Differing Arguments` (Medium) on the endpoint: alert-backed, and only if the operator installed the rule.",
+              "Void when step-02 of the run ended 10, 11 or 12: no complete burst ran, so neither an issue nor a miss on this rule means anything. The engine still writes the row missed once the window closes. Fix the endpoint and re-run.",
+              "Not a criterion: that the built-in Low alert joins the correlation's case. It cannot."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Prefer SSH public-key or certificate authentication, and turn password authentication off on servers that do not need it (sshd_config PasswordAuthentication no). sshpass only automates password logins.",
+      "Do not install sshpass on servers with no documented need for it. Its own manual page calls -p the least secure of its options, because every system user can read the password from the process list.",
+      "For programs that must pass a password, the manual page recommends an anonymous pipe and the -d option."
+    ],
+    "detection_engineering": [
+      "Key on the sshpass process image name, and on the client it starts by parent (actor_process_image_name = sshpass). The password forms differ only in the command line: -p puts the password there, -f names a file, -e and -d keep it off the command line.",
+      "Leave the MITRE tag off CR-EDR-0029. The matcher reads an XQL row and a correlation issue as one engine family, so a tagged issue would also be credited to the validation rows that share the technique.",
+      "Keep CR-EDR-0029 at Medium or higher and map agent_hostname and agent_id in its alert fields: a Low issue never creates or joins a case, and a correlation issue groups only through mapped artifacts.",
+      "The built-in alert's deduplication period is 1 Day. A second execution of sshpass on the same endpoint inside a day may raise nothing, which is the deduplication and not a miss.",
+      "The XQL here uses actor_causality_id and timestamp_diff(current_time(), _time, \"SECOND\"): bare causality_id and to_timestamp(current_time() - N) are rejected by the lab tenant."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex analytics alert reference — Suspicious sshpass command execution",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-sshpass-command-execution",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1110.004 Brute Force: Credential Stuffing",
+      "url": "https://attack.mitre.org/techniques/T1110/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1070.004 Indicator Removal: File Deletion",
+      "url": "https://attack.mitre.org/techniques/T1070/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "sshpass(1) manual page, Ubuntu 24.04 (sshpass 1.09-1): the -p and -f password forms and the return values",
+      "url": "https://manpages.ubuntu.com/manpages/noble/man1/sshpass.1.html",
+      "publisher": "Canonical (Ubuntu Manpages)"
+    },
+    {
+      "title": "ssh_config(5) manual page, Ubuntu 24.04 (openssh-client 1:9.6p1): BatchMode disables password prompts; ConnectTimeout covers the connection, not the name lookup",
+      "url": "https://manpages.ubuntu.com/manpages/noble/man5/ssh_config.5.html",
+      "publisher": "Canonical (Ubuntu Manpages)"
+    }
+  ]
+}

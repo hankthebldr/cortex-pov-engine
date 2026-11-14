@@ -94,7 +94,7 @@ describe('page h1 is the rail or tab label', () => {
 })
 
 describe('off-tab pages: one h1, and it is the registry label', () => {
-  it('New POV run stays the only h1 once a scenario is armed', async () => {
+  it('the Launch gate keeps one h1 with a scenario armed: the panel and this POVengine are h2s', async () => {
     installRoutes({
       'GET /api/scenarios/SIM-EDR-001': {
         scenario_id: 'SIM-EDR-001', name: 'Credential dumping', plane: 'EDR',
@@ -103,12 +103,11 @@ describe('off-tab pages: one h1, and it is the registry label', () => {
       'GET /api/agents': { agents: [], total: 0 },
       'GET /api/tools/adapters': { adapters: [], total: 0 },
     })
-    const Guided = getDestination('guided').Component
-    render(<Guided params={{ arm: 'SIM-EDR-001' }} onNavigate={() => {}} />)
-    // Both embedded surfaces have mounted: the target picker and the launch panel.
-    await screen.findByText('Armed scenario')
-    await screen.findByTestId('active-agent-summary')
-    expect(h1Texts()).toEqual([routeLabel('guided')])
+    const Gate = getDestination('preflight').Component
+    render(<Gate params={{ arm: 'SIM-EDR-001' }} onNavigate={() => {}} />)
+    await screen.findByTestId('new-run')
+    expect(h1Texts()).toEqual([routeLabel('preflight')])
+    expect(screen.getByRole('heading', { level: 2, name: 'New POV run' })).toBeInTheDocument()
   })
 
   it('Lab', async () => {

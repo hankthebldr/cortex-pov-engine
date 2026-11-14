@@ -1,8 +1,8 @@
 """POST /api/runs against a container agent: refuse before dispatch.
 
 A step that fails for lack of privilege or tooling would be scored as a
-detection the customer's Cortex missed, so the launch is refused (409) and the
-run row ends ``failed`` rather than ``pending``.
+detection the customer's Cortex missed, so the launch is refused (409) before
+any Run row is written.
 """
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def _launch(client, sid, agent_id="pod-1", **extra):
         "scenario_id": sid, "mode": "pull", "target_agent_id": agent_id, **extra})
 
 
-def test_absent_tool_is_refused_409_and_run_is_failed(client, session_factory):
+def test_absent_tool_is_refused_409_and_no_run_is_written(client, session_factory):
     sid = _seed(session_factory, command="jq . /etc/os-release", facts=FACTS,
                 agent_id="pod-refuse")
     r = _launch(client, sid, "pod-refuse")
@@ -82,9 +82,8 @@ def test_absent_tool_is_refused_409_and_run_is_failed(client, session_factory):
     d = r.json()["detail"]
     assert d["code"] == "AGENT_TOOL_ABSENT"
     assert d["detail"]["missing"] == [{"step": "step-01", "tools": ["jq"]}]
-    runs = _runs(session_factory)
-    assert len(runs) == 1 and runs[0].status == "failed"
-    assert "AGENT_TOOL_ABSENT" in (runs[0].output or "")
+    # Refused before the Run row is written (slice 1 of the one-model gate).
+    assert _runs(session_factory) == []
     assert _queued_steps("pod-refuse") == []
 
 
@@ -127,7 +126,7 @@ def test_posture_gap_is_refused_and_not_overridable(client, session_factory, mon
     d = r.json()["detail"]
     assert d["code"] == "AGENT_POSTURE_INSUFFICIENT"
     assert d["detail"]["satisfying_profile"] == "cluster-privilege"
-    assert _runs(session_factory)[0].status == "failed"
+    assert _runs(session_factory) == []
 
 
 @pytest.mark.parametrize("facts", [None, {"container": False, "tools": []}])
