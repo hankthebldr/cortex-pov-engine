@@ -272,6 +272,26 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
 
+### Added — every component page explains itself (design v33 C7)
+
+- **Each of the eight component pages now opens with four plain lines** under
+  its header: What it is · Why the POV needs it · What it unlocks · Where it
+  lives. They stay on every tab (Overview, Setup and the management tab). The
+  copy lives in one module, `ui/src/components/console/componentAbout.js`,
+  keyed by component id; a page whose id has no entry renders without the
+  block rather than borrow another component's words.
+- **The canvas copy was held to what the code does.** The Tenant and Firewall
+  lines say POVengine never writes to either. The Agents line says nearly
+  every scenario step runs on an agent (an offline bundle runs without one),
+  in place of a five-plane list. The HTTP collector line names the log
+  streams the collector-class emitters actually send; AI access and AI
+  runtime scenarios do not go through it. Read-back is described as checking a
+  run's expected detections, not as the source of every Detected result,
+  because a result can still be marked by hand. The XDR Collector and Cortex
+  Engine lines say POVengine maps no scenario to them yet (the canvas had the
+  Engine unlocking ANALYTICS scenarios), and the Cortex paths match the ones
+  their Setup steps already give.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as

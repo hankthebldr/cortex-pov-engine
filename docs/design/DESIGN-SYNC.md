@@ -180,6 +180,7 @@ or a link.
 | Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
 | Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
 | Component page shape + Configure frame | — | `component/ComponentPage.jsx` · `ConfigureFrame.jsx` · `checks.js` |
+| Component About lines (v33 C7: What it is · Why the POV needs it · What it unlocks · Where it lives) | every component page, every tab | `components/console/componentAbout.js` (copy, keyed by component id) → `ComponentPage.jsx` |
 | Scenarios (Library) | Compose & simulate › Scenarios | `components/console/OperationsView.jsx` · `ScenarioGrid.jsx` · `ScenarioInspector.jsx` (the scenario sheet) |
 | Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
 | Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
