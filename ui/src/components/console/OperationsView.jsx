@@ -6,6 +6,7 @@ import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
+import FlowStepper from './FlowStepper.jsx'
 import { getScenarios, getScenario, getDoorReadiness, getDoors, getStagedScenarios } from '../../api/client.js'
 import { applyScenarioFilters, scenarioFilterOptions, EMPTY_SCENARIO_FILTERS } from './scenarioFilters.js'
 import { unmappedCounts } from './scenarioMapping.js'
@@ -362,6 +363,8 @@ export default function OperationsView({
 
   return (
     <div className="operations grid-bg">
+      {/* Compose → simulate: the scenario picked here rides into the next pages. */}
+      <FlowStepper current="library" scenarioId={selectedId} onNavigate={onNavigate} />
       <div className="view-head">
         <div>
           <div className="ops-accent-bar" aria-hidden="true" />

@@ -14,6 +14,7 @@ import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecy
 import useReadBack from '../components/console/useReadBack.jsx'
 import ResultOfBar from '../components/console/ResultOfBar.jsx'
 import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
+import FlowStepper from '../components/console/FlowStepper.jsx'
 import { Button } from '../components/console/kit/index.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
@@ -418,10 +419,12 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
 // The one place a run is started: the armed scenario's launch flow (What runs ›
 // Readiness › Where it runs › What it will do › authorisation › one Run), then
 // this POVengine's own readiness. The guided "New POV run" route and the old
-// readiness route both land here.
+// readiness route both land here. The compose → simulate stepper sits on top;
+// `?arm=` is the scenario the launch is for, carried on to the other steps.
 function LaunchGateSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div className="launch-gate-page">
+      <FlowStepper current="preflight" scenarioId={params.arm || null} onNavigate={onNavigate} />
       <GuidedPovFlow params={params} onNavigate={onNavigate} title="Launch gate" />
       <ReadinessSurface embedded onNavigate={onNavigate} />
     </div>
@@ -450,9 +453,21 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
     return runs.find((r) => idMatches(runIdOf(r), runId)) || null
   }, [runs, runId])
 
+  // Compose → simulate: the open run's scenario rides back to the other steps
+  // (Launch gate re-arms it, Build a chain opens its chain).
+  const stepper = (
+    <FlowStepper
+      current="runs"
+      scenarioId={(selected && selected.scenario_id) || null}
+      runId={runId || null}
+      onNavigate={onNavigate}
+    />
+  )
+
   if (compare) {
     return (
       <div className="runs-surface">
+        {stepper}
         <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
         <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
@@ -465,6 +480,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   if (!runId) {
     return (
       <div className="runs-surface">
+        {stepper}
         <div className="view-head">
           <div>
             {/* "Runs", not "Runs & Proof". Proof & Export is its own
@@ -505,6 +521,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
 
   return (
     <Suspense fallback={<DestinationLoading />}>
+      {stepper}
       <RunDetailView
         runId={runId}
         run={selected}
