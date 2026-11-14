@@ -8,7 +8,6 @@ import { runIdOf } from '../../api/ids.js'
 import { serverDate } from '../../api/time.js'
 import useCatalogBindings from './useCatalogBindings.js'
 import Button from './kit/Button.jsx'
-import StatusIcon from './kit/StatusIcon.jsx'
 import { useChainTray, ttpTrayItem } from '../../context/ChainTrayContext.jsx'
 import {
   BINDING_STATUS, GROUP_OPTIONS, SORT_OPTIONS, MEMBERSHIP_OPTIONS,
@@ -67,9 +66,8 @@ export default function TtpBrowserView({
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedRuns, setSelectedRuns]     = useState(null)
 
-  const [filterStatus, setFilterStatus]     = useState('all')
+  const [filterSubdomain, setFilterSubdomain] = useState('all')
   const [filterTactic, setFilterTactic]     = useState('all')
-  const [filterPlatform, setFilterPlatform] = useState('all')
   const [query, setQuery]                   = useState('')
 
   // Group / sort by the UC / TC index. The join loads beside the corpus and
@@ -143,18 +141,17 @@ export default function TtpBrowserView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTtpId, loading])
 
-  // Status is what runs have shown (design C5): `run_status` on each list row,
-  // from read-back runs only. Offered only when the server sends it.
-  const statuses = useMemo(
-    () => (ttps.some((t) => t.run_status) ? RUN_STATUS_OPTIONS : []),
-    [ttps],
-  )
+  // Subdomain is the index's fy27_subdomain over the cards' bindings, so it is
+  // offered once the UC / TC join has loaded. A card evidencing test cases in
+  // two subdomains matches either.
+  const subdomains = useMemo(() => {
+    if (!bindingsReady) return []
+    const all = new Set()
+    for (const list of bindings.byCard.values()) for (const b of list) if (b.subdomain) all.add(b.subdomain)
+    return Array.from(all).sort()
+  }, [bindings, bindingsReady])
   const tactics = useMemo(
     () => Array.from(new Set(ttps.flatMap((t) => t.tactic_ids || []))).sort(),
-    [ttps],
-  )
-  const platforms = useMemo(
-    () => Array.from(new Set(ttps.flatMap((t) => t.platforms || []))).sort(),
     [ttps],
   )
 
@@ -166,9 +163,9 @@ export default function TtpBrowserView({
     // narrows by AND across tokens.
     const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     return ttps.filter((t) => {
-      if (filterStatus   !== 'all' && t.run_status !== filterStatus)     return false
+      if (filterSubdomain !== 'all'
+        && !(bindings.byCard.get(t.id) || []).some((b) => b.subdomain === filterSubdomain)) return false
       if (filterTactic   !== 'all' && !(t.tactic_ids || []).includes(filterTactic))   return false
-      if (filterPlatform !== 'all' && !(t.platforms  || []).includes(filterPlatform)) return false
       if (tokens.length > 0) {
         const haystack = [
           t.id, t.name, t.summary,
@@ -181,16 +178,14 @@ export default function TtpBrowserView({
       }
       return true
     })
-  }, [ttps, filterStatus, filterTactic, filterPlatform, query, bindings])
+  }, [ttps, filterSubdomain, filterTactic, query, bindings])
 
   const hasActiveFilters =
-    filterStatus !== 'all' || filterTactic !== 'all' ||
-    filterPlatform !== 'all' || query.trim() !== ''
+    filterSubdomain !== 'all' || filterTactic !== 'all' || query.trim() !== ''
 
   const resetFilters = () => {
-    setFilterStatus('all')
+    setFilterSubdomain('all')
     setFilterTactic('all')
-    setFilterPlatform('all')
     setQuery('')
     setPage(0)
   }
@@ -256,7 +251,7 @@ export default function TtpBrowserView({
         <div>
           <h1>TTP cards</h1>
           <div className="view-head__meta">
-            {ttps.length} TTPs · {tactics.length} tactics · {platforms.length} platforms · {visible.length} visible
+            {ttps.length} TTPs · {tactics.length} tactics · {visible.length} visible
           </div>
         </div>
       </div>
@@ -278,10 +273,6 @@ export default function TtpBrowserView({
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{tactics.length}</div>
           <div className="ttpb-stat__label">tactics</div>
-        </div>
-        <div className="ttpb-stat">
-          <div className="ttpb-stat__value mono">{platforms.length}</div>
-          <div className="ttpb-stat__label">platforms</div>
         </div>
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{visible.length}</div>
@@ -325,11 +316,10 @@ export default function TtpBrowserView({
       </div>
 
       <div className="ttpb-filters">
-        {statuses.length > 0 && (
-          <FilterRow label="status" active={filterStatus} options={statuses} onChange={setFilterStatus} />
+        {subdomains.length > 0 && (
+          <FilterRow label="subdomain" active={filterSubdomain} options={subdomains} onChange={setFilterSubdomain} />
         )}
         <FilterRow label="tactic"   active={filterTactic}   options={tactics}   onChange={setFilterTactic} />
-        <FilterRow label="platform" active={filterPlatform} options={platforms} onChange={setFilterPlatform} />
       </div>
 
       {/* Organizes the GRID, so it leaves with it: no corpus, or a card open
@@ -651,34 +641,19 @@ function FilterRow({ label, active, options, onChange }) {
       >
         All
       </button>
-      {options.map((opt) => {
-        const { v, label: text } = typeof opt === 'string' ? { v: opt, label: opt } : opt
-        return (
-          <button
-            key={v}
-            type="button"
-            className={'ttpb-chip' + (active === v ? ' is-active' : '')}
-            onClick={() => onChange(v)}
-          >
-            {text}
-          </button>
-        )
-      })}
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          className={'ttpb-chip' + (active === opt ? ' is-active' : '')}
+          onClick={() => onChange(opt)}
+        >
+          {opt}
+        </button>
+      ))}
     </div>
   )
 }
-
-/* ─── Run status on a card (design C5) ──────────────────────────────── */
-
-// `run_status` from GET /api/ttps: detected only from a run that was read
-// back, pending when a step citing the card ran but nothing read back has seen
-// it, never when no step citing it has run.
-const RUN_STATUS = {
-  detected: { status: 'up', word: 'Detected in a run' },
-  pending: { status: 'degraded', word: 'Pending' },
-  never: { status: 'off', word: 'Never run' },
-}
-const RUN_STATUS_OPTIONS = Object.entries(RUN_STATUS).map(([v, { word }]) => ({ v, label: word }))
 
 /* ─── TTP row card ──────────────────────────────────────────────────── */
 
@@ -744,7 +719,6 @@ function CardIndexRow({ id, bindings, placedBy }) {
 function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false, bindings, placedBy }) {
   const techniques = ttp.technique_ids || []
   const tactics    = ttp.tactic_ids    || []
-  const platforms  = ttp.platforms     || []
   const counts     = ttp.detection_counts || {}
   const totalDetections = detectionTotal(ttp)
 
@@ -786,13 +760,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
             )}
           </div>
         )}
-        {(tactics.length > 0 || platforms.length > 0) && (
+        {tactics.length > 0 && (
           <div className="ttpb-row__chips">
             {tactics.map((t) => (
               <span key={t} className="ttpb-chip--tag ttpb-chip--tag-signal mono">{t}</span>
-            ))}
-            {platforms.map((p) => (
-              <span key={p} className="ttpb-chip--tag ttpb-chip--tag-muted mono">{p}</span>
             ))}
           </div>
         )}
@@ -816,11 +787,6 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
           </div>
         )}
       </div>
-      {RUN_STATUS[ttp.run_status] && (
-        <div className="ttpb-card__run" data-testid="ttpb-card-run-status" data-run-status={ttp.run_status}>
-          <StatusIcon status={RUN_STATUS[ttp.run_status].status} word={RUN_STATUS[ttp.run_status].word} />
-        </div>
-      )}
       </button>
       <div className="ttpb-card__foot" data-testid="ttpb-card-foot">
         <span className="ttpb-card__count mono">
