@@ -44,10 +44,10 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **173 HTTP routes total** (counted 2026-11-13 with the walker below on the
+- **175 HTTP routes total** (counted 2026-11-13 with the walker below on the
   1.2.0 release tree after `dev` was merged in, on the host venv). Routers under `/api`,
   plus the app-level `GET /api/health` and a static file mount at `/`, plus 4
-  FastAPI-owned docs/openapi routes. The ground truth's static count is 163 route
+  FastAPI-owned docs/openapi routes. The ground truth's static count is 165 route
   decorators; the walker adds the 4 docs routes and the 6 shelf artifact routes that
   `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
   `/api/shelf` without a decorator. On 2026-11-12, before the tenant reader merged,

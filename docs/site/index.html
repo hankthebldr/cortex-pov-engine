@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>CortexSim — Detection Simulation Engine</title>
-<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 201 UC/TC-aligned scenarios across 16 detection planes." />
+<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 205 UC/TC-aligned scenarios across 16 detection planes." />
 <meta name="theme-color" content="#0a0e0b" />
 <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
-<meta property="og:description" content="201 scenarios across 16 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
+<meta property="og:description" content="205 scenarios across 16 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -242,7 +242,7 @@ footer a{border-bottom:none}
     <p>
       CortexSim drives controlled, high-fidelity signal into a customer's XSIAM or
       XDR tenant so a DC can prove detection logic against the same UC/TC the
-      customer is buying — <strong>201 scenarios across 16 detection planes</strong>,
+      customer is buying — <strong>205 scenarios across 16 detection planes</strong>,
       every one a validated foreign key into the FY27 v2.2 index rather than a
       generic atomic test.
     </p>
@@ -285,8 +285,8 @@ footer a{border-bottom:none}
           <!-- corpus -->
           <rect x="1" y="76" width="118" height="66" fill="var(--surface)" stroke="var(--hairline)"/>
           <text x="60" y="101" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">CORPUS</text>
-          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">201 scenarios</text>
-          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">199 TTP cards</text>
+          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">205 scenarios</text>
+          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">203 TTP cards</text>
 
           <line x1="119" y1="109" x2="163" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
 
@@ -354,14 +354,14 @@ footer a{border-bottom:none}
   <section class="sec">
     <div class="sechead"><span class="sechead__i">02</span><h2>What the corpus covers</h2></div>
     <p class="lede">
-      201 scenarios decompose into 835 executable steps carrying 1430 expected
+      205 scenarios decompose into 850 executable steps carrying 1452 expected
       detections across 14 MITRE ATT&amp;CK tactics.
     </p>
     <p>
       Counts are re-measured by running the engine's own loader over the tree, not
       estimated from file counts — the two are not the same question. A file count
       reports what was authored; the loader reports what the engine will actually
-      accept under strict validation. They agree today at 201 with zero rejected,
+      accept under strict validation. They agree today at 205 with zero rejected,
       but only because the corpus is clean, and the moment they diverge it is the
       loader that is telling the truth.
     </p>
@@ -512,7 +512,7 @@ footer a{border-bottom:none}
       <table>
         <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">201</td></tr>
+          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">205</td></tr>
           <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">18</td></tr>
           <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">7</td></tr>
           <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
@@ -573,7 +573,7 @@ footer a{border-bottom:none}
         </g>
       </svg>
       <figcaption>
-        <b>Figure 3 — The evidence ladder.</b> 201 scenarios plus 28 assertions are
+        <b>Figure 3 — The evidence ladder.</b> 205 scenarios plus 28 assertions are
         authored. Zero have executed against a live Cortex tenant. Every preflight
         response carries <code>queries_issued</code> for exactly this reason — so a
         run against a mock transport cannot later be quoted as tenant proof.

@@ -37,14 +37,14 @@ with `ground-truth.md`, that file wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **201** across **16 planes** |
-| Steps · step-detections | **835 · 1430** |
-| TTP detection cards | **199** |
+| Loadable scenarios | **205** across **16 planes** |
+| Steps · step-detections | **850 · 1452** |
+| TTP detection cards | **203** |
 | Assertion artifacts (POS/PLT/AUT) | **28** (18 · 7 · 3) |
 | EAL simulator plugins | **27** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
-| HTTP routes | **163** decorators · **173** served at boot |
+| HTTP routes | **165** decorators · **175** served at boot |
 | MITRE ATT&CK tactics | **14** |
 
 ```bash
