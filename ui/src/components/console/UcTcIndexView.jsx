@@ -460,7 +460,7 @@ export default function UcTcIndexView({
       const r = componentConfigure(key) || componentRoute(key)
       onNavigate(r.destination, r.params)
     },
-    run: (scenarioId) => onNavigate('guided', { arm: scenarioId }),
+    run: (scenarioId) => onNavigate('preflight', { arm: scenarioId }),
     readBack: (runId) => readBack(runId),
     openResults: (runId) => onNavigate('proof', { run: runId }),
     openRun: (runId) => onNavigate('runs', { run: runId }),

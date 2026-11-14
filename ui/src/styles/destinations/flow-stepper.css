@@ -1,0 +1,90 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Compose → simulate stepper (design v33, handoff item 6):
+   Scenarios › Build a chain › Launch gate › Run, on each of those pages.
+
+   Tokens only. The current step is the green wash (--ac-soft) with the
+   matte line (--gr-matte; --ac-line until that token is on the branch).
+   The other steps are plain links: neutral ink, underline on hover, the
+   console's green focus ring.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .flow-stepper {
+  margin: 0 0 12px;
+  min-width: 0;
+}
+.theme-console .flow-stepper__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.theme-console .flow-stepper__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.theme-console .flow-stepper__sep {
+  color: var(--tx3);
+  font-size: 12px;
+}
+.theme-console .flow-stepper__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: 500 12px/1.3 var(--font-ui);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.theme-console .flow-stepper__num {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--bd2);
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--tx3);
+}
+.theme-console .flow-stepper__link {
+  text-decoration: none;
+  cursor: pointer;
+}
+.theme-console .flow-stepper__link:hover {
+  color: var(--tx);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.theme-console .flow-stepper__link:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+.theme-console .flow-stepper__step--current .flow-stepper__label {
+  background: var(--ac-soft);
+  border-color: var(--gr-matte, var(--ac-line));
+  color: var(--tx);
+  font-weight: 600;
+}
+.theme-console .flow-stepper__step--current .flow-stepper__num {
+  border-color: var(--gr-matte, var(--ac-line));
+  color: var(--ac-ink);
+}
+
+/* In the Composer's full-bleed mode the stepper is one slim strip under the
+   workflow bar, like the Proves strip below it. */
+.theme-console .flow-stepper--bar {
+  flex: none;
+  margin: 0;
+  padding: 5px 14px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto;
+}
+.theme-console .flow-stepper--bar .flow-stepper__list { flex-wrap: nowrap; }

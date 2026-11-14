@@ -1159,7 +1159,7 @@ describe('UC / TC Gaps (C6)', () => {
     expect(screen.getByTestId('uctc-gap-TC-NDR-07')).toHaveAttribute('data-kind', 'never_ran')
     expect(screen.getByTestId('uctc-gap-why-TC-NDR-07')).toHaveTextContent("whether its components are ready can't be checked yet")
     fireEvent.click(within(screen.getByTestId('uctc-gap-TC-NDR-07')).getByRole('button', { name: 'Run' }))
-    expect(onNavigate).toHaveBeenCalledWith('guided', { arm: 'SIM-NDR-002' })
+    expect(onNavigate).toHaveBeenCalledWith('preflight', { arm: 'SIM-NDR-002' })
 
     // Read back, nothing seen yet: Open results.
     expect(screen.getByTestId('uctc-gap-TC-TH-05')).toHaveAttribute('data-kind', 'not_seen')

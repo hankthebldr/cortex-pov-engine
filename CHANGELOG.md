@@ -529,6 +529,40 @@ read-back run of a scenario that evidences it saw a detection.
   assertion catalog panel (refused, absent and empty states) stays at the foot
   of Mechanisms; the test-case drawer still names a row's assertion.
 
+### Added — Scenarios: the extended library, a mapping on every card, and a compose → simulate stepper
+
+- **The extended library is listed below the corpus.** The extended library
+  is the staged draft pairs under `drafts/detection-library/` (362 today). A
+  new read-only route, `GET /api/scenarios/staged`, serves them in the corpus
+  row's shape. They are still not loaded as scenarios, cannot be opened, pinned
+  or run, and are not counted as coverage. Each card shows its card id,
+  platform and how many findings the manifest records for it (listed in the
+  tooltip). A **Library** select lists both
+  libraries (the default), the corpus or the extended library. A SimCore
+  without the directory, such as any image, which does not ship `drafts/`,
+  answers `loaded: false` with `STAGED_LIBRARY_ABSENT`. The page then says the
+  extended library is not on this SimCore; it never shows an empty one.
+- **Every card shows UC/TC · Source · MITRE.** Source is the ingestion doors
+  the scenario's detections land on, read from a new `doors` field on door
+  readiness (`GET /api/doors/readiness` and `/api/scenarios/{id}/doors`). The
+  field lists every door a derived detection names, whatever the door's state.
+  `not_open` could not stand in for it: an open door drops out of `not_open`,
+  and with no agent selected an agent door is never listed there. The use case
+  and test case moved from the tag row to this line. A mapping the API reports
+  as absent reads **Not mapped**. One it did not answer (readiness not loaded,
+  the dataset registry absent) reads **Not checked**. Nothing is inferred.
+- **An Unmapped filter with its count.** The toggle lists the scenarios
+  missing a UC/TC, a detection source or a MITRE technique, and its count
+  follows the library in view. On this tree that is 8 corpus scenarios, whose
+  detections all derive no door, and every staged pair, which is generated
+  without UC/TC refs. A scenario whose source was not checked is not counted.
+- **Scenarios › Build a chain › Launch gate › Run.** A stepper on those four
+  pages marks the current step and links the others. It carries the chosen
+  scenario where the next page takes it: `?open=` for Scenarios and the
+  Composer, `?arm=` for the Launch gate and `?run=` for that scenario's newest
+  run. In the Composer it carries a launch id only for a saved chain with no
+  unsaved edits, and leaving through it asks first when edits are unsaved.
+
 ### Added — Dashboards on the rail (design C8)
 
 - **The hidden Coverage page is now Dashboards**, a rail item under Run &

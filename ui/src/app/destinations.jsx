@@ -155,6 +155,18 @@ const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'),
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
 const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
+// The compose → simulate stepper. Lazy like the surfaces: the entry chunk has a
+// size budget (composerChunkBoundary.test.js), and Scenarios and the Composer
+// already pull this module into their own chunks. No fallback: the strip is
+// navigation, and the page under it does not wait for it.
+const LazyFlowStepper = lazy(() => import('../components/console/FlowStepper.jsx'))
+function FlowStepper(props) {
+  return (
+    <Suspense fallback={null}>
+      <LazyFlowStepper {...props} />
+    </Suspense>
+  )
+}
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
@@ -418,10 +430,12 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
 // The one place a run is started: the armed scenario's launch flow (What runs ›
 // Readiness › Where it runs › What it will do › authorisation › one Run), then
 // this POVengine's own readiness. The guided "New POV run" route and the old
-// readiness route both land here.
+// readiness route both land here. The compose → simulate stepper sits on top;
+// `?arm=` is the scenario the launch is for, carried on to the other steps.
 function LaunchGateSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div className="launch-gate-page">
+      <FlowStepper current="preflight" scenarioId={params.arm || null} onNavigate={onNavigate} />
       <GuidedPovFlow params={params} onNavigate={onNavigate} title="Launch gate" />
       <ReadinessSurface embedded onNavigate={onNavigate} />
     </div>
@@ -450,9 +464,21 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
     return runs.find((r) => idMatches(runIdOf(r), runId)) || null
   }, [runs, runId])
 
+  // Compose → simulate: the open run's scenario rides back to the other steps
+  // (Launch gate re-arms it, Build a chain opens its chain).
+  const stepper = (
+    <FlowStepper
+      current="runs"
+      scenarioId={(selected && selected.scenario_id) || null}
+      runId={runId || null}
+      onNavigate={onNavigate}
+    />
+  )
+
   if (compare) {
     return (
       <div className="runs-surface">
+        {stepper}
         <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
         <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
@@ -465,6 +491,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   if (!runId) {
     return (
       <div className="runs-surface">
+        {stepper}
         <div className="view-head">
           <div>
             {/* "Runs", not "Runs & Proof". Proof & Export is its own
@@ -505,6 +532,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
 
   return (
     <Suspense fallback={<DestinationLoading />}>
+      {stepper}
       <RunDetailView
         runId={runId}
         run={selected}

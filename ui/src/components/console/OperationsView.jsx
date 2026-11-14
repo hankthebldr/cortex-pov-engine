@@ -6,8 +6,10 @@ import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
-import { getScenarios, getScenario, getDoorReadiness, getDoors } from '../../api/client.js'
+import FlowStepper from './FlowStepper.jsx'
+import { getScenarios, getScenario, getDoorReadiness, getDoors, getStagedScenarios } from '../../api/client.js'
 import { applyScenarioFilters, scenarioFilterOptions, EMPTY_SCENARIO_FILTERS } from './scenarioFilters.js'
+import { unmappedCounts } from './scenarioMapping.js'
 import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
@@ -116,6 +118,30 @@ export default function OperationsView({
       })
     return () => { cancelled = true }
   }, [doorAgentId, reloadKey])
+
+  // ── Extended library (the staged draft pairs) ───────────────────────────
+  // GET /api/scenarios/staged. Listed below the corpus, never mixed into it:
+  // a staged pair is not loaded, not launchable and not coverage. `absent`
+  // (the directory is not on this SimCore) and `error` are each said on the
+  // page; neither reads as an empty extended library.
+  const [staged, setStaged] = useState({ status: 'loading', rows: [], code: null, detail: null })
+  useEffect(() => {
+    let cancelled = false
+    setStaged((prev) => ({ ...prev, status: 'loading' }))
+    getStagedScenarios()
+      .then((data) => {
+        if (cancelled) return
+        setStaged(data.loaded
+          ? { status: 'ok', rows: data.scenarios, code: null, detail: null }
+          : { status: 'absent', rows: [], code: data.code || null, detail: data.detail || null })
+      })
+      .catch((err) => {
+        if (!cancelled) setStaged({ status: 'error', rows: [], code: err.code || null, detail: err.message || 'request failed' })
+      })
+    return () => { cancelled = true }
+  }, [reloadKey])
+  // Which library the page lists: both (default), the corpus, or the extended one.
+  const [library, setLibrary] = useState('all')
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
@@ -263,14 +289,31 @@ export default function OperationsView({
   }, [techniqueFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Apply unified filter, then the filter row on top ────────────────
-  const visibleScenarios = useMemo(() => {
-    const filtered = scenarioFilter.applyTo(scenarios, doorState.map)
+  // The corpus and the extended library go through the same filters; the
+  // library select decides which of the two the page lists.
+  const showCorpus = library !== 'extended'
+  const showStaged = library !== 'corpus'
+  const scopedRows = useMemo(
+    () => [...(showCorpus ? scenarios : []), ...(showStaged ? staged.rows : [])],
+    [scenarios, staged.rows, showCorpus, showStaged],
+  )
+  const filterRows = useCallback((rows) => {
+    const filtered = scenarioFilter.applyTo(rows, doorState.map)
     return applyScenarioFilters(filtered, rowFilters, { readiness: doorState.map, history: historyByScenario })
-  }, [scenarios, scenarioFilter.filter, rowFilters, historyByScenario, doorState.map]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scenarioFilter.filter, rowFilters, historyByScenario, doorState.map]) // eslint-disable-line react-hooks/exhaustive-deps
+  const visibleScenarios = useMemo(
+    () => (showCorpus ? filterRows(scenarios) : []),
+    [scenarios, showCorpus, filterRows],
+  )
+  const visibleStaged = useMemo(
+    () => (showStaged ? filterRows(staged.rows) : []),
+    [staged.rows, showStaged, filterRows],
+  )
+  const unmapped = useMemo(() => unmappedCounts(scopedRows, doorState.map), [scopedRows, doorState.map])
 
   const filterOptions = useMemo(
-    () => scenarioFilterOptions(scenarios, { readiness: doorState.map, doorRows: doorState.rows, history: historyByScenario }),
-    [scenarios, doorState.map, doorState.rows, historyByScenario],
+    () => scenarioFilterOptions(scopedRows, { readiness: doorState.map, doorRows: doorState.rows, history: historyByScenario }),
+    [scopedRows, doorState.map, doorState.rows, historyByScenario],
   )
   const activePlane = selectedPlane || scenarioFilter.filter.plane || ''
   const choosePlane = useCallback((code) => {
@@ -278,9 +321,11 @@ export default function OperationsView({
     if (onSelectPlane) onSelectPlane(code || null)
     else if (!code) onClearPlane()
   }, [onSelectPlane, onClearPlane]) // eslint-disable-line react-hooks/exhaustive-deps
-  const rowFiltered = !!(activePlane || rowFilters.component || rowFilters.uc || rowFilters.tc || rowFilters.status)
+  const rowFiltered = !!(activePlane || rowFilters.component || rowFilters.uc || rowFilters.tc
+    || rowFilters.status || rowFilters.unmapped || library !== 'all')
   const clearRow = useCallback(() => {
     setRowFilters(EMPTY_SCENARIO_FILTERS)
+    setLibrary('all')
     choosePlane(null)
   }, [choosePlane])
 
@@ -318,6 +363,8 @@ export default function OperationsView({
 
   return (
     <div className="operations grid-bg">
+      {/* Compose → simulate: the scenario picked here rides into the next pages. */}
+      <FlowStepper current="library" scenarioId={selectedId} onNavigate={onNavigate} />
       <div className="view-head">
         <div>
           <div className="ops-accent-bar" aria-hidden="true" />
@@ -340,6 +387,7 @@ export default function OperationsView({
                 </span>
               )} scenarios
             </span>
+            {' · '}<ExtendedCount staged={staged} />
             {' · '}<span className="mono">{pinnedIds.length} pinned</span>
             {' · '}last updated <span className="mono">{headMeta.lastUpdated}</span>
           </div>
@@ -407,13 +455,17 @@ export default function OperationsView({
         onPlane={choosePlane}
         filters={rowFilters}
         onFilter={setRowFilter}
-        shown={visibleScenarios.length}
-        total={scenarios.length}
+        library={library}
+        onLibrary={setLibrary}
+        staged={staged}
+        unmapped={unmapped}
+        shown={visibleScenarios.length + visibleStaged.length}
+        total={scopedRows.length}
         filtered={rowFiltered}
         onClear={clearRow}
       />
 
-      {loading ? (
+      {!showCorpus ? null : loading ? (
         <div className="ops-loading-note">
           loading scenarios…
         </div>
@@ -441,6 +493,10 @@ export default function OperationsView({
           doorAgentId={doorAgentId}
           doorError={doorState.error}
         />
+      )}
+
+      {showStaged && (
+        <ExtendedLibrary staged={staged} rows={visibleStaged} doorRows={doorState.rows} />
       )}
 
       <ScenarioInspector
@@ -551,12 +607,26 @@ function FilterChips({ filter, onClearOne, onClearAll }) {
 /* ─── Filter row (design v26 §4.4) ────────────────────────────────── */
 
 /**
- * Plane · Component · Use case · Test case · Status, then "N of M shown" and
- * Clear. Options come from `scenarioFilterOptions` — read from the loaded
- * scenarios, the door registry and the run history, never authored here.
+ * Library · Plane · Component · Use case · Test case · Status · Unmapped, then
+ * "N of M shown" and Clear. Options come from `scenarioFilterOptions` — read
+ * from the loaded scenarios, the door registry and the run history, never
+ * authored here. Unmapped is a toggle that carries its count, so the gap is
+ * visible before anyone opens it.
  */
-function ScenarioFilterRow({ options, plane, onPlane, filters, onFilter, shown, total, filtered, onClear }) {
+function ScenarioFilterRow({
+  options, plane, onPlane, filters, onFilter, library = 'all', onLibrary = () => {},
+  staged = null, unmapped = { unmapped: 0, sourceUnknown: 0 }, shown, total, filtered, onClear,
+}) {
   const uid = React.useId()
+  const stagedLabel = !staged || staged.status === 'loading' ? 'Extended · …'
+    : staged.status === 'ok' ? `Extended · ${staged.rows.length}`
+      : staged.status === 'absent' ? 'Extended · not on this SimCore'
+        : 'Extended · could not be loaded'
+  const libraries = [{ v: 'corpus', label: 'Corpus' }, { v: 'extended', label: stagedLabel }]
+  const unmappedTitle = 'Scenarios missing a UC/TC, a detection source or a MITRE technique, as SimCore reports them.'
+    + (unmapped.sourceUnknown
+      ? ` ${unmapped.sourceUnknown} more could not be checked for a detection source and are not counted.`
+      : '')
   const field = (key, label, all, list, value, onChange) => (
     <span className="ops-filter" key={key}>
       <label className="ops-filter__label" htmlFor={`${uid}-${key}`}>{label}</label>
@@ -575,11 +645,22 @@ function ScenarioFilterRow({ options, plane, onPlane, filters, onFilter, shown, 
   )
   return (
     <div className="ops-filter-row" data-testid="scenario-filter-row">
+      {field('library', 'Library', 'All libraries', libraries, library === 'all' ? '' : library, (v) => onLibrary(v || 'all'))}
       {field('plane', 'Plane', 'All planes', options.planes.map((p) => ({ v: p, label: p })), plane, onPlane)}
       {field('component', 'Component', 'All components', options.components, filters.component, (v) => onFilter('component', v))}
       {field('uc', 'Use case', 'All use cases', options.useCases, filters.uc, (v) => onFilter('uc', v))}
       {field('tc', 'Test case', 'All test cases', options.testCases, filters.tc, (v) => onFilter('tc', v))}
       {field('status', 'Status', 'Any status', options.statuses, filters.status, (v) => onFilter('status', v))}
+      <button
+        type="button"
+        className={'ops-filter-toggle' + (filters.unmapped ? ' ops-filter-toggle--on' : '')}
+        aria-pressed={!!filters.unmapped}
+        onClick={() => onFilter('unmapped', !filters.unmapped)}
+        title={unmappedTitle}
+        data-testid="filter-unmapped"
+      >
+        Unmapped <span className="ops-filter-toggle__count mono" data-testid="filter-unmapped-count">{unmapped.unmapped}</span>
+      </button>
       <span className="ops-filter-row__spacer" />
       <span className="ops-filter-row__count mono" data-testid="scenario-filter-count">
         {shown} of {total} shown
@@ -588,5 +669,61 @@ function ScenarioFilterRow({ options, plane, onPlane, filters, onFilter, shown, 
         <button type="button" className="btn btn--xs" aria-label="Clear filters" onClick={onClear}>Clear</button>
       )}
     </div>
+  )
+}
+
+/* ─── Extended library (the staged draft pairs) ───────────────────── */
+
+/** The masthead's extended-library count, or what stands in for it. */
+function ExtendedCount({ staged }) {
+  if (staged.status === 'ok') {
+    return (
+      <span className="mono">
+        <span data-testid="library-staged-count">{staged.rows.length}</span> in the extended library
+      </span>
+    )
+  }
+  if (staged.status === 'loading') return <span className="mono">… in the extended library</span>
+  return <span>extended library {staged.status === 'absent' ? 'not on this SimCore' : 'not loaded'}</span>
+}
+
+/**
+ * The staged pairs under drafts/detection-library, listed below the corpus and
+ * never mixed into it. Each card says what it is and what it still needs; none
+ * can be opened, pinned or run. An absent directory and a failed request are
+ * said as such, never as an empty list.
+ */
+function ExtendedLibrary({ staged, rows, doorRows }) {
+  const headingId = React.useId()
+  return (
+    <section className="ops-extended" aria-labelledby={headingId} data-testid="extended-library">
+      <div className="ops-extended__head">
+        <h2 id={headingId} className="ops-extended__title">Extended library</h2>
+        <p className="ops-extended__note">
+          Staged pairs under <span className="mono">drafts/detection-library</span>: not loaded by SimCore,
+          not launchable and not counted as coverage. Each still needs a review, a tested cleanup, UC/TC refs
+          and a lab run before it is promoted into the library.
+        </p>
+      </div>
+      {staged.status === 'loading' ? (
+        <div className="ops-loading-note">loading the extended library…</div>
+      ) : staged.status === 'absent' ? (
+        <div className="ops-loading-note" role="status" data-testid="extended-library-absent">
+          The extended library is not on this SimCore{staged.code ? <> (<span className="mono">{staged.code}</span>)</> : null}.
+          {staged.detail ? <> {staged.detail}.</> : null}
+        </div>
+      ) : staged.status === 'error' ? (
+        <div className="ops-loading-note ops-load-error" role="status" data-testid="extended-library-error">
+          <strong>The extended library could not be loaded.</strong>{' '}
+          <span className="mono">{staged.detail}</span>
+        </div>
+      ) : (
+        <ScenarioGrid
+          scenarios={rows}
+          doorRows={doorRows}
+          emptyText="No staged pair matches the current filter."
+        />
+      )}
+    </section>
   )
 }
