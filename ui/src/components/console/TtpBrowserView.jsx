@@ -13,6 +13,8 @@ import {
   BINDING_STATUS, GROUP_OPTIONS, SORT_OPTIONS, MEMBERSHIP_OPTIONS,
   parseOrganize, organizeUrlPatch, organizeCards, bindingSearchText, detectionTotal,
 } from './catalogBindings.js'
+import WhyThisMatters from './WhyThisMatters.jsx'
+import { ttpThesis, detectionThesis } from './sheetThesis.js'
 import '../../styles/destinations/ttps.css'
 
 // Maps a card detection-family key to the canonical detection-type chip token
@@ -876,6 +878,9 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
 
   const teardown = execution?.cleanup?.code || execution?.cleanup || null
 
+  // Design v33 C10: the card opens with why it matters, read off the card.
+  const thesis = ttpThesis(detail)
+
   return (
     <aside className="ttpb-detail" data-testid="ttp-detail">
       {/* THE WAY BACK. The `Close` further down is a btn--xs floated far right —
@@ -906,37 +911,36 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
         <button type="button" className="btn ttpb-btn--xs" onClick={onClose}>Close</button>
       </div>
 
-      <div className="ttpb-detail__actions">
-        {onAddToChain && <Button variant="primary" onClick={onAddToChain}>Add to chain</Button>}
-        <button
-          type="button"
-          className="btn ttpb-btn--sm ttpb-btn--accent"
+      {/* Design v33 C10: actions are verbs from the closed set, each with its
+          icon. The Navigator layer is a file, not an action, so it reads as a
+          link. */}
+      <div className="ttpb-detail__actions" data-testid="ttp-detail-actions">
+        {onAddToChain && <Button variant="primary" verb="Add to chain" onClick={onAddToChain} />}
+        <Button
+          variant="secondary"
+          verb="Run"
           data-testid="ttp-launch-all"
-          title="Launch every scenario whose expected_detections cite this TTP"
+          title="Run the scenarios whose expected detections cite this card: pick them, then launch"
           onClick={() => setLauncherOpen(true)}
-        >
-          Launch all&hellip;
-        </button>
+        />
+        {onEdit && (
+          <Button
+            variant="secondary"
+            verb="Customize"
+            data-testid="ttp-edit"
+            onClick={onEdit}
+            title="Open this card in the authoring editor"
+          />
+        )}
         {techniques.length > 0 && (
           <button
             type="button"
-            className="btn ttpb-btn--sm"
+            className="sheet-link"
             data-testid="ttp-export-navigator"
-            title="Download a MITRE ATT&CK Navigator layer scoped to this TTP — paste into the customer's Navigator for the briefing"
+            title="Download a MITRE ATT&CK Navigator layer scoped to this card — paste into the customer's Navigator for the briefing"
             onClick={() => downloadTtpLayer(detail)}
           >
-            Export ATT&amp;CK layer
-          </button>
-        )}
-        {onEdit && (
-          <button
-            type="button"
-            className="btn ttpb-btn--sm"
-            data-testid="ttp-edit"
-            onClick={onEdit}
-            title="Open this TTP in the authoring editor"
-          >
-            Edit&hellip;
+            ATT&amp;CK Navigator layer ↓
           </button>
         )}
       </div>
@@ -947,6 +951,8 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
           onClose={() => setLauncherOpen(false)}
         />
       )}
+
+      <WhyThisMatters parts={thesis} headingLevel={4} testId="ttp-why-matters" />
 
       {identity.summary && (
         <DetailSection label="Summary">
@@ -1075,7 +1081,7 @@ function TtpDetail({ detail, runs, onClose, onEdit, onAddToChain = null, binding
       )}
 
       <DetailSection label="Detection coverage">
-        <DetectionsBreakdown detections={detections} />
+        <DetectionsBreakdown detections={detections} card={detail} />
       </DetailSection>
 
       {products.length > 0 && (
@@ -1304,7 +1310,7 @@ function formatMttd(seconds) {
  * filesystem. Closes the "show me the actual detection" gap PR #50
  * left as a follow-up.
  */
-function DetectionsBreakdown({ detections }) {
+function DetectionsBreakdown({ detections, card = null }) {
   const kinds = [
     { key: 'biocs',             label: 'BIOCs',        bodyKey: 'logic' },
     { key: 'xql_queries',       label: 'XQL queries',  bodyKey: 'query' },
@@ -1340,6 +1346,7 @@ function DetectionsBreakdown({ detections }) {
                 index={idx}
                 item={item}
                 bodyKey={bodyKey}
+                card={card}
               />
             ))}
           </div>
@@ -1349,7 +1356,7 @@ function DetectionsBreakdown({ detections }) {
   )
 }
 
-function DetectionItem({ kind, index, item, bodyKey }) {
+function DetectionItem({ kind, index, item, bodyKey, card = null }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied]     = useState(false)
 
@@ -1407,11 +1414,14 @@ function DetectionItem({ kind, index, item, bodyKey }) {
       </button>
       {expanded && (
         <div className="ttpb-det-item__body">
-          {desc && (
-            <p className="ttpb-det-item__desc">
-              {desc}
-            </p>
-          )}
+          {/* Design v33 C10: an opened detection starts with why it matters.
+              Its description, purpose or context is read into those parts,
+              so it is not repeated as a paragraph here. */}
+          <WhyThisMatters
+            parts={detectionThesis(kind, item, card)}
+            headingLevel={5}
+            testId={`ttp-det-why-${kind}-${index}`}
+          />
           {body ? (
             <>
               <div className="ttpb-det-item__body-head">

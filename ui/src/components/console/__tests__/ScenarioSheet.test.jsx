@@ -1,10 +1,13 @@
 /**
- * The scenario sheet (design v26 §4.1 Sheet, §4.4).
+ * The scenario sheet (design v26 §4.1 Sheet, §4.4; v33 C10).
  *
- * A scenario's deep-dive opens on its CHAIN — the same stage the Composer
- * edits and Run detail draws live, here in preview — then its tabs. Its action
- * row carries the card's two verbs: Run (to the launch step with the scenario
- * loaded) and Customize (to Build a chain with its chain loaded).
+ * A scenario's deep-dive opens with "Why this matters" (Thesis · Why we
+ * simulate it · What proves it · What it needs, read off the scenario), then
+ * its CHAIN — the same stage the Composer edits and Run detail draws live, here
+ * in preview — then its tabs. Its action row carries the card's two verbs, each
+ * with its icon: Run (to the launch step with the scenario loaded) and
+ * Customize (to Build a chain with its chain loaded). Anything that only
+ * navigates is a link.
  */
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
@@ -12,6 +15,7 @@ import { render, screen, fireEvent, within, waitFor } from '@testing-library/rea
 import ScenarioInspector from '../ScenarioInspector.jsx'
 import OperationsView from '../OperationsView.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
+import { VERBS, VERB_ICONS } from '../kit/index.js'
 
 void React
 
@@ -98,6 +102,82 @@ describe('Scenario sheet', () => {
   it('a scenario with no steps shows the stage\'s empty state', () => {
     render(<ScenarioInspector scenario={{ ...scenario, steps: [] }} open launch={launch} onRun={() => {}} />)
     expect(screen.getByTestId('chain-stage-empty')).toBeInTheDocument()
+  })
+})
+
+describe('Scenario sheet — why this matters (design v33 C10)', () => {
+  const written = {
+    ...scenario,
+    mitre_technique_name: 'OS Credential Dumping',
+    mitre_tactic_name: 'Credential Access',
+    threat_report: 'Unit42 - Credential Theft Tradecraft',
+    uc_ref: 'UCS-EDR-01',
+    uc_name: 'Endpoint Threat Detection',
+    tc_ref: 'TC-EDR-03',
+    tc_name: 'Credential dumping is detected',
+    validation_methodology: 'Signal Injection & Detection Accuracy',
+    success_criteria: 'The BIOC fires on the shadow read.',
+    threshold: { kpi: 'MTTD', op: '≤', value: 300, unit: 'seconds' },
+  }
+
+  it('opens with the four parts, before the chain', () => {
+    render(<ScenarioInspector scenario={written} open launch={launch} onRun={() => {}} />)
+    const why = screen.getByTestId('scenario-why-matters')
+    expect(within(why).getByRole('heading', { level: 3, name: 'Why this matters' })).toBeInTheDocument()
+    const parts = within(why).getAllByRole('listitem')
+    expect(parts.map((li) => li.getAttribute('data-part'))).toEqual(['thesis', 'why', 'proves', 'needs'])
+    expect(parts.map((li) => li.querySelector('.why-matters__label').textContent))
+      .toEqual(['Thesis', 'Why we simulate it', 'What proves it', 'What it needs'])
+    // Read off the scenario document, not written by the console.
+    expect(parts[0]).toHaveTextContent('T1003 OS Credential Dumping (Credential Access).')
+    expect(parts[0]).toHaveTextContent('Modeled on Unit42 - Credential Theft Tradecraft.')
+    expect(parts[1]).toHaveTextContent('Evidences test case TC-EDR-03 Credential dumping is detected, under use case UCS-EDR-01 Endpoint Threat Detection.')
+    expect(parts[2]).toHaveTextContent('The BIOC fires on the shadow read.')
+    expect(parts[2]).toHaveTextContent('Passes when MTTD ≤ 300 seconds.')
+    expect(parts[2]).toHaveTextContent('2 expected detections across 2 steps.')
+    expect(parts[3]).toHaveTextContent('Runs as www-data.')
+    // It comes first: before the chain stage in reading order.
+    const stage = screen.getByTestId('chain-stage')
+    expect(why.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a part the scenario does not carry says so plainly instead of inventing one', () => {
+    render(<ScenarioInspector scenario={scenario} open launch={launch} onRun={() => {}} />)
+    const why = screen.getByTestId('scenario-why-matters')
+    const thesis = why.querySelector('[data-part="thesis"]')
+    // `scenario` has a technique id but no name, tactic or report.
+    expect(thesis).toHaveAttribute('data-written', 'true')
+    const reasons = why.querySelector('[data-part="why"]')
+    expect(reasons).toHaveAttribute('data-written', 'false')
+    expect(reasons).toHaveTextContent('Not written for this scenario yet.')
+    expect(within(why).getAllByText('Not written for this scenario yet.')).toHaveLength(1)
+  })
+
+  it('the action row\'s buttons are verbs from the closed set, each with its icon', () => {
+    render(<ScenarioInspector scenario={scenario} open launch={launch} onRun={() => {}} onCustomize={() => {}} />)
+    const row = screen.getByTestId('scenario-sheet-actions')
+    const verbs = within(row).getAllByRole('button').filter((b) => b.hasAttribute('data-verb'))
+    expect(verbs.map((b) => b.textContent)).toEqual(['Run', 'Customize'])
+    for (const b of verbs) {
+      expect(VERBS).toContain(b.textContent)
+      expect(b.querySelector('svg')).toHaveAttribute('data-icon', VERB_ICONS[b.textContent])
+    }
+    // The only other control dismisses the sheet; it is not an action.
+    const others = within(row).getAllByRole('button').filter((b) => !b.hasAttribute('data-verb'))
+    expect(others.map((b) => b.textContent)).toEqual(['Close'])
+  })
+
+  it('a navigation-only action is a link with a trailing arrow, not a button', async () => {
+    installRoutes({
+      'GET /api/tools/adapters': { adapters: [{ adapter_id: 'TOOL-HYDRA', name: 'hydra', tier: 4 }] },
+      'GET /api/shelf/payloads': { payloads: [], total: 0, declared: [] },
+    })
+    const withTool = { ...scenario, external_tools: [{ name: 'hydra', adapter_ref: 'TOOL-HYDRA' }] }
+    render(<ScenarioInspector scenario={withTool} open launch={launch} onRun={() => {}} />)
+    const warn = await screen.findByTestId('insp-tools-warn')
+    const link = within(warn).getByRole('link', { name: 'Packages →' })
+    expect(link).toHaveAttribute('href', '#/adapters?scenario=SIM-EDR-001&supply=unstaged')
+    expect(within(warn).queryByRole('button')).toBeNull()
   })
 })
 
