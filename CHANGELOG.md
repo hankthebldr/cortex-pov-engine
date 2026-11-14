@@ -339,6 +339,16 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — TTP cards filter by subdomain, not status or platform
+
+The TTP cards page now filters by **Subdomain** (the UC / TC index's
+subdomain for the test cases each card evidences; a card in two subdomains
+matches either) and Tactic. The Status filter, which was "active" for every
+card, and the Platform filter are gone, as are the platform count and the
+platform chips on each card. A card shows its status only when it is a
+draft or deprecated.
+
+||||||| c4528ab2
 ### Added — run detail says why a test case is pending (design C3)
 
 A run whose test-case verdict is pending with nothing scored now says why on

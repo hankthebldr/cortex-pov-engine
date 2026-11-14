@@ -206,21 +206,22 @@ describe('<TtpBrowserView />', () => {
     await waitFor(() => {
       expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument()
     })
-    // status / tactic / platform chips
-    expect(screen.getByRole('button', { name: 'active' })).toBeInTheDocument()
+    // Tactic chips only: Status and Platform are not filters (Henry,
+    // 2026-11-13). Subdomain needs the UC / TC join, which this fixture lacks.
     expect(screen.getByRole('button', { name: 'TA0006' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'TA0001' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'windows' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'linux' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'active' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'windows' })).toBeNull()
+    expect(screen.queryByText('subdomain')).toBeNull()
   })
 
   it('hides the card grid when filters exclude everything', async () => {
     installRoutes({ 'GET /api/ttps': fixtureList })
     render(<TtpBrowserView />)
     await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
-    // No card has both TA0001 (initial-access) AND windows in the fixture
+    // No card has TA0001 (initial-access) AND matches "dcsync"
     fireEvent.click(screen.getByRole('button', { name: 'TA0001' }))
-    fireEvent.click(screen.getByRole('button', { name: 'windows' }))
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'dcsync' } })
     expect(screen.getByText(/no TTPs match the current filters/i)).toBeInTheDocument()
   })
 
@@ -790,6 +791,17 @@ describe('<TtpBrowserView /> — organize by use case / test case / subdomain', 
     expect(face).toHaveTextContent('+1')
     // A card nothing cites says so, rather than showing an empty row.
     expect(screen.getByTestId('ttp-card-uctc-TTP-2026-0003')).toHaveTextContent(/no scenario cites this card/i)
+  })
+
+  it('the Subdomain filter offers the index subdomains and keeps the cards bound to the one picked', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Identity Security' })).toBeInTheDocument())
+    const row = screen.getByText('subdomain').closest('.ttpb-filter-row')
+    expect(Array.from(row.querySelectorAll('button')).map((b) => b.textContent))
+      .toEqual(['All', 'Endpoint Protection', 'Identity Security', 'SOC Transformation'])
+    fireEvent.click(screen.getByRole('button', { name: 'SOC Transformation' }))
+    // LSASS evidences TC-IR-01 (SOC Transformation) as a secondary: it stays.
+    expect(cardIds(document)).toEqual(['TTP-2026-0002'])
   })
 
   it('Group by subdomain renders one section per subdomain with its count, uncited last', async () => {
