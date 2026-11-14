@@ -87,8 +87,9 @@ steps:
   - id: step-02
     name: "Dry-run staging fetch — confirm safety policy holds before generating IOC traffic"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-resdev-stage-dry.yml <<YML
+      cat > "$C/tim-resdev-stage-dry.yml" <<YML
       campaign_id: CMP-TIM-002
       name: "TIM validation — adversary infrastructure staging dry run"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -105,7 +106,7 @@ steps:
             sleep_seconds: 5
             jitter_pct: 10
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-resdev-stage-dry.yml
+      python3 -m scripts.eal_simulator.cli run "$C/tim-resdev-stage-dry.yml"
     identity: container-runtime
     mitre_technique: "T1583.001"
     expected_detections:
@@ -122,8 +123,9 @@ steps:
   - id: step-03
     name: "Live resolve + fetch from TAXII-fed staged-capability host — fire IOC match + DNS leg + session + stitch"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-resdev-stage-live.yml <<YML
+      cat > "$C/tim-resdev-stage-live.yml" <<YML
       campaign_id: CMP-TIM-002
       name: "TIM validation — adversary infrastructure staging live fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -144,7 +146,7 @@ steps:
             method: GET
             dga_query_param: false
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-resdev-stage-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/tim-resdev-stage-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1583.001"
     expected_detections:
@@ -219,7 +221,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/tim-resdev-stage-dry.yml /tmp/tim-resdev-stage-live.yml /tmp/stage2.bin"
+    - "rm -f /tmp/stage2.bin"
     - "echo '[CortexSim] SIM-TIM-002 cleanup complete'"
 
 author: "Henry Reed"

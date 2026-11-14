@@ -54,7 +54,7 @@ steps:
   - id: "step-01"
     name: "Plant synthetic sensitive customer records"
     command: |
-      mkdir -p /tmp/cortex_dlp_staging
+      rm -rf /tmp/cortex_dlp_staging && mkdir -m 700 /tmp/cortex_dlp_staging || { echo "sandbox /tmp/cortex_dlp_staging could not be created fresh: something else is at that path" >&2; exit 1; }
       cat << 'EOF' > /tmp/cortex_dlp_staging/customer_pii_export.csv
       First,Last,SSN,CreditCard,Salary
       Alice,Smith,987-65-4320,4111-2221-3333-4444,$145000
@@ -72,7 +72,7 @@ steps:
 
   - id: "step-02"
     name: "Compress and password-encrypt sensitive payload"
-    command: "zip -e -P 'P@ssw0rd123!' /tmp/cortex_dlp_staging/exfil_archive.zip /tmp/cortex_dlp_staging/customer_pii_export.csv || tar -czvf /tmp/cortex_dlp_staging/exfil_archive.tar.gz /tmp/cortex_dlp_staging/customer_pii_export.csv"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortex_dlp_staging 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortex_dlp_staging is missing or not ours: step-01 did not complete\" >&2; exit 1; }; zip -e -P 'P@ssw0rd123!' /tmp/cortex_dlp_staging/exfil_archive.zip /tmp/cortex_dlp_staging/customer_pii_export.csv || tar -czvf /tmp/cortex_dlp_staging/exfil_archive.tar.gz /tmp/cortex_dlp_staging/customer_pii_export.csv"
     identity: "svc-backup"
     mitre_technique: "T1560.001"
     causality:

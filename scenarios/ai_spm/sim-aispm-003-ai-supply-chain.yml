@@ -79,6 +79,7 @@ steps:
   - id: step-01
     name: "Capture supply-chain manifest from Terraform output + Lambda layer inspection"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-003] Capturing planted ML-dependency manifest';
       # Pull the Lambda layer that ships vulnerable ML deps
       LAMBDA_FN=$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `aispm-openai-proxy`)].FunctionName' --output text | head -1)
@@ -87,12 +88,12 @@ steps:
         echo "<<no layer found — fixture may be running in minimal mode>>" > /tmp/aispm-003-layer-arn.txt
 
       # Expected vulnerable deps from the fixture's requirements.txt manifest
-      cat > /tmp/aispm-003-expected-cves.txt <<-EOF
+      cat > "$C/aispm-003-expected-cves.txt" <<-EOF
         transformers<4.30 CVE-2024-3568 model-loading-rce
         tensorflow<2.13.1 CVE-2023-25660 saved-model-deser
       EOF
       echo "[*] Expected CVE findings:"
-      cat /tmp/aispm-003-expected-cves.txt
+      cat "$C/aispm-003-expected-cves.txt"
     identity: root
     mitre_technique: "T1195.002"
     expected_detections:
@@ -123,24 +124,25 @@ steps:
   - id: step-03
     name: "Probe supply-chain findings + EU AI Act annotations + dependency graph"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-003] Querying AI-SPM supply-chain findings';
 
       # 1. CVE findings on ML deps
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_supply_chain&tag=CortexSimAISPMFinding" \
-        > /tmp/aispm-003-findings.json
+        > "$C/aispm-003-findings.json"
 
-      CVE_COUNT=$(jq -r '[.findings[] | select(.cve_id != null)] | length' /tmp/aispm-003-findings.json 2>/dev/null || echo 0)
-      EU_AI_ACT_COUNT=$(jq -r '[.findings[] | select(.regulatory_tags[]? | contains("EU_AI_ACT"))] | length' /tmp/aispm-003-findings.json 2>/dev/null || echo 0)
+      CVE_COUNT=$(jq -r '[.findings[] | select(.cve_id != null)] | length' "$C/aispm-003-findings.json" 2>/dev/null || echo 0)
+      EU_AI_ACT_COUNT=$(jq -r '[.findings[] | select(.regulatory_tags[]? | contains("EU_AI_ACT"))] | length' "$C/aispm-003-findings.json" 2>/dev/null || echo 0)
 
       # 2. Dependency graph: assert chain length
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/inventory/dependency_graph?asset_type=ai" \
-        > /tmp/aispm-003-graph.json
+        > "$C/aispm-003-graph.json"
 
-      CHAIN_LENGTH=$(jq -r '.nodes | length' /tmp/aispm-003-graph.json 2>/dev/null || echo 0)
+      CHAIN_LENGTH=$(jq -r '.nodes | length' "$C/aispm-003-graph.json" 2>/dev/null || echo 0)
 
       echo "[*] CVE findings:       $CVE_COUNT (expected >= 2)"
       echo "[*] EU AI Act annot:    $EU_AI_ACT_COUNT (expected >= 1)"

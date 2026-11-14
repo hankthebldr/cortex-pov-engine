@@ -118,13 +118,14 @@ steps:
   - id: step-02
     name: "Issue 50 high-token requests to drain the cost / latency budget"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       cortex-prompt-attacker run \
         --probes scenarios/airs/probes/llm10/dos/*.yml \
         --target-url http://127.0.0.1:8089/owasp/llm10/chat \
         --iterations 50 \
         --scorers latency_p95,token_total \
-        --out /tmp/airs-005-events.jsonl
-      jq -s '[.[] | .detector_results.token_total] | add' /tmp/airs-005-events.jsonl
+        --out "$C/airs-005-events.jsonl"
+      jq -s '[.[] | .detector_results.token_total] | add' "$C/airs-005-events.jsonl"
     identity: container-runtime
     mitre_technique: "T1499"
     platforms: ["linux", "container", "windows"]
@@ -154,11 +155,12 @@ steps:
   - id: step-03
     name: "Verify AIRS rate-limit / circuit-breaker engaged"
     command: |
-      curl -sS -o /tmp/airs-005-final.json -w 'http=%{http_code}\n' \
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      curl -sS -o "$C/airs-005-final.json" -w 'http=%{http_code}\n' \
         -X POST http://127.0.0.1:8089/owasp/llm10/chat \
         -H 'content-type: application/json' \
         --data '{"prompt":"final probe","max_tokens":100000}' || true
-      jq -e '.error // .blocked' /tmp/airs-005-final.json
+      jq -e '.error // .blocked' "$C/airs-005-final.json"
     identity: container-runtime
     mitre_technique: "T1499"
     platforms: ["linux", "container", "windows"]
@@ -178,7 +180,6 @@ steps:
 cleanup:
   commands:
     - "pkill -f 'cortex-vulnerable-llm serve' || true"
-    - "rm -f /tmp/airs-005-events.jsonl /tmp/airs-005-final.json"
 
 author: "Henry Reed"
 created: "2026-05-05"

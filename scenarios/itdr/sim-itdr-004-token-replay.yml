@@ -98,9 +98,10 @@ steps:
   - id: step-02
     name: "Issue token from US-West Chrome, replay from EU-Central curl"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-004.yml <<YML
+      cat > "$C/itdr-004.yml" <<YML
       campaign_id: CMP-ITDR-004
       name: "ITDR — Okta token replay"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -119,7 +120,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-004.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-004.yml" --live
     identity: container-runtime
     mitre_technique: "T1539"
     expected_detections:
@@ -163,9 +164,10 @@ steps:
   - id: step-03
     name: "Replay 3 iterations to confirm rule deterministically fires"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-004-rep.yml <<YML
+      cat > "$C/itdr-004-rep.yml" <<YML
       campaign_id: CMP-ITDR-004
       name: "ITDR — Okta token replay repeat"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -184,7 +186,7 @@ steps:
             iterations: 3
             sleep_seconds: 10
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-004-rep.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-004-rep.yml" --live
     identity: container-runtime
     mitre_technique: "T1550.004"
     expected_detections:
@@ -204,8 +206,7 @@ steps:
     platforms: ["linux", "container"]
 
 cleanup:
-  commands:
-    - "rm -f /tmp/itdr-004.yml /tmp/itdr-004-rep.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

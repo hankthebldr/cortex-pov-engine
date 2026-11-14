@@ -99,7 +99,8 @@ steps:
   - id: step-02
     name: "Single full-mailbox grant request to Google OAuth endpoint"
     command: |
-      cat > /tmp/cloud-003.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-003.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-003
       name: "Cloud App — Google full-mailbox grant"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -116,7 +117,7 @@ steps:
             scope_preset: full_mailbox
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-003.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-003.yml" --live
     identity: container-runtime
     mitre_technique: "T1528"
     platforms: ["linux"]
@@ -138,7 +139,8 @@ steps:
   - id: step-03
     name: "Microsoft mailbox grant in parallel — cross-provider mailbox-collection pattern"
     command: |
-      cat > /tmp/cloud-003-ms.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-003-ms.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-003
       name: "Cloud App — cross-provider mailbox-collection"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -154,7 +156,7 @@ steps:
             scope_preset: full_mailbox
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-003-ms.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-003-ms.yml" --live
     identity: container-runtime
     mitre_technique: "T1114.002"
     platforms: ["linux"]
@@ -174,8 +176,7 @@ steps:
         detection_id: xql-cloud-003-cross-provider-mailbox-collection-same-identity-stitch
 
 cleanup:
-  commands:
-    - "rm -f /tmp/cloud-003.yml /tmp/cloud-003-ms.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

@@ -120,7 +120,7 @@ steps:
   - id: step-01
     name: "Malicious signal 1/3 — impossible-travel privileged sign-in (two geographies, one window)"
     command: |
-      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; rm -rf /tmp/cortexsim-mp015 && mkdir -m 755 /tmp/cortexsim-mp015 || { echo "sandbox /tmp/cortexsim-mp015 could not be created fresh: something else is at that path" >&2; exit 1; }
       printf '{"event":"signin","user_principal":"%s","country":"US","source_ip":"203.0.113.10","result":"success","privileged":true}\n' "$P" > "$D/signin-us.json"
       printf '{"event":"signin","user_principal":"%s","country":"DE","source_ip":"198.51.100.20","result":"success","privileged":true}\n' "$P" > "$D/signin-de.json"
       echo cortexsim-mp015-impossible-travel-signin-emitted
@@ -145,7 +145,7 @@ steps:
   - id: step-02
     name: "Malicious signal 2/3 — abnormal PowerShell chain from an Office parent"
     command: |
-      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp015 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp015 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # SAFE-MODE: no real PowerShell on the Linux harness; emit a process-lineage
       # marker mirroring winword.exe -> powershell.exe -enc <b64> for ingestion.
       printf '{"event":"process","parent":"winword.exe","child":"powershell.exe","cmdline":"powershell.exe -nop -enc SQBFAFgA","user":"%s"}\n' "$P" > "$D/ps-chain.json"
@@ -178,7 +178,7 @@ steps:
   - id: step-03
     name: "Malicious signal 3/3 — rapid privilege escalation within minutes of access"
     command: |
-      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; s=$(stat -c %F:%u:%a /tmp/cortexsim-mp015 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp015 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
       id
       # SAFE-MODE: no real group modification on the Linux harness; emit a marker
       # modeling the compromised valid account added to local admins (the escalation
@@ -208,7 +208,7 @@ steps:
   - id: step-04
     name: "Benign decoy singletons — cron backup, sanctioned admin PowerShell, authenticated scanner (must NOT be merged)"
     command: |
-      D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      D=/tmp/cortexsim-mp015; s=$(stat -c %F:%u:%a /tmp/cortexsim-mp015 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp015 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
       # Decoy 1: legitimate scheduled backup job under the automation account.
       tar -cf "$D/backup.tar" /etc/hostname 2>/dev/null || true
       gzip -f "$D/backup.tar" 2>/dev/null || true

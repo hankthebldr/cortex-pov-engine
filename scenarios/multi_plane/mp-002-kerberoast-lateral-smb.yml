@@ -150,9 +150,10 @@ steps:
   - id: step-02
     name: "Crack roasted hash (simulated offline)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[MP-002] Offline: hashcat crack simulation';
-      echo 'Successful crack - sql-svc:Summer2024' > /tmp/cortexsim_mp002_cracked.txt;
-      cat /tmp/cortexsim_mp002_cracked.txt;
+      echo 'Successful crack - sql-svc:Summer2024' > "$C/cortexsim_mp002_cracked.txt";
+      cat "$C/cortexsim_mp002_cracked.txt";
       echo '[*] Simulated only - no actual cracking performed'
     identity: root
     mitre_technique: "T1110.002"
@@ -247,7 +248,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/cortexsim_mp002_cracked.txt"
     - "echo '[CortexSim] SIM-MP-002 cleanup complete'"
 
 author: "Henry Reed"

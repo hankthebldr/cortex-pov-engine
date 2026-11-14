@@ -81,7 +81,8 @@ steps:
   - id: step-01
     name: "Provider 1 — Okta risky drive grant"
     command: |
-      cat > /tmp/cloud-004-okta.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-004-okta.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-004
       name: "Cloud App — rotation step 1 Okta"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -98,7 +99,7 @@ steps:
             scope_preset: risky_drive
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-okta.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-004-okta.yml" --live
     identity: container-runtime
     mitre_technique: "T1550.001"
     platforms: ["linux"]
@@ -112,8 +113,9 @@ steps:
   - id: step-02
     name: "Provider 2 — Microsoft admin-consent grant within 60s"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       sleep 30
-      cat > /tmp/cloud-004-ms.yml <<'YML'
+      cat > "$C/cloud-004-ms.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-004
       name: "Cloud App — rotation step 2 Microsoft"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -129,7 +131,7 @@ steps:
             scope_preset: admin_consent
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-ms.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-004-ms.yml" --live
     identity: container-runtime
     mitre_technique: "T1090"
     platforms: ["linux"]
@@ -146,8 +148,9 @@ steps:
   - id: step-03
     name: "Provider 3 — Google risky drive grant completes triangle"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       sleep 30
-      cat > /tmp/cloud-004-google.yml <<'YML'
+      cat > "$C/cloud-004-google.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-004
       name: "Cloud App — rotation step 3 Google"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -163,7 +166,7 @@ steps:
             scope_preset: risky_drive
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-google.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-004-google.yml" --live
     identity: container-runtime
     mitre_technique: "T1090"
     platforms: ["linux"]

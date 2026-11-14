@@ -87,9 +87,10 @@ steps:
   - id: step-02
     name: "Emit a malicious-attachment message burst (Proofpoint TAP shape)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-002.yml <<YML
+      cat > "$C/email-002.yml" <<YML
       campaign_id: CMP-EMAIL-002
       name: "EMAIL — Proofpoint TAP malicious attachment"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -109,7 +110,7 @@ steps:
             iterations: 1
             burst_count: 4
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-002.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-002.yml" --live
     identity: container-runtime
     mitre_technique: "T1566.001"
     platforms: ["linux", "container"]
@@ -126,9 +127,10 @@ steps:
   - id: step-03
     name: "Repeat the pattern with Microsoft 365 event shape — confirm parser works for both"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-002-m365.yml <<YML
+      cat > "$C/email-002-m365.yml" <<YML
       campaign_id: CMP-EMAIL-002
       name: "EMAIL — Microsoft 365 malicious attachment"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -147,7 +149,7 @@ steps:
             iterations: 1
             burst_count: 4
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-002-m365.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-002-m365.yml" --live
     identity: container-runtime
     mitre_technique: "T1566.001"
     platforms: ["linux", "container"]
@@ -162,8 +164,7 @@ steps:
         detection_id: xql-email-002-malicious-attachment-microsoft-365-emailevents-shape
 
 cleanup:
-  commands:
-    - "rm -f /tmp/email-002.yml /tmp/email-002-m365.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-06-17"

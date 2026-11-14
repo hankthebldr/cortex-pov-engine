@@ -82,13 +82,14 @@ steps:
   - id: step-01
     name: "Snapshot expected aggregate counts from the AI-SPM module's findings_summary"
     command: |
+      rm -rf /tmp/cortexsim-aispm-006 && mkdir -m 700 /tmp/cortexsim-aispm-006 || { echo "sandbox /tmp/cortexsim-aispm-006 could not be created fresh: something else is at that path" >&2; exit 1; }
       echo '[AISPM-006] Capturing expected aggregate counts';
       # Reads from the Terraform output stored by the bundle apply
       cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
-        terraform output -json findings_summary > /tmp/aispm-006-expected.json || \
-        echo '{"value":{"total_assets_planted":6}}' > /tmp/aispm-006-expected.json
+        terraform output -json findings_summary > /tmp/cortexsim-aispm-006/aispm-006-expected.json || \
+        echo '{"value":{"total_assets_planted":6}}' > /tmp/cortexsim-aispm-006/aispm-006-expected.json
 
-      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-006-expected.json)
+      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/cortexsim-aispm-006/aispm-006-expected.json)
       echo "[*] Expected aggregate asset count: $EXPECTED_ASSETS"
     identity: root
     mitre_technique: "T1526"
@@ -103,18 +104,20 @@ steps:
   - id: step-02
     name: "Fetch AI-SPM dashboard summary + verify aggregate counts"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-006 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-006 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-006] Fetching AI-SPM dashboard summary';
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dashboards/ai_spm/summary" \
-        > /tmp/aispm-006-summary.json
+        > "$C/aispm-006-summary.json"
 
-      AGGREGATE_ASSETS=$(jq -r '.total_ai_assets // 0' /tmp/aispm-006-summary.json)
-      MODEL_SEC=$(jq -r '.risk_categories.model_security // 0' /tmp/aispm-006-summary.json)
-      SUPPLY_CHAIN=$(jq -r '.risk_categories.supply_chain // 0' /tmp/aispm-006-summary.json)
-      STATIC_ANAL=$(jq -r '.risk_categories.static_analysis // 0' /tmp/aispm-006-summary.json)
-      DATA_GOV=$(jq -r '.risk_categories.data_governance // 0' /tmp/aispm-006-summary.json)
-      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-006-expected.json)
+      AGGREGATE_ASSETS=$(jq -r '.total_ai_assets // 0' "$C/aispm-006-summary.json")
+      MODEL_SEC=$(jq -r '.risk_categories.model_security // 0' "$C/aispm-006-summary.json")
+      SUPPLY_CHAIN=$(jq -r '.risk_categories.supply_chain // 0' "$C/aispm-006-summary.json")
+      STATIC_ANAL=$(jq -r '.risk_categories.static_analysis // 0' "$C/aispm-006-summary.json")
+      DATA_GOV=$(jq -r '.risk_categories.data_governance // 0' "$C/aispm-006-summary.json")
+      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/cortexsim-aispm-006/aispm-006-expected.json)
 
       echo "[*] Aggregate AI assets:    $AGGREGATE_ASSETS (expected = $EXPECTED_ASSETS)"
       echo "[*] model_security count:   $MODEL_SEC   (expected >= 1)"
@@ -155,14 +158,15 @@ steps:
   - id: step-03
     name: "Fetch dashboard trend series + verify non-empty time-series per category"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-006] Fetching dashboard trend series';
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dashboards/ai_spm/trends?window=24h" \
-        > /tmp/aispm-006-trends.json
+        > "$C/aispm-006-trends.json"
 
-      SERIES_COUNT=$(jq -r '.series | length' /tmp/aispm-006-trends.json 2>/dev/null || echo 0)
-      MIN_POINTS=$(jq -r '[.series[].data_points | length] | min // 0' /tmp/aispm-006-trends.json 2>/dev/null || echo 0)
+      SERIES_COUNT=$(jq -r '.series | length' "$C/aispm-006-trends.json" 2>/dev/null || echo 0)
+      MIN_POINTS=$(jq -r '[.series[].data_points | length] | min // 0' "$C/aispm-006-trends.json" 2>/dev/null || echo 0)
 
       echo "[*] Trend series count:      $SERIES_COUNT (expected >= 4: one per risk category)"
       echo "[*] Min data points/series:  $MIN_POINTS  (expected >= 1)"
@@ -186,7 +190,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-006-*"
+    - "rm -rf /tmp/cortexsim-aispm-006"
     - "echo '[CortexSim] SIM-AISPM-006 cleanup complete.'"
 
 author: "Henry Reed"

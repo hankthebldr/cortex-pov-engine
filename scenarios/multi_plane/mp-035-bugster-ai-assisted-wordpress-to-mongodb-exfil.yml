@@ -246,13 +246,14 @@ steps:
   - id: step-03
     name: "NGFW EAL leg: the brute force tunnels through the commercial proxy (published IP)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
-      cat > /tmp/mp-035-ngfw-proxy.yml <<YML
+      cat > "$C/mp-035-ngfw-proxy.yml" <<YML
       campaign_id: CMP-MP-PROXY-035
       name: "BUGSTER - brute-force traffic through the commercial proxy"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -278,7 +279,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-proxy.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-035-ngfw-proxy.yml" --live
     identity: container-runtime
     mitre_technique: "T1090"
     # Same foothold (src_host / src_ip / src_user) as the brute-force process: the NGFW records
@@ -380,13 +381,14 @@ steps:
   - id: step-06
     name: "NGFW EAL leg: bulk upload of the archive to the actor server (published IP)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
-      cat > /tmp/mp-035-ngfw-exfil.yml <<YML
+      cat > "$C/mp-035-ngfw-exfil.yml" <<YML
       campaign_id: CMP-MP-EXFIL-035
       name: "BUGSTER - records archive upload to the actor server"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -411,7 +413,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-exfil.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-035-ngfw-exfil.yml" --live
     identity: container-runtime
     mitre_technique: "T1041"
     # The upload the step-05 archive implies, recorded as NGFW traffic from the same host; the
@@ -474,13 +476,14 @@ steps:
   - id: step-08
     name: "NGFW EAL leg: reverse-shell sessions to the actor server's C2 listener (published IP)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
-      cat > /tmp/mp-035-ngfw-c2.yml <<YML
+      cat > "$C/mp-035-ngfw-c2.yml" <<YML
       campaign_id: CMP-MP-C2-035
       name: "BUGSTER - PowerShell reverse shell to the actor C2 listener"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -506,7 +509,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-c2.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-035-ngfw-c2.yml" --live
     identity: container-runtime
     mitre_technique: "T1071.001"
     # The records name bash, the step-07 /dev/tcp child on this Linux path (the report's shell is
@@ -535,7 +538,8 @@ steps:
   - id: step-09
     name: "AI Access leg: jailbreak system-prompt override to DeepSeek and to a model through OpenRouter"
     command: |
-      cat > /tmp/mp-035-llm.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/mp-035-llm.yml" <<'YML'
       campaign_id: CMP-MP-LLM-035
       name: "BUGSTER - safety override to DeepSeek and OpenRouter"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -560,7 +564,7 @@ steps:
             payload_type: jailbreak
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-llm.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-035-llm.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     # Real egress from the foothold to the provider APIs with obviously-fake keys (the request is
@@ -589,7 +593,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/cortexsim-mp-035 /tmp/mp-035-ngfw-proxy.yml /tmp/mp-035-ngfw-exfil.yml /tmp/mp-035-ngfw-c2.yml /tmp/mp-035-llm.yml"
+    - "rm -rf /tmp/cortexsim-mp-035"
     - "echo cortexsim-mp-035-cleanup-complete"
 
 author: "Henry Reed"

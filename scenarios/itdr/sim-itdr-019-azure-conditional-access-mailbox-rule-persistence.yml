@@ -97,10 +97,11 @@ steps:
   - id: step-01
     name: "Weaken conditional-access posture (emit Azure Audit Log CA-policy change)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       : "${TARGET_USER:=svc-automation@cortexsim-canary.invalid}"
-      cat > /tmp/itdr-019.yml <<YML
+      cat > "$C/itdr-019.yml" <<YML
       campaign_id: CMP-ITDR-019
       name: "ITDR — Azure conditional-access policy weakening"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -117,7 +118,7 @@ steps:
             event_pattern: conditional_access_policy_change
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-019.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-019.yml" --live
     identity: container-runtime
     mitre_technique: "T1556"
     # Root of the causality spine — links from the CGO (python3 emitter session).
@@ -137,10 +138,11 @@ steps:
   - id: step-02
     name: "Plant covert external mailbox forwarding rule (emit O365 inbox-rule creation)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       : "${TARGET_USER:=svc-automation@cortexsim-canary.invalid}"
-      cat > /tmp/itdr-019-rule.yml <<YML
+      cat > "$C/itdr-019-rule.yml" <<YML
       campaign_id: CMP-ITDR-019
       name: "ITDR — Azure external inbox-rule persistence"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -158,7 +160,7 @@ steps:
             target_user: "$TARGET_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-019-rule.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-019-rule.yml" --live
     identity: container-runtime
     mitre_technique: "T1114.003"
     # Same initiating identity's next persistence action (no process fork between
@@ -203,7 +205,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/itdr-019.yml /tmp/itdr-019-rule.yml"
     - "echo cortexsim-itdr-019-cleanup-complete"
 
 author: "Henry Reed"

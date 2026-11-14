@@ -145,7 +145,7 @@ steps:
       SRC="sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary"
       OUT="/tmp/CORTEXSIM-KOI009-VSIX"
       STAGE="$OUT/pkg"
-      rm -rf "$OUT"
+      rm -rf /tmp/CORTEXSIM-KOI009-VSIX && mkdir -m 700 /tmp/CORTEXSIM-KOI009-VSIX || { echo "sandbox /tmp/CORTEXSIM-KOI009-VSIX could not be created fresh: something else is at that path" >&2; exit 1; }
       mkdir -p "$STAGE"
       cp -R "$SRC/extension" "$STAGE/extension"
       printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
@@ -180,8 +180,7 @@ steps:
       # environment so the extension activates and registers its URI handler.
       set -eu
       export CORTEXSIM_KOI009_DECOY_ROOT="/tmp/CORTEXSIM-KOI009-DECOY"
-      rm -rf "$CORTEXSIM_KOI009_DECOY_ROOT"
-      mkdir -p "$CORTEXSIM_KOI009_DECOY_ROOT"
+      rm -rf /tmp/CORTEXSIM-KOI009-DECOY && mkdir -m 700 /tmp/CORTEXSIM-KOI009-DECOY || { echo "sandbox /tmp/CORTEXSIM-KOI009-DECOY could not be created fresh: something else is at that path" >&2; exit 1; }
       if pgrep -f "[V]isual Studio Code.app/Contents/MacOS" >/dev/null; then
         echo "[CortexSim] VS Code is already running; quit it so the decoy-root variable reaches the IDE" >&2
         exit 1
@@ -214,6 +213,7 @@ steps:
     # path, as a child of the IDE extension host. The login keychain is never
     # opened or copied.
     command: |
+      s=$(stat -c %F:%u:%a /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null || stat -f %HT:%u:%Lp /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/CORTEXSIM-KOI009-DECOY is missing or not ours: step-02 did not complete" >&2; exit 1; }
       # SAFE-MODE — create a throwaway keychain with one decoy item inside the
       # decoy tree, then trigger the extension's /step-03 handler against it.
       set -eu
@@ -247,6 +247,7 @@ steps:
     # extension-host child, then `launchctl bootstrap gui/<uid>`. The agent's
     # program is /usr/bin/true; cleanup boots it out and deletes it.
     command: |
+      s=$(stat -c %F:%u:%a /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null || stat -f %HT:%u:%Lp /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/CORTEXSIM-KOI009-DECOY is missing or not ours: step-02 did not complete" >&2; exit 1; }
       # SAFE-MODE — trigger the extension's /step-04 handler. Nothing to plant:
       # it writes the no-op CORTEXSIM-CANARY plist and bootstraps it.
       set -eu
@@ -279,6 +280,7 @@ steps:
     # extension-host child, then a staging directory created and populated. The
     # files hold only the literal CORTEXSIM-DECOY.
     command: |
+      s=$(stat -c %F:%u:%a /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null || stat -f %HT:%u:%Lp /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/CORTEXSIM-KOI009-DECOY is missing or not ours: step-02 did not complete" >&2; exit 1; }
       # SAFE-MODE — plant decoy credential-named files (names mirror the report,
       # every value is the literal CORTEXSIM-DECOY), then trigger /step-05.
       set -eu
@@ -328,6 +330,7 @@ steps:
     # declared detection is CR-KOI-0009, whose chain closes on the endpoint at
     # the staging-directory create.
     command: |
+      s=$(stat -c %F:%u:%a /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null || stat -f %HT:%u:%Lp /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/CORTEXSIM-KOI009-DECOY is missing or not ours: step-02 did not complete" >&2; exit 1; }
       # SAFE-MODE — trigger /step-06. CORTEXSIM_C2_URL is deliberately NOT set
       # here: the extension archives and records cortexsim-canary.invalid only.
       set -eu

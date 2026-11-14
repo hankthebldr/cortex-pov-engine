@@ -159,7 +159,7 @@ steps:
     name: "The dangling record — an abandoned CNAME in the customer's own zone still points at a released provider endpoint"
     command: |
       set -u
-      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      D=/tmp/cortexsim-tim008; rm -rf /tmp/cortexsim-tim008 && mkdir -m 755 /tmp/cortexsim-tim008 || { echo "sandbox /tmp/cortexsim-tim008 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
       FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
       printf '{"run_tag":"%s","event":"dns_record","rrname":"%s","rrtype":"CNAME","rdata":"legacy-bucket.provider-cdn.example","target_claimed":false,"parent_domain_age_days":3100}\n' "$RUN_TAG" "$FQDN" > "$D/dangling-record.json"
@@ -181,7 +181,7 @@ steps:
     name: "Takeover — the adversary claims the released provider endpoint and serves C2 from the customer's own name"
     command: |
       set -u
-      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      D=/tmp/cortexsim-tim008; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim008 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim008 2>/dev/null); [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim008 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
       printf '{"run_tag":"%s","event":"endpoint_claim","provider_endpoint":"legacy-bucket.provider-cdn.example","claimed_by":"adversary","serves":"c2"}\n' "$RUN_TAG" > "$D/endpoint-claim.json"
       echo cortexsim-tim008-provider-endpoint-claimed
@@ -202,7 +202,7 @@ steps:
     name: "Allowlisted C2 — internal hosts beacon to the customer's own subdomain over HTTPS"
     command: |
       set -u
-      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      D=/tmp/cortexsim-tim008; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim008 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim008 2>/dev/null); [ "$s" = "directory:0:755" ] || [ "$s" = "Directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim008 is missing or not owned by root: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
       FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
       for N in $(seq 1 12); do
@@ -229,7 +229,7 @@ steps:
     name: "NEGATIVE CONTROL — reputation, category, domain age and feed match are evaluated and all pass the takeover host"
     command: |
       set -u
-      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      D=/tmp/cortexsim-tim008; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim008 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim008 2>/dev/null); [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim008 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
       FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
       printf '{"run_tag":"%s","event":"reputation_eval","fqdn":"%s","category":"corporate","reputation":"clean","newly_registered":false,"feed_match":false,"parent_domain_age_days":3100}\n' "$RUN_TAG" "$FQDN" > "$D/reputation-eval.json"

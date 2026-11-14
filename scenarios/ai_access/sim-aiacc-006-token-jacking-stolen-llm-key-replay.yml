@@ -126,7 +126,7 @@ steps:
     name: "BASELINE ARM — the same key used normally from corporate egress, on the models it always calls (must NOT alert)"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      D=/tmp/cortexsim-aiacc006; rm -rf /tmp/cortexsim-aiacc006 && mkdir -m 755 /tmp/cortexsim-aiacc006 || { echo "sandbox /tmp/cortexsim-aiacc006 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for N in 1 2 3 4 5; do
@@ -151,7 +151,7 @@ steps:
     name: "ANOMALOUS ARM — the same key replayed from infrastructure absent from its calling history"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      D=/tmp/cortexsim-aiacc006; s=$(stat -c %F:%u:%a /tmp/cortexsim-aiacc006 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-aiacc006 2>/dev/null); [ "$s" = "directory:$(id -u developer):755" ] || [ "$s" = "Directory:$(id -u developer):755" ] || [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-aiacc006 is missing or not owned by developer: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for N in $(seq 1 40); do
@@ -184,7 +184,7 @@ steps:
     name: "Unauthorized compute — sustained inference on models this key has never called"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      D=/tmp/cortexsim-aiacc006; s=$(stat -c %F:%u:%a /tmp/cortexsim-aiacc006 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-aiacc006 2>/dev/null); [ "$s" = "directory:$(id -u developer):755" ] || [ "$s" = "Directory:$(id -u developer):755" ] || [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-aiacc006 is missing or not owned by developer: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for MODEL in gpt-4o-large claude-opus-xl gemini-ultra-pro; do

@@ -148,7 +148,7 @@ steps:
     name: "Publish the run's labelled ground-truth manifest, then fire malicious signal 1/4 — spearphishing credential link delivered and clicked"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; rm -rf /tmp/cortexsim-mp021 && mkdir -m 755 /tmp/cortexsim-mp021 || { echo "sandbox /tmp/cortexsim-mp021 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
       # Ground truth, fixed at authoring time and stamped BEFORE the corpus it
@@ -189,7 +189,7 @@ steps:
     name: "Malicious signal 2/4 — Office parent spawns an encoded PowerShell downloader"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp021 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp021 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
       # SAFE-MODE: no PowerShell is executed. The signal that matters is the
@@ -217,7 +217,7 @@ steps:
     name: "Malicious signal 3/4 — SMB and RDP lateral fan-out from the phished principal"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp021 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp021 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
       # SAFE-MODE: RFC5737 documentation addresses, no sockets opened.
@@ -245,7 +245,7 @@ steps:
     name: "Malicious signal 4/4 — valid-account cloud administrative role assumption (the elevation the AI must rank #1)"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; s=$(stat -c %F:%u:%a /tmp/cortexsim-mp021 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp021 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
       printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"cloud_assume","principal":"%s","role":"GlobalAdministrator","source_ip":"203.0.113.10","mfa":"satisfied_by_token"}\n' "$RUN_TAG" "$P" > "$D/cloud-assume.json"
@@ -267,7 +267,7 @@ steps:
     name: "HARD POSITIVE — backup automation identity genuinely deviates from its own learned job envelope"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; s=$(stat -c %F:%u:%a /tmp/cortexsim-mp021 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp021 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       # A real deviation by a real automation account: a different share set,
       # outside the learned window, followed by egress. It shares NO principal,
@@ -298,7 +298,7 @@ steps:
     name: "BENIGN NEAR-MISS FLOOR at volume — authenticated scanner sweep, sanctioned admin module load, RMM patch fan-out, in-window backup"
     command: |
       set -u
-      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      D=/tmp/cortexsim-mp021; s=$(stat -c %F:%u:%a /tmp/cortexsim-mp021 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-mp021 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
       SIZE="${CORTEXSIM_CORPUS_SIZE:-800}"
       # Deliberately NEAR-MISS, not obvious noise. Each of these four is a shape

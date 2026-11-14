@@ -145,11 +145,13 @@ steps:
   - id: step-01
     name: "Phished credentials replayed — Entra sign-in flagged at-risk from an anonymised address"
     command: |
+      rm -rf /tmp/cortexsim-mp-034 && mkdir -m 700 /tmp/cortexsim-mp-034 || { echo "sandbox /tmp/cortexsim-mp-034 could not be created fresh: something else is at that path" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/entra/signin/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       CORTEXSIM_USER="${CORTEXSIM_USER:-cortexsim.canary@${LAB_TENANT:-cortexsim-canary.invalid}}"
-      printf '%s\n' "$CORTEXSIM_USER" > /tmp/mp-034-principal
-      cat > /tmp/mp-034-risky.yml <<YML
+      printf '%s\n' "$CORTEXSIM_USER" > /tmp/cortexsim-mp-034/mp-034-principal
+      cat > "$C/mp-034-risky.yml" <<YML
       campaign_id: CMP-MP-RISKY-034
       name: "MP-034 — Jingle Thief azure_risky_login"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -168,7 +170,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-risky.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-risky.yml" --live
     identity: direct
     mitre_technique: "T1078.004"
     platforms: ["linux"]
@@ -186,11 +188,13 @@ steps:
   - id: step-02
     name: "Same principal signs in from two distant countries — impossible traveler"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-034 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-034 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/entra/signin/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
-      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
-      cat > /tmp/mp-034-travel.yml <<YML
+      test -s /tmp/cortexsim-mp-034/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/cortexsim-mp-034/mp-034-principal)
+      cat > "$C/mp-034-travel.yml" <<YML
       campaign_id: CMP-MP-TRAVEL-034
       name: "MP-034 — Jingle Thief impossible_travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -209,7 +213,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-travel.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-travel.yml" --live
     identity: direct
     mitre_technique: "T1078.004"
     platforms: ["linux"]
@@ -225,11 +229,13 @@ steps:
   - id: step-03
     name: "Cloud reconnaissance — SharePoint search/page sweep for gift-card workflows"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-034 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-034 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
-      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
-      cat > /tmp/mp-034-sharepoint.yml <<YML
+      test -s /tmp/cortexsim-mp-034/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/cortexsim-mp-034/mp-034-principal)
+      cat > "$C/mp-034-sharepoint.yml" <<YML
       campaign_id: CMP-MP-SHAREPOINT-034
       name: "MP-034 — Jingle Thief sharepoint_enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -247,7 +253,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-sharepoint.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-sharepoint.yml" --live
     identity: direct
     mitre_technique: "T1213.002"
     platforms: ["linux"]
@@ -263,11 +269,13 @@ steps:
   - id: step-04
     name: "Cloud reconnaissance — OneDrive file enumeration by the same principal"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-034 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-034 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
-      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
-      cat > /tmp/mp-034-onedrive.yml <<YML
+      test -s /tmp/cortexsim-mp-034/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/cortexsim-mp-034/mp-034-principal)
+      cat > "$C/mp-034-onedrive.yml" <<YML
       campaign_id: CMP-MP-ONEDRIVE-034
       name: "MP-034 — Jingle Thief onedrive_enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -286,7 +294,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-onedrive.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-onedrive.yml" --live
     identity: direct
     mitre_technique: "T1213.002"
     platforms: ["linux"]
@@ -302,11 +310,13 @@ steps:
   - id: step-05
     name: "Collection — burst of SharePoint/OneDrive file downloads"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-034 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-034 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
-      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
-      cat > /tmp/mp-034-download.yml <<YML
+      test -s /tmp/cortexsim-mp-034/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/cortexsim-mp-034/mp-034-principal)
+      cat > "$C/mp-034-download.yml" <<YML
       campaign_id: CMP-MP-DOWNLOAD-034
       name: "MP-034 — Jingle Thief storage_exfiltration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -325,7 +335,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-download.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-download.yml" --live
     identity: direct
     mitre_technique: "T1530"
     platforms: ["linux"]
@@ -346,11 +356,13 @@ steps:
   - id: step-06
     name: "Mailbox persistence — Exchange inbox forwarding rule, and the stitched incident"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-034 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-034 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
-      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
-      cat > /tmp/mp-034-rule.yml <<YML
+      test -s /tmp/cortexsim-mp-034/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/cortexsim-mp-034/mp-034-principal)
+      cat > "$C/mp-034-rule.yml" <<YML
       campaign_id: CMP-MP-RULE-034
       name: "MP-034 — Jingle Thief mailbox_rule_creation"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -368,7 +380,7 @@ steps:
             target_user: "$CORTEXSIM_USER"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-rule.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-034-rule.yml" --live
     identity: direct
     mitre_technique: "T1114.003"
     platforms: ["linux"]
@@ -389,7 +401,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/mp-034-principal /tmp/mp-034-risky.yml /tmp/mp-034-travel.yml /tmp/mp-034-sharepoint.yml /tmp/mp-034-onedrive.yml /tmp/mp-034-download.yml /tmp/mp-034-rule.yml"
+    - "rm -rf /tmp/cortexsim-mp-034"
 
 author: "Henry Reed"
 created: "2026-10-27"

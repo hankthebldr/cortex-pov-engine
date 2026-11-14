@@ -189,6 +189,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-01-windows
       linux: |
+        rm -rf /var/tmp/.cortexsim-mp026 && mkdir -m 700 /var/tmp/.cortexsim-mp026 || { echo "sandbox /var/tmp/.cortexsim-mp026 could not be created fresh: something else is at that path" >&2; exit 1; }
         ASM=/var/tmp/.cortexsim-mp026/assembly
         mkdir -p "$ASM"
         cp /bin/true "$ASM/mscorsvw"
@@ -221,6 +222,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-02-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         U=/etc/systemd/system/msdnetsvc.service
         if [ -e "$U" ]; then
           echo "msdnetsvc.service pre-exists; left untouched"
@@ -266,6 +268,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-03-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LOG=/var/tmp/.cortexsim-mp026/beacon.log
         for i in 1 2 3 4; do
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://${STAGE_HOST:-127.0.0.1}:8080/" || echo no-listener)
@@ -283,12 +286,13 @@ steps:
   - id: step-04
     name: "NGFW leg — recurring-comms beacon record for the run host (preset destination, un-enrichable)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
-      cat > /tmp/mp-026-beacon.yml <<YML
+      cat > "$C/mp-026-beacon.yml" <<YML
       campaign_id: CMP-MP-BEACON-026
       name: "CL-STA-1020 HazyBeacon — recurring Lambda-URL-shaped beacon (NGFW EAL)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -310,7 +314,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-beacon.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-026-beacon.yml" --live
     identity: root
     mitre_technique: "T1071.001"
     causality:
@@ -327,12 +331,13 @@ steps:
   - id: step-05
     name: "NGFW leg — WildFire threat logs for the six tools pulled over the C2 (report sha256s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
-      cat > /tmp/mp-026-threat.yml <<YML
+      cat > "$C/mp-026-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-026
       name: "CL-STA-1020 HazyBeacon — WildFire verdicts on the C2-delivered toolkit"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -415,7 +420,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-026-threat.yml" --live
     identity: root
     mitre_technique: "T1105"
     causality:
@@ -455,6 +460,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-06-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         DROP=/var/tmp/.cortexsim-mp026/tools
         mkdir -p "$DROP"
         for n in igfx GoogleGet google GoogleDrive GoogleDriveUpload Dropbox; do
@@ -502,6 +508,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-07-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LAB=/var/tmp/.cortexsim-mp026; DOCS=$LAB/docs; STG=$LAB/stage
         mkdir -p "$DOCS" "$STG"
         printf 'CORTEXSIM DECOY draft letter on tariff measures\n' > "$DOCS/draft-letter-on-tariff-measures.txt"
@@ -545,6 +552,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-08-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         STG=/var/tmp/.cortexsim-mp026/stage; LOG=/var/tmp/.cortexsim-mp026/exfil.log
         for part in "$STG"/*.tgz.[0-9][0-9][0-9]; do
           for path in '/upload/drive/v3/files?uploadType=media' '/2/files/upload'; do
@@ -585,6 +593,7 @@ steps:
       # primary on a windows-ONLY step, and this one also runs on linux.
       windows: *mp026-step-09-windows
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LAB=/var/tmp/.cortexsim-mp026
         find "$LAB/stage" "$LAB/tools" -type f -delete
         find "$LAB" -type f
@@ -603,7 +612,7 @@ steps:
 cleanup:
   commands:
     - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
-    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
+    - "rm -rf /var/tmp/.cortexsim-mp026"
     # Native Windows teardown (CONT-11). The previous form wrapped pwsh in bash
     # (`command -v pwsh && pwsh -Command ...`), which the Windows bundle skips,
     # so Windows never ran it. These lines are PowerShell the Windows bundle

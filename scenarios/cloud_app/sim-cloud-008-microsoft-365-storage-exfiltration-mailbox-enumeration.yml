@@ -97,7 +97,8 @@ steps:
   - id: step-01
     name: "Azure app mailbox enumeration — MailItemsAccessed Bind burst into msft_o365_audit"
     command: |
-      cat > /tmp/cloud-008-enum.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-008-enum.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-008
       name: "Cloud App — M365 mailbox enumeration by Azure app"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -116,7 +117,7 @@ steps:
             burst_count: 24
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-008-enum.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-008-enum.yml" --live
     identity: container-runtime
     mitre_technique: "T1114"
     platforms: ["linux", "container"]
@@ -135,7 +136,8 @@ steps:
   - id: step-02
     name: "Bulk OneDrive/SharePoint storage exfiltration — FileDownloaded burst into msft_o365_audit"
     command: |
-      cat > /tmp/cloud-008-exfil.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-008-exfil.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-008
       name: "Cloud App — M365 storage services exfiltration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -154,7 +156,7 @@ steps:
             burst_count: 20
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-008-exfil.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-008-exfil.yml" --live
     identity: container-runtime
     mitre_technique: "T1567.002"
     platforms: ["linux", "container"]
@@ -180,7 +182,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/cloud-008-enum.yml /tmp/cloud-008-exfil.yml"
     - "echo 'cortexsim-cloud-008-cleanup-complete'"
 
 author: "Henry Reed"

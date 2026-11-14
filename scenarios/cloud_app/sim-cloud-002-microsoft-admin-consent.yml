@@ -99,7 +99,8 @@ steps:
   - id: step-02
     name: "Single admin-consent grant request to Microsoft Identity Platform"
     command: |
-      cat > /tmp/cloud-002.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-002.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-002
       name: "Cloud App — Microsoft admin-consent grant"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -116,7 +117,7 @@ steps:
             scope_preset: admin_consent
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-002.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-002.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     platforms: ["linux", "container"]
@@ -143,7 +144,8 @@ steps:
   - id: step-03
     name: "Confirm a second attempt produces same alert deterministically"
     command: |
-      cat > /tmp/cloud-002-rep.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-002-rep.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-002
       name: "Cloud App — Microsoft admin-consent repeat"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -160,7 +162,7 @@ steps:
             iterations: 2
             sleep_seconds: 10
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-002-rep.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-002-rep.yml" --live
     identity: container-runtime
     mitre_technique: "T1098"
     platforms: ["linux", "container"]
@@ -175,8 +177,7 @@ steps:
         detection_id: xql-cloud-002-microsoft-repeat-admin-consent-persistence-attempt
 
 cleanup:
-  commands:
-    - "rm -f /tmp/cloud-002.yml /tmp/cloud-002-rep.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

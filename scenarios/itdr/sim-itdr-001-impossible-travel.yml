@@ -104,9 +104,10 @@ steps:
   - id: step-02
     name: "Emit two successful Okta sign-in events from US-West then APAC-East"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-001.yml <<YML
+      cat > "$C/itdr-001.yml" <<YML
       campaign_id: CMP-ITDR-001
       name: "ITDR — Okta impossible travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -125,7 +126,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-001.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-001.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     causality:
@@ -147,9 +148,10 @@ steps:
   - id: step-03
     name: "Repeat the pattern with Microsoft event shape — confirm parser works for both"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-001-ms.yml <<YML
+      cat > "$C/itdr-001-ms.yml" <<YML
       campaign_id: CMP-ITDR-001
       name: "ITDR — Microsoft impossible travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -167,7 +169,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-001-ms.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-001-ms.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     # The Microsoft leg stitches to the Okta leg on the SHARED identity
@@ -185,8 +187,7 @@ steps:
         detection_id: xql-itdr-001-impossible-travel-microsoft-signinlogs-shape
 
 cleanup:
-  commands:
-    - "rm -f /tmp/itdr-001.yml /tmp/itdr-001-ms.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

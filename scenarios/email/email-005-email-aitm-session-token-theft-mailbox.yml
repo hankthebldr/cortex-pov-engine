@@ -99,9 +99,10 @@ steps:
   - id: step-01
     name: "AiTM permitted click to the look-alike Microsoft 365 login (Proofpoint TAP shape)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-005-click.yml <<YML
+      cat > "$C/email-005-click.yml" <<YML
       campaign_id: CMP-EMAIL-005
       name: "EMAIL — AiTM look-alike permitted click"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -120,7 +121,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-005-click.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-005-click.yml" --live
     identity: container-runtime
     mitre_technique: "T1566.002"
     platforms: ["linux"]
@@ -134,9 +135,10 @@ steps:
   - id: step-02
     name: "Session-cookie replay sign-in from a new ASN (Entra ID sign-in shape)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-005-replay.yml <<YML
+      cat > "$C/email-005-replay.yml" <<YML
       campaign_id: CMP-EMAIL-005
       name: "IDENTITY — token-replay sign-in from new ASN"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -155,7 +157,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-005-replay.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-005-replay.yml" --live
     identity: container-runtime
     mitre_technique: "T1550.004"
     platforms: ["linux"]
@@ -212,7 +214,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/email-005-click.yml /tmp/email-005-replay.yml"
     - "echo cortexsim-email-005-cleanup-complete"
 
 author: "Henry Reed"

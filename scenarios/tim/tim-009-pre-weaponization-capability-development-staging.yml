@@ -143,7 +143,7 @@ steps:
     name: "Adversary develops capability — a phishing-kit builder staged on acquired infrastructure"
     command: |
       set -u
-      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      D=/tmp/cortexsim-tim009; rm -rf /tmp/cortexsim-tim009 && mkdir -m 755 /tmp/cortexsim-tim009 || { echo "sandbox /tmp/cortexsim-tim009 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
       STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
       printf '{"run_tag":"%s","event":"capability_staging","fqdn":"%s","capability":"phishing_kit_builder","stage":"pre_weaponization"}\n' "$RUN_TAG" "$STAGING" > "$D/kit-staging.json"
@@ -165,7 +165,7 @@ steps:
     name: "Adversary obtains capability — a commodity prompt-farm tool for lure mass-production"
     command: |
       set -u
-      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      D=/tmp/cortexsim-tim009; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim009 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim009 2>/dev/null); [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim009 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
       printf '{"run_tag":"%s","event":"capability_obtained","tool":"prompt-farm","source":"commodity_marketplace","purpose":"lure_generation"}\n' "$RUN_TAG" > "$D/tool-obtained.json"
       echo cortexsim-tim009-tool-obtained-emitted
@@ -186,7 +186,7 @@ steps:
     name: "Intel lands FIRST via TAXII — with a deliberate low-confidence control indicator in the same batch"
     command: |
       set -u
-      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      D=/tmp/cortexsim-tim009; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim009 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim009 2>/dev/null); [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim009 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
       STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
       {
@@ -211,7 +211,7 @@ steps:
     name: "First estate contact with the staging host — matching intel that already landed"
     command: |
       set -u
-      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      D=/tmp/cortexsim-tim009; s=$(stat -c %F:%u:%a /tmp/cortexsim-tim009 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-tim009 2>/dev/null); [ "$s" = "directory:0:755" ] || [ "$s" = "Directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-tim009 is missing or not owned by root: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
       STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
       curl -s --max-time 3 -o /dev/null "https://127.0.0.1/kit" 2>/dev/null || true

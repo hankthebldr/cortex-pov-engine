@@ -79,19 +79,21 @@ steps:
   - id: step-01
     name: "Anchor MTTD timestamp + verify static-analysis fixture is present"
     command: |
+      rm -rf /tmp/cortexsim-aispm-004 && mkdir -m 700 /tmp/cortexsim-aispm-004 || { echo "sandbox /tmp/cortexsim-aispm-004 could not be created fresh: something else is at that path" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-004] Anchoring MTTD t0';
-      date -u +%s > /tmp/aispm-004-t0.txt
+      date -u +%s > /tmp/cortexsim-aispm-004/aispm-004-t0.txt
 
       # Verify the canary key is actually in the Lambda env (sanity check)
       LAMBDA_FN=$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `aispm-openai-proxy`)].FunctionName' --output text | head -1)
       aws lambda get-function-configuration --function-name "$LAMBDA_FN" \
-        --query 'Environment.Variables.OPENAI_API_KEY' --output text > /tmp/aispm-004-canary.txt
-      echo "[*] Lambda env canary: $(cat /tmp/aispm-004-canary.txt)"
+        --query 'Environment.Variables.OPENAI_API_KEY' --output text > "$C/aispm-004-canary.txt"
+      echo "[*] Lambda env canary: $(cat "$C/aispm-004-canary.txt")"
 
       # Verify the pickled-model object is in the S3 bucket
       BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `aispm-training-data`)].Name' --output text | head -1)
-      aws s3 ls "s3://$BUCKET/models/legacy_model.pkl" > /tmp/aispm-004-pickle-check.txt
-      echo "[*] Pickled model in S3: $(cat /tmp/aispm-004-pickle-check.txt)"
+      aws s3 ls "s3://$BUCKET/models/legacy_model.pkl" > "$C/aispm-004-pickle-check.txt"
+      echo "[*] Pickled model in S3: $(cat "$C/aispm-004-pickle-check.txt")"
     identity: root
     mitre_technique: "T1552.001"
     expected_detections:
@@ -104,9 +106,10 @@ steps:
   - id: step-02
     name: "Wait for Cortex Cloud AI-SPM static-analysis scan cycle"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-004 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-004 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[AISPM-004] Sleeping for AI-SPM static-analysis scan';
       sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
-      date -u +%s > /tmp/aispm-004-t1.txt
+      date -u +%s > /tmp/cortexsim-aispm-004/aispm-004-t1.txt
     identity: root
     mitre_technique: "T1552.001"
     causality:
@@ -122,17 +125,19 @@ steps:
   - id: step-03
     name: "Probe static-analysis findings + assert 3 categories + MTTD ≤ 900s"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-004 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-004 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-004] Querying static-analysis findings';
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_static_analysis&tag=CortexSimAISPMFinding" \
-        > /tmp/aispm-004-findings.json
+        > "$C/aispm-004-findings.json"
 
-      HARDCODED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-001" or .subcategory == "hardcoded_credentials_in_ml_pipeline")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
-      PICKLE=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-002" or .subcategory == "insecure_model_serialization")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
-      UNVALIDATED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-003" or .subcategory == "unvalidated_model_inputs")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
+      HARDCODED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-001" or .subcategory == "hardcoded_credentials_in_ml_pipeline")] | length' "$C/aispm-004-findings.json" 2>/dev/null || echo 0)
+      PICKLE=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-002" or .subcategory == "insecure_model_serialization")] | length' "$C/aispm-004-findings.json" 2>/dev/null || echo 0)
+      UNVALIDATED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-003" or .subcategory == "unvalidated_model_inputs")] | length' "$C/aispm-004-findings.json" 2>/dev/null || echo 0)
 
-      MTTD=$(( $(cat /tmp/aispm-004-t1.txt) - $(cat /tmp/aispm-004-t0.txt) ))
+      MTTD=$(( $(cat /tmp/cortexsim-aispm-004/aispm-004-t1.txt) - $(cat /tmp/cortexsim-aispm-004/aispm-004-t0.txt) ))
 
       echo "[*] Hardcoded creds findings:      $HARDCODED (expected >= 1)"
       echo "[*] Insecure pickle findings:      $PICKLE (expected >= 1)"
@@ -190,7 +195,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-004-*"
+    - "rm -rf /tmp/cortexsim-aispm-004"
     - "echo '[CortexSim] SIM-AISPM-004 cleanup complete.'"
 
 author: "Henry Reed"
