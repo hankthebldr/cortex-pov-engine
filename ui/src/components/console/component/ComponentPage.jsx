@@ -1,12 +1,16 @@
 import React, { useCallback, useState } from 'react'
 import '../../../styles/destinations/component-page.css'
 import { Button, ErrorBadge, PageIcon, StatusIcon } from '../kit/index.js'
+import { componentAbout } from '../componentAbout.js'
 
 /**
  * ComponentPage — the one page shape for all eight components (design v26
  * §4.2).
  *
  *   Header         PageIcon · name · StatusIcon + word · Configure · Test
+ *   About          What it is · Why the POV needs it · What it unlocks ·
+ *                  Where it lives (design v33 C7), on every tab; the copy is
+ *                  componentAbout.js, keyed by `componentKey`
  *   Issue line     one sentence, only when something is wrong
  *   Tabs           Overview · Setup · one management tab (when it has one)
  *   Overview       Services (left) and Configuration (right)
@@ -26,6 +30,8 @@ import { Button, ErrorBadge, PageIcon, StatusIcon } from '../kit/index.js'
  * a component is deep-linkable and the browser's back button works.
  *
  * Props:
+ *   componentKey  the component id (componentModel.js); an id with no About
+ *                 entry renders the page without the About block
  *   name, icon, status { status, word?, detail?, issue? }
  *   issueStep     the Setup step the issue line's badge opens
  *   services      [{ id, name, status, word?, since?, drill? }]
@@ -47,6 +53,7 @@ const CONFIG_LOOK = {
 }
 
 export default function ComponentPage({
+  componentKey = null,
   name,
   icon,
   status = { status: 'unknown' },
@@ -67,6 +74,7 @@ export default function ComponentPage({
   const tab = tabIds.includes(params.tab) ? params.tab : 'overview'
   const off = status.status === 'off'
   const problem = status.status === 'degraded' || status.status === 'down'
+  const about = componentAbout(componentKey)
 
   const [test, setTest] = useState({ state: 'idle' })
   const runTest = useCallback(async () => {
@@ -128,6 +136,19 @@ export default function ComponentPage({
           )}
         </div>
       </header>
+
+      {about && (
+        <section className="cmp-about" aria-label="About this component">
+          <dl className="cmp-about__grid">
+            {about.map((line) => (
+              <div key={line.key} className="cmp-about__item">
+                <dt className="cmp-about__k">{line.label}</dt>
+                <dd className="cmp-about__v">{line.text}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       {off && <p className="cmp-page__off">Configure it to unlock its scenarios.</p>}
 
