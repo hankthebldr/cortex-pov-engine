@@ -144,8 +144,10 @@ steps:
       U=cortexsim-svc
       H=/home/$U
       K=/var/tmp/.cortexsim-sshd
-      mkdir -p "$K" "$H/.ssh"
-      chmod 700 "$K" "$H/.ssh"
+      rm -rf "$K"
+      mkdir -m 700 "$K"
+      mkdir -p "$H/.ssh"
+      chmod 700 "$H/.ssh"
       rm -f "$K/id_ed25519" "$K/id_ed25519.pub"
       ssh-keygen -q -t ed25519 -N '' -C cortexsim-edr-024 -f "$K/id_ed25519"
       cat "$K/id_ed25519.pub" >> "$H/.ssh/authorized_keys"
@@ -178,6 +180,7 @@ steps:
       set -eu
       sleep 40   # dwell
       K=/var/tmp/.cortexsim-sshd
+      [ -d "$K" ] && [ ! -L "$K" ] && [ -O "$K" ] || { echo "sandbox $K is missing or not ours: step-02 did not complete" >&2; exit 1; }
       expr "$(date +%s)" + 2700 > "$K/expires-at"
       cat > "$K/sync.sh" <<'EOF'
       #!/bin/sh
