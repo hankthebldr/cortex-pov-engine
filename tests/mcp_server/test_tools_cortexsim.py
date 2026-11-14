@@ -298,6 +298,13 @@ def _every_tool_routes():
         ("GET", "/api/assertions/A-1"): {"id": "A-1"},
         ("POST", "/api/assertions/A-1/run"): {"assertion_id": "A-1", "dry_run": True,
                                               "queries_issued": 0},
+        ("GET", "/api/runs/r1/tenant-evidence"): {
+            "run_id": "r1", "status": "pending", "code": "TENANT_EVIDENCE_NOT_READ",
+            "snapshot": None, "history": [], "case_ledger": None},
+        ("POST", "/api/runs/r1/tenant-evidence"): {
+            "run_id": "r1", "read": False, "status": "pending", "code": "NO_TENANT_CONFIGURED",
+            "detail": "no integration", "retry_after_seconds": None, "snapshot": None,
+            "issues": None},
     }
 
 
@@ -318,6 +325,8 @@ MINIMAL_ARGS = {
     "cortexsim.connector.preflight": {"kind": "xsiam_tenant"},
     "cortexsim.assertion.get": {"id": "A-1"},
     "cortexsim.assertion.run": {"id": "A-1"},
+    "cortexsim.run.tenant_evidence.get": {"run_id": "r1"},
+    "cortexsim.run.tenant_evidence.read": {"run_id": "r1"},
 }
 
 
@@ -325,7 +334,7 @@ MINIMAL_ARGS = {
 async def test_every_cortexsim_tool_returns_an_envelope():
     mcp, _ = _mcp(_every_tool_routes())
     specs = cortexsim_specs()
-    assert len(specs) == 25
+    assert len(specs) == 27
     for spec in specs:
         res = await call(mcp, spec.id, **MINIMAL_ARGS.get(spec.id, {}))
         assert not res.isError, (spec.id, res.content[0].text)

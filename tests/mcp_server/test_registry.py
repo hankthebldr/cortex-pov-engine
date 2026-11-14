@@ -38,7 +38,7 @@ def _mcp(routes=None, specs=None, bucket=None):
 async def test_registered_wire_names_equal_the_canonical_set_for_the_group():
     mcp, _, _ = _mcp()
     tools = await mcp.list_tools()
-    assert len(CORTEXSIM_IDS) == 25
+    assert len(CORTEXSIM_IDS) == 27
     assert {t.name for t in tools} == {wire_name(c) for c in CORTEXSIM_IDS}
     assert {t.title for t in tools} == CORTEXSIM_IDS
 

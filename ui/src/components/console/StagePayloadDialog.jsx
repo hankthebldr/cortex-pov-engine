@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ProvenanceBlock, { CopyButton } from './ProvenanceBlock.jsx'
-import { OFFLINE_RECIPE } from './PayloadShelfBanner.jsx'
 import { SUPPLY, formatBytes, hostOf } from './supplyState.js'
 
 /**
@@ -283,3 +282,15 @@ export const ERROR_COPY = {
     message: () => 'The declared source URL was refused — bad scheme, unresolvable host, or an SSRF guard hit (loopback / link-local / cloud metadata).',
   },
 }
+
+/** The commands that make declared tools ready on an instance that cannot
+ *  fetch them itself. */
+export const OFFLINE_RECIPE = (distDir) => [
+  '# on a host with internet, from a cortex-pov-engine checkout:',
+  './scripts/build-payloads.sh          # stages every declared install.artifact',
+  '',
+  '# then copy the shelf onto the SimCore host and point at it:',
+  `scp -r payloads/ dc@simcore-host:${distDir || '/srv/cortexsim/payloads'}`,
+  `export CORTEXSIM_PAYLOAD_DIST=${distDir || '/srv/cortexsim/payloads'}`,
+  'docker compose restart simcore',
+].join('\n')

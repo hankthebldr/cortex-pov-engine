@@ -1,7 +1,7 @@
-"""The ``xsiam.*`` group: 16 tools projecting SimCore's XSIAM integration (spec 5.3).
+"""The ``xsiam.*`` group: 19 tools projecting SimCore's XSIAM integration (spec 5.3).
 
 Every tenant call goes through SimCore's own routes (``/api/xsiam/...``); this
-module never talks to a tenant. Three rules hold everywhere:
+module never talks to a tenant. Four rules hold everywhere:
 
 * **Writes only preview** (spec 6). :func:`execute` looks the operation's
   ``access_class`` up in SimCore's catalog and, for ``write``/``destructive``,
@@ -16,6 +16,12 @@ module never talks to a tenant. Three rules hold everywhere:
   not recognise raises ``XSIAM_PARSE_ERROR``; it is never read as empty. Only
   ``xsiam.operation.execute`` returns the upstream ``reply``, as capped JSON
   text with ``truncated`` + ``bytes``.
+* **Tenant text is data** (tenant-reader spec §7.7). A result carrying tenant
+  rows has ``data["data_notice"] = DATA_NOTICE`` and the tool's description
+  repeats it. The tenant-reader tools (``issue.search``, ``case.search``,
+  ``endpoint.get``) pass SimCore's projection through, which puts free text
+  only under ``tenant_text``; nothing from a row reaches ``statement``,
+  ``error`` or ``remediation``.
 
 The REST routes own every gate (capability, XQL write stage, traversal,
 budget); their codes pass through unchanged (D-1).
@@ -28,13 +34,20 @@ import shlex
 import time
 from typing import Any, NamedTuple, Optional
 
+from connectors.tenant_reader import DATA_NOTICE
 from integrations.xsiam.codes import XSIAM_PARSE_ERROR, XSIAM_QUERY_ERROR, remediation_for
 from integrations.xsiam.exceptions import XsiamError
 from integrations.xsiam.queries import result_rows, row_count
 
 from ..client import SimCoreShapeUnknown, encode_segment
 from ..envelope import Envelope, _iso_utc, ledger_from_snapshot
-from ..errors import MCP_WRITE_NOT_EXECUTABLE, REMEDIATION, TOOL_NOT_BACKED, McpToolError
+from ..errors import (
+    MCP_WRITE_NOT_EXECUTABLE,
+    NO_TENANT_CONFIGURED,
+    REMEDIATION,
+    TOOL_NOT_BACKED,
+    McpToolError,
+)
 from ..registry import (
     TenantCallError,
     ToolContext,
@@ -49,8 +62,11 @@ from ..registry import (
     tenant_call,
 )
 from ..schemas import (
+    CaseSearchIn,
     DatasetSchemaIn,
     EmptyInput,
+    EndpointGetIn,
+    IssueSearchIn,
     ListIn,
     OperationExecuteIn,
     OperationListIn,
@@ -71,6 +87,11 @@ _CONSENT = {
 }
 _XQL_DONE = frozenset({"SUCCESS", "PARTIAL_SUCCESS"})
 _LICENSE_GATED_STATUS = "reachable (healthcheck license-gated)"
+#: On ``xsiam.alert.list`` / ``xsiam.incident.list``: in the description and as
+#: ``data["degradations"]``. Both keep working, because the matcher still reads
+#: the alerts API (tenant-reader spec §7.6).
+LEGACY_LINE = ("LEGACY: PANW's deprecation map lists get_alerts → issue/search and get_incidents → "
+               "case/search; prefer xsiam.issue.search / xsiam.case.search.")
 
 #: Poll pacing; module attributes so tests can swap in a fake clock.
 _sleep = asyncio.sleep
@@ -280,6 +301,11 @@ _SHAPES = {
     "playbooks": _Shape("OP-PLAYBOOKS-GET", "playbooks", "objects", "objects_count", "name",
                         _PLAYBOOK_FIELDS),
 }
+#: Lists whose rows a tenant user wrote: they carry the data framing (PD7), with
+#: their field layout unchanged.
+_TENANT_ROWS = frozenset({"alerts", "incidents", "correlation_rules"})
+#: Lists over an API that PANW's deprecation map retires.
+_LEGACY = frozenset({"alerts", "incidents"})
 
 
 def _project(row: Any, shape: _Shape, ex: Executed, where: str) -> dict:
@@ -317,6 +343,10 @@ async def _named_list(ctx: ToolContext, args: TenantListIn, shape: _Shape) -> En
     truncated = args.offset + len(page) < total
     data = {shape.out_key: [_project(r, shape, ex, where) for r in page], "total": total,
             "truncated": truncated}
+    if shape.out_key in _TENANT_ROWS:
+        data["data_notice"] = DATA_NOTICE
+    if shape.out_key in _LEGACY:
+        data["degradations"] = [LEGACY_LINE]
     return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
                              ledger=ex.ledger, truncated=truncated, answered=ex.answered)
 
@@ -362,6 +392,79 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
         raise _parse_error(ex, "OP-HEALTHCHECK reply", f"no string status in {str(reply)[:200]}")
     return await _tenant_env(ctx, {"license_gated": False, "status": status}, tenant=ex.tenant,
                              queries=ex.queries_issued, ledger=ex.ledger, answered=ex.answered)
+
+
+# --- the tenant reader: issues, cases, endpoints (tenant-reader spec §7.4) -------
+#: The reply keys this layer reads; the rest of the route's reply passes through.
+_READER_KEYS = ("truncated", "queries_issued", "ledger")
+_RECONCILE_KIND = "xsiam"
+
+
+async def _reader_tenant(ctx: ToolContext, tenant: Optional[str]) -> str:
+    """The ``xsiam_tenant`` credential to read through. When none qualifies and
+    reconcile's ``xsiam`` kind is what is configured, the refusal says so and
+    names the kind these reads need, instead of an empty list of names."""
+    try:
+        return await resolve_tenant(ctx, tenant, kind=TENANT_KIND, must_exist=True)
+    except McpToolError as err:
+        if err.code != NO_TENANT_CONFIGURED:
+            raise
+        reconcile = sorted(i["name"] for i in (await readiness(ctx))["integrations"]
+                           if isinstance(i, dict) and i.get("kind") == _RECONCILE_KIND
+                           and (tenant is None or i.get("name") == tenant))
+        if not reconcile:
+            raise
+        names = ", ".join(f"'{n}'" for n in reconcile)
+        noun = (f"is an '{_RECONCILE_KIND}' (reconcile) credential" if len(reconcile) == 1
+                else f"are '{_RECONCILE_KIND}' (reconcile) credentials")
+        raise McpToolError(
+            NO_TENANT_CONFIGURED, f"{names} {noun}, not '{TENANT_KIND}'",
+            f"{names} {noun}, which serve alert read-back only; xsiam.issue.search, "
+            f"xsiam.case.search and xsiam.endpoint.get need an '{TENANT_KIND}' credential. "
+            "Nothing was queried",
+            remediation=REMEDIATION[NO_TENANT_CONFIGURED], basis="authored") from err
+
+
+async def _reader_read(ctx: ToolContext, args: Any, *, segment: str, rows_key: str) -> Envelope:
+    """``POST /api/xsiam/tenants/{t}/{segment}``: SimCore's projection, passed through.
+
+    The tenant must name an ``xsiam_tenant`` credential; a reconcile-only
+    ``xsiam`` one is ``NO_TENANT_CONFIGURED`` before any request. The count is
+    the route's. Its own ``pending`` reply (the credential changed between the
+    readiness read and the call) passes through at the count it reports, 0.
+    ``data.truncated`` is the route's true/false/null verbatim. When the reply
+    carries rows, the boolean ``evidence.truncated`` errs safe and is false only
+    when the route says false; a reply with no rows (``pending``) has nothing a
+    cut could leave behind, and this layer caps nothing of its own, so it is false.
+    """
+    tenant = await _reader_tenant(ctx, args.tenant)
+    take_token(ctx)
+    path = f"/api/xsiam/tenants/{encode_segment(tenant)}/{segment}"
+    where = f"POST {path}"
+
+    def read(b: dict) -> int:
+        _require(b, where, rows_key, *_READER_KEYS)
+        return _int(b, where, "queries_issued")
+
+    body, queries = await tenant_call(ctx, tenant=tenant, read=read,
+                                      coro=ctx.client.post(path, json=args.to_body()))
+    data = {**body, "data_notice": DATA_NOTICE}
+    has_rows = isinstance(body[rows_key], list)
+    return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=body["ledger"],
+                             truncated=has_rows and body["truncated"] is not False,
+                             answered=body.get("status") != "pending")
+
+
+async def issue_search(ctx: ToolContext, args: IssueSearchIn) -> Envelope:
+    return await _reader_read(ctx, args, segment="issues/search", rows_key="issues")
+
+
+async def case_search(ctx: ToolContext, args: CaseSearchIn) -> Envelope:
+    return await _reader_read(ctx, args, segment="cases/search", rows_key="cases")
+
+
+async def endpoint_get(ctx: ToolContext, args: EndpointGetIn) -> Envelope:
+    return await _reader_read(ctx, args, segment="endpoints/get", rows_key="endpoints")
 
 
 # --- XQL: start + poll ---------------------------------------------------------
@@ -535,6 +638,17 @@ def _not_backed(tool_id: str):
 _NO_TENANT = "Catalog only; makes no tenant call."
 _TENANT = ("Tenant by vault name (kind xsiam_tenant; the only one is the default). Rate-limited. "
            "evidence.queries_issued is SimCore's count.")
+_NO_KEY = ("Holds no tenant key: SimCore reads with the xsiam_tenant credential stored at tenant "
+           "onboarding, under the per-tenant request budget run evidence and reconcile share.")
+_READER = ("Returns the route's reply: {rows}[] (allowlisted; free text only under tenant_text), "
+           "tenant, total_count, filter_count, truncated, unrecognised_values, "
+           "excluded_non_security, duplicate_rows, queries_issued, ledger and data_notice. "
+           "data.truncated is the route's true/false/null verbatim (null: the tenant sent no "
+           "count, so whether rows were left behind is unknown); when rows came back, "
+           "evidence.truncated is true unless the route says false (a pending reply with no "
+           "rows is false). A reconcile-only xsiam credential is "
+           "NO_TENANT_CONFIGURED with no call; an unrecognised reply is XSIAM_PARSE_ERROR, never "
+           "an empty list.")
 
 
 def _fields(shape: _Shape) -> str:
@@ -551,9 +665,17 @@ def specs() -> list[ToolSpec]:
 
     def named(id_, key, scopes):
         shape = _SHAPES[key]
-        return s(id_, TenantListIn, _LIST_IMPLS[key], "read", "tenant",
-                 f"{shape.op_id} through SimCore's catalog executor. {_fields(shape)} {_TENANT}",
-                 scopes=scopes)
+        desc = f"{shape.op_id} through SimCore's catalog executor. {_fields(shape)} {_TENANT}"
+        if key in _LEGACY:
+            desc = f"{LEGACY_LINE} {desc} data.degradations carries the same line."
+        if key in _TENANT_ROWS:
+            desc += f" data.data_notice: {DATA_NOTICE}"
+        return s(id_, TenantListIn, _LIST_IMPLS[key], "read", "tenant", desc, scopes=scopes)
+
+    def reader(id_, model, impl, route, rows, what):
+        return s(id_, model, impl, "read", "tenant",
+                 f"POST /api/xsiam/tenants/{{tenant}}/{route}: {what} {_READER.format(rows=rows)} "
+                 f"{_TENANT} {_NO_KEY} data_notice: {DATA_NOTICE}", scopes=("alert.read",))
 
     return [
         s("xsiam.operation.list", OperationListIn, operation_list, "read", "none",
@@ -606,6 +728,16 @@ def specs() -> list[ToolSpec]:
         *(s(tool, TenantIn, _not_backed(tool), "read", "none",
             f"Registered, not backed: always TOOL_NOT_BACKED ({_NOT_BACKED[tool][0]}), never an "
             "empty list. Makes no call.", backed=False) for tool in _NOT_BACKED),
+        reader("xsiam.issue.search", IssueSearchIn, issue_search, "issues/search", "issues",
+               "Security-domain issues (OP-ISSUE-SEARCH), newest first, filtered by an "
+               "_insert_time window (since/until), ids, detection.method display names and "
+               "severities; limit <= 200 with offset."),
+        reader("xsiam.case.search", CaseSearchIn, case_search, "cases/search", "cases",
+               "cases (OP-CASE-SEARCH) by id and/or a creation_time window; limit <= 200 with "
+               "offset."),
+        reader("xsiam.endpoint.get", EndpointGetIn, endpoint_get, "endpoints/get", "endpoints",
+               "endpoint records (OP-ENDPOINTS-GET-ENDPOINT) for 1..100 hostnames, as of now, in "
+               "one request."),
     ]
 
 

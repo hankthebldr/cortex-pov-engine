@@ -224,6 +224,46 @@ def inspect_operation_body(path: str, body: Any) -> None:
     )
 
 
+#: Characters of a tenant's ``err_code`` quoted in an error; ``err_msg`` is
+#: capped at the tenant reader's ``TEXT_CAP`` (200).
+_ERR_CODE_CAP = 64
+
+
+def _app_error_text(reply: dict) -> tuple[str, bool]:
+    """``(text, is_quota)`` for an application error a tenant sent inside a 200.
+
+    ``err_code`` and ``err_msg`` come from the tenant (or whatever answered in
+    its place), and the text becomes an ``XsiamError.detail`` that SimCore
+    returns. So each is neutralised as tenant text is
+    (``connectors.tenant_reader.neutralise_text``: control, bidi, zero-width
+    and other invisible characters stripped; the message capped at 200
+    characters, the code at 64), and nothing else in the reply is ever echoed:
+    a reply with no ``err_msg`` is named by its code alone, because the rest of
+    it can carry whole rows. ``is_quota`` reads the raw values: code
+    ``XQL_0003``, or "quota" in the message.
+    """
+    from connectors.tenant_reader import neutralise_text  # noqa: PLC0415
+
+    raw_code, raw_msg = reply.get("err_code"), reply.get("err_msg")
+    code = neutralise_text(raw_code)[0] if raw_code not in (None, "") else None
+    if code is not None:
+        code = code[:_ERR_CODE_CAP]
+    msg, cut = (neutralise_text(raw_msg) if raw_msg not in (None, "")
+                else (None, False))
+    if msg is not None and cut:
+        msg += " [cut at 200 characters]"
+    if code and msg:
+        text = f"{code}: {msg}"
+    elif code:
+        text = f"{code} (the tenant sent no error message)"
+    elif msg:
+        text = msg
+    else:
+        text = "the tenant replied with an error object carrying no err_code and no err_msg"
+    quota = raw_code == "XQL_0003" or "quota" in str(raw_msg or "").lower()
+    return text, quota
+
+
 class XsiamClient:
     def __init__(
         self,
@@ -383,10 +423,8 @@ class XsiamClient:
             and ("err_code" in reply or "err_msg" in reply)
             and "reply" not in reply
         ):
-            err_code = reply.get("err_code", "")
-            err_msg = reply.get("err_msg") or str(reply)
-            err = f"{err_code}: {err_msg}" if err_code else err_msg
-            if err_code == "XQL_0003" or "quota" in str(err_msg).lower():
+            err, quota = _app_error_text(reply)
+            if quota:
                 raise XsiamQuotaError(f"XSIAM quota exceeded: {err}")
             raise XsiamQueryError(f"XSIAM API error: {err}")
         return reply
@@ -447,10 +485,8 @@ class XsiamClient:
         # for application-level failures (quota exceeded, bad syntax, etc.).
         # A real query id is always a plain string — a dict reply is always an error.
         if isinstance(reply, dict):
-            err_code = reply.get("err_code", "")
-            err_msg  = reply.get("err_msg") or str(reply)
-            err = f"{err_code}: {err_msg}" if err_code else err_msg
-            if err_code == "XQL_0003" or "quota" in err_msg.lower():
+            err, quota = _app_error_text(reply)
+            if quota:
                 raise XsiamQuotaError(f"XQL quota exceeded: {err}")
             raise XsiamQueryError(f"XSIAM XQL error: {err}")
         if not reply:

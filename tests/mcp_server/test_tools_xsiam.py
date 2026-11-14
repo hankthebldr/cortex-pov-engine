@@ -1,4 +1,4 @@
-"""The 16 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
+"""The 19 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
 
 ``stubbed_app.stub.calls`` is the tenant witness; every count asserted here is
 the one SimCore's route reported, never one the MCP layer computed.
@@ -450,6 +450,7 @@ _MIN_ARGS = {
     "xsiam.operation.execute": {"op_id": "OP-HEALTHCHECK"},
     "xsiam.dataset.schema": {"dataset": "xdr_data"},
     "xsiam.xql.query": {"query": "dataset = xdr_data"},
+    "xsiam.endpoint.get": {"hostnames": ["target-01"]},
 }
 
 
@@ -464,10 +465,13 @@ async def test_every_xsiam_tool_returns_an_envelope_or_typed_refusal(stubbed_app
         "/public_api/v1/incidents/get_incidents": {"total_count": 0, "incidents": []},
         "/public_api/v1/playbooks/get": {"objects_count": 0, "objects": []},
         "/public_api/v1/healthcheck": {"status": "available"},
+        "/public_api/v1/issue/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
+        "/public_api/v1/case/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
+        "/public_api/v1/endpoints/get_endpoint": {"endpoints": [], "total_count": 0},
     })
     mcp = stubbed_app.mcp()
     xsiam_ids = [c for c in CANONICAL_IDS if c.startswith("xsiam.")]
-    assert len(xsiam_ids) == 16
+    assert len(xsiam_ids) == 19
     for tool in xsiam_ids:
         res = await call(mcp, tool, **_MIN_ARGS.get(tool, {}))
         sc = res.structuredContent
