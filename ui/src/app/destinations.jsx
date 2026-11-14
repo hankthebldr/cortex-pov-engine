@@ -145,7 +145,7 @@ const ComposerView = makeLazySurface(() => import('../components/console/Compose
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
-const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Coverage')
+const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Dashboards')
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
@@ -801,7 +801,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
 //
 //   1  Onboard & connect    Get started · Components ▸ (the eight components)
 //   2  Compose & simulate   Scenarios · Build a chain · Launch gate
-//   3  Run & observe        Runs · Results
+//   3  Run & observe        Runs · Results · Dashboards
 //      Reference            Catalog
 //
 // Every page belongs to exactly one rail item. Simulate's three tabs became
@@ -843,6 +843,9 @@ export const DESTINATIONS = [
   // ── 3 · Run & observe ──
   { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
   { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
+  // Design v33 C8: the global dashboards are a rail item again. The id stays
+  // 'coverage' — it is the route, and `#/coverage` links keep working.
+  { id: 'coverage',   label: 'Dashboards',    group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
 
   // ── Reference ──
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
@@ -867,7 +870,6 @@ export const DESTINATIONS = [
 
   // ── Off-rail, reached as tabs or links ──
   { id: 'guided',    label: 'Launch gate',       hidden: true, redirect: true, navParent: 'preflight', icon: 'apps-grid',      Component: redirectTo('preflight') },
-  { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
   // id stays 'adapters' deliberately — it is the route; only the label moved.
   { id: 'adapters',  label: 'Packages',          hidden: true, navParent: 'ttps',    icon: 'settings-edit',  Component: AdaptersSurface },
   { id: 'streams',   label: 'Data streams',      hidden: true, navParent: 'ttps',    icon: 'threat-network', Component: DataStreamsSurface },
@@ -891,7 +893,7 @@ export const DESTINATIONS = [
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  proof: [['proof', 'Report'], ['coverage', 'Coverage']],
+  proof: [['proof', 'Report']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
 

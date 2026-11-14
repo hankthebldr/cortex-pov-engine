@@ -460,7 +460,7 @@ export default function UcTcIndexView({
       const r = componentConfigure(key) || componentRoute(key)
       onNavigate(r.destination, r.params)
     },
-    run: (scenarioId) => onNavigate('guided', { arm: scenarioId }),
+    run: (scenarioId) => onNavigate('preflight', { arm: scenarioId }),
     readBack: (runId) => readBack(runId),
     openResults: (runId) => onNavigate('proof', { run: runId }),
     openRun: (runId) => onNavigate('runs', { run: runId }),
@@ -508,8 +508,8 @@ export default function UcTcIndexView({
         <TabStrip active={tab} counts={tabCounts} onChange={setTab} />
         <div className="uctc__modebar-meta mono">
           methodology coverage — for MITRE ATT&amp;CK technique coverage see{' '}
-          <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage')}>
-            Coverage →
+          <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage', { tab: 'mitre' })}>
+            Dashboards →
           </button>
           {' · '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-ttps" onClick={() => onNavigate('ttps')}>

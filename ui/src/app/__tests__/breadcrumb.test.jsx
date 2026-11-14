@@ -43,6 +43,11 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
       .toEqual(['Compose & simulate', 'Scenarios', 'Scenario SIM-EDR-001'])
     expect(labels(breadcrumbFor('composer', { from: 'SIM-EDR-001' })))
       .toEqual(['Compose & simulate', 'Build a chain', 'Scenario SIM-EDR-001'])
+    // `guided` is an alias of the Launch gate since the launch gate MVP, so its
+    // crumb is the Launch gate's and is not named twice.
+    const guided = breadcrumbFor('guided', { arm: 'SIM-EDR-001' })
+    expect(labels(guided)).toEqual(['Compose & simulate', 'Launch gate', 'Scenario SIM-EDR-001'])
+    expect(targets(guided)).toEqual(['library', 'guided', null])
     // The launch is the Launch gate (#299); the old guided route only redirects there.
     const gate = breadcrumbFor('preflight', { arm: 'SIM-EDR-001' })
     expect(labels(gate)).toEqual(['Compose & simulate', 'Launch gate', 'Scenario SIM-EDR-001'])
@@ -57,11 +62,12 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
       .toEqual(['Onboard & connect', 'Components', 'Firewall'])
   })
 
-  it('a tab names its rail item first: Catalog › UC / TC index, Results › Coverage', () => {
+  it('a tab names its rail item first: Catalog › UC / TC index', () => {
     const tc = breadcrumbFor('uctc', { tc: 'TC-EDR-03' })
     expect(labels(tc)).toEqual(['Reference', 'Catalog', 'UC / TC index', 'Test case TC-EDR-03'])
     expect(targets(tc)).toEqual(['ttps', 'ttps', 'uctc', null])
-    expect(labels(breadcrumbFor('coverage'))).toEqual(['Run & observe', 'Results', 'Coverage'])
+    // Dashboards is a rail item of its own now (design C8), not a Results tab.
+    expect(labels(breadcrumbFor('coverage'))).toEqual(['Run & observe', 'Dashboards'])
     expect(labels(breadcrumbFor('ttps', { open: 'TTP-2026-0001' })))
       .toEqual(['Reference', 'Catalog', 'TTP card TTP-2026-0001'])
   })

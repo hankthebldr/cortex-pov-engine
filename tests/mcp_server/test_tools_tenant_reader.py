@@ -588,3 +588,51 @@ async def test_run_get_projects_the_case_ledger_and_frames_its_cases(ledger, fra
     else:
         assert data["case_ledger"] == ledger
         assert "data_notice" not in data
+
+
+# --- run.list and run.pair project the ledger like run.get -------------------
+def _run_row(run_id, ledger):
+    return {"run_id": run_id, "status": "complete", "case_ledger": copy.deepcopy(ledger)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ledger, framed", [(LEDGER, True), (None, False),
+                                            ({**LEDGER, "cases": []}, False)])
+async def test_run_list_projects_every_rows_case_ledger(ledger, framed):
+    rows = [_run_row("r1", ledger), _run_row("r2", None)]
+    mcp, _ = _mcp({("GET", "/api/runs"): {"runs": rows, "total": 2}})
+
+    res = await call(mcp, "cortexsim.run.list")
+
+    assert not res.isError, res.structuredContent
+    data = res.structuredContent["data"]
+    if framed:
+        _assert_projected(data["runs"][0]["case_ledger"])
+        assert data["data_notice"] == DATA_NOTICE
+    else:
+        assert data["runs"][0]["case_ledger"] == ledger
+        assert "data_notice" not in data
+    assert data["runs"][1]["case_ledger"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ledger, framed", [(LEDGER, True), (None, False),
+                                            ({**LEDGER, "cases": []}, False)])
+async def test_run_pair_projects_both_runs_case_ledgers(ledger, framed):
+    body = {"runs": [_run_row("r1", ledger), _run_row("r2", ledger)],
+            "merge": {"merge_class": "ONE_CASE", "merge_reason": "one case", "basis": "x"},
+            "delta": []}
+    mcp, _ = _mcp({("GET", "/api/runs/r1/pair"): body})
+
+    res = await call(mcp, "cortexsim.run.pair", run_id="r1")
+
+    assert not res.isError, res.structuredContent
+    data = res.structuredContent["data"]
+    if framed:
+        for run in data["runs"]:
+            _assert_projected(run["case_ledger"])
+        assert data["data_notice"] == DATA_NOTICE
+    else:
+        assert [r["case_ledger"] for r in data["runs"]] == [ledger, ledger]
+        assert "data_notice" not in data
+    assert data["merge"] == body["merge"]

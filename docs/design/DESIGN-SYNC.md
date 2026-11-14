@@ -197,7 +197,7 @@ or a link.
 | Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
 | Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
-| Coverage | Results › Coverage | `components/console/CoverageView.jsx` |
+| Dashboards (v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from run read-back only) | Run & observe › Dashboards (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `dashboardModel.js` (read-back state, grids, ATT&CK matrix) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
