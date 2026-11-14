@@ -155,6 +155,7 @@ const ReadinessView = makeLazySurface(() => import('../components/console/Readin
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
+const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
@@ -739,6 +740,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
         <div className="view-head"><div><h1>Report</h1></div></div>
         {bar}
         <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
+        <TenantEvidencePanel runId={id} showCaseLedger={false} />
       </div>
     )
   }

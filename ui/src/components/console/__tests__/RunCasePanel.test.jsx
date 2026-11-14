@@ -159,3 +159,25 @@ describe('RunCasePanel', () => {
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
   })
 })
+
+describe('RunCasePanel Read back action', () => {
+  const ACTION = <button type="button">Read back</button>
+
+  it('RunCasePanel offers Read back in its empty state and under NO_CASE_YET', () => {
+    const { rerender } = render(<RunCasePanel ledger={null} reconcileAction={ACTION} />)
+    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    rerender(<RunCasePanel
+      ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }}
+      reconcileAction={ACTION}
+    />)
+    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    expect(screen.getByTestId('run-case-no-case-yet').textContent).toBe(NO_CASE_YET_HINT)
+  })
+
+  it('with no reconcileAction it renders no button', () => {
+    const { rerender } = render(<RunCasePanel ledger={null} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+})

@@ -7,6 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import TenantEvidencePanel from './TenantEvidencePanel.jsx'
+import ReadBackButton from './ReadBackButton.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
 import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
@@ -223,7 +224,12 @@ export default function EvidenceView({
       )}
 
       {viewMode === 'this-run' && (
-        <TenantEvidencePanel runId={targetRunId} showCaseLedger={showCaseLedger} onScored={refresh} />
+        <TenantEvidencePanel
+          runId={targetRunId}
+          showCaseLedger={showCaseLedger}
+          onScored={refresh}
+          reconcileAction={({ onDone }) => <ReadBackButton runId={targetRunId} onDone={onDone} />}
+        />
       )}
     </div>
   )
@@ -273,7 +279,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
       />
       {kpis.stitchDenominator > 0 ? (
         <Kpi
-          label="XSIAM Stitch"
+          label="Analytics plane"
           value={kpis.stitched}
           suffix={` / ${kpis.stitchDenominator}`}
           meta="analytics-plane detections observed"
@@ -281,7 +287,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         />
       ) : (
         <Kpi
-          label="XSIAM Stitch"
+          label="Analytics plane"
           value="—"
           meta="no analytics-plane detection to score on this run"
           tone="tx"

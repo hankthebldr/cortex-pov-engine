@@ -54,18 +54,31 @@ export function ledgerUnreadableReason(l) {
   return null
 }
 
+/** True when the panel itself carries the Read back action (its empty state, or NO_CASE_YET). */
+export function caseOffersReadBack(ledger) {
+  if (!ledger || typeof ledger !== 'object') return true
+  return !ledgerUnreadableReason(ledger) && ledger.merge_class === 'NO_CASE_YET'
+}
+
 /**
  * `headingLevel` (2–6, default 2): a page that nests the panel under its own
  * h2 (the Results tenant evidence panel) passes 3 so the outline stays a tree.
+ *
+ * `reconcileAction` (a node, normally a ReadBackButton): offered beside the
+ * empty-state text and the NO_CASE_YET hint, the two states only a read back
+ * advances. The panel never posts anything itself.
  */
-export default function RunCasePanel({ ledger = null, headingLevel = 2 }) {
+export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcileAction = null }) {
   const level = Number.isInteger(headingLevel) && headingLevel >= 2 && headingLevel <= 6 ? headingLevel : 2
   const H = `h${level}`
   if (!ledger || typeof ledger !== 'object') {
     return (
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
-        <p className="run-case__empty">Not read yet — reconcile the run.</p>
+        <div className="run-case__action-row">
+          <p className="run-case__empty">Not read yet — reconcile the run.</p>
+          {reconcileAction}
+        </div>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>
     )
@@ -101,7 +114,10 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2 }) {
       </p>
 
       {ledger.merge_class === 'NO_CASE_YET' && (
-        <p className="run-case__meta" data-testid="run-case-no-case-yet">{NO_CASE_YET_HINT}</p>
+        <div className="run-case__action-row">
+          <p className="run-case__meta" data-testid="run-case-no-case-yet">{NO_CASE_YET_HINT}</p>
+          {reconcileAction}
+        </div>
       )}
       {ledger.code !== 'CASE_LEDGER_OK' && (
         <p className="run-case__warn" role="status">

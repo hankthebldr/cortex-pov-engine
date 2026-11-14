@@ -20,7 +20,7 @@
  */
 import React from 'react'
 import useTenantEvidence from './useTenantEvidence.js'
-import RunCasePanel, { safeXdrUrl } from './RunCasePanel.jsx'
+import RunCasePanel, { safeXdrUrl, caseOffersReadBack } from './RunCasePanel.jsx'
 import { Button, Icon, StatusIcon } from './kit/index.js'
 import '../../styles/destinations/run-detail.css'
 
@@ -158,12 +158,20 @@ function notesFor(data, payload, lastRead, readError, loadError) {
   return notes
 }
 
-export default function TenantEvidencePanel({ runId, showCaseLedger = true, onScored = () => {} }) {
-  // `onScored` is for an action that may change the run's score (Reconcile,
-  // Task 11). The read here never does, so it never calls it.
-  void onScored
-  const { data, lastRead, loading, reading, readError, loadError, read } = useTenantEvidence(runId)
+/**
+ * `reconcileAction` is a function `({ onDone }) => node` (normally rendering a
+ * ReadBackButton): the panel's own hook owns the stored read, so it hands the
+ * action an `onDone` that reloads that read and then calls `onScored`. The
+ * refresh button here never calls `onScored`: it cannot change a score.
+ */
+export default function TenantEvidencePanel({
+  runId, showCaseLedger = true, onScored = () => {}, reconcileAction = null,
+}) {
+  const { data, lastRead, loading, reading, readError, loadError, read, reload } = useTenantEvidence(runId)
   if (!runId) return null
+  const action = typeof reconcileAction === 'function'
+    ? reconcileAction({ onDone: async () => { await reload(); onScored() } })
+    : null
 
   const payload = payloadOf(data)
   const notes = notesFor(data, payload, lastRead, readError, loadError)
@@ -192,6 +200,9 @@ export default function TenantEvidencePanel({ runId, showCaseLedger = true, onSc
         >
           <Icon name="repeat" size={14} />
         </Button>
+        {/* One Read back per run on screen: the embedded case panel carries it in
+            the two states only a read back advances, so the head carries it otherwise. */}
+        {!(showCaseLedger && data && caseOffersReadBack(data.case_ledger ?? null)) && action}
       </div>
       <p className="tenant-evidence__line">{line}</p>
 
@@ -210,7 +221,7 @@ export default function TenantEvidencePanel({ runId, showCaseLedger = true, onSc
       )}
       {showCaseLedger && data && payload !== undefined && (
         <div className="tenant-evidence__block tenant-evidence__block--case">
-          <RunCasePanel ledger={data.case_ledger ?? null} headingLevel={3} />
+          <RunCasePanel ledger={data.case_ledger ?? null} headingLevel={3} reconcileAction={action} />
         </div>
       )}
       {payload && (

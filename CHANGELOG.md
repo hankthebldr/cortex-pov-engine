@@ -912,6 +912,13 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 - The case panel's read line no longer shows the integration's name, on Results
   and on Run detail, and a failed request renders a fixed sentence by its code,
   never the error's own text.
+- Read back on a run that already has a verdict (Results, and the run page's
+  case panel) asks first: it reads the tenant and may change the verdict, and the
+  confirm says refreshing tenant evidence never does. Cancel posts nothing, and
+  the first focus is on Cancel. The unread phase's Read back stays one click.
+- Run detail shows the case panel once (the evidence tab no longer embeds a
+  second one), a run that has not been read back shows its tenant evidence, and
+  the scorecard's "XSIAM Stitch" tile is now "Analytics plane" (same figure).
 
 ### Changed — one per-tenant request budget; any 429 trips once
 

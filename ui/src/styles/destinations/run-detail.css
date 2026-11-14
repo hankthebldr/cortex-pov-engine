@@ -1111,6 +1111,7 @@
 .theme-console .run-detail .run-case__reason { font-size: 13px; color: var(--tx); }
 .theme-console .run-detail .run-case__meta { margin: 4px 0 8px; font-size: 11px; color: var(--tx3); }
 .theme-console .run-detail .run-case__warn { margin: 0 0 8px; font-size: 12px; color: var(--warn-str); }
+.theme-console .run-detail .run-case__action-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .theme-console .run-detail .run-case__empty { margin: 0 0 6px; font-size: 13px; color: var(--tx2); }
 .theme-console .run-detail .run-case__table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--tx); }
 .theme-console .run-detail .run-case__table th,
@@ -1136,6 +1137,7 @@
   color: var(--tx);
 }
 .theme-console .tenant-evidence__refresh { margin-left: auto; padding: 6px 8px; }
+.theme-console .tenant-evidence__head .tenant-evidence__refresh + .kit-btn { margin-left: 0; }
 .theme-console .tenant-evidence__line { margin: 4px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx3); }
 .theme-console .tenant-evidence__notes { list-style: none; margin: 12px 0 0; padding: 0; max-width: 820px; }
 .theme-console .tenant-evidence__note { margin: 0 0 6px; font: 400 13px/1.5 var(--font-ui); color: var(--tx2); }

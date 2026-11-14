@@ -249,12 +249,12 @@ describe('R4: an outcome-less unvalidated row is awaiting reconcile, never misse
   })
 })
 
-// ─── Residual R1: the XSIAM STITCH tile uses the one denominator rule ───────
+// ─── Residual R1: the Analytics plane tile uses the one denominator rule ───────
 // The live run a04023ce… read "0 / 3": its denominator counted the
 // not_reached row. Rows that never ran (and soak-pending rows) leave it.
 describe('R1: the XSIAM STITCH denominator excludes rows that never ran or are soaking', () => {
   const stitchTile = () => Array.from(document.querySelectorAll('.kpi'))
-    .find((k) => k.querySelector('.kpi__label').textContent === 'XSIAM Stitch')
+    .find((k) => k.querySelector('.kpi__label').textContent === 'Analytics plane')
 
   it('round 3: no analytics-plane row in the denominator renders "—", never "0 / 0"', async () => {
     installRoutes({ 'GET /api/results/run-ax': PAYLOAD })
@@ -287,5 +287,16 @@ describe('R1: the XSIAM STITCH denominator excludes rows that never ran or are s
     expect(isInDenominator('pending', 'PREVENTION_ALERT_WITHOUT_TERMINATION')).toBe(true)
     expect(isInDenominator(null, null)).toBe(true)
     expect(isInDenominator('missed', null)).toBe(true)
+  })
+})
+
+describe('the KPI tile reads Analytics plane, never XSIAM Stitch', () => {
+  it('the KPI tile reads Analytics plane, never XSIAM Stitch', async () => {
+    installRoutes({ 'GET /api/results/run-ax': PAYLOAD })
+    render(<EvidenceView lastRun={{ runId: 'run-ax', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-missed')).toBeInTheDocument())
+    const labels = Array.from(document.querySelectorAll('.kpi__label')).map((k) => k.textContent)
+    expect(labels).toContain('Analytics plane')
+    expect(labels).not.toContain('XSIAM Stitch')
   })
 })
