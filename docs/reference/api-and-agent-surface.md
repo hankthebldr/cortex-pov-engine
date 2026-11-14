@@ -141,6 +141,7 @@ every string as an escaped HCL literal.
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
 | GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
+| GET | `/api/scenarios/staged` | The **extended library**: the staged draft pairs under `drafts/detection-library/`, read only (not loaded, not launchable, not counted as coverage) | — | `{loaded, code, detail, registry_loaded, source, launchable:false, counted_as_coverage:false, scenarios[<summary> + doors, doors_code, doors_detail, staged{card, platform, source, findings, launchable:false}], total, projection}`; `loaded:false` + `STAGED_LIBRARY_ABSENT` when the directory is not on this SimCore (the image does not ship `drafts/`); 500 `STAGED_LIBRARY_UNREADABLE`, 500 `DATASET_REGISTRY_MALFORMED` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/tenant-content` | What the scenario (or saved draft) needs to exist in the tenant. Read-only; see §1.2.1 | — | the tenant-content manifest, 404 `SCENARIO_NOT_FOUND`, 422 `TENANT_CONTENT_UNREADABLE` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
@@ -1692,11 +1693,15 @@ Errors use the top-level `{"error", "code", "detail"}` shape.
 | GET | `/api/scenarios/{scenario_id}/doors` | One scenario's readiness plus each expected detection's requirement | query: `agent_id` | `{scenario_id, registry_loaded, readiness, detections[{step_id, detection_id, requirement}], tenant_verified, outbound_calls}`; 404 `SCENARIO_NOT_FOUND`, 500 as above |
 
 - A readiness object is `{scenario_id, state, scorable, total, underived, route_blocked,
-  unevaluated, not_open[{door_id, detections}], agent_scoped_evaluated}`. `state` is
+  unevaluated, not_open[{door_id, detections}], doors[], agent_scoped_evaluated}`. `state` is
   `ready | partial | needs_doors | not_evaluated`. `route_blocked` counts detections whose
   collector route cannot feed them (the library resolves no collector target, so every
   collector-route detection counts here); `unevaluated` counts agent-scoped OR-sets with no
   `agent_id` to key them. Both are passed through unchanged from the resolver.
+- `doors` (added 2026-11-13) is every door id any derived detection names, whatever the
+  door's state, the `agent_id` and the collector route: the scenario's detection source, read
+  by the Scenarios page's mapping line and its Unmapped filter. It does not change as doors
+  open, which `not_open` does. `[]` means no detection could be derived (all `underived`).
 - `not_open` lists each door that is **not in the open set** and how many detections it
   holds back, most first. It does **not** distinguish a door checked and found closed from
   one nobody has checked; join each `door_id` against `GET /api/doors` for the door's real
