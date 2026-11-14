@@ -230,8 +230,8 @@ export default function LaunchView({
     }
     for (const name of missingDeclaredPayloads) {
       out.push(
-        `${name} is declared by this scenario but is not staged — SimCore will refuse the launch `
-        + '(PAYLOAD_NOT_STAGED). Stage it in Tools & Payloads.',
+        `${name} is declared by this scenario but is not ready on this instance — the launch will `
+        + 'be refused (PAYLOAD_NOT_STAGED). Make it ready in Packages.',
       )
     }
     // Preflight rows marked BLOCK are conditions SimCore's own guards refuse
@@ -524,11 +524,11 @@ function PayloadPlanCard({
   if (resolving) {
     return (
       <section className="launch-card launch-card--payload" data-testid="launch-payload-plan-resolving">
-        <div className="launch-card__kicker">Payload plan</div>
+        <div className="launch-card__kicker">Tools for this run</div>
         <p className="launch-payload__resolving">
-          Resolving the composed payload plan from this link&apos;s{' '}
+          Resolving the tools chosen for this run from this link&apos;s{' '}
           <span className="mono">?plan=</span> parameter — Launch stays disabled until it settles,
-          so the run cannot go out with the plan silently dropped.
+          so the run cannot go out with them silently dropped.
         </p>
       </section>
     )
@@ -537,7 +537,7 @@ function PayloadPlanCard({
   return (
     <section className="launch-card launch-card--payload" data-testid="launch-payload-plan">
       <div className="launch-card__kicker">
-        Payload plan
+        Tools for this run
         {onEdit && artifacts.length > 0 && (
           <button type="button" className="btn btn--xs launch-edit-btn" onClick={onEdit}>
             Edit ▸
@@ -549,7 +549,7 @@ function PayloadPlanCard({
         <div key={a.payload_name} className="launch-payload__row" data-testid={`launch-payload-${a.payload_name}`}>
           <div className="mono launch-payload__path">{a.payload_name} → {a.dest_path}</div>
           <div className="mono launch-payload__meta">
-            sha256 {shortDigest(a.sha256)} · served from this SimCore
+            sha256 {shortDigest(a.sha256)} · supplied by this instance
           </div>
           {a.renamed && (
             <div className="launch-payload__renamed" data-testid="launch-payload-renamed">
@@ -568,7 +568,7 @@ function PayloadPlanCard({
           This SimCore&apos;s <span className="mono">POST /api/runs</span> does not accept a{' '}
           <span className="mono">payload_plan</span>, so the console will not send one — an unknown
           field is silently dropped, and the run would execute the scenario&apos;s own commands
-          unchanged while this card claimed a rename. The artifact is staged and served either way;
+          unchanged while this card claimed a rename. The tool is ready and supplied either way;
           the destination above is <strong>not</strong> in effect for this run.
         </div>
       )}
@@ -576,15 +576,15 @@ function PayloadPlanCard({
       {egressTools.length > 0 && (
         <div className="launch-payload__warn" data-testid="launch-payload-egress">
           <strong>{egressTools.length}</strong>{' '}
-          {egressTools.length === 1 ? 'tool is' : 'tools are'} fetched by the target from the public
-          internet at run time:{' '}
+          {egressTools.length === 1 ? 'tool needs' : 'tools need'} internet access on the
+          target:{' '}
           <span className="mono">
             {egressTools.map((t) => t.adapter.name).join(' · ')}
           </span>
-          . A default-deny egress policy blocks that, and the step then runs without its tool.
+          . A network that blocks it leaves the step running without its tool.
           {onGoShelf && (
             <button type="button" className="btn btn--xs launch-edit-btn" onClick={onGoShelf}>
-              Stage them ▸
+              Make them ready ▸
             </button>
           )}
         </div>
@@ -592,7 +592,7 @@ function PayloadPlanCard({
 
       {shelfAvailable === false && (
         <div className="launch-payload__warn" data-testid="launch-payload-unknown">
-          This SimCore does not report shelf state, so tool supply for this run is{' '}
+          This instance does not report tool readiness, so the tools for this run are{' '}
           <strong>UNKNOWN</strong> — not &ldquo;fine&rdquo;.
         </div>
       )}

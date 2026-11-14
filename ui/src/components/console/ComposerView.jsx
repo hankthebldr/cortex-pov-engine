@@ -132,7 +132,7 @@ function useMediaQuery(query) {
 }
 
 const WS_TABS = [
-  ['payload', 'Payload plan'],
+  ['payload', 'Tools'],
   ['preflight', 'Preflight'],
   ['active', 'Active run'],
   ['history', 'History'],
@@ -1068,7 +1068,7 @@ export default function ComposerView({
     })
 
     groups.push({
-      label: 'Staged payloads',
+      label: 'Ready tools',
       tone: 'pending',
       tab: 'packages',
       items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
@@ -1727,8 +1727,8 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
-    if (shelf.available === false) return 'no shelf'
-    return `${(shelf.shelf?.payloads || []).length} staged`
+    if (shelf.available === false) return 'not reported'
+    return `${(shelf.shelf?.payloads || []).length} ready`
   }
   if (id === 'preflight') {
     if (!env.healthModel) return 'unknown'
@@ -1750,9 +1750,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (shelf.available === false) {
     return (
       <div className="ws-empty">
-        This SimCore exposes no payload shelf, so every tool a step needs is fetched by the
-        TARGET from the public internet at run time. That is a real property of the run, not a
-        missing panel.
+        This instance supplies no tools itself, so every tool a step needs is installed by the
+        TARGET, which needs internet access. That is a real property of the run, not a missing
+        panel.
       </div>
     )
   }
@@ -1760,9 +1760,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (!payloads.length) {
     return (
       <div className="ws-empty">
-        Nothing staged on this SimCore.
+        No tools are ready on this instance.
         <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-          Open Tools &amp; Payloads
+          Open Packages
         </button>
       </div>
     )

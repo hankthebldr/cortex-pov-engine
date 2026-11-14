@@ -503,14 +503,14 @@ describe('ComposerView — YAML view and workstream', () => {
     expect(yaml).toHaveTextContent('NO EXPECTED DETECTION')
   })
 
-  it('opens the workstream on a tab click and reports the real shelf state', async () => {
+  it('opens the workstream on a tab click and reports which tools are ready', async () => {
     const user = userEvent.setup()
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('ws-tab-payload')).toBeInTheDocument())
     await user.click(screen.getByTestId('ws-tab-payload'))
     await waitFor(() => expect(screen.getByTestId('composer-ws-body')).toBeInTheDocument())
-    expect(screen.getByText(/Nothing staged on this SimCore/i)).toBeInTheDocument()
+    expect(screen.getByText(/No tools are ready on this instance/i)).toBeInTheDocument()
   })
 
   it('preflight reports the chain verdict alongside component health', async () => {

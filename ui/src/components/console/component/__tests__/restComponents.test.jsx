@@ -80,7 +80,7 @@ describe('POVengine', () => {
     mount(PovengineComponent, { env: { healthModel: health } })
     const services = screen.getByRole('region', { name: 'Services' })
     expect(within(within(services).getByRole('button', { name: /database/i })).getByRole('img', { name: 'Up' })).toBeInTheDocument()
-    expect(within(within(services).getByRole('button', { name: /payload shelf/i })).getByRole('img', { name: 'Degraded' })).toBeInTheDocument()
+    expect(within(within(services).getByRole('button', { name: /tool readiness/i })).getByRole('img', { name: 'Degraded' })).toBeInTheDocument()
   })
 
   it('the API tab is generated from this POVengine\'s own OpenAPI document', async () => {
@@ -115,7 +115,7 @@ describe('POVengine', () => {
     mount(PovengineComponent, { env: { healthModel: health, refreshHealth: vi.fn() }, params: { tab: 'setup', step: 'health' } })
     const item = within(stepList()).getByRole('button', { name: /check health/i })
     expect(within(item).getByRole('img', { name: 'Failed' })).toBeInTheDocument()
-    expect(panel()).toHaveTextContent(/payload/i)
+    expect(panel()).toHaveTextContent(/tool readiness/i)
   })
 })
 

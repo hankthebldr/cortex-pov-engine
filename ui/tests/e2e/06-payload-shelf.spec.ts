@@ -88,10 +88,10 @@ test.describe('Tools & Payloads', () => {
       const dialog = page.getByTestId('stage-payload-dialog')
       await expect(dialog).toBeVisible()
       // The licence gate is real: Stage is dead until it is ticked.
-      await expect(dialog.getByRole('button', { name: /^Stage ▸$/ })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: /^Make ready ▸$/ })).toBeDisabled()
       await dialog.getByTestId('stage-license-ack').click()
-      await expect(dialog.getByRole('button', { name: /^Stage ▸$/ })).toBeEnabled()
-      await dialog.getByRole('button', { name: /^Stage ▸$/ }).click()
+      await expect(dialog.getByRole('button', { name: /^Make ready ▸$/ })).toBeEnabled()
+      await dialog.getByRole('button', { name: /^Make ready ▸$/ }).click()
       await expect(page.getByTestId('stage-done')).toBeVisible()
       await expect(page.getByTestId('stage-done')).toContainText('1,106,683 bytes')
     }

@@ -65,12 +65,13 @@ describe('LaunchView preflight', () => {
     }
   })
 
-  it('warns about a tool the TARGET must fetch, before the run rather than after', async () => {
+  it('warns about a tool that needs internet on the TARGET, before the run rather than after', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
     await waitFor(() => {
       expect(screen.getByTestId('preflight-tools')).toHaveAttribute('data-status', 'warn')
     })
-    expect(screen.getByTestId('preflight-tools')).toHaveTextContent(/default-deny/)
+    expect(screen.getByTestId('preflight-tools')).toHaveTextContent(/need internet access on the target/)
+    expect(screen.getByTestId('preflight-tools')).toHaveTextContent(/runs without its tool/)
   })
 
   it('never claims READY while a precondition is unchecked', async () => {

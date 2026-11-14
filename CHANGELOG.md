@@ -60,6 +60,24 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Changed — the console no longer says "shelf" or "staged" for tools
+
+- **Tool readiness is said in plain words everywhere.** The launch gate row is
+  **Tool readiness** (was "Payload shelf"). The launch check says a tool is
+  **not ready**, or **needs internet access on the target**, and still says what
+  that costs: on a network that blocks it the step runs without its tool and the
+  missing detection reads as a coverage gap. The launch card is **Tools for this
+  run**, the Composer's bottom tab is **Tools · N ready**, the scenario sheet's
+  tool chips read READY / NOT READY / NEEDS INTERNET, and the dialog is **Make
+  \<tool\> ready on this instance**. "Tools & Payloads" is **Packages**.
+- **Coverage** calls a technique no run has exercised **Not run** (was
+  "Staged"), on the page and in the exported Navigator layer.
+- The About page no longer claims "nothing is fetched at dispatch": it now says
+  a run that needs a tool this instance cannot supply is refused, and a tool the
+  target must install for itself is flagged at the launch check.
+- API fields, error codes (`PAYLOAD_NOT_STAGED`) and a push run's `staged`
+  status are unchanged.
+
 ### Changed — Packages: a plain catalog, no supply mechanics
 
 - **The Packages page no longer talks about the payload shelf.** How and when a
