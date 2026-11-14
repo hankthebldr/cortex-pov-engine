@@ -77,6 +77,35 @@ scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
 (plane, detection types, use case), and the active tab offers its most common
 tags as chips that filter the list; tags that differ only in case are one chip.
 
+||||||| parent of 2ce787e5 (docs(docs): document the launch dry run and refusals that write nothing)
+
+### Added — a launch dry run, and a refused launch writes nothing
+
+`POST /api/runs/preflight` takes the launch body and runs every check
+`POST /api/runs` makes, in the same order, without launching. It returns
+whether the launch would go, the refusal it would get (code and HTTP status),
+every refusal at once, and each check as pass, block or skipped with a reason.
+The checks are one function shared with the launch, so the two cannot
+disagree; a test holds them to the same answer for every refusal code. Before,
+the console could predict about six of the twenty-odd refusals.
+
+Every refusal is now decided before the run row is written. Six refusals used
+to fire after it — the payload shelf, a pull launch with no target, an invalid
+stitch context, a composed run's unenrolled second endpoint, the
+container-agent gate — and left a `failed` run with `not_executed` results in
+the run list. They now leave nothing, like the consent gate always did. One
+order change comes with it: a composed run with an unenrolled endpoint is now
+refused `TARGET_AGENT_NOT_ENROLLED` before the container-agent gate judges its
+other endpoints (it could answer `AGENT_TOOL_ABSENT` first).
+
+New refusal codes: `SCENARIO_NOT_FOUND` (404; was `LAUNCH_FAILED` 422),
+`PULL_TARGET_MISSING` (422), `STITCH_CONTEXT_INVALID` (409; was only in the
+message) and, for the push cluster-consent clause, `CLUSTER_CONSENT_REQUIRED`,
+`PRIVILEGED_K8S_DISABLED` and `CLUSTER_POSTURE_REFUSED` (409). The Composer's
+draft verdict now reports `DRAFT_CHAIN_INVALID` when the chain is invalid
+(it always said `DRAFT_NOT_TC_BOUND`). Spec:
+`docs/superpowers/specs/2026-11-13-launch-gate-one-model-design.md`, slice 1.
+
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
 - **Tool readiness is said in plain words everywhere.** The launch gate row is
