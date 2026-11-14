@@ -1118,3 +1118,106 @@
 .theme-console .run-detail .run-case__table th { color: var(--tx2); font-weight: 600; }
 .theme-console .run-detail .run-case__shared { margin: 8px 0 0; font-size: 12px; color: var(--tx2); }
 .theme-console .run-detail .run-case__disclaimer { margin: 8px 0 0; font-size: 11px; color: var(--tx3); }
+
+/* ───────────────────────────────────────────────────────────────────
+   TenantEvidencePanel.jsx — Results › tenant evidence (spec §7.5).
+   No box around the panel: it sits below the scorecard and separates
+   its blocks with a 1px top rule. Status is StatusIcon + one word (kit);
+   yellow appears only through StatusIcon's degraded tone and the case
+   ledger's own warning line. Agreement and disposition are context, so
+   no pass/fail colour here.
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .tenant-evidence { margin: 28px 0 0; }
+.theme-console .tenant-evidence__head { display: flex; align-items: center; gap: 10px; }
+.theme-console .tenant-evidence__title {
+  margin: 0;
+  font: 600 15px/1.3 var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .tenant-evidence__refresh { margin-left: auto; padding: 6px 8px; }
+.theme-console .tenant-evidence__line { margin: 4px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx3); }
+.theme-console .tenant-evidence__notes { list-style: none; margin: 12px 0 0; padding: 0; max-width: 820px; }
+.theme-console .tenant-evidence__note { margin: 0 0 6px; font: 400 13px/1.5 var(--font-ui); color: var(--tx2); }
+
+.theme-console .tenant-evidence__block {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 4px 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .tenant-evidence__block--case { display: block; }
+.theme-console .tenant-evidence__label { font: 600 12px/1.5 var(--font-ui); color: var(--tx2); }
+.theme-console .tenant-evidence__body { min-width: 0; }
+.theme-console .tenant-evidence__meta { margin: 0 0 6px; font-size: 12px; line-height: 1.5; color: var(--tx2); }
+.theme-console .tenant-evidence__statement { margin: 4px 0 0; font-size: 12px; color: var(--tx3); }
+.theme-console .tenant-evidence__sub { margin-top: 12px; }
+.theme-console .tenant-evidence__subtitle { margin: 0 0 4px; font: 600 12px/1.4 var(--font-ui); color: var(--tx2); }
+.theme-console .tenant-evidence__chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  color: var(--tx);
+}
+
+/* The tables scroll inside their own box; the page never scrolls sideways. */
+.theme-console .tenant-evidence__scroll { overflow-x: auto; }
+.theme-console .tenant-evidence__table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--tx); }
+.theme-console .tenant-evidence__table th,
+.theme-console .tenant-evidence__table td {
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--bd);
+  overflow-wrap: anywhere;
+}
+.theme-console .tenant-evidence__table th { color: var(--tx2); font-weight: 600; white-space: nowrap; }
+.theme-console .tenant-evidence__table a { color: var(--ac-ink, var(--ac)); }
+
+.theme-console .tenant-evidence__kv { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 6px; }
+.theme-console .tenant-evidence__kv-row { display: flex; gap: 6px; font-size: 12px; min-width: 0; }
+.theme-console .tenant-evidence__kv dt { color: var(--tx3); }
+.theme-console .tenant-evidence__kv dd { margin: 0; color: var(--tx); overflow-wrap: anywhere; }
+
+.theme-console .tenant-evidence__foot { margin: 14px 0 0; font-size: 11px; color: var(--tx3); }
+.theme-console .tenant-evidence__notice { margin: 4px 0 0; font-size: 11px; color: var(--tx3); }
+
+/* The embedded case panel (RunCasePanel) is one block of this panel. On
+   Results no .run-detail rule reaches it, so it is styled here: same type
+   as the other blocks, no box of its own. */
+.theme-console .tenant-evidence .run-case { margin: 0; padding: 0; border: 0; }
+.theme-console .tenant-evidence .run-case__h {
+  margin: 0 0 6px;
+  font: 600 12px/1.5 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tx2);
+}
+.theme-console .tenant-evidence .run-case__merge { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.theme-console .tenant-evidence .run-case__chip {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  color: var(--tx);
+}
+.theme-console .tenant-evidence .run-case__reason { font-size: 13px; color: var(--tx); }
+.theme-console .tenant-evidence .run-case__meta { margin: 4px 0 8px; font-size: 11px; color: var(--tx3); }
+.theme-console .tenant-evidence .run-case__warn { margin: 0 0 8px; font-size: 12px; color: var(--warn-str); }
+.theme-console .tenant-evidence .run-case__empty { margin: 0 0 6px; font-size: 13px; color: var(--tx2); }
+.theme-console .tenant-evidence .run-case__table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--tx); }
+.theme-console .tenant-evidence .run-case__table th,
+.theme-console .tenant-evidence .run-case__table td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--bd); }
+.theme-console .tenant-evidence .run-case__table th { color: var(--tx2); font-weight: 600; }
+.theme-console .tenant-evidence .run-case__shared { margin: 8px 0 0; font-size: 12px; color: var(--tx2); }
+.theme-console .tenant-evidence .run-case__disclaimer { margin: 8px 0 0; font-size: 11px; color: var(--tx3); }
+
+@media (max-width: 720px) {
+  .theme-console .tenant-evidence__block { grid-template-columns: minmax(0, 1fr); }
+}

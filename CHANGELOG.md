@@ -894,6 +894,22 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   issue read now raises on a lowercase `data` reply where it used to return
   `{}`.
 
+### Added — Results: tenant evidence panel
+
+- Results › Report shows a Tenant evidence panel below the scorecard: the
+  agreement figures with the two-reads statement, the issues credited to the
+  run's host, the issues not credited, their cases, the run's case ledger and
+  the endpoint record as of the read (with the ledger's ip-to-host bridge code).
+- Display only, and read on request only. Opening the page sends one `GET` of
+  the stored snapshot and nothing polls. The tenant is read only when the DC
+  presses the panel's refresh button, which sends one metered read per press
+  (a double click sends one) and never changes a score or verdict.
+- Every degraded state is a sentence, never an empty table: not read, no
+  credential, no run window, unscoped, zero attributed, truncated, truncation
+  unknown, quota refused and a failed section with its code and remediation.
+  Tenant-written names render as text, and a case link is followed only when it
+  is https on `paloaltonetworks.com`.
+
 ### Changed — one per-tenant request budget; any 429 trips once
 
 - Every SimCore request to a tenant now spends one per-tenant request bucket
