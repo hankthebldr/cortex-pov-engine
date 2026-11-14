@@ -238,6 +238,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 
 ### Security
 
+- **A path override on a tenant credential could send the tenant's API key to
+  another host.** The connector checks the tenant's base URL, then appended the
+  credential's `alerts_path` / `incidents_path` / `issues_path` / `cases_path` /
+  `endpoints_path` as given. A path that does not start with `/` changes the
+  host of the result (`…paloaltonetworks.com` + `@attacker.example/x` is a
+  request to `attacker.example`), and the API key went with it. The credential
+  API is unauthenticated, so anyone who could reach SimCore could set such a
+  path on a stored credential. A path override must now start with `/`;
+  anything else is refused with `XSIAM_CONFIG_ERROR` before any request is
+  made. `alerts_path` and `incidents_path` have had this since 1.1.0; the other
+  three arrived with the tenant reader in this release.
+
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
   (SEC-02, verified on cc26ddf).** The request's `params` were merged over the
   registry's own `binary` / `source_path` / `port`, so

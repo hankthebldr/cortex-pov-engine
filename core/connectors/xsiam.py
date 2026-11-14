@@ -38,7 +38,7 @@ from integrations.xsiam.ledger import (
     QuotaBreakerOpen, RequestBudgetExhausted, ledger, tenant_ledger_key,
 )
 from integrations.xsiam.queries import endpoint_get_body, issue_search_body
-from integrations.xsiam.tenant_url import normalize_tenant_base_url
+from integrations.xsiam.tenant_url import normalize_tenant_base_url, tenant_endpoint_url
 
 from . import tuning
 from .base import (
@@ -209,6 +209,8 @@ class XsiamConnector(Connector):
 
         try:
             base = normalize_tenant_base_url(str(fqdn))
+            # The path can be a credential override; it must not move the host.
+            url = tenant_endpoint_url(base, path)
         except XsiamConfigError as e:
             # Refusing here is the whole point: without it this connector would
             # POST `Authorization: <raw api key>` in cleartext to whatever host
@@ -218,7 +220,6 @@ class XsiamConnector(Connector):
             return PullResult(ok=False, connector=self.kind,
                               code=codes.XSIAM_CONFIG_ERROR, error=str(e))
 
-        url = base + path
         mode = str(conf.get("auth_mode", "standard")).lower()
         # One signer, shared with the tenant client. Two byte-identical copies of
         # a signature scheme is two edits when PANW changes it, and one of them
