@@ -238,6 +238,20 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 
 ### Security
 
+- **A leftover cron entry or systemd timer could run another user's script as
+  root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
+  runs a script from a fixed directory under `/var/tmp` every five minutes, and
+  the job can outlive the directory: the beacon does not run a scenario's
+  cleanup, and a tmp cleaner or a partial cleanup can remove it. A local user
+  could then recreate the directory with a script of their own. The cron line
+  and the unit's `ExecStart` now run nothing from the directory unless one
+  `stat` lookup reads it as root's own 0700 directory; otherwise the cron entry
+  deletes itself and the unit disables its timer. The check is in `ExecStart`
+  because systemd before 243 ignores `ExecCondition=`. The step that recreates
+  the directory first removes a cron entry or timer left by an earlier run. The
+  re-executions keep the command-line path the cards' BIOCs match, so no
+  detection changed.
+
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
   credential's `alerts_path` / `incidents_path` / `issues_path` / `cases_path` /
