@@ -88,9 +88,14 @@
   --warn: #7D5E11; --warn-str: #C7AA47; --crit: #A51B00; --info: #00667B;
   --warn-soft: #F7F1DF; --crit-soft: #F6E4DF;
   /* Matte greens from the DS (panw-green-700, green-500, green-200): the
-     secondary shades of the one accent. Bright --ac stays for the primary
-     button; selected states use the wash + the matte line. */
+     secondary shades of the one accent; selected states use the wash + the
+     matte line. */
   --gr-matte: #238A4D; --gr-mid: #40A557; --gr-pale: #ADD8B1;
+  /* Buttons (Henry, 2026-11-13: "standardize the greyscale / matte green
+     buttons"): ONE primary fill in both themes, the deep matte green with
+     white text (7.5:1), and a hover a shade lighter (#1E8247, 4.85:1 under
+     white; an 80/20 composite of panw-green-700 over the deep green). */
+  --btn: #0A6231; --btn-hover: #1E8247; --btn-tx: #FFFFFF;
   --ink: #1A1A1A; --ink2: #333333; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
   --shadow: 0 4px 12px rgba(0,0,0,.08);
 }
@@ -134,6 +139,8 @@
   --warn-soft: #2A261A; --crit-soft: #302624;
   /* Matte greens from the DS (panw-green-700, green-500, green-200). */
   --gr-matte: #238A4D; --gr-mid: #40A557; --gr-pale: #ADD8B1;
+  /* The same matte primary as light (see there): one button in both themes. */
+  --btn: #0A6231; --btn-hover: #1E8247; --btn-tx: #FFFFFF;
   --ink: #000000; --ink2: #141414; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
   --shadow: 0 12px 32px rgba(0,0,0,.5);
 }

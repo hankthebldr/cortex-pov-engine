@@ -124,6 +124,12 @@ describe('design token contract (cortex-tokens.css)', () => {
     // --crit is coral again: the minimal pass moved it to red because coral read
     // as the ORANGE primary button; with a green primary that collision is gone.
     expect(darkTokens.warn).toBe('#C7AA47')
+    // One primary button in both themes: the deep matte green, white text.
+    for (const t of [lightTokens, darkTokens]) {
+      expect(t.btn).toBe('#0A6231')
+      expect(t['btn-tx']).toBe('#FFFFFF')
+      expect(t['btn-hover']).toBe('#1E8247')
+    }
     expect(darkTokens.crit).toBe('#FDAC96')
     expect(darkTokens.info).toBe('#00C0E8')
     for (const key of ['ac', 'ac-str', 'ac-ink', 'ac-soft', 'ac-line', 'br']) {

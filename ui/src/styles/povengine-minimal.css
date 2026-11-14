@@ -85,8 +85,8 @@
 /* ── Primary action ─────────────────────────────────────────────────────────
    One filled green button per screen (v26 §4.1 Button · primary). Hover
    brightens the fill (§5); the label never changes colour. */
-.theme-console .pov-btn--primary { background: var(--ac); border-color: var(--ac); color: var(--ac-tx); }
-.theme-console .pov-btn--primary:hover:not(:disabled) { filter: brightness(1.08); }
+.theme-console .pov-btn--primary { background: var(--btn); border-color: var(--btn); color: var(--btn-tx); }
+.theme-console .pov-btn--primary:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover); }
 
 /* Per-page accent bars from the parity pass — the same 44px orange-then-white
    block above each page title, under a different class on each page. */
@@ -132,4 +132,20 @@
   background: var(--ac-soft);
   border-color: var(--gr-matte);
   color: var(--tx);
+}
+
+/* ── One button language (Henry, 2026-11-13) ────────────────────────────────
+   The legacy `.btn` / `.btn--primary` (cortex-console.css) painted the bright
+   action green with a glow and a cyan hover. They read the same as the kit
+   now: the matte primary fill, a greyscale secondary whose hover is the matte
+   line. `:root` lifts these over the lazily loaded destination sheets. */
+:root .theme-console .btn--primary {
+  background: var(--btn); border-color: var(--btn); color: var(--btn-tx);
+}
+:root .theme-console .btn--primary:hover:not(:disabled) {
+  background: var(--btn-hover); border-color: var(--btn-hover); color: var(--btn-tx);
+  box-shadow: none;
+}
+:root .theme-console .btn:not(.btn--primary):hover:not(:disabled) {
+  border-color: var(--gr-matte); color: var(--tx);
 }
