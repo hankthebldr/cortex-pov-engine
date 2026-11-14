@@ -17,6 +17,8 @@
  *   rotate   Read back (the verb)
  *   external Open results (the verb)
  *   target   a deep dive's thesis ("Why this matters")
+ *   back     the header's Back: the previous place in the console's history
+ *   forward  the header's Forward: the next place, after a Back
  */
 import React from 'react'
 
@@ -76,6 +78,8 @@ const SHAPES = {
       <circle cx="8" cy="8" r="2.2" />
     </g>
   ),
+  back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
+  forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

@@ -25,18 +25,25 @@
 .kit-status--unknown  .kit-status__word { color: var(--tx3); }
 
 /* ── ErrorBadge ─────────────────────────────────────────────────────────── */
+/* Greyscale, the same height and corner as a button; only the "!" carries the
+   tone (gold warn / coral crit), as an accent rather than a filled alarm. */
 .kit-errbadge {
   display: inline-flex; align-items: center; gap: 6px;
   max-width: 100%;
-  padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor;
-  font: 600 11px/1.2 var(--font-ui);
+  padding: 6px 10px; border-radius: 6px; border: 1px solid var(--bd2);
+  background: var(--s2); color: var(--tx2);
+  font: 600 12px/1 var(--font-ui);
   cursor: pointer;
 }
-.kit-errbadge--warn { color: var(--warn); background: var(--warn-soft); }
-.kit-errbadge--crit { color: var(--crit); background: var(--crit-soft); }
-.kit-errbadge__glyph { font-weight: 700; }
+.kit-errbadge__glyph {
+  display: inline-grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  font-weight: 700; font-size: 10px;
+}
+.kit-errbadge--warn .kit-errbadge__glyph { color: var(--warn); background: var(--warn-soft); }
+.kit-errbadge--crit .kit-errbadge__glyph { color: var(--crit); background: var(--crit-soft); }
 .kit-errbadge__text { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kit-errbadge:hover { filter: brightness(1.08); }
+.kit-errbadge:hover { border-color: var(--gr-matte); color: var(--tx); }
 .kit-errbadge:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 /* ── Button ─────────────────────────────────────────────────────────────── */
@@ -47,12 +54,12 @@
   border: 1px solid transparent; cursor: pointer;
   transition: filter 120ms ease-out, border-color 120ms ease-out;
 }
-.kit-btn--primary     { background: var(--ac);   border-color: var(--ac);   color: var(--ac-tx); }
+.kit-btn--primary     { background: var(--btn);  border-color: var(--btn);  color: var(--btn-tx); }
 .kit-btn--secondary   { background: transparent; border-color: var(--bd2); color: var(--tx); }
 .kit-btn--destructive { background: var(--crit); border-color: var(--crit); color: var(--s0); }
-.kit-btn--primary:hover:not(:disabled),
+.kit-btn--primary:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover); }
 .kit-btn--destructive:hover:not(:disabled) { filter: brightness(1.08); }
-.kit-btn--secondary:hover:not(:disabled) { border-color: var(--tx3); }
+.kit-btn--secondary:hover:not(:disabled) { border-color: var(--gr-matte); }
 .kit-btn:disabled { opacity: .45; cursor: not-allowed; }
 .kit-btn:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
 

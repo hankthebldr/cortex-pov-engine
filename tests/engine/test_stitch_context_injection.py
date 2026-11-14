@@ -317,11 +317,10 @@ def test_invalid_persisted_spec_refuses_at_launch(session_factory):
             )
             assert result.success is False
             assert "STITCH_CONTEXT_INVALID" in (result.error or "")
-            # run row exists (seeded before pull) but was never marked running with a binding
-            run = (await db.execute(
-                select(Run).where(Run.run_id == result.run_id)
-            )).scalar_one()
-            assert run.stitch_binding is None
+            assert result.error_code == "STITCH_CONTEXT_INVALID"
+            # Refused before the Run row is written: no run carries a binding.
+            assert result.run_id is None
+            assert (await db.execute(select(Run))).scalars().all() == []
             # nothing enqueued for the agent
             assert not orch._queue.get("agent-1")
 

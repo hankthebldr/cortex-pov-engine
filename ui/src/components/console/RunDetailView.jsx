@@ -16,6 +16,8 @@ import { launchWarningsFor } from './launchWarnings.js'
 import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import ReadBackNotice from './ReadBackNotice.jsx'
+import ReadBackButton from './ReadBackButton.jsx'
+import TenantEvidencePanel from './TenantEvidencePanel.jsx'
 import RunChain from './RunChain.jsx'
 import RunVerdictLine from './RunVerdictLine.jsx'
 import useReadBack from './useReadBack.jsx'
@@ -515,7 +517,7 @@ export default function RunDetailView({
             <Button variant="primary" onClick={() => onNavigate('proof', { run: runId })}>Open results</Button>
           )}
           {lifecycle?.phase === PHASE.NOTHING && descriptor.scenarioId && (
-            <Button variant="primary" onClick={() => onNavigate('guided', { arm: descriptor.scenarioId })}>Run</Button>
+            <Button variant="primary" onClick={() => onNavigate('preflight', { arm: descriptor.scenarioId })}>Run</Button>
           )}
         </div>
       </div>
@@ -589,7 +591,13 @@ export default function RunDetailView({
         </section>
       )}
 
-      <RunCasePanel ledger={run?.case_ledger ?? null} />
+      {/* Read back here only where a verdict is already on screen, and not on the
+          Evidence tab, whose tenant evidence panel carries the one button. */}
+      <RunCasePanel
+        ledger={run?.case_ledger ?? null}
+        reconcileAction={lifecycle?.phase === PHASE.READY && tab !== 'evidence'
+          ? <ReadBackButton runId={runId} /> : null}
+      />
 
       <div
         className="lab__segmented run-detail__subtabs"
@@ -620,16 +628,20 @@ export default function RunDetailView({
           />
         )}
         {tab === 'evidence' && (lifecycle && lifecycle.phase !== PHASE.READY ? (
-          <ReadBackNotice
-            lifecycle={lifecycle}
-            outcome={outcomes.get(runId)}
-            onReadBack={() => readBack(runId)}
-          />
+          <>
+            <ReadBackNotice
+              lifecycle={lifecycle}
+              outcome={outcomes.get(runId)}
+              onReadBack={() => readBack(runId)}
+            />
+            <TenantEvidencePanel runId={runId} showCaseLedger={false} />
+          </>
         ) : (
           <EvidenceView
             activeRun={isThisActive ? activeRun : null}
             lastRun={isThisActive ? null : descriptor}
             pinnedRun={descriptor}
+            showCaseLedger={false}
             onError={onError}
           />
         ))}

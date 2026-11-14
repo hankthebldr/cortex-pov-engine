@@ -77,7 +77,10 @@ describe('design-system drift', () => {
   const SOURCED = [
     ['panw-green', 'br', 'Cortex green — the brand, primary action and selected state (v26 §9.1)'],
     ['panw-green', 'pos-str', 'Cortex green — healthy / done / detected'],
-    ['panw-yellow', 'warn-str', 'Strata yellow — warn'],
+    ['gold-600', 'warn-str', 'gold-600 — warn, muted to an accent (Henry, 2026-11-13)'],
+    ['panw-green-700', 'gr-matte', 'matte green — the selected line'],
+    ['green-500', 'gr-mid', 'mid green — secondary green'],
+    ['green-200', 'gr-pale', 'pale green — secondary green'],
   ]
 
   it.each(SOURCED)('--%s from the DS is what --%s paints (%s)', (dsName, ours) => {
@@ -101,7 +104,9 @@ describe('design-system drift', () => {
     const all = declarations(TOKENS)
     expect(norm(all['plane-edr'])).toBe(norm(ds['panw-cyan']))
     expect(norm(all['plane-itdr'])).toBe(norm(ds['panw-yellow']))
-    expect(norm(all['plane-analytics'])).toBe(norm(ds['panw-orange']))
+    // Not orange: v26 keeps PANW orange for the NGFW family tint alone.
+    expect(norm(all['plane-analytics'])).toBe(norm(ds['ink-400']))
+    expect(norm(all['plane-analytics'])).not.toBe(norm(ds['panw-orange']))
     expect(norm(all['plane-cdr'])).toBe(norm(ds['panw-teal']))
     expect(norm(all['plane-cspm'])).toBe(norm(ds['panw-green-700']))
   })

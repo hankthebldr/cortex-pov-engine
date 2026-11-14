@@ -109,7 +109,8 @@ describe('every destination renders itself, and only itself', () => {
 
   it('retired seed pages redirect instead of rendering', () => {
     const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
-    expect(retired).toEqual(['agents', 'cli', 'firewall', 'scope', 'setup', 'tenants', 'validation'])
+    // guided and readiness land on the Launch gate (the MVP merged them into it).
+    expect(retired).toEqual(['agents', 'cli', 'firewall', 'guided', 'readiness', 'scope', 'setup', 'tenants', 'validation'])
   })
 
   it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {

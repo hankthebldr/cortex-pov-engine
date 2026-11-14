@@ -135,6 +135,7 @@ describe('Icon', () => {
     expect(ICONS).toEqual([
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
+      'back', 'forward',
     ])
   })
 

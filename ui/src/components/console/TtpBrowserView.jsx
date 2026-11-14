@@ -68,9 +68,8 @@ export default function TtpBrowserView({
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedRuns, setSelectedRuns]     = useState(null)
 
-  const [filterStatus, setFilterStatus]     = useState('all')
+  const [filterSubdomain, setFilterSubdomain] = useState('all')
   const [filterTactic, setFilterTactic]     = useState('all')
-  const [filterPlatform, setFilterPlatform] = useState('all')
   const [query, setQuery]                   = useState('')
 
   // Group / sort by the UC / TC index. The join loads beside the corpus and
@@ -144,16 +143,17 @@ export default function TtpBrowserView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTtpId, loading])
 
-  const statuses = useMemo(
-    () => Array.from(new Set(ttps.map((t) => t.status))).sort(),
-    [ttps],
-  )
+  // Subdomain is the index's fy27_subdomain over the cards' bindings, so it is
+  // offered once the UC / TC join has loaded. A card evidencing test cases in
+  // two subdomains matches either.
+  const subdomains = useMemo(() => {
+    if (!bindingsReady) return []
+    const all = new Set()
+    for (const list of bindings.byCard.values()) for (const b of list) if (b.subdomain) all.add(b.subdomain)
+    return Array.from(all).sort()
+  }, [bindings, bindingsReady])
   const tactics = useMemo(
     () => Array.from(new Set(ttps.flatMap((t) => t.tactic_ids || []))).sort(),
-    [ttps],
-  )
-  const platforms = useMemo(
-    () => Array.from(new Set(ttps.flatMap((t) => t.platforms || []))).sort(),
     [ttps],
   )
 
@@ -165,9 +165,9 @@ export default function TtpBrowserView({
     // narrows by AND across tokens.
     const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     return ttps.filter((t) => {
-      if (filterStatus   !== 'all' && t.status !== filterStatus)         return false
+      if (filterSubdomain !== 'all'
+        && !(bindings.byCard.get(t.id) || []).some((b) => b.subdomain === filterSubdomain)) return false
       if (filterTactic   !== 'all' && !(t.tactic_ids || []).includes(filterTactic))   return false
-      if (filterPlatform !== 'all' && !(t.platforms  || []).includes(filterPlatform)) return false
       if (tokens.length > 0) {
         const haystack = [
           t.id, t.name, t.summary,
@@ -180,16 +180,14 @@ export default function TtpBrowserView({
       }
       return true
     })
-  }, [ttps, filterStatus, filterTactic, filterPlatform, query, bindings])
+  }, [ttps, filterSubdomain, filterTactic, query, bindings])
 
   const hasActiveFilters =
-    filterStatus !== 'all' || filterTactic !== 'all' ||
-    filterPlatform !== 'all' || query.trim() !== ''
+    filterSubdomain !== 'all' || filterTactic !== 'all' || query.trim() !== ''
 
   const resetFilters = () => {
-    setFilterStatus('all')
+    setFilterSubdomain('all')
     setFilterTactic('all')
-    setFilterPlatform('all')
     setQuery('')
     setPage(0)
   }
@@ -255,7 +253,7 @@ export default function TtpBrowserView({
         <div>
           <h1>TTP cards</h1>
           <div className="view-head__meta">
-            {ttps.length} TTPs · {tactics.length} tactics · {platforms.length} platforms · {visible.length} visible
+            {ttps.length} TTPs · {tactics.length} tactics · {visible.length} visible
           </div>
         </div>
       </div>
@@ -277,10 +275,6 @@ export default function TtpBrowserView({
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{tactics.length}</div>
           <div className="ttpb-stat__label">tactics</div>
-        </div>
-        <div className="ttpb-stat">
-          <div className="ttpb-stat__value mono">{platforms.length}</div>
-          <div className="ttpb-stat__label">platforms</div>
         </div>
         <div className="ttpb-stat">
           <div className="ttpb-stat__value mono">{visible.length}</div>
@@ -324,9 +318,10 @@ export default function TtpBrowserView({
       </div>
 
       <div className="ttpb-filters">
-        <FilterRow label="status"   active={filterStatus}   options={statuses}  onChange={setFilterStatus} />
+        {subdomains.length > 0 && (
+          <FilterRow label="subdomain" active={filterSubdomain} options={subdomains} onChange={setFilterSubdomain} />
+        )}
         <FilterRow label="tactic"   active={filterTactic}   options={tactics}   onChange={setFilterTactic} />
-        <FilterRow label="platform" active={filterPlatform} options={platforms} onChange={setFilterPlatform} />
       </div>
 
       {/* Organizes the GRID, so it leaves with it: no corpus, or a card open
@@ -726,7 +721,6 @@ function CardIndexRow({ id, bindings, placedBy }) {
 function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false, bindings, placedBy }) {
   const techniques = ttp.technique_ids || []
   const tactics    = ttp.tactic_ids    || []
-  const platforms  = ttp.platforms     || []
   const counts     = ttp.detection_counts || {}
   const totalDetections = detectionTotal(ttp)
 
@@ -743,7 +737,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
       <div className="ttpb-row__head" data-testid="ttpb-card-head">
         <span className="ttpb-row__id mono">{ttp.id}</span>
         {techniques[0] && <span className="ttpb-chip--tag mono ttpb-card__technique">{techniques[0]}</span>}
-        <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        {/* Every shipped card is active; only a draft or deprecated card says so. */}
+        {ttp.status && ttp.status !== 'active' && (
+          <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        )}
       </div>
       <div className="ttpb-row__name ttpb-card__title">{ttp.name}</div>
       <div className="ttpb-row__cat mono">
@@ -765,13 +762,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
             )}
           </div>
         )}
-        {(tactics.length > 0 || platforms.length > 0) && (
+        {tactics.length > 0 && (
           <div className="ttpb-row__chips">
             {tactics.map((t) => (
               <span key={t} className="ttpb-chip--tag ttpb-chip--tag-signal mono">{t}</span>
-            ))}
-            {platforms.map((p) => (
-              <span key={p} className="ttpb-chip--tag ttpb-chip--tag-muted mono">{p}</span>
             ))}
           </div>
         )}

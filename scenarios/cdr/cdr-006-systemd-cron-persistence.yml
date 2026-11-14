@@ -5,10 +5,22 @@ status: active
 
 # Detection-validation scenario (defensive QA). It establishes a self-reloading
 # systemd-service foothold on a Linux node so Cortex Cloud / XDR for Linux can be
-# shown to detect it. The anchor card TTP-2026-0074 is SAFE-MODE: the unit's
-# ExecStart and the cron watchdog reference an inert /tmp/.cortexsim_node_beacon
-# marker (no payload runs), and cleanup disables+removes the unit, strips the
-# cron line, and reloads the daemon. LAB ONLY — requires root on the node.
+# shown to detect it. The anchor card TTP-2026-0074 is SAFE-MODE: the unit runs
+# an inert marker, /tmp/.cortexsim-node/.cortexsim_node_beacon, that only sleeps
+# (no network, no payload) and retires the foothold 45 minutes after install.
+# cleanup disables+removes the unit, strips the cron line, reloads the daemon
+# and removes the directory. LAB ONLY — requires root on the node.
+#
+# The unit and the root crontab watchdog outlive a run: the beacon does not run
+# cleanup.commands, and /tmp is emptied at boot and by tmp cleaners. So the
+# marker lives in a directory step-01 makes root-owned 0700, and both the
+# unit's ExecStart and the watchdog run nothing unless one lstat reads it that
+# way; otherwise the unit disables itself and the watchdog removes itself.
+# /tmp is sticky, so a directory that passes cannot be replaced by another
+# user. The check is in ExecStart, not ExecCondition=: systemd before 243
+# (RHEL 8, Amazon Linux 2, Debian 10) ignores ExecCondition= with a log
+# warning. In the unit `%` is written `%%` and `$` is written `$$`; in the
+# crontab `%` is written `\%`.
 # Focused systemd-centric variant distinct from the broad multi-mechanism
 # SIM-EDR-003 (TTP-2026-0034).
 
@@ -66,12 +78,37 @@ steps:
   - id: step-01
     name: "Write a systemd service unit with Restart=always + /tmp ExecStart (T1543.002)"
     command: |
-      # SAFE-MODE: ExecStart references an inert marker, no payload runs.
+      set -eu
+      # SAFE-MODE: ExecStart runs an inert marker that only sleeps; no payload runs.
+      N=/tmp/.cortexsim-node
+      # A unit or watchdog left by an earlier run must not fire while $N is
+      # replaced: stop and disable the unit and drop the watchdog first.
+      systemctl disable --now cortexsim-node.service >/dev/null 2>&1 || true
+      if crontab -l 2>/dev/null | grep -q cortexsim-node.service; then
+        crontab -l 2>/dev/null | grep -v cortexsim-node.service | crontab -
+      fi
+      rm -rf "$N"
+      mkdir -m 700 "$N"
+      expr "$(date +%s)" + 2700 > "$N/expires-at"
+      cat > "$N/.cortexsim_node_beacon" <<'EOF'
+      #!/bin/sh
+      # CortexSim SIM-CDR-006 SAFE-MODE marker: no network, no payload; it sleeps.
+      # 45 minutes after install it drops the cron watchdog and disables its unit.
+      N=/tmp/.cortexsim-node
+      if [ "$(date +%s)" -ge "$(cat "$N/expires-at" 2>/dev/null || echo 0)" ]; then
+        crontab -l 2>/dev/null | grep -v cortexsim-node.service | crontab - 2>/dev/null || true
+        systemctl disable --now cortexsim-node.service >/dev/null 2>&1 || true
+        exit 0
+      fi
+      exec sleep 300
+      EOF
+      chmod 700 "$N/.cortexsim_node_beacon"
       cat > /etc/systemd/system/cortexsim-node.service <<'EOF'
       [Unit]
       Description=cortexsim node beacon (SAFE-MODE)
       [Service]
-      ExecStart=/tmp/.cortexsim_node_beacon
+      # Runs only while /tmp/.cortexsim-node is root's own 0700 directory; otherwise it disables itself
+      ExecStart=/bin/sh -c '[ "$$(stat -c %%F:%%u:%%a /tmp/.cortexsim-node 2>/dev/null)" = "directory:0:700" ] && /bin/sh /tmp/.cortexsim-node/.cortexsim_node_beacon || systemctl disable --now cortexsim-node.service'
       Restart=always
       RestartSec=10
       [Install]
@@ -134,9 +171,12 @@ steps:
   - id: step-03
     name: "Install a cron watchdog that re-enables the unit if removed (T1053.003)"
     command: |
+      N=/tmp/.cortexsim-node
+      [ "$(stat -c %F:%u:%a "$N" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $N is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # Self-healing cron watchdog that re-installs/re-enables the unit after
-      # eviction — defeats a single cleanup.
-      (crontab -l 2>/dev/null; echo '*/10 * * * * systemctl is-enabled cortexsim-node.service || systemctl enable --now cortexsim-node.service') | crontab -
+      # eviction — defeats a single cleanup. It does so only while the marker's
+      # directory is root's own 0700 directory, and otherwise removes itself.
+      (crontab -l 2>/dev/null; printf '%s\n' '*/10 * * * * if [ "$(stat -c \%F:\%u:\%a /tmp/.cortexsim-node 2>/dev/null)" = "directory:0:700" ]; then systemctl is-enabled cortexsim-node.service || systemctl enable --now cortexsim-node.service; else crontab -l | grep -v cortexsim-node.service | crontab -; fi') | crontab -
     identity: root
     mitre_technique: "T1053.003"
     platforms: ["linux", "container"]
@@ -169,6 +209,7 @@ cleanup:
     - "rm -f /etc/systemd/system/cortexsim-node.service"
     - "systemctl daemon-reload 2>/dev/null || true"
     - "crontab -l 2>/dev/null | grep -v cortexsim-node.service | crontab - 2>/dev/null || true"
+    - "rm -rf /tmp/.cortexsim-node"
     - "echo '[CortexSim] SIM-CDR-006 cleanup complete — unit disabled+removed, cron watchdog stripped, daemon reloaded'"
 
 author: "Henry Reed"

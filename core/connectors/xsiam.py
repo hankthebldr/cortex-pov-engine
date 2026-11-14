@@ -183,8 +183,10 @@ class XsiamConnector(Connector):
         keep_partial: bool = False,
         parse: Optional[Callable[[str], "tuple[list[Any], int, dict[str, Any]]"]] = None,
     ) -> PullResult:
-        # `parse(text)` replaces the list-envelope reader for a reply that is not
-        # a list (get_tenant_info's one object); a raise is XSIAM_PARSE_ERROR.
+        # `parse(text)` replaces the list-envelope reader: for a reply that is not
+        # a list (get_tenant_info's one object), or to read one envelope strictly
+        # while truncation stays non-strict (get_endpoints). A raise is
+        # XSIAM_PARSE_ERROR.
         #
         # `request_for(search_from, page_size)` replaces the alert time-window body
         # for the by-id and tenant-reader reads; everything else (auth, URL
@@ -598,7 +600,8 @@ class XsiamConnector(Connector):
         envelope; ``truncated`` is ``total_count > returned``, and null (unknown,
         never False) when the tenant sent no ``total_count`` and the page came
         back full. Raw endpoint records land on ``.observations``. No
-        hostnames, no request.
+        hostnames, no request. A reply without ``reply.endpoints`` (a lowercase
+        ``data`` list included) is ``XSIAM_PARSE_ERROR``, never "no record".
         """
         path = self._endpoints_path(cfg)
         names = list(hostnames)
@@ -611,9 +614,15 @@ class XsiamConnector(Connector):
         def body(search_from: int, page_size: int) -> dict:
             return endpoint_get_body(names, search_from=0, search_to=page_size)
 
+        # The envelope is read strictly (no `data` fallback), while `_harvest`
+        # stays non-strict so truncation is measured by `total_count`.
+        def parse(text: str) -> "tuple[list[Any], int, dict[str, Any]]":
+            return parse_reply(json.loads(text), "endpoints", _raw_row, strict=True)
+
         res = self._harvest(cfg, path, since=None, until=None,
                             filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
-                            normalize=_raw_row, kind="endpoints", request_for=body)
+                            normalize=_raw_row, kind="endpoints", request_for=body,
+                            parse=parse)
         if (res.ok and res.detail.get("total_count") is None
                 and not res.detail.get("total_count_capped")
                 and res.detail.get("returned", 0) >= res.detail.get("page_size", self._PAGE_SIZE_MAX)):
@@ -917,9 +926,10 @@ def parse_reply(doc: Any, list_key: str,
 
     ``strict`` (the issue/case ``reply.DATA`` reads): a reply without
     ``list_key`` raises ``XSIAM_ENVELOPE_UNRECOGNISED``; there is no fallback
-    to a lowercase ``data`` list. An error names only identifier-shaped reply
-    keys (:func:`_key_names`), so no tenant free text enters a message SimCore
-    returns.
+    to a lowercase ``data`` list, and a row that is not an object raises too
+    (non-strict skips it). An error names only identifier-shaped reply keys
+    (:func:`_key_names`) and type names, so no tenant free text enters a
+    message SimCore returns.
     """
     normalize = normalize or _raw_row
     # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
@@ -992,6 +1002,12 @@ def parse_reply(doc: Any, list_key: str,
     dropped = 0
     for a in alerts:
         if not isinstance(a, dict):
+            if strict:
+                raise ConnectorError(
+                    f"XSIAM_ENVELOPE_UNRECOGNISED: a row in '{list_key}' is a "
+                    f"{type(a).__name__}, not an object. This is NOT an absence of rows "
+                    f"— no observation was made."
+                )
             continue
         alert = normalize(a)
         if alert is None:

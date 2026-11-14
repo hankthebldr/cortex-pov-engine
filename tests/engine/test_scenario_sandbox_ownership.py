@@ -44,6 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SANDBOXES = {
     "SIM-CDR-002": ["/tmp/.xmr"],
     "SIM-CDR-005": ["/tmp/wf_sim"],
+    "SIM-CDR-006": ["/tmp/.cortexsim-node"],
     "SIM-CDR-018": ["/tmp/cortexsim-cdr-018"],
     "SIM-EDR-023": ["/var/tmp/.cortexsim-ice"],
     "SIM-EDR-024": ["/var/tmp/.cortexsim-sshd"],
