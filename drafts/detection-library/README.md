@@ -65,7 +65,10 @@ no pair here has had any of the following:
    traffic to a host outside the lab. The scratch directory is created exclusively
    (`rm -rf` then `mkdir -m 700` with no `-p`) and every later step checks in one
    `stat` lookup that it is a directory the running user owns; `tests/engine/test_scenario_sandbox_ownership.py`
-   shows the two lines.
+   shows the two lines. A cron entry or systemd unit that root runs later makes
+   the same check itself, for uid 0, before it runs anything from the directory,
+   and retires itself otherwise; `tests/engine/test_scenario_root_run_entry_guard.py`
+   shows both.
 2. A cleanup that was written and run.
 3. A check of each declared row against what a tenant can raise. Most rows are
    `BIOC`, which exist only if the rule is deployed to the tenant. `Analytics` and
