@@ -8,6 +8,7 @@ import { runIdOf } from '../../api/ids.js'
 import { serverDate } from '../../api/time.js'
 import useCatalogBindings from './useCatalogBindings.js'
 import Button from './kit/Button.jsx'
+import StatusIcon from './kit/StatusIcon.jsx'
 import { useChainTray, ttpTrayItem } from '../../context/ChainTrayContext.jsx'
 import {
   BINDING_STATUS, GROUP_OPTIONS, SORT_OPTIONS, MEMBERSHIP_OPTIONS,
@@ -142,8 +143,10 @@ export default function TtpBrowserView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTtpId, loading])
 
+  // Status is what runs have shown (design C5): `run_status` on each list row,
+  // from read-back runs only. Offered only when the server sends it.
   const statuses = useMemo(
-    () => Array.from(new Set(ttps.map((t) => t.status))).sort(),
+    () => (ttps.some((t) => t.run_status) ? RUN_STATUS_OPTIONS : []),
     [ttps],
   )
   const tactics = useMemo(
@@ -163,7 +166,7 @@ export default function TtpBrowserView({
     // narrows by AND across tokens.
     const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     return ttps.filter((t) => {
-      if (filterStatus   !== 'all' && t.status !== filterStatus)         return false
+      if (filterStatus   !== 'all' && t.run_status !== filterStatus)     return false
       if (filterTactic   !== 'all' && !(t.tactic_ids || []).includes(filterTactic))   return false
       if (filterPlatform !== 'all' && !(t.platforms  || []).includes(filterPlatform)) return false
       if (tokens.length > 0) {
@@ -322,7 +325,9 @@ export default function TtpBrowserView({
       </div>
 
       <div className="ttpb-filters">
-        <FilterRow label="status"   active={filterStatus}   options={statuses}  onChange={setFilterStatus} />
+        {statuses.length > 0 && (
+          <FilterRow label="status" active={filterStatus} options={statuses} onChange={setFilterStatus} />
+        )}
         <FilterRow label="tactic"   active={filterTactic}   options={tactics}   onChange={setFilterTactic} />
         <FilterRow label="platform" active={filterPlatform} options={platforms} onChange={setFilterPlatform} />
       </div>
@@ -646,19 +651,34 @@ function FilterRow({ label, active, options, onChange }) {
       >
         All
       </button>
-      {options.map((opt) => (
-        <button
-          key={opt}
-          type="button"
-          className={'ttpb-chip' + (active === opt ? ' is-active' : '')}
-          onClick={() => onChange(opt)}
-        >
-          {opt}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const { v, label: text } = typeof opt === 'string' ? { v: opt, label: opt } : opt
+        return (
+          <button
+            key={v}
+            type="button"
+            className={'ttpb-chip' + (active === v ? ' is-active' : '')}
+            onClick={() => onChange(v)}
+          >
+            {text}
+          </button>
+        )
+      })}
     </div>
   )
 }
+
+/* ─── Run status on a card (design C5) ──────────────────────────────── */
+
+// `run_status` from GET /api/ttps: detected only from a run that was read
+// back, pending when a step citing the card ran but nothing read back has seen
+// it, never when no step citing it has run.
+const RUN_STATUS = {
+  detected: { status: 'up', word: 'Detected in a run' },
+  pending: { status: 'degraded', word: 'Pending' },
+  never: { status: 'off', word: 'Never run' },
+}
+const RUN_STATUS_OPTIONS = Object.entries(RUN_STATUS).map(([v, { word }]) => ({ v, label: word }))
 
 /* ─── TTP row card ──────────────────────────────────────────────────── */
 
@@ -741,7 +761,10 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
       <div className="ttpb-row__head" data-testid="ttpb-card-head">
         <span className="ttpb-row__id mono">{ttp.id}</span>
         {techniques[0] && <span className="ttpb-chip--tag mono ttpb-card__technique">{techniques[0]}</span>}
-        <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        {/* Every shipped card is active; only a draft or deprecated card says so. */}
+        {ttp.status && ttp.status !== 'active' && (
+          <span className="ttpb-chip--tag ttpb-chip--tag-status">{ttp.status}</span>
+        )}
       </div>
       <div className="ttpb-row__name ttpb-card__title">{ttp.name}</div>
       <div className="ttpb-row__cat mono">
@@ -793,6 +816,11 @@ function TtpCard({ ttp, isSelected, onSelect, onAdd = null, showBindings = false
           </div>
         )}
       </div>
+      {RUN_STATUS[ttp.run_status] && (
+        <div className="ttpb-card__run" data-testid="ttpb-card-run-status" data-run-status={ttp.run_status}>
+          <StatusIcon status={RUN_STATUS[ttp.run_status].status} word={RUN_STATUS[ttp.run_status].word} />
+        </div>
+      )}
       </button>
       <div className="ttpb-card__foot" data-testid="ttpb-card-foot">
         <span className="ttpb-card__count mono">

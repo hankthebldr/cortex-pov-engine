@@ -60,7 +60,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from engine.outcome import is_hit, is_in_denominator
+from engine.outcome import EXCLUDED_FROM_DENOMINATOR, is_hit, is_in_denominator
 from engine.ttp_catalog import catalog as ttp_catalog
 from models import Result, Run
 from tools.adapter_catalog import catalog as adapter_catalog
@@ -159,18 +159,67 @@ def _adapters_referencing(ttp_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _run_was_read_back(detail: Any) -> bool:
+    """A run whose results came from the tenant: reconciled (``source`` is
+    ``reconcile:…``, manual import included) or verified with at least one
+    query issued. The console's ``runLifecycle.readBackOf`` reads the same two
+    facts, so a card and a run page agree on what has been read back."""
+    if not isinstance(detail, dict):
+        return False
+    if str(detail.get("source") or "").startswith("reconcile:"):
+        return True
+    verification = detail.get("verification")
+    if isinstance(verification, dict):
+        try:
+            return int(verification.get("queries_issued") or 0) > 0
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+async def ttp_run_status(db: AsyncSession) -> dict[str, str]:
+    """``ttp_id -> "detected" | "pending"`` from every Result that cites a card.
+
+    ``detected`` needs a hit in a run that was read back: a run nobody read
+    back has not shown anything yet. ``pending`` means a step citing the card
+    ran but no read-back run has seen it. A card whose rows all say the step
+    never ran (``not_executed`` / ``not_reached``) is absent, and the caller
+    reads absent as ``never``.
+    """
+    stmt = (
+        select(Result.ttp_ref, Result.outcome, Result.observed, Run.tc_verdict_detail)
+        .join(Run, Result.run_id == Run.run_id)
+        .where(Result.ttp_ref.is_not(None))
+    )
+    status: dict[str, str] = {}
+    for ttp_ref, outcome, observed, detail in (await db.execute(stmt)).all():
+        if outcome in EXCLUDED_FROM_DENOMINATOR or status.get(ttp_ref) == "detected":
+            continue
+        if _run_was_read_back(detail) and is_hit(outcome, observed):
+            status[ttp_ref] = "detected"
+        else:
+            status[ttp_ref] = "pending"
+    return status
+
+
 @router.get("")
 async def list_ttps(
     status: Optional[str] = Query(None, description="Filter by status (active|draft|deprecated)"),
     tactic: Optional[str] = Query(None, description="Filter by MITRE tactic id (e.g. TA0006)"),
     platform: Optional[str] = Query(None, description="Filter by pov_engine.platforms entry (e.g. linux)"),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     List every TTP card with optional filters. Filters compose with
     logical AND; unknown filter values quietly return an empty list
     (defensive against UI taxonomy drift, mirroring the adapter list
     endpoint's behaviour).
+
+    Each row carries ``run_status``: ``detected`` (a read-back run saw it),
+    ``pending`` (a step citing it ran, nothing read back has seen it yet) or
+    ``never`` (no step citing it has run).
     """
+    run_status = await ttp_run_status(db)
     raw_by_ttp = ttp_catalog.all_raw()
     items: list[dict[str, Any]] = []
     for ttp_id, raw in raw_by_ttp.items():
@@ -181,6 +230,7 @@ async def list_ttps(
             continue
         if platform and platform not in s["platforms"]:
             continue
+        s["run_status"] = run_status.get(ttp_id, "never")
         items.append(s)
 
     items.sort(key=lambda d: d["id"])

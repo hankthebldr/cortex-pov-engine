@@ -263,6 +263,16 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Added — TTP cards say what runs have shown (design C5)
+
+Each TTP card shows a status icon and word: **Detected in a run** (a run
+that was read back saw it), **Pending** (a step citing the card ran, but
+nothing read back has seen it yet) or **Never run**. The Catalog's Status
+filter now filters by these three. It used to filter by card status, which is
+"active" for every shipped card. `GET /api/ttps` rows carry the new
+`run_status` field. A step that never ran (`not_executed` / `not_reached`)
+does not count as a run of the card.
+
 ### Security
 
 - **A path override on a tenant credential could send the tenant's API key to

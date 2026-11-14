@@ -206,12 +206,41 @@ describe('<TtpBrowserView />', () => {
     await waitFor(() => {
       expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument()
     })
-    // status / tactic / platform chips
-    expect(screen.getByRole('button', { name: 'active' })).toBeInTheDocument()
+    // tactic / platform chips (status is run status now, offered only when
+    // the server sends run_status — this fixture has none)
+    expect(screen.queryByRole('button', { name: 'active' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Never run' })).toBeNull()
     expect(screen.getByRole('button', { name: 'TA0006' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'TA0001' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'windows' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'linux' })).toBeInTheDocument()
+  })
+
+  describe('run status (design C5)', () => {
+    const withRunStatus = {
+      ...fixtureList,
+      ttps: fixtureList.ttps.map((t, i) => ({ ...t, run_status: ['detected', 'pending', 'never'][i] })),
+    }
+
+    it('each card says what runs have shown, as an icon and a word', async () => {
+      installRoutes({ 'GET /api/ttps': withRunStatus })
+      render(<TtpBrowserView />)
+      await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+      const word = (id) => screen.getByTestId(`ttp-card-${id}`).querySelector('[data-testid="ttpb-card-run-status"]')
+      expect(word('TTP-2026-0002')).toHaveTextContent('Detected in a run')
+      expect(word('TTP-2026-0003')).toHaveTextContent('Pending')
+      expect(word('TTP-2026-0004')).toHaveTextContent('Never run')
+      expect(word('TTP-2026-0002').querySelector('[role="img"]')).toHaveAttribute('aria-label', 'Detected in a run')
+    })
+
+    it('the Status filter narrows by run status', async () => {
+      installRoutes({ 'GET /api/ttps': withRunStatus })
+      render(<TtpBrowserView />)
+      await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Never run' }))
+      expect(screen.queryByTestId('ttp-card-TTP-2026-0002')).toBeNull()
+      expect(screen.getByTestId('ttp-card-TTP-2026-0004')).toBeInTheDocument()
+    })
   })
 
   it('hides the card grid when filters exclude everything', async () => {

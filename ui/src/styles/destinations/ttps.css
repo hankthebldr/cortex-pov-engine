@@ -260,6 +260,8 @@
   border-top: 1px solid var(--bd);
 }
 .ttpb-card__count { font-size: 10px; color: var(--tx3); }
+/* What runs have shown for this card (design C5). */
+.ttpb-card__run { margin-top: 8px; font-size: 10.5px; }
 .ttpb-card__spacer { flex: 1; }
 .ttpb-row__cat {
   font-size: 10px;
