@@ -993,6 +993,42 @@
   color: var(--s1);
   border-color: var(--tx);
 }
+/* An icon tab (★ Favorites) is a square, so it reads as a control, not a word. */
+.theme-console .composer-bench__tab:has(> .kit-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+/* Tag chips: shortcuts into the filter, drawn quieter than the tabs above. */
+.theme-console .composer-bench__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -6px 0 14px;
+}
+.theme-console .composer-bench__tag {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  background: transparent;
+  color: var(--tx2);
+  border: 1px solid var(--bd);
+}
+.theme-console .composer-bench__tag:hover { border-color: var(--ac-line); color: var(--tx); }
+.theme-console .composer-bench__tag--on {
+  background: var(--s2);
+  color: var(--tx);
+  border-color: var(--tx2);
+}
+
+/* ★ in place of the tone dot: neutral ink, so it never reads as a status. */
+.theme-console .bench-item__star { flex: none; color: var(--tx2); }
 
 /* ─── Inspector: the fields are now editable ─── */
 .theme-console .field-input {
