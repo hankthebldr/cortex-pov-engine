@@ -233,13 +233,9 @@ def test_missing_target_agent_refuses_all_or_nothing(session_factory):
             assert orch.peek_queue("agent-1") == []
             assert orch.peek_queue("agent-2") == []
 
-            # The seeded run is terminalised (not left orphaned at 'pending'):
-            # a refused launch can never advance, so it reaches a terminal state
-            # with the refusal as its reason.
-            run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
-            assert run.status == "failed"
-            assert run.completed_at is not None
-            assert run.channel_dispatch is None
+            # Refused before the Run row is written: nothing to terminalise.
+            assert result.run_id is None
+            assert (await db.execute(select(Run))).scalars().all() == []
 
     asyncio.run(_run())
 

@@ -401,8 +401,11 @@ COLLECTOR_TLS_ERROR = "collector_tls_error"
 TRANSPORT_ERROR = "transport_error"
 
 REMEDIATION = {
-    COLLECTOR_REJECTED: "Collector refused the payload — check the URL path, "
-                        "content-type and that the target dataset exists.",
+    COLLECTOR_REJECTED: "Collector refused the payload; the response body names "
+                        "the cause. 400: not one JSON object per line, or gzip "
+                        "vs uncompressed not matching the collector's Compression "
+                        "setting. 404: wrong URL path. 413: a record over 5 MiB "
+                        "or a POST over 10 MiB.",
     COLLECTOR_UNAUTHORIZED: "Collector rejected the credential — check the "
                             "ingestion token env var, header name and scheme.",
     COLLECTOR_THROTTLED: "Collector is rate-limiting — slow the send down or "

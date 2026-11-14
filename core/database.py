@@ -469,6 +469,11 @@ def _migrate_collector_target_columns(connection) -> None:
         if column not in existing:
             connection.execute(
                 text(f"ALTER TABLE collector_targets ADD COLUMN {column} JSON"))
+    # Non-null with a SQL DEFAULT so SQLite accepts it; a legacy target reads as
+    # uncompressed, which is what every POST to it has sent until now.
+    if "compress" not in existing:
+        connection.execute(text(
+            "ALTER TABLE collector_targets ADD COLUMN compress BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def _migrate_prevention_columns(connection) -> None:

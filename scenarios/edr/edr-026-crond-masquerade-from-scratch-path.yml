@@ -1,0 +1,547 @@
+# Masquerading as the Linux crond process: the shell is copied and renamed to
+# crond in a scratch directory, then run from there.
+#
+# Source. The only source is the Cortex XDR Analytics alert reference page for
+# the built-in alert "Masquerading as the Linux crond process", as it read on
+# 2026-11-13:
+#   https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/masquerading-as-the-linux-crond-process
+# The page gives a one-sentence description ("Copies a file and renames it as
+# crond."), the periods (activation 14 days, training 30 days, test period N/A
+# (single event), deduplication 1 day), XDR Agent as the required data,
+# severity Low, and ATT&CK TA0005 / T1036.004. It publishes no trigger
+# predicate, no threshold, no field name and no indicator. It names no actor
+# and no campaign, so nothing here is attributed to one and there is no
+# indicators block. Every file name below is this scenario's own choice.
+#
+# What executes. All of it is real: real file copies, a real rename, real
+# process starts.
+#   step-01  cp /bin/sh to <sandbox>/copy/crond (copy straight to the name),
+#            and cp /bin/sh to <sandbox>/renamed/sh-copy.tmp followed by mv to
+#            <sandbox>/renamed/crond (copy, then rename).
+#   step-02  the first copy runs once in the foreground: a process whose image
+#            name is crond, from a path that is not a system path, starts id,
+#            uname and hostname as its children.
+#   step-03  the renamed copy starts in the background, runs the same three
+#            commands and then idles. It ends itself after 300 seconds, or as
+#            soon as the sandbox is gone.
+#   step-04  processes named crond are listed through /proc, the lingering
+#            instance is stopped by its pidfile, and the sandbox is removed.
+#
+# What is not touched: the cron service, any crontab, /etc/cron*,
+# /usr/sbin/cron, systemd, and the network. Ubuntu's cron daemon is
+# /usr/sbin/cron, so a file named crond replaces and shadows nothing there.
+#
+# Sandbox. Every artifact lives under /var/tmp/.cortexsim-crond:
+#   copy/crond       the shell, copied straight to the name crond
+#   renamed/crond    a second copy, renamed from renamed/sh-copy.tmp
+#   run/linger.pid   pid of the lingering instance (step-03 to step-04)
+#   run/linger.log   its output
+# /var/tmp is world-writable, this name is predictable and every step runs as
+# root, so the steps never trust what is at that path. step-01 removes it and
+# creates the root with mkdir, no -p, mode 0700: if another user has put
+# anything there in between, mkdir fails and the step stops. Every later step
+# first reads the root's type, owner and mode with ONE stat call, so all
+# three come from one inode and a symlink is seen as a symlink, and stops
+# unless the answer is: a directory, owned by the running user, mode 700.
+# Three separate tests would be three path lookups, which another user can
+# swap between on a host that lets root follow their symlink. step-01 makes
+# the same test before it reads an earlier run's pidfile, and so does the
+# cleanup: when it fails the cleanup skips the pidfile and still removes the
+# path.
+# All of this relies on /var/tmp being sticky (mode 1777, as read back from
+# the lab endpoint): that is what stops another user renaming or removing
+# root's directory once step-01 has made it. Under a parent that is not
+# sticky the check and the use are still two lookups of one path, so do not
+# run this chain on such a host.
+#
+# Timing. Steps are spaced 40 s apart because back-to-back steps lost
+# telemetry in this lab on 2026-11-11. The chain takes a little over two
+# minutes. The agent uploaded telemetry in batches about five minutes apart
+# in this lab, so verify no sooner than six minutes after the run completes
+# (success_criteria).
+#
+# Lab run. One pull run on pov-target-01 (Ubuntu 24.04, Cortex XDR agent
+# 9.4.0.470, report mode, identity root, beacon pov-target-01-4dcdce) on
+# 2026-11-14 UTC: 7714f4ce (00:50:47 to 00:52:57). All four steps exited 0.
+# SimCore's Tier-2 verify at 00:57:30 issued 3 queries and all three XQL rows
+# passed. CR-EDR-0026's XQL, run as an ordinary query at 01:11, was accepted
+# and returned the chain's row; the rule was not installed, so no issue was
+# raised from it. The built-in alert was not raised (success_criteria).
+scenario_id: SIM-EDR-026
+name: "Linux crond Masquerade — the Shell Copied and Renamed to crond in a Scratch Directory, Then Run From That Path"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# The binding SIM-EDR-010 uses for a built-in behavioural analytics detection
+# on an endpoint: TC-EDR-03 is the index row whose detection method is
+# Analytics BIOC, and TC-EDR-05 is the process chain (the crond-named parent
+# and its children) that step-02 and step-03 record. Both rows are already
+# evidenced by other scenarios: this adds depth, not new index breadth.
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
+
+# Tactic and technique are the ones the alert reference page lists. The
+# additional techniques are this scenario's own mapping of what the steps do.
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1036.004"
+mitre_technique_name: "Masquerading: Masquerade Task or Service"
+additional_techniques:
+  - technique: "T1036.003"
+    name: "Masquerading: Rename Legitimate Utilities"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1033"
+    name: "System Owner/User Discovery"
+  - technique: "T1082"
+    name: "System Information Discovery"
+  - technique: "T1057"
+    name: "Process Discovery"
+
+threat_report: "Cortex XDR Analytics Alert Reference — Masquerading as the Linux crond process"
+threat_report_url: "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/masquerading-as-the-linux-crond-process"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The operator holds a root shell and works from it. cgo_anchor labels
+# SimCore's own causality graph and, in a pull run, is the argv[0] the beacon
+# gives the one shell that runs the steps. It does NOT change the tenant's
+# CGO: in the 2026-11-11 lab every beacon-run step recorded
+# causality_actor_process_image_name = cortexsim-agent, so no query here keys
+# on the anchor name. step-01 is the single root.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
+# Root only. The lab endpoint has no service account provisioned. Nothing in
+# the chain needs root: /var/tmp is world-writable and /bin/sh is
+# world-readable.
+execution_identity:
+  default: root
+  options:
+    - root
+
+# Push works: every step is shell that dash and bash both run, plus coreutils
+# (the ownership check is stat -c and id -u), grep and hostname. A push
+# bundle runs every step even when one fails: after a failed step-01 each
+# later step sleeps 40 s and exits 1 at its ownership check.
+# All telemetry is produced inside the steps, and step-04 has
+# already stopped the lingering instance and removed the sandbox when the
+# bundle's exit trap runs the cleanup below. A pull run executes no
+# cleanup.commands, which is why step-04 does that work itself.
+# A pull run that stops early leaves the sandbox behind. The beacon is
+# fail-fast: the first non-zero step ends the run, and nothing after it runs.
+# If step-02 exits 126 because /var/tmp is mounted noexec, six root-owned
+# paths stay on the endpoint (the root, copy/, copy/crond, renamed/,
+# renamed/crond, run/) until the next run's step-01 removes them or the
+# operator does, as root: rm -rf /var/tmp/.cortexsim-crond
+# A stop at step-03 or step-04 leaves eight paths (the pidfile and the log as
+# well). The beacon ends the lingering instance when it tears the chain down,
+# and the instance ends itself within 300 s in any case; the first cleanup
+# command below stops it by its pidfile.
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 20
+  unit: "%"
+success_criteria: |
+  Five step-detections are declared, of two kinds.
+  Alert-backed (2 of 5):
+  (1) step-01, ABIOC: the built-in XDR Analytics BIOC "Masquerading as the
+  Linux crond process" (Low, TA0005 / T1036.004). It is declared on the basis
+  of its alert reference page, which describes the trigger as "Copies a file
+  and renames it as crond." and lists a single-event detector (test period
+  N/A) with a 14-day activation period, a 30-day training period, a 1-day
+  deduplication period and XDR Agent as the required data. The page publishes
+  no trigger predicate, so step-01 performs both readings of that sentence:
+  cp straight to the name crond, and cp under another name followed by mv to
+  crond.
+  Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC, 00:50:47 to 00:52:57):
+  the alert was NOT raised. No endpoint issue appeared in the tenant between
+  00:50 and 01:55, and SimCore's reconcile at 01:45 pulled 1 alert for the
+  run window (an unrelated firewall alert) and matched 0. The engine holds
+  this row pending with reason ANALYTICS_ACTIVATION_PERIOD, as designed, so
+  it reads neither missed nor detected. Context, with no conclusion drawn:
+  the agent was first seen in the tenant on 2026-11-10, so it was 4 days
+  into the 14-day activation period the page states; yet "Suspicious data
+  encryption", whose page states the same periods, fired on this endpoint
+  on 2026-11-11, one day after install
+  (docs/lab/2026-11-11-unit42-deep-real-verification.md). The cause is not
+  established. The row stays declared. A re-run after 2026-11-24 (14 days
+  after the agent's install), or a run on an endpoint whose agent is older,
+  would settle whether this chain raises it.
+  Reading this row: the matcher credits it on the ATT&CK technique and on
+  shared words as well as on the exact name. An Analytics BIOC issue with a
+  different name on the same endpoint also marks it detected when it is
+  tagged with any T1036 technique or sub-technique, or when its name shares
+  two words of four or more letters with this row's description.
+  The row stands for this alert only when the verdict's alert name is exactly
+  the name above (its matched_on list contains rule_name).
+  (2) step-04, Correlation: CR-EDR-0026. It fires ONLY if the operator
+  installs it before the run, from TTP-2026-0552: alert name exactly
+  "EDR-026 Crond Lookalike Planted And Launched", severity Medium, scheduled
+  every 10 minutes, query time frame 1 hour, issue suppression enabled with
+  a duration of 1 hour on the field agent_id, agent_hostname mapped to Host
+  Name and agent_id mapped to Agent ID, and NO MITRE tag (an issue tagged
+  T1036 would also be credited to the XQL rows on step-01 and step-02, which
+  share that technique). CortexSim never writes it to the tenant. Its XQL,
+  the not in lists and the !~= regex included, was run as an ordinary
+  read-only query over a one-hour time frame at 01:11 UTC on 2026-11-14 and
+  the tenant accepted it. It returned one row for pov-target-01: legs 3,
+  events 30, first_seen 00:50:55.117, last_seen 00:52:55.267 (run
+  7714f4ce). The rule itself was not installed (no tenant write was made),
+  so it has not run on a schedule, no issue was raised from it, and this
+  row has not been observed as an issue.
+  Tier-2-verify-only (3 of 5): the XQL rows on step-01, step-02 and step-03.
+  They are scored by POST /api/runs/{id}/verify and never by an alert, so
+  they never raise Detection Accuracy. For a pull run verify queries the
+  run's own time window; for a push run it looks back one hour from when it
+  is called, so verify within the hour. In lab run 7714f4ce SimCore's
+  verify at 00:57:30 UTC, about 4.5 minutes after the run completed, issued
+  3 queries and all three rows passed.
+  Verify timing: call verify no sooner than six minutes after the run
+  completes. Measured on the lab endpoint on 2026-11-14 with SIM-EDR-027:
+  the agent uploads endpoint telemetry in batches about five minutes apart
+  (that run's events from 00:54:15 to 00:56:15 UTC all carried one insert
+  time of 00:58:38), and a verify called 97 s after that run ended wrote
+  fail on rows whose events were not ingested yet.
+  The run verdict needs two things: Detection Accuracy of at least 20%, and
+  the three XQL rows through verify.
+  Detection Accuracy counts only alert-backed observations, so its ceiling is
+  40% (2 of 5), and one alert-backed row observed already reaches the bar:
+  - CR-EDR-0026 fires and the built-in alert fires: 40% (2 of 5).
+  - CR-EDR-0026 fires and the built-in alert stays silent: on a tenant not
+    attested soakless the engine holds the ABIOC row pending
+    (ANALYTICS_ACTIVATION_PERIOD) and takes it out of the denominator, 25%
+    (1 of 4); on a tenant attested soakless the row is missed, 20% (1 of 5).
+  - CR-EDR-0026 is not installed and the built-in alert fires: 20% (1 of 5).
+  - Neither is observed: the engine does not score a zero, so the run stays
+    pending, not failed, whatever verify returns. Without CR-EDR-0026
+    installed that is a run missing its prerequisite, not a statement about
+    the tenant.
+  With at least one alert-backed row observed, the run reads pending until
+  verify has run. It then reads not_applicable when all three XQL rows return
+  rows: the bound index row carries a qualitative threshold, so a machine
+  PASS is recorded as evidence, not as a scored pass. It reads fail when any
+  of the three queries runs and returns no row.
+  What the chain cannot show: a case built on the built-in alert. That alert
+  is Low, and only Medium-or-higher issues create a case or join one.
+  CR-EDR-0026 at Medium is the only issue here that can open a case, and
+  nothing else here is Medium to join it. With the suppression
+  above it is raised once per endpoint per hour, so one run gives one issue;
+  that is the documented behaviour of issue suppression and has not been
+  exercised in this lab, where the rule was not installed for run 7714f4ce.
+  Without suppression the rule raises a new issue on every 10-minute run
+  while the events stay inside the hour, up to six for one run. Whether such
+  repeats share a case has not been observed.
+  Spacing: the built-in alert is deduplicated for one day, so a second run on
+  the same endpoint within a day may raise no second issue. Launch at least
+  75 minutes after the previous run on the same endpoint. Inside that time
+  the earlier run's suppression is still active and delays the new run's
+  issue; without suppression, an issue raised for the earlier run's events is
+  credited to the new run by rule name.
+  Not declared, on the card only: four hunting queries for any Linux
+  endpoint. Three match the same behaviour at any path other than the four
+  system paths the card lists; the fourth groups on the executable hash and
+  has no path filter. No custom BIOC, IOC,
+  Prevention or network row is declared, and the chain opens no network
+  connection.
+moat_tier: "PARITY"
+
+steps:
+  - id: step-01
+    name: "Copy the shell to a file named crond, and copy-then-rename a second one, in a scratch directory"
+    # What the step produces for the sensor: PROCESS_START of cp twice and of
+    # mv once, with these paths on the command line, and file events on the
+    # two crond files. In this lab on 2026-11-11
+    # FILE_CREATE_NEW and FILE_WRITE were recorded for files under /var/tmp and
+    # FILE_RENAME was not seen, so the validation row accepts either a file
+    # event on one of the two crond paths or the cp / mv process start that
+    # names it. In a pull run the parent of cp and mv is the beacon's step
+    # shell, in a push run it is bash; no row keys on the parent.
+    # This step performs both readings of the reference page's sentence
+    # "Copies a file and renames it as crond.", which is why the built-in
+    # alert's row sits here. This is the root step.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0 and
+    # the declared XQL row passed SimCore's Tier-2 verify. The built-in alert
+    # was not raised; success_criteria says what that does and does not show.
+    command: |
+      # REAL file copies and a REAL rename. Nothing here reads or writes cron:
+      # no crontab, no /etc/cron*, no /usr/sbin/cron, no systemd unit.
+      set -eu
+      D=/var/tmp/.cortexsim-crond
+      # An instance left behind by an earlier run is stopped first, by its
+      # pidfile. The pidfile is read only when one stat call says the
+      # sandbox root is a directory, owned by this user, mode 700, and the
+      # pid is used only if it still belongs to this sandbox.
+      if [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] && [ -f "$D/run/linger.pid" ]; then
+        old="$(cat "$D/run/linger.pid")"
+        if grep -q cortexsim-crond "/proc/$old/cmdline" 2>/dev/null; then
+          kill "$old" 2>/dev/null || true
+        fi
+      fi
+      # The sandbox root is created atomically: remove whatever is at the
+      # path, then mkdir with NO -p and mode 0700. If another user has put
+      # anything there after the remove, mkdir fails and the step stops here
+      # instead of working in a directory it does not own.
+      rm -rf "$D"
+      mkdir -m 700 "$D"
+      mkdir "$D/copy" "$D/renamed" "$D/run"
+      # Form 1: copy straight to the name crond.
+      cp /bin/sh "$D/copy/crond"
+      # Form 2: copy under another name, then rename it to crond.
+      cp /bin/sh "$D/renamed/sh-copy.tmp"
+      mv "$D/renamed/sh-copy.tmp" "$D/renamed/crond"
+      chmod 755 "$D/copy/crond" "$D/renamed/crond"
+      # Both copies exist and are not empty; the name used on the way is gone.
+      # Whether they can run is step-02's question, not this step's.
+      test -s "$D/copy/crond"
+      test -s "$D/renamed/crond"
+      test ! -e "$D/renamed/sh-copy.tmp"
+      ls -la "$D/copy" "$D/renamed"
+      echo "[CortexSim] SIM-EDR-026 step-01: /bin/sh copied to $D/copy/crond, and copied then renamed to $D/renamed/crond"
+    identity: root
+    mitre_technique: "T1036.004"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Built-in XDR Analytics BIOC 'Masquerading as the Linux crond process' (Low, T1036.004, no case): a system binary is copied to a file named crond, and a second copy is renamed to crond. Declared from the alert reference page (single event; 14-day activation, 30-day training, 1-day deduplication). Not yet observed in a lab run"
+        ttp_ref: "TTP-2026-0552"
+        detection_id: abioc-masquerading-as-the-linux-crond-process
+      - plane: EDR
+        type: XQL
+        description: "Validation — a file named crond appears in the sandbox by copy or by rename (a file event on either crond file, or the cp / mv process start that names it). Tier-2 verify only"
+        ttp_ref: "TTP-2026-0552"
+        detection_id: xql-edr-026-crond-named-file-created-or-renamed-under-var-tmp
+        verification_xql: |
+          dataset = xdr_data
+          | filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME) and action_file_path in ("/var/tmp/.cortexsim-crond/copy/crond", "/var/tmp/.cortexsim-crond/renamed/crond"))
+             or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name in ("cp", "mv") and (action_process_image_command_line contains "/var/tmp/.cortexsim-crond/copy/crond" or action_process_image_command_line contains "/var/tmp/.cortexsim-crond/renamed/crond"))
+          | fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line
+
+  - id: step-02
+    name: "Run the copy named crond from the scratch path; it starts id, uname and hostname"
+    # What the sensor is expected to record: PROCESS_START with
+    # action_process_image_name = crond and action_process_image_path =
+    # /var/tmp/.cortexsim-crond/copy/crond, then PROCESS_START of id, uname and
+    # hostname with that process as their actor. In this lab on 2026-11-11 a
+    # binary run from a hidden /var/tmp directory was recorded by its path
+    # (SIM-EDR-023 step-02). The last command inside the copy is a shell
+    # builtin, so all three tools are forked children and none replaces the
+    # crond process.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the copy ran id, uname
+    # and hostname as root, the step exited 0, and the declared XQL row passed
+    # SimCore's Tier-2 verify.
+    # Exit code: 1 when the sandbox root is not a directory owned by the
+    # running user with mode 700 (missing, a symlink, another user's, another
+    # mode); nothing under it is executed then. Otherwise
+    # the exec is attempted without a pre-check, so its own status is the
+    # step's: 126 when the copy cannot run (/var/tmp is mounted noexec, or
+    # the exec was blocked), 127 when the copy is missing or one of the three
+    # tools is absent. None of these is masked.
+    command: |
+      # REAL exec of the copied shell under the name crond.
+      set -eu
+      sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
+      D=/var/tmp/.cortexsim-crond
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      "$D/copy/crond" -c 'set -e; id; uname -a; hostname; echo "[crond copy, pid $$] ran id, uname and hostname"'
+      echo "[CortexSim] SIM-EDR-026 step-02: $D/copy/crond ran in the foreground and exited"
+    identity: root
+    mitre_technique: "T1036.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — a process whose image name is crond starts from the sandbox copy directory, not from a system directory. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0552"
+        detection_id: xql-edr-026-crond-named-process-started-from-var-tmp
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "crond" and action_process_image_path = "/var/tmp/.cortexsim-crond/copy/crond"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_path, action_process_image_command_line
+
+  - id: step-03
+    name: "Start the renamed copy as a lingering background instance; it runs the same discovery and then idles"
+    # What the sensor is expected to record: PROCESS_START of
+    # /var/tmp/.cortexsim-crond/renamed/crond, then id, uname and hostname with
+    # that process as their actor, then one sleep child every five seconds
+    # while it idles. The validation row accepts the actor by image path or by
+    # command line, because both carry the sandbox path.
+    # The instance is long-lived on purpose, so a process named crond is
+    # visible outside a system path for about 45 seconds. It ends itself after
+    # 300 s (60 waits of 5 s) or as soon as the sandbox directory is gone, and
+    # it exits at once on TERM, taking its sleep child with it. Its output goes
+    # to a file and its stdin is closed, so it holds none of the beacon's or
+    # the bundle's pipes. With the causality contract the beacon runs every
+    # step under one anchor shell, so the instance survives into step-04; the
+    # beacon also ends the anchor's process group when the run ends.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0; the
+    # lingering instance ran as pid 191326, name crond, exe
+    # /var/tmp/.cortexsim-crond/renamed/crond; the declared XQL row passed
+    # SimCore's Tier-2 verify.
+    # Exit code: 1 when the sandbox root is not a directory owned by the
+    # running user with mode 700 (nothing under it is executed then), when the
+    # instance cannot start (its error is printed from its log), when it does
+    # not finish the three commands within 15 s, or when it exits right after
+    # them.
+    command: |
+      # REAL long-lived process named crond, started from the renamed copy.
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-crond
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      alive() { kill -0 "$1" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null; }
+      "$D/renamed/crond" -c 'trap "kill \$s 2>/dev/null; exit 0" TERM INT HUP; id && uname -a && hostname && echo discovery-done || exit 1; n=0; while [ "$n" -lt 60 ] && [ -d /var/tmp/.cortexsim-crond/run ]; do sleep 5 & s=$!; wait "$s"; n=$((n + 1)); done' > "$D/run/linger.log" 2>&1 < /dev/null &
+      echo $! > "$D/run/linger.pid"
+      n=0
+      until grep -q '^discovery-done$' "$D/run/linger.log" 2>/dev/null; do
+        n=$((n + 1))
+        if [ "$n" -gt 15 ] || ! alive "$(cat "$D/run/linger.pid")"; then
+          echo "[CortexSim] the lingering instance did not finish id, uname and hostname" >&2
+          cat "$D/run/linger.log" >&2 || true
+          exit 1
+        fi
+        sleep 1
+      done
+      if ! alive "$(cat "$D/run/linger.pid")"; then
+        echo "[CortexSim] the lingering instance exited right after its discovery commands" >&2
+        exit 1
+      fi
+      cat "$D/run/linger.log"
+      echo "[CortexSim] SIM-EDR-026 step-03: $D/renamed/crond is running as pid $(cat "$D/run/linger.pid"); it ends itself within 300 s"
+    identity: root
+    mitre_technique: "T1082"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — id, uname or hostname starts as a child of the crond-named process running from the sandbox renamed directory. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0552"
+        detection_id: xql-edr-026-crond-named-process-starts-discovery-children
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name in ("id", "uname", "hostname")
+          | filter actor_process_image_path = "/var/tmp/.cortexsim-crond/renamed/crond" or actor_process_command_line contains "/var/tmp/.cortexsim-crond/renamed/crond"
+          | fields _time, agent_hostname, actor_causality_id, actor_process_image_name, actor_process_image_path, action_process_image_name, action_process_image_command_line
+
+  - id: step-04
+    name: "List processes named crond through /proc, stop the lingering instance and remove the sandbox"
+    # What the sensor is expected to record: PROCESS_START of grep over
+    # /proc/<pid>/comm, then cat and readlink for each process named crond.
+    # The listing prints what a process listing shows for the lingering
+    # instance: the name crond, and an executable under /var/tmp. The instance
+    # is then stopped by its pidfile, after a check that the pid still belongs
+    # to this sandbox. The sandbox is removed here because a pull run executes
+    # no cleanup.commands; that removal is lab hygiene, not a claimed technique.
+    # It happens only when this step is reached: a pull run that stopped at an
+    # earlier step leaves the sandbox on the endpoint (see the note above
+    # push_supported).
+    # This step carries the operator-installed correlation, whose three legs
+    # were all produced on this one host by step-01, step-02 and step-03.
+    # Lab run 7714f4ce (pov-target-01, 2026-11-14 UTC): the step exited 0,
+    # stopped the lingering instance and removed the sandbox. CR-EDR-0026's
+    # XQL, run as an ordinary query over one hour at 01:11 UTC, was accepted
+    # and returned one row for pov-target-01 (legs 3, events 30); the rule was
+    # not installed, so no issue was raised from it.
+    # Exit code: 1 when the sandbox root is not a directory owned by the
+    # running user with mode 700 (the pidfile is not read then), when the
+    # instance did not survive from step-03, or when it does not stop within
+    # 15 s.
+    command: |
+      # REAL process listing through /proc and a REAL stop by pidfile.
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-crond
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      alive() { kill -0 "$1" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null; }
+      pid="$(cat "$D/run/linger.pid")"
+      if ! alive "$pid" || ! grep -q cortexsim-crond "/proc/$pid/cmdline" 2>/dev/null; then
+        echo "[CortexSim] the lingering instance (pid $pid) is not running; it should have survived from step-03" >&2
+        exit 1
+      fi
+      for c in $(grep -l '^crond$' /proc/[0-9]*/comm 2>/dev/null || true); do
+        p="${c#/proc/}"
+        p="${p%/comm}"
+        echo "pid $p name $(cat "$c" 2>/dev/null || echo gone) exe $(readlink "/proc/$p/exe" 2>/dev/null || echo unreadable)"
+      done
+      kill "$pid"
+      n=0
+      while alive "$pid"; do
+        n=$((n + 1))
+        if [ "$n" -gt 15 ]; then
+          echo "[CortexSim] the lingering instance is still running 15 s after it was told to stop" >&2
+          exit 1
+        fi
+        sleep 1
+      done
+      cat "$D/run/linger.log"
+      rm -rf "$D"
+      test ! -e "$D"
+      echo "[CortexSim] SIM-EDR-026 step-04: the lingering instance has stopped and $D is removed; nothing this chain started is left"
+    identity: root
+    mitre_technique: "T1057"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation CR-EDR-0026 (operator-installed; alert name 'EDR-026 Crond Lookalike Planted And Launched'; Medium; scheduled every 10 min, query time frame 1 h; issue suppression 1 h on agent_id, so one issue per endpoint per hour; agent_hostname mapped to Host Name and agent_id to Agent ID; no MITRE tag): on one agent, at least two of: a file named crond created, written or renamed outside the system paths (or the cp / mv that names it); a process named crond started from outside the system paths; a process started by such a crond"
+        ttp_ref: "TTP-2026-0552"
+        detection_id: CR-EDR-0026
+
+# The pidfile is read only when one stat call says the sandbox root is a
+# directory, owned by the user running the cleanup, mode 700. When it is
+# not, the pidfile is skipped and the path is still removed: the removal is
+# unconditional, and rm -rf removes a symlink, not what it points at.
+cleanup:
+  commands:
+    - "if [ \"$(stat -c %F:%u:%a /var/tmp/.cortexsim-crond 2>/dev/null)\" = \"directory:$(id -u):700\" ] && [ -f /var/tmp/.cortexsim-crond/run/linger.pid ] && grep -q cortexsim-crond \"/proc/$(cat /var/tmp/.cortexsim-crond/run/linger.pid)/cmdline\" 2>/dev/null; then kill \"$(cat /var/tmp/.cortexsim-crond/run/linger.pid)\" 2>/dev/null; fi"
+    - "rm -rf /var/tmp/.cortexsim-crond"
+    - "echo 'cortexsim-edr-026-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-11-13"
+last_updated: "2026-11-14"
+tags:
+  - edr
+  - linux
+  - defense-evasion
+  - masquerading
+  - crond
+  - analytics-bioc
+  - causality

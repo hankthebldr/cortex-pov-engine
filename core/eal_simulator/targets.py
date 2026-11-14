@@ -79,6 +79,9 @@ class TargetSpec:
     is_default: bool
     has_token: bool
     last_check: Optional[dict[str, Any]] = None
+    #: The collector instance's Compression setting. It must match: a gzip
+    #: collector refuses an uncompressed body with 400 (PMA-2026-11-13).
+    compress: bool = False
 
     def __post_init__(self) -> None:
         if not NAME_RE.match(self.name or ""):
@@ -255,6 +258,10 @@ def apply_targets(
             params["collector_url"] = target.url
             params["auth_header"] = target.auth_header
             params["auth_scheme"] = target.auth_scheme
+            # The door's compression, not the step's: only plugins that can
+            # gzip get it (email_emitter has no such transport).
+            if "compress" in registry.get(plugin).Meta.params_model.model_fields:
+                params["compress"] = target.compress
             params.pop("auth_token", None)
             if tokens and res.target in tokens:
                 params["auth_token"] = tokens[res.target]

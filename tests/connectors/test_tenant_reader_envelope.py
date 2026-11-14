@@ -193,6 +193,32 @@ def test_get_endpoints_is_one_request_in_the_lowercase_envelope():
     assert res.detail["pages"] == 1 and res.detail["truncated"] is False
 
 
+def test_get_endpoints_lowercase_data_is_parse_error_not_no_record():
+    """Final review I-1: the run-scoped endpoint read was the last read that took a
+    lowercase ``data`` list as ``endpoints`` and answered "no record"."""
+    res = _conn(FakeTenant(replies={"endpoints": LOWERCASE_DATA})).get_endpoints(
+        CFG, ["target-01"])
+    assert res.ok is False and res.code == codes.XSIAM_PARSE_ERROR
+    assert "XSIAM_ENVELOPE_UNRECOGNISED" in res.error
+    assert res.observations == []
+
+
+def test_strict_reply_with_rows_that_are_not_objects_is_a_parse_error():
+    """Final review M-1: strict ``DATA: [None, "x"]`` is not zero rows."""
+    reply = {"reply": {"DATA": [None, "x"], "TOTAL_COUNT": 2, "FILTER_COUNT": 2}}
+    res = _conn(FakeTenant(replies={"issues": reply})).search_issues(CFG, body_for=_window_body)
+    assert res.ok is False and res.code == codes.XSIAM_PARSE_ERROR
+    assert "XSIAM_ENVELOPE_UNRECOGNISED" in res.error
+    assert res.observations == []
+
+
+def test_non_strict_reply_still_skips_rows_that_are_not_objects():
+    from connectors.xsiam import parse_reply
+
+    rows, dropped, _ = parse_reply({"reply": {"alerts": [None, "x", {"alert_id": "a1"}]}}, "alerts")
+    assert rows == [{"alert_id": "a1"}] and dropped == 0
+
+
 def test_strict_reply_without_the_reply_wrapper_is_envelope_unrecognised():
     """A bare ``{"DATA": ...}`` is not the documented envelope; reading it is a guess."""
     bare = {"DATA": [_issue(1)], "TOTAL_COUNT": 1, "FILTER_COUNT": 1}

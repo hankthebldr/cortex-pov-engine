@@ -77,6 +77,35 @@ scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
 (plane, detection types, use case), and the active tab offers its most common
 tags as chips that filter the list; tags that differ only in case are one chip.
 
+||||||| parent of 2ce787e5 (docs(docs): document the launch dry run and refusals that write nothing)
+
+### Added — a launch dry run, and a refused launch writes nothing
+
+`POST /api/runs/preflight` takes the launch body and runs every check
+`POST /api/runs` makes, in the same order, without launching. It returns
+whether the launch would go, the refusal it would get (code and HTTP status),
+every refusal at once, and each check as pass, block or skipped with a reason.
+The checks are one function shared with the launch, so the two cannot
+disagree; a test holds them to the same answer for every refusal code. Before,
+the console could predict about six of the twenty-odd refusals.
+
+Every refusal is now decided before the run row is written. Six refusals used
+to fire after it — the payload shelf, a pull launch with no target, an invalid
+stitch context, a composed run's unenrolled second endpoint, the
+container-agent gate — and left a `failed` run with `not_executed` results in
+the run list. They now leave nothing, like the consent gate always did. One
+order change comes with it: a composed run with an unenrolled endpoint is now
+refused `TARGET_AGENT_NOT_ENROLLED` before the container-agent gate judges its
+other endpoints (it could answer `AGENT_TOOL_ABSENT` first).
+
+New refusal codes: `SCENARIO_NOT_FOUND` (404; was `LAUNCH_FAILED` 422),
+`PULL_TARGET_MISSING` (422), `STITCH_CONTEXT_INVALID` (409; was only in the
+message) and, for the push cluster-consent clause, `CLUSTER_CONSENT_REQUIRED`,
+`PRIVILEGED_K8S_DISABLED` and `CLUSTER_POSTURE_REFUSED` (409). The Composer's
+draft verdict now reports `DRAFT_CHAIN_INVALID` when the chain is invalid
+(it always said `DRAFT_NOT_TC_BOUND`). Spec:
+`docs/superpowers/specs/2026-11-13-launch-gate-one-model-design.md`, slice 1.
+
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
 - **Tool readiness is said in plain words everywhere.** The launch gate row is
@@ -207,6 +236,53 @@ tags as chips that filter the list; tags that differ only in case are one chip.
   workflow legitimately needs more.
 - **New table `tenant_evidence_reads`** is created at boot; no migration step.
 
+### Added — four Linux scenarios promoted from the staged draft library
+
+Four of the seven Linux pairs that `drafts/detection-library/INDEX.md` listed
+with no content finding are now corpus content. Each was rewritten from the
+draft and the alert's reference page by `ttp-engineer`, reviewed
+adversarially by `detection-corpus-reviewer` until it passed (with
+advisories, all closed), given real ids, and landed as its own commit. Each
+draft pair was removed from staging in the same commit. Ground truth after
+the four: **205 scenarios · 203 TTP cards · 1452 step-detections ·
+Correlation 149 (10.3%)** (`docs/reference/ground-truth.md`); the staging
+library holds 362 pairs.
+
+| scenario | card | draft | targeted alert (reference page) | how it is declared |
+|---|---|---|---|---|
+| SIM-EDR-026 crond masquerade from a scratch path | TTP-2026-0552 | TTP-0000-0029 | Masquerading as the Linux crond process | the built-in alert as one ABIOC row, 3 XQL, CR-EDR-0026 |
+| SIM-EDR-027 compressed-archive exfiltration attempt over SSH | TTP-2026-0553 | TTP-0000-0033 | A compressed file was exfiltrated over SSH | alert hunt-only (no SSH session opens); 5 XQL, CR-EDR-0027 |
+| SIM-EDR-028 sudoedit burst in the CVE-2021-3156 probe form | TTP-2026-0554 | TTP-0000-0317 | Sudoedit Brute force attempt | alert hunt-only (needs a trained baseline); 4 XQL, CR-EDR-0028 |
+| SIM-EDR-029 sshpass credential-stuffing burst | TTP-2026-0555 | TTP-0000-0321 | Suspicious sshpass command execution | the built-in alert as one ABIOC row, 4 XQL, CR-EDR-0029 |
+
+- **Every step runs for real.** Each chain works inside one hidden `/var/tmp`
+  sandbox and makes no real network call: SSH clients aim at a `.invalid`
+  host and must fail at name resolution. Each chain removes its own sandbox.
+  - The sandbox is created atomically (`mkdir -m 700`, no `-p`).
+  - Every later step checks the sandbox with one `stat` of type, owner and
+    mode before it touches it. A three-test check was shown racy where
+    `fs.protected_symlinks` is off.
+  - `sshpass`, `ssh`, `scp`, `sudo` and `sudoedit` are declared in
+    `requires_interpreters` where a step needs them, so a host without them
+    reads `not_executed`, not missed.
+- **Lab runs on `pov-target-01` (2026-11-14)**, recorded in
+  `docs/lab/2026-11-14-promoted-linux-drafts-lab-run.md`:
+  - **All four completed** (SIM-EDR-029 after `sshpass` was installed on the
+    endpoint), and every declared XQL row returned rows in the tenant.
+  - **SIM-EDR-027:** step-02's gzip leg was never recorded by the agent, so
+    that row was dropped.
+  - **SIM-EDR-028:** the agent recorded the first 28 of 60 starts, above the
+    floor of 20.
+  - **Correlation rules:** CR-EDR-0026, 0027, 0028 and 0029 were accepted by
+    the tenant as queries and return their chain's row. None is installed.
+  - **Built-in alerts:** none was raised.
+- **Left in staging, with nothing a lab run can fire:**
+  - TTP-0000-0315 *Rare SSH Session* and TTP-0000-0323 *Uncommon SSH session
+    was established*: both need a real SSH session to a second host plus a
+    rarity baseline.
+  - TTP-0000-0318 *Suspicious container orchestration job*: needs a container
+    orchestrator job, and the lab is one VM with no cluster.
+
 ### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
 
 - **A Broken card on a run's chain is now a button** that opens a sheet of
@@ -284,6 +360,17 @@ its "!" carries the gold or coral accent, so it no longer reads as a filled
 alarm next to the action it describes.
 
 ||||||| c4528ab2
+||||||| 5874d974
+### Changed — TTP cards filter by subdomain, not status or platform
+
+The TTP cards page now filters by **Subdomain** (the UC / TC index's
+subdomain for the test cases each card evidences; a card in two subdomains
+matches either) and Tactic. The Status filter, which was "active" for every
+card, and the Platform filter are gone, as are the platform count and the
+platform chips on each card. A card shows its status only when it is a
+draft or deprecated.
+
+||||||| c4528ab2
 ### Added — run detail says why a test case is pending (design C3)
 
 A run whose test-case verdict is pending with nothing scored now says why on
@@ -292,6 +379,32 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 ("nothing executed" or "detectors soaking") and the test case id, with the
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
+
+### Changed — Runs · Compare: two or three finished runs, and no claim without a read back (design C2)
+
+- **The Runs header has a primary Run beside a secondary Compare runs.** Run
+  opens the New POV run page, where Scenarios and ⌘K start every launch. The
+  design draws it as "New run"; that label is not in the console's closed verb
+  set, and Run is.
+- **Compare takes two or three finished runs**, picked as chips that say
+  whether each run has been read back. A running or staged run is not offered.
+  A fourth pick is refused with the reason. It used to list sixteen runs of any
+  status and take four.
+- **One row per expected detection, one column per run**, then four paired
+  rows: Detected, Steps that ran, Fastest detection and Workflow (the scenario
+  the run executed). Each column header carries the run's next action: Read
+  back while it has not been read back, Open results once it has. Both use the
+  console's existing Read back and Results route. Rows line up on the card's
+  detection id; before, they keyed on fields a Result row does not carry.
+- **Only a read-back run says Detected or Not seen.** Any other run says "Ran —
+  not read back" or "Did not run", even when its rows carry a hand mark or an
+  outcome, and its Detected and Fastest detection rows read a dash. The words
+  are the chain's own (`LIVE_STATES`). Before, an unread run's hand-marked row
+  read Detected, and the prevention delta for a report/block pair was drawn for
+  runs that had not been read back; it now waits until both have been. A runs
+  list or a run's results that fail to load are said to have failed, never shown
+  as empty. The coverage percentages and the new/regression flags are gone with
+  the old grid.
 
 ### Security
 
@@ -310,6 +423,28 @@ states the same verdict and reason. A verdict without a reason draws neither.
   detection changed. The two cards' illustrative payloads now run under
   `set -eu`, stop unless the directory they make is root's own 0700 directory,
   and install the checked entry.
+
+- **A root systemd unit and root crontab lines ran programs from `/tmp` paths
+  another user could create (SIM-CDR-006, SIM-CDR-002).** SIM-CDR-006 enabled a
+  `Restart=always` unit whose `ExecStart` was a fixed `/tmp` file the scenario
+  never created, and a root crontab watchdog that re-enabled it every 10
+  minutes. SIM-CDR-002 added a root crontab line that runs `/tmp/.xmr/xmrig`.
+  The beacon does not run a scenario's cleanup and `/tmp` is emptied at boot,
+  so these entries outlived what they pointed at. SIM-CDR-006 now makes its
+  marker in a root-owned 0700 directory, and the unit's `ExecStart` and the
+  watchdog run nothing unless one `stat` lookup reads it that way; otherwise
+  the unit disables itself and the watchdog removes itself. The check is in
+  `ExecStart` because systemd before 243 ignores `ExecCondition=`. The step that
+  makes the directory first retires a unit or watchdog left by an earlier run,
+  and the marker now retires the foothold 45 minutes after install. Both
+  SIM-CDR-002 crontab lines run the miner only from the 0755 directory step-01
+  made, and only while the miner itself is a regular 0755 file owned by the
+  same account. Step-02 extracts the archive with `--no-same-owner
+  --no-same-permissions` and sets the miner's mode, because `tar` run as root
+  otherwise keeps the archive's owner and mode. The two cards' illustrative
+  payloads run under `set -eu`, stop unless
+  the directory they make passes the same check, and install the checked
+  entries. No detection query changed.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
@@ -966,6 +1101,50 @@ states the same verdict and reason. A verdict without a reason draws neither.
   (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
   issue read now raises on a lowercase `data` reply where it used to return
   `{}`.
+- The run read's endpoint record reads the strict `endpoints` envelope too, so a
+  lowercase `data` reply is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`. A
+  strict reply with a row that is not an object raises rather than reading as
+  fewer rows. A refused id probe records `attempted` and `refused_locally` on
+  `agreement.id_space`, as a section does. `xsiam.xql.query` and a live
+  `xsiam.operation.execute` carry a fixed `data_notice` for the tenant's raw
+  values, and a parse error on any named MCP shape names keys and types, never a
+  value. The run case ledger leaves `GET /api/runs/{id}/tenant-evidence`,
+  `cortexsim.run.tenant_evidence.get` and `cortexsim.run.get` projected: a case's
+  `resolve_comment` under `tenant_text`, a rejected `xdr_url` null with
+  `xdr_url_withheld`. `run.get` then adds `data_notice`.
+
+### Added — Results: tenant evidence panel
+
+- Results › Report shows a Tenant evidence panel below the scorecard: the
+  agreement figures with the two-reads statement, the issues credited to the
+  run's host, the issues not credited, their cases, the run's case ledger and
+  the endpoint record as of the read (with the ledger's ip-to-host bridge code).
+- Display only, and read on request only. Opening the page sends one `GET` of
+  the stored snapshot and nothing polls. The tenant is read only when the DC
+  presses the panel's refresh button, which sends one metered read per press
+  (a double click sends one) and never changes a score or verdict.
+- Every degraded state is a sentence, never an empty table: not read, no
+  credential, no run window, unscoped, zero attributed, truncated, truncation
+  unknown, quota refused and a failed section with its code and remediation.
+  Tenant-written names render as text, and a case link is followed only when it
+  is https on `paloaltonetworks.com`.
+- A quota refusal names whose budget refused the read: this instance's own (the
+  tenant was not asked), the tenant's rate limit (HTTP 429), or, when the stored
+  read does not say, neither. It also says what was counted: floors, complete
+  issue rows, rows of unknown completeness, or nothing. A read inside the minimum
+  interval says a new read is possible now rather than "in 0 s", and the case
+  panel shows "link withheld" for a case link it will not follow, never the link's
+  text.
+- The case panel's read line no longer shows the integration's name, on Results
+  and on Run detail, and a failed request renders a fixed sentence by its code,
+  never the error's own text.
+- Read back on a run that already has a verdict (Results, and the run page's
+  case panel) asks first: it reads the tenant and may change the verdict, and the
+  confirm says refreshing tenant evidence never does. Cancel posts nothing, and
+  the first focus is on Cancel. The unread phase's Read back stays one click.
+- Run detail shows the case panel once (the evidence tab no longer embeds a
+  second one), a run that has not been read back shows its tenant evidence, and
+  the scorecard's "XSIAM Stitch" tile is now "Analytics plane" (same figure).
 
 ### Changed — one per-tenant request budget; any 429 trips once
 
@@ -1005,6 +1184,9 @@ states the same verdict and reason. A verdict without a reason draws neither.
   with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
+- API reference §9.2 now leads with the stdio launcher as the way to verify runs;
+  the HTTP `/mcp` registration is optional and its example reads the token from
+  an environment variable.
 
 ### Added — MCP tools for the tenant reader
 
@@ -1556,6 +1738,33 @@ escape every string behind it.
   key the connector does not read. Guard:
   `tests/connectors/test_issues_api_fields.py` (15 failures before the change).
   Nothing here ran against a tenant: tenant-verified is still 0.
+
+### Fixed — a collector target carries its Compression, and the preflight sends it
+
+- **Both collector preflights sent an uncompressed body whatever the step was
+  set to.** The campaign preflight and a collector target's "Send test record"
+  go through `preflight_collector`, which never read `compress`. In the
+  deathstar lab (PMA-2026-11-13), a collector set to gzip answered every
+  uncompressed POST with 400 `gzip compression error (invalid header)` and
+  ingested nothing. So against a gzip collector the preflight read `refused`
+  for a door a `compress: true` campaign used, and against an uncompressed one
+  it read `accepted` while a `compress: true` campaign got 400. The preflight
+  now gzips when the target says so.
+- **A collector target records its instance's Compression setting.**
+  `PUT /api/collector-targets/{name}` takes `compress` (default `false`, which
+  is what every target sent until now), reports it back, and applies it to its
+  own test record and to every bound step whose plugin can gzip, overriding
+  the step's inline value, the same way it already overrides URL and key. A
+  change of `compress` discards the stored check. `email_emitter` has no gzip
+  transport, so it is left alone. The startup migration adds the column, and
+  existing targets read as uncompressed.
+- **The remediation for `collector_rejected` names what the lab saw.** It used
+  to point at the content type, which the collector ignores. It now names
+  invalid JSON and a compression mismatch (400), a wrong path (404), and a
+  record over 5 MiB decompressed or a POST over 10 MiB on the wire (413). The
+  `collector_error` text keeps the documented 500 for a Log Format mismatch
+  and says that the two mismatches the lab tried came back as 400. The
+  offline bundle's copy says the same.
 
 ### Fixed — EAL collector emitters send the XSIAM API key bare
 
