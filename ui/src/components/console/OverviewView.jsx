@@ -56,8 +56,8 @@ export default function OverviewView({ onNavigate = () => {} }) {
   // can be dishonest, and each is enforced somewhere in the product rather
   // than being a claim on a slide.
   const honesty = [
-    ['Nothing is fetched at dispatch',
-      'Every artifact is staged and digest-pinned before launch, so a blocked egress can never read as a missed detection.'],
+    ['Tools are checked before launch',
+      'A run that needs a tool this instance cannot supply is refused, and a tool the target must install for itself is flagged at the launch check.'],
     ['A blocked technique is not a failed detection',
       'When a prevention profile or a firewall stops a step, the run record says so. Prevention working is a result, not an absence.'],
     ['Absence is qualified, never assumed',

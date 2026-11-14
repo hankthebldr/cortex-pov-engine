@@ -178,7 +178,7 @@ function alphaOf(c: string) {
 }
 
 async function openPalette(page: Page) {
-  await page.getByRole('button', { name: '＋ Add' }).click()
+  await page.getByRole('button', { name: 'Add to chain' }).click()
   await page.waitForSelector('.composer-mode__drawer--left')
 }
 async function closePalette(page: Page) {
@@ -341,9 +341,10 @@ test('<=1100px: Controls, overview map and caption sit just beside the narrower 
   expect.soft(await centred({ l: left2.right, r: right.left }), 'caption not centred between both drawers').toBeLessThanOrEqual(2)
 })
 
-test('the canvas dot grid is painted in the console border token, not React Flow\'s default grey', async ({ page }) => {
+test('the canvas dot grid is painted in the console\'s dot token, not React Flow\'s default grey', async ({ page }) => {
   await openComposer(page, 1440, 900)
-  const bd2 = await tokenColor(page, '--bd2')
+  // --canvas-dot sits between the hairline and the quiet-text tokens.
+  const bd2 = await tokenColor(page, '--canvas-dot')
   const dots = () => page.evaluate(() => getComputedStyle(document.querySelector('.react-flow__background-pattern.dots')!).fill)
   expect(await dots()).toBe(bd2)
   // The stylesheet's own theme hook, without the component's `color` prop:

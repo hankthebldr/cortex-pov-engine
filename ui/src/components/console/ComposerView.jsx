@@ -34,6 +34,7 @@ import ComposerInspector from './ComposerInspector.jsx'
 import ComposerRuleInspector from './ComposerRuleInspector.jsx'
 import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
+import Icon from './kit/Icon.jsx'
 import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
@@ -132,7 +133,7 @@ function useMediaQuery(query) {
 }
 
 const WS_TABS = [
-  ['payload', 'Payload plan'],
+  ['payload', 'Tools'],
   ['preflight', 'Preflight'],
   ['active', 'Active run'],
   ['history', 'History'],
@@ -1068,7 +1069,7 @@ export default function ComposerView({
     })
 
     groups.push({
-      label: 'Staged payloads',
+      label: 'Ready tools',
       tone: 'pending',
       tab: 'packages',
       items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
@@ -1403,7 +1404,8 @@ export default function ComposerView({
           onClick={() => launch.launch()}
           title={launchTitle()}
         >
-          {launch.launching ? 'Launching…' : `Launch on ${agentName || 'agent'}`}
+          <Icon name="play" size={11} className="composer__start-glyph" />
+          {launch.launching ? 'Starting…' : `Start on ${agentName || 'agent'}`}
         </button>
       </div>
 
@@ -1544,11 +1546,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--left"
+            className="composer-mode__reopen composer-mode__reopen--left composer-mode__reopen--icon"
             onClick={openPalette}
-            title="Open the node palette"
+            aria-label="Add to chain"
+            title="Add to chain"
           >
-            ＋ Add
+            <Icon name="plus" size={16} />
           </button>
         )}
 
@@ -1605,11 +1608,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--right"
+            className="composer-mode__reopen composer-mode__reopen--right composer-mode__reopen--icon"
             onClick={openInspector}
-            title="Open the inspector"
+            aria-label="Inspector"
+            title="Inspector"
           >
-            Inspector
+            <Icon name="sliders" size={16} />
           </button>
         )}
 
@@ -1727,8 +1731,8 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
-    if (shelf.available === false) return 'no shelf'
-    return `${(shelf.shelf?.payloads || []).length} staged`
+    if (shelf.available === false) return 'not reported'
+    return `${(shelf.shelf?.payloads || []).length} ready`
   }
   if (id === 'preflight') {
     if (!env.healthModel) return 'unknown'
@@ -1750,9 +1754,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (shelf.available === false) {
     return (
       <div className="ws-empty">
-        This SimCore exposes no payload shelf, so every tool a step needs is fetched by the
-        TARGET from the public internet at run time. That is a real property of the run, not a
-        missing panel.
+        This instance supplies no tools itself, so every tool a step needs is installed by the
+        TARGET, which needs internet access. That is a real property of the run, not a missing
+        panel.
       </div>
     )
   }
@@ -1760,9 +1764,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (!payloads.length) {
     return (
       <div className="ws-empty">
-        Nothing staged on this SimCore.
+        No tools are ready on this instance.
         <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-          Open Tools &amp; Payloads
+          Open Packages
         </button>
       </div>
     )

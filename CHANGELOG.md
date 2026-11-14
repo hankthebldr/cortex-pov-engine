@@ -81,6 +81,24 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Changed — the console no longer says "shelf" or "staged" for tools
+
+- **Tool readiness is said in plain words everywhere.** The launch gate row is
+  **Tool readiness** (was "Payload shelf"). The launch check says a tool is
+  **not ready**, or **needs internet access on the target**, and still says what
+  that costs: on a network that blocks it the step runs without its tool and the
+  missing detection reads as a coverage gap. The launch card is **Tools for this
+  run**, the Composer's bottom tab is **Tools · N ready**, the scenario sheet's
+  tool chips read READY / NOT READY / NEEDS INTERNET, and the dialog is **Make
+  \<tool\> ready on this instance**. "Tools & Payloads" is **Packages**.
+- **Coverage** calls a technique no run has exercised **Not run** (was
+  "Staged"), on the page and in the exported Navigator layer.
+- The About page no longer claims "nothing is fetched at dispatch": it now says
+  a run that needs a tool this instance cannot supply is refused, and a tool the
+  target must install for itself is flagged at the launch check.
+- API fields, error codes (`PAYLOAD_NOT_STAGED`) and a push run's `staged`
+  status are unchanged.
+
 ### Changed — Packages: a plain catalog, no supply mechanics
 
 - **The Packages page no longer talks about the payload shelf.** How and when a
@@ -98,6 +116,25 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   removed from the detail.
 - A link can still scope the list (`?supply=unstaged`, used by a refused
   launch); the scope is named in plain words and can be cleared.
+
+### Changed — Composer: Start and Stop points, lanes without Launch/Proof, less chrome
+
+- **The chain's ends are Start and Stop.** The trigger node reads **Start** and
+  the proof node **Stop**, each with the play / stop icon, on the Design, Run
+  and Lanes lenses, the scenario sheet and Run detail. The launch button is
+  **Start on \<agent\>** with the same icon.
+- **Launch and Proof are no longer lanes.** The Lanes lens draws the signal
+  paths only; Start and Stop sit in a row above them, before the first step
+  and after the last. Each lane shows its component's icon and name; its
+  description is the tooltip.
+- **The canvas dots stay visible at every zoom.** React Flow shrank a dot with
+  the zoom, so the grid vanished on a fitted chain. Dots are now drawn at a
+  constant size on screen; the spacing still scales with the zoom.
+- **The "SimCore degraded" strip is removed.** The header's status (Degraded ·
+  N issues, opening Components) carries it.
+- **Icon buttons.** The palette and inspector toggles on the canvas are icons
+  (named "Add to chain" and "Inspector" for assistive tech). A shared `Icon`
+  set (play, stop, repeat, plus, sliders) joins the kit.
 
 ### Upgrading from 1.1.x (read before you re-run `dev-up.sh` on a jumpbox)
 

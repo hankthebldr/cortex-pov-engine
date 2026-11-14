@@ -176,7 +176,7 @@ test('Composer: a canvas launch on a seeded agent switches the dock to Active wi
   await page.getByTestId('composer-preflight').click()
   const launch = page.getByTestId('composer-launch')
   await expect(launch).toBeEnabled({ timeout: 10_000 })
-  await expect(launch).toHaveText(/^Launch on /)
+  await expect(launch).toHaveText(/Start on /)
   await launch.click()
 
   // The dock switches itself to Active on the new run; nothing navigates away.

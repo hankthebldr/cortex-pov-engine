@@ -6076,53 +6076,6 @@
 .theme-console .insp-tool__egress { font-size: 10px; color: var(--c-text-muted); flex: 1 1 100%; }
 .theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }
 
-/* ── Global degraded banner ─────────────────────────────────────────── */
-/* Full-bleed shell row, not an in-view card. It used to render inside `.view`
-   as a bordered/rounded box with a bottom margin; moving it to AppShell's
-   `banner` slot (so the nav rail and each view's filter rail finally share a
-   top) also means it now spans the console like `.phase-bar` and the safety
-   banner above it — hence `flex: none`, the row background + single bottom
-   hairline, and header-matching 16px side padding instead of a card outline. */
-.theme-console .readiness-banner {
-  flex: none;
-  background: var(--c-pending-soft);
-  border-bottom: 1px solid var(--c-pending);
-  padding: 8px 16px;
-}
-.theme-console .readiness-banner__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.theme-console .readiness-banner__tag {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
-  font-weight: 700; color: var(--c-pending);
-}
-.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); }
-/* Sits between the always-visible claim and the actions. `margin-right: auto`
-   (rather than the count carrying `flex: 1`) keeps the toggle next to the text
-   it expands instead of stranding it against the buttons on a wide console. */
-.theme-console .readiness-banner__toggle {
-  margin-right: auto;
-  background: none;
-  border: none;
-  padding: 2px 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  cursor: pointer;
-  border-radius: 3px;
-}
-.theme-console .readiness-banner__toggle:hover { color: var(--c-text); background: var(--c-hairline); }
-.theme-console .readiness-banner__x {
-  background: none; border: none; color: var(--c-text-muted); cursor: pointer;
-  font-size: 12px; padding: 2px 4px; border-radius: 2px;
-}
-.theme-console .readiness-banner__x:focus-visible { outline: 2px solid var(--cortex-teal, #00C0E8); }
-.theme-console .readiness-banner__list { margin: 6px 0 0; padding-left: 18px; }
-.theme-console .readiness-banner__list li {
-  font-size: 11px; line-height: 1.6; color: var(--c-text); margin-bottom: 3px;
-}
-.theme-console .readiness-banner__fix { color: var(--c-text-secondary); }
-
 /* ── Per-scenario preflight card (inside Launch) ────────────────────── */
 .theme-console .launch-card--preflight { border-left: 2px solid var(--cortex-steel, #6B7E8E); }
 .theme-console .preflight__lede {
