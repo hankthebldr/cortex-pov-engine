@@ -1,6 +1,6 @@
 """A fake Cortex tenant for the tenant-reader tests: an ``HttpFetcher`` by path.
 
-``FakeTenant`` answers the four read routes the reader uses, each from canned
+``FakeTenant`` answers the five read routes the reader uses, each from canned
 rows, in the wire shapes the vendor pages document (spec §3.4):
 
 * ``issues`` — a window ``issue/search`` (no filter on ``id``): pages
@@ -10,7 +10,10 @@ rows, in the wire shapes the vendor pages document (spec §3.4):
   ``probe`` (default: ``issues``) whose id is in the filter, ints or strings;
 * ``cases`` — ``case/search``, filtered by ``case_id`` ``in`` when one is sent;
 * ``endpoints`` — ``endpoints/get_endpoint``, filtered by ``hostname`` ``in``,
-  in the lowercase ``reply.endpoints`` envelope.
+  in the lowercase ``reply.endpoints`` envelope;
+* ``tenant_info`` — ``system/get_tenant_info``, the object reply
+  ``{"reply": tenant_info}`` (default ``TENANT_INFO``: licence fields and no
+  version field, as PANW's page documents it).
 
 Every request body is recorded under its route in ``calls``. ``status`` maps a
 route to an HTTP status it answers instead; ``replies`` maps a route to a raw
@@ -27,7 +30,11 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tenant_reader"
 #: Pass as ``filter_count`` to leave ``FILTER_COUNT`` out of the window reply.
 OMIT = object()
 
-ROUTES = ("issues", "issues_by_id", "cases", "endpoints")
+ROUTES = ("issues", "issues_by_id", "cases", "endpoints", "tenant_info")
+
+#: The documented ``get_tenant_info`` reply: licence fields, no version field.
+TENANT_INFO = {"xsiam_premium_expiration": 1798761600000,
+               "purchased_xsiam_premium": {"users": 10, "gb": 100, "agents": 500}}
 
 
 def fixture(name: str) -> dict:
@@ -54,6 +61,7 @@ class FakeTenant:
         tenant_total: int = 4200,
         status: Optional[dict[str, int]] = None,
         replies: Optional[dict[str, Union[dict, Callable[[dict], dict]]]] = None,
+        tenant_info: Optional[dict] = None,
     ) -> None:
         self.issues = list(issues or [])
         self.probe = list(probe) if probe is not None else None
@@ -63,6 +71,7 @@ class FakeTenant:
         self.tenant_total = tenant_total
         self.status = dict(status or {})
         self.replies = dict(replies or {})
+        self.tenant_info = dict(TENANT_INFO if tenant_info is None else tenant_info)
         self.calls: dict[str, list[dict]] = {r: [] for r in ROUTES}
         self.urls: list[str] = []
 
@@ -77,6 +86,8 @@ class FakeTenant:
             return "cases"
         if "endpoints/get_endpoint" in url:
             return "endpoints"
+        if "system/get_tenant_info" in url:
+            return "tenant_info"
         return None
 
     def __call__(self, method: str, url: str, headers: dict, body: Optional[bytes],
@@ -133,3 +144,6 @@ class FakeTenant:
         page = self._page(rows, request_data)
         return {"reply": {"total_count": len(rows), "result_count": len(page),
                           "endpoints": page}}
+
+    def _tenant_info(self, request_data: dict) -> dict:
+        return {"reply": dict(self.tenant_info)}

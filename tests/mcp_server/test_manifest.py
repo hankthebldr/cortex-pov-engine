@@ -18,14 +18,14 @@ def _doc() -> dict:
     return build_manifest(cortexsim.specs() + xsiam.specs())
 
 
-def test_manifest_validates_against_local_p2_schema_and_lists_46_tools():
+def test_manifest_validates_against_local_p2_schema_and_lists_52_tools():
     doc = _doc()
     validate_manifest(doc)
     assert (doc["manifest_version"], doc["kind"], doc["id"], doc["target"]) == (
         2, "mcp-server", "core/xsiam", "xsiam")
     assert doc["server"] == {"name": "cortexsim", "sdk": "mcp==1.30.0"}
     assert [t["id"] for t in doc["tools"]] == list(CANONICAL_IDS)
-    assert len(doc["tools"]) == 46
+    assert len(doc["tools"]) == 52
     for t in doc["tools"]:
         assert t["wire"] == wire_name(t["id"])
     by_id = {t["id"]: t for t in doc["tools"]}

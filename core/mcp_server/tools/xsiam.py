@@ -1,4 +1,4 @@
-"""The ``xsiam.*`` group: 19 tools projecting SimCore's XSIAM integration (spec 5.3).
+"""The ``xsiam.*`` group: 25 tools projecting SimCore's XSIAM integration (spec 5.3).
 
 Every tenant call goes through SimCore's own routes (``/api/xsiam/...``); this
 module never talks to a tenant. Four rules hold everywhere:
@@ -21,7 +21,12 @@ module never talks to a tenant. Four rules hold everywhere:
   repeats it. The tenant-reader tools (``issue.search``, ``case.search``,
   ``endpoint.get``) pass SimCore's projection through, which puts free text
   only under ``tenant_text``; nothing from a row reaches ``statement``,
-  ``error`` or ``remediation``.
+  ``error`` or ``remediation``. The six parity reads (tenant-reader spec §8.1:
+  ``tenant_info.get``, ``audit_log.list``, ``asset.list``, ``asset.get``,
+  ``vulnerability.list``, ``assessment_result.list``) project here, the same
+  way: allowlisted fields, free text only under ``tenant_text``, every string
+  neutralised and capped as the reader does, and a parse error that names reply
+  keys, never quotes a tenant value.
 
 The REST routes own every gate (capability, XQL write stage, traversal,
 budget); their codes pass through unchanged (D-1).
@@ -34,7 +39,8 @@ import shlex
 import time
 from typing import Any, NamedTuple, Optional
 
-from connectors.tenant_reader import DATA_NOTICE
+from connectors.tenant_reader import DATA_NOTICE, LIST_CAP, neutralise_text
+from connectors.xsiam import _key_names  # the envelope rule: identifier-shaped key names only
 from integrations.xsiam.codes import XSIAM_PARSE_ERROR, XSIAM_QUERY_ERROR, remediation_for
 from integrations.xsiam.exceptions import XsiamError
 from integrations.xsiam.queries import result_rows, row_count
@@ -62,6 +68,7 @@ from ..registry import (
     tenant_call,
 )
 from ..schemas import (
+    AssetGetIn,
     CaseSearchIn,
     DatasetSchemaIn,
     EmptyInput,
@@ -280,14 +287,83 @@ _CORRELATION_FIELDS = (("rule_id", "rule_id", None), ("name", "name", None), ("s
 _PLAYBOOK_FIELDS = (("id", "id", None), ("name", "name", None), ("version", "version", None),
                     ("description", "description", None))
 
+# The six parity reads (tenant-reader spec §8.1). Field tables and envelopes are
+# PANW's public API pages, recorded in docs/reference/xsiam-platform-apis/15-parity-reads.md.
+#: get_tenant_info: every documented licence key, kept verbatim. The page gives
+#: no units, and a 0 expiration means "not licensed", so none is read as a date.
+_TENANT_INFO_FIELDS = tuple((key, key, None) for key in (
+    "xsiam_premium_expiration", "purchased_xsiam_premium",
+    "pro_per_endpoint_expiration", "purchased_pro_per_endpoint", "data_enabled_pro_per_endpoint",
+    "prevent_expiration", "purchased_prevent", "installed_prevent",
+    "pro_gb_expiration", "purchased_pro_gb", "installed_pro_gb",
+    "compute_unit_expiration", "purchased_compute_unit",
+    "host_insights_expiration", "enabled_host_insights", "purchased_host_insights",
+    "forensics_expiration", "enabled_forensics",
+    "pro_cloud_expiration", "purchased_pro_cloud", "installed_pro_cloud", "data_enabled_pro_cloud",
+    "identity_threat_expiration", "xth_expiration", "purchased_xth",
+    "threat_intelligence_management_expiration", "purchased_threat_intelligence_management",
+    "attack_surface_management_expiration", "purchased_attack_surface_management",
+    "xsiam_ep_hot_expiration", "purchased_xsiam_ep_hot",
+    "xsiam_ep_cold_expiration", "purchased_xsiam_ep_cold",
+    "xsiam_gb_hot_expiration", "purchased_xsiam_gb_hot",
+    "xsiam_gb_cold_expiration", "purchased_xsiam_gb_cold"))
+_AUDIT_FIELDS = (("audit_id", "AUDIT_ID", None), ("owner_email", "AUDIT_OWNER_EMAIL", None),
+                 ("entity", "AUDIT_ENTITY", None), ("entity_subtype", "AUDIT_ENTITY_SUBTYPE", None),
+                 ("result", "AUDIT_RESULT", None), ("severity", "AUDIT_SEVERITY", None),
+                 ("hostname", "AUDIT_HOSTNAME", None), ("case_id", "AUDIT_CASE_ID", None),
+                 ("insert_time", "AUDIT_INSERT_TIME", "ts"))
+_AUDIT_TEXT = (("owner_name", "AUDIT_OWNER_NAME"), ("description", "AUDIT_DESCRIPTION"),
+               ("reason", "AUDIT_REASON"), ("asset_names", "AUDIT_ASSET_NAMES"))
+#: Asset rows carry flat dotted XDM keys ("xdm.asset.id" is one key, not a path).
+#: The asset's name is a display name whoever creates the resource chooses, so
+#: it is tenant text (spec §7.7), not an allowlisted field.
+_ASSET_FIELDS = (("asset_id", "xdm.asset.id", None), ("strong_id", "xdm.asset.strong_id", None),
+                 ("type_name", "xdm.asset.type.name", None),
+                 ("type_category", "xdm.asset.type.category", None),
+                 ("type_class", "xdm.asset.type.class", None),
+                 ("provider", "xdm.asset.provider", None), ("realm", "xdm.asset.realm", None),
+                 ("cloud_region", "xdm.asset.cloud.region", None),
+                 ("first_observed", "xdm.asset.first_observed", "ts"),
+                 ("last_observed", "xdm.asset.last_observed", "ts"))
+_ASSET_TEXT = (("name", "xdm.asset.name"), ("resource_group", "xdm.asset.resource_group"),
+               ("hierarchy_path", "xdm.asset.hierarchy.path"))
+_VULNERABILITY_FIELDS = (("vulnerability_id", "vulnerability_id", None),
+                         ("cvss_severity", "cvss_severity", None), ("cvss_score", "cvss_score", None),
+                         ("cvss_version", "cvss_version", None), ("epss_score", "epss_score", None),
+                         ("cisa_kev", "cisa_kev", None), ("attack_vector", "attack_vector", None),
+                         ("first_published", "first_published", "ts"),
+                         ("last_modified", "last_modified", "ts"))
+#: PANW documents no field of an assessment result row; these are the
+#: assessment-profile model's, provisional until a live reply is recorded. The
+#: profile name and a custom standard's name are user-named: tenant text.
+_ASSESSMENT_FIELDS = (("id", "id", None), ("enabled", "enabled", None),
+                      ("standard_id", "standard_id", None),
+                      ("asset_group_id", "asset_group_id", None), ("report_type", "report_type", None),
+                      ("creation_time", "creation_time", "ts"),
+                      ("modification_time", "modification_time", "ts"))
+_ASSESSMENT_TEXT = (("name", "name"), ("standard_name", "standard_name"),
+                    ("description", "description"))
+
 
 class _Shape(NamedTuple):
     op_id: str
-    out_key: str              # the list's name in data
+    out_key: str              # the list's (or the one object's) name in data
     rows_key: Optional[str]   # where the list sits in the reply; None = the reply is the list
-    total_key: Optional[str]  # the tenant's own total, when the reply carries one
-    required: str             # an upstream key every row must carry
+    #: The tenant's own total, when the reply carries one: a key, or a tuple
+    #: path into the reply (``("metadata", "total_count")``).
+    total_key: Any
+    #: An upstream key every row must carry; None (an object with no identifier)
+    #: = at least one allowlisted key must be present.
+    required: Optional[str]
     fields: tuple
+    #: One object, not a list: ``data[out_key]`` is that object. With a
+    #: ``rows_key`` the reply holds it as a one-record list (a by-id read).
+    object_reply: bool = False
+    #: The catalog path param an object read fills from its input.
+    path_param: Optional[str] = None
+    #: ``(output name, upstream key)``: free text a tenant user wrote, projected
+    #: under ``row["tenant_text"]``.
+    tenant_text: tuple = ()
 
 
 _SHAPES = {
@@ -300,55 +376,177 @@ _SHAPES = {
                         "incident_id", _INCIDENT_FIELDS),
     "playbooks": _Shape("OP-PLAYBOOKS-GET", "playbooks", "objects", "objects_count", "name",
                         _PLAYBOOK_FIELDS),
+    "tenant_info": _Shape("OP-SYSTEM-GET-TENANT-INFO", "tenant_info", None, None, None,
+                          _TENANT_INFO_FIELDS, object_reply=True),
+    "audit_logs": _Shape("OP-AUDITS-MANAGEMENT-LOGS", "audit_logs", "data", "total_count",
+                         "AUDIT_ID", _AUDIT_FIELDS, tenant_text=_AUDIT_TEXT),
+    # OP-ASSETS (POST /assets), the documented successor of the /assets/ POST the
+    # retired server sent; OP-ASSETS-GET-ASSETS is the legacy search. The live
+    # check confirms the tenant accepts it (15-parity-reads.md).
+    "assets": _Shape("OP-ASSETS", "assets", "data", ("metadata", "total_count"), "xdm.asset.id",
+                     _ASSET_FIELDS, tenant_text=_ASSET_TEXT),
+    "asset": _Shape("OP-ASSETS-ID", "asset", "data", None, "xdm.asset.id", _ASSET_FIELDS,
+                    object_reply=True, path_param="id", tenant_text=_ASSET_TEXT),
+    "vulnerabilities": _Shape("OP-UVEM-GET-VULNERABILITIES", "vulnerabilities", "vulnerabilities",
+                              "total_count", "vulnerability_id", _VULNERABILITY_FIELDS),
+    "assessment_results": _Shape("OP-COMPLIANCE-GET-ASSESSMENT-RESULTS", "assessment_results",
+                                 "data", "total_count", "id", _ASSESSMENT_FIELDS,
+                                 tenant_text=_ASSESSMENT_TEXT),
 }
 #: Lists whose rows a tenant user wrote: they carry the data framing (PD7), with
 #: their field layout unchanged.
 _TENANT_ROWS = frozenset({"alerts", "incidents", "correlation_rules"})
 #: Lists over an API that PANW's deprecation map retires.
 _LEGACY = frozenset({"alerts", "incidents"})
+#: The parity reads (spec §8.1): every string neutralised and capped as the
+#: tenant reader does, per-row ``text_truncated`` / ``list_truncated``, the data
+#: framing, and parse errors that name reply keys, never quote a tenant value.
+_PARITY = frozenset({"tenant_info", "audit_logs", "assets", "asset", "vulnerabilities",
+                     "assessment_results"})
+
+
+class _Clean:
+    """Neutralises every string it is handed (``neutralise_text``: invisible and
+    control characters stripped, capped at 200) and caps lists and objects at
+    ``LIST_CAP`` entries, remembering whether it cut anything."""
+
+    def __init__(self) -> None:
+        self.text_truncated = False
+        self.list_truncated = False
+
+    def __call__(self, value: Any) -> Any:
+        if isinstance(value, str):
+            text, cut = neutralise_text(value)
+            self.text_truncated |= cut
+            return text
+        if isinstance(value, list):
+            if len(value) > LIST_CAP:
+                self.list_truncated, value = True, value[:LIST_CAP]
+            return [self(v) for v in value]
+        if isinstance(value, dict):
+            items = list(value.items())
+            if len(items) > LIST_CAP:
+                self.list_truncated, items = True, items[:LIST_CAP]
+            return {self(str(k)): self(v) for k, v in items}
+        return value
+
+
+def _seen(value: Any, parity: bool) -> str:
+    """What came back, for a parse error's detail. The older shapes quote up to
+    200 characters of it; a parity read names only its type and identifier-shaped
+    key names (the connector's envelope rule), so a planted tenant value never
+    rides in an error."""
+    if not parity:
+        return str(value)[:200]
+    if isinstance(value, dict):
+        return f"an object with keys {_key_names(value)}"
+    if isinstance(value, list):
+        return f"a list of {len(value)}"
+    return f"a {type(value).__name__}"
+
+
+def _dig(reply: dict, key: Any) -> Any:
+    """``reply[key]``, or along a tuple path; None where a step is missing."""
+    if isinstance(key, str):
+        return reply.get(key)
+    value: Any = reply
+    for step in key:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(step)
+    return value
+
+
+def _key_label(key: Any) -> str:
+    return key if isinstance(key, str) else ".".join(key)
+
+
+def _convert(value: Any, conv: Optional[str]) -> Any:
+    if conv == "ts" and value is not None:
+        return _iso_utc(value)
+    if conv == "lower" and isinstance(value, str):
+        return value.lower()
+    return value
 
 
 def _project(row: Any, shape: _Shape, ex: Executed, where: str) -> dict:
-    if not isinstance(row, dict) or shape.required not in row:
-        raise _parse_error(ex, where, f"a {shape.out_key} row has no {shape.required!r}: {str(row)[:200]}")
-    out = {}
-    for name, key, conv in shape.fields:
-        value = row.get(key)
-        if conv == "ts" and value is not None:
-            value = _iso_utc(value)
-        elif conv == "lower" and isinstance(value, str):
-            value = value.lower()
-        out[name] = value
+    parity = shape.out_key in _PARITY
+    if shape.required is None:
+        if not isinstance(row, dict) or not any(key in row for _, key, _ in shape.fields):
+            raise _parse_error(ex, where, f"the {shape.out_key} reply is not an object carrying "
+                                          f"a documented key: {_seen(row, parity)}")
+    elif not isinstance(row, dict) or shape.required not in row:
+        raise _parse_error(ex, where, f"a {shape.out_key} row has no {shape.required!r}: "
+                                      f"{_seen(row, parity)}")
+    if not parity:
+        return {name: _convert(row.get(key), conv) for name, key, conv in shape.fields}
+    clean = _Clean()
+    out = {name: clean(_convert(row.get(key), conv)) for name, key, conv in shape.fields}
+    if shape.tenant_text:
+        out["tenant_text"] = {name: clean(row.get(key)) for name, key in shape.tenant_text}
+    out["text_truncated"] = clean.text_truncated
+    out["list_truncated"] = clean.list_truncated
     return out
 
 
 async def _named_list(ctx: ToolContext, args: TenantListIn, shape: _Shape) -> Envelope:
     ex = await execute(ctx, tenant=args.tenant, op_id=shape.op_id, path_params={}, query=None,
                        body=None, dry_run=None)
+    parity = shape.out_key in _PARITY
     where, reply = f"{shape.op_id} reply", ex.body["reply"]
     if shape.rows_key is None:
         rows, total = reply, None
     elif isinstance(reply, dict):
-        rows, total = reply.get(shape.rows_key), reply.get(shape.total_key)
+        rows = reply.get(shape.rows_key)
+        total = _dig(reply, shape.total_key) if shape.total_key is not None else None
     else:
         rows, total = None, None
     if not isinstance(rows, list):
-        raise _parse_error(ex, where, f"expected a list at {shape.rows_key or 'reply'}, got {str(reply)[:200]}")
+        raise _parse_error(ex, where, f"expected a list at {shape.rows_key or 'reply'}, "
+                                      f"got {_seen(reply, parity)}")
     if shape.total_key is None:
         total = len(rows)
     elif isinstance(total, bool) or not isinstance(total, int):
-        raise _parse_error(ex, where, f"{shape.total_key} is missing or not an integer "
-                                      f"({total!r}); the list's size is unknown, not {len(rows)}")
+        got = _seen(total, True) if parity else repr(total)
+        raise _parse_error(ex, where, f"{_key_label(shape.total_key)} is missing or not an integer "
+                                      f"({got}); the list's size is unknown, not {len(rows)}")
     page, _ = cap_list(rows, limit=args.limit, offset=args.offset)
     truncated = args.offset + len(page) < total
     data = {shape.out_key: [_project(r, shape, ex, where) for r in page], "total": total,
             "truncated": truncated}
-    if shape.out_key in _TENANT_ROWS:
+    if shape.out_key in _TENANT_ROWS or parity:
         data["data_notice"] = DATA_NOTICE
     if shape.out_key in _LEGACY:
         data["degradations"] = [LEGACY_LINE]
     return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
                              ledger=ex.ledger, truncated=truncated, answered=ex.answered)
+
+
+async def _named_object(ctx: ToolContext, shape: _Shape, *, tenant: Optional[str],
+                        path_value: Optional[str] = None) -> Envelope:
+    """One object over one catalog op: ``data[out_key]``, never an empty object.
+
+    With a ``rows_key`` (a by-id read) the reply must hold exactly one record
+    there: none or several is not this shape (an unknown id is the tenant's
+    404, which the route answers as ``XSIAM_API_ERROR``). ``path_value`` fills
+    ``shape.path_param``; the executor route refuses a value that is not one
+    path segment with ``XSIAM_CONFIG_ERROR`` before any tenant call.
+    """
+    params = {shape.path_param: path_value} if shape.path_param else {}
+    ex = await execute(ctx, tenant=tenant, op_id=shape.op_id, path_params=params, query=None,
+                       body=None, dry_run=None)
+    where, reply = f"{shape.op_id} reply", ex.body["reply"]
+    obj = reply
+    if shape.rows_key is not None:
+        rows = reply.get(shape.rows_key) if isinstance(reply, dict) else None
+        if not isinstance(rows, list) or len(rows) != 1:
+            got = _seen(reply if rows is None else rows, True)
+            raise _parse_error(ex, where, f"expected exactly one record in a list at "
+                                          f"{shape.rows_key}, got {got}")
+        obj = rows[0]
+    data = {shape.out_key: _project(obj, shape, ex, where), "data_notice": DATA_NOTICE}
+    return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
+                             ledger=ex.ledger, answered=ex.answered)
 
 
 async def dataset_list(ctx, args):
@@ -369,6 +567,30 @@ async def incident_list(ctx, args):
 
 async def playbook_list(ctx, args):
     return await _named_list(ctx, args, _SHAPES["playbooks"])
+
+
+async def tenant_info_get(ctx: ToolContext, args: TenantIn) -> Envelope:
+    return await _named_object(ctx, _SHAPES["tenant_info"], tenant=args.tenant)
+
+
+async def audit_log_list(ctx, args):
+    return await _named_list(ctx, args, _SHAPES["audit_logs"])
+
+
+async def asset_list(ctx, args):
+    return await _named_list(ctx, args, _SHAPES["assets"])
+
+
+async def asset_get(ctx: ToolContext, args: AssetGetIn) -> Envelope:
+    return await _named_object(ctx, _SHAPES["asset"], tenant=args.tenant, path_value=args.asset_id)
+
+
+async def vulnerability_list(ctx, args):
+    return await _named_list(ctx, args, _SHAPES["vulnerabilities"])
+
+
+async def assessment_result_list(ctx, args):
+    return await _named_list(ctx, args, _SHAPES["assessment_results"])
 
 
 async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
@@ -657,6 +879,41 @@ def _fields(shape: _Shape) -> str:
             f"unrecognised reply is XSIAM_PARSE_ERROR, never an empty list.")
 
 
+def _parity_fields(shape: _Shape) -> str:
+    what = (f"Returns {shape.out_key}, one object" if shape.object_reply else
+            f"Returns {shape.out_key}[] capped by limit/offset (default 50, max 200) with total + "
+            f"truncated. The tenant is read in ONE request and limit/offset page over that one "
+            f"reply, so offset cannot reach past the tenant's first page; truncated: true says "
+            f"the tenant holds more than was returned")
+    text = (f"; free text only under tenant_text: {', '.join(t[0] for t in shape.tenant_text)}"
+            if shape.tenant_text else "")
+    return (f"{what}; allowlisted fields only: {', '.join(f[0] for f in shape.fields)}{text}. "
+            "Every string is neutralised and capped at 200 characters, lists at 50 "
+            "(text_truncated / list_truncated say when). An unrecognised reply is "
+            f"XSIAM_PARSE_ERROR, never an empty {'object' if shape.object_reply else 'list'}.")
+
+
+#: What one parity read adds to its description, after the shared text.
+_PARITY_NOTES = {
+    "tenant_info": ("The tenant's licence record: every documented key, verbatim (an expiration "
+                    "of 0 means not licensed; units are not documented, so none is read as a "
+                    "date). PANW's page documents no platform-version field in it."),
+    "audit_logs": ("Console and API management actions, newest first as the tenant sorts them; "
+                   "the tenant's page is its default 100 rows."),
+    "assets": ("The asset inventory (POST /public_api/v1/assets); total is metadata.total_count; "
+               "the tenant's page is its default (at most 1,000 assets)."),
+    "asset": ("One asset by asset_id (GET /public_api/v1/assets/{id}). asset_id is one path "
+              "segment: '/', '\\', '.' and '..' are refused with XSIAM_CONFIG_ERROR before any "
+              "tenant call; an unknown id is the tenant's 404, XSIAM_API_ERROR."),
+    "vulnerabilities": ("Vulnerability intelligence (UVEM): CVE id, CVSS, EPSS, CISA KEV, dates; "
+                        "the tenant's page is its default 500 rows (its page token is not "
+                        "followed)."),
+    "assessment_results": ("Compliance assessment-profile results; the API does not paginate. "
+                           "PANW documents no field of a result row: the allowlist follows the "
+                           "assessment-profile model, and a row without id is XSIAM_PARSE_ERROR."),
+}
+
+
 def specs() -> list[ToolSpec]:
     def s(id_, model, impl, klass, network, desc, *, scopes=(), idempotent=True, backed=True):
         return ToolSpec(id=id_, input_model=model, impl=impl, klass=klass, network=network,
@@ -676,6 +933,12 @@ def specs() -> list[ToolSpec]:
         return s(id_, model, impl, "read", "tenant",
                  f"POST /api/xsiam/tenants/{{tenant}}/{route}: {what} {_READER.format(rows=rows)} "
                  f"{_TENANT} {_NO_KEY} data_notice: {DATA_NOTICE}", scopes=("alert.read",))
+
+    def parity(id_, key, model, impl):
+        shape = _SHAPES[key]
+        return s(id_, model, impl, "read", "tenant",
+                 f"{shape.op_id} through SimCore's catalog executor. {_PARITY_NOTES[key]} "
+                 f"{_parity_fields(shape)} {_TENANT} {_NO_KEY} data_notice: {DATA_NOTICE}")
 
     return [
         s("xsiam.operation.list", OperationListIn, operation_list, "read", "none",
@@ -738,6 +1001,13 @@ def specs() -> list[ToolSpec]:
         reader("xsiam.endpoint.get", EndpointGetIn, endpoint_get, "endpoints/get", "endpoints",
                "endpoint records (OP-ENDPOINTS-GET-ENDPOINT) for 1..100 hostnames, as of now, in "
                "one request."),
+        parity("xsiam.tenant_info.get", "tenant_info", TenantIn, tenant_info_get),
+        parity("xsiam.audit_log.list", "audit_logs", TenantListIn, audit_log_list),
+        parity("xsiam.asset.list", "assets", TenantListIn, asset_list),
+        parity("xsiam.asset.get", "asset", AssetGetIn, asset_get),
+        parity("xsiam.vulnerability.list", "vulnerabilities", TenantListIn, vulnerability_list),
+        parity("xsiam.assessment_result.list", "assessment_results", TenantListIn,
+               assessment_result_list),
     ]
 
 

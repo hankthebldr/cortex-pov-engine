@@ -126,6 +126,8 @@ class XsiamConnector(Connector):
     _CASES_SEARCH_PATH = "/public_api/v1/case/search/"
     #: Endpoint detail (read-only POST); overridable via ``config["endpoints_path"]``.
     _ENDPOINT_PATH = "/public_api/v1/endpoints/get_endpoint"
+    #: Tenant licence record (read-only POST): one object under ``reply``.
+    _TENANT_INFO_PATH = "/public_api/v1/system/get_tenant_info"
     #: Ids per request body for the by-id reads (the tenant's page ceiling).
     _ID_CHUNK = 100
 
@@ -179,7 +181,11 @@ class XsiamConnector(Connector):
         request_for: Optional[Callable[[int, int], dict]] = None,
         strict: bool = False,
         keep_partial: bool = False,
+        parse: Optional[Callable[[str], "tuple[list[Any], int, dict[str, Any]]"]] = None,
     ) -> PullResult:
+        # `parse(text)` replaces the list-envelope reader for a reply that is not
+        # a list (get_tenant_info's one object); a raise is XSIAM_PARSE_ERROR.
+        #
         # `request_for(search_from, page_size)` replaces the alert time-window body
         # for the by-id and tenant-reader reads; everything else (auth, URL
         # validation, the request bucket, error mapping, envelope parsing) is
@@ -305,8 +311,9 @@ class XsiamConnector(Connector):
                 ))
 
             try:
-                page_items, page_dropped, meta = self._parse_page(text, list_key, normalize,
-                                                                  strict=strict)
+                page_items, page_dropped, meta = (
+                    parse(text) if parse is not None
+                    else self._parse_page(text, list_key, normalize, strict=strict))
             except Exception as e:  # noqa: BLE001
                 # `page`: the page that was sent and could not be read, so a
                 # caller counting requests counts it (and every page before it).
@@ -614,6 +621,34 @@ class XsiamConnector(Connector):
             res.detail["truncated"] = None
         return res
 
+    def get_tenant_info(self, cfg: ConnectorConfig) -> PullResult:
+        """``POST /public_api/v1/system/get_tenant_info``: the tenant's licence record.
+
+        Exactly one request, through :meth:`_harvest`'s path (auth, URL
+        validation, one token from the per-tenant request bucket, error mapping;
+        a local refusal is ``XSIAM_QUOTA_ERROR`` with ``refused_locally`` and
+        sends nothing). The reply is one object (:func:`parse_object_reply`), not a
+        list: it lands on ``detail["tenant_info"]`` as the tenant sent it, with
+        ``detail["pages"]`` = 1. Anything but an object under ``reply`` is
+        ``XSIAM_PARSE_ERROR``, never an empty record.
+        """
+        path = self._TENANT_INFO_PATH
+
+        def body(search_from: int, page_size: int) -> dict:
+            return {"request_data": {}}
+
+        def parse(text: str) -> "tuple[list[Any], int, dict[str, Any]]":
+            return [parse_object_reply(json.loads(text))], 0, {"result_count": 1}
+
+        res = self._harvest(cfg, path, since=None, until=None, filters={"limit": 1},
+                            list_key="reply", normalize=None, kind="tenant_info",
+                            request_for=body, parse=parse)
+        if not res.ok:
+            return res
+        return PullResult(ok=True, connector=self.kind, detail={
+            "queried_host": res.detail.get("queried_host"), "path": path,
+            "pages": res.detail.get("pages"), "tenant_info": res.observations[0]})
+
     # ── the reader's paths, per credential ────────────────────────────────
 
     def _issues_path(self, cfg: ConnectorConfig) -> str:
@@ -840,6 +875,28 @@ def alert_host(a: dict[str, Any]) -> Optional[str]:
               or (hosts[0] if isinstance(hosts, list) and hosts else None))
 
 
+def _raise_on_app_error(doc: Any, tail: str) -> None:
+    """Raise ``XSIAM_APPLICATION_ERROR`` when ``doc`` marks an application error.
+
+    Checks the top level and the object under ``reply``: a document carrying an
+    error in either half is not a success. The tenant's text is neutralised and
+    capped by the catalog client's formatter (the one definition) and nothing
+    else of the reply is echoed.
+    """
+    if not isinstance(doc, dict):
+        return
+    from integrations.xsiam.client import _app_error_text, has_app_error  # noqa: PLC0415
+
+    inner = doc.get("reply") if isinstance(doc.get("reply"), dict) else None
+    for err in (inner, doc):
+        if has_app_error(err):
+            text, _quota = _app_error_text(err)
+            raise ConnectorError(
+                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                f"200 response ({text}). {tail}"
+            )
+
+
 def parse_reply(doc: Any, list_key: str,
                 normalize: Optional[Callable[[dict], Any]] = None, *,
                 strict: bool = False) -> "tuple[list[Any], int, dict[str, Any]]":
@@ -872,16 +929,11 @@ def parse_reply(doc: Any, list_key: str,
     # into "the customer's stack detected nothing", which is the manufactured
     # false negative in its most damaging form: it is the number that goes in
     # the report. Raise instead, so the caller degrades to pending.
-    if isinstance(doc, dict):
-        err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
-        if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
-            raise ConnectorError(
-                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
-                f"200 response (err_code={err.get('err_code')}, "
-                f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
-                f"absence of alerts — no observation was made, so the run "
-                f"stays pending rather than being scored."
-            )
+    _raise_on_app_error(
+        doc,
+        "This is NOT an absence of alerts — no observation was made, so the "
+        "run stays pending rather than being scored.",
+    )
     if not isinstance(doc, dict):
         raise ConnectorError(
             f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
@@ -957,6 +1009,27 @@ def parse_reply(doc: Any, list_key: str,
     rc = reply.get("result_count")
     meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
     return out, dropped, meta
+
+
+def parse_object_reply(doc: Any) -> dict[str, Any]:
+    """The one object under ``reply`` (``get_tenant_info``), or raise.
+
+    The rules :func:`parse_reply` holds for a list hold for an object: an error
+    inside a 200 is not a record, and a document that is not ``{"reply": {...}}``
+    is ``XSIAM_ENVELOPE_UNRECOGNISED``, never an empty one. A message names the
+    error code and identifier-shaped keys only, never tenant text.
+    """
+    if not isinstance(doc, dict):
+        raise ConnectorError(
+            f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got {type(doc).__name__}")
+    reply = doc.get("reply")
+    _raise_on_app_error(doc, "This is not a record.")
+    if not isinstance(reply, dict):
+        raise ConnectorError(
+            "XSIAM_ENVELOPE_UNRECOGNISED: expected an object under 'reply', got "
+            + (f"a {type(reply).__name__}" if "reply" in doc
+               else f"no 'reply' (keys: {_key_names(doc)})"))
+    return reply
 
 
 #: How many reply keys an envelope error names. Only key names shaped like an

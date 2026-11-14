@@ -19,14 +19,14 @@ def test_every_canonical_id_round_trips_and_fits():
         assert len(wire) <= 48
 
 
-def test_there_are_46_ids_27_cortexsim_19_xsiam():
-    assert len(CANONICAL_IDS) == 46
-    assert len(set(CANONICAL_IDS)) == 46
+def test_there_are_52_ids_27_cortexsim_25_xsiam():
+    assert len(CANONICAL_IDS) == 52
+    assert len(set(CANONICAL_IDS)) == 52
     assert sum(group_of(i) == "cortexsim" for i in CANONICAL_IDS) == 27
-    assert sum(group_of(i) == "xsiam" for i in CANONICAL_IDS) == 19
+    assert sum(group_of(i) == "xsiam" for i in CANONICAL_IDS) == 25
     assert GROUP == {"cortexsim", "xsiam"}
     assert CANONICAL_IDS[0] == "cortexsim.health.get"
-    assert CANONICAL_IDS[-1] == "xsiam.endpoint.get"
+    assert CANONICAL_IDS[-1] == "xsiam.assessment_result.list"
 
 
 def test_longest_wire_name_is_34_chars():

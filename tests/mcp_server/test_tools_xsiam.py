@@ -1,4 +1,4 @@
-"""The 19 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
+"""The 25 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
 
 ``stubbed_app.stub.calls`` is the tenant witness; every count asserted here is
 the one SimCore's route reported, never one the MCP layer computed.
@@ -451,6 +451,7 @@ _MIN_ARGS = {
     "xsiam.dataset.schema": {"dataset": "xdr_data"},
     "xsiam.xql.query": {"query": "dataset = xdr_data"},
     "xsiam.endpoint.get": {"hostnames": ["target-01"]},
+    "xsiam.asset.get": {"asset_id": "a-1"},
 }
 
 
@@ -468,10 +469,16 @@ async def test_every_xsiam_tool_returns_an_envelope_or_typed_refusal(stubbed_app
         "/public_api/v1/issue/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
         "/public_api/v1/case/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
         "/public_api/v1/endpoints/get_endpoint": {"endpoints": [], "total_count": 0},
+        "/public_api/v1/system/get_tenant_info": {"xsiam_premium_expiration": 0},
+        "/public_api/v1/audits/management_logs": {"total_count": 0, "data": []},
+        "/public_api/v1/assets": {"data": [], "metadata": {"total_count": 0}},
+        "/public_api/v1/assets/a-1": {"data": [{"xdm.asset.id": "a-1"}]},
+        "/public_api/uvem/v1/get_vulnerabilities": {"total_count": 0, "vulnerabilities": []},
+        "/public_api/v1/compliance/get_assessment_results/": {"total_count": 0, "data": []},
     })
     mcp = stubbed_app.mcp()
     xsiam_ids = [c for c in CANONICAL_IDS if c.startswith("xsiam.")]
-    assert len(xsiam_ids) == 19
+    assert len(xsiam_ids) == 25
     for tool in xsiam_ids:
         res = await call(mcp, tool, **_MIN_ARGS.get(tool, {}))
         sc = res.structuredContent

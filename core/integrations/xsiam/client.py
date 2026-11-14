@@ -229,6 +229,13 @@ def inspect_operation_body(path: str, body: Any) -> None:
 _ERR_CODE_CAP = 64
 
 
+def has_app_error(doc: Any) -> bool:
+    """True when ``doc`` marks an application error: a non-empty ``err_code`` or
+    ``err_msg``. Value-based, so a present-but-null/empty/zero field is not an
+    error. The one predicate the client and the connector's readers share."""
+    return isinstance(doc, dict) and bool(doc.get("err_code") or doc.get("err_msg"))
+
+
 def _app_error_text(reply: dict) -> tuple[str, bool]:
     """``(text, is_quota)`` for an application error a tenant sent inside a 200.
 
@@ -410,19 +417,17 @@ class XsiamClient:
             raise XsiamApiError("XSIAM returned a non-JSON response") from exc
 
     @staticmethod
-    def _check_app_error(reply: Any) -> Any:
+    def _check_app_error(reply: Any, *, wrapped: bool = False) -> Any:
         """Raise on XSIAM's HTTP-200 application-level error envelope.
 
         XSIAM returns 200 with ``{"err_code","err_msg"}`` for app-level failures
         (bad filter, quota, syntax). A normal read reply is also a dict, so only
         an envelope carrying ``err_code``/``err_msg`` (and not a wrapping ``reply``)
         is treated as an error — ordinary result dicts pass through untouched.
+        ``wrapped=True`` checks the whole document before ``reply`` is unwrapped:
+        an ``err_code``/``err_msg`` beside a ``reply`` key is an error too.
         """
-        if (
-            isinstance(reply, dict)
-            and ("err_code" in reply or "err_msg" in reply)
-            and "reply" not in reply
-        ):
+        if has_app_error(reply) and (wrapped or "reply" not in reply):
             err, quota = _app_error_text(reply)
             if quota:
                 raise XsiamQuotaError(f"XSIAM quota exceeded: {err}")
@@ -457,6 +462,7 @@ class XsiamClient:
         async with self._client() as c:
             resp = await c.request(method.upper(), path, json=json, params=params)
         data = self._unwrap(resp)
+        self._check_app_error(data, wrapped=True)
         reply = data.get("reply", data) if isinstance(data, dict) else data
         return self._check_app_error(reply)
 
@@ -508,6 +514,7 @@ class XsiamClient:
         async with self._client(query_id=query_id if started else None) as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
+        self._check_app_error(data, wrapped=True)
         reply = data.get("reply", data) if isinstance(data, dict) else {}
         # `request()` has always done this; this method did not. A 200 carrying
         # {"err_code": ...} has no `status`, so run_xql's poll loop saw
