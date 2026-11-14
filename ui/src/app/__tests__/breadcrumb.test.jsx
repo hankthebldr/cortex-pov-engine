@@ -43,9 +43,11 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
       .toEqual(['Compose & simulate', 'Scenarios', 'Scenario SIM-EDR-001'])
     expect(labels(breadcrumbFor('composer', { from: 'SIM-EDR-001' })))
       .toEqual(['Compose & simulate', 'Build a chain', 'Scenario SIM-EDR-001'])
+    // `guided` is an alias of the Launch gate since the launch gate MVP, so its
+    // crumb is the Launch gate's and is not named twice.
     const guided = breadcrumbFor('guided', { arm: 'SIM-EDR-001' })
-    expect(labels(guided)).toEqual(['Compose & simulate', 'Scenarios', 'New POV run', 'Scenario SIM-EDR-001'])
-    expect(targets(guided)).toEqual(['library', 'library', 'guided', null])
+    expect(labels(guided)).toEqual(['Compose & simulate', 'Launch gate', 'Scenario SIM-EDR-001'])
+    expect(targets(guided)).toEqual(['library', 'guided', null])
   })
 
   it('a component: its page sits under Components, in Onboard & connect', () => {
