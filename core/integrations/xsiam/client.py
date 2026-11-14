@@ -7,9 +7,11 @@ code runs against a faked network (no live tenant, no new deps).
 from __future__ import annotations
 
 import asyncio
+import json as _jsonlib
 import logging
 import posixpath
 import re
+import zlib
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Optional
@@ -282,6 +284,59 @@ def _content_type(resp: httpx.Response) -> str:
     return f", content-type {raw.lower()}" if _MEDIA_TYPE_RE.fullmatch(raw) else ""
 
 
+#: A ``Content-Encoding`` quoted in an error: a short token only.
+_ENCODING_RE = re.compile(r"[a-z0-9-]{1,32}")
+
+
+async def _read_capped(resp: httpx.Response, cap: int, call: str) -> bytes:
+    """A streamed body, refused once it passes ``cap`` bytes.
+
+    Read raw, so the ceiling holds on what is held in memory: a body the tenant
+    compressed although ``identity`` was asked for (gzip or deflate) is inflated
+    here in steps of at most what is left under the ceiling, never a whole chunk
+    at once; any other encoding is refused. ``call`` names the request in errors.
+    """
+    enc = (resp.headers.get("content-encoding") or "").strip().lower()
+    if enc in ("", "identity"):
+        inflate = None
+    elif enc in ("gzip", "x-gzip", "deflate"):
+        inflate = zlib.decompressobj(zlib.MAX_WBITS | 32)   # a gzip or zlib header
+    else:
+        shown = f" {enc!r}" if _ENCODING_RE.fullmatch(enc) else ""
+        raise XsiamParseError(
+            f"XSIAM answered {call} with a content-encoding{shown} SimCore does not read")
+    if resp.is_stream_consumed:
+        # A transport that built its Response from bytes (a test transport) has
+        # read and decoded the body already; only its size is left to refuse.
+        if len(resp.content) > cap:
+            raise XsiamParseError(
+                f"XSIAM answered {call} with more than {cap} bytes, the most SimCore "
+                f"reads for an archive")
+        return resp.content
+    body = bytearray()
+    # Identity: aiter_bytes yields the raw bytes as they arrive. Compressed:
+    # aiter_raw, because aiter_bytes would let httpx inflate a whole chunk at once.
+    chunks = resp.aiter_bytes() if inflate is None else resp.aiter_raw()
+    try:
+        async for raw in chunks:
+            pending = raw
+            while pending:
+                if inflate is None:
+                    piece, pending = pending, b""
+                else:
+                    piece = inflate.decompress(pending, cap + 1 - len(body))
+                    pending = inflate.unconsumed_tail
+                body += piece
+                if len(body) > cap:
+                    raise XsiamParseError(
+                        f"XSIAM answered {call} with more than {cap} bytes, the most SimCore "
+                        f"reads for an archive; nothing past that was read")
+    except zlib.error as exc:
+        raise XsiamParseError(
+            f"XSIAM answered {call} with a {enc} body that does not inflate") from exc
+    return bytes(body)
+
+
 class XsiamClient:
     def __init__(
         self,
@@ -494,34 +549,39 @@ class XsiamClient:
 
         One request, charged to the per-tenant bucket like every other (a local
         refusal raises before anything is sent), through the status mapping
-        :meth:`_unwrap` applies (:meth:`_raise_for_status`). A body that starts
-        with the ZIP signature is returned as is. A
-        JSON body is the tenant's answer in place of an archive: an error object
-        raises through the shared ``has_app_error`` / ``_app_error_text`` (whole
-        document, then ``reply``), and anything else is :class:`XsiamParseError`,
-        never an empty archive. A body that is neither ZIP nor JSON is
-        :class:`XsiamParseError` too. Only the size, the content type and
-        identifier-shaped key names are quoted, never the body.
+        :meth:`_unwrap` applies (:meth:`_raise_for_status`). The body is streamed
+        with ``Accept-Encoding: identity`` and refused past
+        ``archives.MAX_ARCHIVE_BODY_BYTES`` (:func:`_read_capped`), so a large or
+        inflating reply is never held whole. A body that starts with a ZIP
+        signature (``PK\\x03\\x04``, or ``PK\\x05\\x06`` for an archive with no
+        member) is returned as is. A JSON body is the tenant's answer in place of
+        an archive: an error object raises through the shared ``has_app_error`` /
+        ``_app_error_text`` (whole document, then ``reply``), and anything else is
+        :class:`XsiamParseError`, never an empty archive. A body that is neither
+        ZIP nor JSON is :class:`XsiamParseError` too. Only the size, the content
+        type and identifier-shaped key names are quoted, never the body.
         """
         from connectors.xsiam import _key_names  # noqa: PLC0415
 
-        from .archives import ZIP_MAGIC  # noqa: PLC0415
+        from .archives import MAX_ARCHIVE_BODY_BYTES, ZIP_SIGNATURES  # noqa: PLC0415
 
         if is_xql_start_path(path):
             # SEC-05: a query string reaches the wire only through start_xql_query.
             raise XsiamConfigError(
                 "start_xql_query answers a query id, not an archive; send it through "
                 "request(), which routes it to start_xql_query")
+        call = f"{method.upper()} {path}"
         async with self._client() as c:
-            resp = await c.request(method.upper(), path, json=json, params=params)
-        self._raise_for_status(resp)
-        body = resp.content
-        if body.startswith(ZIP_MAGIC):
+            async with c.stream(method.upper(), path, json=json, params=params,
+                                headers={"Accept-Encoding": "identity"}) as resp:
+                self._raise_for_status(resp)
+                body = await _read_capped(resp, MAX_ARCHIVE_BODY_BYTES, call)
+        if body.startswith(ZIP_SIGNATURES):
             return body
         what = f"{len(body)} bytes" + _content_type(resp)
         try:
-            data = resp.json()
-        except Exception as exc:  # noqa: BLE001
+            data = _jsonlib.loads(body)
+        except (ValueError, RecursionError) as exc:     # RecursionError: deeply nested JSON
             raise XsiamParseError(
                 f"XSIAM answered {method.upper()} {path} with {what} that is neither a ZIP "
                 f"archive (it does not start with PK\\x03\\x04) nor JSON") from exc

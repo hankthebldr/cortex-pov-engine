@@ -14,6 +14,10 @@ declares:
 
 * a member whose declared size is over ``max_member_bytes``, or over what is left
   of ``max_total_bytes``, is refused without being opened;
+* a member compressed other than stored or deflated (bzip2, LZMA, anything
+  else) is refused without being opened: how far those decompressors stop at a
+  member's declared size depends on the interpreter's patch level, so a lying
+  bzip2 member is a memory bomb on some, and a playbook export is deflated;
 * a member is read at most up to that limit, so one that inflates past its
   declared size (a zip bomb) is never read past it — zipfile stops at the
   declared size and the CRC check then fails, which reads as ``UNREADABLE``;
@@ -30,13 +34,17 @@ from typing import Any
 
 from .exceptions import XsiamParseError
 
-try:  # an interpreter built without liblzma cannot read LZMA members at all
-    from lzma import LZMAError as _LZMAError
-except ImportError:  # pragma: no cover
-    _LZMAError = zlib.error
-
 #: The local-file-header signature every non-empty ZIP starts with.
 ZIP_MAGIC = b"PK\x03\x04"
+#: An archive with no member is only its end-of-central-directory record.
+EMPTY_ZIP_MAGIC = b"PK\x05\x06"
+ZIP_SIGNATURES = (ZIP_MAGIC, EMPTY_ZIP_MAGIC)
+
+#: The most bytes ``XsiamClient.request_archive`` reads off the wire (inflated,
+#: when the tenant compresses anyway) before refusing the reply: 4x the 1 MiB
+#: the members may total, so stored members, headers and the central directory
+#: fit, and a central directory zipfile has to parse stays small.
+MAX_ARCHIVE_BODY_BYTES = 4194304     # 4 MiB
 
 MAX_MEMBERS = 50
 MAX_MEMBER_BYTES = 262144        # 256 KiB
@@ -46,13 +54,17 @@ MAX_TOTAL_BYTES = 1048576        # 1 MiB
 MEMBER_OVER_CAP = "MEMBER_OVER_CAP"
 TOTAL_OVER_CAP = "TOTAL_OVER_CAP"
 UNREADABLE = "UNREADABLE"
+UNSUPPORTED_COMPRESSION = "UNSUPPORTED_COMPRESSION"
+
+#: The compression methods a member may use to be opened.
+_READABLE_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 _NAME_CUT = " [cut at 200 characters]"
-#: What reading one member can raise: a corrupt or lying entry, an unsupported
-#: or broken compression stream, an encrypted member. The message is never
-#: echoed: zipfile quotes the member name in it.
+#: What opening or reading one stored or deflated member can raise: a corrupt or
+#: lying entry, a broken deflate stream, an encrypted member. The message is
+#: never echoed: zipfile quotes the member name in it.
 _MEMBER_ERRORS = (zipfile.BadZipFile, EOFError, OSError, ValueError, RuntimeError,
-                  NotImplementedError, zlib.error, _LZMAError)
+                  NotImplementedError, zlib.error)
 
 
 def _name(raw: str) -> str:
@@ -84,18 +96,22 @@ def zip_members(blob: bytes, *, max_members: int = MAX_MEMBERS,
     * refused for a cap (``refused`` ``MEMBER_OVER_CAP`` or ``TOTAL_OVER_CAP``):
       never opened; ``text`` null, ``text_truncated`` true, ``binary`` null (not
       known), ``bytes`` the size the archive declares;
-    * ``UNREADABLE``: opening or reading it failed (corrupt, encrypted, an
-      unsupported compression, or bytes that do not match the declared size and
-      CRC); ``text`` and ``binary`` null, ``bytes`` the declared size.
+    * ``UNSUPPORTED_COMPRESSION``: neither stored nor deflated; never opened;
+      ``text`` and ``binary`` null, ``bytes`` the declared size;
+    * ``UNREADABLE``: opening or reading it failed (corrupt, encrypted, or bytes
+      that do not match the declared size and CRC); ``text`` and ``binary``
+      null, ``bytes`` the declared size.
 
     ``member_count`` counts the archive's file members (directory entries are
     not members); ``members_truncated`` is true when more than ``max_members``
-    were there. A blob zipfile cannot open is :class:`XsiamParseError`, naming
-    the failure's kind only.
+    were there. A blob zipfile cannot open (a corrupt directory, or a "version
+    needed to extract" past what zipfile reads, which it raises as
+    ``NotImplementedError``) is :class:`XsiamParseError`, naming the failure's
+    kind only.
     """
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob))
-    except (zipfile.BadZipFile, EOFError, OSError, ValueError) as exc:
+    except (zipfile.BadZipFile, EOFError, OSError, ValueError, NotImplementedError) as exc:
         raise XsiamParseError(
             f"the tenant's ZIP reply ({len(blob)} bytes) could not be opened as an "
             f"archive ({type(exc).__name__})") from exc
@@ -114,6 +130,9 @@ def zip_members(blob: bytes, *, max_members: int = MAX_MEMBERS,
                 members.append(_member(name, size=declared, text_truncated=True,
                                        refused=TOTAL_OVER_CAP))
                 continue
+            if info.compress_type not in _READABLE_COMPRESSION:
+                members.append(_member(name, size=declared, refused=UNSUPPORTED_COMPRESSION))
+                continue
             limit = min(max_member_bytes, left)
             try:
                 with zf.open(info) as fh:
@@ -122,7 +141,10 @@ def zip_members(blob: bytes, *, max_members: int = MAX_MEMBERS,
                 members.append(_member(name, size=declared, refused=UNREADABLE))
                 continue
             if len(data) > limit:
-                # Read past what it declared and past the cap: not returned.
+                # Cannot fire with CPython's zipfile, which stops at the declared
+                # size (<= limit here) and checks the CRC there. It stays so the
+                # cap holds on the bytes read if that ever changes: reading
+                # limit + 1 and refusing beats a silent cut at limit.
                 members.append(_member(name, size=declared, text_truncated=True,
                                        refused=MEMBER_OVER_CAP))
                 continue

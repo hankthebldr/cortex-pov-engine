@@ -216,4 +216,118 @@ def test_scripts_get_is_in_the_catalog_as_read():
         "Scripts", "Get a script", "POST", "/public_api/v1/scripts/get", "read", "none")
     assert op.tags == ["zip-reply"]
     assert op.doc_link == "https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/scripts"
-    assert "zip-reply" in cat.find("OP-PLAYBOOKS-GET").tags
+    playbooks = cat.find("OP-PLAYBOOKS-GET")
+    assert "zip-reply" in playbooks.tags
+    assert playbooks.doc_link == (
+        "https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/playbooks")
+
+
+# ── fix round 1 ──────────────────────────────────────────────────────────────
+
+def _route(tmp_path, monkeypatch, handler):
+    """The executor route over the real client answering with ``handler``; an
+    exception the app does not handle is the 500 a caller would see."""
+    from fastapi.testclient import TestClient
+
+    from tests.integration.xsiam.test_operations_api import _build_app
+
+    test_client, _stub, xsiam_api = _build_app(tmp_path, monkeypatch)
+    client = _client(handler)
+
+    async def _load(session, name):
+        return client
+
+    monkeypatch.setattr(xsiam_api, "load_xsiam_client", _load)
+    return TestClient(test_client.app, raise_server_exceptions=False)
+
+
+def test_an_extract_version_zipfile_cannot_read_is_parse_error_not_500(tmp_path, monkeypatch):
+    blob = bytearray(_zip([("playbook-Foo.yml", PLAYBOOK_YAML)]))
+    blob[blob.index(b"PK\x01\x02") + 6] = 64        # "version needed to extract" 6.4
+    test_client = _route(tmp_path, monkeypatch, lambda r: httpx.Response(200, content=bytes(blob)))
+
+    r = test_client.post("/api/xsiam/tenants/acme/operations/OP-PLAYBOOKS-GET",
+                         json={"body": BODY})
+
+    assert r.status_code == 502, r.text
+    assert r.json()["code"] == "XSIAM_PARSE_ERROR"
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_a_member_neither_stored_nor_deflated_is_refused_unopened(monkeypatch, compression):
+    from integrations.xsiam.archives import zip_members
+
+    bomb = _lie_about_size(_zip([("bomb.yml", "z" * 200_000)], compression=compression), 10)
+    opened: list[str] = []
+    real_open = zipfile.ZipFile.open
+
+    def spy(self, name, *args, **kwargs):
+        opened.append(getattr(name, "filename", name))
+        return real_open(self, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", spy)
+    (member,) = zip_members(bomb)["members"]
+
+    assert member == {"name": "bomb.yml", "text": None, "bytes": 10, "text_truncated": False,
+                      "binary": None, "refused": "UNSUPPORTED_COMPRESSION"}
+    assert opened == []
+
+
+@pytest.mark.asyncio
+async def test_a_body_past_the_ceiling_is_parse_error_and_reading_stops_there():
+    import gzip
+
+    from integrations.xsiam.archives import MAX_ARCHIVE_BODY_BYTES
+    from integrations.xsiam.exceptions import XsiamParseError
+
+    chunk = 64 * 1024
+    sent_chunks: list[int] = []
+    asked: list[str] = []
+
+    async def stream():
+        for i in range(2 * MAX_ARCHIVE_BODY_BYTES // chunk):
+            sent_chunks.append(i)
+            yield (b"PK\x03\x04" + b"\0" * (chunk - 4)) if i == 0 else b"\0" * chunk
+
+    def handler(request):
+        asked.append(request.headers.get("accept-encoding"))
+        return httpx.Response(200, content=stream())
+
+    with pytest.raises(XsiamParseError) as ei:
+        await _client(handler).request_archive("POST", PLAYBOOKS_GET, json=BODY)
+    assert str(MAX_ARCHIVE_BODY_BYTES) in ei.value.detail
+    assert asked == ["identity"]
+    assert len(sent_chunks) == MAX_ARCHIVE_BODY_BYTES // chunk + 1
+
+    # A tenant that compresses anyway: inflated in bounded steps, refused past the
+    # ceiling (~64 KB on the wire that would inflate to 64 MiB). Streamed, as a
+    # network body is: httpx inflates a bytes body when the Response is built.
+    def gzipped(data: bytes):
+        wire = gzip.compress(data)
+
+        async def body():
+            yield wire
+
+        return lambda r: httpx.Response(200, content=body(), headers={"content-encoding": "gzip"})
+
+    with pytest.raises(XsiamParseError) as ei:
+        await _client(gzipped(b"PK\x03\x04" + b"\0" * (64 * 1024 * 1024))).request_archive(
+            "POST", PLAYBOOKS_GET, json=BODY)
+    assert f"more than {MAX_ARCHIVE_BODY_BYTES} bytes" in ei.value.detail
+
+    # A small compressed archive still reads.
+    small = _zip([("playbook-Foo.yml", PLAYBOOK_YAML)])
+    assert await _client(gzipped(small)).request_archive(
+        "POST", PLAYBOOKS_GET, json=BODY) == small
+
+
+def test_an_empty_archive_is_zero_members_not_a_parse_error(tmp_path, monkeypatch):
+    empty = _zip([])
+    assert empty.startswith(b"PK\x05\x06")
+    test_client = _route(tmp_path, monkeypatch, lambda r: httpx.Response(200, content=empty))
+
+    r = test_client.post("/api/xsiam/tenants/acme/operations/OP-PLAYBOOKS-GET",
+                         json={"body": BODY})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["reply"] == {"members": [], "member_count": 0, "members_truncated": False}

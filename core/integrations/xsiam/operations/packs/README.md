@@ -37,9 +37,10 @@ operations:
 - **Tags with behaviour.** `no-request-data-wrapper` makes the executor send `{}` instead of
   `{"request_data": {}}` for a bodyless POST (BYOS ingest rejects the wrapper). `zip-reply` marks
   an op whose tenant reply is a ZIP archive, not JSON (`OP-PLAYBOOKS-GET`, `OP-SCRIPTS-GET`): the
-  executor reads it with `XsiamClient.request_archive` and returns
+  executor reads it with `XsiamClient.request_archive` (streamed, refused past 4 MiB) and returns
   `integrations/xsiam/archives.py::zip_members` (members read in memory, never extracted, under
-  member and byte caps) as the reply. Every other tag is documentation only.
+  member and byte caps; only stored or deflated members are opened) as the reply. Every other
+  tag is documentation only.
 - **Provenance tags.** `confirm-tail` = not in the source CSV. `cortex-bot-observed` = harvested
   from a field tool whose author ran it against a live tenant (an observation, not a CortexSim
   verification). `prefix-inferred` = the full path was composed from that tool's default

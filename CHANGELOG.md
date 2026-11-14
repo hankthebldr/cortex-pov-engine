@@ -987,12 +987,14 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   "non-JSON response" and `xsiam.playbook.list` could never return a playbook.
   Both ops (`OP-SCRIPTS-GET` is new, taking the catalog to 152 operations, 83 of
   them reads) are tagged `zip-reply`: the executor fetches the bytes with
-  `XsiamClient.request_archive`, on the per-tenant request budget, and reads the
-  archive in memory with stdlib `zipfile`, never extracting it. At most 50
-  members; a member over 256 KiB, or past 1 MiB in all, is refused unread; one
-  that inflates past its declared size is never read past it; non-UTF-8 is
-  `binary: true`. A JSON body goes through the shared application-error test, and
-  a body that is neither ZIP nor JSON is `XSIAM_PARSE_ERROR`, never an empty archive.
+  `XsiamClient.request_archive`, on the per-tenant request budget, streamed and
+  refused past 4 MiB, and reads the archive in memory with stdlib `zipfile`,
+  never extracting it. At most 50 members; a member over 256 KiB, or past 1 MiB
+  in all, or neither stored nor deflated, is refused unread; one that inflates
+  past its declared size is never read past it; non-UTF-8 is `binary: true`. An
+  archive with no member reads as 0 members. A JSON body goes through the shared
+  application-error test, and a body that is neither ZIP nor JSON is
+  `XSIAM_PARSE_ERROR`, never an empty archive.
 - Two MCP tools, `xsiam.playbook.get` and `xsiam.script.get` (by `id` or `name`),
   close the last two `~/cortex-mcp` parity rows, taking the server to 54 tools
   (27 `cortexsim.*`, 27 `xsiam.*`). Each member's name and YAML sit only under

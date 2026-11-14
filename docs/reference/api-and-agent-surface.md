@@ -2855,20 +2855,31 @@ other request, and returns `integrations/xsiam/archives.py::zip_members` as the
 reply: `members[]` (`name`, `text`, `bytes`, `text_truncated`, `binary`, `refused`),
 `member_count`, `members_truncated`. Inputs: `by` (`id` | `name`), `value`, `tenant`.
 
+- **A bounded body.** The reply is streamed with `Accept-Encoding: identity` and
+  refused with `XSIAM_PARSE_ERROR` once it passes 4 MiB
+  (`archives.MAX_ARCHIVE_BODY_BYTES`); reading stops there. A tenant that compresses
+  anyway (gzip or deflate) is inflated in steps of at most what is left under that
+  ceiling; any other content encoding is refused.
 - **In memory, under caps.** Stdlib `zipfile` over the bytes; nothing is
   extracted and a member name is never used as a path (it is neutralised data). At
   most 50 file members are listed. A member whose declared size is over 256 KiB, or
   over what is left of 1 MiB in all, is refused without being opened (`refused`
   `MEMBER_OVER_CAP` / `TOTAL_OVER_CAP`, `text_truncated: true`, `binary: null`,
-  `bytes` the declared size). A member is read at most to that limit, so one that
-  inflates past its declared size is never read past it; zipfile then fails its CRC
-  check and the member is `UNREADABLE`, as a corrupt or encrypted one is. Text is
-  UTF-8 only: anything else is `binary: true` with no text.
-- **Never empty by accident.** A JSON body in place of the archive goes through the
+  `bytes` the declared size). A member compressed other than stored or deflated
+  (bzip2, LZMA) is refused unopened as `UNSUPPORTED_COMPRESSION`: how far those
+  decompressors stop at a declared size depends on the interpreter's patch level.
+  A member is read at most to its limit, so one that inflates past its declared
+  size is never read past it; zipfile then fails its CRC check and the member is
+  `UNREADABLE`, as a corrupt or encrypted one is. Text is UTF-8 only: anything
+  else is `binary: true` with no text. An archive zipfile cannot open (a corrupt
+  directory, a "version needed to extract" it does not read) is `XSIAM_PARSE_ERROR`.
+- **Never empty by accident.** An archive with no member (`PK\x05\x06`) is
+  `member_count: 0`. A JSON body in place of the archive goes through the
   shared application-error test (an `err_code` / `err_msg` is the route's
   `XSIAM_QUERY_ERROR` or `XSIAM_QUOTA_ERROR`, its text neutralised and capped); any
-  other JSON, an empty body or a body that is neither ZIP (`PK\x03\x04`) nor JSON
-  is `XSIAM_PARSE_ERROR`, naming the size, the media type and key names only.
+  other JSON, an empty body or a body that is neither ZIP (`PK\x03\x04` or
+  `PK\x05\x06`) nor JSON is `XSIAM_PARSE_ERROR`, naming the size, the media type and
+  key names only.
 - **Framed.** The MCP tools put each member's name and text only under
   `tenant_text`, with `data.data_notice`. The text keeps its lines: the reader's
   strip set less tab and line feed, a carriage return read as a line feed

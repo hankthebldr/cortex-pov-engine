@@ -213,7 +213,7 @@
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
 | `OP-PLAYBOOKS-DELETE` | POST | `/public_api/v1/playbooks/delete` | 🚫 destructive | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ee099fa49ba0d-delete-a-playbook) |
-| `OP-PLAYBOOKS-GET` | POST | `/public_api/v1/playbooks/get` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/9bxk3d1x20w62-get-a-playbook) |
+| `OP-PLAYBOOKS-GET` | POST | `/public_api/v1/playbooks/get` | ✅ read | [↗](https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/playbooks) |
 | `OP-PLAYBOOKS-INSERT` | POST | `/public_api/v1/playbooks/insert` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nyd2ep538b093-insert-or-update-playbooks) |
 
 ## Query Library
