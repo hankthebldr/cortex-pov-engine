@@ -2646,14 +2646,49 @@ manifest the consumer vendors) and `--max-tenant-calls-per-minute N` (overrides
 
 ### 9.2 Client install
 
-Streamable HTTP, when the mount is on (zero install on the laptop):
+The MCP server holds no tenant key. Its tenant tools reach the tenant through
+SimCore's routes, with the integration credential stored at tenant onboarding:
+the same credential and per-tenant budget the run-evidence and reconcile path
+uses. `CORTEXSIM_MCP_TOKEN` only admits a client to `/mcp`. `/mcp` is
+bearer-only, not loopback-only (see Reach in §9.1). `/api` stays
+unauthenticated: the bearer applies to `/mcp` only.
+
+Claude Code over streamable HTTP, when the mount is on. `/mcp` answers 401
+without `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, so register it with a
+`headersHelper` that prints the header from a secret store (no literal token in
+any config):
 
 ```bash
-claude mcp add --transport http cortexsim http://localhost:8888/mcp
+claude mcp add --transport http cortexsim --scope user 'http://127.0.0.1:8888/mcp'
 ```
 
-stdio, from the running container (no Python on the laptop needed; substitute
-the container name of the running image):
+Then add `"headersHelper": "<abs path>/cortexsim-mcp-headers.sh"` to that entry
+in `~/.claude.json`. The helper prints one JSON object and reads the token at
+run time, for example with 1Password:
+
+```bash
+#!/usr/bin/env bash
+printf '{"Authorization":"Bearer %s"}\n' "$(op read 'op://<vault>/<item>/credential')"
+```
+
+Claude Desktop over stdio, through the launcher. It runs the server inside the
+running SimCore container, so it needs no bearer token:
+
+```bash
+scripts/mcp-stdio-docker.sh --print   # show the docker exec line
+scripts/mcp-stdio-docker.sh           # exec it (what Desktop's config runs)
+```
+
+It selects the container labelled `com.docker.compose.service=simcore`, narrowed
+by `CORTEXSIM_COMPOSE_PROJECT` when set. Zero matches, or several, exit 2.
+`CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is passed into the container only when it is
+set in the launcher's environment.
+
+Rotation: change the stored token and restart SimCore. The helper reads the
+store on each connection, so the client picks up the new value on its next
+connect; nothing in the client config changes.
+
+stdio, from the running container by hand (substitute the container name):
 
 ```bash
 claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 python -m mcp_server --server http://127.0.0.1:8888

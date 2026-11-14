@@ -959,6 +959,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   scorecard's Alert ID column had always shown `—`. It now shows the alert id,
   with a new Source column beside it.
 
+### Added — stdio MCP launcher for Claude Desktop
+
+- `scripts/mcp-stdio-docker.sh [--print]` execs `python -m mcp_server` inside
+  the one running SimCore container (selected by compose labels, narrowed by
+  `CORTEXSIM_COMPOSE_PROJECT`); zero or several matches exit 2. stdio runs
+  inside the container, so it needs no bearer token.
+- `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is forwarded only when set in the
+  launcher's environment.
+- `docs/reference/api-and-agent-surface.md` §9.2 now shows the authenticated
+  HTTP registration with a `headersHelper`, the Desktop stdio entry and token
+  rotation; the old unauthenticated install line is gone.
+
 ### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
 
 - When every Result left the scoring denominator (`not_reached`, `not_executed` or
