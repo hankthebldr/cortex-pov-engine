@@ -263,6 +263,16 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Fixed — the ANALYTICS plane is no longer PANW orange
+
+Design v26 keeps PANW orange for the NGFW family tint alone, but the
+ANALYTICS plane (the correlation engine) still used it as its categorical
+tint, so analytics lanes, dots and chips read as firewall. ANALYTICS now uses
+the DS ink-400 (`#9A9A9A`), a neutral for the engine that sits over every
+plane rather than a sensor. The tokens and the plane vocabulary
+(`povdata/planes.js`) agree, and the drift guard now pins it and asserts it is
+not orange.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as

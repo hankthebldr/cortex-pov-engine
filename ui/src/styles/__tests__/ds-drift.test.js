@@ -101,7 +101,9 @@ describe('design-system drift', () => {
     const all = declarations(TOKENS)
     expect(norm(all['plane-edr'])).toBe(norm(ds['panw-cyan']))
     expect(norm(all['plane-itdr'])).toBe(norm(ds['panw-yellow']))
-    expect(norm(all['plane-analytics'])).toBe(norm(ds['panw-orange']))
+    // Not orange: v26 keeps PANW orange for the NGFW family tint alone.
+    expect(norm(all['plane-analytics'])).toBe(norm(ds['ink-400']))
+    expect(norm(all['plane-analytics'])).not.toBe(norm(ds['panw-orange']))
     expect(norm(all['plane-cdr'])).toBe(norm(ds['panw-teal']))
     expect(norm(all['plane-cspm'])).toBe(norm(ds['panw-green-700']))
   })

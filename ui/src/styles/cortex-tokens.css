@@ -143,7 +143,8 @@
   --plane-cdr:        #00AEC4;  /* teal                   */
   --plane-ndr:        #6EC2D6;  /* cyan-400               */
   --plane-itdr:       #FFCB06;  /* Strata yellow          */
-  --plane-analytics:  #FA582D;  /* PANW orange            */
+  --plane-analytics:  #9A9A9A;  /* ink-400 — the engine over every plane, not a sensor;
+                                   orange is the NGFW family tint only (v26) */
   --plane-cloud-app:  #FDAC96;  /* coral-300              */
   --plane-tim:        #E5C148;  /* gold-500               */
   --plane-koi:        #D1755F;  /* coral-400              */
