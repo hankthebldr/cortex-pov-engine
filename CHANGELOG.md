@@ -276,7 +276,33 @@ bright green. Bright green is left to the one primary button. New tokens
 `--gr-matte`, `--gr-mid` and `--gr-pale` take the DS's panw-green-700,
 green-500 and green-200, and the drift guard pins them.
 
+||||||| c4528ab2
+### Added — run detail says why a test case is pending (design C3)
+
+A run whose test-case verdict is pending with nothing scored now says why on
+its own page, not only on the Topology and Techniques tabs. Under the
+lifecycle strip a "Test case" line shows PENDING, the reason chip
+("nothing executed" or "detectors soaking") and the test case id, with the
+action as a visible sentence. Under the chain, the Cortex Engine terminal
+states the same verdict and reason. A verdict without a reason draws neither.
+
 ### Security
+
+- **A leftover cron entry or systemd timer could run another user's script as
+  root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
+  runs a script from a fixed directory under `/var/tmp` every five minutes, and
+  the job can outlive the directory: the beacon does not run a scenario's
+  cleanup, and a tmp cleaner or a partial cleanup can remove it. A local user
+  could then recreate the directory with a script of their own. The cron line
+  and the unit's `ExecStart` now run nothing from the directory unless one
+  `stat` lookup reads it as root's own 0700 directory; otherwise the cron entry
+  deletes itself and the unit disables its timer. The check is in `ExecStart`
+  because systemd before 243 ignores `ExecCondition=`. The step that recreates
+  the directory first removes a cron entry or timer left by an earlier run. The
+  re-executions keep the command-line path the cards' BIOCs match, so no
+  detection changed. The two cards' illustrative payloads now run under
+  `set -eu`, stop unless the directory they make is root's own 0700 directory,
+  and install the checked entry.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
