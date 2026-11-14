@@ -970,6 +970,9 @@ viewport test at 375 px and 845 px guards both and fails without the fix.
   with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
+- API reference §9.2 now leads with the stdio launcher as the way to verify runs;
+  the HTTP `/mcp` registration is optional and its example reads the token from
+  an environment variable.
 
 ### Added — MCP tools for the tenant reader
 

@@ -2658,51 +2658,42 @@ manifest the consumer vendors) and `--max-tenant-calls-per-minute N` (overrides
 ### 9.2 Client install
 
 The MCP server holds no tenant key. Its tenant tools reach the tenant through
-SimCore's routes, with the integration credential stored at tenant onboarding:
-the same credential and per-tenant budget the run-evidence and reconcile path
-uses. `CORTEXSIM_MCP_TOKEN` only admits a client to `/mcp`. `/mcp` is
-bearer-only, not loopback-only (see Reach in §9.1). `/api` stays
+SimCore's routes, with the integration credential saved in this instance at
+tenant onboarding: the same credential and per-tenant budget the run-evidence
+and reconcile path uses. `CORTEXSIM_MCP_TOKEN` only admits a client to `/mcp`.
+`/mcp` is bearer-only, not loopback-only (see Reach in §9.1). `/api` stays
 unauthenticated: the bearer applies to `/mcp` only.
 
-Claude Code over streamable HTTP, when the mount is on. `/mcp` answers 401
-without `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, so register it with a
-`headersHelper` that prints the header from a secret store (no literal token in
-any config):
-
-```bash
-claude mcp add --transport http cortexsim --scope user 'http://127.0.0.1:8888/mcp'
-```
-
-Then add `"headersHelper": "<abs path>/cortexsim-mcp-headers.sh"` to that entry
-in `~/.claude.json`. The helper prints one JSON object and reads the token at
-run time, for example with 1Password:
-
-```bash
-#!/usr/bin/env bash
-printf '{"Authorization":"Bearer %s"}\n' "$(op read 'op://<vault>/<item>/credential')"
-```
-
-Claude Desktop over stdio, through the launcher. It runs the server inside the
-running SimCore container, so it needs no bearer token:
+**Verify runs over stdio, through the launcher.** `scripts/mcp-stdio-docker.sh`
+runs the server inside the running SimCore container, so it needs no bearer
+token and no `/mcp` mount, and it reads the tenant through the integration
+credential saved in this instance:
 
 ```bash
 scripts/mcp-stdio-docker.sh --print   # show the docker exec line
-scripts/mcp-stdio-docker.sh           # exec it (what Desktop's config runs)
+scripts/mcp-stdio-docker.sh           # exec it
 ```
 
-It selects the container labelled `com.docker.compose.service=simcore`, narrowed
-by `CORTEXSIM_COMPOSE_PROJECT` when set. Zero matches, or several, exit 2.
-`CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is passed into the container only when it is
-set in the launcher's environment.
-
-Rotation: change the stored token and restart SimCore. The helper reads the
-store on each connection, so the client picks up the new value on its next
-connect; nothing in the client config changes.
-
-stdio, from the running container by hand (substitute the container name):
+Claude Code (give the launcher's absolute path; `claude mcp add` sets no working
+directory):
 
 ```bash
-claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 python -m mcp_server --server http://127.0.0.1:8888
+claude mcp add cortexsim -- <abs path to checkout>/scripts/mcp-stdio-docker.sh
+```
+
+Claude Desktop runs the same launcher from its config.
+
+The launcher selects the container labelled `com.docker.compose.service=simcore`,
+narrowed by `com.docker.compose.project=$CORTEXSIM_COMPOSE_PROJECT` when that is
+set. Zero matches, or several, exit 2. `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is
+passed into the container only when it is set in the launcher's environment.
+
+stdio by hand, without the launcher: find the container by its compose label
+rather than by a versioned name, then exec the server in it:
+
+```bash
+docker ps --filter label=com.docker.compose.service=simcore --format '{{.Names}}'
+claude mcp add cortexsim -- docker exec -i <that container> python -m mcp_server
 ```
 
 stdio, from a host venv that has `core/requirements.txt` installed:
@@ -2714,6 +2705,29 @@ claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -e PYTHONPATH=<c
 `<checkout>` is the absolute path to your clone. `claude mcp add` sets no working
 directory, so without `PYTHONPATH` the server exits with `No module named mcp_server`;
 `python` must be the venv's interpreter (give its absolute path if the venv is not active).
+
+**Optional: Claude Code over streamable HTTP.** The `/mcp` mount is off by
+default; it needs `CORTEXSIM_MCP_HTTP=1` and `CORTEXSIM_MCP_TOKEN` in SimCore's
+environment. `/mcp` answers 401 without `Authorization: Bearer
+<CORTEXSIM_MCP_TOKEN>`, so register it with a `headersHelper` that prints the
+header at run time (no literal token in any config):
+
+```bash
+claude mcp add --transport http cortexsim --scope user 'http://127.0.0.1:8888/mcp'
+```
+
+Then add `"headersHelper": "<abs path>/cortexsim-mcp-headers.sh"` to that entry
+in `~/.claude.json`. The helper prints one JSON object, reading the token from
+an environment variable the operator exports where the client starts:
+
+```bash
+#!/usr/bin/env bash
+printf '{"Authorization":"Bearer %s"}\n' "$CORTEXSIM_MCP_TOKEN"
+```
+
+Rotation: change the token in SimCore's environment and restart SimCore, then
+export the new value and restart the client. The helper reads the variable on
+each connection; nothing in the client config changes.
 
 ### 9.3 Tools
 
