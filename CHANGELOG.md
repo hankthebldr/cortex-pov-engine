@@ -1356,10 +1356,16 @@ escape every string behind it.
   runs.
 - **The fix.** The step that creates the directory removes whatever is at the
   path and makes it with `mkdir` and no `-p`, so an existing entry stops the
-  step. Every other step that uses it first checks that it is a real directory,
-  not a symlink, owned by the running user (or by root, where a service account
-  runs inside a root-made directory). After the fix the same race gave 0 of 400
-  runs in the other user's directory: 7 ran clean and 393 stopped.
+  step. Every other step that uses it first checks, in one `stat` lookup, that
+  it is a directory, not a symlink, with the mode the creating step gave it and
+  owned by the running user (or by root, where a service account runs inside a
+  root-made directory). After the fix the same race gave 0 of 400 runs in the
+  other user's directory: 7 ran clean and 393 stopped.
+- **Why one lookup.** A first version of the check used three tests (`-d`,
+  `! -L`, `-O`). Where root follows another user's symlink
+  (`fs.protected_symlinks` off), a user exchanging a directory and a symlink
+  between those tests got past it in 73 of 300 passes under dash and 50 of 300
+  under bash. The one-lookup form let none through in the same test.
 - **Which scenarios.** A root step used the directory in SIM-CDR-002, -005,
   -018, SIM-EDR-023, -024, SIM-KOI-012 and SIM-MP-036. In SIM-MP-019, -024,
   -032, -035 and -037 the directory belongs to a service account, so the
@@ -1368,10 +1374,10 @@ escape every string behind it.
   exits 1 with `sandbox … is missing or not ours`. Launching a scenario again
   removes the previous run's scratch directory first. Under an active attempt
   to plant the directory, the scenario stops instead of running.
-- **Counts are unchanged.** The guard is `[ … ]` tests, an `echo` and an `exit`,
-  which start no process. The lab-readiness and coverage classifiers now treat
-  those as no signal, so a narration step that gained a guard is still counted
-  as narration.
+- **Counts are unchanged.** The guard is a `[ … ]` test over `stat` and `id`, an
+  `echo` and an `exit`: a probe, not an attack action. The lab-readiness and
+  coverage classifiers now treat it as no signal, so a narration step that
+  gained a guard is still counted as narration.
 - **Not fixed here.** Root steps in 64 scenarios write a fixed-name file
   straight into `/tmp` or `/var/tmp` (120 steps), mostly EAL campaign files; on
   a kernel with `fs.protected_symlinks` and `fs.protected_regular` off, a

@@ -63,8 +63,8 @@ no pair here has had any of the following:
 
 1. A review of the commands: real, runnable, confined to a scratch directory, no
    traffic to a host outside the lab. The scratch directory is created exclusively
-   (`rm -rf` then `mkdir` with no `-p`) and every later step checks it is a real
-   directory the running user owns; `tests/engine/test_scenario_sandbox_ownership.py`
+   (`rm -rf` then `mkdir -m 700` with no `-p`) and every later step checks in one
+   `stat` lookup that it is a directory the running user owns; `tests/engine/test_scenario_sandbox_ownership.py`
    shows the two lines.
 2. A cleanup that was written and run.
 3. A check of each declared row against what a tenant can raise. Most rows are
