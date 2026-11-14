@@ -21,11 +21,11 @@ def _run(*args: str, **extra_env: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, timeout=120)
 
 
-def test_list_tools_prints_46():
+def test_list_tools_prints_54():
     proc = _run("--list-tools")
     assert proc.returncode == 0, proc.stderr
     lines = proc.stdout.strip().splitlines()
-    assert lines[-1] == "46 tools"
+    assert lines[-1] == "54 tools"
     rows = [line.split("\t") for line in lines[:-1]]
     assert all(len(r) == 4 for r in rows)
     assert [r[0] for r in rows] == list(CANONICAL_IDS)
@@ -39,7 +39,7 @@ def test_manifest_flag_prints_yaml_that_validates():
     assert proc.returncode == 0, proc.stderr
     doc = yaml.safe_load(proc.stdout)
     validate_manifest(doc)
-    assert len(doc["tools"]) == 46
+    assert len(doc["tools"]) == 54
 
 
 def test_tenant_call_ceiling_defaults_from_the_same_setting_as_the_mount():

@@ -250,6 +250,19 @@ class DatasetSchemaIn(_In):
     tenant: str | None = None
 
 
+class AssetGetIn(TenantIn):
+    """``xsiam.asset.get``: the asset id fills ``OP-ASSETS-ID``'s ``{id}``; the
+    executor route refuses anything that is not one path segment."""
+    asset_id: str
+
+
+class ArchiveGetIn(TenantIn):
+    """``xsiam.playbook.get`` / ``xsiam.script.get``: the vendor filter, sent as
+    ``{"request_data": {"filter": {"field": by, "value": value}}}``."""
+    by: Literal["id", "name"]
+    value: str
+
+
 class ReportIn(_In):
     run_id: str
     format: Literal["markdown"] = "markdown"

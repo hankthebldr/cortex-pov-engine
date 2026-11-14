@@ -16,7 +16,7 @@ Framework, driving a gated executor on the existing `XsiamClient`:
 | Operation schema (`op_id`, method, path, `access_class`, consent, `path_params`, `path_param_allowlist`) | `core/integrations/xsiam/operations/schema.py` |
 | Loader (reject-and-log, never raises) | `core/integrations/xsiam/operations/loader.py` |
 | Singleton catalog (`catalog.load/find/all/list_for_*`) | `core/integrations/xsiam/operations/catalog.py` |
-| 151 operations in category-grouped YAML packs | `core/integrations/xsiam/operations/packs/*.yml` |
+| 152 operations in category-grouped YAML packs | `core/integrations/xsiam/operations/packs/*.yml` |
 | Generic transport `XsiamClient.request(method, path, json, params)` + advanced auth | `core/integrations/xsiam/client.py`, `auth.py` |
 | List / detail / **gated executor** endpoints | `core/api/xsiam.py` (`/operations`, `/operations/{id}`, `POST /tenants/{name}/operations/{id}`) |
 | Boot load + health component | `core/main.py` (lifespan 2c, `xsiam_operation_catalog`) |

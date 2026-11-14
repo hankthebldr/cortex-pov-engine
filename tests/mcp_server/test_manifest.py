@@ -10,22 +10,22 @@ from mcp_server.manifest import build_manifest, validate_manifest
 from mcp_server.naming import CANONICAL_IDS, wire_name
 from mcp_server.tools import cortexsim, xsiam
 
-NOT_BACKED = {"xsiam.modeling_rule.list", "xsiam.parser.list", "xsiam.content.list",
-              "xsiam.ingest.status"}
+NOT_BACKED = {"xsiam.playbook.list", "xsiam.modeling_rule.list", "xsiam.parser.list",
+              "xsiam.content.list", "xsiam.ingest.status"}
 
 
 def _doc() -> dict:
     return build_manifest(cortexsim.specs() + xsiam.specs())
 
 
-def test_manifest_validates_against_local_p2_schema_and_lists_46_tools():
+def test_manifest_validates_against_local_p2_schema_and_lists_54_tools():
     doc = _doc()
     validate_manifest(doc)
     assert (doc["manifest_version"], doc["kind"], doc["id"], doc["target"]) == (
         2, "mcp-server", "core/xsiam", "xsiam")
     assert doc["server"] == {"name": "cortexsim", "sdk": "mcp==1.30.0"}
     assert [t["id"] for t in doc["tools"]] == list(CANONICAL_IDS)
-    assert len(doc["tools"]) == 46
+    assert len(doc["tools"]) == 54
     for t in doc["tools"]:
         assert t["wire"] == wire_name(t["id"])
     by_id = {t["id"]: t for t in doc["tools"]}

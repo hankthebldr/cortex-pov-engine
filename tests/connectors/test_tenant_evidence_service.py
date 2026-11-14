@@ -153,7 +153,7 @@ def test_reader_io_does_not_block_the_event_loop(session_factory):
         return out, seen
 
     out, seen = asyncio.run(main())
-    assert fake.total_calls == 1 and out["read"] is True
+    assert fake.total_calls == 2 and out["read"] is True          # issues, then tenant info
     assert seen >= 3, f"the event loop ticked {seen} time(s) during a 0.3 s tenant read"
 
 
@@ -339,7 +339,7 @@ def test_concurrent_reads_of_one_run_send_one_read(session_factory):
     assert sorted(o["read"] for o in outs) == [False, True]
     assert {o["code"] for o in outs} == {"OK", "TENANT_EVIDENCE_READ_RECENTLY"}
     assert stored == 1
-    assert fake.total_calls == 3          # issues, cases, endpoint: one read's worth
+    assert fake.total_calls == 4          # issues, cases, endpoint, tenant info: one read
 
 
 def test_truncated_window_is_incomplete_and_named_first(session_factory, monkeypatch):
@@ -458,7 +458,7 @@ def test_waiter_returns_the_read_that_finished_while_it_waited(session_factory, 
     first = next(o for o in outs if o["read"])
     assert waiter["code"] == "TENANT_EVIDENCE_READ_RECENTLY"
     assert waiter["snapshot"]["id"] == first["snapshot"]["id"]
-    assert stored == 1 and fake.total_calls == 3
+    assert stored == 1 and fake.total_calls == 4
 
     # With the interval at 0 a later, separate request reads again: only a
     # read that finished while the request waited is reused.

@@ -79,7 +79,7 @@ core/                  ← SimCore FastAPI app — 166 routes served (156 decora
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
   connectors/            optional read-back measurement loop
-  integrations/xsiam/    151-op gated operation catalog (writes preview) + Tier-2 XQL
+  integrations/xsiam/    152-op gated operation catalog (writes preview) + Tier-2 XQL
   eal_simulator/         EAL traffic simulator + 27 plugins
   planes/                declarative PlaneDescriptor registry (15 registered; dlp.py is not)
   mcp_server/            MCP server, 41 tools (writes preview; opt-in HTTP at /mcp)

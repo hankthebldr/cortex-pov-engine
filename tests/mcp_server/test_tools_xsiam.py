@@ -1,4 +1,4 @@
-"""The 19 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
+"""The 27 ``xsiam.*`` tools against the real SimCore xsiam + readiness routes.
 
 ``stubbed_app.stub.calls`` is the tenant witness; every count asserted here is
 the one SimCore's route reported, never one the MCP layer computed.
@@ -27,8 +27,8 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::starlette.exceptions.StarletteDeprecationWarning")
 
 STUB_KEY = "api-stub.xdr.us.paloaltonetworks.com"
-NOT_BACKED = ("xsiam.modeling_rule.list", "xsiam.parser.list", "xsiam.content.list",
-              "xsiam.ingest.status")
+NOT_BACKED = ("xsiam.playbook.list", "xsiam.modeling_rule.list", "xsiam.parser.list",
+              "xsiam.content.list", "xsiam.ingest.status")
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ async def test_xql_still_pending_at_max_wait_says_pending(stubbed_app, fast_poll
 
 # --- spec test 6 ---------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_four_unbacked_tools_return_tool_not_backed_never_empty(stubbed_app):
+async def test_five_unbacked_tools_return_tool_not_backed_never_empty(stubbed_app):
     await stubbed_app.seed_tenant("deathstar")
     mcp = stubbed_app.mcp()
     for tool in NOT_BACKED:
@@ -451,6 +451,9 @@ _MIN_ARGS = {
     "xsiam.dataset.schema": {"dataset": "xdr_data"},
     "xsiam.xql.query": {"query": "dataset = xdr_data"},
     "xsiam.endpoint.get": {"hostnames": ["target-01"]},
+    "xsiam.asset.get": {"asset_id": "a-1"},
+    "xsiam.playbook.get": {"by": "id", "value": "pb-1"},
+    "xsiam.script.get": {"by": "name", "value": "Foo"},
 }
 
 
@@ -463,15 +466,20 @@ async def test_every_xsiam_tool_returns_an_envelope_or_typed_refusal(stubbed_app
         "/public_api/v1/alerts/get_alerts_multi_events": {"total_count": 0, "alerts": []},
         "/public_api/v1/correlations/get": {"objects_count": 0, "objects": []},
         "/public_api/v1/incidents/get_incidents": {"total_count": 0, "incidents": []},
-        "/public_api/v1/playbooks/get": {"objects_count": 0, "objects": []},
         "/public_api/v1/healthcheck": {"status": "available"},
         "/public_api/v1/issue/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
         "/public_api/v1/case/search/": {"DATA": [], "TOTAL_COUNT": 0, "FILTER_COUNT": 0},
         "/public_api/v1/endpoints/get_endpoint": {"endpoints": [], "total_count": 0},
+        "/public_api/v1/system/get_tenant_info": {"xsiam_premium_expiration": 0},
+        "/public_api/v1/audits/management_logs": {"total_count": 0, "data": []},
+        "/public_api/v1/assets": {"data": [], "metadata": {"total_count": 0}},
+        "/public_api/v1/assets/a-1": {"data": [{"xdm.asset.id": "a-1"}]},
+        "/public_api/uvem/v1/get_vulnerabilities": {"total_count": 0, "vulnerabilities": []},
+        "/public_api/v1/compliance/get_assessment_results/": {"total_count": 0, "data": []},
     })
     mcp = stubbed_app.mcp()
     xsiam_ids = [c for c in CANONICAL_IDS if c.startswith("xsiam.")]
-    assert len(xsiam_ids) == 19
+    assert len(xsiam_ids) == 27
     for tool in xsiam_ids:
         res = await call(mcp, tool, **_MIN_ARGS.get(tool, {}))
         sc = res.structuredContent

@@ -23,6 +23,7 @@ from security import CredentialStore
 from integrations.xsiam.client import (
     inspect_operation_body, is_xql_start_path, refuse_xql_write_stages,
 )
+from integrations.xsiam.archives import zip_members
 from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client
 from integrations.xsiam.queries import (
     INGESTION_HEALTH_XQL, case_search_body, endpoint_get_body, issue_search_body,
@@ -314,6 +315,11 @@ async def execute_operation(
                 queries_issued = 0  # polling a started query is not metered
             reply = await client.request(
                 op.method, path, json=payload, params=(body.query or None))
+    elif "zip-reply" in op.tags:
+        # playbooks/get and scripts/get answer a ZIP holding the object's YAML
+        # (PANW's Playbooks and Scripts pages): read in memory, under caps.
+        reply = zip_members(await client.request_archive(
+            op.method, path, json=payload, params=(body.query or None)))
     else:
         reply = await client.request(
             op.method, path, json=payload, params=(body.query or None))

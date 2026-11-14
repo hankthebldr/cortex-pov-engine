@@ -271,6 +271,18 @@ both.
 
 ### Security
 
+- **A path override on a tenant credential could send the tenant's API key to
+  another host.** The connector checks the tenant's base URL, then appended the
+  credential's `alerts_path` / `incidents_path` / `issues_path` / `cases_path` /
+  `endpoints_path` as given. A path that does not start with `/` changes the
+  host of the result (`…paloaltonetworks.com` + `@attacker.example/x` is a
+  request to `attacker.example`), and the API key went with it. The credential
+  API is unauthenticated, so anyone who could reach SimCore could set such a
+  path on a stored credential. A path override must now start with `/`;
+  anything else is refused with `XSIAM_CONFIG_ERROR` before any request is
+  made. `alerts_path` and `incidents_path` have had this since 1.1.0; the other
+  three arrived with the tenant reader in this release.
+
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
   (SEC-02, verified on cc26ddf).** The request's `params` were merged over the
   registry's own `binary` / `source_path` / `port`, so
@@ -973,12 +985,77 @@ both.
   pointing to `xsiam.issue.search` and `xsiam.case.search`. Their field layout
   is unchanged. `make check-mcp-boot` now fails below 46 tools.
 
+### Added — six parity reads over the MCP server
+
+- Six named tenant reads close the named-read rows of the `~/cortex-mcp` parity
+  table (tenant-reader spec §8.1), taking the MCP server from 46 to 52 tools
+  (27 `cortexsim.*`, 25 `xsiam.*`): `xsiam.tenant_info.get`,
+  `xsiam.audit_log.list`, `xsiam.asset.list`, `xsiam.asset.get`,
+  `xsiam.vulnerability.list` and `xsiam.assessment_result.list`. Each runs one
+  catalog op through SimCore's executor route, on the per-tenant request budget,
+  with the `xsiam_tenant` credential only; they hold no tenant key.
+- Fields are allowlisted from PANW's public API pages
+  (`docs/reference/xsiam-platform-apis/15-parity-reads.md`). Free text, and any
+  name someone chose for an object (an asset's display name, an assessment
+  profile's or a custom standard's name), sits under `tenant_text`; every string
+  is neutralised and capped as the tenant reader's are, and every result carries
+  `data.data_notice`. An unrecognised reply is `XSIAM_PARSE_ERROR`, never an
+  empty list or object, and its detail names reply keys, never a tenant value.
+  `asset.get` refuses an id that is not one path segment with
+  `XSIAM_CONFIG_ERROR` before any tenant call. The list tools read the tenant
+  once and page over that reply, so `offset` cannot reach past the tenant's
+  first page; `truncated: true` says it holds more.
+- Each tenant-evidence snapshot spends one more request, last, on
+  `get_tenant_info` and records `tenant_version` with `tenant_version_code`. PANW
+  documents licence fields only in that reply, so a reply as documented records
+  `null` with `TENANT_VERSION_NOT_REPORTED` (a `version` the tenant does send is
+  recorded, a number as its text); a failed or refused sub-read records
+  `null` with its code. It never changes the snapshot's code, status or
+  completeness. `make check-mcp-boot` now fails below 52 tools.
+
+### Added — playbook and script ZIP reads
+
+- `playbooks/get` and `scripts/get` answer a ZIP holding the object's YAML, and
+  the executor read every reply as JSON, so `OP-PLAYBOOKS-GET` always failed with
+  "non-JSON response" and `xsiam.playbook.list` could never return a playbook.
+  Both ops (`OP-SCRIPTS-GET` is new, taking the catalog to 152 operations, 83 of
+  them reads) are tagged `zip-reply`: the executor fetches the bytes with
+  `XsiamClient.request_archive`, on the per-tenant request budget, asking for an
+  identity body (any other `Content-Encoding` is refused unread) and refusing it
+  past 4 MiB of raw bytes, and reads the archive in memory with stdlib `zipfile`,
+  never extracting it. At most 50 members; a member over 256 KiB, or past 1 MiB
+  in all, or neither stored nor deflated, is refused unread; one that inflates
+  past its declared size is never read past it; non-UTF-8 is `binary: true`. An
+  archive with no member reads as 0 members. A JSON body goes through the shared
+  application-error test, and a body that is neither ZIP nor JSON is
+  `XSIAM_PARSE_ERROR`, never an empty archive.
+- Two MCP tools, `xsiam.playbook.get` and `xsiam.script.get` (by `id` or `name`),
+  close the last two `~/cortex-mcp` parity rows, taking the server to 54 tools
+  (27 `cortexsim.*`, 27 `xsiam.*`). Each member's name and YAML sit only under
+  `tenant_text`, neutralised with line breaks kept, beside `data.data_notice`; they
+  hold no tenant key.
+- `xsiam.playbook.list` is registered, not backed: the public API has no playbook
+  listing, so it answers `TOOL_NOT_BACKED` and names `xsiam.playbook.get`.
+  `make check-mcp-boot` now fails below 54 tools.
+
 ### Fixed — Results shows each result's alert id and source
 
 - `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
   `observation_count`, using the first recorded observation per result. The
   scorecard's Alert ID column had always shown `—`. It now shows the alert id,
   with a new Source column beside it.
+
+### Added — stdio MCP launcher for Claude Desktop
+
+- `scripts/mcp-stdio-docker.sh [--print]` execs `python -m mcp_server` inside
+  the one running SimCore container (selected by compose labels, narrowed by
+  `CORTEXSIM_COMPOSE_PROJECT`); zero or several matches exit 2. stdio runs
+  inside the container, so it needs no bearer token.
+- `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is forwarded only when set in the
+  launcher's environment.
+- `docs/reference/api-and-agent-surface.md` §9.2 now shows the authenticated
+  HTTP registration with a `headersHelper`, the Desktop stdio entry and token
+  rotation; the old unauthenticated install line is gone.
 
 ### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
 
