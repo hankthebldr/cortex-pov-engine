@@ -326,7 +326,12 @@
 }
 .theme-console .evidence .view-head {
   margin-bottom: 18px;
+  /* Wrap rather than run past the view: at phone width the mode toggle,
+     Validate all and Export drop below the title instead of being clipped. */
+  flex-wrap: wrap;
+  gap: 12px 16px;
 }
+.theme-console .evidence .view-head > :first-child { min-width: 0; }
 .theme-console .evidence .view-head h1 {
   font-family: 'Montserrat', var(--font-display), sans-serif;
   font-size: 20px;
@@ -345,8 +350,10 @@
 
 .theme-console .evidence .evidence-header__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 
 .theme-console .evidence .evidence__mode-toggle {
