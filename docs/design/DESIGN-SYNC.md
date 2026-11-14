@@ -195,10 +195,11 @@ or a link.
 | UC / TC Index | Catalog › UC / TC index | `components/console/UcTcIndexView.jsx` |
 | "Your chain" tray | Scenarios and Catalog pages | `components/console/ChainTray.jsx` · `context/ChainTrayContext.jsx` |
 | Chain stage (editable · live · preview) | Composer Lanes lens, Run detail, scenario sheet | `components/console/ChainStage.jsx` · `chainStage.js` |
+| "Why this matters" (design v33 C10) | First on the scenario sheet, a TTP card, and an opened detection | `components/console/WhyThisMatters.jsx` · `sheetThesis.js` (every line read off the document; a missing part says "Not written for this … yet.") |
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
 | Lane and plane vocabulary | — | `components/console/povdata/` |
 | Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-kit.css` · `styles/povengine-minimal.css` |

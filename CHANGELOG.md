@@ -272,6 +272,31 @@ lifecycle strip a "Test case" line shows PENDING, the reason chip
 action as a visible sentence. Under the chain, the Cortex Engine terminal
 states the same verdict and reason. A verdict without a reason draws neither.
 
+### Added — deep dives open with "Why this matters"; sheet actions are verbs (design v33 C10)
+
+- **The scenario sheet, the TTP card and an opened detection start with four
+  parts: Thesis · Why we simulate it · What proves it · What it needs.** Each
+  line is read off a field the document already carries; the console writes
+  none. A scenario: its technique and the report it is modeled on; the test
+  case, use case and method it evidences; its success criteria, threshold and
+  expected detections; its tools, identity, Cortex platform, add-ons and the
+  planes its incident must span. A TTP card: the first sentence of its
+  description; its threat scenarios; its threat steps' objectives; its target,
+  privilege and prerequisites. A detection: its description (or an IOC's
+  context); the threat step whose success criteria name it, and the techniques
+  it covers; those criteria and, for a query, its row floor; who owns the work
+  (run it, deploy it, or built in) and the dataset it reads. A part the
+  document does not carry says "Not written for this card yet." (or scenario,
+  or detection) and nothing else. The derivation is one pure module,
+  `sheetThesis.js`.
+- **Sheet actions are verbs from the closed set, each with its icon.** The
+  kit Button takes `verb` and draws that verb's icon (`VERB_ICONS`); the Icon
+  set gains `check`, `gear`, `pencil`, `rotate`, `external` and `target`. On a
+  TTP card, "Launch all…" is now Run and "Edit…" is Customize, beside Add to
+  chain; the ATT&CK Navigator layer is a file, not an action, and reads as a
+  link. On the scenario sheet, Run and Customize carry their icons, and the
+  tools warning's "Review ▸" button is now a "Packages →" link.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
