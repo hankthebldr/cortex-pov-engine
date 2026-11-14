@@ -165,7 +165,7 @@ steps:
       set -eu
       sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
       D=/var/tmp/.cortexsim-ice
-      [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo "[CortexSim] SIM-EDR-023 step-02: executing $D/kworker-ice at $(date -u +%FT%TZ)"
       rc=0
       timeout 20 "$D/kworker-ice" || rc=$?
@@ -213,7 +213,7 @@ steps:
       set -eu
       sleep 40   # dwell
       D=/var/tmp/.cortexsim-ice
-      [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       expr "$(date +%s)" + 2700 > "$D/expires-at"
       cat > "$D/ice-run.sh" <<'EOF'
       #!/bin/sh
@@ -262,7 +262,7 @@ steps:
       set -eu
       sleep 40   # dwell
       D=/var/tmp/.cortexsim-ice
-      [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       touch -r /etc/hostname /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/kworker-ice /var/tmp/.cortexsim-ice/ice-run.sh
       ls -la /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/
     identity: root

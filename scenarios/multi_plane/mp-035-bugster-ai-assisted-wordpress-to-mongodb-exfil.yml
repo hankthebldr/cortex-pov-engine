@@ -196,7 +196,7 @@ steps:
   - id: step-02
     name: "Generated brute-force tool: capped wp-login.php password-guessing matrix, candidate credential recorded"
     command: |
-      D=/tmp/cortexsim-mp-035; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      D=/tmp/cortexsim-mp-035; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       mkdir -p /tmp/cortexsim-mp-035/brute
       cat > /tmp/cortexsim-mp-035/tools/wp_brute.py <<'PY'
       # Stand-in for the generated tool (report: 117 users x 28 passwords); capped at 60 attempts.
@@ -303,7 +303,7 @@ steps:
   - id: step-04
     name: "Database dump: mongodump of the stage host, or a python3 socket probe, plus the exfiltration manifest"
     command: |
-      D=/tmp/cortexsim-mp-035; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      D=/tmp/cortexsim-mp-035; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       mkdir -p /tmp/cortexsim-mp-035/dump
       cat > /tmp/cortexsim-mp-035/tools/mongo_exfil.py <<'PY'
       # Stand-in for the generated exfiltration tool; it talks only to the lab stage host and writes
@@ -355,7 +355,7 @@ steps:
   - id: step-05
     name: "Staging: python3 runs tar over the dump"
     command: |
-      D=/tmp/cortexsim-mp-035; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      D=/tmp/cortexsim-mp-035; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       mkdir -p /tmp/cortexsim-mp-035/exfil
       python3 - <<'PY'
       import subprocess

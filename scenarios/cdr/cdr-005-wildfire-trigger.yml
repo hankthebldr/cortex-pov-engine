@@ -117,7 +117,7 @@ steps:
   - id: step-02
     name: "Execute simulated backdoor in container context"
     command: |
-      D=/tmp/wf_sim; [ -d "$D" ] && [ ! -L "$D" ] && { [ -O "$D" ] || [ "$(stat -c %u "$D")" = 0 ]; } || { echo "sandbox $D is missing or not owned by root: step-01 did not complete" >&2; exit 1; }; \
+      D=/tmp/wf_sim; s=$(stat -c %F:%u:%a "$D" 2>/dev/null); [ "$s" = "directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not owned by root: step-01 did not complete" >&2; exit 1; }; \
       echo '[*] Executing WildFire test binary...' && \
       timeout 5 /tmp/wf_sim/test_backdoor.elf 2>/dev/null; \
       echo "[*] Exit code: $?" && \
@@ -175,7 +175,7 @@ steps:
   - id: step-04
     name: "Attempt file encryption simulation on /tmp (ransomware behavior)"
     command: |
-      D=/tmp/wf_sim; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
+      D=/tmp/wf_sim; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
       echo '[*] Simulating ransomware-style file encryption on /tmp staging area...' && \
       mkdir -p /tmp/wf_sim/targets && \
       for i in $(seq 1 5); do echo "SIM-TARGET-FILE-${i}" > /tmp/wf_sim/targets/file_${i}.txt; done && \

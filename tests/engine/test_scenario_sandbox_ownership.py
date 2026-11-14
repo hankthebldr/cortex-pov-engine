@@ -9,10 +9,18 @@ this as a root code execution on a sibling scenario (2026-11-13).
 
 The rule the steps now follow:
   - the step that creates the directory removes whatever is at the path and
-    makes it with ``mkdir`` and no ``-p``, so an existing entry stops the step;
-  - every other step that uses it first checks that it is a real directory
-    (not a symlink) owned by the running user, or by root where a service
-    account runs inside a root-made directory.
+    makes it with ``mkdir -m MODE`` and no ``-p``, so an existing entry stops
+    the step;
+  - every other step that uses it first checks, in ONE lookup, that it is a
+    directory (not a symlink) with that mode, owned by the running user, or by
+    root where a service account runs inside a root-made directory:
+    ``[ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ]``.
+
+One lookup matters. An earlier form used three tests (``-d``, ``! -L``, ``-O``).
+Where root follows another user's symlink (``fs.protected_symlinks`` off), a
+user exchanging a directory and a symlink between those tests got a root step
+past it in 73 of 300 passes under dash and 50 of 300 under bash; the one-lookup
+form let none through.
 
 The first test reads the scenario text and runs anywhere. The second runs each
 step's own guard against a planted directory; it needs root and fixed system
@@ -76,8 +84,11 @@ def _guard(command: str, sandbox: str) -> tuple[str, re.Match, re.Match] | None:
     for ref in _refs(command, sandbox):
         r = re.escape(ref)
         create = re.search(rf"rm -rf {r}(?: &&|\n)\s*mkdir -m [0-7]{{3}} {r}(?: \|\| \{{[^\n]*?exit 1; \}})?", command)
+        lookup = rf"\$\(stat -c %F:%u:%a {r} 2>/dev/null\)"
+        mine = r'"directory:\$\(id -u\):[0-7]{3}"'
         check = re.search(
-            rf"\[ -d {r} \] && \[ ! -L {r} \] && (?:\[ -O {r} \]|\{{ \[ -O {r} \] \|\| [^\n]*?; \}})"
+            rf'(?:\[ "{lookup}" = {mine} \]'                                               # the owner's check
+            rf'|s={lookup}; \[ "\$s" = "directory:0:[0-7]{{3}}" \] \|\| \[ "\$s" = {mine} \])'   # root's or mine
             rf"(?: \|\| \{{[^\n]*?exit 1; \}})?", command)
         found = [m for m in (create, check) if m]
         if found:
@@ -115,12 +126,15 @@ def test_a_step_guards_its_scratch_directory_before_using_it(sid, step_id, ident
     assert use is None or guard[1].start() < use, "the sandbox is used before it is guarded"
 
 
-def test_each_scratch_directory_is_created_by_exactly_one_step():
+def test_each_scratch_directory_is_created_once_with_the_mode_its_checks_expect():
     for sid, doc in _scenarios().items():
         for sandbox in SANDBOXES[sid]:
-            creators = [s["id"] for s in doc["steps"]
-                        if (g := _guard(s.get("command") or "", sandbox)) and g[0] == "create"]
-            assert len(creators) == 1, (sid, sandbox, creators)
+            guards = [(s["id"], g) for s in doc["steps"] if (g := _guard(s.get("command") or "", sandbox))]
+            made = [re.search(r"mkdir -m ([0-7]{3})", g[2].group(0)).group(1) for _, g in guards if g[0] == "create"]
+            assert len(made) == 1, (sid, sandbox, made)
+            expected = {mode for _, g in guards if g[0] == "check"
+                        for mode in re.findall(r"directory:[^:]+:([0-7]{3})", g[2].group(0))}
+            assert expected <= set(made), (sid, sandbox, "created " + made[0], "checked for " + str(expected))
 
 
 # --------------------------------------------------------------------------- behaviour
@@ -201,19 +215,22 @@ def test_a_planted_scratch_directory_is_never_used(sid, step_id, identity, sandb
             done = _run(script, identity)
             assert "REACHED" in done.stdout and os.stat(sandbox).st_uid == runner, done
         else:
-            for plant in ("missing", "other-owned", "symlink"):
+            mode = int(re.search(r"directory:\$\(id -u\):([0-7]{3})", script).group(1), 8)
+            owner = 0 if "directory:0:" in script else runner   # a service account inside a root-made directory
+            for plant in ("missing", "other-owned", "symlink", "writable-by-others"):
                 _clear(sandbox, elsewhere)
                 if plant == "other-owned":
                     _plant_dir(sandbox, OTHER_UID)
-                elif plant == "symlink":
-                    os.mkdir(elsewhere); os.chown(elsewhere, runner, runner); os.symlink(elsewhere, sandbox)
+                elif plant == "symlink":      # to a directory that would itself pass
+                    os.mkdir(elsewhere); os.chmod(elsewhere, mode); os.chown(elsewhere, owner, owner)
+                    os.symlink(elsewhere, sandbox)
+                elif plant == "writable-by-others":
+                    os.mkdir(sandbox); os.chmod(sandbox, 0o777); os.chown(sandbox, owner, owner)
                 done = _run(script, identity)
                 assert done.returncode == 1 and "REACHED" not in done.stdout, (plant, done)
-            # The directory the creating step would have made is accepted.
+            # The directory the creating step makes is accepted.
             _clear(sandbox, elsewhere)
-            os.mkdir(sandbox, 0o755)
-            owner = 0 if "stat -c %u" in script else runner   # a service account inside a root-made directory
-            os.chown(sandbox, owner, owner)
+            os.mkdir(sandbox); os.chmod(sandbox, mode); os.chown(sandbox, owner, owner)
             done = _run(script, identity)
             assert done.returncode == 0 and "REACHED" in done.stdout, done
     finally:

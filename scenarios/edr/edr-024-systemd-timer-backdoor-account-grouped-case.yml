@@ -180,7 +180,7 @@ steps:
       set -eu
       sleep 40   # dwell
       K=/var/tmp/.cortexsim-sshd
-      [ -d "$K" ] && [ ! -L "$K" ] && [ -O "$K" ] || { echo "sandbox $K is missing or not ours: step-02 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a "$K" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $K is missing or not ours: step-02 did not complete" >&2; exit 1; }
       expr "$(date +%s)" + 2700 > "$K/expires-at"
       cat > "$K/sync.sh" <<'EOF'
       #!/bin/sh

@@ -115,7 +115,7 @@ steps:
 
   - id: step-03
     name: "Mint STS credentials via CreateSession with the attacker certificate (SAFE-MODE marker)"
-    command: "[ -d /tmp/cortexsim-cdr-018 ] && [ ! -L /tmp/cortexsim-cdr-018 ] && [ -O /tmp/cortexsim-cdr-018 ] || { echo 'sandbox /tmp/cortexsim-cdr-018 is missing or not ours: step-02 did not complete' >&2; exit 1; }; printf 'aws_signing_helper credential-process --role-arn %s --trust-anchor-arn ARN --profile-arn ARN\\n' \"${TARGET_ROLE_ARN:-arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target}\" > /tmp/cortexsim-cdr-018/SAFE-MODE-createsession.marker; echo cortexsim-cdr-018-safe-mode-createsession-marked"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-cdr-018 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo 'sandbox /tmp/cortexsim-cdr-018 is missing or not ours: step-02 did not complete' >&2; exit 1; }; printf 'aws_signing_helper credential-process --role-arn %s --trust-anchor-arn ARN --profile-arn ARN\\n' \"${TARGET_ROLE_ARN:-arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target}\" > /tmp/cortexsim-cdr-018/SAFE-MODE-createsession.marker; echo cortexsim-cdr-018-safe-mode-createsession-marked"
     identity: container-runtime
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]

