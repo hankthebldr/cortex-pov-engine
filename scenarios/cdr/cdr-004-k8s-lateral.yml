@@ -170,7 +170,7 @@ steps:
       APISERVER="https://kubernetes.default.svc" && \
       echo '[*] Enumerating all pods across namespaces...' && \
       "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
-        get pods --all-namespaces 2>&1 | tee /tmp/pod_enum.txt && \
+        get pods --all-namespaces 2>&1 | tee /tmp/cortexsim-cdr-004/pod_enum.txt && \
       echo '[*] Cross-namespace pod enumeration complete'
     identity: container-runtime
     mitre_technique: "T1613"
@@ -275,7 +275,6 @@ steps:
 cleanup:
   commands:
     - "kubectl --insecure-skip-tls-verify delete cronjob cortexsim-persistence-sim -n default 2>/dev/null || true"
-    - "rm -f /tmp/pod_enum.txt"
     - "rm -rf /tmp/cortexsim-cdr-004"
     - "echo '[CortexSim] SIM-CDR-004 cleanup complete'"
   k8s_teardown: "kubectl delete -f {manifest_path}"

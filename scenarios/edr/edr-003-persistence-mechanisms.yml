@@ -84,7 +84,7 @@ steps:
       C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[*] Creating simulated persistence cron entry';
       echo '*/15 * * * * /tmp/.cortexsim_beacon 2>/dev/null' > "$C/cortexsim_cron_test";
-      crontab -l 2>/dev/null > /tmp/cortexsim_cron_backup;
+      crontab -l 2>/dev/null > "$C/cortexsim_cron_backup";
       echo '# CortexSim EDR-003 test entry — will be removed in cleanup' >> "$C/cortexsim_cron_test";
       cat "$C/cortexsim_cron_test";
       echo '[*] Cron persistence payload staged (NOT installed — display only for safety)'
@@ -318,7 +318,6 @@ steps:
 cleanup:
   commands:
     - "userdel cortexsim_testuser 2>/dev/null"
-    - "rm -f /tmp/cortexsim_cron_backup"
     - "rm -rf /tmp/.cortexsim_ssh_test"
     # Windows teardown, for a step interrupted between create and its in-step
     # delete. The bash bundle and the K8s bootstrap do NOT run these lines:

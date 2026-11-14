@@ -138,7 +138,7 @@ steps:
     name: "Trigger arm 1/3 (identity) — privileged principal signs in off its learned access baseline, expecting an autonomous account disable"
     command: |
       set -u
-      D=/tmp/cortexsim-apb001; rm -rf /tmp/cortexsim-apb001 && mkdir -m 755 /tmp/cortexsim-apb001 || { echo "sandbox /tmp/cortexsim-apb001 could not be created fresh: something else is at that path" >&2; exit 1; }
+      D=/tmp/cortexsim-apb001; rm -rf /tmp/cortexsim-apb001 && mkdir -m 700 /tmp/cortexsim-apb001 || { echo "sandbox /tmp/cortexsim-apb001 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
       printf '{"run_tag":"%s","arm":"identity","event":"signin","principal":"svc-privileged@corp.local","source_ip":"203.0.113.55","privileged":true,"baseline_match":false}\n' "$RUN_TAG" > "$D/arm-identity.json"
       echo cortexsim-apb001-identity-arm-emitted
@@ -158,7 +158,7 @@ steps:
     name: "Trigger arm 2/3 (endpoint) — off-baseline interpreter chain on a server-role host, expecting an autonomous endpoint isolation"
     command: |
       set -u
-      D=/tmp/cortexsim-apb001; [ "$(stat -c %F:%u:%a /tmp/cortexsim-apb001 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-apb001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      D=/tmp/cortexsim-apb001; [ "$(stat -c %F:%u:%a /tmp/cortexsim-apb001 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-apb001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
       printf '{"run_tag":"%s","arm":"endpoint","event":"process","host_role":"server","parent":"httpd","child":"bash","cmdline":"bash -i","baseline_match":false}\n' "$RUN_TAG" > "$D/arm-endpoint.json"
       echo cortexsim-apb001-endpoint-arm-emitted
@@ -184,9 +184,9 @@ steps:
     name: "Trigger arm 3/3 (cloud) — application access token used from an unseen calling location, expecting an autonomous token revocation"
     command: |
       set -u
-      D=/tmp/cortexsim-apb001; s=$(stat -c %F:%u:%a /tmp/cortexsim-apb001 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-apb001 2>/dev/null); [ "$s" = "directory:$(id -u www-data):755" ] || [ "$s" = "Directory:$(id -u www-data):755" ] || [ "$s" = "directory:$(id -u):755" ] || [ "$s" = "Directory:$(id -u):755" ] || { echo "sandbox /tmp/cortexsim-apb001 is missing or not owned by www-data: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
-      printf '{"run_tag":"%s","arm":"cloud","event":"api_call","oauth_token_id":"0CiSIMAPB001","caller_ip":"198.51.100.44","caller_seen_before":false}\n' "$RUN_TAG" > "$D/arm-cloud.json"
+      printf '{"run_tag":"%s","arm":"cloud","event":"api_call","oauth_token_id":"0CiSIMAPB001","caller_ip":"198.51.100.44","caller_seen_before":false}\n' "$RUN_TAG" > "$C/arm-cloud.json"
       echo cortexsim-apb001-cloud-arm-emitted
     identity: svc-backup
     mitre_technique: "T1550.001"

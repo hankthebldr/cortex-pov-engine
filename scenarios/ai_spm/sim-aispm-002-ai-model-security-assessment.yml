@@ -83,7 +83,7 @@ steps:
       echo "[*] t0 = $(cat /tmp/cortexsim-aispm-002/aispm-002-t0.txt) ($(date -u))"
       # Sanity-check the fixture is present
       aws sagemaker list-endpoints --query 'Endpoints[?contains(EndpointName, `aispm`)].EndpointName' --output text \
-        | tee /tmp/aispm-002-endpoints.txt
+        | tee /tmp/cortexsim-aispm-002/aispm-002-endpoints.txt
     identity: root
     mitre_technique: "T1078.004"
     expected_detections:
@@ -161,7 +161,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-002-endpoints.txt"
     - "rm -rf /tmp/cortexsim-aispm-002"
     - "echo '[CortexSim] SIM-AISPM-002 cleanup complete.'"
 

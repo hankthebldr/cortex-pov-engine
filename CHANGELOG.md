@@ -1939,7 +1939,7 @@ Each runs for real (not SAFE-MODE) inside a staged decoy tree under
   fixed directory and were not examined. The cards' illustrative payload text
   still shows `mkdir -p`.
 
-### Security — the remaining scratch paths: directories in 47 more scenarios and 146 fixed-name files
+### Security — the remaining scratch paths: directories in 47 more scenarios and 151 fixed-name files
 
 - **What was wrong.** The two classes the entry above left open. Recounted on
   that tree: 49 more scenarios create a fixed directory under `/tmp`,
@@ -1955,20 +1955,27 @@ Each runs for real (not SAFE-MODE) inside a staged decoy tree under
   `/tmp/cortexsim_targetlist.txt`.
 - **Directories (47 scenarios, 50 directories).** The same rule as above: the
   creating step makes the directory with `mkdir -m` and no `-p`, and every other
-  step checks it in one `stat` lookup first. Two additions. Where a second
-  account runs inside it the mode is 755 and the check also accepts the
-  creating account (`$(id -u www-data)`, or root). A step that also runs on
-  macOS adds `|| stat -f %HT:%u:%Lp` inside the same substitution, which on
-  Linux can never print a passing value. SIM-CDR-008's per-run exfil directory
+  step checks it in one `stat` lookup first. A check accepts only a directory
+  the running user or root owns: in five scenarios (SIM-AIACC-006, SIM-APB-001,
+  SIM-CLOUD-010, SIM-MP-015, SIM-MP-021) steps running as another account,
+  root among them, wrote their own files into a directory a service account
+  made, which that account could have filled with links. Those steps now keep
+  their files in their own private directory. A step that also runs on macOS
+  adds `|| stat -f %HT:%u:%Lp` inside the same substitution, which on Linux can
+  never print a passing value. SIM-CDR-008's per-run exfil directory
   is now made with `mktemp -d`. SIM-CDR-030 is unchanged: every step already
   makes its directory with `set -eu`, `umask 077` and `mkdir` without `-p`.
-- **Files (143 steps in 76 scenarios, 146 names).** A file only the writing
-  step uses now lives in `C=$(mktemp -d /tmp/cortexsim.XXXXXX)`, which the step
-  removes on exit; the old cleanup lines for those names are gone. A file a
-  later step reads moved into a new sandbox under the directory rule (12
-  scenarios: SIM-AIRS-001, -003, -004, SIM-AISPM-001, -002, -004, -005, -006,
-  SIM-CDR-004, -010, SIM-EDR-008, SIM-MP-034). Cleanup that sources or rewrites
-  through such a path now checks ownership first (SIM-AIRS-001, SIM-EDR-008).
+- **Files (143 root, `container-runtime` or `direct` steps in 76 scenarios,
+  151 names).** A file only the writing step uses now lives in
+  `C=$(mktemp -d /tmp/cortexsim.XXXXXX)`, which the step removes on exit; the
+  old cleanup lines for those names are gone. In those steps a tool's output
+  that used to go to a fixed `/tmp` name goes there too (SIM-EDR-001's
+  `mimi_output.txt`, SIM-ITDR-006's AS-REP hashes, both readable by every user
+  before). A file a later step reads moved into a new sandbox under the
+  directory rule (12 scenarios: SIM-AIRS-001, -003, -004, SIM-AISPM-001, -002,
+  -004, -005, -006, SIM-CDR-004, -010, SIM-EDR-008, SIM-MP-034). Cleanup that
+  sources or rewrites through such a path now checks ownership first
+  (SIM-AIRS-001, SIM-EDR-008).
   No detection, card query or test keyed on the old file paths; the cards'
   illustrative payload text still shows them.
 - **What an operator will notice.** EAL campaign files, staged crontabs and the
@@ -1988,7 +1995,7 @@ Each runs for real (not SAFE-MODE) inside a staged decoy tree under
   `~/.zshrc` that cleanup does not remove: until cleanup, a planted file at
   either path runs as root. SIM-EDR-007 runs `ansible-playbook` on
   `/tmp/pov-encrypt.yml`, an operator-staged file no step writes. Root steps
-  still write about 40 output-only files to fixed `/tmp` names, and SIM-CDR-001
+  still write about 35 output-only files to fixed `/tmp` names, and SIM-CDR-001
   keeps `/tmp/linpeas.sh` and `/tmp/deepce.sh`, the payload shelf's
   `stage_path`. Service-account steps (SIM-MP-028's EAL files, SIM-EDR-011's
   target list) were not in scope.

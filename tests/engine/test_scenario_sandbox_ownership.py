@@ -18,13 +18,15 @@ The rule for a directory (SANDBOXES):
   - every other step that uses it first checks, in ONE lookup, that it is a
     directory (not a symlink) with that mode and the expected owner:
     ``[ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ]``.
-    Where another identity runs inside it the mode is 755 and the check stores
-    the lookup and also accepts the creating account
-    (``s=$(stat ...); [ "$s" = "directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ]``,
-    or ``$(id -u www-data)`` for an account). A step that also runs on macOS
-    adds the BSD lookup inside the same substitution
-    (``|| stat -f %HT:%u:%Lp "$D" 2>/dev/null``) and accepts ``Directory:``.
-    Each alternative is a complete check on one lookup.
+    Where a service account runs inside a root-made directory the mode is 755
+    and the check stores the lookup and also accepts root
+    (``s=$(stat ...); [ "$s" = "directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ]``).
+    It never accepts a directory another, less privileged account owns: that
+    account could plant links inside it and redirect the step's writes, so a
+    step running as a different account keeps its own files in ``$C`` instead.
+    A step that also runs on macOS adds the BSD lookup inside the same
+    substitution (``|| stat -f %HT:%u:%Lp "$D" 2>/dev/null``) and accepts
+    ``Directory:``. Each alternative is a complete check on one lookup.
 
 The rule for a file used only by the step that writes it (PRIVATE_FILES): the
 step opens with ``C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf
@@ -136,8 +138,9 @@ SANDBOXES = {
     "SIM-TIM-009": ["/tmp/cortexsim-tim009"],
 }
 
-# scenario id -> files a root step once wrote straight into /tmp under these names
-# and then ran or read in the same step; each now lives in $C (see PRIVATE_DIR)
+# scenario id -> files a root step once wrote straight into /tmp under these names,
+# to run or read them in the same step (or, in a step that now has $C anyway, only
+# to keep its output); each now lives in $C (see PRIVATE_DIR)
 PRIVATE_FILES = {
     "SIM-AIACC-001": "aiacc-001-burst.yml aiacc-001.yml",
     "SIM-AIACC-002": "aiacc-002-burst.yml aiacc-002.yml",
@@ -148,7 +151,7 @@ PRIVATE_FILES = {
     "SIM-AIRS-004": "airs-004-tools.json",
     "SIM-AIRS-005": "airs-005-events.jsonl airs-005-final.json",
     "SIM-AISPM-002": "aispm-002-findings.json",
-    "SIM-AISPM-003": "aispm-003-expected-cves.txt aispm-003-findings.json aispm-003-graph.json",
+    "SIM-AISPM-003": "aispm-003-expected-cves.txt aispm-003-findings.json aispm-003-graph.json aispm-003-layer-arn.txt",
     "SIM-AISPM-004": "aispm-004-canary.txt aispm-004-findings.json aispm-004-pickle-check.txt",
     "SIM-AISPM-005": "aispm-005-canary-preview.txt aispm-005-dspm.json aispm-005-gov.json aispm-005-lineage.json",
     "SIM-AISPM-006": "aispm-006-summary.json aispm-006-trends.json",
@@ -158,7 +161,7 @@ PRIVATE_FILES = {
     "SIM-BROWSER-004": "sim-browser-004-eal.yml",
     "SIM-BROWSER-005": "sim-browser-005-eal.yml",
     "SIM-CDR-004": "cortexsim-cronjob.yaml",
-    "SIM-CDR-007": "iam-authz.json",
+    "SIM-CDR-007": "cloudsplaining iam-authz.json",
     "SIM-CDR-019": "cdr-019-s3-exfil-confirm.yml cdr-019-s3-exfil.yml",
     "SIM-CDR-020": "cdr-020-secrets.yml cdr-020-ssm.yml",
     "SIM-CLOUD-001": "cloud-001-burst.yml cloud-001.yml",
@@ -169,8 +172,8 @@ PRIVATE_FILES = {
     "SIM-CLOUD-008": "cloud-008-enum.yml cloud-008-exfil.yml",
     "SIM-CLOUD-009": "sim-cloud-009-onedrive.yml sim-cloud-009-sharepoint.yml",
     "SIM-CSPM-001": "cspm-discovered.json cspm-planted.json",
-    "SIM-EDR-001": "mimipenguin.sh",
-    "SIM-EDR-003": "cortexsim-backdoor.service cortexsim_cron_test cortexsim_profile_test",
+    "SIM-EDR-001": "mimi_output.txt mimipenguin.sh",
+    "SIM-EDR-003": "cortexsim-backdoor.service cortexsim_cron_backup cortexsim_cron_test cortexsim_profile_test",
     "SIM-EMAIL-001": "email-001-m365.yml email-001.yml",
     "SIM-EMAIL-002": "email-002-m365.yml email-002.yml",
     "SIM-EMAIL-003": "email-003-m365.yml email-003.yml",
@@ -181,7 +184,7 @@ PRIVATE_FILES = {
     "SIM-ITDR-003": "itdr-003-ms.yml itdr-003.yml",
     "SIM-ITDR-004": "itdr-004-rep.yml itdr-004.yml",
     "SIM-ITDR-005": "itdr-005-spray.yml itdr-005.yml",
-    "SIM-ITDR-006": "cortexsim_itdr006_users.txt",
+    "SIM-ITDR-006": "cortexsim_itdr006_asrep.txt cortexsim_itdr006_users.txt",
     "SIM-ITDR-008": "itdr-008-ms.yml itdr-008-okta.yml",
     "SIM-ITDR-019": "itdr-019-rule.yml itdr-019.yml",
     "SIM-KOI-001": "koi-001.yml",
@@ -221,7 +224,6 @@ PRIVATE_FILES = {
 PRIVATE_DIR = """C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT"""
 RUNS_AS_BEACON = {"root", "direct", "container-runtime"}
 OTHER_UID = 4242  # stands in for another local user
-ACCOUNT = r"[a-z_][a-z0-9_-]*"
 
 
 @functools.lru_cache(maxsize=None)
@@ -275,10 +277,10 @@ def _guard(command: str, sandbox: str) -> tuple[str, re.Match, re.Match] | None:
         r = re.escape(ref)
         create = re.search(rf"rm -rf {r}(?: &&|\n)\s*mkdir -m [0-7]{{3}} {r}(?: \|\| \{{[^\n]*?exit 1; \}})?", command)
         mine = r'"directory:\$\(id -u\):[0-7]{3}"'
-        alt = rf'\[ "\$s" = "[dD]irectory:(?:0|\$\(id -u(?: {ACCOUNT})?\)):[0-7]{{3}}" \]'
+        alt = r'\[ "\$s" = "[dD]irectory:(?:0|\$\(id -u\)):[0-7]{3}" \]'
         check = re.search(
             rf'(?:\[ "{_lookup(r)}" = {mine} \]'          # the owner's check
-            rf"|s={_lookup(r)}; {alt}(?: \|\| {alt})*)"    # stored: root's, an account's, mine; BSD spelling
+            rf"|s={_lookup(r)}; {alt}(?: \|\| {alt})*)"    # stored: root's or mine; BSD spelling
             rf"(?: \|\| \{{[^\n]*?exit 1; \}})?", command)
         found = [m for m in (create, check) if m]
         if found:
@@ -320,6 +322,8 @@ CASES = list(_cases())
 @pytest.mark.parametrize("sid, step_id, identity, sandbox, command", CASES)
 def test_a_step_guards_its_scratch_directory_before_using_it(sid, step_id, identity, sandbox, command):
     assert f"mkdir -p {sandbox}\n" not in command + "\n" and f"mkdir -p {sandbox} " not in command
+    assert not re.search(r"directory:\$\(id -u [a-z_]", command), \
+        "a check must not trust a directory another account owns: keep this step's files in $C"
     guard = _guard(command, sandbox)
     assert guard is not None, "no creation or ownership guard for " + sandbox
     use = _first_use(command, sandbox)
@@ -379,7 +383,6 @@ needs_root_in_a_container = pytest.mark.skipif(
 def accounts():
     """The service accounts the steps run as, created in the container when absent."""
     wanted = {identity for _, _, identity, _, _ in (c.values for c in CASES)} - RUNS_AS_BEACON
-    wanted |= {a for c in CASES for a in re.findall(rf"\$\(id -u ({ACCOUNT})\)", c.values[4])}
     for name in sorted(wanted):
         try:
             pwd.getpwnam(name)
@@ -413,11 +416,8 @@ def _uid(identity: str) -> int:
 
 
 def _owner(script: str, runner: int) -> int:
-    """Who the guard accepts besides the running user: root, a named account, or no one else."""
-    if "directory:0:" in script:
-        return 0
-    named = re.search(rf"\$\(id -u ({ACCOUNT})\)", script)
-    return pwd.getpwnam(named.group(1)).pw_uid if named else runner
+    """Who the guard accepts besides the running user: root, or no one else."""
+    return 0 if "directory:0:" in script else runner
 
 
 def _clear(*paths: str) -> None:
@@ -524,16 +524,15 @@ def test_a_planted_file_or_link_at_the_old_name_is_never_written_or_read(sid, na
 
 
 # A one-of-each sample of the guard forms in the corpus: the owner's check, a
-# stored lookup accepting root or a named account, and each again with the macOS
-# fallback. The race replays each, as written, against an exchange.
+# stored lookup also accepting root, and each again with the macOS fallback.
+# The race replays each, as written, against an exchange.
 RACE_FORMS = [
     ("SIM-ITDR-017", "step-02", "/tmp/cortexsim-itdr-017"),     # [ "$(stat ...)" = mine ]
     ("SIM-CDR-002", "step-02", "/tmp/.xmr"),                     # the same through a variable
     ("SIM-MP-013", "step-05", "/tmp/cortexsim-mp013"),           # stored: root's or mine
-    ("SIM-MP-015", "step-03", "/tmp/cortexsim-mp015"),           # stored: www-data's or mine
     ("SIM-TIM-008", "step-02", "/tmp/cortexsim-tim008"),         # portable: mine
     ("SIM-TIM-008", "step-03", "/tmp/cortexsim-tim008"),         # portable: root's or mine
-    ("SIM-AIACC-006", "step-02", "/tmp/cortexsim-aiacc006"),     # portable: developer's or mine
+    ("SIM-CLOUD-010", "step-02", "/tmp/cortexsim-cloud010"),     # portable: mine, mode 700
 ]
 _EXCHANGER = r"""
 import ctypes, os, sys

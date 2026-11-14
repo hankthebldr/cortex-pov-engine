@@ -84,8 +84,8 @@ steps:
       # Pull the Lambda layer that ships vulnerable ML deps
       LAMBDA_FN=$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `aispm-openai-proxy`)].FunctionName' --output text | head -1)
       aws lambda list-layer-versions --layer-name "${LAMBDA_FN}-vulnerable-ml-deps" 2>/dev/null \
-        | jq -r '.LayerVersions[0].LayerVersionArn' > /tmp/aispm-003-layer-arn.txt || \
-        echo "<<no layer found — fixture may be running in minimal mode>>" > /tmp/aispm-003-layer-arn.txt
+        | jq -r '.LayerVersions[0].LayerVersionArn' > "$C/aispm-003-layer-arn.txt" || \
+        echo "<<no layer found — fixture may be running in minimal mode>>" > "$C/aispm-003-layer-arn.txt"
 
       # Expected vulnerable deps from the fixture's requirements.txt manifest
       cat > "$C/aispm-003-expected-cves.txt" <<-EOF
@@ -187,7 +187,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-003-*"
     - "echo '[CortexSim] SIM-AISPM-003 cleanup complete.'"
 
 author: "Henry Reed"
