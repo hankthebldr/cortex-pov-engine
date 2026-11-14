@@ -239,6 +239,11 @@ _PS_MARKER_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
+# Shell bookkeeping that starts no process: a `[ ... ]` test and `exit`.
+# A scratch-directory ownership guard is made only of these (plus an
+# echo), so it must not turn a marker-only step into a signal one. A piece with
+# a command substitution is not bookkeeping: that runs a process.
+_BOOKKEEPING_RE = re.compile(r"^(\[\s.*\]|exit(\s+\d+)?)$")
 _UNIT42_HOST = "unit42.paloaltonetworks.com"
 
 
@@ -272,6 +277,11 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
         return False
     for line in re.split(r"\n|;|&&|\|\||\|", cmd):
         if _MARKER_LINE_RE.match(line) or _PS_MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
+            continue
+        piece = line.strip().lstrip("{( ").rstrip("}) ")
+        if not piece or _MARKER_LINE_RE.match(piece):
+            continue  # a `{ echo ...` or a closing brace of a guard
+        if _BOOKKEEPING_RE.match(piece) and "$(" not in piece and "`" not in piece:
             continue
         return False
     return True

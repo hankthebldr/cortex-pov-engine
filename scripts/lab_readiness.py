@@ -86,6 +86,11 @@ PACKS_GLOB = os.path.join(BASE, "tools", "packs", "*.yml")
 # is one of these. `touch` is included to match the corpus's own documented
 # echo/printf/touch definition, though it does emit a weak FILE_WRITE event.
 _NO_SIGNAL_RE = re.compile(r"^(echo|printf|:|true|touch|sleep|export|cd|set|source)\b|^#")
+# Shell bookkeeping that starts no process: a `[ ... ]` test and `exit`.
+# A scratch-directory ownership guard is made only of these, so it
+# must not turn a narration step into a "real signal" one. A clause holding a
+# command substitution is not bookkeeping: that runs a process.
+_BOOKKEEPING_RE = re.compile(r"^(\[\s.*\]|exit(\s+\d+)?)$")
 # A guarded availability probe is NOT an attack action — it only asks "is this
 # tool present / what version is it". A SAFE-MODE narration step that pairs an
 # `echo` with `(esxcli --version || true)` produces no attack telemetry, so
@@ -200,6 +205,8 @@ def _clause_is_signal(clause: str) -> bool:
     if _NO_SIGNAL_RE.match(c):
         return False
     if _PROBE_RE.match(c):
+        return False
+    if _BOOKKEEPING_RE.match(c) and "$(" not in c and "`" not in c:
         return False
     return True
 
