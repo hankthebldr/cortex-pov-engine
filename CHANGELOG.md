@@ -236,6 +236,53 @@ draft verdict now reports `DRAFT_CHAIN_INVALID` when the chain is invalid
   workflow legitimately needs more.
 - **New table `tenant_evidence_reads`** is created at boot; no migration step.
 
+### Added — four Linux scenarios promoted from the staged draft library
+
+Four of the seven Linux pairs that `drafts/detection-library/INDEX.md` listed
+with no content finding are now corpus content. Each was rewritten from the
+draft and the alert's reference page by `ttp-engineer`, reviewed
+adversarially by `detection-corpus-reviewer` until it passed (with
+advisories, all closed), given real ids, and landed as its own commit. Each
+draft pair was removed from staging in the same commit. Ground truth after
+the four: **205 scenarios · 203 TTP cards · 1452 step-detections ·
+Correlation 149 (10.3%)** (`docs/reference/ground-truth.md`); the staging
+library holds 362 pairs.
+
+| scenario | card | draft | targeted alert (reference page) | how it is declared |
+|---|---|---|---|---|
+| SIM-EDR-026 crond masquerade from a scratch path | TTP-2026-0552 | TTP-0000-0029 | Masquerading as the Linux crond process | the built-in alert as one ABIOC row, 3 XQL, CR-EDR-0026 |
+| SIM-EDR-027 compressed-archive exfiltration attempt over SSH | TTP-2026-0553 | TTP-0000-0033 | A compressed file was exfiltrated over SSH | alert hunt-only (no SSH session opens); 5 XQL, CR-EDR-0027 |
+| SIM-EDR-028 sudoedit burst in the CVE-2021-3156 probe form | TTP-2026-0554 | TTP-0000-0317 | Sudoedit Brute force attempt | alert hunt-only (needs a trained baseline); 4 XQL, CR-EDR-0028 |
+| SIM-EDR-029 sshpass credential-stuffing burst | TTP-2026-0555 | TTP-0000-0321 | Suspicious sshpass command execution | the built-in alert as one ABIOC row, 4 XQL, CR-EDR-0029 |
+
+- **Every step runs for real.** Each chain works inside one hidden `/var/tmp`
+  sandbox and makes no real network call: SSH clients aim at a `.invalid`
+  host and must fail at name resolution. Each chain removes its own sandbox.
+  - The sandbox is created atomically (`mkdir -m 700`, no `-p`).
+  - Every later step checks the sandbox with one `stat` of type, owner and
+    mode before it touches it. A three-test check was shown racy where
+    `fs.protected_symlinks` is off.
+  - `sshpass`, `ssh`, `scp`, `sudo` and `sudoedit` are declared in
+    `requires_interpreters` where a step needs them, so a host without them
+    reads `not_executed`, not missed.
+- **Lab runs on `pov-target-01` (2026-11-14)**, recorded in
+  `docs/lab/2026-11-14-promoted-linux-drafts-lab-run.md`:
+  - **All four completed** (SIM-EDR-029 after `sshpass` was installed on the
+    endpoint), and every declared XQL row returned rows in the tenant.
+  - **SIM-EDR-027:** step-02's gzip leg was never recorded by the agent, so
+    that row was dropped.
+  - **SIM-EDR-028:** the agent recorded the first 28 of 60 starts, above the
+    floor of 20.
+  - **Correlation rules:** CR-EDR-0026, 0027, 0028 and 0029 were accepted by
+    the tenant as queries and return their chain's row. None is installed.
+  - **Built-in alerts:** none was raised.
+- **Left in staging, with nothing a lab run can fire:**
+  - TTP-0000-0315 *Rare SSH Session* and TTP-0000-0323 *Uncommon SSH session
+    was established*: both need a real SSH session to a second host plus a
+    rarity baseline.
+  - TTP-0000-0318 *Suspicious container orchestration job*: needs a container
+    orchestrator job, and the lab is one VM with no cluster.
+
 ### Added — Run detail: a Broken step opens its troubleshooting sheet (design v26 §4.6)
 
 - **A Broken card on a run's chain is now a button** that opens a sheet of

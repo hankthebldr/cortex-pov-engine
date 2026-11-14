@@ -1,13 +1,13 @@
 {
  "generated_by": "scripts/detdev/manifest.py",
  "summary": {
-  "pairs": 366,
+  "pairs": 362,
   "by_platform": {
-   "linux": 56,
+   "linux": 52,
    "windows": 310
   },
   "by_source": {
-   "cortex analytics alert": 306,
+   "cortex analytics alert": 302,
    "not recorded": 60
   },
   "declared_rows": {
@@ -15,7 +15,7 @@
    "Prevention": 0,
    "ABIOC": 80,
    "Analytics": 43,
-   "BIOC": 876,
+   "BIOC": 861,
    "XQL": 9
   },
   "pairs_by_finding": {
@@ -32,12 +32,8 @@
    "query uses to_timestamp()": 1
   },
   "pairs_with_no_finding": [
-   "TTP-0000-0029",
-   "TTP-0000-0033",
    "TTP-0000-0315",
-   "TTP-0000-0317",
    "TTP-0000-0318",
-   "TTP-0000-0321",
    "TTP-0000-0323"
   ]
  },
@@ -622,24 +618,6 @@
    ]
   },
   {
-   "card": "TTP-0000-0029",
-   "scenario": "SIM-DRAFT-029",
-   "name": "Masquerading as crond process from non-standard path",
-   "platform": "linux",
-   "source": {
-    "alert": "Masquerading as the Linux crond process",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/masquerading-as-the-linux-crond-process"
-   },
-   "techniques": [
-    "T1036.004"
-   ],
-   "steps": 4,
-   "rows": {
-    "BIOC": 4
-   },
-   "findings": []
-  },
-  {
    "card": "TTP-0000-0030",
    "scenario": "SIM-DRAFT-030",
    "name": "Setuid Privilege Escalation via chmod u+s on Shell Binary",
@@ -699,25 +677,6 @@
     "technique not named by the reviewed corpus: T1027.001",
     "commands name a routable host: example.com"
    ]
-  },
-  {
-   "card": "TTP-0000-0033",
-   "scenario": "SIM-DRAFT-033",
-   "name": "SSH Exfiltration of Compressed Data",
-   "platform": "linux",
-   "source": {
-    "alert": "A compressed file was exfiltrated over SSH",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compressed-file-was-exfiltrated-over-ssh"
-   },
-   "techniques": [
-    "T1048",
-    "T1560"
-   ],
-   "steps": 3,
-   "rows": {
-    "BIOC": 3
-   },
-   "findings": []
   },
   {
    "card": "TTP-0000-0034",
@@ -7168,26 +7127,6 @@
    ]
   },
   {
-   "card": "TTP-0000-0317",
-   "scenario": "SIM-DRAFT-317",
-   "name": "Sudoedit Brute Force Attack via Automated Script",
-   "platform": "linux",
-   "source": {
-    "alert": "Sudoedit Brute force attempt",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/sudoedit-brute-force-attempt"
-   },
-   "techniques": [
-    "T1059.003",
-    "T1110.001",
-    "T1078.004"
-   ],
-   "steps": 4,
-   "rows": {
-    "BIOC": 4
-   },
-   "findings": []
-  },
-  {
    "card": "TTP-0000-0318",
    "scenario": "SIM-DRAFT-318",
    "name": "Suspicious Container Orchestration Job Execution",
@@ -7250,26 +7189,6 @@
    "findings": [
     "commands name a routable host: example.com"
    ]
-  },
-  {
-   "card": "TTP-0000-0321",
-   "scenario": "SIM-DRAFT-321",
-   "name": "Suspicious sshpass Usage for Credential Theft",
-   "platform": "linux",
-   "source": {
-    "alert": "Suspicious sshpass command execution",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-sshpass-command-execution"
-   },
-   "techniques": [
-    "T1021.004",
-    "T1059.004",
-    "T1566.001"
-   ],
-   "steps": 4,
-   "rows": {
-    "BIOC": 4
-   },
-   "findings": []
   },
   {
    "card": "TTP-0000-0322",

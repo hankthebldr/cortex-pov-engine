@@ -419,6 +419,22 @@
     "bash": "43e8f0011214ca09f6e65fc2ea9be8953b2375b9de6ec5b017ef74b5cd25cb3f",
     "powershell": null
   },
+  "SIM-EDR-026": {
+    "bash": "182cd2ad4e3099d32954784a17901989ad5802608c4c7f90506bf56d6a9b5ded",
+    "powershell": null
+  },
+  "SIM-EDR-027": {
+    "bash": "ffbf263cc34f126ba4610fe9fdb5e7893766457e0f26df6276224e5798417081",
+    "powershell": null
+  },
+  "SIM-EDR-028": {
+    "bash": "f5d40c8f00b23cd8dca15548d15fa7ed7fd6ce273904a7dff4a32f8ac6234bcd",
+    "powershell": null
+  },
+  "SIM-EDR-029": {
+    "bash": "7093b802032895f66562990f9330246630c208da0d6e568854f4f6630f19685f",
+    "powershell": null
+  },
   "SIM-EMAIL-001": {
     "bash": "1b672530c35eb89c279c2e0b223a42dde42f6a9b5a1b45c228fc92c176eb7200",
     "powershell": null
