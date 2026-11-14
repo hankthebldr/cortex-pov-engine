@@ -11,7 +11,6 @@ import json as _jsonlib
 import logging
 import posixpath
 import re
-import zlib
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Optional
@@ -289,51 +288,36 @@ _ENCODING_RE = re.compile(r"[a-z0-9-]{1,32}")
 
 
 async def _read_capped(resp: httpx.Response, cap: int, call: str) -> bytes:
-    """A streamed body, refused once it passes ``cap`` bytes.
+    """A streamed body, refused once its raw bytes pass ``cap``.
 
-    Read raw, so the ceiling holds on what is held in memory: a body the tenant
-    compressed although ``identity`` was asked for (gzip or deflate) is inflated
-    here in steps of at most what is left under the ceiling, never a whole chunk
-    at once; any other encoding is refused. ``call`` names the request in errors.
+    SimCore asks for ``Accept-Encoding: identity``. A reply carrying any other
+    ``Content-Encoding`` is refused before its body is read: an inflating reader
+    counts what it produced, not the raw bytes behind it, and a gzip stream
+    followed by a junk trailer produces nothing while it is read to the end.
+    On the one path left, the raw bytes are counted as they arrive and reading
+    stops at the first chunk past ``cap``. ``call`` names the request in errors.
     """
     enc = (resp.headers.get("content-encoding") or "").strip().lower()
-    if enc in ("", "identity"):
-        inflate = None
-    elif enc in ("gzip", "x-gzip", "deflate"):
-        inflate = zlib.decompressobj(zlib.MAX_WBITS | 32)   # a gzip or zlib header
-    else:
+    if enc not in ("", "identity"):
         shown = f" {enc!r}" if _ENCODING_RE.fullmatch(enc) else ""
         raise XsiamParseError(
-            f"XSIAM answered {call} with a content-encoding{shown} SimCore does not read")
+            f"XSIAM answered {call} with Content-Encoding{shown} although SimCore asked for "
+            f"identity; the reply was refused unread")
     if resp.is_stream_consumed:
         # A transport that built its Response from bytes (a test transport) has
-        # read and decoded the body already; only its size is left to refuse.
+        # read the body already; only its size is left to refuse.
         if len(resp.content) > cap:
             raise XsiamParseError(
                 f"XSIAM answered {call} with more than {cap} bytes, the most SimCore "
                 f"reads for an archive")
         return resp.content
     body = bytearray()
-    # Identity: aiter_bytes yields the raw bytes as they arrive. Compressed:
-    # aiter_raw, because aiter_bytes would let httpx inflate a whole chunk at once.
-    chunks = resp.aiter_bytes() if inflate is None else resp.aiter_raw()
-    try:
-        async for raw in chunks:
-            pending = raw
-            while pending:
-                if inflate is None:
-                    piece, pending = pending, b""
-                else:
-                    piece = inflate.decompress(pending, cap + 1 - len(body))
-                    pending = inflate.unconsumed_tail
-                body += piece
-                if len(body) > cap:
-                    raise XsiamParseError(
-                        f"XSIAM answered {call} with more than {cap} bytes, the most SimCore "
-                        f"reads for an archive; nothing past that was read")
-    except zlib.error as exc:
-        raise XsiamParseError(
-            f"XSIAM answered {call} with a {enc} body that does not inflate") from exc
+    async for raw in resp.aiter_raw():
+        if len(body) + len(raw) > cap:
+            raise XsiamParseError(
+                f"XSIAM answered {call} with more than {cap} bytes, the most SimCore "
+                f"reads for an archive; nothing past that was read")
+        body += raw
     return bytes(body)
 
 
@@ -550,9 +534,10 @@ class XsiamClient:
         One request, charged to the per-tenant bucket like every other (a local
         refusal raises before anything is sent), through the status mapping
         :meth:`_unwrap` applies (:meth:`_raise_for_status`). The body is streamed
-        with ``Accept-Encoding: identity`` and refused past
-        ``archives.MAX_ARCHIVE_BODY_BYTES`` (:func:`_read_capped`), so a large or
-        inflating reply is never held whole. A body that starts with a ZIP
+        with ``Accept-Encoding: identity``: a reply with any other
+        ``Content-Encoding`` is refused unread, and its raw bytes are refused past
+        ``archives.MAX_ARCHIVE_BODY_BYTES`` (:func:`_read_capped`), so a large
+        reply is never held whole. A body that starts with a ZIP
         signature (``PK\\x03\\x04``, or ``PK\\x05\\x06`` for an archive with no
         member) is returned as is. A JSON body is the tenant's answer in place of
         an archive: an error object raises through the shared ``has_app_error`` /
@@ -584,7 +569,7 @@ class XsiamClient:
         except (ValueError, RecursionError) as exc:     # RecursionError: deeply nested JSON
             raise XsiamParseError(
                 f"XSIAM answered {method.upper()} {path} with {what} that is neither a ZIP "
-                f"archive (it does not start with PK\\x03\\x04) nor JSON") from exc
+                f"archive (it starts with neither PK\\x03\\x04 nor PK\\x05\\x06) nor JSON") from exc
         self._check_app_error(data, wrapped=True)
         reply = data.get("reply", data) if isinstance(data, dict) else data
         self._check_app_error(reply)

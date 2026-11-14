@@ -40,8 +40,8 @@ ZIP_MAGIC = b"PK\x03\x04"
 EMPTY_ZIP_MAGIC = b"PK\x05\x06"
 ZIP_SIGNATURES = (ZIP_MAGIC, EMPTY_ZIP_MAGIC)
 
-#: The most bytes ``XsiamClient.request_archive`` reads off the wire (inflated,
-#: when the tenant compresses anyway) before refusing the reply: 4x the 1 MiB
+#: The most raw bytes ``XsiamClient.request_archive`` reads off the wire (it asks
+#: for identity and refuses any other encoding) before refusing the reply: 4x the 1 MiB
 #: the members may total, so stored members, headers and the central directory
 #: fit, and a central directory zipfile has to parse stays small.
 MAX_ARCHIVE_BODY_BYTES = 4194304     # 4 MiB

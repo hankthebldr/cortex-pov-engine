@@ -987,8 +987,9 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   "non-JSON response" and `xsiam.playbook.list` could never return a playbook.
   Both ops (`OP-SCRIPTS-GET` is new, taking the catalog to 152 operations, 83 of
   them reads) are tagged `zip-reply`: the executor fetches the bytes with
-  `XsiamClient.request_archive`, on the per-tenant request budget, streamed and
-  refused past 4 MiB, and reads the archive in memory with stdlib `zipfile`,
+  `XsiamClient.request_archive`, on the per-tenant request budget, asking for an
+  identity body (any other `Content-Encoding` is refused unread) and refusing it
+  past 4 MiB of raw bytes, and reads the archive in memory with stdlib `zipfile`,
   never extracting it. At most 50 members; a member over 256 KiB, or past 1 MiB
   in all, or neither stored nor deflated, is refused unread; one that inflates
   past its declared size is never read past it; non-UTF-8 is `binary: true`. An

@@ -2855,11 +2855,11 @@ other request, and returns `integrations/xsiam/archives.py::zip_members` as the
 reply: `members[]` (`name`, `text`, `bytes`, `text_truncated`, `binary`, `refused`),
 `member_count`, `members_truncated`. Inputs: `by` (`id` | `name`), `value`, `tenant`.
 
-- **A bounded body.** The reply is streamed with `Accept-Encoding: identity` and
-  refused with `XSIAM_PARSE_ERROR` once it passes 4 MiB
-  (`archives.MAX_ARCHIVE_BODY_BYTES`); reading stops there. A tenant that compresses
-  anyway (gzip or deflate) is inflated in steps of at most what is left under that
-  ceiling; any other content encoding is refused.
+- **A bounded body.** SimCore asks for `Accept-Encoding: identity`. A reply with
+  any other `Content-Encoding` (gzip included) is refused with `XSIAM_PARSE_ERROR`
+  before its body is read. An identity body is streamed, its raw bytes counted, and
+  refused with `XSIAM_PARSE_ERROR` at the first chunk that takes it past 4 MiB
+  (`archives.MAX_ARCHIVE_BODY_BYTES`); nothing after that chunk is read.
 - **In memory, under caps.** Stdlib `zipfile` over the bytes; nothing is
   extracted and a member name is never used as a path (it is neutralised data). At
   most 50 file members are listed. A member whose declared size is over 256 KiB, or

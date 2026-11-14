@@ -155,6 +155,8 @@ async def test_non_zip_non_json_body_is_parse_error():
     with pytest.raises(XsiamParseError) as ei:
         await client.request_archive("POST", PLAYBOOKS_GET, json=BODY)
     assert "text/html" in ei.value.detail and "sign in" not in ei.value.detail
+    # Both signatures it accepts are named, not only the non-empty one.
+    assert "PK\\x03\\x04" in ei.value.detail and "PK\\x05\\x06" in ei.value.detail
 
     client = _client(lambda r: httpx.Response(200, content=b""))
     with pytest.raises(XsiamParseError):
@@ -275,8 +277,6 @@ def test_a_member_neither_stored_nor_deflated_is_refused_unopened(monkeypatch, c
 
 @pytest.mark.asyncio
 async def test_a_body_past_the_ceiling_is_parse_error_and_reading_stops_there():
-    import gzip
-
     from integrations.xsiam.archives import MAX_ARCHIVE_BODY_BYTES
     from integrations.xsiam.exceptions import XsiamParseError
 
@@ -299,26 +299,38 @@ async def test_a_body_past_the_ceiling_is_parse_error_and_reading_stops_there():
     assert asked == ["identity"]
     assert len(sent_chunks) == MAX_ARCHIVE_BODY_BYTES // chunk + 1
 
-    # A tenant that compresses anyway: inflated in bounded steps, refused past the
-    # ceiling (~64 KB on the wire that would inflate to 64 MiB). Streamed, as a
-    # network body is: httpx inflates a bytes body when the Response is built.
-    def gzipped(data: bytes):
-        wire = gzip.compress(data)
 
-        async def body():
-            yield wire
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "br"])
+async def test_a_compressed_reply_is_refused_before_its_body_is_read(encoding):
+    """SimCore asks for identity; a tenant that compresses anyway is refused unread,
+    a small valid archive included (gzip of it, then a junk trailer, is the shape
+    whose raw bytes an inflating reader never counts)."""
+    import gzip
 
-        return lambda r: httpx.Response(200, content=body(), headers={"content-encoding": "gzip"})
+    from integrations.xsiam.exceptions import XsiamParseError
+
+    small = _zip([("playbook-Foo.yml", PLAYBOOK_YAML)])
+    pulled: list[int] = []
+
+    async def stream():
+        for i, piece in enumerate([gzip.compress(small)] + [b"\xaa" * 65536] * 64):
+            pulled.append(i)
+            yield piece
 
     with pytest.raises(XsiamParseError) as ei:
-        await _client(gzipped(b"PK\x03\x04" + b"\0" * (64 * 1024 * 1024))).request_archive(
+        await _client(lambda r: httpx.Response(
+            200, content=stream(), headers={"content-encoding": encoding})).request_archive(
             "POST", PLAYBOOKS_GET, json=BODY)
-    assert f"more than {MAX_ARCHIVE_BODY_BYTES} bytes" in ei.value.detail
+    assert f"Content-Encoding '{encoding}'" in ei.value.detail
+    assert "identity" in ei.value.detail
+    assert len(pulled) <= 1
 
-    # A small compressed archive still reads.
-    small = _zip([("playbook-Foo.yml", PLAYBOOK_YAML)])
-    assert await _client(gzipped(small)).request_archive(
-        "POST", PLAYBOOKS_GET, json=BODY) == small
+    # A body a transport built from bytes (and httpx already decoded) is refused too.
+    with pytest.raises(XsiamParseError):
+        await _client(lambda r: httpx.Response(
+            200, content=gzip.compress(small), headers={"content-encoding": "gzip"})).request_archive(
+            "POST", PLAYBOOKS_GET, json=BODY)
 
 
 def test_an_empty_archive_is_zero_members_not_a_parse_error(tmp_path, monkeypatch):
