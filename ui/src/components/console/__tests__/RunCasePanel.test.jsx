@@ -77,7 +77,30 @@ describe('RunCasePanel', () => {
     expect(a.getAttribute('href')).toBe('https://acme.xdr.us.paloaltonetworks.com/incidents/900')
     expect(a.getAttribute('rel')).toMatch(/noopener/)
     expect(within(rows[1]).queryByRole('link')).toBeNull()
-    expect(within(rows[1]).getByText('http://evil.example.com/x')).toBeTruthy()
+    expect(within(rows[1]).getByText('link withheld')).toBeTruthy()
+    expect(rows[1].textContent).not.toMatch(/evil\.example/)
+  })
+
+  it.each([
+    ['a javascript: url', 'javascript:alert(document.cookie)', /javascript/],
+    ['a non-PANW host', 'https://evil.example.com/case/901', /evil\.example/],
+  ])('a rejected xdr_url (%s) reads "link withheld" and its text is not printed', (_, url, raw) => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [{ ...LEDGER.cases[0], xdr_url: url }] }} />)
+    const row = screen.getByTestId('run-case-row')
+    expect(within(row).queryByRole('link')).toBeNull()
+    expect(within(row).getByText('link withheld')).toBeTruthy()
+    expect(row.textContent).not.toMatch(raw)
+  })
+
+  it('a url the instance withheld reads "link withheld"; no url reads a dash', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [
+      { ...LEDGER.cases[0], case_id: '902', xdr_url: null, xdr_url_withheld: true },
+      { ...LEDGER.cases[0], case_id: '903', xdr_url: null, xdr_url_withheld: false },
+    ] }} />)
+    const rows = screen.getAllByTestId('run-case-row')
+    expect(within(rows[0]).getByText('link withheld')).toBeTruthy()
+    expect(within(rows[1]).queryByText('link withheld')).toBeNull()
+    expect(within(rows[1]).getByText('—')).toBeTruthy()
   })
 
   it('shows a non-OK code and a failed issue read', () => {

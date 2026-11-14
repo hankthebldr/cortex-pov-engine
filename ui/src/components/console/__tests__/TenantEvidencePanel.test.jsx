@@ -260,7 +260,8 @@ const DEGRADED = [
       endpoint: { code: 'QUOTA_REFUSED', attempted: false, retry_after_seconds: 30, as_of: '2026-11-13T20:31:05', record: null },
       agreement: null,
     })),
-    sentence: S.QUOTA_REFUSED(30),
+    sentence: "This instance's own request budget refused a request in this read before it "
+      + 'reached the tenant, so the tenant was not asked for it. Retry in 30 s. Nothing was counted.',
   },
   {
     name: 'a failed section',
@@ -298,6 +299,95 @@ describe('each degraded code renders its own sentence, never an empty table', ()
       expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(0)
     }
     expect(panel().textContent).not.toMatch(/miss/i)
+  })
+})
+
+// ─── I-3: whose budget refused the read, and what the read counted ───────────
+
+const quotaSection = (over = {}) => ({
+  code: 'QUOTA_REFUSED', attempted: false, refused_locally: null, retry_after_seconds: 30,
+  detail: 'not read', remediation: 'retry later', ...over,
+})
+const notReadCases = quotaSection({ rows: null, requested: 0, ids_capped: null })
+const notReadEndpoint = quotaSection({ as_of: '2026-11-13T20:31:05', record: null })
+const refusedRead = ({ issues, cases = notReadCases, endpoint = notReadEndpoint, idSpace = {} }) => payload({
+  code: 'QUOTA_REFUSED', status: 'degraded', complete: false, issues, cases, endpoint,
+  agreement: { ...payload().agreement, id_space: { probed: 4, hit: 2, no_hit: 2, code: 'OK', ...idSpace } },
+})
+const LOCAL = "This instance's own request budget refused a request in this read before it "
+  + 'reached the tenant, so the tenant was not asked for it.'
+
+const QUOTA_CASES = [
+  {
+    name: "the issue read refused by this instance's own budget before any row: nothing was counted",
+    p: refusedRead({
+      issues: issuesSection({
+        ...quotaSection({ attempted: true, refused_locally: true }),
+        total_count: null, filter_count: null, truncated: null, counts_are_floors: null, pages: 0,
+        host_scope: { host: 'pov-target-01', attributed: null, other_host: null, without_host: null },
+        excluded_non_security: null, duplicate_rows: null, unrecognised_values: null,
+        rows: null, unattributed_rows: null,
+      }),
+      idSpace: { code: 'QUOTA_REFUSED', attempted: false, refused_locally: null },
+    }),
+    sentence: `${LOCAL} Retry in 30 s. Nothing was counted.`,
+  },
+  {
+    name: "the endpoint read refused by the tenant's rate limit after a truncated window: floors",
+    p: refusedRead({
+      issues: issuesSection({ truncated: true, counts_are_floors: true, filter_count: 900 }),
+      cases: { code: 'OK', rows: [], requested: 0, ids_capped: false },
+      endpoint: { ...notReadEndpoint, attempted: true, refused_locally: false },
+    }),
+    sentence: "The tenant's rate limit (HTTP 429) refused a request in this read. Retry in 30 s. "
+      + 'Rows already read are kept and counts are floors.',
+  },
+  {
+    name: "the id probe refused by this instance's own budget after a complete window",
+    p: refusedRead({
+      issues: issuesSection(),
+      idSpace: { code: 'QUOTA_REFUSED', attempted: true, refused_locally: true },
+    }),
+    sentence: `${LOCAL} Retry in 30 s. The issue rows are complete; later sections were not read.`,
+  },
+  {
+    name: 'a stored read that does not say whose budget: a neutral subject, completeness unknown',
+    // A read stored before the id probe recorded whose budget refused it.
+    p: refusedRead({
+      issues: issuesSection({ truncated: null, counts_are_floors: null, filter_count: null }),
+      idSpace: { code: 'QUOTA_REFUSED' },
+    }),
+    sentence: 'A request budget refused a request in this read; the stored read does not say whose '
+      + "budget it was (this instance's own, or the tenant's). Retry in 30 s. "
+      + 'Whether the issue rows are complete is unknown; later sections were not read.',
+  },
+]
+
+describe('a quota refusal says whose budget refused it and what the read counted', () => {
+  it.each(QUOTA_CASES)('$name', async ({ p, sentence }) => {
+    installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(p) })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(within(panel()).getByText(sentence)).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/miss|SimCore|deathstar/i)
+  })
+})
+
+describe('a read inside the minimum interval says when a new read is possible', () => {
+  it.each([0, null])('retry_after_seconds %s says a new read is possible now', async (n) => {
+    installRoutes({
+      'GET /api/runs/r1/tenant-evidence': stored(payload()),
+      'POST /api/runs/r1/tenant-evidence': {
+        ...postNothingRead('TENANT_EVIDENCE_READ_RECENTLY', 'ok'),
+        retry_after_seconds: n, snapshot: snapshotOf(payload()), issues: issuesSection(),
+      },
+    })
+    render(<TenantEvidencePanel runId="r1" />)
+    await waitFor(() => expect(refreshButton()).not.toBeDisabled())
+    fireEvent.click(refreshButton())
+    await waitFor(() => expect(within(panel()).getByText(
+      'This run was read from the tenant recently, so that read is shown. A new read is possible now.',
+    )).toBeInTheDocument())
+    expect(panel().textContent).not.toMatch(/in 0 s|shortly/)
   })
 })
 

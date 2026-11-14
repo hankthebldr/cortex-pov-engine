@@ -23,9 +23,11 @@ export const NO_CASE_YET_HINT =
 
 /**
  * xdr_url comes from the tenant: link only plain https on paloaltonetworks.com.
- * Mirrors the backend (core/api/runs.py::_safe_xdr_url): whitespace, control
- * characters, backslash, markup metacharacters, userinfo and a port all reject
- * (`new URL` alone would accept a backslash and read userinfo past it).
+ * The backend's check is core/connectors/tenant_reader.py::safe_xdr_url, which
+ * is stricter still (printable ASCII only, at most 200 characters). Here
+ * whitespace, control characters, backslash, markup metacharacters, userinfo
+ * and a port all reject (`new URL` alone would accept a backslash and read
+ * userinfo past it). A rejected url is never printed: the row says "link withheld".
  */
 export function safeXdrUrl(url) {
   if (typeof url !== 'string' || !url) return null
@@ -156,9 +158,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
                   <td>
                     {safe ? (
                       <a href={safe} target="_blank" rel="noopener noreferrer">open in XSIAM</a>
-                    ) : c.xdr_url ? (
-                      <span className="mono">{String(c.xdr_url)}</span>
-                    ) : '—'}
+                    ) : c.xdr_url || c.xdr_url_withheld ? 'link withheld' : '—'}
                   </td>
                 </tr>
               )

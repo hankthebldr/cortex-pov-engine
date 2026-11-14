@@ -26,6 +26,27 @@ import '../../styles/destinations/run-detail.css'
 
 void React
 
+/**
+ * Whose budget refused a request (I-3). A local refusal is this instance's own
+ * bucket and says nothing about the tenant; only a 429 is the tenant's. When the
+ * stored read does not say which, the sentence says so rather than guess.
+ */
+const QUOTA_WHO = Object.freeze({
+  local: "This instance's own request budget refused a request in this read before it reached "
+    + 'the tenant, so the tenant was not asked for it.',
+  tenant: "The tenant's rate limit (HTTP 429) refused a request in this read.",
+  unknown: 'A request budget refused a request in this read; the stored read does not say whose '
+    + "budget it was (this instance's own, or the tenant's).",
+})
+
+/** What the refused read counted, from `issues.counts_are_floors` (and `issues.rows` when it is null). */
+const QUOTA_COUNTED = Object.freeze({
+  floors: 'Rows already read are kept and counts are floors.',
+  complete: 'The issue rows are complete; later sections were not read.',
+  unknown: 'Whether the issue rows are complete is unknown; later sections were not read.',
+  nothing: 'Nothing was counted.',
+})
+
 /** One sentence per degraded state (spec §7.5). The templates take the numbers. */
 export const TENANT_EVIDENCE_SENTENCES = Object.freeze({
   TENANT_EVIDENCE_NOT_READ:
@@ -44,13 +65,14 @@ export const TENANT_EVIDENCE_SENTENCES = Object.freeze({
     + 'or it is a push run whose bundle ran offline. Nothing was read from the tenant.',
   TRUNCATED: 'The tenant holds more issues in this window than were read; counts are floors.',
   TRUNCATION_UNKNOWN: 'Truncation unknown: the tenant sent no FILTER_COUNT.',
-  QUOTA_REFUSED: (n) => `The request budget for this tenant refused the read; ${
-    n == null ? 'retry later' : `retry in ${n} s`
-  }. Rows already read are kept and counts are floors.`,
+  // `who` and `counted` are keys of QUOTA_WHO and QUOTA_COUNTED (quotaWho, quotaCounted).
+  QUOTA_REFUSED: (who, n, counted) => `${QUOTA_WHO[who] ?? QUOTA_WHO.unknown} ${
+    n == null ? 'Retry later.' : `Retry in ${n} s.`
+  } ${QUOTA_COUNTED[counted] ?? QUOTA_COUNTED.nothing}`,
   SECTION_FAILED: (section, code, remediation) =>
     `${section} read failed (${code})${remediation ? `: ${remediation}` : ''}`,
   TENANT_EVIDENCE_READ_RECENTLY: (n) => `This run was read from the tenant recently, so that read is shown. ${
-    n == null ? 'A new read is possible shortly.' : `A new read is possible in ${n} s.`
+    typeof n === 'number' && n > 0 ? `A new read is possible in ${n} s.` : 'A new read is possible now.'
   }`,
   // Request failures, by code. Never the error's own text.
   CREDENTIAL_ERROR: 'The tenant credential on this instance could not be opened, so nothing was read from the tenant.',
@@ -105,6 +127,33 @@ function payloadOf(data) {
   return p && typeof p === 'object' && typeof p.code === 'string' ? p : undefined
 }
 
+/**
+ * The refusal's subject: the first section whose own request was refused
+ * (`attempted: true`), else the issue id probe when it records one. A section
+ * that was never tried (`attempted: false`) says nothing about whose budget it was.
+ */
+function quotaWho(payload) {
+  const tried = [payload.issues, payload.cases, payload.endpoint]
+    .find((s) => s && s.code === QUOTA && s.attempted === true)
+  const probe = payload.agreement?.id_space
+  const by = tried ?? (probe && probe.code === QUOTA && probe.attempted === true ? probe : null)
+  if (by?.refused_locally === true) return 'local'
+  if (by?.refused_locally === false) return 'tenant'
+  return 'unknown'
+}
+
+/**
+ * true: the counts are floors. false: the issue rows are complete. null: nothing
+ * was counted, unless the issue rows were read, when only their completeness is
+ * unknown (the tenant sent no FILTER_COUNT).
+ */
+function quotaCounted(issues) {
+  const floors = issues?.counts_are_floors
+  if (floors === true) return 'floors'
+  if (floors === false) return 'complete'
+  return Array.isArray(issues?.rows) ? 'unknown' : 'nothing'
+}
+
 function headStatus(p) {
   if (p.status === 'ok') return { status: 'up', word: 'Read' }
   if (p.status === 'degraded') return { status: 'degraded', word: 'Degraded' }
@@ -144,7 +193,7 @@ function notesFor(data, payload, lastRead, readError, loadError) {
   if (payload.code === QUOTA || quota.length > 0) {
     const n = quota.map((s) => s.retry_after_seconds).find((v) => typeof v === 'number')
       ?? (typeof lastRead?.retry_after_seconds === 'number' ? lastRead.retry_after_seconds : null)
-    notes.push(S.QUOTA_REFUSED(n))
+    notes.push(S.QUOTA_REFUSED(quotaWho(payload), n, quotaCounted(issues)))
   }
   for (const [name, s] of sections) {
     if (s && typeof s.code === 'string' && !ANSWERED.has(s.code) && s.code !== QUOTA) {

@@ -909,6 +909,13 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   unknown, quota refused and a failed section with its code and remediation.
   Tenant-written names render as text, and a case link is followed only when it
   is https on `paloaltonetworks.com`.
+- A quota refusal names whose budget refused the read: this instance's own (the
+  tenant was not asked), the tenant's rate limit (HTTP 429), or, when the stored
+  read does not say, neither. It also says what was counted: floors, complete
+  issue rows, rows of unknown completeness, or nothing. A read inside the minimum
+  interval says a new read is possible now rather than "in 0 s", and the case
+  panel shows "link withheld" for a case link it will not follow, never the link's
+  text.
 - The case panel's read line no longer shows the integration's name, on Results
   and on Run detail, and a failed request renders a fixed sentence by its code,
   never the error's own text.
