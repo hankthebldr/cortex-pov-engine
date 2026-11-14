@@ -44,8 +44,10 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   'Targets': { dest: 'component-agents', params: { tab: 'fleet' }, hidden: true },
   // 'library' is the Scenarios rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
-  // Coverage is a tab inside Results since the task-rail pass, not a rail item.
-  'ATT&CK Coverage': { dest: 'coverage', hidden: true },
+  // The coverage route is the Dashboards rail item (design C8); its MITRE
+  // ATT&CK matrix is a tab, fetched when that tab opens, so it is addressed by
+  // route with `?tab=mitre`.
+  'ATT&CK Coverage': { dest: 'coverage', params: { tab: 'mitre' } },
   // `hidden` means "routable but not in the rail", so gotoView addresses it by
   // URL instead of clicking a button that does not exist. Three of these are
   // hidden as of the POVengine IA:
