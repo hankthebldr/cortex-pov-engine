@@ -138,6 +138,13 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "was exfiltrated over SSH' is hunt content only (no SSH session is opened; Informational). "
         "TC-EDR-05 is already evidenced — depth, not new index breadth. TC-DLP-01 is left off on "
         "purpose: nothing here inspects content."),
+    "SIM-EDR-029": (["TC-EDR-03", "TC-EDR-05"], REMAP,
+        "sshpass credential-stuffing burst at a .invalid name — six real sshpass runs around the "
+        "OpenSSH client, declared against the built-in single-event Analytics BIOC 'Suspicious "
+        "sshpass command execution'. sshpass is a packaged binary, so the behavioral method is what "
+        "flags it (TC-EDR-03); the shell to sshpass to ssh chain is the causality claim (TC-EDR-05). "
+        "The burst has not been run anywhere (it needs the sshpass package on the endpoint). Both "
+        "rows already evidenced — depth, not new index breadth."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,

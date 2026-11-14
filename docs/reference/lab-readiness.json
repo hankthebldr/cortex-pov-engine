@@ -1361,6 +1361,36 @@
     {
       "c2_tools": [],
       "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "sshpass Credential-Stuffing Burst Against an Unreachable Host \u2014 Six Real sshpass Runs Around the OpenSSH Client (-p and -f forms) at One .invalid Name",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "ssh",
+        "sshpass"
+      ],
+      "scenario_id": "SIM-EDR-029",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
@@ -6036,7 +6066,7 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 170,
+      "GREEN": 171,
       "RED": 5,
       "YELLOW": 28
     },
@@ -6044,7 +6074,7 @@
     "eal_delivered": 72,
     "scenarios_consent_gated": 5,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 203,
+    "scenarios_total": 204,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -6052,6 +6082,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 844
+    "total_steps": 847
   }
 }

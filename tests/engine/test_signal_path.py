@@ -153,6 +153,9 @@ def test_corpus_signal_paths():
     commands on the beacon host).
 
     SIM-EDR-026 on 2026-11-13: ENDPOINT 539 -> 543 (its 4 steps, all
+    commands on the beacon host).
+
+    SIM-EDR-029 on 2026-11-13: ENDPOINT 543 -> 546 (its 3 steps, all
     commands on the beacon host)."""
     counts: dict[str, int] = {}
     unplaced = []
@@ -162,4 +165,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 543, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 546, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}
