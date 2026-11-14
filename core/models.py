@@ -1266,6 +1266,9 @@ class CollectorTargetConfig(Base):
     dataset: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     auth_header: Mapped[str] = mapped_column(String, nullable=False, default="Authorization")
     auth_scheme: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # The collector instance's Compression setting (gzip = True).
+    compress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                           server_default="0")
     plugins: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     secret_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -1283,6 +1286,7 @@ class CollectorTargetConfig(Base):
             "dataset": self.dataset,
             "auth_header": self.auth_header,
             "auth_scheme": self.auth_scheme,
+            "compress": bool(self.compress),
             "plugins": list(self.plugins or []),
             "is_default": bool(self.is_default),
             "has_key": self.secret_name is not None,

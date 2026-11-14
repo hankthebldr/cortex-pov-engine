@@ -341,3 +341,54 @@ class TestPreflightAgreesWithTheLiveRun:
             live = DeliveryLedger().record_response(
                 status, records=1, wire_bytes=1, content_type=ct, body_prefix=bp)
             assert pre["code"] == live, (status, headers, pre["code"], live)
+
+
+# --------------------------------------------------------------------------
+# Compression. An XSIAM HTTP log collector set to gzip answered every
+# uncompressed POST with 400 "gzip compression error (invalid header)" in the
+# deathstar lab (PMA-2026-11-13, PM-ING-09). The preflight must send what the
+# campaign will send, or it reads refused for a door the run would use.
+# --------------------------------------------------------------------------
+
+
+def _gzip_only_collector(seen):
+    def handler(request):
+        seen.append(request)
+        if request.headers.get("content-encoding") != "gzip":
+            return httpx.Response(400, json={"error": "gzip compression error (invalid header)"})
+        import gzip
+        import json
+
+        json.loads(gzip.decompress(request.content))
+        return httpx.Response(200, json={"error": "false"})
+
+    return lambda timeout, verify: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=False,
+    )
+
+
+class TestPreflightCompression:
+    def test_a_compress_target_is_delivered_by_a_gzip_collector(self):
+        import gzip
+        import json
+
+        seen = []
+        result = asyncio.run(preflight_collector(
+            _target(compress=True), campaign_id="CMP-COLL-001",
+            client_factory=_gzip_only_collector(seen),
+        ))
+        assert result["delivered"] is True and result["code"] is None
+        body = json.loads(gzip.decompress(seen[0].content))
+        assert body["cortexsim_preflight"] is True
+        assert result["bytes_sent"] == len(seen[0].content)
+
+    def test_an_uncompressed_target_is_refused_with_a_compression_hint(self):
+        seen = []
+        result = asyncio.run(preflight_collector(
+            _target(compress=False), campaign_id="CMP-COLL-001",
+            client_factory=_gzip_only_collector(seen),
+        ))
+        assert "content-encoding" not in seen[0].headers
+        assert result["delivered"] is False
+        assert result["code"] == "collector_rejected"
+        assert "Compression" in result["remediation"]

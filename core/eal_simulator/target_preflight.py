@@ -131,7 +131,7 @@ async def preflight_target(
         step_id="preflight", plugin="collector-target", url=spec.url,
         scheme=parsed.scheme, host=spec.host, port=spec.port, path=parsed.path or "/",
         auth_header=spec.auth_header, auth_scheme=spec.auth_scheme,
-        has_auth_token=bool(token), dataset=spec.dataset,
+        has_auth_token=bool(token), dataset=spec.dataset, compress=spec.compress,
     )
     result["post_attempted"] = True
     probe = await preflight_collector(

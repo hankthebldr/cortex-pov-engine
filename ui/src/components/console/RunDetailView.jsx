@@ -16,7 +16,10 @@ import { launchWarningsFor } from './launchWarnings.js'
 import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import ReadBackNotice from './ReadBackNotice.jsx'
+import ReadBackButton from './ReadBackButton.jsx'
+import TenantEvidencePanel from './TenantEvidencePanel.jsx'
 import RunChain from './RunChain.jsx'
+import RunVerdictLine from './RunVerdictLine.jsx'
 import useReadBack from './useReadBack.jsx'
 import { resultCell } from './RunList.jsx'
 import { absoluteTime, runAgent } from './runRows.js'
@@ -532,6 +535,7 @@ export default function RunDetailView({
           {lifecycle.phase === PHASE.UNREAD && outcomes.get(runId) && !outcomes.get(runId).ok && (
             <p className="run-lifecycle__why" role="status">{outcomes.get(runId).message}</p>
           )}
+          <RunVerdictLine run={lcRun} variant="header" />
         </div>
       )}
 
@@ -541,6 +545,7 @@ export default function RunDetailView({
       {lifecycle && (
         <RunChain runId={runId} run={lcRun} lifecycle={lifecycle} onNavigate={onNavigate} />
       )}
+      <RunVerdictLine run={lcRun} variant="engine" />
 
       {/* The run died and the console knew — say it here, once, at the top,
           before any proof surface invites a coverage reading. */}
@@ -586,7 +591,13 @@ export default function RunDetailView({
         </section>
       )}
 
-      <RunCasePanel ledger={run?.case_ledger ?? null} />
+      {/* Read back here only where a verdict is already on screen, and not on the
+          Evidence tab, whose tenant evidence panel carries the one button. */}
+      <RunCasePanel
+        ledger={run?.case_ledger ?? null}
+        reconcileAction={lifecycle?.phase === PHASE.READY && tab !== 'evidence'
+          ? <ReadBackButton runId={runId} /> : null}
+      />
 
       <div
         className="lab__segmented run-detail__subtabs"
@@ -617,16 +628,20 @@ export default function RunDetailView({
           />
         )}
         {tab === 'evidence' && (lifecycle && lifecycle.phase !== PHASE.READY ? (
-          <ReadBackNotice
-            lifecycle={lifecycle}
-            outcome={outcomes.get(runId)}
-            onReadBack={() => readBack(runId)}
-          />
+          <>
+            <ReadBackNotice
+              lifecycle={lifecycle}
+              outcome={outcomes.get(runId)}
+              onReadBack={() => readBack(runId)}
+            />
+            <TenantEvidencePanel runId={runId} showCaseLedger={false} />
+          </>
         ) : (
           <EvidenceView
             activeRun={isThisActive ? activeRun : null}
             lastRun={isThisActive ? null : descriptor}
             pinnedRun={descriptor}
+            showCaseLedger={false}
             onError={onError}
           />
         ))}

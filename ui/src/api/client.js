@@ -559,6 +559,50 @@ export async function reconcileRun(runId, { connector = 'xsiam', integration = n
 }
 
 /**
+ * GET /api/runs/:id/tenant-evidence — the latest STORED tenant-evidence
+ * snapshot for a run. SimCore makes no outbound call for this.
+ *
+ * @param {string} runId
+ * @returns {Promise<{run_id:string, status:string, code:string, snapshot:Object|null,
+ *   history:Array<{id:number, read_at:string, code:string}>, case_ledger:Object|null}>}
+ *   Never read: `snapshot: null`, `code: 'TENANT_EVIDENCE_NOT_READ'`.
+ */
+export async function getTenantEvidence(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/tenant-evidence`)
+}
+
+/**
+ * The tenant-evidence read holds the request open while SimCore reads the
+ * tenant (issue pages, the id probe, cases, the endpoint record), so it gets
+ * longer than the 20 s default. A request that gives up here still finishes on
+ * SimCore, and the next one is answered from that read.
+ */
+const TENANT_EVIDENCE_READ_TIMEOUT_MS = 60_000
+
+/**
+ * POST /api/runs/:id/tenant-evidence — read the run's issues, cases and
+ * endpoint record from the tenant ONCE (an explicit operator action; read-only,
+ * metered) and store the snapshot. Display only: it never changes a score.
+ *
+ * Always 200 with `{run_id, read, status, code, detail, retry_after_seconds,
+ * snapshot, issues}`. `read: false` with `NO_TENANT_CONFIGURED`,
+ * `NO_RUN_WINDOW` or `TENANT_EVIDENCE_READ_RECENTLY` means no new read was made.
+ *
+ * @param {string} runId
+ * @param {{force?: boolean, integration?: string|null}} [opts]
+ */
+export async function readTenantEvidence(runId, { force = false, integration = null } = {}) {
+  const qs = new URLSearchParams()
+  if (force) qs.set('force', 'true')
+  if (integration) qs.set('integration', integration)
+  const query = qs.toString()
+  return request(
+    `/api/runs/${encodeURIComponent(runId)}/tenant-evidence${query ? `?${query}` : ''}`,
+    { method: 'POST', _timeoutMs: TENANT_EVIDENCE_READ_TIMEOUT_MS },
+  )
+}
+
+/**
  * POST /api/runs/canary — launch the block-mode canary against an agent.
  * 409 CANARY_NOT_AVAILABLE when the deployment has no canary scenario; the
  * thrown Error carries `.code` / `.detail` for the launch form to render.

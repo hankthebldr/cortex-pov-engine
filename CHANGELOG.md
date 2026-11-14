@@ -324,7 +324,42 @@ both.
   panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
   failure on #258, #260 and #270.
 
+### Fixed — Results at phone width
+
+At 375 px the "Result of" bar on Results squeezed its text column to about
+one character, so the run's facts wrapped a letter per line. The run switcher
+and the Open button kept their full widths in a three-column grid. The bar is
+now a wrapping row: the text keeps at least 240 px, and the switcher and Open
+drop below it. The Report header (This run / Compare runs, Validate all,
+Export) now wraps instead of running past the view, where it was clipped. A
+viewport test at 375 px and 845 px guards both and fails without the fix.
+
+### Added — run detail says why a test case is pending (design C3)
+
+A run whose test-case verdict is pending with nothing scored now says why on
+its own page, not only on the Topology and Techniques tabs. Under the
+lifecycle strip a "Test case" line shows PENDING, the reason chip
+("nothing executed" or "detectors soaking") and the test case id, with the
+action as a visible sentence. Under the chain, the Cortex Engine terminal
+states the same verdict and reason. A verdict without a reason draws neither.
+
 ### Security
+
+- **A leftover cron entry or systemd timer could run another user's script as
+  root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
+  runs a script from a fixed directory under `/var/tmp` every five minutes, and
+  the job can outlive the directory: the beacon does not run a scenario's
+  cleanup, and a tmp cleaner or a partial cleanup can remove it. A local user
+  could then recreate the directory with a script of their own. The cron line
+  and the unit's `ExecStart` now run nothing from the directory unless one
+  `stat` lookup reads it as root's own 0700 directory; otherwise the cron entry
+  deletes itself and the unit disables its timer. The check is in `ExecStart`
+  because systemd before 243 ignores `ExecCondition=`. The step that recreates
+  the directory first removes a cron entry or timer left by an earlier run. The
+  re-executions keep the command-line path the cards' BIOCs match, so no
+  detection changed. The two cards' illustrative payloads now run under
+  `set -eu`, stop unless the directory they make is root's own 0700 directory,
+  and install the checked entry.
 
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
@@ -981,6 +1016,50 @@ both.
   (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
   issue read now raises on a lowercase `data` reply where it used to return
   `{}`.
+- The run read's endpoint record reads the strict `endpoints` envelope too, so a
+  lowercase `data` reply is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`. A
+  strict reply with a row that is not an object raises rather than reading as
+  fewer rows. A refused id probe records `attempted` and `refused_locally` on
+  `agreement.id_space`, as a section does. `xsiam.xql.query` and a live
+  `xsiam.operation.execute` carry a fixed `data_notice` for the tenant's raw
+  values, and a parse error on any named MCP shape names keys and types, never a
+  value. The run case ledger leaves `GET /api/runs/{id}/tenant-evidence`,
+  `cortexsim.run.tenant_evidence.get` and `cortexsim.run.get` projected: a case's
+  `resolve_comment` under `tenant_text`, a rejected `xdr_url` null with
+  `xdr_url_withheld`. `run.get` then adds `data_notice`.
+
+### Added — Results: tenant evidence panel
+
+- Results › Report shows a Tenant evidence panel below the scorecard: the
+  agreement figures with the two-reads statement, the issues credited to the
+  run's host, the issues not credited, their cases, the run's case ledger and
+  the endpoint record as of the read (with the ledger's ip-to-host bridge code).
+- Display only, and read on request only. Opening the page sends one `GET` of
+  the stored snapshot and nothing polls. The tenant is read only when the DC
+  presses the panel's refresh button, which sends one metered read per press
+  (a double click sends one) and never changes a score or verdict.
+- Every degraded state is a sentence, never an empty table: not read, no
+  credential, no run window, unscoped, zero attributed, truncated, truncation
+  unknown, quota refused and a failed section with its code and remediation.
+  Tenant-written names render as text, and a case link is followed only when it
+  is https on `paloaltonetworks.com`.
+- A quota refusal names whose budget refused the read: this instance's own (the
+  tenant was not asked), the tenant's rate limit (HTTP 429), or, when the stored
+  read does not say, neither. It also says what was counted: floors, complete
+  issue rows, rows of unknown completeness, or nothing. A read inside the minimum
+  interval says a new read is possible now rather than "in 0 s", and the case
+  panel shows "link withheld" for a case link it will not follow, never the link's
+  text.
+- The case panel's read line no longer shows the integration's name, on Results
+  and on Run detail, and a failed request renders a fixed sentence by its code,
+  never the error's own text.
+- Read back on a run that already has a verdict (Results, and the run page's
+  case panel) asks first: it reads the tenant and may change the verdict, and the
+  confirm says refreshing tenant evidence never does. Cancel posts nothing, and
+  the first focus is on Cancel. The unread phase's Read back stays one click.
+- Run detail shows the case panel once (the evidence tab no longer embeds a
+  second one), a run that has not been read back shows its tenant evidence, and
+  the scorecard's "XSIAM Stitch" tile is now "Analytics plane" (same figure).
 
 ### Changed — one per-tenant request budget; any 429 trips once
 
@@ -1020,6 +1099,9 @@ both.
   with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
   `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
   HTTP.
+- API reference §9.2 now leads with the stdio launcher as the way to verify runs;
+  the HTTP `/mcp` registration is optional and its example reads the token from
+  an environment variable.
 
 ### Added — MCP tools for the tenant reader
 
@@ -1590,6 +1672,33 @@ Each runs for real (not SAFE-MODE) inside a staged decoy tree under
   key the connector does not read. Guard:
   `tests/connectors/test_issues_api_fields.py` (15 failures before the change).
   Nothing here ran against a tenant: tenant-verified is still 0.
+
+### Fixed — a collector target carries its Compression, and the preflight sends it
+
+- **Both collector preflights sent an uncompressed body whatever the step was
+  set to.** The campaign preflight and a collector target's "Send test record"
+  go through `preflight_collector`, which never read `compress`. In the
+  deathstar lab (PMA-2026-11-13), a collector set to gzip answered every
+  uncompressed POST with 400 `gzip compression error (invalid header)` and
+  ingested nothing. So against a gzip collector the preflight read `refused`
+  for a door a `compress: true` campaign used, and against an uncompressed one
+  it read `accepted` while a `compress: true` campaign got 400. The preflight
+  now gzips when the target says so.
+- **A collector target records its instance's Compression setting.**
+  `PUT /api/collector-targets/{name}` takes `compress` (default `false`, which
+  is what every target sent until now), reports it back, and applies it to its
+  own test record and to every bound step whose plugin can gzip, overriding
+  the step's inline value, the same way it already overrides URL and key. A
+  change of `compress` discards the stored check. `email_emitter` has no gzip
+  transport, so it is left alone. The startup migration adds the column, and
+  existing targets read as uncompressed.
+- **The remediation for `collector_rejected` names what the lab saw.** It used
+  to point at the content type, which the collector ignores. It now names
+  invalid JSON and a compression mismatch (400), a wrong path (404), and a
+  record over 5 MiB decompressed or a POST over 10 MiB on the wire (413). The
+  `collector_error` text keeps the documented 500 for a Log Format mismatch
+  and says that the two mismatches the lab tried came back as 400. The
+  offline bundle's copy says the same.
 
 ### Fixed — EAL collector emitters send the XSIAM API key bare
 
