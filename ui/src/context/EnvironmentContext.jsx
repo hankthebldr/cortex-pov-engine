@@ -93,7 +93,7 @@ const DEFAULT_ENV = {
   health: { hostname: '', version: 'v1.0', sensors: {}, tenantHealth: null },
   apiError: null,
   healthModel: null,
-  errors: { scenarios: null, agents: null, tenants: null },
+  errors: { scenarios: null, runs: null, agents: null, tenants: null },
   scenarios: [],
   planes: [],
   runs: [],
@@ -150,7 +150,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Per-list fetch failures. A failed fetch is NOT an empty list: the
   // stale-pointer guards below only trust a list that actually arrived, and
   // surfaces can say "could not load" instead of "none registered".
-  const [errors, setErrors] = useState({ scenarios: null, agents: null, tenants: null })
+  const [errors, setErrors] = useState({ scenarios: null, runs: null, agents: null, tenants: null })
   const setListError = useCallback((key, err) => {
     setErrors((e) => (e[key] === err ? e : { ...e, [key]: err }))
   }, [])
@@ -180,12 +180,17 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // transcript reads GET /api/runs/{id} for that run — RunDetailView,
   // useRunStepTail and RunTopologyView all do. An older SimCore ignores the
   // parameter and returns the full shape, which every consumer still handles.
+  // A failed read keeps the last list that arrived and records why, so a
+  // surface can say "runs did not load" instead of "never ran".
   const refreshRuns = useCallback(() => {
     return getRuns({ fields: 'summary' })
-      .then((data) => setRuns(Array.isArray(data) ? data : []))
-      .catch(() => {})
+      .then((data) => {
+        setRuns(Array.isArray(data) ? data : [])
+        setListError('runs', null)
+      })
+      .catch((err) => setListError('runs', err?.message || 'run list failed'))
       .finally(() => setLoading((l) => ({ ...l, runs: false })))
-  }, [])
+  }, [setListError])
 
   // On failure the last list that DID arrive is kept (it is the best-known
   // roster) and the error is recorded — folding the failure into [] used to

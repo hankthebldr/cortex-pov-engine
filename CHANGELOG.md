@@ -467,6 +467,43 @@ states the same verdict and reason. A verdict without a reason draws neither.
   header is crowded the outer crumbs shorten first and the bar scrolls below a
   floor, as its other controls do.
 
+### Changed — UC / TC index: the proof path, by tab (design C5 / C6)
+
+The four tabs now say how far each detection test case (DET and HNT) has got,
+from what SimCore has recorded. A test case counts as covered only once a
+read-back run of a scenario that evidences it saw a detection.
+
+- **Index.** Four tiles over the table: Use cases, Partly proven, Pending and
+  Blocked. The table gains a Verdict column (icon and word: Detected, Not seen
+  yet, Pending, Blocked, No scenario, Can't check) and a Runs rollup (runs in
+  progress, waiting, not read back and read back), with the VerdictReason chip
+  for runs where nothing executed. The use-case rail shows each use case's
+  verdict. A scenario or assertion binding is no longer drawn in the
+  detected green.
+- **Mechanisms.** One card per detection mechanism (BIOC, ABIOC, XQL,
+  Correlation, IOC, and any other type a scenario declares): how many test
+  cases rely on it and how many objects their scenarios declare. Below, one row
+  per test case with its mechanisms and the component its signal comes from,
+  which opens that component. No SimCore API reads whether a mechanism's
+  content is in the tenant, so every tenant state reads Can't check.
+- **Coverage.** The proof path as five counts (Has a scenario, Components
+  ready, Ran, Read back, Detected), then a status per stage for each test case,
+  with the VerdictReason chip where it stalls. A run that was not read back
+  never counts as Detected, whatever its detection count. A staged push bundle
+  reads Waiting, not ran.
+- **Gaps.** Every test case not yet detected, earliest stall first, filterable
+  by No scenario, Component not ready, Never ran, Not read back and Not seen
+  yet, each with one sentence and one verb: Configure, Run, Read back or Open
+  results. No scenario links to Build a chain instead.
+- **A source that did not load reads Can't check, never zero.** A door counts
+  as not ready only when it was checked and found closed; an unchecked door is
+  Can't check. The console now records a failed `GET /api/runs` read
+  (`errors.runs`) instead of treating it as an empty run list.
+- **Removed:** the validation-class strip, the class-by-class Mechanisms mode,
+  the per-use-case Coverage rollups and the closability Gaps list. The
+  assertion catalog panel (refused, absent and empty states) stays at the foot
+  of Mechanisms; the test-case drawer still names a row's assertion.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
