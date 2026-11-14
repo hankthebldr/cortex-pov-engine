@@ -339,6 +339,28 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — the warning colour is a muted gold; greens come in shades
+
+Henry, 2026-11-13: the console's yellow is muted to an accent and green
+gets more than one shade. The warning colour is now the design system's
+gold-600 (`#C7AA47`) instead of Strata yellow, in the dark theme's text and
+in both themes' fills and borders (the light theme's warning text keeps its
+AA-dark ochre). Every selected state (tabs, filter chips, segmented buttons,
+the active rail item) now reads the same: the deep green wash with a matte
+green line (the DS panw-green-700). Before, some were white on black and some
+bright green. New tokens `--gr-matte`, `--gr-mid` and `--gr-pale` take the
+DS's panw-green-700, green-500 and green-200, and the drift guard pins them.
+
+Buttons follow one language. Every primary button (the kit's, `pov-btn` and
+the legacy `.btn`) is the same matte deep green with white text in both
+themes (`--btn` `#0A6231`, 7.5:1), with a hover a shade lighter and no glow or
+brightness filter. Secondary buttons are greyscale with a matte-green hover
+line. The error badge ("5 not ok") is greyscale and sized like a button; only
+its "!" carries the gold or coral accent, so it no longer reads as a filled
+alarm next to the action it describes.
+
+||||||| c4528ab2
+||||||| 5874d974
 ### Changed — TTP cards filter by subdomain, not status or platform
 
 The TTP cards page now filters by **Subdomain** (the UC / TC index's
