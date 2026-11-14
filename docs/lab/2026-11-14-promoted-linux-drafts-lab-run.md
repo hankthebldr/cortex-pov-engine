@@ -155,7 +155,7 @@ step-01 removed before it did anything else.
 
 ### 6. What this session changed on the shared lab
 
-- Copied the eight scenario and card files into the worktree the shared SimCore mounts (`funny-bartik-cd5ed4`), as untracked files, and restarted the container three times.
+- Copied the eight scenario and card files into the worktree the shared SimCore mounts (`funny-bartik-cd5ed4`), as untracked files, and restarted the container four times. The last re-stage, at 02:09, carries the final committed versions.
 - Undo: delete those eight files and restart the container.
 - Created two drafts on the shared SimCore: the tool probe and the sshpass maintenance draft.
 - Nothing was installed on the VM and nothing was written to the tenant.
