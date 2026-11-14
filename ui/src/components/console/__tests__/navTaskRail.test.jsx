@@ -33,7 +33,7 @@ describe('task rail', () => {
     ])
     expect(groups[0].items.map((i) => i.label)).toEqual(['Get started', 'Components'])
     expect(groups[1].items.map((i) => i.label)).toEqual(['Scenarios', 'Build a chain', 'Launch gate'])
-    expect(groups[2].items.map((i) => i.label)).toEqual(['Runs', 'Results'])
+    expect(groups[2].items.map((i) => i.label)).toEqual(['Runs', 'Results', 'Dashboards'])
     expect(groups[3].items.map((i) => i.label)).toEqual(['Catalog'])
   })
 
@@ -88,6 +88,17 @@ describe('task rail', () => {
         expect(sectionFor(id).active).toBe(id)
       }
     }
+  })
+
+  it('Dashboards is a rail item under Run & observe, on its old route', () => {
+    const observe = navGroups().find((g) => g.label === 'Run & observe')
+    const dash = observe.items.find((i) => i.id === 'coverage')
+    expect(dash.label).toBe('Dashboards')
+    expect(getDestination('coverage').hidden).toBeFalsy()
+    expect(navOwner('coverage')).toBe('coverage')
+    expect(sectionFor('coverage')).toBeNull()
+    // Results kept only its report: the Coverage tab moved out with the page.
+    expect(SECTIONS.proof.map(([id]) => id)).toEqual(['proof'])
   })
 
   it('the legacy readiness id lights up the Launch gate', () => {

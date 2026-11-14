@@ -114,9 +114,14 @@ describe('SectionTabs — the pages inside a task', () => {
   it('navigates by destination id — a tab is a route, not local state', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    render(<SectionTabs destination="proof" onNavigate={onNavigate} />)
-    await user.click(screen.getByTestId('section-tab-coverage'))
-    expect(onNavigate).toHaveBeenCalledWith('coverage')
+    render(<SectionTabs destination="ttps" onNavigate={onNavigate} />)
+    await user.click(screen.getByTestId('section-tab-uctc'))
+    expect(onNavigate).toHaveBeenCalledWith('uctc')
+  })
+
+  it('Results is one page now that Dashboards is a rail item, so it carries no strip', () => {
+    const { container } = render(<SectionTabs destination="proof" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('renders nothing on a single-page task', () => {

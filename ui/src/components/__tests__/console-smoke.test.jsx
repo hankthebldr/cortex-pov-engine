@@ -8,7 +8,7 @@
  * etc.) live in their own files.
  */
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 
 import AppShell from '../console/AppShell.jsx'
@@ -306,8 +306,10 @@ describe('console-view smoke renders', () => {
     })
   })
 
-  it('CoverageView mounts and fetches the heatmap data', async () => {
-    installRoutes({
+  it('CoverageView (Dashboards) mounts and fetches the heatmap data on its MITRE tab', async () => {
+    const fetchMock = installRoutes({
+      'GET /api/scenarios': { scenarios: [{ scenario_id: 'SIM-EDR-001', plane: 'EDR', steps: [] }] },
+      'GET /api/runs': { runs: [], total: 0 },
       'GET /api/mitre/coverage': {
         summary: { total_techniques: 0, detected: 0, run_not_detected: 0, not_run: 0 },
         by_tactic: [],
@@ -315,7 +317,11 @@ describe('console-view smoke renders', () => {
     })
     render(<CoverageView />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /coverage/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: /dashboards/i })).toBeInTheDocument()
+    })
+    fireEvent.click(await screen.findByRole('tab', { name: /MITRE/ }))
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/mitre/coverage'))).toBe(true)
     })
   })
 })

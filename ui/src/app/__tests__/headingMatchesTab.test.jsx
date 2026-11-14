@@ -61,14 +61,20 @@ describe('page h1 is the rail or tab label', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('proof')))
   })
 
-  it('Results › Coverage, in every view mode', async () => {
-    installRoutes({ 'GET /api/mitre/coverage': { tactics: [], techniques: [], summary: null }, 'GET /api/scenarios': { scenarios: [] } })
+  it('Dashboards, on every tab', async () => {
+    installRoutes({
+      'GET /api/mitre/coverage': { by_tactic: [], techniques: [], summary: null },
+      'GET /api/scenarios': { scenarios: [] },
+      'GET /api/runs': { runs: [], total: 0 },
+      'GET /api/doors/readiness': { registry_loaded: true, scenarios: {} },
+      'GET /api/doors': { doors: [], registry_loaded: true },
+    })
     render(<CoverageView />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('coverage')))
-    // The lens is named by the view-mode toggle; switching it does not rename the page.
-    for (const mode of [/PANW Stack/, /Competitive/, /ATT&CK/]) {
-      fireEvent.click(screen.getByRole('tab', { name: mode }))
-      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('coverage'))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('coverage')))
+    // The lens is named by the tab; switching it does not rename the page.
+    for (const tab of [/MITRE/, /Planes × doors/, /PANW stack/, /Competitive/, /Detection source/]) {
+      fireEvent.click(screen.getByRole('tab', { name: tab }))
+      expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([railLabel('coverage')])
     }
   })
 
