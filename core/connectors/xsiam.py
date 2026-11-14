@@ -874,6 +874,28 @@ def alert_host(a: dict[str, Any]) -> Optional[str]:
               or (hosts[0] if isinstance(hosts, list) and hosts else None))
 
 
+def _raise_on_app_error(doc: Any, tail: str) -> None:
+    """Raise ``XSIAM_APPLICATION_ERROR`` when ``doc`` marks an application error.
+
+    Checks the top level and the object under ``reply``: a document carrying an
+    error in either half is not a success. The tenant's text is neutralised and
+    capped by the catalog client's formatter (the one definition) and nothing
+    else of the reply is echoed.
+    """
+    if not isinstance(doc, dict):
+        return
+    from integrations.xsiam.client import _app_error_text, has_app_error  # noqa: PLC0415
+
+    inner = doc.get("reply") if isinstance(doc.get("reply"), dict) else None
+    for err in (inner, doc):
+        if has_app_error(err):
+            text, _quota = _app_error_text(err)
+            raise ConnectorError(
+                f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                f"200 response ({text}). {tail}"
+            )
+
+
 def parse_reply(doc: Any, list_key: str,
                 normalize: Optional[Callable[[dict], Any]] = None, *,
                 strict: bool = False) -> "tuple[list[Any], int, dict[str, Any]]":
@@ -906,23 +928,11 @@ def parse_reply(doc: Any, list_key: str,
     # into "the customer's stack detected nothing", which is the manufactured
     # false negative in its most damaging form: it is the number that goes in
     # the report. Raise instead, so the caller degrades to pending.
-    if isinstance(doc, dict):
-        # An error object at the top level OR under `reply`: a document that
-        # carries both is not a success, whichever half holds the error.
-        inner = doc.get("reply") if isinstance(doc.get("reply"), dict) else None
-        for err in (inner, doc):
-            if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
-                # The tenant's text is neutralised and capped by the one
-                # formatter the catalog client uses; nothing else is echoed.
-                from integrations.xsiam.client import _app_error_text  # noqa: PLC0415
-
-                text, _quota = _app_error_text(err)
-                raise ConnectorError(
-                    f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
-                    f"200 response ({text}). This is NOT an "
-                    f"absence of alerts — no observation was made, so the run "
-                    f"stays pending rather than being scored."
-                )
+    _raise_on_app_error(
+        doc,
+        "This is NOT an absence of alerts — no observation was made, so the "
+        "run stays pending rather than being scored.",
+    )
     if not isinstance(doc, dict):
         raise ConnectorError(
             f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
@@ -1012,13 +1022,7 @@ def parse_object_reply(doc: Any) -> dict[str, Any]:
         raise ConnectorError(
             f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got {type(doc).__name__}")
     reply = doc.get("reply")
-    err = reply if isinstance(reply, dict) else doc
-    if err.get("err_code") or err.get("err_msg"):
-        code = err.get("err_code")
-        raise ConnectorError(
-            "XSIAM_APPLICATION_ERROR: tenant returned an error inside a 200 response"
-            + (f" (err_code={code})" if isinstance(code, (int, str)) and len(str(code)) <= 16
-               else "") + "; this is not a record")
+    _raise_on_app_error(doc, "This is not a record.")
     if not isinstance(reply, dict):
         raise ConnectorError(
             "XSIAM_ENVELOPE_UNRECOGNISED: expected an object under 'reply', got "

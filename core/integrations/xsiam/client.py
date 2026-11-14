@@ -229,6 +229,13 @@ def inspect_operation_body(path: str, body: Any) -> None:
 _ERR_CODE_CAP = 64
 
 
+def has_app_error(doc: Any) -> bool:
+    """True when ``doc`` marks an application error: a non-empty ``err_code`` or
+    ``err_msg``. Value-based, so a present-but-null/empty/zero field is not an
+    error. The one predicate the client and the connector's readers share."""
+    return isinstance(doc, dict) and bool(doc.get("err_code") or doc.get("err_msg"))
+
+
 def _app_error_text(reply: dict) -> tuple[str, bool]:
     """``(text, is_quota)`` for an application error a tenant sent inside a 200.
 
@@ -420,11 +427,7 @@ class XsiamClient:
         ``wrapped=True`` checks the whole document before ``reply`` is unwrapped:
         an ``err_code``/``err_msg`` beside a ``reply`` key is an error too.
         """
-        if (
-            isinstance(reply, dict)
-            and ("err_code" in reply or "err_msg" in reply)
-            and (wrapped or "reply" not in reply)
-        ):
+        if has_app_error(reply) and (wrapped or "reply" not in reply):
             err, quota = _app_error_text(reply)
             if quota:
                 raise XsiamQuotaError(f"XSIAM quota exceeded: {err}")
