@@ -298,14 +298,20 @@ and TCP 5514). The canary session read it back at +2 min and I re-read it indepe
 | RFC 3164 header now, CEF `rt` 3 days back | 2026-11-10 23:53:28 (`rt` wins over a current header) | parsed, both protocols |
 | header and `rt` now | 23:53:28 | parsed, both protocols |
 | CEF cut off after the signatureId | = `_insert_time` (23:54:15, ~35 s after collection) | **raw only**: `_raw_log` set, no `cefName`/`cs1`/`cefDeviceEventClassId` |
-| 70 KB CEF line, TCP only | — | not seen at +2 min, re-read pending |
+| 70 KB CEF line, TCP only | — | **dropped**: absent at +11.5 min; `collection_auditing` WARNING "A log entry exceeded the maximum allowed size." at 23:53:32Z |
 | earlier plain-text line with no `CEF:` marker (`door-syslog-f2f705-plain`) | — | absent, raw column included |
 
 Collection is batched: every UDP row shares one `_collection_timestamp` (23:53:30.502), and every TCP row another
 (23:53:40.501). One TCP row inserted 80 s after collection. **Rules for the testing pass:** a sender controls
 `_time` on this door through its syslog header or CEF `rt`, so read-backs must filter on `_insert_time` or use a window
 that covers every timestamp sent, and the matcher window cannot assume `_time` is arrival. A CEF line that fails to
-parse is findable only through `_raw_log contains`, and a non-CEF line on a CEF row is dropped.
+parse is findable only through `_raw_log contains`, and a non-CEF line on a CEF row is dropped. An oversize line is
+dropped too. Only the oversize drop is audited; the non-CEF drop leaves no audit entry, so absence is the only signal.
+
+Applet status flaps without losing data. `collection_auditing` for bvm-01 shows ERROR "Failed to establish an initial
+connection to the persistence service." at 23:51:05Z, then "The applet is back to an active status" at 23:53:02Z and
+23:55:31Z, and every probe line except the oversize one landed. A readiness check that reads applet status must not
+treat one such ERROR as a closed door.
 
 #### 5.4.1 Applet inventory and syslog row options (tenant Broker API schema, `broker-papi.yaml`)
 
