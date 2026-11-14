@@ -1,52 +1,77 @@
 import { test, expect, gotoView } from './_fixtures'
 
 /**
- * Golden path #2 — the redesigned guided launch flow (console v2):
- *   ① Targets (pick push bundle) → ② Library (arm a scenario) →
- *   ③ Launch (authorize the dual-use tool consent gate) → fire.
+ * Golden path #2 — the Launch gate (design v33 MVP):
+ *   Scenarios (browse) → Launch gate armed with SIM-EDR-001:
+ *   What runs › Readiness › Where it runs › What it will do →
+ *   the authorisation tick → ONE Run.
+ *
+ * Push is the offline bundle in "Where it runs". Run saves the bundle and
+ * records the run, which reads Staged: the DC runs the bundle on the target
+ * and POVengine takes their word until it reports in. There is no separate
+ * "Download bundle" button.
  *
  * SIM-EDR-001 is wired to TOOL-ATOMIC-RED-TEAM (dual-use-lab-only), so the
- * Launch step must surface the consent prompt and block the button until
- * it's checked — this exercises that gate end-to-end.
+ * tool consent must block Run on its own: the authorisation tick alone does
+ * not unblock it.
  */
-test('DC arms a scenario against a target and launches through the consent gate', async ({ page, api }) => {
+test('DC arms a scenario at the Launch gate and runs it as an offline bundle through the consent gate', async ({ page, api, request }) => {
   await api.health()
   await page.goto('/')
 
-  // ① Targets — the destination renders the same TargetsView, so confirm the
-  //    offline push bundle is offered there.
-  await gotoView(page, 'Targets')
-  await expect(page.locator('.target-card--push').first()).toBeVisible({ timeout: 10_000 })
-
-  // ② Library — filter to EDR and confirm the scenario is browsable.
+  // Scenarios — filter to EDR and confirm the scenario is browsable.
   await gotoView(page, 'Library')
   await page.getByTestId('plane-button-EDR').click()
-  const card = page.getByText(/SIM-EDR-001/).first()
-  await expect(card).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(/SIM-EDR-001/).first()).toBeVisible({ timeout: 10_000 })
 
-  // ③ Launch — the guided flow owns its own armed-scenario state (it is a
-  //    separate surface from Library since the destination redesign), so the
-  //    scenario is armed via the route rather than by clicking in Library.
-  await gotoView(page, 'Launch', { arm: 'SIM-EDR-001' })
-  await expect(page.locator('.launch-card__title').first()).toBeVisible({ timeout: 10_000 })
+  // Launch gate, armed by route.
+  await gotoView(page, 'Launch gate', { arm: 'SIM-EDR-001' })
+  const panel = page.getByTestId('new-run')
+  await expect(panel).toBeVisible({ timeout: 10_000 })
+  await expect(panel.locator('.new-run__what-meta')).toContainText('SIM-EDR-001')
 
-  //    The guided flow owns its OWN selectedTarget — a target picked in the
-  //    Targets destination is a different component instance and does not
-  //    compose here, so pick it inside the flow or "Pick a target" stays a
-  //    launch blocker.
-  await page.locator('.target-card--push').first().click()
+  // One primary action, and it is Run; nothing else downloads the bundle.
+  const run = panel.getByRole('button', { name: 'Run', exact: true })
+  await expect(panel.locator('.kit-btn--primary')).toHaveCount(1)
+  await expect(run).toBeDisabled()
+  await expect(page.getByRole('button', { name: /download/i })).toHaveCount(0)
 
-  // dual-use consent gate: button is disabled until consent is granted
-  const launchBtn = page.getByRole('button', { name: /Launch run/i })
-  const consent = page.locator('.launch-consent input[type="checkbox"]').first()
-  await expect(consent).toBeVisible({ timeout: 5_000 })
-  await expect(launchBtn).toBeDisabled()
-  await consent.check()
-  await expect(launchBtn).toBeEnabled()
+  // Where it runs — the offline bundle. It needs no enrolled agent.
+  const bundle = page.getByTestId('new-run-target-push-bundle')
+  await bundle.click()
+  await expect(bundle).toHaveAttribute('aria-checked', 'true')
+  const blockers = page.getByTestId('launch-blockers')
+  await expect(blockers).not.toContainText('Choose where it runs')
+  await expect(blockers).not.toContainText('No agent enrolled')
 
-  // fire — expect the success result banner / toast
-  await launchBtn.click()
+  // The authorisation tick starts unticked and blocks Run.
+  const authorised = page.getByTestId('new-run-authorised')
+  await expect(authorised).not.toBeChecked()
+  await expect(blockers).toContainText('Confirm you are authorised')
+  await authorised.check()
+
+  // The dual-use tool consent still blocks Run on its own.
+  await expect(page.locator('.launch-consent')).toContainText('Atomic Red Team')
+  await expect(run).toBeDisabled()
+  await expect(blockers).toContainText('lab-only consent')
+  await page.locator('.launch-consent input[type="checkbox"]').first().check()
+  await expect(run).toBeEnabled()
+  await expect(blockers).toHaveCount(0)
+
+  // Run — saves the bundle, records the run and opens it.
+  const download = page.waitForEvent('download')
+  await run.click()
+  expect((await download).suggestedFilename()).toMatch(/SIM-EDR-001/i)
+  await expect(page).toHaveURL(/#\/runs\?(.*&)?run=/, { timeout: 15_000 })
+  const runId = new URLSearchParams(page.url().split('?')[1]).get('run')
+  expect(runId).toBeTruthy()
+
+  // The run is Staged: recorded, and waiting for the DC to run the bundle.
+  const r = await request.get(`/api/runs/${runId}`)
+  expect(r.ok()).toBeTruthy()
+  const body = await r.json()
+  expect(body.status ?? body.run?.status).toBe('staged')
   await expect(
-    page.getByText(/started|success|launched|run /i).first(),
-  ).toBeVisible({ timeout: 15_000 })
+    page.getByTestId('run-lifecycle').getByText('Staged', { exact: true }).first(),
+  ).toBeVisible({ timeout: 10_000 })
 })
