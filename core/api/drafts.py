@@ -179,20 +179,51 @@ def _tc_bound(row: Scenario) -> tuple[bool, list[str]]:
     return True, []
 
 
+def draft_launch_refusals(row: Scenario) -> list[dict[str, str]]:
+    """The draft refusals a launch makes, in launch order, as API error bodies.
+
+    The ONE source for ``POST /api/runs`` (which raises the first),
+    ``POST /api/runs/preflight`` (which reports all of them) and the verdict
+    block below. A non-draft row has none."""
+    if row.status != "draft":
+        return []
+    chain_ok, chain_reasons = _chain_valid(row)
+    tc_ok, _tc_reasons = _tc_bound(row)
+    return _refusal_bodies(chain_ok, chain_reasons, tc_ok)
+
+
+def _refusal_bodies(
+    chain_ok: bool, chain_reasons: list[str], tc_ok: bool,
+) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    if not chain_ok:
+        out.append({
+            "error": "draft chain is not launchable",
+            "code": "DRAFT_CHAIN_INVALID",
+            "detail": "; ".join(chain_reasons),
+        })
+    if not tc_ok:
+        out.append({
+            "error": "draft is not launchable",
+            "code": "DRAFT_NOT_TC_BOUND",
+            "detail": "bind a real test case from the UC/TC Index before launching",
+        })
+    return out
+
+
 def _launchable(row: Scenario) -> dict[str, Any]:
     """Compute the launch verdict block returned alongside every draft doc and
-    by ``GET /{id}/launchable``. Mirrors the orchestrator's DRAFT_NOT_TC_BOUND
-    gate exactly. Mutates nothing; makes no outbound calls."""
+    by ``GET /{id}/launchable``. ``refusal_code`` is the code ``POST /api/runs``
+    returns for this draft. Mutates nothing; makes no outbound calls."""
     chain_valid, chain_reasons = _chain_valid(row)
     tc_bound, tc_reasons = _tc_bound(row)
-    launchable = chain_valid and tc_bound
-    reasons = [*chain_reasons, *tc_reasons]
+    refusals = _refusal_bodies(chain_valid, chain_reasons, tc_bound)
     return {
-        "launchable": launchable,
+        "launchable": not refusals,
         "chain_valid": chain_valid,
         "tc_bound": tc_bound,
-        "reasons": reasons,
-        "refusal_code": None if launchable else "DRAFT_NOT_TC_BOUND",
+        "reasons": [*chain_reasons, *tc_reasons],
+        "refusal_code": refusals[0]["code"] if refusals else None,
     }
 
 

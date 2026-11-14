@@ -97,7 +97,8 @@ describe('design token contract (cortex-tokens.css)', () => {
     // --s1, short of the 4.5:1 text floor at the 9-11px this console renders
     // warn text at. --warn-str keeps the brand value for fills.
     expect(lightTokens.warn).toBe('#7D5E11')
-    expect(lightTokens['warn-str']).toBe('#FFCB06')
+    // Muted to an accent (Henry, 2026-11-13): the DS gold-600, not Strata yellow.
+    expect(lightTokens['warn-str']).toBe('#C7AA47')
     expect(lightTokens.crit).toBe('#A51B00')
     expect(lightTokens.info).toBe('#00667B')
     // No orange anywhere in the accent family, and no orange alias left.
@@ -122,7 +123,13 @@ describe('design token contract (cortex-tokens.css)', () => {
     expect(darkTokens.bd).toBe('#333333')
     // --crit is coral again: the minimal pass moved it to red because coral read
     // as the ORANGE primary button; with a green primary that collision is gone.
-    expect(darkTokens.warn).toBe('#FFCB06')
+    expect(darkTokens.warn).toBe('#C7AA47')
+    // One primary button in both themes: the deep matte green, white text.
+    for (const t of [lightTokens, darkTokens]) {
+      expect(t.btn).toBe('#0A6231')
+      expect(t['btn-tx']).toBe('#FFFFFF')
+      expect(t['btn-hover']).toBe('#1E8247')
+    }
     expect(darkTokens.crit).toBe('#FDAC96')
     expect(darkTokens.info).toBe('#00C0E8')
     for (const key of ['ac', 'ac-str', 'ac-ink', 'ac-soft', 'ac-line', 'br']) {

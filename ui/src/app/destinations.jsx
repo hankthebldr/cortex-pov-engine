@@ -154,6 +154,7 @@ const ReadinessView = makeLazySurface(() => import('../components/console/Readin
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
+const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
@@ -452,12 +453,10 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   if (compare) {
     return (
       <div className="runs-surface">
-        <div className="view-head">
-          <div><h1>Runs · Compare</h1></div>
-          <button className="btn" onClick={() => setParams({ compare: null }, { replace: true })}>← Back to runs</button>
-        </div>
+        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
+        <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
-          <MultiRunCompare />
+          <MultiRunCompare onOpenResults={(id) => onNavigate('proof', { run: id })} />
         </Suspense>
       </div>
     )
@@ -474,7 +473,13 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
             <h1>Runs</h1>
             <div className="view-head__meta"><span className="mono">{runs.length}</span> runs</div>
           </div>
-          <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
+          {/* C2: secondary Compare runs beside the primary. "New run" is not
+              in the closed verb set; Run is, and it opens the New POV run
+              page, where every launch starts. */}
+          <div className="runs-surface__actions">
+            <Button variant="secondary" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</Button>
+            <Button variant="primary" title="New POV run" onClick={() => onNavigate('guided')}>Run</Button>
+          </div>
         </div>
         {activeRun && <TelemetryStrip run={activeRun} onAbort={onAbortRun} />}
         {/* "What ran last" leads the page: the first question on this surface
@@ -746,6 +751,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
         <div className="view-head"><div><h1>Report</h1></div></div>
         {bar}
         <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
+        <TenantEvidencePanel runId={id} showCaseLedger={false} />
       </div>
     )
   }

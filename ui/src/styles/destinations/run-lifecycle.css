@@ -130,3 +130,16 @@
 /* Below the width the eight columns need, the table scrolls itself rather
    than pushing the page sideways. */
 .theme-console .run-list .run-list__table { overflow-x: auto; }
+
+/* ── Runs header (design change C2) ───────────────────────────────────── */
+/* Secondary Compare runs beside the primary Run; the Compare page's way back. */
+.theme-console .runs-surface__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.theme-console .runs-surface__back {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 12px; padding: 0;
+  background: transparent; border: 0;
+  font: 500 12px/1 var(--font-ui); color: var(--tx2);
+  cursor: pointer;
+}
+.theme-console .runs-surface__back:hover { color: var(--tx); text-decoration: underline; }
+.theme-console .runs-surface__back:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }

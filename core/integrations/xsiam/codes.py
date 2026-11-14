@@ -66,7 +66,7 @@ REMEDIATION: dict[str, str] = {
     ),
     XSIAM_API_ERROR: (
         "The tenant returned an unexpected HTTP status. If it is 403 the API "
-        "key's role is missing a scope (alert read / XQL); if 5xx the tenant is "
+        "key's role lacks a scope (alert read / XQL); if 5xx the tenant is "
         "unhealthy. Verdicts stay `pending`."
     ),
     XSIAM_QUERY_ERROR: (

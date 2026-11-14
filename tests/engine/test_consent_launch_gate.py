@@ -312,3 +312,42 @@ def test_launch_passes_the_mode_through_on_the_pull_path(session_factory, monkey
 
     asyncio.run(_go())
     assert seen["mode"] == "pull"
+
+
+# ===========================================================================
+# Machine codes on the cluster clause
+# ===========================================================================
+# The adapter clause has always carried CONSENT_REQUIRED; the cluster clause
+# returned bare prose, which reached the API as LAUNCH_FAILED / 422. A console
+# cannot offer the right fix from prose, and the three refusals have three
+# different fixes.
+
+def test_a_missing_cluster_consent_key_carries_its_code_and_key(kill_switch):
+    from engine.orchestrator import _check_launch_consent, _refusal_code  # noqa: PLC0415
+
+    err = _check_launch_consent(_scn(POSTURE_TIER1), {}, mode="push")
+    assert _refusal_code(err) == "CLUSTER_CONSENT_REQUIRED"
+    assert err.detail["required_consent"] == ["cluster_privilege_authorized"]
+
+
+def test_the_deployment_switch_refusal_names_the_setting_not_a_key(kill_switch):
+    from engine.orchestrator import _check_launch_consent, _refusal_code  # noqa: PLC0415
+
+    kill_switch(False)
+    err = _check_launch_consent(
+        _scn(POSTURE_TIER2), {"node_access_authorized": True}, mode="push",
+    )
+    assert _refusal_code(err) == "PRIVILEGED_K8S_DISABLED"
+    assert err.detail["setting"] == "CORTEXSIM_ALLOW_PRIVILEGED_K8S"
+
+
+def test_a_posture_no_key_unlocks_has_its_own_code(kill_switch):
+    from engine.orchestrator import _check_launch_consent, _refusal_code  # noqa: PLC0415
+
+    kill_switch(True)
+    err = _check_launch_consent(
+        _scn({**POSTURE_TIER2, "namespace": "kube-system"}),
+        {"node_access_authorized": True, "cluster_privilege_authorized": True},
+        mode="push",
+    )
+    assert _refusal_code(err) == "CLUSTER_POSTURE_REFUSED"

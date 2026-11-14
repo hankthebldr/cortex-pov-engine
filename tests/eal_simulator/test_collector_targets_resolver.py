@@ -170,3 +170,23 @@ def test_unrecognised_check_verdict_raises():
     assert check_verdict({"verdict": "accepted"}) == "accepted"
     with pytest.raises(TargetSpecError):
         check_verdict({"verdict": "looks-fine"})
+
+
+def test_target_compression_reaches_every_step_that_can_send_gzip():
+    import dataclasses
+
+    target = dataclasses.replace(_target("catchall", is_default=True), compress=True)
+    out, _ = apply_targets(
+        _spec(("cloud_audit_emitter", {}), ("email_emitter", {})), REG, [target],
+        tokens={"catchall": "k"})
+    cloud, email = (s["params"] for s in out["steps"])
+    assert REG.get("cloud_audit_emitter").validate_params(cloud).compress is True
+    # email_emitter has no gzip transport; nothing is set it would ignore.
+    assert "compress" not in email
+
+
+def test_the_target_decides_compression_over_an_inline_value():
+    targets = [_target("catchall", is_default=True)]  # an uncompressed door
+    out, _ = apply_targets(
+        _spec(("cloud_audit_emitter", {"compress": True})), REG, targets)
+    assert out["steps"][0]["params"]["compress"] is False

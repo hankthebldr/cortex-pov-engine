@@ -223,14 +223,6 @@
   "scenario_file": "scenarios/edr/edr-049-linux-possible-brute-force-on-sudo-user.yml",
   "scenario_id": "SIM-EDR-049"
  },
- "TTP-0000-0029": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0212-sim-edr-050.json",
-  "card_id": "TTP-2026-0212",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-050-linux-masquerading-as-the-linux-crond-proc.yml",
-  "scenario_id": "SIM-EDR-050"
- },
  "TTP-0000-0030": {
   "card_file": "detection_scanner/ttps/TTP-2026-0213-sim-edr-051.json",
   "card_id": "TTP-2026-0213",
@@ -254,14 +246,6 @@
   "hash_iocs_dropped": 1,
   "scenario_file": "scenarios/edr/edr-053-linux-possible-binary-padding-using-dd.yml",
   "scenario_id": "SIM-EDR-053"
- },
- "TTP-0000-0033": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0216-sim-edr-054.json",
-  "card_id": "TTP-2026-0216",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-054-linux-a-compressed-file-was-exfiltrated-ov.yml",
-  "scenario_id": "SIM-EDR-054"
  },
  "TTP-0000-0034": {
   "card_file": "detection_scanner/ttps/TTP-2026-0217-sim-edr-055.json",
@@ -2527,14 +2511,6 @@
   "scenario_file": "scenarios/edr/edr-337-linux-ssh-authentication-brute-force-attempts.yml",
   "scenario_id": "SIM-EDR-337"
  },
- "TTP-0000-0317": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0500-sim-edr-338.json",
-  "card_id": "TTP-2026-0500",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-338-linux-sudoedit-brute-force-attempt.yml",
-  "scenario_id": "SIM-EDR-338"
- },
  "TTP-0000-0318": {
   "card_file": "detection_scanner/ttps/TTP-2026-0501-sim-edr-339.json",
   "card_id": "TTP-2026-0501",
@@ -2558,14 +2534,6 @@
   "hash_iocs_dropped": 1,
   "scenario_file": "scenarios/edr/edr-341-linux-suspicious-container-runtime-connection.yml",
   "scenario_id": "SIM-EDR-341"
- },
- "TTP-0000-0321": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0504-sim-edr-342.json",
-  "card_id": "TTP-2026-0504",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-342-linux-suspicious-sshpass-command-execution.yml",
-  "scenario_id": "SIM-EDR-342"
  },
  "TTP-0000-0322": {
   "card_file": "detection_scanner/ttps/TTP-2026-0505-sim-edr-343.json",

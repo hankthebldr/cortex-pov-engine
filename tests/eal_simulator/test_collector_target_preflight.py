@@ -129,3 +129,17 @@ def test_a_keyless_forwarder_may_proceed():
                write_canary=True, connect=_ok_connect, client_factory=rec.factory)
     assert out["verdict"] == "accepted"
     assert "authorization" not in rec.requests[0].headers
+
+
+def test_send_test_record_gzips_for_a_gzip_target():
+    import dataclasses
+    import gzip
+
+    rec = _Recorder(status=200, body=b'{"error":"false"}')
+    spec = dataclasses.replace(_spec(), compress=True)
+    out = _run(spec=spec, token=KEY, write_canary=True,
+               connect=_ok_connect, client_factory=rec.factory)
+    assert out["verdict"] == "accepted"
+    sent = rec.requests[0]
+    assert sent.headers["content-encoding"] == "gzip"
+    assert json.loads(gzip.decompress(sent.content))["cortexsim_preflight"] is True
