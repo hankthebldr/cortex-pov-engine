@@ -290,6 +290,28 @@ states the same verdict and reason. A verdict without a reason draws neither.
   `set -eu`, stop unless the directory they make is root's own 0700 directory,
   and install the checked entry.
 
+- **A root systemd unit and root crontab lines ran programs from `/tmp` paths
+  another user could create (SIM-CDR-006, SIM-CDR-002).** SIM-CDR-006 enabled a
+  `Restart=always` unit whose `ExecStart` was a fixed `/tmp` file the scenario
+  never created, and a root crontab watchdog that re-enabled it every 10
+  minutes. SIM-CDR-002 added a root crontab line that runs `/tmp/.xmr/xmrig`.
+  The beacon does not run a scenario's cleanup and `/tmp` is emptied at boot,
+  so these entries outlived what they pointed at. SIM-CDR-006 now makes its
+  marker in a root-owned 0700 directory, and the unit's `ExecStart` and the
+  watchdog run nothing unless one `stat` lookup reads it that way; otherwise
+  the unit disables itself and the watchdog removes itself. The check is in
+  `ExecStart` because systemd before 243 ignores `ExecCondition=`. The step that
+  makes the directory first retires a unit or watchdog left by an earlier run,
+  and the marker now retires the foothold 45 minutes after install. Both
+  SIM-CDR-002 crontab lines run the miner only from the 0755 directory step-01
+  made, and only while the miner itself is a regular 0755 file owned by the
+  same account. Step-02 extracts the archive with `--no-same-owner
+  --no-same-permissions` and sets the miner's mode, because `tar` run as root
+  otherwise keeps the archive's owner and mode. The two cards' illustrative
+  payloads run under `set -eu`, stop unless
+  the directory they make passes the same check, and install the checked
+  entries. No detection query changed.
+
 - **A path override on a tenant credential could send the tenant's API key to
   another host.** The connector checks the tenant's base URL, then appended the
   credential's `alerts_path` / `incidents_path` / `issues_path` / `cases_path` /
