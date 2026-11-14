@@ -8,8 +8,10 @@ response carries a ``Date`` header, because ``as_of`` is SimCore's clock.
 """
 from __future__ import annotations
 
+import io
 import logging
 import sys
+import zipfile
 from typing import Any, Callable, Optional
 
 import httpx
@@ -23,6 +25,19 @@ from tests._core_reimport import CORE_DIR, is_core_module, reimport_core
 
 DATE = "Mon, 02 Nov 2026 18:04:11 GMT"
 AS_OF = "2026-11-02T18:04:11+00:00"
+
+
+def zip_blob(members: list[tuple[str, Any]]) -> bytes:
+    """A ZIP archive built in memory: ``[(name, str | bytes), ...]``."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in members:
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+#: What ``TenantStub.request_archive`` answers when a test names no archive.
+STUB_ZIP = zip_blob([("stub.yml", "id: stub\n")])
 
 
 def readiness_body(tenant_verified: int = 0, integrations: Optional[list] = None) -> dict:
@@ -117,6 +132,14 @@ class TenantStub:
     async def request(self, method, path, *, json=None, params=None):
         self.calls.append({"method": method, "path": path, "json": json, "params": params})
         value = self.replies.get(path, {"ok": True, "echo_path": path})
+        if isinstance(value, BaseException):
+            raise value
+        return value() if callable(value) else value
+
+    async def request_archive(self, method, path, *, json=None, params=None):
+        """A ``zip-reply`` op's bytes: ``replies[path]`` (bytes), else a one-member ZIP."""
+        self.calls.append({"method": method, "path": path, "json": json, "params": params})
+        value = self.replies.get(path, STUB_ZIP)
         if isinstance(value, BaseException):
             raise value
         return value() if callable(value) else value

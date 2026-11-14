@@ -470,7 +470,7 @@ erDiagram
 | `agents` | 16 | enrollment tokens, install / uninstall script + telemetry, task claim, binary matrix |
 | `runs` | 16 | launch, output, complete, abort, control, pair, canary, verify, case-ledger refresh, report export |
 | `eal` | 16 | campaigns, collectors, preflight, offline bundle |
-| `xsiam` | 11 | 151-op gated operation catalog (writes preview) + Tier-2 XQL + issue, case and endpoint reads |
+| `xsiam` | 11 | 152-op gated operation catalog (writes preview) + Tier-2 XQL + issue, case and endpoint reads |
 | `credentials` | 10 | encrypted integration vault |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
@@ -1067,7 +1067,7 @@ cortex-pov-engine/
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop
-│   ├── integrations/xsiam/     151-op gated operation catalog (writes preview) + Tier-2 XQL
+│   ├── integrations/xsiam/     152-op gated operation catalog (writes preview) + Tier-2 XQL
 │   ├── eal_simulator/          27 plugins, two families
 │   ├── planes/                 declarative PlaneDescriptor registry (16)
 │   └── models.py               16 ORM models

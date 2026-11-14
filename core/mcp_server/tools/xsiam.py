@@ -1,4 +1,4 @@
-"""The ``xsiam.*`` group: 25 tools projecting SimCore's XSIAM integration (spec 5.3).
+"""The ``xsiam.*`` group: 27 tools projecting SimCore's XSIAM integration (spec 5.3).
 
 Every tenant call goes through SimCore's own routes (``/api/xsiam/...``); this
 module never talks to a tenant. Four rules hold everywhere:
@@ -26,7 +26,9 @@ module never talks to a tenant. Four rules hold everywhere:
   ``vulnerability.list``, ``assessment_result.list``) project here, the same
   way: allowlisted fields, free text only under ``tenant_text``, every string
   neutralised and capped as the reader does, and a parse error that names reply
-  keys, never quotes a tenant value.
+  keys, never quotes a tenant value. The two ZIP reads (``playbook.get``,
+  ``script.get``) put each archive member's name and text under ``tenant_text``
+  only; the text keeps its lines (``neutralise_document``) and is capped by bytes.
 
 The REST routes own every gate (capability, XQL write stage, traversal,
 budget); their codes pass through unchanged (D-1).
@@ -39,7 +41,7 @@ import shlex
 import time
 from typing import Any, NamedTuple, Optional
 
-from connectors.tenant_reader import DATA_NOTICE, LIST_CAP, neutralise_text
+from connectors.tenant_reader import DATA_NOTICE, LIST_CAP, neutralise_document, neutralise_text
 from connectors.xsiam import _key_names  # the envelope rule: identifier-shaped key names only
 from integrations.xsiam.codes import XSIAM_PARSE_ERROR, XSIAM_QUERY_ERROR, remediation_for
 from integrations.xsiam.exceptions import XsiamError
@@ -51,6 +53,7 @@ from ..errors import (
     MCP_WRITE_NOT_EXECUTABLE,
     NO_TENANT_CONFIGURED,
     REMEDIATION,
+    SIMCORE_SHAPE_UNKNOWN,
     TOOL_NOT_BACKED,
     McpToolError,
 )
@@ -68,6 +71,7 @@ from ..registry import (
     tenant_call,
 )
 from ..schemas import (
+    ArchiveGetIn,
     AssetGetIn,
     CaseSearchIn,
     DatasetSchemaIn,
@@ -284,8 +288,6 @@ _CORRELATION_FIELDS = (("rule_id", "rule_id", None), ("name", "name", None), ("s
                        ("search_window", "search_window", None), ("dataset", "dataset", None),
                        ("alert_category", "alert_category", None), ("mitre_defs", "mitre_defs", None),
                        ("xql_query", "xql_query", None), ("description", "description", None))
-_PLAYBOOK_FIELDS = (("id", "id", None), ("name", "name", None), ("version", "version", None),
-                    ("description", "description", None))
 
 # The six parity reads (tenant-reader spec §8.1). Field tables and envelopes are
 # PANW's public API pages, recorded in docs/reference/xsiam-platform-apis/15-parity-reads.md.
@@ -374,8 +376,6 @@ _SHAPES = {
                                 "name", _CORRELATION_FIELDS),
     "incidents": _Shape("OP-INCIDENTS-GET-INCIDENTS", "incidents", "incidents", "total_count",
                         "incident_id", _INCIDENT_FIELDS),
-    "playbooks": _Shape("OP-PLAYBOOKS-GET", "playbooks", "objects", "objects_count", "name",
-                        _PLAYBOOK_FIELDS),
     "tenant_info": _Shape("OP-SYSTEM-GET-TENANT-INFO", "tenant_info", None, None, None,
                           _TENANT_INFO_FIELDS, object_reply=True),
     "audit_logs": _Shape("OP-AUDITS-MANAGEMENT-LOGS", "audit_logs", "data", "total_count",
@@ -565,10 +565,6 @@ async def incident_list(ctx, args):
     return await _named_list(ctx, args, _SHAPES["incidents"])
 
 
-async def playbook_list(ctx, args):
-    return await _named_list(ctx, args, _SHAPES["playbooks"])
-
-
 async def tenant_info_get(ctx: ToolContext, args: TenantIn) -> Envelope:
     return await _named_object(ctx, _SHAPES["tenant_info"], tenant=args.tenant)
 
@@ -614,6 +610,69 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
         raise _parse_error(ex, "OP-HEALTHCHECK reply", f"no string status in {str(reply)[:200]}")
     return await _tenant_env(ctx, {"license_gated": False, "status": status}, tenant=ex.tenant,
                              queries=ex.queries_issued, ledger=ex.ledger, answered=ex.answered)
+
+
+# --- the ZIP reads: playbooks/get and scripts/get (tenant-reader spec §8.1) ------
+#: The keys of one member of SimCore's archive listing (archives.zip_members).
+_MEMBER_KEYS = ("name", "text", "bytes", "text_truncated", "binary", "refused")
+
+
+def _not_a_listing(ex: Executed, where: str, detail: str) -> TenantCallError:
+    """The route's reply is not SimCore's archive listing: a SimCore that does not
+    read this op as a ZIP. The tenant was read, so the count stays the route's."""
+    return TenantCallError(
+        SIMCORE_SHAPE_UNKNOWN, f"{where}: not an archive listing", detail, tenant=ex.tenant,
+        queries_issued=ex.queries_issued, ledger_snapshot=ex.ledger,
+        remediation=REMEDIATION[SIMCORE_SHAPE_UNKNOWN])
+
+
+def _archive_member(m: dict) -> dict:
+    """One member; its name and text sit only under ``tenant_text``."""
+    name, _ = neutralise_text(m["name"])
+    text, cut = m["text"], bool(m["text_truncated"])
+    if isinstance(text, str):
+        text, capped, _ = cap_text(neutralise_document(text))
+        cut = cut or capped
+    else:
+        text = None
+    return {"bytes": m["bytes"], "binary": m["binary"], "refused": m["refused"],
+            "text_truncated": cut, "tenant_text": {"name": name, "text": text}}
+
+
+async def _archive_get(ctx: ToolContext, args: ArchiveGetIn, op_id: str) -> Envelope:
+    """One ``zip-reply`` op through the executor route, filtered by id or name."""
+    flt = {"field": args.by, "value": args.value}
+    ex = await execute(ctx, tenant=args.tenant, op_id=op_id, path_params={}, query=None,
+                       body={"request_data": {"filter": flt}}, dry_run=None)
+    where, reply = f"{op_id} reply", ex.body["reply"]
+    expected = "an object with members[], an integer member_count and a boolean members_truncated"
+    if not isinstance(reply, dict):
+        raise _not_a_listing(ex, where, f"got {_seen(reply, True)}; expected {expected}")
+    members, count, cut = (reply.get("members"), reply.get("member_count"),
+                           reply.get("members_truncated"))
+    if (not isinstance(members, list) or isinstance(count, bool) or not isinstance(count, int)
+            or not isinstance(cut, bool)):
+        raise _not_a_listing(ex, where, f"got {_seen(reply, True)}; expected {expected}")
+    for m in members:
+        if not isinstance(m, dict) or any(k not in m for k in _MEMBER_KEYS):
+            raise _not_a_listing(ex, where, f"a member is {_seen(m, True)}; expected the keys "
+                                            f"{', '.join(_MEMBER_KEYS)}")
+    out = [_archive_member(m) for m in members]
+    data = {"op_id": op_id, "filter": flt, "members": out, "member_count": count,
+            "members_truncated": cut, "data_notice": DATA_NOTICE}
+    # Truncated when the result does not hold the whole archive: a member past
+    # the 50 listed, a text cut by a cap, or a member refused for any reason.
+    left_out = any(m["text_truncated"] or m["refused"] is not None for m in out)
+    return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
+                             ledger=ex.ledger, answered=ex.answered, truncated=cut or left_out)
+
+
+async def playbook_get(ctx: ToolContext, args: ArchiveGetIn) -> Envelope:
+    return await _archive_get(ctx, args, "OP-PLAYBOOKS-GET")
+
+
+async def script_get(ctx: ToolContext, args: ArchiveGetIn) -> Envelope:
+    return await _archive_get(ctx, args, "OP-SCRIPTS-GET")
 
 
 # --- the tenant reader: issues, cases, endpoints (tenant-reader spec §7.4) -------
@@ -835,6 +894,13 @@ async def session_index(ctx: ToolContext, args: EmptyInput) -> Envelope:
 
 # --- registered, not backed ---------------------------------------------------
 _NOT_BACKED = {
+    # PD6: playbooks/get answers one playbook as a ZIP; the API has no listing.
+    "xsiam.playbook.list": (
+        "the XSIAM public API exposes no playbook listing: POST /public_api/v1/playbooks/get "
+        "returns one playbook, by id or name, as YAML in a ZIP, which xsiam.playbook.get reads; "
+        "nothing was queried",
+        "read one playbook with xsiam.playbook.get (by: id or name; value: the playbook's id or "
+        "name)"),
     "xsiam.modeling_rule.list": (
         "the XSIAM public API exposes no modeling-rule listing; nothing was queried", None),
     "xsiam.parser.list": ("the XSIAM public API exposes no parser listing; nothing was queried", None),
@@ -893,6 +959,21 @@ def _parity_fields(shape: _Shape) -> str:
             f"XSIAM_PARSE_ERROR, never an empty {'object' if shape.object_reply else 'list'}.")
 
 
+#: The ZIP reads (tenant-reader spec §8.1); PANW's page for each is recorded in
+#: docs/reference/xsiam-platform-apis/15-parity-reads.md.
+_ARCHIVE = ("{op_id} (POST {path}) through SimCore's catalog executor: one {noun}, chosen by "
+            "by: id | name and value, which the tenant returns as YAML inside a ZIP. SimCore "
+            "reads the archive in memory and never extracts it: at most 50 members are listed; "
+            "a member over 256 KiB, or past 1 MiB in all, is refused unread (refused: "
+            "MEMBER_OVER_CAP / TOTAL_OVER_CAP; UNREADABLE for a corrupt or encrypted one); a "
+            "member that is not UTF-8 is binary: true with no text. Returns op_id, filter, "
+            "members[] (bytes, binary, refused, text_truncated, tenant_text {{name, text}}), "
+            "member_count, members_truncated and data_notice. A member's name and text are only "
+            "under tenant_text; the text keeps its lines, with invisible, control and bidi "
+            "characters stripped. evidence.truncated is true when a member or its text was left "
+            "out. A tenant error keeps the route's code; a reply that is neither a ZIP nor a "
+            "tenant error is XSIAM_PARSE_ERROR, never an empty archive.")
+
 #: What one parity read adds to its description, after the shared text.
 _PARITY_NOTES = {
     "tenant_info": ("The tenant's licence record: every documented key, verbatim (an expiration "
@@ -934,6 +1015,16 @@ def specs() -> list[ToolSpec]:
                  f"POST /api/xsiam/tenants/{{tenant}}/{route}: {what} {_READER.format(rows=rows)} "
                  f"{_TENANT} {_NO_KEY} data_notice: {DATA_NOTICE}", scopes=("alert.read",))
 
+    def archive(id_, impl, op_id, path, noun):
+        return s(id_, ArchiveGetIn, impl, "read", "tenant",
+                 f"{_ARCHIVE.format(op_id=op_id, path=path, noun=noun)} {_TENANT} {_NO_KEY} "
+                 f"data_notice: {DATA_NOTICE}", scopes=("content.read",))
+
+    def not_backed(tool):
+        return s(tool, TenantIn, _not_backed(tool), "read", "none",
+                 f"Registered, not backed: always TOOL_NOT_BACKED ({_NOT_BACKED[tool][0]}), never an "
+                 "empty list. Makes no call.", backed=False)
+
     def parity(id_, key, model, impl):
         shape = _SHAPES[key]
         return s(id_, model, impl, "read", "tenant",
@@ -955,7 +1046,10 @@ def specs() -> list[ToolSpec]:
           "truncated + bytes; dry_run: true previews it. A write or destructive op ALWAYS previews "
           "(queries_issued 0): dry_run, op_id, access_class, request, consent_required, "
           "execute_as_human — a human runs it; dry_run: false on one is MCP_WRITE_NOT_EXECUTABLE "
-          "with the preview attached. Path params are single segments (the executor's guard).",
+          "with the preview attached. Path params are single segments (the executor's guard). A "
+          "zip-reply op (OP-PLAYBOOKS-GET, OP-SCRIPTS-GET) replies with SimCore's in-memory "
+          "reading of the archive (members[], member_count, members_truncated), its text not "
+          "framed; xsiam.playbook.get / xsiam.script.get frame it.",
           idempotent=False),
         s("xsiam.session.index", EmptyInput, session_index, "read", "none",
           "From GET /api/readiness only: tenant_bound, tenant, scopes_held (from config.capabilities: "
@@ -983,14 +1077,12 @@ def specs() -> list[ToolSpec]:
           "query; refused with XSIAM_CAPABILITY_MISSING when the credential lacks xql. "
           f"{_TENANT}", scopes=("xql.execute",)),
         named("xsiam.incident.list", "incidents", ("alert.read",)),
-        named("xsiam.playbook.list", "playbooks", ("content.read",)),
+        not_backed("xsiam.playbook.list"),
         s("xsiam.healthcheck", TenantIn, healthcheck, "read", "tenant",
           "OP-HEALTHCHECK through SimCore's catalog executor. Returns license_gated and status only. "
           "A 403 is license_gated: true (reachable, healthcheck license-gated), not unreachable. "
           f"{_TENANT}"),
-        *(s(tool, TenantIn, _not_backed(tool), "read", "none",
-            f"Registered, not backed: always TOOL_NOT_BACKED ({_NOT_BACKED[tool][0]}), never an "
-            "empty list. Makes no call.", backed=False) for tool in _NOT_BACKED),
+        *(not_backed(tool) for tool in _NOT_BACKED if tool != "xsiam.playbook.list"),
         reader("xsiam.issue.search", IssueSearchIn, issue_search, "issues/search", "issues",
                "Security-domain issues (OP-ISSUE-SEARCH), newest first, filtered by an "
                "_insert_time window (since/until), ids, detection.method display names and "
@@ -1008,8 +1100,12 @@ def specs() -> list[ToolSpec]:
         parity("xsiam.vulnerability.list", "vulnerabilities", TenantListIn, vulnerability_list),
         parity("xsiam.assessment_result.list", "assessment_results", TenantListIn,
                assessment_result_list),
+        archive("xsiam.playbook.get", playbook_get, "OP-PLAYBOOKS-GET",
+                "/public_api/v1/playbooks/get", "playbook"),
+        archive("xsiam.script.get", script_get, "OP-SCRIPTS-GET", "/public_api/v1/scripts/get",
+                "script"),
     ]
 
 
 _LIST_IMPLS = {"datasets": dataset_list, "alerts": alert_list, "correlation_rules": correlation_rule_list,
-               "incidents": incident_list, "playbooks": playbook_list}
+               "incidents": incident_list}

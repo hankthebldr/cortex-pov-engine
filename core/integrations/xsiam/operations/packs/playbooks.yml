@@ -7,6 +7,7 @@ operations:
     method: POST
     path: "/public_api/v1/playbooks/get"
     access_class: read
+    tags: [zip-reply]
     doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/9bxk3d1x20w62-get-a-playbook"
   - op_id: OP-PLAYBOOKS-INSERT
     name: "Insert or update playbooks"

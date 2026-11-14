@@ -5,7 +5,7 @@
 > `POST /api/xsiam/tenants/{name}/operations/{op_id}`). This table is generated
 > from the loaded catalog — if the packs change, regenerate it.
 >
-> **151 operations** across **31 categories** — 82 read · 51 write · 18 destructive.
+> **152 operations** across **31 categories** — 83 read · 51 write · 18 destructive.
 ## Access classes & gating
 | Class | Badge | Executor behavior |
 |---|---|---|
@@ -250,6 +250,7 @@
 ## Scripts
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
+| `OP-SCRIPTS-GET` | POST | `/public_api/v1/scripts/get` | ✅ read | [↗](https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/scripts) |
 | `OP-SCRIPTS-GET-SCRIPT-EXECUTION-RESULTS` | POST | `/public_api/v1/scripts/get_script_execution_results` | ✅ read | `confirm-tail` |
 | `OP-SCRIPTS-GET-SCRIPT-EXECUTION-STATUS` | POST | `/public_api/v1/scripts/get_script_execution_status` | ✅ read | `confirm-tail` |
 | `OP-SCRIPTS-GET-SCRIPT-METADATA` | POST | `/public_api/v1/scripts/get_script_metadata` | ✅ read | `confirm-tail` |

@@ -1,11 +1,13 @@
-# Parity reads: the six named tenant reads behind the MCP server
+# Parity reads: the named tenant reads behind the MCP server
 
-> The response contracts behind the six `xsiam.*` parity tools (in-container tenant
-> reader spec §8.1, Track R): `xsiam.tenant_info.get`, `xsiam.audit_log.list`,
-> `xsiam.asset.list`, `xsiam.asset.get`, `xsiam.vulnerability.list` and
-> `xsiam.assessment_result.list`. Each tool runs one catalog op through
-> `POST /api/xsiam/tenants/{name}/operations/{op_id}` and projects the reply in
-> `core/mcp_server/tools/xsiam.py` (`_SHAPES`). Shared request conventions are in
+> The response contracts behind the eight `xsiam.*` parity tools (in-container tenant
+> reader spec §8.1, Track R): the six named reads `xsiam.tenant_info.get`,
+> `xsiam.audit_log.list`, `xsiam.asset.list`, `xsiam.asset.get`,
+> `xsiam.vulnerability.list` and `xsiam.assessment_result.list`, and the two ZIP
+> reads `xsiam.playbook.get` and `xsiam.script.get` (§7). Each tool runs one catalog
+> op through `POST /api/xsiam/tenants/{name}/operations/{op_id}` and projects the
+> reply in `core/mcp_server/tools/xsiam.py` (`_SHAPES` for the six, `_archive_get`
+> for the two). Shared request conventions are in
 > [`02-conventions.md`](./02-conventions.md); the catalog is
 > [`14-operation-catalog.md`](./14-operation-catalog.md).
 
@@ -239,9 +241,19 @@ Vulnerability records are PANW intelligence, not text a tenant user wrote: no
 | `description` | string | `tenant_text.description` |
 | `asset_group_name`, `report_targets`, `evaluation_frequency`, `created_by`, `modified_by` | various | not projected |
 
+## 7. `xsiam.playbook.get` / `xsiam.script.get` — `OP-PLAYBOOKS-GET` / `OP-SCRIPTS-GET` (ZIP)
+
+- **Pages:** <https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/playbooks> ("Get a playbook") and <https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/scripts> ("Get a script"), read 2026-11-13.
+- **Call:** `POST /public_api/v1/playbooks/get` and `POST /public_api/v1/scripts/get`, body `{"request_data": {"filter": {"field": "id" | "name", "value": "<string>"}}}` (`request_data` is required; `field` is an enum of `id` and `name`; `value` is the string the filter must match). Both pages require the feature's granular RBAC permission and state no licence. `OP-SCRIPTS-GET` is new in the catalog (the catalog had only `get_scripts`, `get_script_metadata` and the execution reads); `OP-PLAYBOOKS-GET` was there.
+- **Reply:** `200`, the object's YAML "in a ZIP file". The Scripts page gives the content type `application/zip` with an object schema and no properties; the Playbooks page gives no content type. Neither page documents an error response or a not-found answer.
+- **Read.** Both ops carry the catalog tag `zip-reply`, so the executor fetches the bytes with `XsiamClient.request_archive` (one request, charged to the per-tenant bucket; 401 / 429 / other 4xx-5xx mapped as for every reply) and returns `integrations/xsiam/archives.py::zip_members`: at most 50 file members, each `{name, text, bytes, text_truncated, binary, refused}`, plus `member_count` and `members_truncated`. The archive is read in memory with stdlib `zipfile` and never extracted. A member whose declared size is over 256 KiB, or over what is left of 1 MiB in all, is refused unopened (`MEMBER_OVER_CAP` / `TOTAL_OVER_CAP`); a member that inflates past its declared size fails zipfile's CRC check and is `UNREADABLE`, as is a corrupt or encrypted one. Text is UTF-8 only; anything else is `binary: true` with no text.
+- **Not an archive.** A JSON body is the tenant's answer in place of the archive: an `err_code` / `err_msg` goes through the shared application-error test (`has_app_error`, `_app_error_text`); any other JSON, an empty body, or a body that starts neither with `PK\x03\x04` nor parses as JSON is `XSIAM_PARSE_ERROR`, never an empty archive.
+- **Shape.** `data.members[]`: `bytes`, `binary`, `refused`, `text_truncated` and `tenant_text {name, text}`. A member's name is chosen by whoever saved the object, and its YAML is written on the tenant, so both are tenant text (spec §7.7). The text is a document: it keeps its tab and line feed, a carriage return is read as a line feed, every other character of the reader's strip set goes, and it is capped by bytes, not at 200 characters. `data.filter` echoes the request; `data.data_notice` frames the result.
+
 ## What the live check settles (Task 19)
 
 1. Whether a tenant accepts `OP-ASSETS` (`POST /public_api/v1/assets`), and that its total sits at `metadata.total_count`; otherwise the shape moves to `OP-ASSETS-GET-ASSETS`.
 2. The assessment-result row's real fields, and whether `.../get_assessment_results` wants the trailing slash.
 3. Whether `get_tenant_info` carries any version key (PD9); if not, the snapshot's extra request records only `TENANT_VERSION_NOT_REPORTED`.
 4. Whether the audit-log `AUDIT_*` spellings, the asset `xdm.*` keys and the UVEM keys match the documented ones.
+5. That `playbooks/get` and `scripts/get` answer a ZIP whose members are the object's YAML (how many, and how named), and what a tenant answers for an id or name that does not exist.
