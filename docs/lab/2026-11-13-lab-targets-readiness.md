@@ -313,6 +313,11 @@ connection to the persistence service." at 23:51:05Z, then "The applet is back t
 23:55:31Z, and every probe line except the oversize one landed. A readiness check that reads applet status must not
 treat one such ERROR as a closed door.
 
+The product-mechanics answers built from these observations (PM-ING-01, 03 and 08, all partial; the applet list is
+"not observed") are in `docs/product-mechanics/answers/PMA-2026-11-13-lab-broker-syslog.md`, commit d6b0b584 on
+`docs/docs-pm-http-collector-canary` (not pushed). When someone reads Broker VMs › bvm-01 › Add App, the list goes
+to that session verbatim for a new answer file.
+
 #### 5.4.1 Applet inventory and syslog row options (tenant Broker API schema, `broker-papi.yaml`)
 
 The tenant offers ten applets: `syslog`, `kafka`, `db`, `ftp` (FTP/SFTP/FTPS), `file` (shared folder), `csv`,
