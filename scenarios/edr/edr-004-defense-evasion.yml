@@ -180,8 +180,22 @@ steps:
       # nothing created, so the step always threw). It is now created first,
       # stomped to a culture-invariant date, shown, and removed.
       windows: |
-        $d = Join-Path $env:TEMP 'cortexsim-edr004'
-        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $sandbox = Join-Path $env:TEMP 'cortexsim-edr004'
+        # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+        # not its target), then the folder is made WITH its ACL in one call, so no other account
+        # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+        # folder carries. The Get-Acl below refuses anything that was there first; a later step
+        # tells this folder from a planted one with the same Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-1004)", [System.Security.AccessControl.AccessControlSections]::Access)
+        $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1004') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1004' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
+        $d = $sandbox
         $f = Join-Path $d 'beacon.exe'
         Copy-Item -Force -Path (Join-Path $env:SystemRoot 'System32\whoami.exe') -Destination $f
         $t = [datetime]'2023-01-01T00:00:00'
@@ -190,7 +204,8 @@ steps:
         $i.LastWriteTime = $t
         $i.LastAccessTime = $t
         Get-Item $f | Select-Object FullName, CreationTime, LastWriteTime
-        Remove-Item -Recurse -Force $d
+        # Directory.Delete leaves $LASTEXITCODE alone and never follows a junction.
+        [System.IO.Directory]::Delete($d, $true)
         Write-Output 'cortexsim-edr004-timestomp-complete'
       macos: 'touch -t 202301010000 /tmp/cortexsim_timestomp_test; touch -r /bin/ls /tmp/cortexsim_timestomp_test'
     expected_detections:

@@ -99,12 +99,26 @@ steps:
     # missing ProcDump fails the step loudly instead. The dump is written,
     # measured and deleted inside this step.
     command: |
+      $sandbox = Join-Path $(if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'
+      # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+      # not its target), then the folder is made WITH its ACL in one call, so no other account
+      # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+      # folder carries. The Get-Acl below refuses anything that was there first; a later step
+      # tells this folder from a planted one with the same Get-Acl.
+      if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      $sd = New-Object System.Security.AccessControl.DirectorySecurity
+      $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-1006)", [System.Security.AccessControl.AccessControlSections]::Access)
+      $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+      $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+      $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+      if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1006') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1006' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+      if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
+      # The folder is in %TEMP% unless that path has a space: comsvcs/ProcDump
+      # argument parsing breaks on one, so the system Temp directory is used.
       $pd = @(Get-Command procdump64.exe, procdump.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) + @('C:\AtomicRedTeam\ExternalPayloads\procdump.exe') | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
       if (-not $pd) { Write-Error 'ProcDump not found on PATH or at C:\AtomicRedTeam\ExternalPayloads\procdump.exe: step-01 did not run, which is not a detection miss'; exit 1 }
-      # comsvcs/ProcDump argument parsing breaks on a path with spaces, so a
-      # spaced %TEMP% falls back to the system Temp directory.
-      $dir = if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }
-      $dmp = Join-Path $dir 'lsass-cortexsim-procdump.dmp'
+      $dmp = Join-Path $sandbox 'lsass-cortexsim-procdump.dmp'
       Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $dmp
       & $pd -accepteula -ma lsass.exe $dmp
       if (-not (Test-Path -LiteralPath $dmp)) { Write-Error ('ProcDump wrote no dump (exit code {0}). This step cannot tell why: an endpoint-agent block, a beacon that is not elevated and LSASS running as a protected process look the same from here, so read the agent''s prevention log before scoring it' -f $LASTEXITCODE); exit 1 }
@@ -145,8 +159,15 @@ steps:
     # command line, so `comsvcs.dll, MiniDump` keeps its comma. Unproven on
     # Windows: no Windows host has run this step.
     command: |
-      $dir = if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }
-      $dmp = Join-Path $dir 'lsass-cortexsim.dmp'
+      $sandbox = Join-Path $(if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'
+      # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+      # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+      # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+      $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+      if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1006') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1006' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+      $dmp = Join-Path $sandbox 'lsass-cortexsim.dmp'
       Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $dmp
       $lsass = (Get-Process -Name lsass).Id
       $rd = Start-Process -FilePath "$env:SystemRoot\System32\rundll32.exe" -ArgumentList ('{0}\System32\comsvcs.dll, MiniDump {1} {2} full' -f $env:SystemRoot, $lsass, $dmp) -NoNewWindow -Wait -PassThru
@@ -196,8 +217,18 @@ steps:
     # directory when %TEMP% has a space) and are deleted in-step, so this
     # confirms none is left on disk rather than listing one.
     command: |
-      $left = @(Get-ChildItem -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\lsass-cortexsim*.dmp", "$env:SystemRoot\Temp\lsass-cortexsim*.dmp")
+      $sandbox = Join-Path $(if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'
+      # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+      # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+      # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+      $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+      if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1006') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1006' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+      $left = @(Get-ChildItem -Force -ErrorAction SilentlyContinue -Path (Join-Path $sandbox 'lsass-cortexsim*.dmp'))
       if ($left.Count -gt 0) { $left | Select-Object FullName, Length; Write-Error 'an LSASS dump from steps 01-02 is still on disk'; exit 1 }
+      # Directory.Delete leaves $LASTEXITCODE alone and never follows a junction.
+      [System.IO.Directory]::Delete($sandbox, $true)
       Write-Output 'cortexsim-edr006-no-lsass-dump-left-on-disk'
       Write-Output '[*] LSASS dump sequence complete — validating XSIAM correlation'
     identity: administrator
@@ -219,8 +250,10 @@ cleanup:
   commands:
     # Only the files this scenario or its atomic tests name — never an
     # arbitrary lsass-*.dmp the customer may be keeping — and it reports what it
-    # actually found, not that something was removed.
+    # actually found, not that something was removed. Since the dumps moved into
+    # the scenario's own folder, those names are left only by an earlier run.
     - "$found = @(Get-ChildItem -Force -ErrorAction SilentlyContinue -Path \"$env:TEMP\\lsass-cortexsim*.dmp\", \"$env:SystemRoot\\Temp\\lsass-cortexsim*.dmp\", \"$env:TEMP\\lsass-comsvcs.dmp\", \"$env:SystemRoot\\Temp\\lsass_dump.dmp\", \"$env:SystemRoot\\Temp\\dumpert.dmp\"); foreach ($f in $found) { Remove-Item -Force -LiteralPath $f.FullName; Write-Output ('removed ' + $f.FullName + ' (' + $f.Length + ' bytes)') }; if ($found.Count -eq 0) { Write-Output 'no LSASS dump artifacts were on disk' }"
+    - "$s = Join-Path $(if ($env:TEMP -match '\\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'; if (Test-Path -LiteralPath $s) { cmd.exe /c rmdir /s /q \"$s\"; Write-Output ('removed ' + $s) }"
     - "Write-Host '[CortexSim] SIM-EDR-006 cleanup complete'"
 
 author: "Henry Reed"

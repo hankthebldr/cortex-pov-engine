@@ -241,11 +241,26 @@ steps:
       # created it — before the step ends. `--%` passes `-N ""` verbatim:
       # Windows PowerShell 5.1 silently drops an empty native argument.
       windows: |
-        $d = Join-Path $env:TEMP 'cortexsim-edr003'
-        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $sandbox = Join-Path $env:TEMP 'cortexsim-edr003'
+        # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+        # not its target), then the folder is made WITH its ACL in one call, so no other account
+        # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+        # folder carries. The Get-Acl below refuses anything that was there first; a later step
+        # tells this folder from a planted one with the same Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-1003)", [System.Security.AccessControl.AccessControlSections]::Access)
+        $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1003') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1003' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
+        $d = $sandbox
+        # Directory.Delete leaves $LASTEXITCODE alone and never follows a junction.
         $k = Join-Path $d 'id_ed25519'
         $kg = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue
-        if (-not $kg) { Remove-Item -Recurse -Force $d; Write-Error 'ssh-keygen.exe not found: install the Windows OpenSSH client; without it this step proves nothing'; exit 1 }
+        if (-not $kg) { [System.IO.Directory]::Delete($d, $true); Write-Error 'ssh-keygen.exe not found: install the Windows OpenSSH client; without it this step proves nothing'; exit 1 }
         & $kg.Source -q -t ed25519 -C cortexsim-edr003 -f $k --% -N ""
         $ssh = Join-Path $env:USERPROFILE '.ssh'
         $ak = Join-Path $ssh 'authorized_keys'
@@ -260,7 +275,7 @@ steps:
         Get-Item $ak | Select-Object FullName, Length
         if ($hadFile) { [IO.File]::WriteAllBytes($ak, [IO.File]::ReadAllBytes($bak)) } else { Remove-Item -Force $ak }
         if (-not $hadDir) { Remove-Item -Recurse -Force $ssh -ErrorAction SilentlyContinue }
-        Remove-Item -Recurse -Force $d
+        [System.IO.Directory]::Delete($d, $true)
         Write-Output 'cortexsim-edr003-authorized-keys-written-and-restored'
     expected_detections:
       - plane: EDR
@@ -335,8 +350,7 @@ cleanup:
     # these three lines are then no-ops. copy /b writes the backup's bytes back
     # into the existing file (as the in-step WriteAllBytes does) rather than
     # moving the backup, with its %TEMP% ACL, into the user's .ssh directory.
-    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.bak" copy /y /b "%TEMP%\cortexsim-edr003\authorized_keys.bak" "%USERPROFILE%\.ssh\authorized_keys"'
-    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.absent" del /f /q "%USERPROFILE%\.ssh\authorized_keys"'
+    - "$sandbox = Join-Path $env:TEMP 'cortexsim-edr003'; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue; $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }; if (($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1003') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1003' }))) { $ak = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'; $bak = Join-Path $sandbox 'authorized_keys.bak'; if (Test-Path -LiteralPath $bak) { Copy-Item -Force -LiteralPath $bak -Destination $ak } elseif (Test-Path -LiteralPath (Join-Path $sandbox 'authorized_keys.absent')) { Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $ak } } elseif (Test-Path -LiteralPath $sandbox) { Write-Output \"authorized_keys left as it is: $sandbox is not the folder step-04 made\" }"
     - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003" rd /s /q "%TEMP%\cortexsim-edr003"'
     - "echo '[CortexSim] SIM-EDR-003 cleanup complete'"
 
