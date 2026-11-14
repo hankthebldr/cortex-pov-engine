@@ -2832,15 +2832,19 @@ never reaches the tenant itself and holds no tenant key.
   instructions." Their descriptions repeat it; an `operation.execute` preview
   carries no tenant value and no notice. A parse error on any named shape, the
   older ones included, names reply keys and types, never a tenant value.
-- **The run case ledger.** `cortexsim.run.get` and
-  `cortexsim.run.tenant_evidence.get` (through `GET /api/runs/{id}/tenant-evidence`)
+- **The run case ledger.** `cortexsim.run.get`, `cortexsim.run.list`,
+  `cortexsim.run.pair` and `cortexsim.run.tenant_evidence.get` (through `GET /api/runs/{id}/tenant-evidence`)
   return `case_ledger.cases[]` projected
   (`connectors/tenant_reader.py::project_case_ledger`): each case's
   `resolve_comment` sits under its `tenant_text`, neutralised and capped, with
   `text_truncated`, and an `xdr_url` that `safe_xdr_url` rejects is `null` with
   `xdr_url_withheld: true`. Every other field keeps its name and value.
-  `cortexsim.run.get` adds `data.data_notice` (the `tenant_text` one) when the
-  ledger has cases. `/api/runs` and `GET /api/runs/{id}` themselves return the
+  `run.get`, `run.list` (every row) and `run.pair` (both runs) add
+  `data.data_notice` (the `tenant_text` one) when a ledger they return has
+  cases. `run.pair`'s `merge` holds only class, reason and basis, so it needs no
+  projection. `run.report` returns the Markdown report only: its case table
+  renders no ledger free text, escapes every tenant string and withholds a
+  rejected link. `/api/runs` and `GET /api/runs/{id}` themselves return the
   stored ledger unchanged.
 - **LEGACY.** `xsiam.alert.list` and `xsiam.incident.list` keep working, because
   the matcher still reads the alerts API. Their descriptions start with, and their

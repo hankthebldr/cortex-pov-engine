@@ -274,6 +274,12 @@ states the same verdict and reason. A verdict without a reason draws neither.
 
 ### Security
 
+- **`cortexsim.run.list` and `cortexsim.run.pair` handed an agent the tenant's
+  case ledger unprojected.** `run.get` already put a case's analyst
+  `resolve_comment` under `tenant_text` and withheld an unsafe `xdr_url`; the
+  two sibling tools returned both raw, with no `data_notice`. They now project
+  every run's ledger the same way and add `data_notice` when a ledger has
+  cases. The REST routes and the stored ledger are unchanged.
 - **A leftover cron entry or systemd timer could run another user's script as
   root (SIM-EDR-023, SIM-EDR-024).** Each scenario installs a root job that
   runs a script from a fixed directory under `/var/tmp` every five minutes, and
