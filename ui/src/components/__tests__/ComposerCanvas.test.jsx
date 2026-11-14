@@ -96,9 +96,9 @@ describe('ComposerCanvas — preserved DOM', () => {
     expect(within(s2.closest('.chain-node')).getByText(/no expected detection/i)).toBeInTheDocument()
   })
 
-  it('shows the CGO on the meta line', () => {
+  it('says where the chain starts on the meta line', () => {
     render(<ComposerCanvas {...baseProps()} />)
-    expect(screen.getByText(/CGO apache2 \/ www-data/)).toBeInTheDocument()
+    expect(screen.getByText(/starts at apache2 \/ www-data/)).toBeInTheDocument()
   })
 
   it('renders the YAML pre with the passed yamlText when canvasView=yaml', () => {
@@ -176,13 +176,14 @@ describe('ComposerCanvas — Lanes lens (the ChainStage, editable)', () => {
   // the same thing on the scenario sheet and on Run detail: all three draw ONE
   // stage (ChainStage, design v26 §4.1). The Design lens draws none of this;
   // the Lanes lens draws all of it, and every card wears its door.
-  it('draws the eight lane bands and badges each step with its signal path', () => {
+  it('draws the six lanes and badges each step with its signal path', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
     const stage = screen.getByTestId('chain-stage')
     expect(stage).toHaveAttribute('data-mode', 'editable')
-    expect(stage.querySelectorAll('.chain-stage__lane')).toHaveLength(8)
-    // LAUNCH, the Engine (tenant content) and PROOF hold no step.
-    expect(stage.querySelectorAll('.chain-stage__lane--terminal')).toHaveLength(3)
+    expect(stage.querySelectorAll('.chain-stage__lane')).toHaveLength(6)
+    // Only the Engine lane (tenant content) holds no step; Start and Stop are
+    // points before and after the lanes, not lanes.
+    expect(stage.querySelectorAll('.chain-stage__lane--terminal')).toHaveLength(1)
     expect(stage).toHaveTextContent('ENDPOINT RUNTIME')
     expect(stage).toHaveTextContent('LOG INJECTION')
     expect(stage).toHaveTextContent('LIVE TRAFFIC')
@@ -192,10 +193,11 @@ describe('ComposerCanvas — Lanes lens (the ChainStage, editable)', () => {
     expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent(/^AGT$/)
     expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent(/^AGT$/)
     // The Design lens's React Flow anchors are not drawn a second time: the
-    // stage's own trigger and proof cards sit in the LAUNCH / PROOF bands.
+    // stage draws its own Start and Stop points, outside every lane.
     expect(screen.queryByTestId('chain-start')).toBeNull()
     expect(screen.queryByTestId('chain-end')).toBeNull()
-    expect(screen.getByTestId('stage-card-trigger')).toHaveAttribute('data-lane', 'LAUNCH')
+    expect(screen.getByTestId('stage-card-trigger')).toHaveTextContent('Start')
+    expect(screen.getByTestId('stage-card-trigger')).not.toHaveAttribute('data-lane')
     expect(screen.getByTestId('composer-add-step')).toBeInTheDocument()
   })
 

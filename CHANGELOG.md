@@ -96,6 +96,25 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 - A link can still scope the list (`?supply=unstaged`, used by a refused
   launch); the scope is named in plain words and can be cleared.
 
+### Changed — Composer: Start and Stop points, lanes without Launch/Proof, less chrome
+
+- **The chain's ends are Start and Stop.** The trigger node reads **Start** and
+  the proof node **Stop**, each with the play / stop icon, on the Design, Run
+  and Lanes lenses, the scenario sheet and Run detail. The launch button is
+  **Start on \<agent\>** with the same icon.
+- **Launch and Proof are no longer lanes.** The Lanes lens draws the signal
+  paths only; Start and Stop sit in a row above them, before the first step
+  and after the last. Each lane shows its component's icon and name; its
+  description is the tooltip.
+- **The canvas dots stay visible at every zoom.** React Flow shrank a dot with
+  the zoom, so the grid vanished on a fitted chain. Dots are now drawn at a
+  constant size on screen; the spacing still scales with the zoom.
+- **The "SimCore degraded" strip is removed.** The header's status (Degraded ·
+  N issues, opening Components) carries it.
+- **Icon buttons.** The palette and inspector toggles on the canvas are icons
+  (named "Add to chain" and "Inspector" for assistive tech). A shared `Icon`
+  set (play, stop, repeat, plus, sliders) joins the kit.
+
 ### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
 
 - **Back up the database volume first, and roll back only by restoring it.**

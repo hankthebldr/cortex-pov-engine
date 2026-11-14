@@ -206,7 +206,7 @@ describe('Build a chain — picks up the tray', () => {
         </ChainTrayProvider>
       </EnvironmentProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: /＋ Add/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to chain' }))
     const tabs = within(screen.getByRole('tablist', { name: 'Palette surfaces' })).getAllByRole('tab')
     expect(tabs.map((t) => t.textContent)).toEqual(['Scenarios', 'TTP cards', 'Data streams', 'Packages'])
     fireEvent.click(tabs[2])

@@ -82,6 +82,9 @@
 @keyframes kit-toast-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .kit-toast { animation: none; } }
 
+/* ── Icon ───────────────────────────────────────────────────────────────── */
+.kit-icon { display: inline-block; flex: none; vertical-align: -2px; }
+
 /* ── PageIcon ───────────────────────────────────────────────────────────── */
 .kit-pageicon { display: inline-grid; place-items: center; flex: none; }
 .kit-pageicon__img { display: block; width: 15px; height: 15px; object-fit: contain; filter: grayscale(1); }

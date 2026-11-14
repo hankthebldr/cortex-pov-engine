@@ -75,15 +75,6 @@
 .theme-console .safety-banner--min .safety-banner__msg strong { color: var(--tx); }
 .theme-console .safety-banner--min .safety-banner__link { color: var(--tx2); font-size: 12px; }
 
-/* ── Readiness line ─────────────────────────────────────────────────────────
-   A server fault is worth one line, not a tinted band across the console. */
-.theme-console .readiness-banner {
-  background: var(--s1);
-  border-bottom: 1px solid var(--bd);
-  padding: 5px 16px;
-}
-.theme-console .readiness-banner__tag { color: var(--warn); }
-
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .theme-console .tour-trigger__beacon { background: var(--tx2); box-shadow: none; animation: none; }
 
