@@ -17,6 +17,7 @@ import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import ReadBackNotice from './ReadBackNotice.jsx'
 import RunChain from './RunChain.jsx'
+import RunVerdictLine from './RunVerdictLine.jsx'
 import useReadBack from './useReadBack.jsx'
 import { resultCell } from './RunList.jsx'
 import { absoluteTime, runAgent } from './runRows.js'
@@ -532,6 +533,7 @@ export default function RunDetailView({
           {lifecycle.phase === PHASE.UNREAD && outcomes.get(runId) && !outcomes.get(runId).ok && (
             <p className="run-lifecycle__why" role="status">{outcomes.get(runId).message}</p>
           )}
+          <RunVerdictLine run={lcRun} variant="header" />
         </div>
       )}
 
@@ -541,6 +543,7 @@ export default function RunDetailView({
       {lifecycle && (
         <RunChain runId={runId} run={lcRun} lifecycle={lifecycle} onNavigate={onNavigate} />
       )}
+      <RunVerdictLine run={lcRun} variant="engine" />
 
       {/* The run died and the console knew — say it here, once, at the top,
           before any proof surface invites a coverage reading. */}
