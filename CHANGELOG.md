@@ -416,6 +416,35 @@ states the same verdict and reason. A verdict without a reason draws neither.
   as empty. The coverage percentages and the new/regression flags are gone with
   the old grid.
 
+### Added — Dashboards on the rail (design C8)
+
+- **The hidden Coverage page is now Dashboards**, a rail item under Run &
+  observe after Results. Its route is still `#/coverage`, so links and
+  bookmarks keep working; `?tab=` opens a view. Results is one page again and
+  no longer draws a tab strip with a single tab.
+- **Three views count every scenario from `GET /api/scenarios`.** *Detection
+  source × Use case* puts use cases (the parent of each `uc_ref`) down and the
+  planes the scenarios raise detections on across. *MITRE ATT&CK* draws
+  `GET /api/mitre/coverage` on the 14 Enterprise tactics, with Plane, Detection
+  source and Gaps only filters; a technique no scenario in scope exercises is
+  drawn dashed. *Planes × doors* counts the scenarios on each plane waiting on
+  each door that is not open (`GET /api/doors/readiness` for the agent the
+  header has selected, and `GET /api/doors`); a scenario with no readiness,
+  or one that needs an agent door while no agent is selected, reads Not
+  checked, never ready. Any cell or technique lists the scenarios behind it,
+  each opening its sheet on Scenarios. The old page's PANW stack and
+  Competitive lenses stay as tabs.
+- **What a scenario has proven comes from run read-back only.** Detected
+  means a run of it was read back from the tenant and SimCore counted a
+  detection on it. A run that finished but was never read back reads Pending,
+  even when it has detections counted; a scenario that is only authored reads
+  Never run; a run list that did not load reads Can't check. The coverage
+  endpoint's own status no longer colours the ATT&CK tiles. Every state is an
+  icon and a word.
+- **The ATT&CK placement is the endpoint's.** It files a step's technique
+  under its scenario's tactic; the page says so. A technique under a tactic id
+  that is not one of the 14 gets its own column instead of vanishing.
+
 ### Security
 
 - **A leftover cron entry or systemd timer could run another user's script as
