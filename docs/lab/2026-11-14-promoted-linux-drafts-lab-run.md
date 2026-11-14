@@ -30,13 +30,13 @@ endpoint software treated that one failure as an instruction to stop. A
 separate fix has been proposed.
 
 None of the built-in Cortex alerts these scenarios name was raised, which is
-expected for two of them. The fourth scenario cannot run until one standard
-package is installed on the endpoint. The custom correlation rules that would
-turn this activity into a case have been checked as queries, but are not
-installed.
+expected for two of them. The fourth scenario ran once `sshpass` was installed
+on the endpoint (Henry installed it at 02:49). The custom correlation rules
+that would turn this activity into a case have been checked as queries, but are
+not installed.
 
-Recommended action: approve the package install, install the four
-correlation rules at Medium, re-run all four scenarios, and re-run the crond
+Recommended action: install the four correlation rules at Medium, re-run all
+four scenarios, and re-run the crond
 scenario after 2026-11-24 to settle its built-in alert.
 
 ## Technical detail
@@ -51,7 +51,7 @@ scenario after 2026-11-24 to settle its built-in alert.
 | 01:05:02 – 01:07:55 | SIM-EDR-027 with an experimental `sleep 10` before the gzip leg (not committed) | `a1d6af86-5baa-407b-a137-d27416f61bc8` | complete, 5/5 steps rc 0 |
 | 01:39:56 – 01:41:03 | SIM-EDR-028 (`2600840e`) | `328b3e45-e10d-4ebe-bd19-a589efc266a2` | failed: step-02 killed after 55 s by the beacon (finding F3), about 16 sudoedit starts |
 | 01:42:44 – 01:45:06 | SIM-EDR-028 (`2600840e`) | `5c500f71-3b23-4f12-b6b0-97e4cdabe9a0` | complete, 3/3 steps rc 0 |
-| — | SIM-EDR-029 (`a0b086ab`) | none | not run: `sshpass` is not installed (section 4) |
+| 02:50:05 – 02:51:47 | SIM-EDR-029 (`a0b086ab`) | `c8fc2bf6-0110-4979-8e25-a8be4c2ac94d` | complete, 3/3 steps rc 0 (after `sshpass` was installed at 02:49) |
 
 Each scenario's sandbox under `/var/tmp` was removed by its own last step.
 The killed run left `/var/tmp/.cortexsim-sudoedit`, which the next run's
@@ -95,6 +95,13 @@ step-01 removed before it did anything else.
 - **CR-EDR-0028:** run as a query at 01:56, it returned `sudoedit_starts` 44. That is this run's 28 plus the killed run's starts.
 - **Built-in alert:** "Sudoedit Brute force attempt" was not raised. It is hunt-only, because it needs a trained baseline.
 
+**SIM-EDR-029 (sshpass credential-stuffing burst).**
+
+- **The run itself:** 3/3 steps rc 0. Six sshpass runs (three `-p`, three `-f`); every `ssh` reported it could not resolve `ssh-gw.cortexsim-canary.invalid` and ended 255. No session opened.
+- **XQL rows:** Tier-2 verify at 02:58 (about 6.5 minutes after the run) passed step-01 and both step-02 rows. The step-03 `rm` row read `fail` on that pass because the `rm` event had not been ingested yet (finding F1): a direct query for it returned 0 rows at 02:59 and the event landed only after 03:00. A re-verify once it landed is recorded in the run ledger.
+- **ABIOC and correlation:** held neutral (no installed alert or rule to match).
+- **Built-in alert:** "Suspicious sshpass command execution" needs the installed alert to be observed; the row's query matched the six real sshpass starts.
+
 ### 3. Findings about the agent and SimCore
 
 **F1. Telemetry arrives in batches about five minutes apart.**
@@ -113,7 +120,7 @@ step-01 removed before it did anything else.
 
 **F3. One failed control poll kills a running step.**
 
-- Run `328b3e45` was not aborted by anyone.
+- Run `328b3e45` (an earlier SIM-EDR-028 attempt) was not aborted by anyone.
 - At 01:40:53 another client's tenant XQL call through SimCore loaded the tenant credential. `CredentialStore.get_plaintext` bumps `last_accessed_at` and flushes without committing, so a SQLite write transaction stayed open through the 10 s outbound call.
 - The beacon's 2-second `GET /api/runs/{id}/control` poll runs an `UPDATE agents SET last_seen`. That update hit `database is locked` and returned HTTP 500 (SimCore log ref `acf296e856f2`).
 - The beacon (`agent/beacon/client.go`, `Control` → `controlLost`, `Abort: true`) treats any single failed poll as an abort. It killed step-02 with exit 130 and reported "aborted by operator".
@@ -128,23 +135,20 @@ step-01 removed before it did anything else.
 
 **F5. The correlation rules are accepted, but none is installed.**
 
-- CR-EDR-0026, CR-EDR-0027 (primary and fallback) and CR-EDR-0028 were all accepted by the tenant as ordinary queries.
+- CR-EDR-0026, CR-EDR-0027 (primary and fallback), CR-EDR-0028 and CR-EDR-0029 were all accepted by the tenant as ordinary queries.
 - Each returned its chain's row.
 - None is installed, so none has run on a schedule and no case was opened.
 - Issue suppression and the timestamp an aggregated correlation issue carries remain unobserved.
 
-### 4. Not run
+### 4. The sshpass install
 
-- **SIM-EDR-029** needs the `sshpass` package on the endpoint.
-  - A one-step maintenance draft that installs it, `SIM-DRAFT-lab-maintenance-pov-target-01-install-sshpass-for-sim-edr-029-20261113`, is on the shared SimCore.
-  - Its launch was refused by this session's permission classifier, so it was not run.
-  - Its real sshpass burst has not been executed anywhere.
+- **SIM-EDR-029** needed the `sshpass` package on the endpoint.
+  - A one-step maintenance draft, `SIM-DRAFT-lab-maintenance-pov-target-01-install-sshpass-for-sim-edr-029-20261113`, is on the shared SimCore; its launch was refused by this session's permission classifier.
+  - Henry installed `sshpass` 1.09-1 on `pov-target-01` himself (over `ssh -J`) at 02:49, and the scenario then ran (`c8fc2bf6`).
 
 ### 5. Lab steps that need Henry's approval
 
-1. Install `sshpass` on `pov-target-01`:
-   - either launch the maintenance draft above, or run `sudo apt-get install -y --no-install-recommends sshpass` on the VM;
-   - do not run `sshpass` by hand afterwards.
+1. (Done 02:49) `sshpass` 1.09-1 installed on `pov-target-01`, and SIM-EDR-029 ran.
 2. Install CR-EDR-0026, CR-EDR-0027, CR-EDR-0028 and CR-EDR-0029 in the tenant from their cards:
    - severity Medium, schedule every 10 minutes, time frame 1 hour, no MITRE tag;
    - map `agent_hostname` to Host Name and `agent_id` to Agent ID;
@@ -158,4 +162,4 @@ step-01 removed before it did anything else.
 - Copied the eight scenario and card files into the worktree the shared SimCore mounts (`funny-bartik-cd5ed4`), as untracked files, and restarted the container four times. The last re-stage, at 02:09, carries the final committed versions.
 - Undo: delete those eight files and restart the container.
 - Created two drafts on the shared SimCore: the tool probe and the sshpass maintenance draft.
-- Nothing was installed on the VM and nothing was written to the tenant.
+- This session installed nothing on the VM and wrote nothing to the tenant. Henry installed `sshpass` on the VM himself.

@@ -1,5 +1,8 @@
 /* components.css — the Components hub (design v26 §9.2).
-   Tokens only; no hex. Rows are cards on --s1 with a 1px --bd border. */
+   Tokens only; no hex. Rows are cards on --s1 with a 1px --bd border.
+   Every .cmp-row rule is scoped to .cmp-hub: the component pages have a row
+   class of the same name (component-page.css), and both stylesheets stay
+   loaded once their pages have been visited. */
 
 .cmp-hub { max-width: 1180px; }
 .cmp-hub__title { display: flex; align-items: center; gap: 11px; margin: 0 0 6px; }
@@ -7,7 +10,7 @@
 
 .cmp-list { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 
-.cmp-row {
+.cmp-hub .cmp-row {
   display: grid;
   grid-template-columns: 30px minmax(0, 1.4fr) 150px minmax(0, 1fr) auto;
   grid-template-areas: "icon name status issue actions";
@@ -18,29 +21,29 @@
   border-radius: 10px;
   transition: border-color 120ms ease-out;
 }
-.cmp-row:hover { border-color: var(--bd2); }
-.cmp-row--open { border-color: var(--ac-line); background: var(--ac-soft); }
+.cmp-hub .cmp-row:hover { border-color: var(--bd2); }
+.cmp-hub .cmp-row--open { border-color: var(--ac-line); background: var(--ac-soft); }
 
-.cmp-row > .kit-pageicon { grid-area: icon; }
-.cmp-row__status { grid-area: status; }
-.cmp-row__name { grid-area: name; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.cmp-row__title { font: 600 14px/1.3 var(--font-ui); color: var(--tx); }
-.cmp-row__detail {
+.cmp-hub .cmp-row > .kit-pageicon { grid-area: icon; }
+.cmp-hub .cmp-row__status { grid-area: status; }
+.cmp-hub .cmp-row__name { grid-area: name; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cmp-hub .cmp-row__title { font: 600 14px/1.3 var(--font-ui); color: var(--tx); }
+.cmp-hub .cmp-row__detail {
   font: 400 11.5px/1.4 var(--font-ui); color: var(--tx3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cmp-row__issue { grid-area: issue; min-width: 0; }
-.cmp-row__issue-text { font: 600 11.5px/1.2 var(--font-ui); }
-.cmp-row__issue-text--degraded { color: var(--warn); }
-.cmp-row__issue-text--down { color: var(--crit); }
-.cmp-row__actions { grid-area: actions; display: flex; gap: 6px; justify-content: flex-end; }
+.cmp-hub .cmp-row__issue { grid-area: issue; min-width: 0; }
+.cmp-hub .cmp-row__issue-text { font: 600 11.5px/1.2 var(--font-ui); }
+.cmp-hub .cmp-row__issue-text--degraded { color: var(--warn); }
+.cmp-hub .cmp-row__issue-text--down { color: var(--crit); }
+.cmp-hub .cmp-row__actions { grid-area: actions; display: flex; gap: 6px; justify-content: flex-end; }
 
 @media (max-width: 1279px) {
-  .cmp-row {
+  .cmp-hub .cmp-row {
     grid-template-columns: 30px minmax(0, 1fr) 130px auto;
     grid-template-areas: "icon name status actions" ". issue issue issue";
     row-gap: 8px;
   }
-  .cmp-row__issue:empty { display: none; }
+  .cmp-hub .cmp-row__issue:empty { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .cmp-row { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cmp-hub .cmp-row { transition: none; } }

@@ -60,6 +60,78 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Added — ★ Favorites: the system's best scenarios, first in the Composer palette
+
+The Composer palette has a new first tab, **★ Favorites**, and opens on it
+whenever the library has any. A scenario earns the ★ by measurement, not by a
+list anyone keeps: it is lab-ready (GREEN: no tool fetched from the internet,
+no launch consent gate), every step makes real telemetry, it raises a
+Correlation, and it spans at least four detection types. That is 27 of 201
+scenarios today, 12 of them the stitched Unit 42 chains. The rule lives once,
+in `core/engine/lab_readiness.py` (`favorite_reasons`), beside the
+GREEN/YELLOW/RED classifier it reads; `scripts/lab_readiness.py` now renders
+the manifest from that module and its output is byte-for-byte unchanged.
+`GET /api/scenarios` rows and `GET /api/scenarios/{id}` carry `favorite` and
+`favorite_why` (the four reasons, shown as the ★'s tooltip). Starred
+scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
+(plane, detection types, use case), and the active tab offers its most common
+tags as chips that filter the list; tags that differ only in case are one chip.
+
+### Changed — the console no longer says "shelf" or "staged" for tools
+
+- **Tool readiness is said in plain words everywhere.** The launch gate row is
+  **Tool readiness** (was "Payload shelf"). The launch check says a tool is
+  **not ready**, or **needs internet access on the target**, and still says what
+  that costs: on a network that blocks it the step runs without its tool and the
+  missing detection reads as a coverage gap. The launch card is **Tools for this
+  run**, the Composer's bottom tab is **Tools · N ready**, the scenario sheet's
+  tool chips read READY / NOT READY / NEEDS INTERNET, and the dialog is **Make
+  \<tool\> ready on this instance**. "Tools & Payloads" is **Packages**.
+- **Coverage** calls a technique no run has exercised **Not run** (was
+  "Staged"), on the page and in the exported Navigator layer.
+- The About page no longer claims "nothing is fetched at dispatch": it now says
+  a run that needs a tool this instance cannot supply is refused, and a tool the
+  target must install for itself is flagged at the launch check.
+- API fields, error codes (`PAYLOAD_NOT_STAGED`) and a push run's `staged`
+  status are unchanged.
+
+### Changed — Packages: a plain catalog, no supply mechanics
+
+- **The Packages page no longer talks about the payload shelf.** How and when a
+  tool reaches a host (staged on the instance, installed by the target at run
+  time, provided by the lab) is the system's decision, not a catalog concept.
+  The banner, the supply statistics, the supply chips, the egress lines and the
+  Stage button are gone from the list, with the tier, safety and supply
+  filters. A card shows the tool, its category and platform, the Cortex planes
+  and techniques its signal lands on, and **Add to chain**.
+- **One readiness fact stays.** A tool this instance cannot supply reads **Not
+  ready** on its card, because a run that needs it is refused. The detail
+  panel's first section is **Availability**, in plain words, with **Make
+  ready** where the instance can fix it; a tool the target installs for itself
+  says the target needs internet access. The install-mechanics section is
+  removed from the detail.
+- A link can still scope the list (`?supply=unstaged`, used by a refused
+  launch); the scope is named in plain words and can be cleared.
+
+### Changed — Composer: Start and Stop points, lanes without Launch/Proof, less chrome
+
+- **The chain's ends are Start and Stop.** The trigger node reads **Start** and
+  the proof node **Stop**, each with the play / stop icon, on the Design, Run
+  and Lanes lenses, the scenario sheet and Run detail. The launch button is
+  **Start on \<agent\>** with the same icon.
+- **Launch and Proof are no longer lanes.** The Lanes lens draws the signal
+  paths only; Start and Stop sit in a row above them, before the first step
+  and after the last. Each lane shows its component's icon and name; its
+  description is the tooltip.
+- **The canvas dots stay visible at every zoom.** React Flow shrank a dot with
+  the zoom, so the grid vanished on a fitted chain. Dots are now drawn at a
+  constant size on screen; the spacing still scales with the zoom.
+- **The "SimCore degraded" strip is removed.** The header's status (Degraded ·
+  N issues, opening Components) carries it.
+- **Icon buttons.** The palette and inspector toggles on the canvas are icons
+  (named "Add to chain" and "Inspector" for assistive tech). A shared `Icon`
+  set (play, stop, repeat, plus, sliders) joins the kit.
+
 ### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
 
 - **Back up the database volume first, and roll back only by restoring it.**
@@ -123,6 +195,18 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   "behaviour change you may veto" items under *Changed* below say exactly
   which routes.
 
+- **`/mcp` now needs `CORTEXSIM_MCP_TOKEN`.** If you run with
+  `CORTEXSIM_MCP_HTTP=true`, set `CORTEXSIM_MCP_TOKEN` (generate one with
+  `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) or `/mcp` is not
+  mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Clients send
+  `Authorization: Bearer <token>`. MCP `run.launch` / `run.abort` now refuse
+  unless `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`.
+- **Tenant reads are metered per tenant.** REST catalog reads now spend the
+  per-tenant request budget (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default
+  60) and can be refused with 429 `XSIAM_QUOTA_ERROR`. Raise the setting if a
+  workflow legitimately needs more.
+- **New table `tenant_evidence_reads`** is created at boot; no migration step.
+
 ### Added — four Linux scenarios promoted from the staged draft library
 
 Four of the seven Linux pairs that `drafts/detection-library/INDEX.md` listed
@@ -154,17 +238,15 @@ library holds 362 pairs.
     reads `not_executed`, not missed.
 - **Lab runs on `pov-target-01` (2026-11-14)**, recorded in
   `docs/lab/2026-11-14-promoted-linux-drafts-lab-run.md`:
-  - **SIM-EDR-026, 027 and 028:** completed, and every declared XQL row
-    returned rows in the tenant.
+  - **All four completed** (SIM-EDR-029 after `sshpass` was installed on the
+    endpoint), and every declared XQL row returned rows in the tenant.
   - **SIM-EDR-027:** step-02's gzip leg was never recorded by the agent, so
     that row was dropped.
   - **SIM-EDR-028:** the agent recorded the first 28 of 60 starts, above the
     floor of 20.
-  - **Correlation rules:** CR-EDR-0026, 0027 and 0028 were accepted by the
-    tenant as queries and return their chain's row. None is installed.
+  - **Correlation rules:** CR-EDR-0026, 0027, 0028 and 0029 were accepted by
+    the tenant as queries and return their chain's row. None is installed.
   - **Built-in alerts:** none was raised.
-  - **SIM-EDR-029:** not run, because `sshpass` is not installed on the
-    endpoint.
 - **Left in staging, with nothing a lab run can fire:**
   - TTP-0000-0315 *Rare SSH Session* and TTP-0000-0323 *Uncommon SSH session
     was established*: both need a real SSH session to a second host plus a
@@ -187,7 +269,50 @@ library holds 362 pairs.
   `canSelect(stepId, state)`, so the other live cards stay plain cards rather
   than buttons that do nothing.
 
+### Fixed — four new scenarios set Detection Accuracy bars their rows could not reach
+
+- **SIM-EDR-023, SIM-EDR-025, SIM-KOI-010 and SIM-KOI-011 read FAIL on a healthy
+  tenant.** Detection Accuracy counts only rows an alert matched, and their
+  Tier-2-verify XQL rows never become a match: verify sets only the row's KPI
+  verdict, and reconcile writes an unmatched row as missed. Their bars (80% and
+  90%) were above what their alert-backed rows can reach (75%, 33%, 43%, 67%),
+  while their text said the opposite. Each bar now counts only alert-backed
+  rows, as SIM-KOI-012's already did, and the text states the ceiling: 62.5%
+  (EDR-023, with its installed BIOCs and correlation rule, allowing the
+  rarity-based ABIOC one miss), 16.7% (EDR-025), 14.3% (KOI-010) and 16.7%
+  (KOI-011), each one built-in ABIOC. The same flaw in 43 older scenarios is
+  issue #272.
+- **SIM-EDR-025 step-03's verify query could not fail.** It matched any
+  `findmnt`, `df` or `find` on the host within the hour. It now matches `df` and
+  `find` run against the `.cortexsim-akira` staging tree. Its four XQL rows no
+  longer name card TTP-2026-0200 without a detection on it, which logged an
+  unresolved-card warning at every boot.
+
+### Fixed — the Composer refits when its canvas changes size after the fit
+
+- **On a cold load the rule card could sit under "+ Add step".** The
+  readiness strip above the Composer ("SIMCORE DEGRADED") appears only once
+  `/api/health` answers. When that landed after the canvas had fitted, the
+  canvas lost about 43 px of height while the view kept the zoom fitted to the
+  taller one, and "+ Add step", pinned to the canvas bottom, rose into the
+  rule card at 1024x768. The canvas now refits when its own size changes, as
+  it already did when the rule card moved, and still never once the DC has
+  panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
+  failure on #258, #260 and #270.
+
 ### Security
+
+- **A path override on a tenant credential could send the tenant's API key to
+  another host.** The connector checks the tenant's base URL, then appended the
+  credential's `alerts_path` / `incidents_path` / `issues_path` / `cases_path` /
+  `endpoints_path` as given. A path that does not start with `/` changes the
+  host of the result (`…paloaltonetworks.com` + `@attacker.example/x` is a
+  request to `attacker.example`), and the API key went with it. The credential
+  API is unauthenticated, so anyone who could reach SimCore could set such a
+  path on a stored credential. A path override must now start with `/`;
+  anything else is refused with `XSIAM_CONFIG_ERROR` before any request is
+  made. `alerts_path` and `incidents_path` have had this since 1.1.0; the other
+  three arrived with the tenant reader in this release.
 
 - **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
   (SEC-02, verified on cc26ddf).** The request's `params` were merged over the
@@ -793,6 +918,176 @@ library holds 362 pairs.
   above. Legacy (`?theme=legacy`) Install All waits for each build and reports
   what failed.
 
+### Added — tenant evidence on request (in-container tenant reader, phase 1)
+
+- `POST /api/runs/{run_id}/tenant-evidence` reads the tenant once, on an
+  explicit operator action. It reads the run's issues (`issue/search`, Security
+  domain), their cases (`case/search`) and the run host's endpoint record
+  (`get_endpoint`), and stores the result as a snapshot in the new
+  `tenant_evidence_reads` table (created at boot). `GET` returns the latest
+  snapshot and makes **zero** outbound calls. Nothing polls the tenant.
+- Issues are attributed to the run only through the issue's own host
+  (`normalized_fields` XDM hostnames, any value in either field, compared with
+  the matcher's short-host rule). An issue with no host is never credited.
+- An id probe reads each matched alert back from `issue/search`. The snapshot
+  then reports agreement with the matcher in two classes, `id` and
+  `name_host_window`, counting distinct alerts. Two reads of one tenant
+  agreeing is not tenant verification, and the snapshot says so.
+- Read-only and display-only. The read never changes `Result` scoring, MTTD,
+  outcome or `tc_verdict`, and never marks a credential verified.
+- Counts that were not measured are `null`. A window cut by the request budget
+  or by truncation reads `complete: false`. Refusals by CortexSim's own budget
+  are worded as such, never as the tenant's.
+- Tenant-authored text is an allowlisted projection under `tenant_text`, with
+  controls and invisible or bidirectional characters stripped and each field
+  capped at 200 characters. Every reply carries `data_notice`.
+- Two tabs or a double click send one metered read. A minimum interval per
+  tenant (default 60 s) refuses a repeat unless `?force=true`.
+- Push-mode runs and runs with no executed step answer `NO_RUN_WINDOW` with no
+  call.
+- General per-tenant reads for the `xsiam_tenant` credential:
+  `POST /api/xsiam/tenants/{name}/issues/search`, `…/cases/search` and
+  `…/endpoints/get`. A reconcile-only `xsiam` credential answers `pending` /
+  `NO_TENANT_CONFIGURED`.
+- New settings: `CORTEXSIM_TENANT_EVIDENCE_MAX_PAGES` (5),
+  `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS` (60) and
+  `CORTEXSIM_TENANT_EVIDENCE_JOIN_TOLERANCE_SECONDS` (300).
+- Strict envelopes on these reads: a lowercase `data` issue reply, or a reply
+  with no `reply` wrapper, raises `XSIAM_PARSE_ERROR`
+  (`XSIAM_ENVELOPE_UNRECOGNISED`) rather than reading as empty. Part B's by-id
+  issue read now raises on a lowercase `data` reply where it used to return
+  `{}`.
+
+### Changed — one per-tenant request budget; any 429 trips once
+
+- Every SimCore request to a tenant now spends one per-tenant request bucket
+  (`CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE`, default 60). That covers catalog
+  REST reads, XQL starts and polls, healthcheck, the clock probe and every
+  measurement-loop connector page. **REST catalog reads were unmetered before**
+  and can now be refused with 429 `XSIAM_QUOTA_ERROR` and
+  `retry_after_seconds`. Reconcile answers 502 `CONNECTOR_PULL_FAILED` with
+  `detail.code` and `detail.refused_locally`.
+- Any tenant 429 opens the shared breaker exactly once. This includes the
+  connector path and the clock probe, which previously never tripped it.
+- A refusal by CortexSim's own budget is a local refusal. It never trips the
+  breaker, never counts as a query issued, never marks the credential
+  unverified, and never becomes a verify or reconcile attempt. A run therefore
+  cannot reach the attempt cap ("…without the detection appearing in the
+  tenant") through requests that never left. Preflights report such a refusal
+  as not probed (`PF_NOT_PROBED`, or `PF_RESPONSE_LAYER_UNREAD` for the response
+  layer), never as an unreachable tenant. Sweep summaries report
+  `refused_locally` separately from `quota_tripped`.
+
+### Security — `/mcp` requires a bearer token; host actions refuse by default
+
+- With `CORTEXSIM_MCP_HTTP` on, `/mcp` requires
+  `Authorization: Bearer <CORTEXSIM_MCP_TOKEN>`, compared in constant time; a
+  missing or wrong token gets 401 `MCP_UNAUTHORIZED`. Without a token, `/mcp`
+  is not mounted and `/api/health` reports `MCP_TOKEN_MISSING`. Compose passes
+  both variables through.
+- The token only admits a client to `/mcp`. It is not a tenant credential, and
+  `/api` stays unauthenticated. The MCP tenant tools hold no key: they reach the
+  tenant through SimCore's routes, using the integration credential from tenant
+  onboarding and the same per-tenant budget.
+- `/mcp` is bearer-only, not loopback-only. Under Docker Desktop a host-loopback
+  request reaches the container as the bridge gateway (`172.17.0.1`), so a
+  peer-address check cannot tell the host from anything Docker forwards.
+- MCP host actions (`cortexsim.run.launch`, `cortexsim.run.abort`) now refuse
+  with `MCP_HOST_ACTION_DISABLED` plus a `curl` a human can run, unless
+  `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS=true`. The same rule applies over stdio and
+  HTTP.
+
+### Added — MCP tools for the tenant reader
+
+- Five tools project the tenant-reader routes, taking the MCP server from 41
+  to 46 tools (27 `cortexsim.*`, 19 `xsiam.*`): `xsiam.issue.search`,
+  `xsiam.case.search` and `xsiam.endpoint.get` (`xsiam_tenant` credential only;
+  a reconcile-only vault answers `NO_TENANT_CONFIGURED` with no call), and
+  `cortexsim.run.tenant_evidence.get` (stored snapshot, zero tenant queries) and
+  `.read` (one metered read; `queries_issued` is the snapshot's when the reply
+  says `read: true`, else 0). They hold no tenant key; SimCore reads with the
+  credential stored at tenant onboarding.
+- Tenant rows are framed as data. These five tools, plus `xsiam.alert.list`,
+  `xsiam.incident.list` and `xsiam.correlation_rule.list`, return
+  `data.data_notice`, and their descriptions repeat it. Tenant text never
+  enters `statement`, `error` or `remediation`.
+- `xsiam.alert.list` and `xsiam.incident.list` carry a `LEGACY` line, in their
+  descriptions and in `data.degradations`, naming PANW's deprecation map and
+  pointing to `xsiam.issue.search` and `xsiam.case.search`. Their field layout
+  is unchanged. `make check-mcp-boot` now fails below 46 tools.
+
+### Added — six parity reads over the MCP server
+
+- Six named tenant reads close the named-read rows of the `~/cortex-mcp` parity
+  table (tenant-reader spec §8.1), taking the MCP server from 46 to 52 tools
+  (27 `cortexsim.*`, 25 `xsiam.*`): `xsiam.tenant_info.get`,
+  `xsiam.audit_log.list`, `xsiam.asset.list`, `xsiam.asset.get`,
+  `xsiam.vulnerability.list` and `xsiam.assessment_result.list`. Each runs one
+  catalog op through SimCore's executor route, on the per-tenant request budget,
+  with the `xsiam_tenant` credential only; they hold no tenant key.
+- Fields are allowlisted from PANW's public API pages
+  (`docs/reference/xsiam-platform-apis/15-parity-reads.md`). Free text, and any
+  name someone chose for an object (an asset's display name, an assessment
+  profile's or a custom standard's name), sits under `tenant_text`; every string
+  is neutralised and capped as the tenant reader's are, and every result carries
+  `data.data_notice`. An unrecognised reply is `XSIAM_PARSE_ERROR`, never an
+  empty list or object, and its detail names reply keys, never a tenant value.
+  `asset.get` refuses an id that is not one path segment with
+  `XSIAM_CONFIG_ERROR` before any tenant call. The list tools read the tenant
+  once and page over that reply, so `offset` cannot reach past the tenant's
+  first page; `truncated: true` says it holds more.
+- Each tenant-evidence snapshot spends one more request, last, on
+  `get_tenant_info` and records `tenant_version` with `tenant_version_code`. PANW
+  documents licence fields only in that reply, so a reply as documented records
+  `null` with `TENANT_VERSION_NOT_REPORTED` (a `version` the tenant does send is
+  recorded, a number as its text); a failed or refused sub-read records
+  `null` with its code. It never changes the snapshot's code, status or
+  completeness. `make check-mcp-boot` now fails below 52 tools.
+
+### Added — playbook and script ZIP reads
+
+- `playbooks/get` and `scripts/get` answer a ZIP holding the object's YAML, and
+  the executor read every reply as JSON, so `OP-PLAYBOOKS-GET` always failed with
+  "non-JSON response" and `xsiam.playbook.list` could never return a playbook.
+  Both ops (`OP-SCRIPTS-GET` is new, taking the catalog to 152 operations, 83 of
+  them reads) are tagged `zip-reply`: the executor fetches the bytes with
+  `XsiamClient.request_archive`, on the per-tenant request budget, asking for an
+  identity body (any other `Content-Encoding` is refused unread) and refusing it
+  past 4 MiB of raw bytes, and reads the archive in memory with stdlib `zipfile`,
+  never extracting it. At most 50 members; a member over 256 KiB, or past 1 MiB
+  in all, or neither stored nor deflated, is refused unread; one that inflates
+  past its declared size is never read past it; non-UTF-8 is `binary: true`. An
+  archive with no member reads as 0 members. A JSON body goes through the shared
+  application-error test, and a body that is neither ZIP nor JSON is
+  `XSIAM_PARSE_ERROR`, never an empty archive.
+- Two MCP tools, `xsiam.playbook.get` and `xsiam.script.get` (by `id` or `name`),
+  close the last two `~/cortex-mcp` parity rows, taking the server to 54 tools
+  (27 `cortexsim.*`, 27 `xsiam.*`). Each member's name and YAML sit only under
+  `tenant_text`, neutralised with line breaks kept, beside `data.data_notice`; they
+  hold no tenant key.
+- `xsiam.playbook.list` is registered, not backed: the public API has no playbook
+  listing, so it answers `TOOL_NOT_BACKED` and names `xsiam.playbook.get`.
+  `make check-mcp-boot` now fails below 54 tools.
+
+### Fixed — Results shows each result's alert id and source
+
+- `GET /api/results/{run_id}` rows carry `alert_id`, `alert_source` and
+  `observation_count`, using the first recorded observation per result. The
+  scorecard's Alert ID column had always shown `—`. It now shows the alert id,
+  with a new Source column beside it.
+
+### Added — stdio MCP launcher for Claude Desktop
+
+- `scripts/mcp-stdio-docker.sh [--print]` execs `python -m mcp_server` inside
+  the one running SimCore container (selected by compose labels, narrowed by
+  `CORTEXSIM_COMPOSE_PROJECT`); zero or several matches exit 2. stdio runs
+  inside the container, so it needs no bearer token.
+- `CORTEXSIM_MCP_ALLOW_HOST_ACTIONS` is forwarded only when set in the
+  launcher's environment.
+- `docs/reference/api-and-agent-surface.md` §9.2 now shows the authenticated
+  HTTP registration with a `headersHelper`, the Desktop stdio entry and token
+  rotation; the old unauthenticated install line is gone.
+
 ### Fixed — a run where nothing executed reads `pending`, not "not scoreable"
 
 - When every Result left the scoring denominator (`not_reached`, `not_executed` or
@@ -1111,6 +1406,48 @@ escape every string behind it.
   `detection_scanner/ttps/`. `genfrag.py` takes the target platform and alert,
   reads the gateway key from the environment, and no longer asks the model for
   an invented hash. The new prompt has not been run against a model.
+
+### Security — a scenario's scratch directory can no longer be taken over by another local user
+
+- **What was wrong.** Twelve scenarios keep their artifacts in a fixed directory
+  under `/tmp`, `/var/tmp` or `/dev/shm` and made it with `mkdir -p`. A local
+  user who created that directory first owned it, because `mkdir -p` succeeds on
+  an existing directory and a later `chmod` does not change the owner. Steps
+  then wrote into it and ran files from it. Reproduced in a container: with the
+  directory planted, the script SIM-EDR-023's root cron entry runs was swapped
+  and ran as uid 0; racing the gap between `rm -rf` and `mkdir -p` in
+  SIM-KOI-012, the step carried on in the other user's directory in 391 of 400
+  runs.
+- **The fix.** The step that creates the directory removes whatever is at the
+  path and makes it with `mkdir` and no `-p`, so an existing entry stops the
+  step. Every other step that uses it first checks, in one `stat` lookup, that
+  it is a directory, not a symlink, with the mode the creating step gave it and
+  owned by the running user (or by root, where a service account runs inside a
+  root-made directory). After the fix the same race gave 0 of 400 runs in the
+  other user's directory: 7 ran clean and 393 stopped.
+- **Why one lookup.** A first version of the check used three tests (`-d`,
+  `! -L`, `-O`). Where root follows another user's symlink
+  (`fs.protected_symlinks` off), a user exchanging a directory and a symlink
+  between those tests got past it in 73 of 300 passes under dash and 50 of 300
+  under bash. The one-lookup form let none through in the same test.
+- **Which scenarios.** A root step used the directory in SIM-CDR-002, -005,
+  -018, SIM-EDR-023, -024, SIM-KOI-012 and SIM-MP-036. In SIM-MP-019, -024,
+  -032, -035 and -037 the directory belongs to a service account, so the
+  exposure there was that account, not root.
+- **What an operator will notice.** A step run without its creating step now
+  exits 1 with `sandbox … is missing or not ours`. Launching a scenario again
+  removes the previous run's scratch directory first. Under an active attempt
+  to plant the directory, the scenario stops instead of running.
+- **Counts are unchanged.** The guard is a `[ … ]` test over `stat` and `id`, an
+  `echo` and an `exit`: a probe, not an attack action. The lab-readiness and
+  coverage classifiers now treat it as no signal, so a narration step that
+  gained a guard is still counted as narration.
+- **Not fixed here.** Root steps in 64 scenarios write a fixed-name file
+  straight into `/tmp` or `/var/tmp` (120 steps), mostly EAL campaign files; on
+  a kernel with `fs.protected_symlinks` and `fs.protected_regular` off, a
+  planted file or link there has the same effect. Another 45 scenarios create a
+  fixed directory and were not examined. The cards' illustrative payload text
+  still shows `mkdir -p`.
 
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 

@@ -98,7 +98,7 @@ export function brokenStepCauses(row, { runId, scenarioId } = {}) {
     causes.push({
       id: 'not_found',
       title: 'The agent could not find a command the step calls (exit 127)',
-      detail: 'A tool the step runs is not installed on the agent. Packages lists the tools the payload shelf has not staged.',
+      detail: 'A tool the step runs is not installed on the agent. Packages lists the tools that are not ready on this instance.',
       place: place('Catalog › Packages', 'adapters', { supply: 'unstaged' }),
     })
   }

@@ -199,3 +199,51 @@ def test_one_error_vocabulary_serves_both_carriers():
                 XsiamQueryError, XsiamQuotaError):
         assert exc.code in codes.ALL_CODES, exc
         assert codes.remediation_for(exc.code), f"{exc.code} has no remediation"
+
+
+# ── A path override must not move the request off the tenant host ──────────
+
+
+_HOST = "api-t.xdr.us.paloaltonetworks.com"
+
+
+@pytest.mark.parametrize("override", [
+    "@attacker.example/x",          # userinfo: the host becomes attacker.example
+    ":443@attacker.example/x",
+    ".attacker.example/x",          # the host becomes ...paloaltonetworks.com.attacker.example
+    "public_api/v1/alerts/get_alerts_multi_events",   # no leading slash
+    "/public_api/v1/alerts\n/get",  # control character
+])
+@pytest.mark.parametrize("key", ["alerts_path", "incidents_path", "endpoints_path"])
+def test_a_path_override_cannot_send_the_api_key_to_another_host(key, override):
+    """The base URL is checked, then the path was appended as given. A path
+    that does not start with ``/`` changes the host of the result, so the key
+    went wherever the override pointed."""
+    from connectors.base import ConnectorConfig
+    from connectors.xsiam import XsiamConnector
+
+    sent: list = []
+    conn = XsiamConnector(fetcher=_capture(sent))
+    cfg = ConnectorConfig("t", {**_cfg(_HOST), key: override}, "SUPER-SECRET-KEY")
+    if key == "alerts_path":
+        pull = conn.pull(cfg, since=datetime(2026, 1, 1), until=datetime(2026, 1, 2))
+    elif key == "incidents_path":
+        pull = conn.pull_cases(cfg, ["51877"])
+    else:
+        pull = conn.get_endpoints(cfg, ["pov-target-01"])
+
+    assert pull.ok is False
+    assert pull.code == "XSIAM_CONFIG_ERROR"
+    assert sent == [], "no request may be made at all — the key must not leave"
+
+
+def test_a_path_override_on_the_tenant_host_still_works():
+    from connectors.base import ConnectorConfig
+    from connectors.xsiam import XsiamConnector
+
+    sent: list = []
+    pull = XsiamConnector(fetcher=_capture(sent)).pull(
+        ConnectorConfig("t", {**_cfg(_HOST), "alerts_path": "/public_api/v2/alerts/get_alerts_multi_events"}, "k"),
+        since=datetime(2026, 1, 1), until=datetime(2026, 1, 2))
+    assert pull.ok
+    assert sent[0]["url"] == f"https://{_HOST}/public_api/v2/alerts/get_alerts_multi_events"

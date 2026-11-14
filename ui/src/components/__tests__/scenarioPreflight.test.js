@@ -54,7 +54,7 @@ const base = (over = {}) => preflightScenario({
 const check = (pf, id) => pf.checks.find((c) => c.id === id)
 
 describe('tool supply', () => {
-  it('warns when a tool is fetched by the TARGET at run time', () => {
+  it('warns when a tool needs internet access on the TARGET', () => {
     const pf = base({
       shelf: shelfWith({
         staged: [],
@@ -63,7 +63,8 @@ describe('tool supply', () => {
     })
     const tools = check(pf, 'tools')
     expect(tools.status).toBe(PF.WARN)
-    expect(tools.detail).toMatch(/default-deny/)
+    expect(tools.detail).toMatch(/installed by the target itself/)
+    expect(tools.detail).toMatch(/runs without its tool/)
     expect(pf.verdict).toBe(PF.WARN)
   })
 

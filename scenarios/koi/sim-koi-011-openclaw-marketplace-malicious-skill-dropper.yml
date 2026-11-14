@@ -72,7 +72,7 @@ primary_kpi: "Detection Accuracy"
 threshold:
   kpi: "Detection Accuracy"
   op: "≥"
-  value: 90
+  value: 16.7
   unit: "%"
 success_criteria: |
   The OpenClaw marketplace skill dropper fires its endpoint-resident Cortex
@@ -82,9 +82,8 @@ success_criteria: |
   infostealer reads the developer's decoy credential files, the loot is staged
   and archived, and CR-KOI-0011 stitches every behavioral stage into ONE
   agentic-supply-chain incident on the shared agent causality chain.
-  Detection Accuracy is the share of injected signals that raise the expected
-  alert (target ≥ 90%). Each of the six declared step-detections is reachable
-  in the lab this runbook documents: the two ABIOCs map to the built-in
+  Detection Accuracy counts only alert-backed observations. Of the six
+  declared step-detections, the two ABIOCs map to the built-in
   "Uncommon Linux shell command execution" behavioral analytics (base64-decode
   and curl-pipe-to-bash), the multi-credential-read BIOC fires on the dropped
   shell reading ≥3 credential files under the agent lineage, the two XQL
@@ -99,6 +98,17 @@ success_criteria: |
   expectations here, so a sink-less run is never scored against them. The
   executed beacon in step-06 points at a non-resolving .invalid canary and
   sends nothing.
+  The two XQL rows are checked by Tier-2 verify (POST /api/runs/{id}/verify,
+  1 h lookback), but verify sets only their KPI verdict, so they never raise
+  Detection Accuracy, and a reconcile that finds no alert for them writes them
+  missed. The multi-credential-read BIOC and CR-KOI-0011 fire only if the DC
+  installs them from TTP-2026-0202 before the run; CortexSim never writes them
+  to the tenant. So the ceiling is 66.7% (4 of 6), and 33.3% (2 of 6) with
+  neither installed. Both ABIOCs map to the "uncommon Linux shell command
+  execution" analytic, which judges rarity and may not fire on a host that has
+  run the same shape before.
+  PASS: Detection Accuracy of at least 16.7% (1 of 6), one of the two
+  built-in ABIOCs.
   tenant-verified: 0 — no run of this scenario has executed against a live
   Cortex tenant; authored is not proven.
 moat_tier: "MOAT"

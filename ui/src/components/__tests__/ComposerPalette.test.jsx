@@ -99,6 +99,94 @@ describe('ComposerPalette', () => {
     expect(screen.queryByText(/nothing matches/)).not.toBeInTheDocument()
   })
 
+  it('draws an icon tab as the icon alone, named by its label', () => {
+    render(
+      <ComposerPalette
+        tabs={[{ id: 'favorites', label: 'Favorites', icon: 'star' }, ...TABS]}
+        activeTab="favorites"
+        groups={groups()}
+      />,
+    )
+    const tab = screen.getByRole('tab', { name: 'Favorites' })
+    expect(tab.textContent).toBe('')
+    expect(tab.querySelector('[data-icon="star"]')).not.toBeNull()
+  })
+
+  it('marks a starred item with a star in place of its tone dot', () => {
+    render(
+      <ComposerPalette
+        groups={[{
+          label: 'Favorites',
+          tone: 'detected',
+          items: [
+            { key: 'fav-a', name: 'SIM-EDR-006', meta: 'LSASS', starred: true, add: vi.fn() },
+            { key: 'fav-b', name: 'SIM-EDR-001', meta: 'plain', add: vi.fn() },
+          ],
+        }]}
+      />,
+    )
+    const starred = screen.getByText('SIM-EDR-006').closest('button')
+    expect(starred.querySelector('[data-icon="star"]')).not.toBeNull()
+    expect(starred.querySelector('.bench-item__dot')).toBeNull()
+    const plain = screen.getByText('SIM-EDR-001').closest('button')
+    expect(plain.querySelector('[data-icon="star"]')).toBeNull()
+  })
+
+  describe('tag chips', () => {
+    const tagged = [{
+      label: 'Favorites',
+      tone: 'detected',
+      tab: 'favorites',
+      items: [
+        { key: 'fav-1', name: 'SIM-EDR-006', meta: 'LSASS', tags: ['EDR', 'BIOC', 'Correlation'], add: vi.fn() },
+        { key: 'fav-2', name: 'SIM-MP-023', meta: 'chain', tags: ['ANALYTICS', 'XQL', 'Correlation'], add: vi.fn() },
+        { key: 'fav-3', name: 'SIM-MP-024', meta: 'chain', tags: ['ANALYTICS', 'BIOC', 'Correlation'], add: vi.fn() },
+      ],
+    }]
+    const TAB = [{ id: 'favorites', label: 'Favorites', icon: 'star' }]
+
+    it('offers the active tab\'s tags, most common first, minus a tag every item shares', () => {
+      render(<ComposerPalette tabs={TAB} activeTab="favorites" groups={tagged} />)
+      const chips = within(screen.getByRole('group', { name: 'Filter by tag' }))
+        .getAllByRole('button').map((b) => b.textContent)
+      expect(chips).toEqual(['ANALYTICS', 'BIOC', 'EDR', 'XQL'])
+    })
+
+    it('tags that differ only in case are one chip', () => {
+      const mixed = [{
+        ...tagged[0],
+        items: [
+          { key: 'a', name: 'A', meta: '', tags: ['ANALYTICS', 'BIOC'], add: vi.fn() },
+          { key: 'b', name: 'B', meta: '', tags: ['Analytics', 'XQL'], add: vi.fn() },
+          { key: 'c', name: 'C', meta: '', tags: ['EDR', 'XQL'], add: vi.fn() },
+        ],
+      }]
+      render(<ComposerPalette tabs={TAB} activeTab="favorites" groups={mixed} />)
+      const chips = within(screen.getByRole('group', { name: 'Filter by tag' }))
+        .getAllByRole('button').map((b) => b.textContent)
+      expect(chips).toEqual(['ANALYTICS', 'XQL', 'BIOC', 'EDR'])
+    })
+
+    it('a chip filters to its tag, and a second click clears the filter', async () => {
+      const onQuery = vi.fn()
+      const { rerender } = render(
+        <ComposerPalette tabs={TAB} activeTab="favorites" groups={tagged} onQuery={onQuery} />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'ANALYTICS' }))
+      expect(onQuery).toHaveBeenLastCalledWith('ANALYTICS')
+
+      rerender(
+        <ComposerPalette tabs={TAB} activeTab="favorites" groups={tagged} onQuery={onQuery} query="ANALYTICS" />,
+      )
+      expect(screen.queryByText('SIM-EDR-006')).toBeNull()
+      expect(screen.getByText('SIM-MP-023')).toBeInTheDocument()
+      const chip = screen.getByRole('button', { name: 'ANALYTICS' })
+      expect(chip).toHaveAttribute('aria-pressed', 'true')
+      await userEvent.click(chip)
+      expect(onQuery).toHaveBeenLastCalledWith('')
+    })
+  })
+
   it('honours a disabled item (unstageable payload) without firing add', async () => {
     const add = vi.fn()
     render(

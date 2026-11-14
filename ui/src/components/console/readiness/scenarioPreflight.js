@@ -144,12 +144,12 @@ function toolCheck(scenario, shelf, adapterIndex) {
 
   if (!shelf || shelf.available !== true) {
     return mk('tools', 'Tooling', PF.UNKNOWN,
-      `${refs.length} tool${refs.length === 1 ? '' : 's'} declared · shelf state unreadable`,
-      'This SimCore does not report payload-shelf state, so we cannot tell whether these tools '
-      + 'are served from here or fetched by the target from the public internet. UNKNOWN is not '
+      `${refs.length} tool${refs.length === 1 ? '' : 's'} declared · readiness not reported`,
+      'This instance does not report tool readiness, so we cannot tell whether these tools '
+      + 'are supplied from here or installed by the target, which needs internet access. UNKNOWN is not '
       + '"fine": if the target has no egress, the step runs WITHOUT its tool and produces no '
       + 'detection.',
-      'Open Tools & Payloads, or upgrade this SimCore to one that serves /api/shelf.')
+      'Open Packages, or upgrade this instance to one that reports tool readiness.')
   }
 
   // A scenario that DECLARES a payload and is missing it is a hard stop —
@@ -157,10 +157,10 @@ function toolCheck(scenario, shelf, adapterIndex) {
   const missing = declaredPayloads.filter((n) => !shelf.stagedNames.has(n))
   if (missing.length) {
     return mk('tools', 'Tooling', PF.BLOCK,
-      `${missing.length} declared payload${missing.length === 1 ? '' : 's'} not staged`,
+      `${missing.length} declared tool${missing.length === 1 ? '' : 's'} not ready`,
       `This scenario declares ${missing.join(', ')} and ${missing.length === 1 ? 'it is' : 'they are'} `
-      + 'not on the shelf. SimCore will refuse the launch with PAYLOAD_NOT_STAGED.',
-      'Stage them in Tools & Payloads.',
+      + 'not ready on this instance. The launch will be refused (PAYLOAD_NOT_STAGED).',
+      'Make them ready in Packages.',
       { payloads: missing })
   }
 
@@ -171,7 +171,7 @@ function toolCheck(scenario, shelf, adapterIndex) {
       `${refs.length} adapter_ref${refs.length === 1 ? '' : 's'} unresolved`,
       `None of ${unresolved.join(', ')} resolves against this SimCore's adapter catalog. That is `
       + 'the signature of a deployment booted without tools/ — the catalog is empty and nothing '
-      + 'can be staged.',
+      + 'can be made ready.',
       'Check /api/health → adapter_catalog. If its count is 0, the image is missing tools/.')
   }
 
@@ -186,27 +186,27 @@ function toolCheck(scenario, shelf, adapterIndex) {
 
   if (unknown.length) {
     return mk('tools', 'Tooling', PF.UNKNOWN,
-      `${unknown.length} of ${resolved.length} tools: supply unknown`,
-      `Supply state could not be determined for ${unknown.map((u) => u.name).join(', ')}.`,
-      'Open Tools & Payloads.')
+      `${unknown.length} of ${resolved.length} tools: readiness unknown`,
+      `Readiness could not be determined for ${unknown.map((u) => u.name).join(', ')}.`,
+      'Open Packages.')
   }
 
   if (egress.length) {
     return mk('tools', 'Tooling', PF.WARN,
-      `${egress.length} of ${resolved.length} tools fetched by the TARGET at run time`,
-      `${egress.map((e) => e.name).join(' · ')} ${egress.length === 1 ? 'is' : 'are'} not served `
-      + 'from this SimCore. On a default-deny network the fetch fails and the step runs without '
+      `${egress.length} of ${resolved.length} tools need internet access on the target`,
+      `${egress.map((e) => e.name).join(' · ')} ${egress.length === 1 ? 'is' : 'are'} installed by `
+      + 'the target itself when the step runs. On a network that blocks it the step runs without '
       + 'its tool — producing no detection, which then reads in the report as a coverage gap.',
-      'Stage them in Tools & Payloads, or confirm this target has egress to those origins.',
+      'Make them ready in Packages, or confirm this target can reach the internet.',
       { tools: egress.map((e) => ({ name: e.name, ref: e.ref, egress: e.supply.egressLabel })) })
   }
 
   return mk('tools', 'Tooling', PF.PASS,
-    `${staged.length ? `${staged.length} staged · ` : ''}no target egress required`,
+    `${staged.length ? `${staged.length} ready · ` : ''}no internet access needed on the target`,
     resolved.length
-      ? `${resolved.map((r) => r.name).join(' · ')} — served from this SimCore or already present `
+      ? `${resolved.map((r) => r.name).join(' · ')} — supplied by this instance or already present `
         + 'on the target.'
-      : 'No runtime-fetched tools.')
+      : 'No tools to install.')
 }
 
 // ─── 2 · Target ──────────────────────────────────────────────────────────────

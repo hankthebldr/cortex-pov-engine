@@ -81,7 +81,7 @@ export default function TenantComponent({ params = {}, setParams = () => {}, onN
     {
       id: 'test',
       title: 'Test the connection',
-      why: 'One staged check: reach the tenant, TLS, sign in, what the key may read, and the clock. Every stage reports, even if an earlier one fails.',
+      why: 'One check, in stages: reach the tenant, TLS, sign in, what the key may read, and the clock. Every stage reports, even if an earlier one fails.',
       verifier: 'pov',
       fields: name ? [['Tenant', name]] : [],
       test: async () => {

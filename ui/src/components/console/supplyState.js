@@ -31,9 +31,9 @@ export const SUPPLY = {
 /** Label text. Colour is never the only signal — a projector flattens hue and
  *  WCAG does not accept it either, so every chip renders this string. */
 export const SUPPLY_LABEL = {
-  [SUPPLY.STAGED]: 'STAGED',
-  [SUPPLY.UNSTAGED]: 'NOT STAGED',
-  [SUPPLY.RUNTIME_FETCH]: 'FETCHES AT RUN TIME',
+  [SUPPLY.STAGED]: 'READY',
+  [SUPPLY.UNSTAGED]: 'NOT READY',
+  [SUPPLY.RUNTIME_FETCH]: 'NEEDS INTERNET',
   [SUPPLY.NOT_APPLICABLE]: 'N/A',
   [SUPPLY.UNKNOWN]: 'UNKNOWN',
 }
@@ -53,10 +53,10 @@ export const SUPPLY_CHIP = {
 }
 
 const TIER_REASON = {
-  1: 'tier 1 — ships in-tree with SimCore',
-  2: 'tier 2 — ships as a git submodule',
-  3: 'tier 3 — provisioned by an IaC module onto the lab host',
-  5: 'tier 5 — reference only, CortexSim never installs it',
+  1: 'ships with POVengine',
+  2: 'ships with POVengine',
+  3: 'provided by the lab host',
+  5: 'reference only, never installed',
 }
 
 /** Hostname of a URL, or null. Never throws — a malformed url in a pack must
@@ -152,7 +152,7 @@ export function supplyOf(adapter, shelf) {
     actionable: false,
   }
 
-  if (!adapter) return { ...base, ...describe(SUPPLY.UNKNOWN), egress: 'unknown', egressLabel: 'egress: unknown' }
+  if (!adapter) return { ...base, ...describe(SUPPLY.UNKNOWN), egress: 'unknown', egressLabel: 'not checked' }
 
   // The shelf could not be read at all → UNKNOWN for every adapter, including
   // the tier-2 ones we could technically answer. Mixing a confident N/A with an
@@ -162,7 +162,7 @@ export function supplyOf(adapter, shelf) {
       ...base,
       ...describe(SUPPLY.UNKNOWN),
       egress: 'unknown',
-      egressLabel: 'egress: unknown — this SimCore does not report shelf state',
+      egressLabel: 'not checked: this instance does not report tool readiness',
     }
   }
 
@@ -171,7 +171,7 @@ export function supplyOf(adapter, shelf) {
       ...base,
       ...describe(SUPPLY.NOT_APPLICABLE),
       egress: 'none',
-      egressLabel: `egress: none — ${TIER_REASON[adapter.tier] || 'not a runtime-fetched tool'}`,
+      egressLabel: TIER_REASON[adapter.tier] || 'nothing to install',
     }
   }
 
@@ -185,14 +185,14 @@ export function supplyOf(adapter, shelf) {
         ...base,
         ...describe(SUPPLY.UNKNOWN),
         egress: 'unknown',
-        egressLabel: 'egress: unknown — this SimCore does not report declared artifacts',
+        egressLabel: 'not checked: this instance does not report declared tools',
       }
     }
     return {
       ...base,
       ...describe(SUPPLY.RUNTIME_FETCH),
       egress: 'target_host',
-      egressLabel: 'egress: target → public internet, at run time (no artifact declared on this pack)',
+      egressLabel: 'the target installs it when the step runs: needs internet access',
     }
   }
 
@@ -205,7 +205,7 @@ export function supplyOf(adapter, shelf) {
       ...base,
       ...describe(SUPPLY.STAGED),
       egress: 'none',
-      egressLabel: 'egress: none — served from this SimCore',
+      egressLabel: 'supplied by this instance',
       payloadName: d.name,
       // The digest is recomputed from the BYTES by the inventory endpoint, so
       // this is what a consumer would actually verify against.
@@ -228,8 +228,8 @@ export function supplyOf(adapter, shelf) {
     ...describe(SUPPLY.UNSTAGED),
     egress: 'target_host',
     egressLabel: host
-      ? `egress: target → ${host}, at run time`
-      : 'egress: target → public internet, at run time',
+      ? `the target fetches it from ${host} when the step runs: needs internet access`
+      : 'the target fetches it when the step runs: needs internet access',
     payloadName: d.name,
     sha256: d.sha256 || null,
     pinned: typeof d.pinned === 'boolean' ? d.pinned : null,

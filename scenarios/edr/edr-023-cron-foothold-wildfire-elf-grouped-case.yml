@@ -70,7 +70,7 @@ primary_kpi: "Detection Accuracy"
 threshold:
   kpi: "Detection Accuracy"
   op: "≥"
-  value: 80
+  value: 62.5
   unit: "%"
 success_criteria: |
   The chain is built so that its alerts can group: only Medium-or-higher
@@ -81,7 +81,8 @@ success_criteria: |
   and three custom BIOCs plus one correlation rule that the operator installs
   at Medium before the run (the install list is on TTP-2026-0198 and in
   docs/lab/2026-11-11-persistence-grouping-lab-run.md).
-  PASS: at least 80% of the eight declared step-detections are observed, AND
+  PASS: Detection Accuracy of at least 62.5% (5 of the eight declared
+  step-detections observed), AND
   every Medium+ issue the run raises on the endpoint carries ONE case_id. The
   case is the beacon-chain issues (Local Analysis, cron drop-in, timestomp)
   plus the cron-chain re-executions plus CR-EDR-0023.
@@ -89,10 +90,13 @@ success_criteria: |
   detection but never expected inside the case.
   Rarity caveat: the built-in ABIOC judges rarity, and this host already
   reached wildfire.paloaltonetworks.com on 2026-11-11, so it may read missed
-  while the tenant is healthy. The 80% bar allows that one miss (7 of 8).
-  The two XQL rows are scored only by Tier-2 verify
+  while the tenant is healthy. The 62.5% bar allows that one miss (5 of 8).
+  The two XQL rows are checked by Tier-2 verify
   (`POST /api/runs/{id}/verify`), which looks back one hour from when it runs:
-  verify within the hour.
+  verify within the hour. verify sets only their KPI verdict, so they never raise Detection
+  Accuracy, and a reconcile that finds no alert for them writes them missed.
+  Detection Accuracy counts only alert-backed observations, so its ceiling is
+  75% (6 of 8), reached only with the three BIOCs and CR-EDR-0023 installed.
   Dedup caveat: Local Analysis issues are deduplicated over one hour. Do not
   run this within an hour of any other execution of the same test ELF on the
   host. The cron job re-runs the ELF for 45 minutes, so a block-mode paired
@@ -118,8 +122,8 @@ steps:
       # test ELF, a benign file built to be classified malicious.
       set -eu
       D=/var/tmp/.cortexsim-ice
-      mkdir -p "$D"
-      chmod 700 "$D"
+      rm -rf "$D"
+      mkdir -m 700 "$D"
       curl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o "$D/kworker-ice"
       chmod 755 "$D/kworker-ice"
       sha256sum "$D/kworker-ice"
@@ -161,6 +165,7 @@ steps:
       set -eu
       sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
       D=/var/tmp/.cortexsim-ice
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo "[CortexSim] SIM-EDR-023 step-02: executing $D/kworker-ice at $(date -u +%FT%TZ)"
       rc=0
       timeout 20 "$D/kworker-ice" || rc=$?
@@ -208,6 +213,7 @@ steps:
       set -eu
       sleep 40   # dwell
       D=/var/tmp/.cortexsim-ice
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       expr "$(date +%s)" + 2700 > "$D/expires-at"
       cat > "$D/ice-run.sh" <<'EOF'
       #!/bin/sh
@@ -255,6 +261,8 @@ steps:
     command: |
       set -eu
       sleep 40   # dwell
+      D=/var/tmp/.cortexsim-ice
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
       touch -r /etc/hostname /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/kworker-ice /var/tmp/.cortexsim-ice/ice-run.sh
       ls -la /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/
     identity: root

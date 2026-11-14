@@ -104,7 +104,8 @@ test('SIM-AISPM-003: Lanes lens draws each card inside the band its path names',
       .find(([, b]) => card(id).top >= b.top - 0.5 && card(id).bottom <= b.bottom + 0.5)?.[0] || null
     return { 'step-01': inBand('step-01'), 'step-02': inBand('step-02'), 'step-03': inBand('step-03'), keys: Object.keys(bands) }
   })
-  expect(placed.keys).toEqual(['LAUNCH', 'ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG', 'PROOF'])
+  // Launch and Proof are the run's Start and Stop points, not lanes.
+  expect(placed.keys).toEqual(['ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG'])
   expect(placed['step-01']).toBe('CLOUD')
   expect(placed['step-02']).toBe('NONE')
   expect(placed['step-03']).toBe('ENDPOINT')

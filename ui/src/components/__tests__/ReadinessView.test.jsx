@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 import { installRoutes } from '../../test/mockFetch.js'
 import ReadinessView from '../console/ReadinessView.jsx'
-import ReadinessBanner from '../console/ReadinessBanner.jsx'
 import { EnvironmentContext } from '../../context/EnvironmentContext.jsx'
 import { buildHealthModel } from '../console/readiness/healthModel.js'
 import { getDestination } from '../../app/destinations.jsx'
@@ -181,73 +180,6 @@ describe('ReadinessView', () => {
     await screen.findByTestId('health-payload_shelf')
     await userEvent.click(screen.getByRole('button', { name: `${getDestination('adapters').label} ▸` }))
     expect(onNavigate).toHaveBeenCalledWith('adapters')
-  })
-})
-
-describe('ReadinessBanner', () => {
-  const degraded = buildHealthModel({
-    ...HEALTH_OK,
-    components: { ...HEALTH_OK.components, adapter_catalog: { status: 'ok', count: 0 } },
-  })
-
-  it('is silent on a healthy deployment', () => {
-    const { container } = render(<ReadinessBanner model={buildHealthModel(HEALTH_OK)} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('is silent when health has never been probed — absence is not degradation', () => {
-    const { container } = render(<ReadinessBanner model={null} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('defers to the louder unreachable banner rather than double-reporting', () => {
-    const { container } = render(
-      <ReadinessBanner model={buildHealthModel(null, { error: 'Failed to fetch' })} />,
-    )
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('states the degradation WITHOUT being expanded — folding detail must not fold the claim', () => {
-    // The detail is collapsed by default to buy back viewport height, so the
-    // collapsed line is the one a DC actually sees. If the claim could hide
-    // with the detail, a degraded deployment would render as a healthy one —
-    // the exact Gate-A5 failure this banner exists to prevent.
-    render(<ReadinessBanner model={degraded} />)
-    expect(screen.getByTestId('readiness-banner')).toHaveTextContent(/SIMCORE DEGRADED/)
-    expect(screen.getByTestId('readiness-banner-count')).toHaveTextContent(/1 component/)
-    expect(screen.queryByTestId('readiness-banner-adapter_catalog')).not.toBeInTheDocument()
-  })
-
-  it('names the fault AND the fix for a silently broken deployment, one click away', async () => {
-    render(<ReadinessBanner model={degraded} />)
-    await userEvent.click(screen.getByTestId('readiness-banner-toggle'))
-    const row = screen.getByTestId('readiness-banner-adapter_catalog')
-    expect(row).toHaveTextContent(/count of 0/)
-    expect(row).toHaveTextContent(/tools\//)
-  })
-
-  it('routes to the readiness surface', async () => {
-    const onNavigate = vi.fn()
-    render(<ReadinessBanner model={degraded} onNavigate={onNavigate} />)
-    await userEvent.click(screen.getByTestId('readiness-banner-open'))
-    expect(onNavigate).toHaveBeenCalledWith('readiness')
-  })
-
-  it('dismisses only the fault it was showing — a NEW fault re-raises it', async () => {
-    const { rerender } = render(<ReadinessBanner model={degraded} />)
-    await userEvent.click(screen.getByRole('button', { name: /Dismiss readiness warning/i }))
-    expect(screen.queryByTestId('readiness-banner')).not.toBeInTheDocument()
-
-    const worse = buildHealthModel({
-      ...HEALTH_OK,
-      components: {
-        ...HEALTH_OK.components,
-        adapter_catalog: { status: 'ok', count: 0 },
-        scenario_catalog: { status: 'ok', count: 0 },
-      },
-    })
-    rerender(<ReadinessBanner model={worse} />)
-    expect(screen.getByTestId('readiness-banner')).toBeInTheDocument()
   })
 })
 

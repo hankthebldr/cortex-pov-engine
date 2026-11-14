@@ -2,6 +2,13 @@
 # Auto-generated from the operation CSV; edit to add fields or fix drift.
 category: "Scripts"
 operations:
+  - op_id: OP-SCRIPTS-GET
+    name: "Get a script"
+    method: POST
+    path: "/public_api/v1/scripts/get"
+    access_class: read
+    tags: [zip-reply]
+    doc_link: "https://cortex-docs.paloaltonetworks.com/xsiam-api/cortex-platform/scripts"
   - op_id: OP-SCRIPTS-GET-SCRIPTS
     name: "Get Scripts"
     method: POST

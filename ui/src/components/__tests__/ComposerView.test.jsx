@@ -160,7 +160,7 @@ describe('ComposerView — seeded from a real scenario', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
-    expect(screen.getByText(/CGO apache2 \/ www-data/)).toBeInTheDocument()
+    expect(screen.getByText(/starts at apache2 \/ www-data/)).toBeInTheDocument()
   })
 
   it('marks the step with NO expected detection on the canvas itself', async () => {
@@ -407,7 +407,7 @@ describe('ComposerView — composer mode drawers', () => {
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
     expect(screen.queryByTestId('composer-palette')).toBeNull()
     expect(screen.queryByTestId('composer-inspector-empty')).toBeNull()
-    expect(screen.getByRole('button', { name: /＋ Add/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to chain' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument()
   })
 
@@ -416,7 +416,7 @@ describe('ComposerView — composer mode drawers', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     expect(screen.getByTestId('composer-palette')).toBeInTheDocument()
     await user.click(screen.getByTestId('chain-step-step-01'))
     expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
@@ -449,7 +449,7 @@ describe('ComposerView — composer mode drawers', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     const item = screen.getByRole('button', { name: /Command/ })
     expect(item).toHaveAttribute('draggable', 'true')
     const setData = vi.fn()
@@ -503,14 +503,14 @@ describe('ComposerView — YAML view and workstream', () => {
     expect(yaml).toHaveTextContent('NO EXPECTED DETECTION')
   })
 
-  it('opens the workstream on a tab click and reports the real shelf state', async () => {
+  it('opens the workstream on a tab click and reports which tools are ready', async () => {
     const user = userEvent.setup()
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('ws-tab-payload')).toBeInTheDocument())
     await user.click(screen.getByTestId('ws-tab-payload'))
     await waitFor(() => expect(screen.getByTestId('composer-ws-body')).toBeInTheDocument())
-    expect(screen.getByText(/Nothing staged on this SimCore/i)).toBeInTheDocument()
+    expect(screen.getByText(/No tools are ready on this instance/i)).toBeInTheDocument()
   })
 
   it('preflight reports the chain verdict alongside component health', async () => {
@@ -1038,7 +1038,7 @@ describe('ComposerView — leaving the mode says only what is true', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' }, { onExit })
     await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     await user.click(screen.getByTestId('chain-step-step-01'))
     expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
     const esc = () => fireEvent.keyDown(document.body, { key: 'Escape' })
@@ -1079,7 +1079,7 @@ describe('ComposerView — opening a library scenario over the chain', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' }, { setParams })
     await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     await user.click(within(screen.getByTestId('composer-palette')).getByRole('button', { name: /^SIM-EDR-001/ }))
     expect(setParams).toHaveBeenCalledWith({ from: 'SIM-EDR-001' }, { replace: true })
   })
@@ -1091,7 +1091,7 @@ describe('ComposerView — opening a library scenario over the chain', () => {
     mount({ from: 'SIM-EDR-001' }, { setParams })
     await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
     await user.click(screen.getByTestId('composer-add-step'))
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     await user.click(within(screen.getByTestId('composer-palette')).getByRole('button', { name: /^SIM-EDR-001/ }))
     expect(setParams).not.toHaveBeenCalled()
     const dialog = screen.getByRole('dialog')
@@ -1205,10 +1205,39 @@ describe('ComposerView — drawers', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Filter the palette')))
     await user.click(screen.getByRole('button', { name: 'Collapse palette' }))
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /＋ Add/ })))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add to chain' })))
+  })
+})
+
+describe('ComposerView — ★ Favorites', () => {
+  const STARRED = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-006',
+    name: 'LSASS dump',
+    plane: 'EDR',
+    detection_types: ['BIOC', 'XQL', 'Correlation', 'IOC'],
+    favorite: true,
+    favorite_why: ['Runs offline on a lab target', 'Every step makes real telemetry'],
+  }
+
+  it('the palette opens on Favorites when the library has any, listing only starred scenarios', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/scenarios': { scenarios: [SCENARIO, STARRED] } })
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
+    const palette = screen.getByTestId('composer-palette')
+    await waitFor(() => expect(within(palette).getByRole('tab', { name: 'Favorites' }))
+      .toHaveAttribute('aria-selected', 'true'))
+    const item = within(palette).getByRole('button', { name: /^SIM-EDR-006/ })
+    expect(item.getAttribute('title')).toMatch(/Runs offline on a lab target/)
+    expect(within(palette).queryByRole('button', { name: /^SIM-EDR-001/ })).toBeNull()
+
+    await user.click(within(palette).getByRole('tab', { name: 'Scenarios' }))
+    expect(within(palette).getByRole('button', { name: /^SIM-EDR-001/ })).toBeInTheDocument()
   })
 })
 
@@ -1226,7 +1255,7 @@ describe('ComposerView — every library scenario is reachable from inside', () 
     baseRoutes({ 'GET /api/scenarios': { scenarios: MANY } })
     mount()
     await waitFor(() => expect(screen.getByTestId('composer-firstrun')).toBeInTheDocument())
-    await user.click(screen.getByTitle('Open the node palette'))
+    await user.click(screen.getByRole('button', { name: 'Add to chain' }))
     await user.type(screen.getByLabelText('Filter the palette'), 'SIM-EDR-030')
     await waitFor(() => expect(screen.getByText('SIM-EDR-030')).toBeInTheDocument())
   })
