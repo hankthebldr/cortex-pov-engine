@@ -263,6 +263,21 @@ drop below it. The Report header (This run / Compare runs, Validate all,
 Export) now wraps instead of running past the view, where it was clipped. A
 viewport test at 375 px and 845 px guards both and fails without the fix.
 
+### Changed — the Launch gate is where a run starts: one Run (design C1, v33 MVP)
+
+The Launch gate page now holds the whole launch, top to bottom: **What runs**
+(the armed scenario) › **Readiness** (its preflight checks and tools) ›
+**Where it runs** (every agent with its state, where an offline agent is
+listed but cannot be chosen, plus the offline bundle) › **What it will do**
+(steps, detections it should raise, who it runs as, "writes to Cortex or the
+firewall: never", who tears down) › an authorisation tick that starts unticked ›
+one **Run**. Run stays disabled until a target is chosen, the tick is given and
+no check blocks, and every reason is listed under it. For the offline bundle,
+Run builds and saves the bundle and records the run, which reads Staged; the
+separate "Download bundle" button is gone. This POVengine's own readiness
+follows below the panel. The "New POV run" and old readiness links land on
+the Launch gate.
+
 ### Security
 
 - **A path override on a tenant credential could send the tenant's API key to

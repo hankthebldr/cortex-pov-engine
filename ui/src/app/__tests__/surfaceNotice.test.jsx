@@ -39,7 +39,7 @@ describe('destination error wiring', () => {
 
   it('guided flow: an armed scenario that fails to load is named, not reported as "nothing armed"', async () => {
     installRoutes(BASE_ROUTES)
-    const Guided = getDestination('guided').Component
+    const Guided = getDestination('preflight').Component
     render(<Guided params={{ arm: 'SIM-GONE-001' }} onNavigate={() => {}} />)
     const notice = await screen.findByTestId('guided-notice')
     expect(notice).toHaveTextContent('Could not load armed scenario SIM-GONE-001')

@@ -52,7 +52,8 @@ function routes(post) {
 }
 
 async function fire() {
-  const btn = await screen.findByRole('button', { name: /Launch run/ })
+  await userEvent.click(await screen.findByTestId('new-run-authorised'))
+  const btn = await screen.findByRole('button', { name: 'Run' })
   await waitFor(() => expect(btn).toBeEnabled())
   await userEvent.click(btn)
 }
