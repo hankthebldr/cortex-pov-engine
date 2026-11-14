@@ -4,7 +4,7 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { StatusIcon, ErrorBadge, Button, VERBS, Toast, PageIcon, Icon, ICONS } from '../index.js'
+import { StatusIcon, ErrorBadge, Button, VERBS, VERB_ICONS, Toast, PageIcon, Icon, ICONS } from '../index.js'
 
 void React
 
@@ -60,6 +60,33 @@ describe('Button', () => {
   it('names the closed verb set from the design', () => {
     expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run'])
   })
+
+  it('gives every verb, and only a verb, an icon from the closed Icon set (design v33 C10)', () => {
+    expect(Object.keys(VERB_ICONS)).toEqual([...VERBS])
+    for (const verb of VERBS) expect(ICONS).toContain(VERB_ICONS[verb])
+    expect(new Set(Object.values(VERB_ICONS)).size).toBe(VERBS.length)
+  })
+
+  it('a verb button draws its icon before the verb, hidden from assistive tech', () => {
+    render(<Button variant="primary" verb="Read back" />)
+    const b = screen.getByRole('button', { name: 'Read back' })
+    expect(b).toHaveAttribute('data-verb', 'Read back')
+    const svg = b.querySelector('svg')
+    expect(svg).toHaveAttribute('data-icon', 'rotate')
+    expect(svg).toHaveAttribute('aria-hidden', 'true')
+    expect(b.firstChild).toBe(svg)
+  })
+
+  it('keeps the verb icon through a busy label', () => {
+    render(<Button verb="Run">Launching…</Button>)
+    const b = screen.getByRole('button', { name: 'Launching…' })
+    expect(b.querySelector('svg')).toHaveAttribute('data-icon', 'play')
+  })
+
+  it('a button without a verb draws no icon', () => {
+    render(<Button>Close</Button>)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).toBeNull()
+  })
 })
 
 describe('Toast', () => {
@@ -105,7 +132,11 @@ describe('Icon', () => {
       expect(svg).toHaveAttribute('aria-hidden', 'true')
       unmount()
     }
-    expect(ICONS).toEqual(['play', 'stop', 'repeat', 'plus', 'star', 'sliders', 'back', 'forward'])
+    expect(ICONS).toEqual([
+      'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
+      'check', 'gear', 'pencil', 'rotate', 'external', 'target',
+      'back', 'forward',
+    ])
   })
 
   it('renders nothing for a name outside the set', () => {

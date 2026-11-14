@@ -12,12 +12,17 @@ import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice } from './Launc
 import ChainStage from './ChainStage.jsx'
 import { draftFromScenario } from './composerDraft.js'
 import { Button, PageIcon, StatusIcon } from './kit/index.js'
+import WhyThisMatters from './WhyThisMatters.jsx'
+import { scenarioThesis } from './sheetThesis.js'
 
 /**
  * ScenarioInspector — the scenario's deep-dive SHEET (design v26 §4.1, §4.4).
  *
  *   header   kind icon + "Scenario" + id + run status (icon AND word), the
- *            name, and the action row: Run (primary) · Customize · Close
+ *            name, and the action row: Run (primary) · Customize · Close,
+ *            each verb with its icon (design v33 C10)
+ *   why      "Why this matters" — Thesis · Why we simulate it · What proves
+ *            it · What it needs, read off the scenario document (C10)
  *   stage    the scenario's chain — the same ChainStage the Composer edits and
  *            Run detail draws live — in preview: no state, scaled to fit
  *   tabs     Overview · Detections · Run history · Launch options
@@ -80,6 +85,7 @@ export default function ScenarioInspector({
   // A different scenario opens on its Overview.
   React.useEffect(() => { setTab('overview') }, [id])
   const draft = React.useMemo(() => (scenario ? draftFromScenario(scenario) : null), [scenario])
+  const thesis = React.useMemo(() => (scenario ? scenarioThesis(scenario) : null), [scenario])
   // Esc closes an open sheet, unless something inside it already took the key.
   React.useEffect(() => {
     if (!open) return undefined
@@ -117,6 +123,7 @@ export default function ScenarioInspector({
           <div className="scenario-sheet__actions" data-testid="scenario-sheet-actions">
             <Button
               variant="primary"
+              verb="Run"
               onClick={run}
               disabled={!onRun && launch.launchDisabled}
               title={onRun ? 'Go to the launch step with this scenario loaded' : 'Launch this scenario in the selected mode'}
@@ -126,11 +133,10 @@ export default function ScenarioInspector({
             {onCustomize && (
               <Button
                 variant="secondary"
+                verb="Customize"
                 onClick={onCustomize}
                 title="Open this scenario's chain in Build a chain"
-              >
-                Customize
-              </Button>
+              />
             )}
             <span className="scenario-sheet__spacer" />
             <button type="button" className="btn scenario-sheet__close" onClick={onClose}>Close</button>
@@ -158,7 +164,12 @@ export default function ScenarioInspector({
         </div>
 
         <div className="scenario-sheet__body">
-          {/* ── The chain, first (preview: no state, scaled to fit) ──────── */}
+          {/* ── Why this matters, first: the thesis before any mechanics ─── */}
+          <div className="scenario-sheet__thesis">
+            <WhyThisMatters parts={thesis} headingLevel={3} testId="scenario-why-matters" />
+          </div>
+
+          {/* ── The chain (preview: no state, scaled to fit) ─────────────── */}
           <section className="scenario-sheet__stage" aria-label="Chain">
             <h3 className="scenario-sheet__section-title">Chain</h3>
             <ChainStage
@@ -428,6 +439,11 @@ function truncate(s, n) {
 
 /* ─── Tools & payload supply ──────────────────────────────────────── */
 
+/** The Packages (payload shelf) route, filtered by `params`. */
+function shelfHref(params) {
+  return `#/adapters?${new URLSearchParams(params).toString()}`
+}
+
 /**
  * The tools this scenario needs, and WHO fetches each one at run time.
  *
@@ -465,8 +481,7 @@ function ScenarioToolsSection({ scenario, scenarioId }) {
   // Direct hash write rather than prop-drilling onNavigate through
   // OperationsView — the console's router is the hash and listens for changes.
   const goShelf = (params) => {
-    const sp = new URLSearchParams(params)
-    window.location.hash = `#/adapters?${sp.toString()}`
+    window.location.hash = shelfHref(params)
   }
 
   return (
@@ -503,13 +518,14 @@ function ScenarioToolsSection({ scenario, scenarioId }) {
         <div className="insp-tool__warn" data-testid="insp-tools-warn">
           {egress.length} of {rows.length} tools are fetched by the target from the internet at run
           time.{' '}
-          <button
-            type="button"
-            className="btn btn--xs"
-            onClick={() => goShelf({ scenario: scenarioId, supply: SUPPLY.UNSTAGED })}
+          {/* Only navigates, so it is a link (design v33 C10), not a button. */}
+          <a
+            className="sheet-link"
+            data-testid="insp-tools-shelf-link"
+            href={shelfHref({ scenario: scenarioId, supply: SUPPLY.UNSTAGED })}
           >
-            Review ▸
-          </button>
+            Packages →
+          </a>
         </div>
       )}
     </div>
