@@ -24,6 +24,7 @@ surfaces that can put a privileged workload into a customer's cluster call it:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -50,6 +51,7 @@ from engine.push_generator import (
     resolve_target,
 )
 from engine import tenant_content
+from engine.lab_readiness import favorites as corpus_favorites
 from engine.ttp_catalog import catalog as ttp_catalog
 from models import Scenario
 from tools.adapter_catalog import catalog as adapter_catalog
@@ -127,14 +129,34 @@ def _bundle_targets(doc: dict) -> list[str]:
     return list(emittable_targets(doc))
 
 
-def _slim_scenario(scenario: Scenario) -> dict:
+async def scenario_favorites() -> dict[str, list[str]]:
+    """The system's best scenarios, ``scenario_id -> reasons`` (the console's ★).
+
+    Measured by ``engine.lab_readiness.favorite_reasons``. The first call
+    classifies the corpus (about 1.3 s), so it runs in a worker thread rather
+    than on the event loop; every later call is the cached answer.
+    """
+    from config import settings  # noqa: PLC0415
+
+    return await asyncio.to_thread(corpus_favorites, settings.CORTEXSIM_BASE_DIR)
+
+
+def _with_favorite(doc: dict, favorites: dict[str, list[str]]) -> dict:
+    """Stamp ``favorite`` and ``favorite_why`` (the ★ and its tooltip) on a row."""
+    why = favorites.get(doc.get("scenario_id"), [])
+    doc["favorite"] = bool(why)
+    doc["favorite_why"] = list(why)
+    return doc
+
+
+def _slim_scenario(scenario: Scenario, favorites: Optional[dict[str, list[str]]] = None) -> dict:
     """Summary projection of a scenario for the list endpoint."""
     full = scenario.to_dict()
     slim = {k: v for k, v in full.items() if k not in _LIST_OMIT_FIELDS}
     steps = full.get("steps")
     slim["steps"] = [_slim_step(s) for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
     slim["bundle_targets"] = _bundle_targets(full)
-    return slim
+    return _with_favorite(slim, favorites or {})
 
 
 @router.get("")
@@ -196,8 +218,9 @@ async def list_scenarios(
     )
     # `projection` names the shape explicitly so a consumer can tell a summary
     # row from a detail document without guessing at which keys are missing.
+    favorites = await scenario_favorites()
     return {
-        "scenarios": [_slim_scenario(s) for s in scenarios],
+        "scenarios": [_slim_scenario(s, favorites) for s in scenarios],
         "total": len(scenarios),
         "projection": "summary",
     }
@@ -233,7 +256,7 @@ async def get_scenario(
     logger.info("get_scenario scenario_id=%s", scenario_id)
     doc = scenario.to_dict()
     doc["bundle_targets"] = _bundle_targets(doc)
-    return doc
+    return _with_favorite(doc, await scenario_favorites())
 
 
 def tenant_content_manifest(scenario_doc: dict[str, Any]) -> dict[str, Any]:

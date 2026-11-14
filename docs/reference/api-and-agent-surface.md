@@ -198,6 +198,17 @@ every string as an escaped HCL literal.
   both 9 · windows-only 4 · `[]` 3 (`SIM-MP-030` emits neither;
   `SIM-MP-031` / `-034` are `push_supported: false`). By content alone it is
   179 · 9 · 4 · 1.
+- **`favorite` / `favorite_why` (2026-11).** `GET /api/scenarios/{id}` and
+  every `GET /api/scenarios` row carry `favorite: bool` and
+  `favorite_why: [str]`: the system's best scenarios, starred in the Composer
+  palette. `engine.lab_readiness.favorite_reasons` decides it from the
+  lab-readiness row: GREEN, `signal_ratio` 1.0 with no detection step lacking
+  signal, `Correlation` among `detection_types`, and at least four distinct
+  detection types. `favorite_why` lists those four facts in that order, and is
+  `[]` when `favorite` is false. The corpus is classified once per process (about
+  1.3 s, in a worker thread) and cached; a draft is never starred. 27 of 201
+  scenarios on 2026-11-13; a test pins the runtime set to the committed
+  `docs/reference/lab-readiness.json`.
 - **`MIXED_DIALECT` (2026-11).** A Windows step whose text is structurally both
   cmd and PowerShell, for example `%TEMP%` plus a `#` comment, runs correctly
   under neither interpreter. It is now named in the

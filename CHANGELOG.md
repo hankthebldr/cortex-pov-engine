@@ -119,6 +119,23 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   a skip link and palette focus order; a page title and form labels on every
   page; agent capabilities shown on their cards.
 
+### Added — ★ Favorites: the system's best scenarios, first in the Composer palette
+
+The Composer palette has a new first tab, **★ Favorites**, and opens on it
+whenever the library has any. A scenario earns the ★ by measurement, not by a
+list anyone keeps: it is lab-ready (GREEN: no tool fetched from the internet,
+no launch consent gate), every step makes real telemetry, it raises a
+Correlation, and it spans at least four detection types. That is 27 of 201
+scenarios today, 12 of them the stitched Unit 42 chains. The rule lives once,
+in `core/engine/lab_readiness.py` (`favorite_reasons`), beside the
+GREEN/YELLOW/RED classifier it reads; `scripts/lab_readiness.py` now renders
+the manifest from that module and its output is byte-for-byte unchanged.
+`GET /api/scenarios` rows and `GET /api/scenarios/{id}` carry `favorite` and
+`favorite_why` (the four reasons, shown as the ★'s tooltip). Starred
+scenarios also carry the ★ on the Scenarios tab. Palette items now carry tags
+(plane, detection types, use case), and the active tab offers its most common
+tags as chips that filter the list; tags that differ only in case are one chip.
+
 ### Changed — the console no longer says "shelf" or "staged" for tools
 
 - **Tool readiness is said in plain words everywhere.** The launch gate row is

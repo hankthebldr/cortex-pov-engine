@@ -140,10 +140,11 @@ const WS_TABS = [
 ]
 
 // The palette's tabs are what a chain is assembled from (design v26 §4.4):
-// Scenarios · TTP cards · Data streams · Packages. Each group the container
-// assembles carries a `tab`; a group with none (the step kinds, the launch
-// targets) shows on every tab.
+// ★ Favorites · Scenarios · TTP cards · Data streams · Packages. Each group the
+// container assembles carries a `tab`; a group with none (the step kinds, the
+// launch targets) shows on every tab.
 const PALETTE_TABS = [
+  { id: 'favorites', label: 'Favorites', icon: 'star' },
   { id: 'scenarios', label: 'Scenarios' },
   { id: 'ttps', label: 'TTP cards' },
   { id: 'streams', label: 'Data streams' },
@@ -186,7 +187,11 @@ export default function ComposerView({
   // else one picked in History, else (null) the provider's own activeRun.
   const [followRunId, setFollowRunId] = useState(null)
   const [benchQuery, setBenchQuery] = useState('')
-  const [paletteTab, setPaletteTab] = useState('scenarios')
+  // The palette opens on ★ Favorites once the library has any, else on
+  // Scenarios; a tab the DC picks (or a "Start from…" option) wins after that.
+  const [paletteTabChoice, setPaletteTab] = useState(null)
+  const hasFavorites = env.scenarios.some((s) => s.favorite)
+  const paletteTab = paletteTabChoice ?? (hasFavorites ? 'favorites' : 'scenarios')
   const [notice, setNotice] = useState(null)
   // Design-lens stitch overlay is off by default (intent, not outcome).
   const [showStitch, setShowStitch] = useState(false)
@@ -981,21 +986,36 @@ export default function ComposerView({
       ],
     })
 
+    // Opening a scenario REPLACES the draft rather than appending its steps:
+    // two chains spliced together share no causality spine. A ★ scenario is one
+    // the system measures as its best; its tooltip says why.
+    const scenarioItem = (s, keyPrefix) => {
+      const id = s.scenario_id || s.id
+      return {
+        key: `${keyPrefix}-${id}`,
+        name: id,
+        meta: s.name || s.plane || '',
+        title: s.favorite
+          ? [`★ ${s.name || id}`, ...(s.favorite_why || [])].join('\n')
+          : (s.name || s.plane || ''),
+        starred: Boolean(s.favorite),
+        tags: scenarioTags(s),
+        add: () => openScenarioRef.current(id),
+      }
+    }
+
+    groups.push({
+      label: 'Favorites',
+      tone: 'detected',
+      tab: 'favorites',
+      items: env.scenarios.filter((s) => s.favorite).map((s) => scenarioItem(s, 'fav')),
+    })
+
     groups.push({
       label: 'Scenario library',
       tone: 'detected',
       tab: 'scenarios',
-      items: env.scenarios.map((s) => {
-        const id = s.scenario_id || s.id
-        return {
-          key: `s-${id}`,
-          name: id,
-          meta: s.name || s.plane || '',
-          // Opening a scenario REPLACES the draft rather than appending its
-          // steps: two chains spliced together share no causality spine.
-          add: () => openScenarioRef.current(id),
-        }
-      }),
+      items: env.scenarios.map((s) => scenarioItem(s, 's')),
     })
 
     groups.push({
@@ -1091,6 +1111,7 @@ export default function ComposerView({
     if (key === 'k-command') return addBlankAt('New command step', position)
     if (key === 'k-wait') return addBlankAt('Wait', position)
     if (key.startsWith('s-')) return openScenarioRef.current(key.slice(2))
+    if (key.startsWith('fav-')) return openScenarioRef.current(key.slice(4))
     if (key.startsWith('t-')) {
       const ttpId = key.slice(2)
       const card = ttps.find((t) => (t.ttp_id || t.id) === ttpId)
@@ -1728,6 +1749,12 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 }
 
 /** Tab subtitles. Every one is a real count or an explicit unknown. */
+// A scenario's palette tags, in the Library's own words: its plane, its
+// detection types and its use case.
+function scenarioTags(s) {
+  return [s.plane, ...(s.detection_types || []), s.uc_ref].filter(Boolean)
+}
+
 function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
