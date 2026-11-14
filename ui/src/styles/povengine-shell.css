@@ -90,6 +90,73 @@
   border-radius: 3px;
 }
 
+/* ── Back / Forward and the breadcrumb (design C9) ────────────────────────
+   Beside the brand, as the canvas draws them. A pressed button and the
+   current crumb take the selected treatment of design v26 §9.1: the green
+   wash and its matte line (--gr-matte, falling back to --ac-line while the
+   token layer does not define it). */
+.pov-history { display: flex; align-items: center; gap: 4px; }
+.pov-history__btn {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx2);
+  cursor: pointer;
+}
+.pov-history__btn:hover:not(:disabled) { border-color: var(--bd2); color: var(--tx); }
+.pov-history__btn:active:not(:disabled) {
+  background: var(--ac-soft);
+  border-color: var(--gr-matte, var(--ac-line));
+  color: var(--tx);
+}
+.pov-history__btn:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.pov-history__btn:disabled { color: var(--tx3); cursor: default; }
+
+/* The one header child that may shrink, and only so far: the outer crumbs
+   give up their width first (the large shrink factor) down to a first letter
+   and an ellipsis, then the current one; below the floor the bar scrolls like
+   every other child rather than lose where the DC is. */
+.pov-header > .pov-crumbs { flex: 0 1 auto; min-width: 176px; overflow: hidden; }
+.pov-crumbs__list {
+  list-style: none;
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; padding: 0;
+  min-width: 0;
+}
+.pov-crumbs__item {
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 1000 auto;
+  min-width: 34px;
+  overflow: hidden;
+}
+.pov-crumbs__item:first-child { min-width: 20px; }
+.pov-crumbs__item:last-child { flex-shrink: 1; min-width: 0; }
+.pov-crumbs__sep { color: var(--tx3); font: 400 12px/1 var(--font-ui); }
+.pov-crumbs__link,
+.pov-crumbs__current {
+  font: 500 12px/1 var(--font-ui);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+/* Two classes deep: `.theme-console a` would otherwise paint the crumbs in
+   the link colour. A crumb is quiet chrome, not an inline link. */
+.pov-crumbs .pov-crumbs__link { color: var(--tx2); text-decoration: none; border-bottom: 0; border-radius: 4px; }
+.pov-crumbs .pov-crumbs__link:hover { color: var(--tx); }
+.pov-crumbs .pov-crumbs__link:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.pov-crumbs__current {
+  padding: 4px 7px;
+  font-weight: 600;
+  color: var(--tx);
+  background: var(--ac-soft);
+  border: 1px solid var(--gr-matte, var(--ac-line));
+  border-radius: 5px;
+}
+
 /* ── The evidence collection trigger ─────────────────────────────────────
    This is the POV chip, and it is the collection rather than a label because
    the instance is ephemeral: it is deployed once for this POV and dies with
