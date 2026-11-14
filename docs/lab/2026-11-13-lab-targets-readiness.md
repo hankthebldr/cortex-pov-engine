@@ -434,4 +434,122 @@ window that reaches back past every `_time` you sent. `metrics_view` already cou
   It is not the lab broker. Henry should confirm whose it is, so nobody reads its rows as `bvm-01`'s.
 - **No libvirt DHCP reservation for `pov-target-01`.** Its .77 is a lease, expiring 23:13:27 local time on ms-01
   when read. dnsmasq normally renews the same address, but the syslog allowlist and the collector's
-  `_collector_ip` read assume it. §5.2 pins it.
+  `_collector_ip` read assume it. Pinned 2026-11-13 22:32Z (§5.2).
+
+### 8. Test plan for the v1.2.0 pass (written 2026-11-14, not run)
+
+Runs once `:8888` has been rebuilt from final `dev`. One check per door, each proven by a tenant read-back. Every
+tenant read is read-only. XQL calls count against the deathstar query budget, and SimCore's ledger reports them as
+`queries_issued`.
+
+#### 8.0 Gate before any check
+
+| # | Command | Pass |
+|---|---|---|
+| G1 | `curl -s localhost:8888/api/health \| python3 -m json.tool` | version is the release build; only `api_auth` degraded (and `mcp` if not enabled) |
+| G2 | `curl -s localhost:8888/api/agents \| python3 -c 'import json,sys;[print(a["agent_id"],a["status"],a["last_seen_age_seconds"]) for a in json.load(sys.stdin)["agents"] if a["agent_id"]=="pov-target-01-4dcdce"]'` | `online`, age < 30 s. The beacon dials 192.168.1.105, so the Mac's address must not have moved |
+| G3 | `curl -s -X POST localhost:8888/api/connectors/xsiam_tenant/preflight -H 'content-type: application/json' -d '{}'` | `auth`, `scope_xql`, `clock`, `response_layer` ok; `capabilities_confirmed` holds `xql` (8 calls) |
+| G4 | Re-run probe 1 (`SIM-DRAFT-lab-readiness-probe-pov-target-01-targets-20261113`, §2.1): `POST /api/runs` `{"scenario_id":"<that id>","mode":"pull","target_agent_id":"pov-target-01-4dcdce"}` | 12 identities `RUNUSER_OK`; leftovers section empty |
+| G5 | `ssh -J henry@192.168.1.110 henry@192.168.122.77 'systemctl is-active xdr-collector traps_pmd'` and `ssh henry@192.168.1.110 'virsh -c qemu:///system list'` | collector and agent `active`; `bvm-01` and `pov-target-01` running |
+
+Rebuild prerequisites: `fix/api-collector-preflight-compress` (930efd3c) must be merged into `dev` before the
+rebuild, or check 8.4 cannot pass. Drafts and runs live in the SimCore DB volume, so the probe drafts survive the
+rebuild.
+
+**How a probe step runs** (8.2, 8.3). One `identity: root` draft step through the beacon, as in §2.1.
+`POST /api/scenarios/drafts` with the body shape of `SIM-DRAFT-lab-door-probe-xdr-collector-filestream-on-pov-target-01-bec86c`
+(one step, `tc_ref: TC-EDR-05`, one XQL expected detection marked diagnostic) and the command below, then
+`POST /api/runs`. Each probe gets a fresh nonce: `H=$(openssl rand -hex 3)`.
+
+#### 8.1 XDR agent: identity-harness scenario, reconcile and tenant evidence
+
+**Scenario: SIM-EDR-001** (credential dumping: `/etc/shadow` read and mimipenguin). Steps 01–03 run as `www-data`,
+which was locked before §3.2. Steps 04–05 run as root, and step 05 needs `python`, which the beacon reports. It
+declares `TOOL-ATOMIC-RED-TEAM` (dual-use), so the launch needs consent. Swap in SIM-EDR-023/024 once their
+security fixes are on `dev`; the steps below are the same.
+
+| Step | Command | Expected |
+|---|---|---|
+| 1 | `curl -s 'localhost:8888/api/agents/pov-target-01-4dcdce/preflight?scenario_id=SIM-EDR-001'` | `ready: true`, `gaps: []` |
+| 2 | `curl -s -X POST localhost:8888/api/runs -H 'content-type: application/json' -d '{"scenario_id":"SIM-EDR-001","mode":"pull","target_agent_id":"pov-target-01-4dcdce","consent":{"simulation_authorized":true}}'` → `RUN` | 201, `run_id` |
+| 3 | Poll `GET /api/runs/$RUN` until terminal | `complete`, 5/5 `rc 0`, `runtime_dependency_gaps: []`. Step headers read `identity=www-data` for 01–03 with no `IDENTITY NOT HONOURED` line |
+| 4 | Wait 10 min (agent upload plus analytics), then `curl -s -X POST "localhost:8888/api/runs/$RUN/reconcile?connector=xsiam"` | 200; observations pulled for `pov-target-01` |
+| 5 | `curl -s -X POST "localhost:8888/api/runs/$RUN/tenant-evidence"`, then `GET` the same path (or Results › tenant evidence once #287 is on dev) | snapshot holds the endpoint `0ad53c90…` CONNECTED and any issues raised on `pov-target-01` in the run window |
+| 6 | Door read (XQL via `POST /api/xsiam/tenants/deathstar/xql`): `dataset = xdr_data \| filter agent_hostname = "pov-target-01" and _time >= <run start> \| filter action_process_image_command_line contains "shadow" or action_process_image_command_line contains "mimipenguin" \| fields _time, actor_effective_username, action_process_image_name, action_process_image_command_line` | rows for steps 01–05; `actor_effective_username` = `www-data` on 01–03 and `root` on 04–05 |
+
+**Pass (door):** steps 3 and 6. The agent recorded every step under the identity the scenario declared. That
+proves the agent door and the identity harness. **Reported separately, not as the door verdict:** step 4's
+matched expectations. deathstar had 0 custom BIOCs when last read, so the scenario's BIOC rows cannot match there,
+and the built-in analytics map `/etc/shadow` reads to T1003, not to the scenario's techniques (observed on this VM 2026-11-11). **Quota:** reconcile 1 alerts
+pull, tenant-evidence 3 reads (issues, cases, endpoint), step 6 1 XQL. Optional Tier-2 `POST /api/runs/$RUN/verify`
+adds about 1 XQL per XQL expectation (~10). **Clean-up:** the beacon does not run `cleanup.commands`. Run
+`rm -f /tmp/mimipenguin.sh /tmp/mimi_output.txt` through a root step (or §3.1's archive form), then re-run probe 1.
+
+#### 8.2 XDR Collector: nonce probe
+
+Step command (root):
+
+```bash
+D=/var/log/cortexsim/door-xdrc; T=$(date -u +%FT%TZ)
+printf '{"cortexsim_door_nonce":"xdrc-%s-probe","sent_at":"%s","msg":"XDR Collector door probe - safe to discard"}\n' "$H" "$T" >> "$D/probe.log"
+printf '{"cortexsim_door_nonce":"xdrc-%s-control","sent_at":"%s","msg":"control - must not land"}\n' "$H" "$T" >> "$D/excluded.log"
+```
+
+Read back 3–5 min later (one heartbeat plus ~80 s ingest):
+`dataset = cortexsim_door_xdrc_raw | filter _raw_log contains "xdrc-<H>" | fields _insert_time, _log_source_file_name, _collector_name, _raw_log`.
+
+**Pass:** exactly one row, `_log_source_file_name = probe.log`, `_collector_type` "XDR Collector", and no `-control`
+row. A dataset row count proves nothing: the profile also ships syslog and auth.log. **Quota:** 1 XQL (2 if the
+first read is early). **Clean-up:** none. The probe files are the door's own and stay.
+
+#### 8.3 bvm-01 syslog: nonce lines (no scenario or emitter sends syslog)
+
+CortexSim has no syslog transport, and SIM-NDR-010 writes its ASA lines to a local file (§5.4.2), so a nonce is
+the only sender. Step command (root, from pov-target-01):
+
+```bash
+B=192.168.122.10
+timeout 10 logger -n $B -P 514  -d --rfc3164 -t cortexsim "CEF:0|cortexsim|door_syslog|1|door-probe|door probe udp|1|cs1Label=cortexsim_door_nonce cs1=door-syslog-$H-udp msg=safe to discard"; echo "udp rc=$?"
+timeout 10 logger -n $B -P 5514 -T --rfc3164 -t cortexsim "CEF:0|cortexsim|door_syslog|1|door-probe|door probe tcp|1|cs1Label=cortexsim_door_nonce cs1=door-syslog-$H-tcp msg=safe to discard"; echo "tcp rc=$?"
+```
+
+If Henry has set both rows' source network to `192.168.122.77/32`, also send the UDP line from ms-01 with
+`cs1=door-syslog-$H-wrongsrc`. Read back after 2 min, on arrival, because a sender can back-date `_time` on this
+door (§5.4): `dataset = cortexsim_door_syslog_raw | filter _insert_time >= <send time> and cs1 contains "door-syslog-<H>" | fields _insert_time, cs1, _final_reporting_device_ip, _broker_device_name`.
+
+**Pass:** the `-udp` and `-tcp` rows land with `_broker_device_name = bvm-01` and `_final_reporting_device_ip`
+192.168.122.77, and, if the restriction is set, no `-wrongsrc` row. **Quota:** 1 XQL, plus 1
+`collection_auditing` read if a line is missing. **Clean-up:** none.
+
+#### 8.4 HTTP collector: declared target, one emitter campaign, arrival
+
+Prerequisites: the compress fix is on the rebuilt image (8.0), and Henry has rotated the `pov-engine-test` key.
+
+| Step | Who | Command / click | Expected |
+|---|---|---|---|
+| 1 | Henry | Tenant › Collector targets › Add (the key goes in the write-only field; never in chat): name `pov-engine-test`, kind `xsiam_http_collector`, URL `https://api-deathstar-xsiam.xdr.us.paloaltonetworks.com/logs/v1/event`, dataset `custom_custom_raw`, auth header `Authorization`, auth scheme empty, **compress on**, default target on, declaration source `okta`, vendor `CUSTOM`, product `CUSTOM` | saved; the server stores its own declaration verdict. Record it, whatever it is |
+| 2 | Claude | `curl -s -X POST localhost:8888/api/collector-targets/pov-engine-test/preflight -H 'content-type: application/json' -d '{"write_canary":true}'` | `accepted` (gzip). Without the compress fix this reads `collector_rejected` |
+| 3 | Claude | `POST /api/eal/campaigns` with `{"campaign_id":"CMP-DOOR-HTTP-001","name":"door http canary","dry_run":false,"simulation_authorized":true,"authorized_by":"Henry Reed","steps":[{"step_id":"step-01","plugin":"idp_signin_emulator","params":{"provider":"okta","event_pattern":"impossible_travel","iterations":1,"canary_token":"door-http-<yyyymmdd>-<4hex>","collector_target":"pov-engine-test","compress":true}}]}` | 201 |
+| 4 | Claude | `POST /api/eal/campaigns/CMP-DOOR-HTTP-001/launch` `{"dry_run":false}`, then `GET /api/eal/runs/<run_id>` | run `delivered`; attempted = delivered = N; `degraded: []` |
+| 5 | Claude | `POST /api/collector-targets/pov-engine-test/arrival` `{"tenant":"deathstar","token":"door-http-<…>","delivered":N,"since":"<launch time>"}` | `state: counted` with N rows (`pending` means retry after 2 min) |
+
+**Pass:** step 2 `accepted`, step 4 delivered = N, and step 5 counted = N. Count on `_insert_time`, because this
+collector honours a body `_time` (§6). **Quota:** step 2 0 XQL (one POST to the collector), step 5 1 XQL per call.
+**Clean-up:** the canary rows stay in `custom_custom_raw` (the dataset cannot be deleted from here). Keep the target
+for the pass. The campaign stays as a record.
+
+#### 8.5 MCP: side-by-side read (only if Henry approves `/mcp` registration)
+
+| Step | Who | Command | Expected |
+|---|---|---|---|
+| 1 | Henry | Enable the mount on the rebuilt stack (`CORTEXSIM_MCP_HTTP=1` and `CORTEXSIM_MCP_TOKEN` in `.env`, per #255), then `claude mcp add --transport http cortexsim http://localhost:8888/mcp` with the token header | `/mcp` lists the tenant-reader tools (#275, #282) |
+| 2 | Claude | Same read on both: endpoint lookup for `pov-target-01` through the new tool and through `~/cortex-mcp`'s `get_filtered_endpoints` | identical `endpoint_id` (`0ad53c90…`), status, version and policy; a difference is a finding |
+
+**Pass:** both reads agree field by field on the endpoint record. **Quota:** 2 API reads, 0 XQL. **Clean-up:** keep
+or `claude mcp remove cortexsim`, Henry's call.
+
+#### 8.6 Budget and order
+
+Order: 8.0 → 8.2 → 8.3 → 8.4 → 8.1 → 8.5. The cheap door probes go first, so a broken door is known before the
+scenario run, which needs a 10-minute wait. Total tenant reads: about 6 XQL, 4 API reads and 8 preflight calls, plus
+about 10 XQL if Tier-2 verify runs in 8.1.
