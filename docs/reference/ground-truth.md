@@ -114,8 +114,8 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 163 |
-| By HTTP method | `{"api_route": 1, "delete": 6, "get": 102, "post": 46, "put": 8}` |
+| Route decorators | 164 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 102, "post": 47, "put": 8}` |
 | `APIRouter()` instances | 31 |
 | Router files (`core/api/*.py`) | 29 |
 
