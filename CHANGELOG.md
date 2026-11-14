@@ -81,6 +81,24 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
+### Changed — Packages: a plain catalog, no supply mechanics
+
+- **The Packages page no longer talks about the payload shelf.** How and when a
+  tool reaches a host (staged on the instance, installed by the target at run
+  time, provided by the lab) is the system's decision, not a catalog concept.
+  The banner, the supply statistics, the supply chips, the egress lines and the
+  Stage button are gone from the list, with the tier, safety and supply
+  filters. A card shows the tool, its category and platform, the Cortex planes
+  and techniques its signal lands on, and **Add to chain**.
+- **One readiness fact stays.** A tool this instance cannot supply reads **Not
+  ready** on its card, because a run that needs it is refused. The detail
+  panel's first section is **Availability**, in plain words, with **Make
+  ready** where the instance can fix it; a tool the target installs for itself
+  says the target needs internet access. The install-mechanics section is
+  removed from the detail.
+- A link can still scope the list (`?supply=unstaged`, used by a refused
+  launch); the scope is named in plain words and can be cleared.
+
 ### Upgrading from 1.1.x (read before you re-run `dev-up.sh` on a jumpbox)
 
 1.1.1 carries 1.1.0's schema code unchanged (`git diff v1.1.0 v1.1.1 --
@@ -201,6 +219,18 @@ both.
   `find` run against the `.cortexsim-akira` staging tree. Its four XQL rows no
   longer name card TTP-2026-0200 without a detection on it, which logged an
   unresolved-card warning at every boot.
+
+### Fixed — the Composer refits when its canvas changes size after the fit
+
+- **On a cold load the rule card could sit under "+ Add step".** The
+  readiness strip above the Composer ("SIMCORE DEGRADED") appears only once
+  `/api/health` answers. When that landed after the canvas had fitted, the
+  canvas lost about 43 px of height while the view kept the zoom fitted to the
+  taller one, and "+ Add step", pinned to the canvas bottom, rose into the
+  rule card at 1024x768. The canvas now refits when its own size changes, as
+  it already did when the rule card moved, and still never once the DC has
+  panned or zoomed. This was the intermittent `e2e (smoke + playwright)`
+  failure on #258, #260 and #270.
 
 ### Security
 
