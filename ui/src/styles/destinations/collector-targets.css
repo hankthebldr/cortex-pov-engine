@@ -116,6 +116,7 @@
 .ct-form__plugins legend { font-size: 12px; color: var(--tx2, var(--cortex-steel)); padding: 0 4px; }
 .ct-form__row { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; }
 .ct-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ct-note { margin: 4px 0 0; font-size: 12px; color: var(--tx3); }
 /* The console's global input rule stretches inputs to their container; a
    checkbox stretched to half the label pushes its box away from its text. */
 .ct-check input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }

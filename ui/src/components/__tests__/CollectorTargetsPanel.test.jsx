@@ -20,7 +20,7 @@ const ONE = {
     name: 'okta-hec', kind: 'xsiam_http_collector',
     url: 'https://api-acme.example.test/logs/v1/event', dataset: 'okta_sso_raw',
     auth_header: 'Authorization', auth_scheme: '', plugins: ['idp_signin_emulator'],
-    is_default: false, has_key: true, warnings: [],
+    is_default: false, has_key: true, warnings: [], compress: true,
     last_check: { verdict: 'reachable', checked_at: '2026-11-10T22:00:00+00:00' },
   }],
 }
@@ -104,7 +104,15 @@ describe('CollectorTargetsPanel', () => {
         const body = bodyOf(call)
         expect(body).not.toHaveProperty('token')
         expect(body.plugins).toEqual(['idp_signin_emulator'])
+        // An edit keeps the target's compression. PUT replaces the target and
+        // the API defaults compress off, so leaving it out turned it off.
+        expect(body.compress).toBe(true)
       })
+    })
+
+    it('shows the target\'s compression on its row', async () => {
+      render(<CollectorTargetsPanel />)
+      expect(await screen.findByTestId('ct-row-compress-okta-hec')).toHaveTextContent('gzip')
     })
   })
 
@@ -126,9 +134,32 @@ describe('CollectorTargetsPanel', () => {
       expect(bodyOf(call)).toMatchObject({
         kind: 'xsiam_http_collector', url: ONE.targets[0].url,
         plugins: ['idp_signin_emulator'], token: 'k-secret',
+        // A new target is gzip unless the DC turns it off.
+        compress: true,
       })
     })
     await waitFor(() => expect(screen.queryByTestId('ct-form')).toBeNull())
+  })
+
+  it('a new target can be declared uncompressed, and the form says why gzip is the default', async () => {
+    fetchSpy = installRoutes({
+      'GET /api/collector-targets': EMPTY,
+      'PUT /api/collector-targets/:name': ONE.targets[0],
+    })
+    render(<CollectorTargetsPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /add collector target/i }))
+    const form = screen.getByTestId('ct-form')
+    expect(form).toHaveTextContent(/gzip-only reject uncompressed/)
+    const tick = within(form).getByTestId('ct-compress')
+    expect(tick).toBeChecked()
+    fireEvent.click(tick)
+    fireEvent.change(within(form).getByLabelText(/^name/i), { target: { value: 'plain-hec' } })
+    fireEvent.change(within(form).getByLabelText(/^url/i), { target: { value: ONE.targets[0].url } })
+    fireEvent.click(within(form).getByRole('button', { name: /save/i }))
+    await waitFor(() => {
+      const call = fetchSpy.mock.calls.find(([, i]) => i?.method === 'PUT')
+      expect(bodyOf(call).compress).toBe(false)
+    })
   })
 
   it('shows the server refusal code instead of a generic failure', async () => {
