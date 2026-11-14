@@ -11,7 +11,8 @@ picture of every ingestion route used in the POV (endpoint agent, XDR Collector,
 collector), with the delay before each one's data can be read and the field where its test marker lands. The
 recommended action: run the v1.2.0 test pass with the rules below, keep the instance's saved credentials and
 connected components (Henry, 2026-11-13), and fix the three verification defects listed under "Open" before
-anyone quotes a verified result.
+anyone quotes a verified result, along with the two run-path defects found in the 2026-11-14 sweep: NDR
+simulator steps that cannot run on a target, and a database lock that can make a live run read as abandoned.
 
 ## Technical detail
 
@@ -38,6 +39,8 @@ four-layer error review), [`2026-11-12-ingestion-sources-bringup.md`](2026-11-12
 - **MTTD runs from launch to the alert.** It includes queue wait and the runtime of earlier steps.
 - **Low severity never groups into a case.** A stitched step whose detections are all Low forms no incident (G-02 on SIM-EMAIL-003/004). Read "no case" as a grouping fact, not as a miss.
 - **Delivered is not ingested.** A 2xx from a collector only means it accepted the body. Ingestion is proven by reading the record back.
+- **EAL steps in the NDR scenarios cannot run on a beacon.** Eight NDR scenarios (001–007, 012) have beacon steps that run `python3 -m scripts.eal_simulator.cli …`. That package lives in the CortexSim repo, not on the target, so the step fails with `ModuleNotFoundError: No module named 'scripts'` (NDR-001/002/003/005/006 in the 2026-11-14 sweep on the 1.1.1 `:8888`). This is a scenario defect, not a miss. Until fixed, send those signals as SimCore EAL campaigns (in-process, #231) and do not score the NDR steps.
+- **A locked database can end a run as abandoned.** SIM-NDR-007 (run `5cc8c6b4`) was marked `complete` with `BEACON ABANDONED TASK`. In the same minute, `GET /api/agents/{id}/tasks` and the heartbeat sweep threw `sqlite3.OperationalError: database is locked` 26 times (03:10Z, 2026-11-14). A Tier-2 verify of run `c8fc2bf6` was running then (4 XQL calls) and held its session open across the tenant calls. `core/database.py` sets neither WAL nor a busy timeout. The same error came in bursts all evening: 152 in the container log, 00:57–03:10Z. An "abandoned" verdict in such a minute is SimCore's own contention, not the beacon. Avoid running a verify while a run is in flight until fixed.
 
 ### 3. The ingestion routes, measured
 
@@ -70,5 +73,7 @@ four-layer error review), [`2026-11-12-ingestion-sources-bringup.md`](2026-11-12
 1. **Arrival 403 mapping** (#263): read HTTP 403 on the arrival query as "the dataset may not have received its first record yet, or the key's role cannot read it", not as `TENANT_UNAUTHORIZED`.
 2. **Corpus XQL faults**: `to_timestamp(current_time() - N)` (178 cards) and bare `causality_id` (38 cards). No issue filed yet.
 3. **Accuracy denominator**: take verify-only rows out of the Detection Accuracy denominator (#272).
-4. Rotate the `pov-engine-test` key, then declare it on the rebuilt `:8888` with `compress: true` (readiness §6, step 1).
-5. Confirm whose broker `5X7S0G08` is.
+4. **NDR EAL steps** run `python3 -m scripts.eal_simulator.cli` on the target, where the package does not exist (8 scenarios). Either stage the CLI with the step or move the step to a SimCore campaign.
+5. **SQLite contention**: enable WAL and a busy timeout in `core/database.py`, and commit before outbound tenant calls (`verify_run_now` holds its session across them), so a verify cannot lock out `/tasks` and the heartbeat sweep.
+6. Rotate the `pov-engine-test` key, then declare it on the rebuilt `:8888` with `compress: true` (readiness §6, step 1).
+7. Confirm whose broker `5X7S0G08` is.
