@@ -58,14 +58,15 @@ def test_presence_probe_is_not_signal():
 
 
 def test_an_ownership_guard_is_not_signal():
-    # RED before the bookkeeping rule: the `[ ... ]` tests and the `exit 1` of a
+    # RED before the bookkeeping rule: the `[ ... ]` test and the `exit 1` of a
     # scratch-directory guard counted as real commands, so adding the guard to a
     # narration step (SIM-CDR-018 step-03) re-scored the scenario as emitting signal.
-    guard = "[ -d /tmp/x ] && [ ! -L /tmp/x ] && [ -O /tmp/x ] || { echo 'not ours' >&2; exit 1; }"
+    guard = ('[ "$(stat -c %F:%u:%a /tmp/x 2>/dev/null)" = "directory:$(id -u):700" ] '
+             "|| { echo 'not ours' >&2; exit 1; }")
     assert lr._step_produces_signal(guard + "; printf 'marker\\n' > /tmp/x/m; echo done") is False
     assert lr._step_produces_signal(guard + "; cat /etc/shadow") is True
-    # a command substitution inside a test runs a process, so it still counts
-    assert lr._step_produces_signal('[ "$(stat -c %u /tmp/x)" = 0 ] || exit 1') is True
+    # any other command substitution inside a test is a real command, so it still counts
+    assert lr._step_produces_signal('[ "$(curl -s http://198.51.100.7/x)" = ok ] || exit 1') is True
 
 
 def test_real_commands_are_signal():
