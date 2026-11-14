@@ -394,7 +394,12 @@ test('quick-launch selects are tall enough for their own text', async ({ page })
   await page.goto('/#/library')
   await page.waitForSelector('.scenario-card')
   // The card's body opens its sheet; the footer's Run / Customize do not (v26 §4.1).
-  await page.locator('.scenario-card').first().locator('.scenario-card__body').click()
+  // The first LOADED scenario, not the first card: the staged drafts of the
+  // extended library can render before the corpus answers, and a draft opens
+  // no sheet (it is not loaded and not launchable).
+  await page.locator('.scenario-card')
+    .filter({ hasNot: page.locator('.sc-staged-chip') })
+    .first().locator('.scenario-card__body').click()
   // The quick launch lives on the scenario sheet's Launch options tab (v26 §4.1).
   await page.getByRole('tab', { name: 'Launch options' }).click()
   await page.waitForSelector('.insp-select')
