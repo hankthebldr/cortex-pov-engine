@@ -11,6 +11,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import FlowStepper, { flowTarget, flowHref } from '../FlowStepper.jsx'
 import OperationsView from '../OperationsView.jsx'
+import { DESTINATIONS } from '../../../app/destinations.jsx'
 import { EnvironmentContext, DEFAULT_ENV } from '../../../context/EnvironmentContext.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
 
@@ -79,6 +80,29 @@ describe('FlowStepper', () => {
     expect(flowHref(flowTarget('preflight', { scenarioId: 'SIM-A' }))).toBe('#/preflight?arm=SIM-A')
     expect(flowHref(flowTarget('runs', { runId: 'r 1' }))).toBe('#/runs?run=r+1&tab=live')
     expect(flowHref(flowTarget('composer', {}))).toBe('#/composer')
+  })
+})
+
+describe('FlowStepper on the Launch gate and Run pages', () => {
+  const surface = (id) => DESTINATIONS.find((d) => d.id === id).Component
+  const stepper = () => screen.getByRole('navigation', { name: 'Compose to simulate' })
+
+  it('the Launch gate is the current step and carries ?arm= on', async () => {
+    installRoutes({ 'GET /api/health': { status: 'ok' }, 'GET /api/agents': [], 'GET /api/runs': { runs: [] } })
+    const Preflight = surface('preflight')
+    withEnv(<Preflight params={{ arm: 'SIM-EDR-001' }} setParams={() => {}} onNavigate={() => {}} />)
+    expect(stepper().querySelector('[aria-current="step"]')).toHaveTextContent('Launch gate')
+    expect(link('Build a chain')).toHaveAttribute('href', '#/composer?open=SIM-EDR-001')
+    expect(link('Run')).toHaveAttribute('href', '#/runs?run=r-new&tab=live')
+  })
+
+  it('a run is the current step and its scenario rides back to the launch', async () => {
+    installRoutes({ 'GET /api/health': { status: 'ok' }, 'GET /api/agents': [], 'GET /api/runs': { runs: RUNS } })
+    const Runs = surface('runs')
+    withEnv(<Runs params={{ run: 'r-old', tab: 'live' }} setParams={() => {}} onNavigate={() => {}} />)
+    expect(stepper().querySelector('[aria-current="step"]')).toHaveTextContent('Run')
+    expect(link('Launch gate')).toHaveAttribute('href', '#/preflight?arm=SIM-EDR-001')
+    expect(link('Scenarios')).toHaveAttribute('href', '#/library?open=SIM-EDR-001')
   })
 })
 
