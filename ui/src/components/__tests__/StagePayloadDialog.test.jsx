@@ -27,7 +27,7 @@ const renderDialog = (props = {}) => render(
 describe('<StagePayloadDialog />', () => {
   it('gates Stage behind the licence acknowledgement, and says why', () => {
     renderDialog()
-    const stage = screen.getByRole('button', { name: /^Stage ▸$/ })
+    const stage = screen.getByRole('button', { name: /^Make ready ▸$/ })
     expect(stage).toBeDisabled()
     expect(screen.getByTestId('stage-blockers')).toHaveTextContent(/Acknowledge the licence/)
     fireEvent.click(screen.getByTestId('stage-license-ack'))
@@ -44,7 +44,7 @@ describe('<StagePayloadDialog />', () => {
     const onStage = vi.fn()
     renderDialog({ onStage })
     fireEvent.click(screen.getByTestId('stage-license-ack'))
-    fireEvent.click(screen.getByRole('button', { name: /^Stage ▸$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Make ready ▸$/ }))
     expect(onStage).toHaveBeenCalledTimes(1)
   })
 
@@ -85,21 +85,21 @@ describe('<StagePayloadDialog />', () => {
     expect(screen.getByText(/deliberately no override/i)).toBeInTheDocument()
   })
 
-  it('explains a 502 as a failure, never as a staged artifact, and offers Retry', () => {
+  it('explains a 502 as a failure, never as a usable tool, and offers Retry', () => {
     renderDialog({ job: { state: 'failed', error: { code: 'PAYLOAD_FETCH_FAILED', message: 'Upstream refused' } } })
-    expect(screen.getByText(/never staged artifacts/i)).toBeInTheDocument()
+    expect(screen.getByText(/never a usable tool/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument()
   })
 
   it('reports a client-side timeout as its own named outcome', () => {
     renderDialog({ job: { state: 'failed', error: { code: 'PAYLOAD_STAGE_TIMEOUT', message: 'timed out' } } })
     expect(screen.getByTestId('stage-failed')).toHaveTextContent('PAYLOAD_STAGE_TIMEOUT')
-    expect(screen.getByText(/NOT staged/)).toBeInTheDocument()
+    expect(screen.getByText(/NOT made ready/)).toBeInTheDocument()
   })
 
-  it('replaces the Stage button with the offline recipe on a read-only shelf', () => {
+  it('replaces the Make ready button with the offline recipe on a read-only instance', () => {
     renderDialog({ writable: false, distDir: '/app/payloads' })
-    expect(screen.queryByRole('button', { name: /^Stage ▸$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Make ready ▸$/ })).not.toBeInTheDocument()
     expect(screen.getByText(/build-payloads\.sh/)).toBeInTheDocument()
   })
 

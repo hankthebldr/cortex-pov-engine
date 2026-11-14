@@ -1,10 +1,12 @@
-"""MCP tool input schemas: drift-tested COPIES of the REST request models.
+"""MCP tool input schemas: COPIES of the REST request models.
 
 D-1: the stdio MCP server runs in a separate process against SimCore's REST
 API, so this package must never import ``api.*`` (that would drag in the
-database and the app). The models below therefore copy the REST shapes, and
-``tests/mcp_server/test_schema_drift.py`` pins them field-for-field to the
-originals (and asserts this package never imports ``api``).
+database and the app). The models below therefore copy the REST shapes.
+``tests/mcp_server/test_schema_drift.py`` pins four of them to their originals
+(``ScopeRequestIn``, ``OperationExecuteIn``, ``XqlQueryIn``, ``McpLaunchRequest``)
+and asserts this package never imports ``api``. The rest, the tenant-reader
+inputs among them, are copies kept by hand and are not drift-tested.
 
 Two deliberate projections: ``OperationExecuteIn`` drops ``consent`` (an agent
 must never self-grant consent; writes through MCP always preview), and
@@ -12,6 +14,7 @@ must never self-grant consent; writes through MCP always preview), and
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -201,9 +204,63 @@ class AssertionRunIn(_In):
     context: dict[str, str] = Field(default_factory=dict)
 
 
+class TenantEvidenceReadIn(_In):
+    """``POST /api/runs/{run_id}/tenant-evidence``'s path and query parameters."""
+
+    run_id: str
+    force: bool = False
+    integration: str | None = None
+
+
+# --- tenant reader (copies of api.xsiam IssueSearchRequest, CaseSearchRequest,
+# EndpointGetRequest, plus the vault name the route takes in its path) ----------
+class _TenantRequestIn(_In):
+    tenant: str | None = None
+
+    def to_body(self) -> dict[str, Any]:
+        """The route's JSON body: every field but ``tenant``, datetimes as ISO strings."""
+        return self.model_dump(mode="json", exclude={"tenant"})
+
+
+class IssueSearchIn(_TenantRequestIn):
+    since: datetime | None = Field(None, description="_insert_time lower bound")
+    until: datetime | None = Field(None, description="_insert_time upper bound")
+    ids: list[str] = Field(default_factory=list)
+    methods: list[str] = Field(default_factory=list, description=(
+        "detection.method filter display names (e.g. 'PAN NGFW'), sent verbatim"))
+    severities: list[str] = Field(default_factory=list)
+    limit: int = Field(50, ge=1, le=200)
+    offset: int = Field(0, ge=0)
+
+
+class CaseSearchIn(_TenantRequestIn):
+    ids: list[str] = Field(default_factory=list)
+    since: datetime | None = Field(None, description="creation_time lower bound")
+    until: datetime | None = Field(None, description="creation_time upper bound")
+    limit: int = Field(50, ge=1, le=200)
+    offset: int = Field(0, ge=0)
+
+
+class EndpointGetIn(_TenantRequestIn):
+    hostnames: list[str] = Field(..., min_length=1, max_length=100)
+
+
 class DatasetSchemaIn(_In):
     dataset: str = Field(pattern=r"^[A-Za-z0-9_]{1,128}$")
     tenant: str | None = None
+
+
+class AssetGetIn(TenantIn):
+    """``xsiam.asset.get``: the asset id fills ``OP-ASSETS-ID``'s ``{id}``; the
+    executor route refuses anything that is not one path segment."""
+    asset_id: str
+
+
+class ArchiveGetIn(TenantIn):
+    """``xsiam.playbook.get`` / ``xsiam.script.get``: the vendor filter, sent as
+    ``{"request_data": {"filter": {"field": by, "value": value}}}``."""
+    by: Literal["id", "name"]
+    value: str
 
 
 class ReportIn(_In):

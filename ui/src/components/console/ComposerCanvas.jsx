@@ -53,8 +53,9 @@ import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, ControlButton, MiniMap,
   Handle, Position, ViewportPortal, BaseEdge, EdgeLabelRenderer,
   getBezierPath, MarkerType, applyNodeChanges, applyEdgeChanges,
-  useNodesInitialized, useReactFlow,
+  useNodesInitialized, useReactFlow, useStore,
 } from '@xyflow/react'
+import Icon from './kit/Icon.jsx'
 import '@xyflow/react/dist/style.css'
 import { layoutCausalityGraph } from './composerLayout.js'
 import { PIVOTS } from './composerDraft.js'
@@ -109,6 +110,7 @@ function edgePath(from, to) {
 
 // ─── Node components ────────────────────────────────────────────────────────
 
+
 /**
  * The CGO trigger node — what OWNS the chain. Styled like an automation tool's
  * trigger (the chain starts here). One source port on the right. Not a step, so
@@ -117,7 +119,9 @@ function edgePath(from, to) {
 function CgoNode({ data }) {
   return (
     <div className="chain-node chain-node--cgo" data-testid="chain-start">
-      <div className="chain-node__kicker">Trigger · CGO</div>
+      <div className="chain-node__kicker" title="Where the chain starts: the process that owns it (its Causality Group Owner)">
+        <Icon name="play" size={10} className="chain-node__glyph chain-node__glyph--start" />Start
+      </div>
       <div className="chain-node__title mono">{data.cgo || 'cortexsim-agent'}</div>
       <div className="chain-node__scope">
         <button type="button" className="scope-link" onClick={data.onTenant}>
@@ -350,7 +354,9 @@ function ProofNode({ data }) {
   return (
     <div className="chain-node chain-node--proof" data-testid="chain-end">
       {!data.runLens && <Handle type="target" id="in" position={Position.Left} isConnectable={false} />}
-      <div className="chain-node__kicker">Proof · teardown</div>
+      <div className="chain-node__kicker" title="Where the chain stops: teardown, then proof">
+        <Icon name="stop" size={10} className="chain-node__glyph" />Stop
+      </div>
       <div className="chain-node__title">Teardown &amp; proof</div>
       <div className="chain-node__sub mono">
         {n ? `${n} cleanup command${n === 1 ? '' : 's'}` : 'no cleanup declared'}
@@ -543,6 +549,27 @@ function ruleExtentKey(nodes) {
     bottom = Math.max(bottom, Math.round((n.position?.y || 0) + n.measured.height))
   }
   return `${count}:${bottom}`
+}
+
+/**
+ * The dot grid behind the graph. React Flow scales a dot with the zoom, so at
+ * a fitted 44% a 1px dot is under half a pixel and the grid disappears: the
+ * canvas loses its depth exactly when the chain is largest. The dot is drawn
+ * at a constant size on screen at every zoom (its size is divided by the
+ * zoom), while the gap still scales with the zoom, which is what reads as
+ * depth. Below 60% every other dot is dropped so the grid does not crowd.
+ * One component for every lens and state the graph is drawn in.
+ */
+function CanvasDots() {
+  const zoom = useStore((s) => s.transform[2]) || 1
+  return (
+    <Background
+      variant={BackgroundVariant.Dots}
+      gap={zoom < 0.6 ? 44 : 22}
+      size={1.7 / zoom}
+      color="var(--canvas-dot)"
+    />
+  )
 }
 
 // ─── Design / Lanes / Run pane ───────────────────────────────────────────────
@@ -959,12 +986,18 @@ const DesignGraph = forwardRef(function DesignGraph({
   // ── Zero-size mount guard + live zoom ──
   const paneRef = useRef(null)
   const [measured, setMeasured] = useState(false)
+  // The pane's size, rounded, for the soft refit: the page above the canvas
+  // can change height after the fit (the readiness strip appears once
+  // /api/health answers), which shrinks the pane under a viewport fitted to
+  // the taller one and put the rule card under "+ Add step" on cold loads.
+  const [paneBox, setPaneBox] = useState('')
   useEffect(() => {
     const el = paneRef.current
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
       setMeasured(width > 0 && height > 0)
+      setPaneBox(`${Math.round(width)}x${Math.round(height)}`)
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -1086,10 +1119,13 @@ const DesignGraph = forwardRef(function DesignGraph({
               // Counted from what React Flow has MEASURED, not from the derived
               // graph: a refit issued the render the rule is derived runs before
               // the node exists in the store, and frames the chain without it.
-              softKey={ruleExtentKey(liveNodes)}
+              // ...and from the pane's own size, so a pane that shrinks or
+              // grows after the fit is refitted too (still never once the DC
+              // has panned or zoomed; a refit does not resize the pane).
+              softKey={`${ruleExtentKey(liveNodes)}|${paneBox}`}
               canSoftFit={canSoftFit}
             />
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
+            <CanvasDots />
             <Controls showInteractive={false}>
               <ControlButton
                 onClick={() => setMiniPinned((v) => !v)}
@@ -1466,7 +1502,7 @@ export default function ComposerCanvas({
 
       <div className="composer-canvas__meta">
         {validation.counts.steps} steps
-        {draft.cgo && <> · {spinePhrase(steps, validation)} · CGO {draft.cgo}</>}
+        {draft.cgo && <> · {spinePhrase(steps, validation)} · starts at {draft.cgo}</>}
         {runLens && activeRun && <> · run {activeRun.run_id || activeRun.id || ''} {activeRun.status || ''}</>}
       </div>
 

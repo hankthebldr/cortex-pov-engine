@@ -4,7 +4,7 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { StatusIcon, ErrorBadge, Button, VERBS, Toast, PageIcon } from '../index.js'
+import { StatusIcon, ErrorBadge, Button, VERBS, Toast, PageIcon, Icon, ICONS } from '../index.js'
 
 void React
 
@@ -92,6 +92,24 @@ describe('PageIcon', () => {
 
   it('renders nothing without an icon', () => {
     const { container } = render(<PageIcon />)
+    expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('Icon', () => {
+  it('draws each control glyph, hidden from assistive tech (the control names itself)', () => {
+    for (const name of ICONS) {
+      const { container, unmount } = render(<Icon name={name} />)
+      const svg = container.querySelector('svg')
+      expect(svg).toHaveAttribute('data-icon', name)
+      expect(svg).toHaveAttribute('aria-hidden', 'true')
+      unmount()
+    }
+    expect(ICONS).toEqual(['play', 'stop', 'repeat', 'plus', 'star', 'sliders'])
+  })
+
+  it('renders nothing for a name outside the set', () => {
+    const { container } = render(<Icon name="rocket" />)
     expect(container).toBeEmptyDOMElement()
   })
 })

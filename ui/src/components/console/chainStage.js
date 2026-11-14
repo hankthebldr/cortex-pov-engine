@@ -50,6 +50,17 @@ export const STAGE_GEOMETRY = Object.freeze({
   cardW: 196,
   pad: 24,       // right padding after the last column
   inset: 5,      // a card's top inside its band (LANE_BANDS.nodeY)
+  anchorStrip: 76, // the row above the lanes that holds the Start and Stop points
+})
+
+/** A lane's icon: the icon of the component page behind that signal path
+ *  (`app/destinations.jsx`), so a lane reads as the component, not a sentence. */
+export const LANE_ICON = Object.freeze({
+  ENDPOINT: 'fingerprint-scan',  // Agents
+  COLLECTOR: 'doc-search',       // HTTP collector / Broker VM
+  WIRE: 'threat-network',        // Firewall
+  CLOUD: 'people',               // Tenant
+  ENG: 'keyboard',               // Cortex Engine
 })
 
 export const TRIGGER_ID = 'trigger'
@@ -98,9 +109,9 @@ function edgePath(from, to) {
  *
  * @param {Array}  steps   Composer step model (`composerDraft.normalizeStep`)
  * @param {Object} [opts]
- * @param {boolean}[opts.compact]  draw only LAUNCH, the lanes in use, ENG when
- *                                 there are rules, and PROOF (sheet, Run detail);
- *                                 false draws all eight (the Composer)
+ * @param {boolean}[opts.compact]  draw only the lanes in use and ENG when there
+ *                                 are rules (sheet, Run detail); false draws
+ *                                 every lane (the Composer)
  * @param {string} [opts.cgo]      the Causality Group Owner (the trigger's label)
  * @param {string} [opts.plane]    the chain's plane, the tint fallback
  * @param {Array}  [opts.rules]    tenant rules `[{key,label,sub}]` for the ENG band
@@ -121,12 +132,14 @@ export function buildChainStage(steps = [], opts = {}) {
   const laneOfStep = new Map(laid.nodes.map((n) => [n.id, n]))
   const used = new Set(laid.nodes.map((n) => n.lane))
 
-  // Which bands are drawn, re-stacked top to bottom in lane order.
-  const keep = (b) => !compact
-    || b.key === 'LAUNCH' || b.key === 'PROOF'
+  // Which bands are drawn, re-stacked top to bottom in lane order. Launch and
+  // proof are not lanes: they are the run's Start and Stop points, drawn in a
+  // row of their own above the lanes, before the first column and after the
+  // last, because they come before and after every component's sequence.
+  const keep = (b) => b.key !== 'LAUNCH' && b.key !== 'PROOF' && (!compact
     || (STEP_LANES.includes(b.key) && used.has(b.key))
-    || (b.key === 'ENG' && rules.length > 0)
-  let y = 0
+    || (b.key === 'ENG' && rules.length > 0))
+  let y = G.anchorStrip
   const lanes = laid.lanes.filter(keep).map((b) => {
     const band = {
       key: b.key, label: b.label, sub: b.sub, fill: b.fill, h: b.h,
@@ -142,9 +155,12 @@ export function buildChainStage(steps = [], opts = {}) {
     return { x: G.gutter + col * G.pitch, y: b.top + G.inset, h: b.h - G.inset * 2 }
   }
 
+  // Start and Stop sit in the row above the lanes, outside any band.
+  const anchor = (col) => ({ x: G.gutter + col * G.pitch, y: G.inset, h: G.anchorStrip - G.inset * 2 })
+
   const n = list.length
   const cards = []
-  const trigger = { id: TRIGGER_ID, kind: 'trigger', lane: 'LAUNCH', col: 0, label: cgo || 'cortexsim-agent', ...place('LAUNCH', 0) }
+  const trigger = { id: TRIGGER_ID, kind: 'trigger', lane: null, col: 0, label: cgo || 'cortexsim-agent', ...anchor(0) }
   cards.push(trigger)
   list.forEach((s, i) => {
     const ln = laneOfStep.get(s.id)
@@ -168,7 +184,7 @@ export function buildChainStage(steps = [], opts = {}) {
     ...place('ENG', n + 1 + k),
   }))
   const proofCol = n + 1 + ruleCards.length
-  cards.push({ id: PROOF_STAGE_ID, kind: 'proof', lane: 'PROOF', col: proofCol, ...place('PROOF', proofCol) })
+  cards.push({ id: PROOF_STAGE_ID, kind: 'proof', lane: null, col: proofCol, ...anchor(proofCol) })
 
   const byId = new Map(cards.map((c) => [c.id, c]))
   const stageId = (id) => (id === CGO_ID ? TRIGGER_ID : id === PROOF_ID ? PROOF_STAGE_ID : id)

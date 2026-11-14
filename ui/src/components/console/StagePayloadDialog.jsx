@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ProvenanceBlock, { CopyButton } from './ProvenanceBlock.jsx'
-import { OFFLINE_RECIPE } from './PayloadShelfBanner.jsx'
 import { SUPPLY, formatBytes, hostOf } from './supplyState.js'
 
 /**
@@ -68,16 +67,16 @@ export default function StagePayloadDialog({
     >
       <div className="confirm-dialog stage-dialog">
         <h3 id="stage-dialog-title" className="confirm-dialog__title">
-          Stage {name} on this SimCore
+          Make {name} ready on this instance
         </h3>
 
         {/* ── read-only shelf: no Stage button at all ───────────────────── */}
         {readOnly && state === 'review' && (
           <div className="stage-dialog__body">
             <p className="stage-dialog__lede">
-              This SimCore&apos;s payload shelf is read-only
-              {distDir ? <> (<span className="mono">{distDir}</span>)</> : null}, so it cannot pull
-              the artifact itself. Stage it on a host with internet and copy it across:
+              This instance cannot fetch tools itself: its tool directory
+              {distDir ? <> (<span className="mono">{distDir}</span>)</> : null} is read-only.
+              Fetch it on a host with internet and copy it across:
             </p>
             <pre className="stage-dialog__recipe mono">{OFFLINE_RECIPE(distDir)}</pre>
             <CopyButton value={OFFLINE_RECIPE(distDir)} label="Copy offline recipe" variant="btn btn--xs" />
@@ -89,8 +88,8 @@ export default function StagePayloadDialog({
           <div className="stage-dialog__body">
             <p className="stage-dialog__lede">
               SimCore will make <strong>one outbound HTTPS request from this host</strong> to{' '}
-              <strong className="mono">{host || 'the declared source'}</strong> and write the bytes
-              to its shelf. Nothing is sent to the customer&apos;s network.
+              <strong className="mono">{host || 'the declared source'}</strong> and keep the tool
+              on this instance. Nothing is sent to the customer&apos;s network.
             </p>
             <ProvenanceBlock supply={supply} adapter={adapter} compact />
             {supply.state === SUPPLY.UNSTAGED && !supply.sha256 && (
@@ -110,7 +109,7 @@ export default function StagePayloadDialog({
               <span>
                 I understand <strong className="mono">{name}</strong> is third-party software under{' '}
                 <strong>{supply.license || adapter?.upstream?.license || 'an unstated licence'}</strong>,
-                that staging places a copy on this SimCore, and that this SimCore will serve it to a
+                that this places a copy on this instance, and that this instance will supply it to a
                 customer host.
               </span>
             </label>
@@ -148,7 +147,7 @@ export default function StagePayloadDialog({
         {state === 'done' && (
           <div className="stage-dialog__body" data-testid="stage-done">
             <p className="stage-dialog__ok">
-              ✓ Staged. <span className="mono">{job.result?.payload?.name}</span> ·{' '}
+              ✓ Ready. <span className="mono">{job.result?.payload?.name}</span> ·{' '}
               <span className="mono">{formatBytes(job.result?.payload?.size_bytes)}</span>
             </p>
             <div className="stage-dialog__digest mono">
@@ -191,7 +190,7 @@ export default function StagePayloadDialog({
               disabled={!acknowledged}
               onClick={() => onStage({ license_acknowledged: true })}
             >
-              Stage ▸
+              Make ready ▸
             </button>
           )}
           {state === 'failed' && canRetry(job.error) && (
@@ -228,7 +227,7 @@ function StageError({ error, name, host, distDir }) {
   return (
     <>
       <p className="stage-dialog__fail">
-        ✗ {copy ? copy.message({ name, host }) : (error?.message || 'Staging failed.')}
+        ✗ {copy ? copy.message({ name, host }) : (error?.message || 'Could not make it ready.')}
         <span className="launch-result__code mono"> [{code}]</span>
       </p>
       {copy?.body && <p className="stage-dialog__note">{copy.body}</p>}
@@ -245,20 +244,20 @@ function StageError({ error, name, host, distDir }) {
 
 export const ERROR_COPY = {
   PAYLOAD_FETCH_FAILED: {
-    message: ({ host }) => `SimCore could not fetch from ${host || 'upstream'} — it answered with an error, a redirect, or an HTML page. Nothing was staged.`,
-    body: 'A 401, a 403 and a 302 to a captive portal are FAILURES, never staged artifacts: an HTML error page staged under the tool’s name would give a perfect digest, verify flawlessly on the consumer, and run as a no-op.',
+    message: ({ host }) => `SimCore could not fetch from ${host || 'upstream'} — it answered with an error, a redirect, or an HTML page. Nothing was made ready.`,
+    body: 'A 401, a 403 and a 302 to a captive portal are FAILURES, never a usable tool: an HTML error page saved under the tool’s name would give a perfect digest, verify flawlessly on the consumer, and run as a no-op.',
     offline: true,
   },
   PAYLOAD_FETCH_TIMEOUT: {
-    message: ({ host }) => `SimCore could not reach ${host || 'upstream'}. This host has no route to the internet, or a proxy is holding the connection. Nothing was staged.`,
+    message: ({ host }) => `SimCore could not reach ${host || 'upstream'}. This host has no route to the internet, or a proxy is holding the connection. Nothing was made ready.`,
     offline: true,
   },
   PAYLOAD_STAGE_TIMEOUT: {
-    message: () => 'Staging timed out. The artifact was NOT staged and nothing was left on the shelf.',
+    message: () => 'It timed out. The tool was NOT made ready and nothing was saved.',
     offline: true,
   },
   PAYLOAD_PIN_MISMATCH: {
-    message: ({ name }) => `Upstream changed. ${name} does not match the digest its pack pins, so it was rejected and nothing was staged.`,
+    message: ({ name }) => `Upstream changed. ${name} does not match the digest its pack pins, so it was rejected and nothing was made ready.`,
     body: 'There is deliberately no override here. A pin mismatch means upstream changed under a digest a human set; blessing that from a console is how an unreviewed artifact reaches a customer host, and there is no undo. If the change is legitimate, repoint the URL at a release tag and update the pack’s install.artifact.sha256 in git, then rebuild.',
   },
   SHELF_EGRESS_DISABLED: {
@@ -266,20 +265,32 @@ export const ERROR_COPY = {
     offline: true,
   },
   PAYLOAD_EXISTS: {
-    message: ({ name }) => `${name} is already on the shelf. Silent replacement is refused — it changes the digest under a manifest a DC may already hold.`,
-    body: 'Re-stage it deliberately only if you mean to invalidate every composition generated before now.',
+    message: ({ name }) => `${name} is already on this instance. Silent replacement is refused — it changes the digest under a manifest a DC may already hold.`,
+    body: 'Replace it deliberately only if you mean to invalidate every run plan generated before now.',
   },
   ADAPTER_HAS_NO_ARTIFACT: {
-    message: () => 'This adapter declares no install.artifact, so there is nothing to stage.',
-    body: 'Add an artifact block to its pack under tools/packs/. The URL is never guessed from install.runtime_install_command — a shell string that silently yields the wrong URL is exactly how staging becomes a no-op.',
+    message: () => 'This tool declares no install.artifact, so there is nothing to fetch.',
+    body: 'Add an artifact block to its pack under tools/packs/. The URL is never guessed from install.runtime_install_command — a shell string that silently yields the wrong URL is exactly how this becomes a no-op.',
   },
   PAYLOAD_TOO_LARGE: {
-    message: ({ name }) => `${name} exceeds this SimCore's staging size cap. Nothing was staged.`,
+    message: ({ name }) => `${name} exceeds this instance's size cap. Nothing was made ready.`,
   },
   PAYLOAD_TOKEN_DENIED: {
-    message: () => 'This SimCore requires a bearer token on the shelf endpoints, and the console has none.',
+    message: () => 'This instance requires a bearer token to manage tools, and the console has none.',
   },
   BAD_PAYLOAD_URL: {
     message: () => 'The declared source URL was refused — bad scheme, unresolvable host, or an SSRF guard hit (loopback / link-local / cloud metadata).',
   },
 }
+
+/** The commands that make declared tools ready on an instance that cannot
+ *  fetch them itself. */
+export const OFFLINE_RECIPE = (distDir) => [
+  '# on a host with internet, from a cortex-pov-engine checkout:',
+  './scripts/build-payloads.sh          # stages every declared install.artifact',
+  '',
+  '# then copy the tools onto the SimCore host and point at them:',
+  `scp -r payloads/ dc@simcore-host:${distDir || '/srv/cortexsim/payloads'}`,
+  `export CORTEXSIM_PAYLOAD_DIST=${distDir || '/srv/cortexsim/payloads'}`,
+  'docker compose restart simcore',
+].join('\n')

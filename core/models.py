@@ -7,6 +7,7 @@ Tables:
   Result          — detection outcome per run
   StepOutcome     — host evidence per step (step_outcomes)
   Observation     — tenant evidence, raw alert per run (observations)
+  TenantEvidenceRead — one explicit tenant read of a run (tenant_evidence_reads)
   Assertion       — POS/PLT/AUT proof artifact, loaded from YAML
   AssertionRun    — execution record per assertion evaluation
   AssertionCheck  — per-check outcome within an assertion run
@@ -584,6 +585,46 @@ class Observation(Base):
             "alert_outcome": self.alert_outcome,
             "raw": self.raw,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
+        }
+
+
+class TenantEvidenceRead(Base):
+    """One explicit tenant-evidence read of a run (spec §7.4): the run's issues,
+    cases and endpoint record as the tenant held them at ``read_at``.
+
+    A table, not a column, because reads repeat and their history matters.
+    Context only: nothing that scores a run reads it. Created by
+    ``create_all``; no migration needed.
+    """
+
+    __tablename__ = "tenant_evidence_reads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    integration: Mapped[str] = mapped_column(String, nullable=False)
+    # The per-tenant ledger key of the integration's URL; None when unusable.
+    tenant: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)   # naive UTC
+    since: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    until: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    queries_issued: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reader_version: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "integration": self.integration,
+            "tenant": self.tenant,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "since": self.since.isoformat() if self.since else None,
+            "until": self.until.isoformat() if self.until else None,
+            "code": self.code,
+            "queries_issued": self.queries_issued,
+            "reader_version": self.reader_version,
+            "payload": self.payload,
         }
 
 

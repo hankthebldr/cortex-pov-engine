@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import ToolAdapterCatalog from '../console/ToolAdapterCatalog.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
 
@@ -54,79 +54,58 @@ const shelf = ({ payloads = [], declared = [], writable = true } = {}) => ({
   'GET /api/shelf/artifacts': { artifacts: declared, total: declared.length, staged: payloads.map((p) => p.name), unstaged: [], unpinned: [], dist_dir: '/app/payloads' },
 })
 
-describe('Tools & Payloads — supply state', () => {
-  it('labels an unstaged declared artifact NOT STAGED and names the host the target reaches', async () => {
+describe('Packages — readiness, in plain words', () => {
+  // How and when a tool reaches the host is the system's business. A card
+  // states one readiness fact: a tool this instance cannot supply, because a
+  // run that needs it is refused.
+  const INTERNAL = /shelf|staged|fetches at run time|egress|sha256|tier/i
+
+  it('marks a tool this instance cannot supply "Not ready", and says nothing about fetching', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
     render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('supply-chip-TOOL-LINPEAS')).toHaveTextContent('NOT STAGED'))
-    expect(screen.getByText(/egress: target → github\.com, at run time/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('not-ready-TOOL-LINPEAS')).toHaveTextContent('Not ready'))
+    expect(screen.queryByTestId('not-ready-TOOL-HYDRA')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('not-ready-TOOL-SIGNALBENCH')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-adapter-catalog').textContent).not.toMatch(INTERNAL)
   })
 
-  it('labels a staged artifact STAGED with its digest and licence', async () => {
+  it('a ready tool carries no marker, no digest and no licence line on its card', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ payloads: [STAGED], declared: [{ ...DECLARED, staged: true }] }) })
     render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('supply-chip-TOOL-LINPEAS')).toHaveTextContent('STAGED'))
-    expect(screen.getByText(/sha256 aaaaaaaaaaaa…/)).toBeInTheDocument()
-    expect(screen.getByText(/egress: none — served from this SimCore/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('LinPEAS')).toBeInTheDocument())
+    expect(screen.queryByTestId('not-ready-TOOL-LINPEAS')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-adapter-catalog').textContent).not.toMatch(INTERNAL)
   })
 
-  it('labels a tier-4 pack with no artifact FETCHES AT RUN TIME and offers no Stage button', async () => {
+  it('offers no staging control on a card; every card can be added to the chain', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
     render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('supply-chip-TOOL-HYDRA')).toHaveTextContent('FETCHES AT RUN TIME'))
-    expect(screen.queryByTestId('stage-button-TOOL-HYDRA')).not.toBeInTheDocument()
-    // …while the declared one does offer it.
-    expect(screen.getByTestId('stage-button-TOOL-LINPEAS')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Hydra')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /stage/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Add to chain' })).toHaveLength(3)
   })
 
-  it('renders every chip as UNKNOWN when the shelf endpoint is absent', async () => {
+  it('claims nothing about readiness when this instance does not report it', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS })
     render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('supply-chip-TOOL-LINPEAS')).toHaveTextContent('UNKNOWN'))
-    expect(screen.getByTestId('supply-chip-TOOL-SIGNALBENCH')).toHaveTextContent('UNKNOWN')
-    expect(screen.getByTestId('payload-shelf-banner')).toHaveTextContent(/SHELF UNKNOWN/)
-    expect(screen.getByTestId('payload-shelf-banner')).toHaveTextContent(/neither staged nor unstaged/)
+    await waitFor(() => expect(screen.getByText('LinPEAS')).toBeInTheDocument())
+    expect(screen.queryByText('Not ready')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('payload-shelf-banner')).not.toBeInTheDocument()
   })
 
-  it('warns about target egress in the banner, with a count', async () => {
-    installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
-    render(<Harness />)
-    // Wait on the CONTENT, not the element. The banner mounts immediately in a
-    // "checking payload shelf…" state, so waiting for it to exist proves only
-    // that the component rendered — the assertion then raced the fetch and won
-    // locally while losing on a slower CI runner.
-    await waitFor(() => expect(screen.getByTestId('payload-shelf-banner'))
-      .toHaveTextContent(/2 of 3 tools fetch from the public internet/))
-  })
-
-  it('names staged-but-UNBOUND artifacts as bytes nothing can compose', async () => {
-    installRoutes({
-      'GET /api/tools/adapters': ADAPTERS,
-      ...shelf({ payloads: [{ ...STAGED, adapter_id: null }], declared: [] }),
-    })
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('payload-unbound')).toBeInTheDocument())
-    expect(screen.getByTestId('payload-unbound')).toHaveTextContent(/UNBOUND/)
-    expect(screen.getByTestId('payload-unbound')).toHaveTextContent(/not as coverage/)
-  })
-
-  it('?supply=unstaged filters the grid', async () => {
+  it('?supply=unstaged scopes the grid, names the scope in plain words, and clears', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
     render(<Harness initialParams={{ supply: 'unstaged' }} />)
     await waitFor(() => expect(screen.getByText('LinPEAS')).toBeInTheDocument())
     expect(screen.queryByText('Hydra')).not.toBeInTheDocument()
     expect(screen.queryByText('signalbench')).not.toBeInTheDocument()
+    const scope = screen.getByTestId('adapter-supply-scope')
+    expect(scope).toHaveTextContent('tools not ready on this instance')
+    fireEvent.click(within(scope).getByRole('button', { name: 'clear' }))
+    expect(screen.getByText('Hydra')).toBeInTheDocument()
   })
 
-  it('the banner CTA narrows to the unstaged set', async () => {
-    installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
-    render(<Harness />)
-    await waitFor(() => expect(screen.getByText('Hydra')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /Show them/i }))
-    await waitFor(() => expect(screen.queryByText('signalbench')).not.toBeInTheDocument())
-  })
-
-  it('?tool= opens the detail panel with Supply BEFORE Upstream', async () => {
+  it('?tool= opens the detail with Availability first, in plain words, and no install mechanics', async () => {
     installRoutes({
       'GET /api/tools/adapters': ADAPTERS,
       'GET /api/tools/adapters/TOOL-LINPEAS': {
@@ -141,21 +120,24 @@ describe('Tools & Payloads — supply state', () => {
     render(<Harness initialParams={{ tool: 'TOOL-LINPEAS' }} />)
     await waitFor(() => expect(screen.getByTestId('tool-adapter-detail')).toBeInTheDocument())
     const labels = Array.from(document.querySelectorAll('.competitive__detail-label')).map((n) => n.textContent)
-    expect(labels.indexOf('Supply')).toBeLessThan(labels.indexOf('Upstream'))
-    expect(screen.getByTestId('supply-detail')).toHaveTextContent('NOT STAGED')
+    expect(labels.indexOf('Availability')).toBeLessThan(labels.indexOf('Upstream'))
+    expect(labels).not.toContain('Install')
+    const availability = screen.getByTestId('supply-detail')
+    expect(availability).toHaveTextContent('Not ready')
+    expect(availability).toHaveTextContent(/A run that needs this tool is refused/)
+    expect(within(availability).getByRole('button', { name: /Make ready/ })).toBeInTheDocument()
   })
 
-  it('a read-only shelf replaces "Stage on SimCore" with the offline path', async () => {
+  it('a tool the target installs for itself says the target needs internet access', async () => {
     installRoutes({
       'GET /api/tools/adapters': ADAPTERS,
-      'GET /api/tools/adapters/TOOL-LINPEAS': { ...ADAPTERS.adapters[0], upstream: {}, install: {}, invoke: {} },
-      ...shelf({ declared: [DECLARED], writable: false }),
+      'GET /api/tools/adapters/TOOL-HYDRA': { ...ADAPTERS.adapters[1], upstream: {}, install: {}, invoke: {} },
+      ...shelf({ declared: [DECLARED] }),
     })
-    render(<Harness initialParams={{ tool: 'TOOL-LINPEAS' }} />)
+    render(<Harness initialParams={{ tool: 'TOOL-HYDRA' }} />)
     await waitFor(() => expect(screen.getByTestId('supply-detail')).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: /Stage on SimCore/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Stage offline/ })).toBeInTheDocument()
-    expect(screen.getByTestId('payload-shelf-banner')).toHaveTextContent(/build-payloads\.sh/)
+    expect(screen.getByTestId('supply-detail')).toHaveTextContent(/The target needs internet access/)
+    expect(within(screen.getByTestId('supply-detail')).queryByRole('button', { name: /Make ready/ })).not.toBeInTheDocument()
   })
 
   it('?panel= without ?tool= says so instead of silently doing nothing', async () => {

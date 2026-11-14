@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import re
 
-#: Appendix A, in order: 25 ``cortexsim.*`` then 16 ``xsiam.*``.
+#: In order: 27 ``cortexsim.*`` then 27 ``xsiam.*``. Appendix A of the MCP server
+#: spec, with the tenant reader's tools (its spec §7.6) after
+#: ``cortexsim.assertion.run`` and after ``xsiam.ingest.status``, then its six
+#: named parity reads (§8.1) after ``xsiam.endpoint.get``, then its two ZIP
+#: reads (§8.1) last.
 CANONICAL_IDS: tuple[str, ...] = (
     "cortexsim.health.get",
     "cortexsim.readiness.get",
@@ -36,6 +40,8 @@ CANONICAL_IDS: tuple[str, ...] = (
     "cortexsim.assertion.list",
     "cortexsim.assertion.get",
     "cortexsim.assertion.run",
+    "cortexsim.run.tenant_evidence.get",
+    "cortexsim.run.tenant_evidence.read",
     "xsiam.operation.list",
     "xsiam.operation.get",
     "xsiam.operation.execute",
@@ -52,6 +58,17 @@ CANONICAL_IDS: tuple[str, ...] = (
     "xsiam.parser.list",
     "xsiam.content.list",
     "xsiam.ingest.status",
+    "xsiam.issue.search",
+    "xsiam.case.search",
+    "xsiam.endpoint.get",
+    "xsiam.tenant_info.get",
+    "xsiam.audit_log.list",
+    "xsiam.asset.list",
+    "xsiam.asset.get",
+    "xsiam.vulnerability.list",
+    "xsiam.assessment_result.list",
+    "xsiam.playbook.get",
+    "xsiam.script.get",
 )
 
 WIRE_PATTERN = re.compile(r"^[a-z0-9_]{1,48}$")

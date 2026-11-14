@@ -48,7 +48,8 @@ state, audit logs, health/metrics — and, where explicitly authorized, act on t
 | [11](11-distributions-assets-api.md) | Distributions / device control / assets | `distributions`/`device_control` | ✅ some reads (prefer XQL for assets) |
 | [12](12-data-ingestion-api.md) | Data ingestion (push) | collector / `alerts` | ⚠ reference-only — **do not implement** |
 | [13](13-healthcheck-metrics.md) | Health & metrics | `healthcheck` + `xql` | ✅ read — **Phase-9 track** |
-| [14](14-operation-catalog.md) | **Operation catalog (all 151 ops)** | every family | authoritative index driving the harness |
+| [14](14-operation-catalog.md) | **Operation catalog (all 152 ops)** | every family | authoritative index driving the harness |
+| [15](15-parity-reads.md) | Parity reads (tenant info, audit log, assets, vulnerabilities, assessment results; playbook and script ZIP reads) | `system`/`audits`/`assets`/`uvem`/`compliance`/`playbooks`/`scripts` | ✅ read — the eight MCP parity tools |
 
 ## The one-paragraph model
 

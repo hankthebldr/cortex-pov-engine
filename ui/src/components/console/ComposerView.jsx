@@ -34,6 +34,7 @@ import ComposerInspector from './ComposerInspector.jsx'
 import ComposerRuleInspector from './ComposerRuleInspector.jsx'
 import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
+import Icon from './kit/Icon.jsx'
 import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
@@ -132,17 +133,18 @@ function useMediaQuery(query) {
 }
 
 const WS_TABS = [
-  ['payload', 'Payload plan'],
+  ['payload', 'Tools'],
   ['preflight', 'Preflight'],
   ['active', 'Active run'],
   ['history', 'History'],
 ]
 
 // The palette's tabs are what a chain is assembled from (design v26 §4.4):
-// Scenarios · TTP cards · Data streams · Packages. Each group the container
-// assembles carries a `tab`; a group with none (the step kinds, the launch
-// targets) shows on every tab.
+// ★ Favorites · Scenarios · TTP cards · Data streams · Packages. Each group the
+// container assembles carries a `tab`; a group with none (the step kinds, the
+// launch targets) shows on every tab.
 const PALETTE_TABS = [
+  { id: 'favorites', label: 'Favorites', icon: 'star' },
   { id: 'scenarios', label: 'Scenarios' },
   { id: 'ttps', label: 'TTP cards' },
   { id: 'streams', label: 'Data streams' },
@@ -185,7 +187,11 @@ export default function ComposerView({
   // else one picked in History, else (null) the provider's own activeRun.
   const [followRunId, setFollowRunId] = useState(null)
   const [benchQuery, setBenchQuery] = useState('')
-  const [paletteTab, setPaletteTab] = useState('scenarios')
+  // The palette opens on ★ Favorites once the library has any, else on
+  // Scenarios; a tab the DC picks (or a "Start from…" option) wins after that.
+  const [paletteTabChoice, setPaletteTab] = useState(null)
+  const hasFavorites = env.scenarios.some((s) => s.favorite)
+  const paletteTab = paletteTabChoice ?? (hasFavorites ? 'favorites' : 'scenarios')
   const [notice, setNotice] = useState(null)
   // Design-lens stitch overlay is off by default (intent, not outcome).
   const [showStitch, setShowStitch] = useState(false)
@@ -980,21 +986,36 @@ export default function ComposerView({
       ],
     })
 
+    // Opening a scenario REPLACES the draft rather than appending its steps:
+    // two chains spliced together share no causality spine. A ★ scenario is one
+    // the system measures as its best; its tooltip says why.
+    const scenarioItem = (s, keyPrefix) => {
+      const id = s.scenario_id || s.id
+      return {
+        key: `${keyPrefix}-${id}`,
+        name: id,
+        meta: s.name || s.plane || '',
+        title: s.favorite
+          ? [`★ ${s.name || id}`, ...(s.favorite_why || [])].join('\n')
+          : (s.name || s.plane || ''),
+        starred: Boolean(s.favorite),
+        tags: scenarioTags(s),
+        add: () => openScenarioRef.current(id),
+      }
+    }
+
+    groups.push({
+      label: 'Favorites',
+      tone: 'detected',
+      tab: 'favorites',
+      items: env.scenarios.filter((s) => s.favorite).map((s) => scenarioItem(s, 'fav')),
+    })
+
     groups.push({
       label: 'Scenario library',
       tone: 'detected',
       tab: 'scenarios',
-      items: env.scenarios.map((s) => {
-        const id = s.scenario_id || s.id
-        return {
-          key: `s-${id}`,
-          name: id,
-          meta: s.name || s.plane || '',
-          // Opening a scenario REPLACES the draft rather than appending its
-          // steps: two chains spliced together share no causality spine.
-          add: () => openScenarioRef.current(id),
-        }
-      }),
+      items: env.scenarios.map((s) => scenarioItem(s, 's')),
     })
 
     groups.push({
@@ -1068,7 +1089,7 @@ export default function ComposerView({
     })
 
     groups.push({
-      label: 'Staged payloads',
+      label: 'Ready tools',
       tone: 'pending',
       tab: 'packages',
       items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
@@ -1090,6 +1111,7 @@ export default function ComposerView({
     if (key === 'k-command') return addBlankAt('New command step', position)
     if (key === 'k-wait') return addBlankAt('Wait', position)
     if (key.startsWith('s-')) return openScenarioRef.current(key.slice(2))
+    if (key.startsWith('fav-')) return openScenarioRef.current(key.slice(4))
     if (key.startsWith('t-')) {
       const ttpId = key.slice(2)
       const card = ttps.find((t) => (t.ttp_id || t.id) === ttpId)
@@ -1403,7 +1425,8 @@ export default function ComposerView({
           onClick={() => launch.launch()}
           title={launchTitle()}
         >
-          {launch.launching ? 'Launching…' : `Launch on ${agentName || 'agent'}`}
+          <Icon name="play" size={11} className="composer__start-glyph" />
+          {launch.launching ? 'Starting…' : `Start on ${agentName || 'agent'}`}
         </button>
       </div>
 
@@ -1544,11 +1567,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--left"
+            className="composer-mode__reopen composer-mode__reopen--left composer-mode__reopen--icon"
             onClick={openPalette}
-            title="Open the node palette"
+            aria-label="Add to chain"
+            title="Add to chain"
           >
-            ＋ Add
+            <Icon name="plus" size={16} />
           </button>
         )}
 
@@ -1605,11 +1629,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--right"
+            className="composer-mode__reopen composer-mode__reopen--right composer-mode__reopen--icon"
             onClick={openInspector}
-            title="Open the inspector"
+            aria-label="Inspector"
+            title="Inspector"
           >
-            Inspector
+            <Icon name="sliders" size={16} />
           </button>
         )}
 
@@ -1724,11 +1749,17 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 }
 
 /** Tab subtitles. Every one is a real count or an explicit unknown. */
+// A scenario's palette tags, in the Library's own words: its plane, its
+// detection types and its use case.
+function scenarioTags(s) {
+  return [s.plane, ...(s.detection_types || []), s.uc_ref].filter(Boolean)
+}
+
 function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
-    if (shelf.available === false) return 'no shelf'
-    return `${(shelf.shelf?.payloads || []).length} staged`
+    if (shelf.available === false) return 'not reported'
+    return `${(shelf.shelf?.payloads || []).length} ready`
   }
   if (id === 'preflight') {
     if (!env.healthModel) return 'unknown'
@@ -1750,9 +1781,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (shelf.available === false) {
     return (
       <div className="ws-empty">
-        This SimCore exposes no payload shelf, so every tool a step needs is fetched by the
-        TARGET from the public internet at run time. That is a real property of the run, not a
-        missing panel.
+        This instance supplies no tools itself, so every tool a step needs is installed by the
+        TARGET, which needs internet access. That is a real property of the run, not a missing
+        panel.
       </div>
     )
   }
@@ -1760,9 +1791,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (!payloads.length) {
     return (
       <div className="ws-empty">
-        Nothing staged on this SimCore.
+        No tools are ready on this instance.
         <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-          Open Tools &amp; Payloads
+          Open Packages
         </button>
       </div>
     )

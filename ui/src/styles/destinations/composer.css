@@ -413,6 +413,15 @@
   color: var(--tx3);
 }
 .theme-console .chain-node--start .chain-node__kicker { color: var(--ac-ink); }
+/* Start ▶ and Stop ■: the chain's two fixed points, the same glyphs wherever
+   a run is started or stopped. */
+.theme-console .chain-node__glyph { margin-right: 5px; color: var(--tx2); }
+.theme-console .composer__start-glyph { margin-right: 6px; }
+.theme-console .composer--mode .composer-mode__reopen--icon { display: grid; place-items: center; width: 32px; padding: 0; }
+.theme-console .chain-node__glyph--start { color: var(--ac-ink); }
+/* The dot grid: between the hairline and the quiet-text token, so it reads as
+   depth without competing with a card's border. */
+.theme-console .composer { --canvas-dot: color-mix(in srgb, var(--tx3) 45%, var(--bd2)); }
 .theme-console .chain-node__title {
   font-size: 12px; font-weight: 700; margin-top: 7px; color: var(--tx);
 }
@@ -850,8 +859,8 @@
    surface is mounted.
 
    The viewport is a FLEX COLUMN, not just an unpadded block. `.view` is not
-   the Composer's only child — the api-down banner and the ReadinessBanner are
-   its siblings — so a `.composer { height: 100% }` inside an `overflow: hidden`
+   the Composer's only child — the api-down banner is
+   its sibling — so a `.composer { height: 100% }` inside an `overflow: hidden`
    block resolves to 100% of the viewport MINUS nothing, pushing the workstream
    strip past the bottom edge where it was then clipped away entirely
    (reproduced with a degraded SimCore: the whole Payload/Preflight/Active/
@@ -984,6 +993,42 @@
   color: var(--s1);
   border-color: var(--tx);
 }
+/* An icon tab (★ Favorites) is a square, so it reads as a control, not a word. */
+.theme-console .composer-bench__tab:has(> .kit-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+/* Tag chips: shortcuts into the filter, drawn quieter than the tabs above. */
+.theme-console .composer-bench__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -6px 0 14px;
+}
+.theme-console .composer-bench__tag {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  background: transparent;
+  color: var(--tx2);
+  border: 1px solid var(--bd);
+}
+.theme-console .composer-bench__tag:hover { border-color: var(--ac-line); color: var(--tx); }
+.theme-console .composer-bench__tag--on {
+  background: var(--s2);
+  color: var(--tx);
+  border-color: var(--tx2);
+}
+
+/* ★ in place of the tone dot: neutral ink, so it never reads as a status. */
+.theme-console .bench-item__star { flex: none; color: var(--tx2); }
 
 /* ─── Inspector: the fields are now editable ─── */
 .theme-console .field-input {
@@ -1539,7 +1584,7 @@
      var(--xy-background-pattern-color-props, var(--xy-background-pattern-color,
      …-dots-color-default)) }`); `--xy-background-pattern-dots-color` is not
      read anywhere and left the grid on the library's #91919a. */
-  --xy-background-pattern-color: var(--bd2);
+  --xy-background-pattern-color: var(--canvas-dot);
   --xy-edge-stroke: var(--tx3);
   --xy-edge-stroke-selected: var(--ac-str);
   --xy-edge-stroke-width: 1.5;

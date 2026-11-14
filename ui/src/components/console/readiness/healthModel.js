@@ -99,7 +99,7 @@ const SPEC = [
     purpose: 'every scenario external_tools[].adapter_ref resolves through this',
     remediation:
       '0 adapter packs loaded — tools/ is missing from this deployment (core/Dockerfile must '
-      + 'COPY tools/). Every adapter_ref will be unresolvable and the payload shelf can stage nothing.',
+      + 'COPY tools/). Every adapter_ref will be unresolvable and no tool can be made ready.',
   },
   {
     key: 'uctc_registry', label: 'UC / TC index', countKey: 'count', zeroIsBad: true, required: true,
@@ -114,11 +114,11 @@ const SPEC = [
     remediation: '0 EAL plugins registered — the Traffic/EAL destination cannot run a campaign.',
   },
   {
-    key: 'payload_shelf', label: 'Payload shelf', countKey: 'staged', zeroIsBad: false, required: true,
-    purpose: 'tools this SimCore serves to the target instead of the public internet',
+    key: 'payload_shelf', label: 'Tool readiness', countKey: 'staged', zeroIsBad: false, required: true,
+    purpose: 'tools this instance supplies to the target itself',
     remediation:
-      'Adapter packs declare staged artifacts that are not on the shelf. Scenarios binding them '
-      + 'refuse at compose with PAYLOAD_NOT_STAGED. Fix: ./scripts/build-payloads.sh, then rebuild.',
+      'Some declared tools are not ready on this instance. Scenarios that need them are refused '
+      + 'at launch (PAYLOAD_NOT_STAGED). Fix: ./scripts/build-payloads.sh, then rebuild.',
   },
   {
     key: 'agent_binaries', label: 'Beacon binaries', countKey: null, zeroIsBad: false, required: true,
@@ -187,9 +187,9 @@ const SPEC_BY_KEY = new Map(SPEC.map((s) => [s.key, s]))
 /** Why a required component might be missing from THIS SimCore's response. */
 const GAP_REASON = {
   payload_shelf:
-    'This SimCore\'s /api/health does not report a payload_shelf component, so the console '
-    + 'cannot tell you from here whether declared artifacts are staged. Tools & Payloads reads '
-    + '/api/shelf directly and is authoritative.',
+    'This instance\'s /api/health does not report tool readiness, so the console cannot tell '
+    + 'you from here whether declared tools are ready. Packages reads it directly and is '
+    + 'authoritative.',
   agent_binaries:
     'This SimCore\'s /api/health does not report an agent_binaries component, so the console '
     + 'cannot tell you which OS a target can enrol from until you try.',
@@ -268,9 +268,9 @@ export function normalizeComponent(key, raw) {
     if (declared !== null && staged !== null && (staged < declared || unpinned > 0)) {
       status = HS.DEGRADED
       disagreement =
-        `This SimCore reported \`ok\` with ${staged}/${declared} artifacts staged`
-        + `${unpinned > 0 ? ` and ${unpinned} unpinned` : ''}. Anything not on the shelf is fetched `
-        + 'by the TARGET from the public internet at run time.'
+        `This instance reported \`ok\` with ${staged}/${declared} declared tools ready`
+        + `${unpinned > 0 ? ` and ${unpinned} unpinned` : ''}. Anything not ready is installed `
+        + 'by the TARGET itself, which needs internet access.'
     }
   }
 

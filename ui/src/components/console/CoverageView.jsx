@@ -131,7 +131,7 @@ export default function CoverageView({ onNavigate } = {}) {
                 </span> run / no detection
                 {' · '}<span className="mono coverage-color-muted">
                   {data.summary.not_run}
-                </span> staged
+                </span> not run
               </>
             ) : (
               'click a cell to filter Operations to scenarios that exercise that technique'
@@ -229,7 +229,7 @@ function CoverageKpis({ summary }) {
     },
     {
       key: 'staged', tone: '', value: String(summary.not_run || 0),
-      label: 'Staged', note: 'scenario library covers this technique, not yet run',
+      label: 'Not run', note: 'the scenario library covers this technique; no run has exercised it',
     },
     {
       key: 'total', tone: '', value: String(total),
@@ -254,7 +254,7 @@ function CoverageSummaryBar({ summary }) {
   const segs = [
     { key: 'detected',         label: 'Detected',            count: summary.detected || 0,         color: 'var(--c-detected)' },
     { key: 'run_not_detected', label: 'Run · no detection',  count: summary.run_not_detected || 0, color: 'var(--c-pending)'  },
-    { key: 'not_run',          label: 'Staged',               count: summary.not_run || 0,          color: 'var(--c-hairline-strong)' },
+    { key: 'not_run',          label: 'Not run',              count: summary.not_run || 0,          color: 'var(--c-hairline-strong)' },
   ]
   return (
     <>
@@ -341,7 +341,7 @@ function TechniqueCell({ technique, isSelected, onClick }) {
 const STATUS_LABEL = {
   detected:         'Detected',
   run_not_detected: 'Run — no detection',
-  not_run:          'Scenario staged · not run',
+  not_run:          'Covered by a scenario · not run',
   no_scenario:      'No scenario',
 }
 

@@ -47,7 +47,7 @@ describe('supplyOf', () => {
     expect(s.state).toBe(SUPPLY.STAGED)
     expect(s.egress).toBe('none')
     expect(s.sha256).toBe('a'.repeat(64))
-    expect(s.label).toBe('STAGED')
+    expect(s.label).toBe('READY')
   })
 
   it('reports UNSTAGED — with the host the target would reach — when declared but absent', () => {
@@ -73,7 +73,7 @@ describe('supplyOf', () => {
     const s = supplyOf(t2, shelf)
     expect(s.state).toBe(SUPPLY.NOT_APPLICABLE)
     expect(s.egress).toBe('none')
-    expect(s.egressLabel).toMatch(/submodule/)
+    expect(s.egressLabel).toBe('ships with POVengine')
   })
 
   it('reports UNKNOWN — never STAGED or UNSTAGED — when the shelf could not be read', () => {

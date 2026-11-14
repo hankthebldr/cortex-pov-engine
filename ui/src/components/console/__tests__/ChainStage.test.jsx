@@ -65,10 +65,20 @@ describe('ChainStage — preview (the scenario sheet)', () => {
     expect(left('step-03')).toBeGreaterThan(left('step-02'))
   })
 
-  it('compact: draws LAUNCH, the lanes the chain uses, and PROOF — not every lane', () => {
+  it('compact: draws only the lanes the chain uses; Start and Stop are points, not lanes', () => {
     const { container } = render(<ChainStage mode="preview" steps={SPINE} />)
     const keys = [...container.querySelectorAll('.chain-stage__lane')].map((b) => b.getAttribute('data-lane'))
-    expect(keys).toEqual(['LAUNCH', 'ENDPOINT', 'CLOUD', 'PROOF'])
+    expect(keys).toEqual(['ENDPOINT', 'CLOUD'])
+    // The two ends sit in no lane, before the first step and after the last.
+    const start = screen.getByTestId('stage-card-trigger')
+    const stop = screen.getByTestId('stage-card-proof')
+    expect(start).toHaveTextContent('Start')
+    expect(stop).toHaveTextContent('Stop')
+    expect(start).not.toHaveAttribute('data-lane')
+    expect(stop).not.toHaveAttribute('data-lane')
+    const left = (el) => parseFloat(el.style.left)
+    expect(left(start)).toBeLessThan(left(screen.getByTestId('stage-card-step-01')))
+    expect(left(stop)).toBeGreaterThan(left(screen.getByTestId('stage-card-step-03')))
   })
 
   it('draws the declared causality, the trigger into the root and the leaf into the proof', () => {
@@ -196,13 +206,13 @@ describe('ChainStage — live (Run detail)', () => {
 })
 
 describe('ChainStage — editable (the Composer)', () => {
-  it('draws all eight bands, and a card is a button that selects its step', () => {
+  it('draws every lane, and a card is a button that selects its step', () => {
     const onSelect = vi.fn()
     const { container } = render(
       <ChainStage mode="editable" steps={SPINE} selectedId="step-02" onSelect={onSelect} />,
     )
     const keys = [...container.querySelectorAll('.chain-stage__lane')].map((b) => b.getAttribute('data-lane'))
-    expect(keys).toEqual(['LAUNCH', 'ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG', 'PROOF'])
+    expect(keys).toEqual(['ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG'])
     const two = screen.getByRole('button', { name: /step-02/ })
     expect(two).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /step-01/ })).toHaveAttribute('aria-pressed', 'false')

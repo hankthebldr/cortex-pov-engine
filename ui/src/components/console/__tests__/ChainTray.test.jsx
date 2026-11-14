@@ -197,7 +197,7 @@ describe('Build a chain — picks up the tray', () => {
     expect(setParams).toHaveBeenCalledWith({ tray: null }, { replace: true })
   })
 
-  it('the palette is tabbed Scenarios · TTP cards · Data streams · Packages', async () => {
+  it('the palette is tabbed ★ Favorites · Scenarios · TTP cards · Data streams · Packages', async () => {
     routes()
     render(
       <EnvironmentProvider>
@@ -206,10 +206,11 @@ describe('Build a chain — picks up the tray', () => {
         </ChainTrayProvider>
       </EnvironmentProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: /＋ Add/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to chain' }))
     const tabs = within(screen.getByRole('tablist', { name: 'Palette surfaces' })).getAllByRole('tab')
-    expect(tabs.map((t) => t.textContent)).toEqual(['Scenarios', 'TTP cards', 'Data streams', 'Packages'])
-    fireEvent.click(tabs[2])
+    expect(tabs.map((t) => t.getAttribute('aria-label') || t.textContent))
+      .toEqual(['Favorites', 'Scenarios', 'TTP cards', 'Data streams', 'Packages'])
+    fireEvent.click(tabs[3])
     await waitFor(() => expect(within(screen.getByTestId('composer-palette')).getByText('cloud_audit_emitter')).toBeInTheDocument())
   })
 })

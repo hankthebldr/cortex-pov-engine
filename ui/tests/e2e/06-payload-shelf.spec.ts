@@ -17,38 +17,31 @@ import { test, expect, gotoView } from './_fixtures'
  */
 
 test.describe('Tools & Payloads', () => {
-  test('destination is reachable from the rail and states where tools come from', async ({ page }) => {
+  test('destination is reachable and says what a package is', async ({ page }) => {
     await gotoView(page, 'Tools & Payloads')
     await expect(page.getByTestId('tool-adapter-catalog')).toBeVisible()
-    await expect(page.getByText(/where the bytes come from at run time/i)).toBeVisible()
+    await expect(page.getByText(/The tools a step can run/i)).toBeVisible()
   })
 
-  test('every adapter card carries a supply chip with TEXT, not just a colour', async ({ page }) => {
+  test('the catalog carries no shelf or fetch-timing vocabulary, and every card can join a chain', async ({ page }) => {
     await gotoView(page, 'Tools & Payloads')
-    const chips = page.locator('[data-testid^="supply-chip-"]')
-    await expect(chips.first()).toBeVisible()
-    const count = await chips.count()
-    expect(count).toBeGreaterThan(0)
-    for (let i = 0; i < Math.min(count, 5); i += 1) {
-      const text = (await chips.nth(i).innerText()).trim()
-      expect(['STAGED', 'NOT STAGED', 'FETCHES AT RUN TIME', 'N/A', 'UNKNOWN']).toContain(text)
-    }
+    const cards = page.locator('[data-testid^="tool-adapter-card-"]')
+    await expect(cards.first()).toBeVisible()
+    await expect(page.getByTestId('payload-shelf-banner')).toHaveCount(0)
+    await expect(page.locator('[data-testid^="supply-chip-"]')).toHaveCount(0)
+    const text = await page.getByTestId('tool-adapter-catalog').innerText()
+    expect(text).not.toMatch(/shelf|staged|fetches at run time|egress/i)
+    await expect(cards.first().getByRole('button', { name: 'Add to chain' })).toBeVisible()
   })
 
-  test('the banner counts target-host egress before the customer meeting', async ({ page }) => {
-    await gotoView(page, 'Tools & Payloads')
-    const banner = page.getByTestId('payload-shelf-banner')
-    await expect(banner).toBeVisible()
-    await expect(banner).toContainText(/on the target host, at run time|UNKNOWN|read-only/i)
-  })
-
-  test('the supply filter narrows to what still needs staging', async ({ page }) => {
+  test('a readiness link scopes the catalog and names the scope in plain words', async ({ page }) => {
     await gotoView(page, 'Payload Shelf')
     await expect(page).toHaveURL(/supply=unstaged/)
     await expect(page.getByTestId('tool-adapter-catalog')).toBeVisible()
+    await expect(page.getByTestId('adapter-supply-scope')).toContainText('tools not ready on this instance')
   })
 
-  test('a tier-4 adapter detail leads with Supply, above Upstream', async ({ page }) => {
+  test('a package detail leads with Availability, above Upstream', async ({ page }) => {
     await gotoView(page, 'Tools & Payloads')
     const card = page.locator('[data-testid^="tool-adapter-card-"]').first()
     await card.click()
@@ -59,8 +52,9 @@ test.describe('Tools & Payloads', () => {
     // is brittle — the property under test is the ORDER.
     const labels = (await page.locator('.competitive__detail-label').allInnerTexts())
       .map((t) => t.trim().toLowerCase())
-    expect(labels).toContain('supply')
-    expect(labels.indexOf('supply')).toBeLessThan(labels.indexOf('upstream'))
+    expect(labels).toContain('availability')
+    expect(labels.indexOf('availability')).toBeLessThan(labels.indexOf('upstream'))
+    expect(labels).not.toContain('install')
   })
 
   test('LinPEAS is in the catalog and stageable — Henry\'s exact journey', async ({ page, request, baseURL }) => {
@@ -88,16 +82,16 @@ test.describe('Tools & Payloads', () => {
       }),
     }))
 
-    const stageCta = page.getByRole('button', { name: /Stage on SimCore/ })
+    const stageCta = page.getByRole('button', { name: /Make ready/ })
     if (await stageCta.count()) {
       await stageCta.click()
       const dialog = page.getByTestId('stage-payload-dialog')
       await expect(dialog).toBeVisible()
       // The licence gate is real: Stage is dead until it is ticked.
-      await expect(dialog.getByRole('button', { name: /^Stage ▸$/ })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: /^Make ready ▸$/ })).toBeDisabled()
       await dialog.getByTestId('stage-license-ack').click()
-      await expect(dialog.getByRole('button', { name: /^Stage ▸$/ })).toBeEnabled()
-      await dialog.getByRole('button', { name: /^Stage ▸$/ }).click()
+      await expect(dialog.getByRole('button', { name: /^Make ready ▸$/ })).toBeEnabled()
+      await dialog.getByRole('button', { name: /^Make ready ▸$/ }).click()
       await expect(page.getByTestId('stage-done')).toBeVisible()
       await expect(page.getByTestId('stage-done')).toContainText('1,106,683 bytes')
     }
