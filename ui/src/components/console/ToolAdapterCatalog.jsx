@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import '../../styles/destinations/adapters.css'
 import { getToolAdapters, getToolAdapter } from '../../api/client.js'
 import useShelf from './useShelf.js'
-import { SUPPLY, SUPPLY_LABEL, supplyOf, shortDigest, scenarioIdsFrom } from './supplyState.js'
-import PayloadShelfBanner from './PayloadShelfBanner.jsx'
+import { SUPPLY, supplyOf, scenarioIdsFrom } from './supplyState.js'
 import StagePayloadDialog from './StagePayloadDialog.jsx'
 import PayloadComposer from './PayloadComposer.jsx'
 import ProvenanceBlock from './ProvenanceBlock.jsx'
 import Button from './kit/Button.jsx'
+import StatusIcon from './kit/StatusIcon.jsx'
 import { useChainTray, packageTrayItem } from '../../context/ChainTrayContext.jsx'
 
 /**
@@ -35,6 +35,15 @@ import { useChainTray, packageTrayItem } from '../../context/ChainTrayContext.js
  * Filters, selection and the open panel all live in URL params so a DC can send
  * a colleague "the twelve tools this POV needs, three of them unstaged".
  */
+/** `?supply=` in plain words, for the scope line. */
+const READINESS_SCOPE = {
+  [SUPPLY.STAGED]: 'tools ready on this instance',
+  [SUPPLY.UNSTAGED]: 'tools not ready on this instance',
+  [SUPPLY.RUNTIME_FETCH]: 'tools installed on the target when a step runs',
+  [SUPPLY.NOT_APPLICABLE]: 'tools provided by the lab',
+  [SUPPLY.UNKNOWN]: 'tools that could not be checked',
+}
+
 export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
   const tray = useChainTray()
   const [adapters, setAdapters] = useState([])
@@ -47,8 +56,6 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
   const selectedId    = params.tool || null
   const panel         = params.panel || null
   const filterPlane   = params.plane || 'all'
-  const filterTier    = params.tier || 'all'
-  const filterSafety  = params.safety || 'all'
   const filterCategory = params.category || 'all'
   const filterSupply  = params.supply || 'all'
   const search        = params.q || ''
@@ -74,10 +81,6 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
 
   const planes = useMemo(
     () => Array.from(new Set(adapters.flatMap((a) => a.planes || []))).sort(), [adapters])
-  const tiers = useMemo(
-    () => Array.from(new Set(adapters.map((a) => a.tier))).sort((x, y) => x - y), [adapters])
-  const safetyClasses = useMemo(
-    () => Array.from(new Set(adapters.map((a) => a.safety_class))).sort(), [adapters])
   const categories = useMemo(
     () => Array.from(new Set(adapters.map((a) => a.category))).sort(), [adapters])
 
@@ -105,8 +108,6 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
     const q = search.trim().toLowerCase()
     return adapters.filter((a) => {
       if (filterPlane    !== 'all' && !(a.planes || []).includes(filterPlane)) return false
-      if (filterTier     !== 'all' && a.tier !== Number(filterTier))           return false
-      if (filterSafety   !== 'all' && a.safety_class !== filterSafety)         return false
       if (filterCategory !== 'all' && a.category !== filterCategory)           return false
       if (filterSupply   !== 'all' && supplyByAdapter[a.adapter_id]?.state !== filterSupply) return false
       if (scopedAdapterIds && !scopedAdapterIds.has(a.adapter_id))             return false
@@ -116,11 +117,11 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
       }
       return true
     })
-  }, [adapters, filterPlane, filterTier, filterSafety, filterCategory, filterSupply,
+  }, [adapters, filterPlane, filterCategory, filterSupply,
       search, supplyByAdapter, scopedAdapterIds])
 
   const resetFilters = () => setParams({
-    plane: null, tier: null, safety: null, category: null, supply: null, q: null, scenario: null,
+    plane: null, category: null, supply: null, q: null, scenario: null,
   })
 
   const selectedSupply = selectedDetail && !selectedDetail._error
@@ -147,39 +148,30 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
 
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
-          Every offensive and defensive tool CortexSim can reference from a scenario via{' '}
-          <strong>external_tools[].adapter_ref</strong>, with the one fact a POV depends on:{' '}
-          <strong>where the bytes come from at run time</strong>. Tier-4 tools install themselves
-          from the public internet <em>on the target host</em> unless their artifact is staged on
-          this SimCore.
+          The tools a step can run. Each lists the Cortex planes and the techniques its signal
+          lands on.
         </p>
-        <div className="adapter-registry__stats">
-          <Stat value={adapters.length} label="adapters" />
-          <Stat value={shelf.counts.staged} label="staged" testid="stat-staged" />
-          <Stat value={shelf.counts.target_egress} label="target egress" testid="stat-egress" />
-          <Stat value={shelf.counts.unknown} label="unknown" testid="stat-unknown" />
-          <Stat value={visible.length} label="visible" />
-        </div>
       </div>
 
       {error && <div className="adapter-registry__error mono" role="alert">{error}</div>}
 
-      <PayloadShelfBanner
-        counts={shelf.counts}
-        shelf={shelf.shelf}
-        available={shelf.available}
-        error={shelf.error}
-        loading={shelf.loading && shelf.available === null}
-        onShowUnstaged={() => setParams({ supply: SUPPLY.UNSTAGED })}
-        onRetry={shelf.refresh}
-      />
+      {/* A link can still scope the list by readiness (`?supply=`), for example
+          from a refused launch; the scope is named in plain words and can be
+          cleared. How and when a tool reaches the host is not a filter. */}
+      {filterSupply !== 'all' && (
+        <div className="adapter-registry__scope mono" data-testid="adapter-supply-scope">
+          showing <strong>{READINESS_SCOPE[filterSupply] || filterSupply}</strong>
+          <button type="button" className="btn btn--xs" onClick={() => setParams({ supply: null })}>
+            clear
+          </button>
+        </div>
+      )}
 
       {scenarioScope && (
         <div className="adapter-registry__scope mono" data-testid="adapter-scenario-scope">
           scoped to <strong>{scenarioScope}</strong>
           {scopedAdapterIds && scopedAdapterIds.size === 0 && (
-            <> — no staged-artifact adapter is annotated as used by it, so this list is empty rather
-              than wrong</>
+            <> — no package is recorded as used by it</>
           )}
           <button type="button" className="btn btn--xs" onClick={() => setParams({ scenario: null })}>
             clear
@@ -191,7 +183,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
         <input
           type="search"
           className="adapter-registry__search-input"
-          placeholder="search tools — name, adapter id, tag"
+          placeholder="Search packages"
           aria-label="Search tool adapters"
           value={search}
           onChange={(e) => setParams({ q: e.target.value || null })}
@@ -201,20 +193,8 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
 
       <FilterRow label="plane" active={filterPlane} options={planes}
         onChange={(v) => setParams({ plane: v === 'all' ? null : v })} />
-      <FilterRow label="tier" active={filterTier} options={tiers.map(String)}
-        onChange={(v) => setParams({ tier: v === 'all' ? null : v })} formatOption={(t) => `T${t}`} />
-      <FilterRow label="safety" active={filterSafety} options={safetyClasses}
-        onChange={(v) => setParams({ safety: v === 'all' ? null : v })} />
       <FilterRow label="category" active={filterCategory} options={categories}
         onChange={(v) => setParams({ category: v === 'all' ? null : v })} />
-      <FilterRow
-        label="supply"
-        active={filterSupply}
-        options={[SUPPLY.STAGED, SUPPLY.UNSTAGED, SUPPLY.RUNTIME_FETCH, SUPPLY.NOT_APPLICABLE, SUPPLY.UNKNOWN]}
-        onChange={(v) => setParams({ supply: v === 'all' ? null : v })}
-        formatOption={(s) => SUPPLY_LABEL[s] || s}
-      />
-
       {loading ? (
         <div className="coverage__empty mono">loading tool-adapter catalog…</div>
       ) : visible.length === 0 ? (
@@ -237,7 +217,6 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
               supply={supplyByAdapter[a.adapter_id]}
               isSelected={a.adapter_id === selectedId}
               onSelect={() => setParams({ tool: a.adapter_id, panel: null })}
-              onStage={() => setParams({ tool: a.adapter_id, panel: 'stage' })}
               onAdd={() => tray.add(packageTrayItem(a))}
             />
           ))}
@@ -325,17 +304,6 @@ export function decodePlan(encoded) {
   }
 }
 
-function Stat({ value, label, testid }) {
-  return (
-    <div className="stack-coverage__stat" data-testid={testid}>
-      <div className="stack-coverage__stat-value mono">{value}</div>
-      <div className="stack-coverage__stat-label">{label}</div>
-    </div>
-  )
-}
-
-/* ─── Filter chip row ─────────────────────────────────────────────── */
-
 function FilterRow({ label, active, options, onChange, formatOption }) {
   return (
     <div className="adapter-registry__filters">
@@ -363,10 +331,9 @@ function FilterRow({ label, active, options, onChange, formatOption }) {
 
 /* ─── Card ────────────────────────────────────────────────────────── */
 
-function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage, onAdd = null }) {
+function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onAdd = null }) {
   const tids    = adapter.expected_techniques || []
   const planes  = adapter.planes || []
-  const safety  = adapter.safety_class || ''
 
   return (
     <article
@@ -381,66 +348,23 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage, onAdd
     >
       <div className="adapter-card__top">
         <span className="adapter-card__id mono">{adapter.adapter_id}</span>
-        {/* Supply first — before this work the first thing a DC read was the
-            licence, which says nothing about whether the tool will be there. */}
-        <span
-          className={supply?.chipClass || 'chip'}
-          data-testid={`supply-chip-${adapter.adapter_id}`}
-          title={supply?.egressLabel}
-        >
-          {supply?.label || SUPPLY_LABEL[SUPPLY.UNKNOWN]}
-        </span>
+        {/* The one readiness fact a card states: a tool this instance cannot
+            supply, so a run that needs it is refused. Everything else about
+            how a tool reaches the host is the system's business. */}
+        {supply?.state === SUPPLY.UNSTAGED && (
+          <span data-testid={`not-ready-${adapter.adapter_id}`}>
+            <StatusIcon status="degraded" word="Not ready" />
+          </span>
+        )}
       </div>
       <div className="adapter-card__head">
         <div className="adapter-card__name mono">{adapter.name}</div>
         <div className="adapter-card__version mono">v{adapter.version}</div>
       </div>
       <div className="adapter-card__category mono">
-        T{adapter.tier} · {adapter.category} · {adapter.target_platform || 'any'}
+        {adapter.category} · {adapter.target_platform || 'any'}
       </div>
 
-      <div className="adapter-card__supply">
-        {supply?.actionable && (
-          <button
-            type="button"
-            className="btn btn--xs"
-            data-testid={`stage-button-${adapter.adapter_id}`}
-            onClick={(e) => { e.stopPropagation(); onStage() }}
-          >
-            Stage ▸
-          </button>
-        )}
-        {/* Catalog is never a dead end (v26 §4.4): every package can be added
-            to the chain tray, and from there to Build a chain. */}
-        {onAdd && (
-          <Button
-            variant="secondary"
-            className="adapter-card__add"
-            onClick={(e) => { e.stopPropagation(); onAdd() }}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            Add to chain
-          </Button>
-        )}
-      </div>
-      <div className="adapter-card__egress mono">{supply?.egressLabel}</div>
-
-      {supply?.state === SUPPLY.STAGED && (
-        <div className="adapter-card__provenance mono">
-          sha256 {shortDigest(supply.sha256)} · {supply.license || '—'}
-          {supply.pinned === false && <span className="chip chip--pending adapter-card__unpinned">UNPINNED</span>}
-        </div>
-      )}
-
-      <div className="adapter-card__desc">
-        <span className={'chip chip--' + safetyChipVariant(safety)} title={`safety class: ${safety}`}>
-          {safety}
-        </span>
-        {' '}
-        <span className="mono adapter-card__license">
-          · {adapter.license}
-        </span>
-      </div>
       <div className="adapter-card__meta">
         {planes.length > 0 && (
           <div className="adapter-card__tids">
@@ -460,6 +384,21 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage, onAdd
           </div>
         )}
       </div>
+
+      {/* Catalog is never a dead end (v26 §4.4): every package can be added
+          to the chain tray, and from there to Build a chain. */}
+      {onAdd && (
+        <div className="adapter-card__supply">
+          <Button
+            variant="secondary"
+            className="adapter-card__add"
+            onClick={(e) => { e.stopPropagation(); onAdd() }}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            Add to chain
+          </Button>
+        </div>
+      )}
     </article>
   )
 }
@@ -485,7 +424,6 @@ function ToolAdapterDetail({
   }
 
   const invoke   = detail.invoke   || {}
-  const install  = detail.install  || {}
   const upstream = detail.upstream || {}
   const cleanup  = detail.cleanup  || {}
   const ttpRefs  = detail.ttp_refs || []
@@ -497,7 +435,7 @@ function ToolAdapterDetail({
       <div className="competitive__detail-head">
         <div>
           <div className="competitive__detail-eyebrow mono">
-            {detail.adapter_id} · v{detail.version} · tier {detail.tier}
+            {detail.adapter_id} · v{detail.version}
           </div>
           <h3 className="competitive__detail-title">{detail.name}</h3>
         </div>
@@ -507,13 +445,11 @@ function ToolAdapterDetail({
         </span>
       </div>
 
-      {/* SUPPLY FIRST. "Will this tool be there, and who has to reach the
-          internet for it" outranks the repo URL. */}
-      <DetailSection label="Supply">
+      {/* Availability first: whether a run that needs this tool can start. */}
+      <DetailSection label="Availability">
         <SupplyDetail
           supply={supply}
           detail={detail}
-          install={install}
           shelf={shelf}
           onStage={onStage}
           onCompose={onCompose}
@@ -542,23 +478,6 @@ function ToolAdapterDetail({
             ))}
           </div>
         )}
-      </DetailSection>
-
-      <DetailSection label="Install">
-        <KeyValueGrid
-          rows={[
-            ['tier',                     `${detail.tier}`],
-            ['iac_module',               install.iac_module],
-            ['source_path',              install.source_path],
-            ['runtime_install_command',  install.runtime_install_command],
-            ['binary',                   install.binary],
-            ['build_cmd',                install.build_cmd],
-            ['artifact.filename',        install.artifact?.filename],
-            ['artifact.url',             install.artifact?.url],
-            ['artifact.sha256',          install.artifact?.sha256],
-            ['artifact.stage_path',      install.artifact?.stage_path],
-          ]}
-        />
       </DetailSection>
 
       <DetailSection label="Invoke">
@@ -637,68 +556,46 @@ function ToolAdapterDetail({
   )
 }
 
-function SupplyDetail({ supply, detail, install, shelf, onStage, onCompose }) {
-  if (!supply) return <p className="mono">unknown</p>
+/** What a DC needs to know about a tool's availability, in plain words. */
+const AVAILABILITY = {
+  [SUPPLY.STAGED]: 'Ready on this instance.',
+  [SUPPLY.UNSTAGED]: 'Not ready on this instance. A run that needs this tool is refused until it is.',
+  [SUPPLY.RUNTIME_FETCH]: 'Installed on the target host when a step runs it. The target needs internet access for that.',
+  [SUPPLY.NOT_APPLICABLE]: 'Provided by the lab or your own environment.',
+  [SUPPLY.UNKNOWN]: 'Could not check from here.',
+}
+
+function SupplyDetail({ supply, detail, shelf, onStage, onCompose }) {
+  if (!supply) return <p className="mono">Could not check from here.</p>
+  const ready = supply.state === SUPPLY.STAGED
 
   return (
     <div className="supply-detail" data-testid="supply-detail">
       <div className="supply-detail__head">
-        <span className={supply.chipClass}>{supply.label}</span>
-        <span className="mono supply-detail__egress">{supply.egressLabel}</span>
+        <StatusIcon
+          status={ready ? 'up' : supply.state === SUPPLY.UNSTAGED ? 'degraded' : 'unknown'}
+          word={ready ? 'Ready' : supply.state === SUPPLY.UNSTAGED ? 'Not ready' : 'Not checked here'}
+        />
       </div>
-
-      {supply.state === SUPPLY.UNKNOWN && (
-        <p className="supply-detail__note">
-          This SimCore did not report shelf state, so this is neither &ldquo;staged&rdquo; nor
-          &ldquo;not staged&rdquo;. Do not plan egress on the strength of this card.
-        </p>
-      )}
-
-      {supply.state === SUPPLY.RUNTIME_FETCH && (
-        <>
-          <p className="supply-detail__note">
-            This tool is installed <strong>by the target host</strong> at run time, with the command
-            below. A default-deny egress policy — which is what the customers who buy Cortex run —
-            blocks it. The step then fails, or worse, runs without the tool and the absent detection
-            reads as a miss.
-          </p>
-          {install.runtime_install_command && (
-            <pre className="supply-detail__cmd mono">{install.runtime_install_command}</pre>
-          )}
-          <p className="supply-detail__note supply-detail__note--muted">
-            No <span className="mono">install.artifact</span> is declared on this pack, so the
-            console cannot stage it: the URL is never guessed out of that shell string. Most of these
-            are apt/pip/git-clone installs that are not single-file artifacts at all. Declare an
-            artifact block in <span className="mono">tools/packs/{'{tool}'}.yml</span> to make it
-            stageable.
-          </p>
-        </>
-      )}
+      <p className="supply-detail__note">{AVAILABILITY[supply.state] || AVAILABILITY[SUPPLY.UNKNOWN]}</p>
 
       {(supply.state === SUPPLY.STAGED || supply.state === SUPPLY.UNSTAGED) && (
         <ProvenanceBlock supply={supply} adapter={detail} />
       )}
 
-      {supply.state === SUPPLY.UNSTAGED && (
-        <p className="supply-detail__note">
-          The bytes are not on this SimCore, so the target fetches them itself at run time. Staging
-          moves that request onto this host, where internet egress is already accepted, and makes
-          the artifact checksummable before it reaches the customer.
-        </p>
-      )}
-
       <div className="supply-detail__actions">
-        {supply.actionable && shelf?.writable !== false && (
-          <button type="button" className="btn btn--primary btn--xs" onClick={onStage}>
-            Stage on SimCore ▸
+        {supply.actionable && (
+          <button
+            type="button"
+            className={'btn btn--xs' + (shelf?.writable !== false ? ' btn--primary' : '')}
+            onClick={onStage}
+          >
+            Make ready ▸
           </button>
         )}
-        {supply.actionable && shelf?.writable === false && (
-          <button type="button" className="btn btn--xs" onClick={onStage}>Stage offline ▸</button>
-        )}
-        {supply.state === SUPPLY.STAGED && (
+        {ready && (
           <button type="button" className="btn btn--primary btn--xs" onClick={onCompose}>
-            Compose into a run ▸
+            Use in a run ▸
           </button>
         )}
       </div>
