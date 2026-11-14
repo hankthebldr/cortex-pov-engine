@@ -277,8 +277,10 @@ export function mitreMatrix(coverage, scenarios, states, { plane = ALL, source =
  * @param {Array} scenarios
  * @param {Object} readiness   GET /api/doors/readiness `scenarios`
  * @param {Array} doorRows     GET /api/doors `doors`
+ * @param {string|null} agentId  the agent the readiness was read for; an
+ *                               agent-scoped door's state is that agent's
  */
-export function planeDoorGrid(scenarios, readiness, doorRows) {
+export function planeDoorGrid(scenarios, readiness, doorRows, agentId = null) {
   if (!Array.isArray(scenarios)) throw new Error('scenario list is not a list')
   if (!readiness || typeof readiness !== 'object' || Array.isArray(readiness)) {
     throw new Error('door readiness is not an object')
@@ -300,7 +302,7 @@ export function planeDoorGrid(scenarios, readiness, doorRows) {
     const keys = doors === null ? [NOT_CHECKED] : doors.length ? doors : [NO_DOOR]
     for (const key of keys) {
       if (key === NOT_CHECKED || key === NO_DOOR) extra.add(key)
-      else if (!cols.has(key)) cols.set(key, doorStateFor(doorRows, key))
+      else if (!cols.has(key)) cols.set(key, doorStateFor(doorRows, key, agentId))
       const cell = (row.cells[key] = row.cells[key] || { ids: [], detections: 0 })
       cell.ids.push(id)
       if (doors && doors.length) {
@@ -309,8 +311,12 @@ export function planeDoorGrid(scenarios, readiness, doorRows) {
       }
     }
   }
+  // Doors in the registry's order (GET /api/doors lists them that way); a door
+  // id the rows do not name follows, A→Z.
+  const registryOrder = [...new Set((Array.isArray(doorRows) ? doorRows : []).map((d) => d && d.door_id).filter(Boolean))]
+  const rank = (id) => (registryOrder.includes(id) ? registryOrder.indexOf(id) : registryOrder.length)
   const columns = [...cols.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (rank(a) - rank(b)) || a.localeCompare(b))
     .map(([id, st]) => ({ id, label: st.label, state: st.state, rung: st.rung }))
   if (extra.has(NO_DOOR)) columns.push({ id: NO_DOOR, label: 'No door listed', state: null, rung: null })
   if (extra.has(NOT_CHECKED)) columns.push({ id: NOT_CHECKED, label: 'Not checked', state: null, rung: null })

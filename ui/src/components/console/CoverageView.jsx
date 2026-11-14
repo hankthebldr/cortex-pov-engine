@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getDoorReadiness, getDoors, getRuns, getScenarios } from '../../api/client.js'
+import { agentIdOf } from '../../api/ids.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
@@ -546,25 +548,30 @@ const DOOR_SUB = {
 }
 
 function DoorsPanel({ scenarios, states }) {
+  // The agent the header has selected, as on Scenarios: agent doors are read
+  // for it, and are not evaluated when there is none.
+  const { agent } = useEnvironment()
+  const agentId = agentIdOf(agent)
   const [doors, setDoors] = useState({ loading: true })
   const [pickKey, setPickKey] = useState(null)
 
   useEffect(() => {
     let live = true
-    Promise.all([getDoorReadiness(), getDoors()])
+    setDoors({ loading: true })
+    Promise.all([getDoorReadiness(agentId), getDoors()])
       .then(([readiness, rows]) => { if (live) setDoors({ readiness, rows }) })
       .catch((err) => { if (live) setDoors({ error: errText(err, 'the doors did not load') }) })
     return () => { live = false }
-  }, [])
+  }, [agentId])
 
   const built = useMemo(() => {
     if (!doors.readiness) return null
     try {
-      return { grid: planeDoorGrid(scenarios, doors.readiness.scenarios, doors.rows?.doors) }
+      return { grid: planeDoorGrid(scenarios, doors.readiness.scenarios, doors.rows?.doors, agentId) }
     } catch (err) {
       return { error: errText(err, 'unrecognised door readiness') }
     }
-  }, [doors, scenarios])
+  }, [doors, scenarios, agentId])
 
   if (doors.loading) return <p className="dash__empty" role="status">Loading doors…</p>
   if (doors.error || built?.error) {
@@ -608,6 +615,10 @@ function DoorsPanel({ scenarios, states }) {
         Scenarios on each plane waiting on each door that is not open. A door nobody has checked is
         not open either, and a scenario waiting on two doors is counted under both. Doors decide
         whether a detection can fire, never whether it is scored.
+        {doors.readiness.agent_scoped_evaluated === false && (
+          <> No agent is selected, so agent doors such as the XDR agent are not evaluated and the
+            scenarios that need them read Not checked.</>
+        )}
       </p>
       <div className="dash__split">
         <div className="dash__card dash__scroll">

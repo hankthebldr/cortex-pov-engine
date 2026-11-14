@@ -24,6 +24,7 @@ import {
   runState, scenarioStates, sourceUseCaseGrid, stateOf, useCaseOf,
 } from '../dashboardModel.js'
 import { navGroups, getDestination } from '../../../app/destinations.jsx'
+import { EnvironmentContext, DEFAULT_ENV } from '../../../context/EnvironmentContext.jsx'
 
 void React
 
@@ -300,13 +301,31 @@ describe('Planes × doors', () => {
   it('renders from GET /api/doors/readiness and GET /api/doors', async () => {
     await mountOn('doors')
     const grid = await screen.findByTestId('dash-doors-grid')
-    expect(within(grid).getByRole('columnheader', { name: /XDR agent/ })).toBeInTheDocument()
-    expect(within(grid).getByRole('columnheader', { name: /NGFW traffic logs/ })).toBeInTheDocument()
+    // Doors in the registry's order, as GET /api/doors lists them.
+    expect(within(grid).getAllByRole('columnheader').map((h) => h.textContent))
+      .toEqual(['Plane', 'XDR agent?Not checked', 'NGFW traffic logs?Not checked', 'Not checkedreadiness not reported or not judged', 'Total'])
     // No door event is written yet, so no door claims to be open.
     expect(within(grid).getAllByRole('img', { name: 'Not checked' }).length).toBe(2)
     fireEvent.click(screen.getByTestId('dash-door-EDR-xdr_agent'))
     expect(screen.getByTestId('dash-pick')).toHaveTextContent('3 detections waiting')
     expect(screen.getByTestId('dash-door-ITDR-(not checked)')).toHaveAccessibleName('ITDR · Not checked: 1 scenarios')
+  })
+
+  it('reads agent doors for the agent the header selected, and says so when there is none', async () => {
+    const fetchMock = routes()
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, agent: { agent_id: 'jb-01' } }}>
+        <CoverageView params={{ tab: 'doors' }} />
+      </EnvironmentContext.Provider>,
+    )
+    await screen.findByTestId('dash-doors-grid')
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/api/doors/readiness?agent_id=jb-01'))).toBe(true)
+
+    routes({
+      'GET /api/doors/readiness': { registry_loaded: true, agent_scoped_evaluated: false, scenarios: {} },
+    })
+    render(<CoverageView params={{ tab: 'doors' }} />)
+    expect(await screen.findByText(/No agent is selected, so agent doors/)).toBeInTheDocument()
   })
 
   it('an absent requirement registry is degraded, not an empty grid', async () => {
