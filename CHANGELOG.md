@@ -372,6 +372,16 @@ line. The error badge ("5 not ok") is greyscale and sized like a button; only
 its "!" carries the gold or coral accent, so it no longer reads as a filled
 alarm next to the action it describes.
 
+### Fixed — the ANALYTICS plane is no longer PANW orange
+
+Design v26 keeps PANW orange for the NGFW family tint alone, but the
+ANALYTICS plane (the correlation engine) still used it as its categorical
+tint, so analytics lanes, dots and chips read as firewall. ANALYTICS now uses
+the DS ink-400 (`#9A9A9A`), a neutral for the engine that sits over every
+plane rather than a sensor. The tokens and the plane vocabulary
+(`povdata/planes.js`) agree, and the drift guard now pins it and asserts it is
+not orange.
+
 ### Changed — TTP cards filter by subdomain, not status or platform
 
 The TTP cards page now filters by **Subdomain** (the UC / TC index's
