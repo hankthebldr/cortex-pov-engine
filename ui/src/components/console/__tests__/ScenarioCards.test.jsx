@@ -46,8 +46,10 @@ describe('ScenarioCard anatomy', () => {
     expect(within(card).getByText('Credential Dumping')).toBeInTheDocument()
     const tags = within(card).getByTestId('scenario-card-tags')
     expect(tags).toHaveTextContent('EDR')
-    expect(tags).toHaveTextContent('UCS-EDR-01')
-    expect(tags).toHaveTextContent('TC-EDR-03')
+    // The use case and test case moved to the mapping line (UC/TC · Source · MITRE).
+    const map = within(card).getByTestId('scenario-card-map')
+    expect(map).toHaveTextContent('UCS-EDR-01')
+    expect(map).toHaveTextContent('TC-EDR-03')
     const foot = within(card).getByTestId('scenario-card-foot')
     expect(foot).toHaveTextContent(/steps\s*2/)
     expect(foot).toHaveTextContent(/detections\s*3/)
