@@ -645,31 +645,9 @@
 .theme-console .evidence .export-menu__item--primary .export-menu__item-label { color: var(--ac-ink); }
 .theme-console .evidence .export-menu__item-sub { color: var(--tx3); }
 
-/* ── Multi-run compare ────────────────────────────────────────────── */
-
-.theme-console .evidence .multirun__intro { color: var(--tx2); }
-.theme-console .evidence .multirun__run-pill {
-  background: var(--s1);
-  border-color: var(--bd2);
-  color: var(--tx2);
-}
-.theme-console .evidence .multirun__run-pill.is-picked {
-  background: var(--ac-soft);
-  border-color: var(--ac-line);
-  color: var(--tx);
-}
-.theme-console .evidence .multirun__kpi-pct { color: var(--tx); }
-.theme-console .evidence .multirun__kpi-delta--up   { color: var(--ac-ink); }
-.theme-console .evidence .multirun__kpi-delta--down { color: var(--crit); }
-.theme-console .evidence .multirun__cell--detected { background: var(--ac-soft); color: var(--ac-ink); }
-.theme-console .evidence .multirun__cell--missed   { background: color-mix(in srgb, var(--crit) 16%, transparent); color: var(--crit); }
-.theme-console .evidence .multirun__cell--pending  { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
-.theme-console .evidence .multirun__cell--prevented { background: var(--ac-soft); color: var(--ac-ink); }
-.theme-console .evidence .multirun__cell--not-reached,
-.theme-console .evidence .multirun__cell--not-executed { background: transparent; color: var(--tx2); }
-.theme-console .evidence .multirun__cell--detected-not-prevented { background: color-mix(in srgb, var(--crit) 16%, transparent); color: var(--crit); }
+/* ── Multi-run compare: the prevention delta table (the grid is
+   destinations/run-compare.css) ─────────────────────────────────── */
 .theme-console .evidence .multirun__matrix th { color: var(--tx3); }
-.theme-console .evidence .multirun__row-desc { color: var(--tx2); }
 
 /* ───────────────────────────────────────────────────────────────────
    NarrativeTimeline.jsx — the Live-tab hero kill-chain timeline
