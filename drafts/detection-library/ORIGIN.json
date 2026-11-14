@@ -2511,14 +2511,6 @@
   "scenario_file": "scenarios/edr/edr-337-linux-ssh-authentication-brute-force-attempts.yml",
   "scenario_id": "SIM-EDR-337"
  },
- "TTP-0000-0317": {
-  "card_file": "detection_scanner/ttps/TTP-2026-0500-sim-edr-338.json",
-  "card_id": "TTP-2026-0500",
-  "from": "PR #229 @ 46df794d",
-  "hash_iocs_dropped": 1,
-  "scenario_file": "scenarios/edr/edr-338-linux-sudoedit-brute-force-attempt.yml",
-  "scenario_id": "SIM-EDR-338"
- },
  "TTP-0000-0318": {
   "card_file": "detection_scanner/ttps/TTP-2026-0501-sim-edr-339.json",
   "card_id": "TTP-2026-0501",

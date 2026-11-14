@@ -71,7 +71,8 @@ def test_the_corpus_is_the_expected_size(parsed):
     # 201 -> 202 on 2026-11-13: SIM-EDR-027 (compressed-archive exfiltration attempt over SSH, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
     # 202 -> 203 on 2026-11-13: SIM-EDR-026 (crond masquerade from a scratch path, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
     # 203 -> 204 on 2026-11-13: SIM-EDR-029 (sshpass credential-stuffing burst against a .invalid host, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
-    assert len(parsed) == 204
+    # 204 -> 205 on 2026-11-13: SIM-EDR-028 (sudoedit burst in the CVE-2021-3156 probe form, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
+    assert len(parsed) == 205
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

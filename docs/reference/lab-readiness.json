@@ -1364,6 +1364,35 @@
       "delivery": "agent",
       "detection_steps_without_signal": 0,
       "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Sudoedit Execution Burst \u2014 the CVE-2021-3156 Probe Form (sudoedit -s /) Run Sixty Times in About a Minute",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "sudo",
+        "sudoedit"
+      ],
+      "scenario_id": "SIM-EDR-028",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
         "ABIOC",
         "XQL",
         "Correlation"
@@ -6066,7 +6095,7 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 171,
+      "GREEN": 172,
       "RED": 5,
       "YELLOW": 28
     },
@@ -6074,7 +6103,7 @@
     "eal_delivered": 72,
     "scenarios_consent_gated": 5,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 204,
+    "scenarios_total": 205,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -6082,6 +6111,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 847
+    "total_steps": 850
   }
 }

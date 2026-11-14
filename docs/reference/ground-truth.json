@@ -36,22 +36,22 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1535,
-    "catalog_detections": 2326,
+    "abioc_analytics_share": 0.153,
+    "catalog_detections": 2336,
     "catalog_detections_by_kind": {
       "abioc": 174,
-      "analytics": 365,
+      "analytics": 366,
       "bioc": 382,
-      "correlation": 221,
+      "correlation": 222,
       "ioc": 475,
       "modeling": 5,
       "prevention": 3,
-      "xql": 701
+      "xql": 709
     },
-    "correlation_share": 0.1022,
+    "correlation_share": 0.1025,
     "detection_planes": 16,
     "methodology_family_counts": {
-      "F1": 140,
+      "F1": 141,
       "F10": 2,
       "F2": 29,
       "F3": 9,
@@ -63,8 +63,8 @@
       "F9": 3
     },
     "mitre_distinct_base_techniques": 128,
-    "mitre_distinct_techniques": 240,
-    "scenarios_loadable": 204,
+    "mitre_distinct_techniques": 241,
+    "scenarios_loadable": 205,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
@@ -76,7 +76,7 @@
       "CLOUD_APP": 10,
       "CSPM": 5,
       "DLP": 5,
-      "EDR": 28,
+      "EDR": 29,
       "EMAIL": 5,
       "ITDR": 20,
       "KOI": 12,
@@ -84,17 +84,17 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1448,
+    "step_detections": 1453,
     "step_detections_by_type": {
       "ABIOC": 166,
       "Analytics": 56,
       "BIOC": 374,
-      "Correlation": 148,
+      "Correlation": 149,
       "IOC": 119,
       "Prevention": 2,
-      "XQL": 583
+      "XQL": 587
     },
-    "ttp_cards": 202
+    "ttp_cards": 203
   },
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
@@ -103,11 +103,11 @@
       "G-01": 0,
       "G-02": 2,
       "G-03": 0,
-      "G-04": 1079,
+      "G-04": 1084,
       "G-05": 0
     },
-    "scenarios_analyzed": 204,
-    "step_detections_analyzed": 1448
+    "scenarios_analyzed": 205,
+    "step_detections_analyzed": 1453
   },
   "http_routes": {
     "apirouter_instances": 30,
@@ -124,7 +124,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.163,
+    "hq_share": 0.1624,
     "hq_signals": 236,
     "indicators": 95,
     "indicators_not_in_band": 11,
@@ -141,11 +141,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1157,
+    "marker_only_share": 0.1153,
     "marker_only_steps": 98,
     "scenarios_with_indicators": 16,
-    "step_detections": 1448,
-    "steps": 847,
+    "step_detections": 1453,
+    "steps": 850,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -179,7 +179,7 @@
     },
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
-    "payload_resolved": 204,
+    "payload_resolved": 205,
     "payload_unresolved": 0,
     "plt_assertions": {
       "artifacts": 7,

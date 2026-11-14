@@ -427,6 +427,10 @@
     "bash": "207780c4def2ef0c0b359822685b5eaffba02a357cb991579885473d62e8af7b",
     "powershell": null
   },
+  "SIM-EDR-028": {
+    "bash": "f5d40c8f00b23cd8dca15548d15fa7ed7fd6ce273904a7dff4a32f8ac6234bcd",
+    "powershell": null
+  },
   "SIM-EDR-029": {
     "bash": "7093b802032895f66562990f9330246630c208da0d6e568854f4f6630f19685f",
     "powershell": null

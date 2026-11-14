@@ -138,6 +138,13 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "was exfiltrated over SSH' is hunt content only (no SSH session is opened; Informational). "
         "TC-EDR-05 is already evidenced — depth, not new index breadth. TC-DLP-01 is left off on "
         "purpose: nothing here inspects content."),
+    "SIM-EDR-028": (["TC-EDR-05"], REMAP,
+        "Sudoedit execution burst — sixty real starts of the harmless CVE-2021-3156 probe form "
+        "(sudoedit -s /) on one causality chain, declared as process-start validation rows plus the "
+        "operator-installed count correlation CR-EDR-0028, not a malware verdict (so TC-EDR-03 is "
+        "not claimed). The built-in 'Sudoedit Brute force attempt' alert is hunt-only: it judges the "
+        "count against a trained baseline. TC-EDR-05 is already evidenced — depth, not new index "
+        "breadth."),
     "SIM-EDR-029": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "sshpass credential-stuffing burst at a .invalid name — six real sshpass runs around the "
         "OpenSSH client, declared against the built-in single-event Analytics BIOC 'Suspicious "

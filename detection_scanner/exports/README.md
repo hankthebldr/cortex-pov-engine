@@ -207,5 +207,6 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0551` | Pink (CL-CRI-1147) — Vishing, Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion | [xql](xql/TTP-2026-0551.xql), [correlation](correlation/TTP-2026-0551.json) |
 | `TTP-2026-0552` | Linux crond Masquerade — the Shell Copied and Renamed to crond in a Scratch Directory, Then Run From That Path | [sigma](sigma/TTP-2026-0552.yml), [xql](xql/TTP-2026-0552.xql), [correlation](correlation/TTP-2026-0552.json) |
 | `TTP-2026-0553` | Linux Archive-Then-SSH Exfiltration Attempt — tar and gzip Archive Handed to scp and Piped to ssh (.invalid host, fails by design) | [xql](xql/TTP-2026-0553.xql), [correlation](correlation/TTP-2026-0553.json) |
+| `TTP-2026-0554` | Sudoedit Execution Burst on a Linux Host — the CVE-2021-3156 Probe Form (sudoedit -s /) Repeated | [xql](xql/TTP-2026-0554.xql), [correlation](correlation/TTP-2026-0554.json) |
 | `TTP-2026-0555` | sshpass Credential-Stuffing Burst Against an Unreachable Host | [sigma](sigma/TTP-2026-0555.yml), [xql](xql/TTP-2026-0555.xql), [correlation](correlation/TTP-2026-0555.json) |
 

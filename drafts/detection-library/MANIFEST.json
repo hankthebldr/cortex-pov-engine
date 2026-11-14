@@ -1,13 +1,13 @@
 {
  "generated_by": "scripts/detdev/manifest.py",
  "summary": {
-  "pairs": 363,
+  "pairs": 362,
   "by_platform": {
-   "linux": 53,
+   "linux": 52,
    "windows": 310
   },
   "by_source": {
-   "cortex analytics alert": 303,
+   "cortex analytics alert": 302,
    "not recorded": 60
   },
   "declared_rows": {
@@ -15,7 +15,7 @@
    "Prevention": 0,
    "ABIOC": 80,
    "Analytics": 43,
-   "BIOC": 865,
+   "BIOC": 861,
    "XQL": 9
   },
   "pairs_by_finding": {
@@ -33,7 +33,6 @@
   },
   "pairs_with_no_finding": [
    "TTP-0000-0315",
-   "TTP-0000-0317",
    "TTP-0000-0318",
    "TTP-0000-0323"
   ]
@@ -7126,26 +7125,6 @@
    "findings": [
     "commands name a routable host: github.com"
    ]
-  },
-  {
-   "card": "TTP-0000-0317",
-   "scenario": "SIM-DRAFT-317",
-   "name": "Sudoedit Brute Force Attack via Automated Script",
-   "platform": "linux",
-   "source": {
-    "alert": "Sudoedit Brute force attempt",
-    "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/sudoedit-brute-force-attempt"
-   },
-   "techniques": [
-    "T1059.003",
-    "T1110.001",
-    "T1078.004"
-   ],
-   "steps": 4,
-   "rows": {
-    "BIOC": 4
-   },
-   "findings": []
   },
   {
    "card": "TTP-0000-0318",
