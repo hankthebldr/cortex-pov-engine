@@ -98,7 +98,7 @@ step-01 removed before it did anything else.
 **SIM-EDR-029 (sshpass credential-stuffing burst).**
 
 - **The run itself:** 3/3 steps rc 0. Six sshpass runs (three `-p`, three `-f`); every `ssh` reported it could not resolve `ssh-gw.cortexsim-canary.invalid` and ended 255. No session opened.
-- **XQL rows:** Tier-2 verify at 02:58 (about 6.5 minutes after the run) passed step-01 and both step-02 rows. The step-03 `rm` row read `fail` on that pass because the `rm` event had not been ingested yet (finding F1): a direct query for it returned 0 rows at 02:59 and the event landed only after 03:00. A re-verify once it landed is recorded in the run ledger.
+- **XQL rows:** Tier-2 verify at 02:58 and again at 03:10 passed step-01 and both step-02 rows. The step-03 `rm` row read `fail` both times. Read back directly at 03:13 (29 minutes after the run): the run's recorded telemetry ends at 02:51:05 (a step-02 sshpass start), all in one upload batch inserted at 02:53:46, and nothing after that arrived — not the rest of step-02 and not step-03's `rm` of the candidate list. This is the dropped-tail pattern of finding F2, not ingest lag. It is NOT that `rm` on the sandbox is unrecordable: step-01's own `rm -rf` of the sandbox was recorded at 02:50:15. So the row is left declared, flagged: a re-run is needed to tell a one-off telemetry cutoff from a reliable drop. If it drops again, the row should go the way SIM-EDR-027's gzip row did.
 - **ABIOC and correlation:** held neutral (no installed alert or rule to match).
 - **Built-in alert:** "Suspicious sshpass command execution" needs the installed alert to be observed; the row's query matched the six real sshpass starts.
 
@@ -111,10 +111,11 @@ step-01 removed before it did anything else.
 - SimCore's Tier-2 verify, called 97 s after a run ended, wrote `fail` on rows whose events were not ingested yet, then refused a re-verify for 600 s.
 - Rule now written into the scenarios: verify no sooner than six minutes after the run completes.
 
-**F2. The agent stops recording part-way through a burst.**
+**F2. The agent stops recording part-way through a run.**
 
 - SIM-EDR-028 kept the first 28 of 60 identical process starts.
 - SIM-EDR-027 kept tar's burst and then nothing for the rest of its step.
+- SIM-EDR-029's recorded telemetry ended at 02:51:05, mid-run: step-03's `rm` of the candidate list (run end 02:51:47) never arrived, 29 minutes later. `rm` is recordable (step-01's was), so this is a cutoff, not an unrecordable command.
 - The cause is not established.
 - Every count-based row should keep a margin, and its first lab run should read the recorded count back.
 
