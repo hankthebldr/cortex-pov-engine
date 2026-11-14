@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-11-13 |
-| Status | Proposed. Decisions D-1 to D-6 (§8) are Henry's. |
+| Status | Approved 2026-11-13: D-1 to D-6 (§8) as recommended. Slice 1 started on `fix/api-launch-dry-run`. |
 | Base | `dev` 48f3dfcd |
 | Relates to | v26 handoff (`docs/design/2026-11-13-v26-design-to-code.md` §4.2–4.5, §11), #217, #227 (Task 27), SEC-01 |
 
