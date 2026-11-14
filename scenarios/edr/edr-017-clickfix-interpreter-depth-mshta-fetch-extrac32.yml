@@ -232,9 +232,11 @@ steps:
       Write-Host 'cortexsim-edr-017-cr-edr-0017-stitched-lumma-loader-incident'
       # Last step: a pull run never executes scenario cleanup, so the stage
       # directory steps 01-02 wrote is removed here.
-      # Directory.Delete leaves $LASTEXITCODE alone and never follows a junction.
-      $s = Join-Path $env:TEMP 'cortexsim-edr-017'
-      if (Test-Path -LiteralPath $s) { try { [System.IO.Directory]::Delete($s, $true) } catch { Write-Warning ('could not remove {0}: {1}' -f $s, $_.Exception.Message) } }
+      # rmdir removes a junction itself, never what it points to. No native command
+      # ran earlier in this step, so its exit code is set back to 0: a folder that
+      # will not go is residue, not a failed step.
+      if (Test-Path -LiteralPath ($s = Join-Path $env:TEMP 'cortexsim-edr-017')) { cmd.exe /c rmdir /s /q "$s" }
+      $global:LASTEXITCODE = 0
     identity: user
     mitre_technique: "T1059.003"
     # Terminal stitch — joins the endpoint loader lineage (steps 01-03) to the

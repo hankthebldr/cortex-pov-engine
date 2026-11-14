@@ -146,8 +146,10 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   `%TEMP%` has a space, as before. In-step removals use
   `[System.IO.Directory]::Delete`, which neither follows a junction nor
   touches `$LASTEXITCODE`, so a native command that failed earlier in the step
-  still fails it. Cleanup lines use `rd /s /q`, and SIM-EDR-003's restore runs
-  only when its folder passes the same check.
+  still fails it; SIM-EDR-017's last step, which runs no native command before
+  it, uses `rmdir` and sets the exit code back. Cleanup lines use `rd /s /q`,
+  and SIM-EDR-003's restore runs only when its folder passes the same check,
+  and starts with `Set-Variable` so the bash bundle withholds it as Windows.
 - **How it is proven.** The text test pins the create and check forms for all
   eighteen Windows folders and fails 16 cases on the old text. The `windows`
   CI job's `sandbox` phase runs every creating step's guard against a planted

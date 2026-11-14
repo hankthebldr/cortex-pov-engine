@@ -328,8 +328,8 @@
     "powershell": null
   },
   "SIM-EDR-003": {
-    "bash": "96ebe83d759e54ef339807857d55be2a498eaaa55aa3d17e352faceb3aeebb4b",
-    "powershell": "83a2bfb9f81640b6445854ad97dae14d4c934ee5a0dccadd31147ee7c6f321d3"
+    "bash": "666201633be08e1b852f32295d8029ec759a31e8f6447e6397f56e1e23affbc9",
+    "powershell": "18b73f3d218172a369dcc1bcd09caf926be58bec4b0a5e51b15e00b5fe9d35bb"
   },
   "SIM-EDR-004": {
     "bash": "9ad04c252e00fe2988da08d2c961d8068f23b2d522d551087bc477bf1921a0f9",
@@ -385,7 +385,7 @@
   },
   "SIM-EDR-017": {
     "bash": null,
-    "powershell": "9786e8e979593915b381bf49299c81c739c8d202d86e93e130b77ab8ccc1a4f4"
+    "powershell": "8b0f3a6f08d6e7e18fe1d39e7641a452804bfd275ace4e0911c0f0eeb514a8bf"
   },
   "SIM-EDR-018": {
     "bash": "5c997d0bc8f5569b2611123d94754883fb38e41f39469d9dbcc253e7357fab1e",
