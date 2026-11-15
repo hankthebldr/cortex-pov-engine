@@ -8,7 +8,10 @@
  * real detections and were shown nowhere. They are not coverage: Detection
  * Accuracy counts expected rows only, and the one line of copy says so.
  *
- * One line per alert: name · source · step · time. No alerts, no section.
+ * One line per alert: name · source · step · time. Alerts that are the same
+ * on the page (same name, severity, source and step) share a line with a
+ * count, "Staged Malware Activity ×4", at the time of the first; the title
+ * still counts every alert. No alerts, no section.
  */
 import React from 'react'
 import { absoluteTime } from './runRows.js'
@@ -26,8 +29,37 @@ function isoInstant(value) {
 }
 
 /**
+ * One entry per distinct alert, in first-seen order: `{ alert, count }`, where
+ * `alert` is the first of its kind. Two alerts are the same kind when their
+ * name, severity, source and step all agree.
+ *
+ * @param {Array<object>} alerts
+ * @returns {Array<{ alert: object, count: number, key: string }>}
+ */
+export function groupAlerts(alerts) {
+  const groups = []
+  const byKey = new Map()
+  for (const alert of alerts) {
+    const key = JSON.stringify([
+      alert.alert_name ?? null, alert.severity ?? null,
+      alert.alert_source ?? null, alert.step_id ?? null,
+    ])
+    const group = byKey.get(key)
+    if (group) {
+      group.count += 1
+    } else {
+      const first = { alert, count: 1, key }
+      byKey.set(key, first)
+      groups.push(first)
+    }
+  }
+  return groups
+}
+
+/**
  * @param {{ alerts?: Array<{alert_external_id?: string, alert_name?: string,
- *   alert_source?: string, step_id?: string, observed_at?: string}> }} props
+ *   alert_source?: string, severity?: string, step_id?: string,
+ *   observed_at?: string}> }} props
  */
 export default function AlsoRaised({ alerts = [] }) {
   const list = Array.isArray(alerts) ? alerts : []
@@ -37,12 +69,12 @@ export default function AlsoRaised({ alerts = [] }) {
       <h2 className="also-raised__title">{ALSO_RAISED_TITLE} ({list.length})</h2>
       <p className="also-raised__note">{ALSO_RAISED_NOTE}</p>
       <ul className="also-raised__list">
-        {list.map((a, i) => (
-          <li
-            key={a.alert_external_id || `${a.observed_at}-${a.alert_name}-${i}`}
-            className="also-raised__item"
-          >
-            <span className="also-raised__name">{a.alert_name || 'Unnamed alert'}</span>
+        {groupAlerts(list).map(({ alert: a, count, key }) => (
+          <li key={key} className="also-raised__item">
+            <span className="also-raised__name">
+              {a.alert_name || 'Unnamed alert'}
+              {count > 1 && <span className="also-raised__count"> ×{count}</span>}
+            </span>
             <span className="also-raised__sep" aria-hidden="true"> · </span>
             <span>{a.alert_source || 'source unknown'}</span>
             <span className="also-raised__sep" aria-hidden="true"> · </span>

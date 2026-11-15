@@ -824,7 +824,9 @@ is 0***: nothing on this path has delivered to a live tenant.
   reconcile writes. **Neither is in `coverage`**, which measures the expected rows.
   `alerts_reviewed_at` is `null` until such a reconcile has run: an empty list with a
   `null` there means "not reviewed", not "none". The console's Results page renders the
-  first list as "Also raised by Cortex (N)".
+  first list as "Also raised by Cortex (N)", one line per alert; alerts with the same
+  name, severity, source and step share a line with a count ("… ×4"), and N still
+  counts every alert.
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
   `observed_at - executed_at`); `observed=false` clears `observed_at`.
 - `validate` is an operator **attestation** and writes `outcome`: `observed=true` on a

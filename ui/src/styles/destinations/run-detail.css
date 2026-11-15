@@ -1133,6 +1133,7 @@
   overflow-wrap: anywhere;
 }
 .theme-console .also-raised__name { color: var(--tx); font-weight: 600; }
+.theme-console .also-raised__count { color: var(--tx2); font-weight: 400; }
 .theme-console .also-raised__sep { color: var(--tx3); }
 
 /* ───────────────────────────────────────────────────────────────────

@@ -5,7 +5,8 @@
  *
  * The server lists them on /api/results/{run_id} as `additional_detections`;
  * the section is one line per alert (name · source · step · time), with the
- * count in its title and one line saying they are not coverage.
+ * count in its title and one line saying they are not coverage. Alerts that
+ * are the same on the page share a line with a count.
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -65,6 +66,56 @@ describe('AlsoRaised', () => {
     const { container } = render(<AlsoRaised alerts={[]} />)
     expect(container).toBeEmptyDOMElement()
     expect(render(<AlsoRaised />).container).toBeEmptyDOMElement()
+  })
+})
+
+describe('AlsoRaised: identical alerts share a line', () => {
+  // SIM-KOI-005 on the sweep: the agent raised one alert four times in a second.
+  const staged = (id, extra = {}) => ({
+    alert_external_id: id, alert_name: 'Staged Malware Activity - 2149710479',
+    alert_source: 'XDR Agent', severity: 'high', techniques: ['T1567.004'],
+    step_id: 'step-03', observed_at: '2026-11-15T05:58:15', ...extra,
+  })
+
+  it('collapses them to one line with a count, and the title still counts every alert', () => {
+    render(<AlsoRaised alerts={['1502496', '1502495', '1502494', '1502492'].map((id) => staged(id))} />)
+    expect(screen.getByRole('heading', { name: 'Also raised by Cortex (4)' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Staged Malware Activity - 2149710479 ×4 · XDR Agent · step-03 · 2026-11-15 05:58:15 UTC',
+    ])
+  })
+
+  it('shows the time of the first when the repeats are seconds apart', () => {
+    render(<AlsoRaised alerts={[
+      staged('a', { observed_at: '2026-11-15T05:58:15' }),
+      staged('b', { observed_at: '2026-11-15T05:58:19' }),
+    ]} />)
+    expect(screen.getByRole('listitem').textContent)
+      .toBe('Staged Malware Activity - 2149710479 ×2 · XDR Agent · step-03 · 2026-11-15 05:58:15 UTC')
+  })
+
+  it('keeps apart alerts that differ in name, severity, source or step', () => {
+    render(<AlsoRaised alerts={[
+      staged('a'),
+      staged('b', { alert_name: 'Staged Malware Activity - 4238392387' }),
+      staged('c', { severity: 'medium' }),
+      staged('d', { alert_source: 'XDR BIOC' }),
+      staged('e', { step_id: 'step-04' }),
+      staged('f'),
+    ]} />)
+    expect(screen.getByRole('heading', { name: 'Also raised by Cortex (6)' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Staged Malware Activity - 2149710479 ×2 · XDR Agent · step-03 · 2026-11-15 05:58:15 UTC',
+      'Staged Malware Activity - 4238392387 · XDR Agent · step-03 · 2026-11-15 05:58:15 UTC',
+      'Staged Malware Activity - 2149710479 · XDR Agent · step-03 · 2026-11-15 05:58:15 UTC',
+      'Staged Malware Activity - 2149710479 · XDR BIOC · step-03 · 2026-11-15 05:58:15 UTC',
+      'Staged Malware Activity - 2149710479 · XDR Agent · step-04 · 2026-11-15 05:58:15 UTC',
+    ])
+  })
+
+  it('a single alert carries no count', () => {
+    render(<AlsoRaised alerts={[staged('a')]} />)
+    expect(screen.getByRole('listitem').textContent).not.toContain('×')
   })
 })
 
