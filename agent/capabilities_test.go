@@ -81,13 +81,26 @@ func TestAgentCapabilities_WindowsAdvertisesElevationOnlyWhenTrue(t *testing.T) 
 // not shift as a side effect of the Windows work.
 func TestAgentCapabilities_POSIXUnchanged(t *testing.T) {
 	// Deliberately changed in the artifact-staging pass: the roster gained
-	// "artifact-fetch". The load-bearing half of this assertion is unchanged —
-	// POSIX still claims identity-harness and the exact set is still pinned, so
-	// a future capability cannot be added by accident.
+	// "artifact-fetch"; and again with the live runtime log: "live-output". The
+	// load-bearing half of this assertion is unchanged — POSIX still claims
+	// identity-harness and the exact set is still pinned, so a future
+	// capability cannot be added by accident.
 	for _, goos := range []string{"linux", "darwin"} {
 		caps := agentCapabilities(goos, false)
-		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch" {
-			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch]", goos, caps)
+		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch,live-output" {
+			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch live-output]", goos, caps)
+		}
+	}
+}
+
+// The console tells an operator when a target cannot stream ("Live output
+// needs the new beacon") from this string, so every platform that can must
+// say so.
+func TestAgentCapabilities_LiveOutputAdvertisedOnEveryPlatform(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		if !has(agentCapabilities(goos, false), "live-output") {
+			t.Errorf("agentCapabilities(%s) does not advertise live-output: %v",
+				goos, agentCapabilities(goos, false))
 		}
 	}
 }

@@ -83,6 +83,10 @@ type Task struct {
 	// the wire entirely when false, so a task for any scenario without a
 	// runtime-dependency gap is byte-identical to before this feature existed.
 	RuntimeInstallAuthorized bool `json:"runtime_install_authorized,omitempty"`
+	// LiveOutput, when SimCore sends it, asks this beacon to report each step's
+	// command before it runs and to stream its output while it runs
+	// (liveout.go). An older SimCore does not send it, and nothing new is posted.
+	LiveOutput *LiveOutput `json:"live_output,omitempty"`
 }
 
 // CgoAnchor labels the causality-chain root so the endpoint sensor's Causality
@@ -402,9 +406,9 @@ type BeaconClient struct {
 	// When 0, the client uses interval ticker polling.
 	LongPollTimeout int
 
-	// StreamOutput enables real-time line-by-line output streaming to SimCore
-	// during command execution.
-	StreamOutput bool
+	// live posts the running task's live frames (liveout.go). nil unless the
+	// task carries `live_output`.
+	live *liveSender
 
 	// execStep runs one per-step command. nil means identity.ExecuteCtxStream.
 	// Injectable so the Windows step-selection path is observable from a POSIX
@@ -836,46 +840,34 @@ func (c *BeaconClient) Control(runID string) (ControlState, error) {
 	return state, nil
 }
 
-// SendOutput streams partial or final command output back to SimCore, attributing
-// it to a specific step. stepID may be empty for un-attributed output.
-// Corresponds to: POST /api/runs/{run_id}/output  body {output, step_id?}
+// SendOutput posts one stored output frame to SimCore, attributing it to a
+// specific step. stepID may be empty for un-attributed output.
+// Corresponds to: POST /api/runs/{run_id}/output  body {output, step_id?, frame_id}
 //
 // Every frame sent here ends with a newline. SimCore appends each body as-is,
 // and the step block (formatStepOutput), the refused-step block and the
 // fail-fast stop line all end on their closing "--- … ---" frame, so without
 // it the next step's "=== STEP" header was glued onto the previous footer and
 // a line-oriented reader of the run record saw only the first step (observed
-// on a lab run). Live streaming chunks (sendOutput with retry=false) are raw
-// pieces of a child's output and are not touched.
+// on a lab run).
+//
+// Every frame sent here is stored, so every one is retried and carries a
+// frame_id. Output streamed while a step runs does not go through here: it is
+// a live frame, which SimCore publishes and does not store (liveout.go).
 func (c *BeaconClient) SendOutput(runID, stepID, output string) error {
 	if output != "" && !strings.HasSuffix(output, "\n") {
 		output += "\n"
 	}
-	return c.sendOutput(runID, stepID, output, true)
-}
-
-// sendOutput posts one output frame. retry=false is for live streaming chunks:
-// those are written from inside the child's pipe writer, and a 31-second retry
-// ladder there would stall the TTP itself; the step's full output is still
-// posted (with retry) when the step ends.
-func (c *BeaconClient) sendOutput(runID, stepID, output string, retry bool) error {
 	body := map[string]string{
 		"run_id": runID,
 		"output": output,
+		// Assigned once, before the first attempt: a retry is the same frame.
+		"frame_id": c.nextFrameID(),
 	}
 	if stepID != "" {
 		body["step_id"] = stepID
 	}
-	path := fmt.Sprintf("/api/runs/%s/output", runID)
-	var err error
-	if retry {
-		// Assigned once, before the first attempt: a retry is the same frame.
-		body["frame_id"] = c.nextFrameID()
-		_, err = c.postRetry(path, body)
-	} else {
-		_, err = c.post(path, body)
-	}
-	if err != nil {
+	if _, err := c.postRetry(fmt.Sprintf("/api/runs/%s/output", runID), body); err != nil {
 		return fmt.Errorf("sendOutput: %w", err)
 	}
 	return nil
@@ -1038,8 +1030,10 @@ func (c *BeaconClient) Run(ctx context.Context) {
 // executeTask runs a task's steps in order, each through the identity harness.
 //
 // Semantics (matching the push bundle's `set -euo pipefail` fail-fast model):
-//   - Steps execute sequentially; output is streamed per step (one /output POST
-//     per step, attributed via step_id).
+//   - Steps execute sequentially; output is stored per step (one /output POST
+//     per step, attributed via step_id). When the task carries `live_output`
+//     each step is also announced before it runs and streamed while it runs
+//     (liveout.go); those frames are not stored.
 //   - Execution stops at the FIRST step with a non-zero exit code; the run's
 //     final exit code is that first failing step's code (0 only if every step
 //     exited 0).
@@ -1050,6 +1044,7 @@ func (c *BeaconClient) Run(ctx context.Context) {
 func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	c.BindShutdown(ctx)
 	c.beginFrames(task.TaskID)
+	defer c.beginLive(task)()
 	totalSteps := len(task.Steps)
 	led := newOutcomeLedger(task)
 	if totalSteps == 0 {
@@ -1148,6 +1143,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 				Command:  step.Command,
 				Shell:    plan.shell,
 			}
+			c.live.stepStart(i+1, totalSteps, &step, username)
 			res, stop, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
@@ -1352,6 +1348,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
 				i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
+			c.live.stepStart(i+1, totalSteps, &step, username)
 			res, stop, timedOut, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, step.ID, plan.shell, wrapped, stTimeout)
 		}
 		depOutcome.cleanup()
@@ -1454,9 +1451,11 @@ func (c *BeaconClient) runChainedStep(
 		err error
 	}
 	done := make(chan result, 1)
+	onChunk := c.live.chunkFunc(stepID)
+	defer c.live.stepEnd()
 	go func() {
 		start := time.Now()
-		stdout, stderr, code, e := session.RunStepShell(stepID, shell, wrapped)
+		stdout, stderr, code, e := session.RunStepShellStream(stepID, shell, wrapped, onChunk)
 		done <- result{
 			res: identity.ExecResult{ExitCode: code, Stdout: stdout, Stderr: stderr, Duration: time.Since(start)},
 			err: e,
@@ -1532,6 +1531,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 			res = depOutcome.synthetic
 		} else {
 			execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command, Shell: plan.shell}
+			c.live.stepStart(i+1, totalSteps, &step, username)
 			res, stop, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
@@ -1612,12 +1612,8 @@ func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID
 	}
 	done := make(chan result, 1)
 
-	var onChunk executor.OutputChunkFunc
-	if c.StreamOutput {
-		onChunk = func(chunk string, isStderr bool) {
-			_ = c.sendOutput(runID, stepID, chunk, false)
-		}
-	}
+	onChunk := c.live.chunkFunc(stepID)
+	defer c.live.stepEnd()
 
 	run := c.execStep
 	if run == nil {
@@ -1725,8 +1721,7 @@ func (c *BeaconClient) resolveStepUsername(task *Task, step *Step) string {
 
 // post marshals body as JSON and POSTs it to path on the SimCore server, once.
 // Returns the raw response body on success (2xx). It carries nothing whose loss
-// costs evidence (registration, a live output chunk), so a shutdown cancels it
-// at once.
+// costs evidence (registration), so a shutdown cancels it at once.
 func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
