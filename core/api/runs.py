@@ -1876,9 +1876,8 @@ async def append_output(
             .on_conflict_do_nothing(index_elements=["run_id", "step_id"])
         )
     await db.commit()
-    if body.step_id:
-        # The stored frame replaces whatever was streamed for this step.
-        live_output.tail.close_step(run_id, body.step_id)
+    # A step's final frame ends its live stream for the rest of the run.
+    await live_output.frame_stored(db, run_id, body, is_terminal=_is_terminal)
 
     if appended:
         await _safe_publish(

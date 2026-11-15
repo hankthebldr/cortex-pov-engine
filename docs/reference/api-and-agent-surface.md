@@ -813,9 +813,9 @@ frame, which is unchanged and is the only kind that is stored.
 
 | Frame | Sent | SimCore does |
 |---|---|---|
-| `start` | before the step's process is started; not sent for a step that does not run (refused, tool absent, dependency missing) | writes one `step_starts` row `(run_id, step_id, command, identity, started_at)`, first one wins; publishes `run.step`. No `step_outcomes` row |
+| `start` | before the step's process is started; not sent for a step that does not run (refused, tool absent, dependency missing) | writes one `step_starts` row `(run_id, step_id, command, identity, started_at)` and publishes `run.step`, once per step. No `step_outcomes` row |
 | `chunk` | every `flush_ms` while the step runs, or sooner once `max_chunk_bytes` is waiting; `seq` counts from 1 per step; stops after `max_step_bytes` of step output with a one-line notice | publishes `run.output` with `live: true`; keeps the newest `max_step_bytes` per step in memory. Never appended to `Run.output` |
-| (no `kind`) | when the step ends, exactly as before, retried, with `frame_id` | appends to `Run.output`, stamps `step_outcomes.started_at`, publishes `run.output`; drops that step's live tail |
+| (no `kind`) | when the step ends, exactly as before, retried, with `frame_id` | appends to `Run.output`, stamps `step_outcomes.started_at`, publishes `run.output`; drops that step's live tail and closes the step |
 
 - `command` is the command the beacon is about to execute on that host: the
   step's command after the per-OS variant is chosen, before the identity
@@ -827,12 +827,21 @@ frame, which is unchanged and is the only kind that is stored.
   frame to be acknowledged, and a live POST still in flight when the step ends
   is abandoned. A 4xx to a live frame stops live frames for the rest of that
   task. The final frame is built and sent the same either way.
-- A chunk for a run that has ended, or for a step whose final frame is already
-  stored, is answered `dropped: true` and goes nowhere. An unknown `kind` is
-  answered the same way; it is never stored.
-- A `start` frame that SimCore was slow to handle can be published after the
-  same step's final frame. A reader treats a step that has a stored frame as
-  finished, whatever arrives later.
+- **A step's live stream ends once.** A step runs once per run, so its final
+  frame closes it for the rest of the run: a `start` or `chunk` for a closed
+  step is answered `dropped: true`, writes nothing and publishes nothing,
+  however late, replayed or forged it is. A step's final frame is the stored
+  frame that carries its `--- exit_code=` footer. Other frames stored under a
+  step's id do not close it (the beacon stores its `ANCHOR NOT HONOURED`
+  notice under the first step's id before that step runs).
+- **The first `start` is the record.** A second `start` for the same step is
+  dropped: it does not replace the stored command and is not published.
+- **A run that is no longer in flight takes no live frame.** Every `start` and
+  `chunk` for it is dropped. An unknown `kind` is dropped too; it is never
+  stored.
+- Which steps are closed is held in memory beside the tail, separately from
+  it: evicting tail text never reopens a step. Like the tail, it is empty
+  after a SimCore restart.
 - stdout and stderr share one live stream, in the order the beacon read them.
 
 **3. `GET /api/runs/{run_id}` returns both.**

