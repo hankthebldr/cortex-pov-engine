@@ -3843,6 +3843,21 @@
   letter-spacing: var(--tracking-mono);
 }
 
+/* A settled run's stored output, one block per step (#340). */
+.theme-console .event-stream--stored .event-stream__scroller { max-height: 360px; }
+.theme-console .event-stream__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.theme-console .event-stream__step-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  font-family: var(--font-ui);
+}
+.theme-console .event-stream__step-name { min-width: 0; color: var(--c-text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.theme-console .event-stream__step-meta { margin-left: auto; color: var(--c-text-disabled); font-size: 10px; }
+.theme-console .event-stream__out {
+  margin: 4px 0 0 22px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--c-text); font-size: 11px; line-height: 1.45;
+}
+.theme-console .event-stream__note .event-stream__out { margin-left: 0; color: var(--c-text-muted); }
+
 .theme-console .event-stream__jump-live {
   position: sticky;
   bottom: 6px;

@@ -52,7 +52,11 @@ export function runCaveatLines(degraded, launchWarnings) {
   return lines
 }
 
-export default function InflightView({ activeRun, lastRun, onError, caveats = [] }) {
+// `status` / `output` / `outputPartial`: the run record the run's page fetched,
+// so the stdout panel shows a settled run's stored output (#340).
+export default function InflightView({
+  activeRun, lastRun, onError, caveats = [], status = null, output = null, outputPartial = false,
+}) {
   // Prefer the live run; fall back to the most recent completed run.
   const targetRunId     = activeRun?.runId      || lastRun?.runId      || null
   const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
@@ -213,7 +217,7 @@ export default function InflightView({ activeRun, lastRun, onError, caveats = []
         )}
       </div>
 
-      <EventStream runId={targetRunId} compact />
+      <EventStream runId={targetRunId} compact status={status} output={output} partial={outputPartial} />
 
       <div className="narrative__footer">
         <p>

@@ -20,6 +20,16 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   the tenant for the run (`POST /api/runs/{id}/reconcile`), and no route, API
   or backend behaviour moved.
 
+### Fixed
+
+- **A finished run's stdout panel shows what the run printed** (#340). The
+  panel on a run's Live tab showed only the live stream, so a run that had
+  already ended said "waiting for agent…" even though SimCore had stored its
+  whole output. A complete, failed, aborted or staged run now shows that stored
+  output, one block per step, each marked Ran, Failed (exit N), Timed out or
+  Did not run with its exit code. A run with no stored output says "No output
+  recorded". A run still in progress keeps the live stream.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is

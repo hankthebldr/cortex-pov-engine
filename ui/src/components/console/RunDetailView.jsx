@@ -625,6 +625,9 @@ export default function RunDetailView({
             lastRun={isThisActive ? null : descriptor}
             caveats={caveats}
             onError={onError}
+            status={lcRun?.status ?? null}
+            output={output}
+            outputPartial={partial}
           />
         )}
         {tab === 'evidence' && (lifecycle && lifecycle.phase !== PHASE.READY ? (
