@@ -2,7 +2,9 @@
 
 **Status:** Draft, awaiting owner approval
 **Date:** 2026-11-15
-**Branch:** `docs/docs-jumpbox-installer-design` (from `dev`)
+**Target release:** 1.3.0 (milestone `1.3.0`, tracking issue #376)
+**Branch:** `feature/docker-jumpbox-installer`, cut from `dev`. Topic branches
+land here; it merges into `dev` only after 1.2.x closes.
 **Supersedes:** `2026-04-22-installer-release-pipeline-design.md`, which was never
 built. This design keeps its WSL2 + docker-ce runtime and its refusal of Docker
 Desktop, and drops its demo mode, ATT&CK-annotated install events and
