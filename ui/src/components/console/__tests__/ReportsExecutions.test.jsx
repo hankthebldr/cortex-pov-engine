@@ -63,7 +63,7 @@ const REPORT = {
     },
     {
       scenario_id: 'SIM-EDR-001', name: 'Credential dumping', plane: 'EDR', techniques: ['T1003.008', 'T1087.001', 'T1552.001'], uc_ref: 'UCS-EDR-02', tc_refs: ['TC-EDR-03', 'TC-EDR-05'],
-      detection_sources: [{ id: 'xdr_agent', label: 'XDR agent' }],
+      detection_sources: [{ id: 'xdr_agent', label: 'XDR agent' }, { id: 'ngfw_traffic', label: 'NGFW traffic logs' }],
       runs: 3, runs_by_status: { complete: 2, failed: 1 }, first_run_at: '2026-11-01T10:00:00+00:00', last_run_at: '2026-11-12T10:00:00+00:00',
       last_status: 'failed', last_run_id: 'r-edr-unrev', reviewed_runs: 2, last_reviewed_run_id: 'r-edr-new', last_reviewed_at: '2026-11-10T10:00:00+00:00',
       outcomes: outcomes({ expected: 4, prevented: 1, detected: 1, missed: 1, pending: 1 }),
@@ -242,11 +242,10 @@ describe('the table', () => {
     fireEvent.click(within(runs).getByRole('button', { name: 'Runs' }))
     expect(runs).toHaveAttribute('aria-sort', 'descending')
     expect(rowIds()).toEqual(['SIM-EDR-001', 'SIM-NDR-001', 'SIM-EDR-002'])
-    // The action column does not sort, and is the pinned one.
+    // The action column does not sort, and is the last one.
     const open = within(table).getByRole('columnheader', { name: 'Open' })
     expect(open).not.toHaveAttribute('aria-sort')
     expect(within(open).queryByRole('button')).toBeNull()
-    expect(open).toHaveClass('rep-table__act')
     expect(COLUMNS.scenario.at(-1).id).toBe('action')
   })
 
@@ -279,6 +278,27 @@ describe('the table', () => {
     expect(row).toHaveTextContent('0 of 1')
     // Its doors could not be derived: Can't check, never "none".
     expect(within(row).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
+  })
+
+  it('fits its card: a class per column, an ellipsis with the whole text as its tooltip', async () => {
+    mount()
+    const table = await screen.findByTestId('rep-table')
+    // Every header and every cell names its column, so a column is sized, and gives way, as one.
+    const ids = COLUMNS.scenario.map((c) => `rep-cell--${c.id}`)
+    expect(within(table).getAllByRole('columnheader').map((h) => h.className)).toEqual(ids)
+    for (const row of within(table).getAllByRole('row').slice(1)) {
+      expect([...row.children].map((c) => c.className.split(' ')[0])).toEqual(ids)
+    }
+    // Text longer than its column is one line with the whole text behind it.
+    const row = screen.getByTestId('rep-row-SIM-EDR-001')
+    const sources = within(row).getByText('XDR agent').closest('.rep-fit')
+    expect(sources).toHaveTextContent('XDR agent +1')
+    expect(sources).toHaveAttribute('title', 'XDR agent, NGFW traffic logs')
+    expect(within(row).getByText('Credential dumping')).toHaveClass('rep-fit')
+    expect(within(row).getByText('Credential dumping')).toHaveAttribute('title', 'Credential dumping')
+    // First run gives way first on a narrow window; the fact stays in the Last run tooltip.
+    expect(row.querySelector('.rep-cell--last [title]').getAttribute('title'))
+      .toBe('2026-11-12 10:00:00 UTC\nFirst run 2026-11-01 10:00:00 UTC')
   })
 
   it('opens the last reviewed run in Results, or the run when none was reviewed', async () => {

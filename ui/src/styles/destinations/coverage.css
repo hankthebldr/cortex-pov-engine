@@ -716,24 +716,54 @@
 .theme-console .rep-chip .kit-status__icon { width: 14px; height: 14px; font-size: 8.5px; }
 .theme-console .rep-quiet { color: var(--tx3); }
 
-.theme-console .rep-table { width: 100%; border-collapse: collapse; font: 400 12px/1.35 var(--font-ui); color: var(--tx2); }
+/* The table fits its card: a fixed layout with a width per column, and the
+   row's name takes what is left. Text longer than its column ends in an
+   ellipsis and its tooltip has it whole. Nothing is pinned, so no column
+   covers another. Where twelve columns do not fit, First run and then Sources
+   give way (both stay in the CSV and JSON; a row's first run is also in its
+   Last run tooltip); below 930px the card scrolls. */
+.theme-console .rep-scroll { container-type: inline-size; }
+.theme-console .rep-table {
+  width: 100%; min-width: 930px; table-layout: fixed; border-collapse: collapse;
+  font: 400 12px/1.35 var(--font-ui); color: var(--tx2);
+}
 .theme-console .rep-table th,
-.theme-console .rep-table td { padding: 7px 9px; border-bottom: 1px solid var(--bd); text-align: left; vertical-align: top; }
+.theme-console .rep-table td {
+  padding: 7px 6px; border-bottom: 1px solid var(--bd);
+  text-align: left; vertical-align: top; overflow: hidden;
+}
+.theme-console .rep-table th:first-child { padding-left: 10px; }
 .theme-console .rep-table tbody tr:last-child > * { border-bottom: 0; }
-/* The row's name and its action stay in view while the columns between scroll. */
-.theme-console .rep-table tbody th,
-.theme-console .rep-table tbody .rep-table__act { position: sticky; background: var(--s1); }
-.theme-console .rep-table thead th:first-child,
-.theme-console .rep-table thead .rep-table__act { position: sticky; z-index: 1; }
-.theme-console .rep-table th:first-child { left: 0; }
-.theme-console .rep-table .rep-table__act { right: 0; border-left: 1px solid var(--bd); }
 .theme-console .rep-table tbody tr:hover > * { background: var(--s2); }
 .theme-console .rep-table thead th {
   background: var(--s2); white-space: nowrap;
   font: 700 10.5px/1.3 var(--font-ui); color: var(--tx);
 }
-.theme-console .rep-table tbody th { font-weight: 400; min-width: 170px; }
+.theme-console .rep-table tbody th { font-weight: 400; }
 .theme-console .rep-table .mono { font-family: var(--font-mono); font-size: 11px; color: var(--tx); }
+
+/* Column widths. Each grouping's first column has none: it takes the rest. */
+.theme-console .rep-table .rep-cell--plane { width: 96px; }
+.theme-console .rep-table .rep-cell--techniques { width: 92px; }
+.theme-console .rep-table .rep-cell--uctc { width: 98px; }
+.theme-console .rep-table .rep-cell--uc { width: 110px; }
+.theme-console .rep-table .rep-cell--runs { width: 52px; }
+.theme-console .rep-table .rep-cell--last,
+.theme-console .rep-table .rep-cell--first { width: 74px; }
+.theme-console .rep-table .rep-cell--status { width: 88px; }
+.theme-console .rep-table .rep-cell--reviewed { width: 76px; }
+.theme-console .rep-table .rep-cell--outcomes { width: 114px; }
+.theme-console .rep-table .rep-cell--sources { width: 124px; }
+.theme-console .rep-table .rep-cell--action { width: 130px; padding-right: 10px; text-align: right; }
+.theme-console .rep-table--technique .rep-cell--outcomes,
+.theme-console .rep-table--test_case .rep-cell--outcomes { width: 300px; }
+/* The fixed columns add up to 1018px, 944px without First run, 820px without
+   Sources too; the name gets at least 126px beside them. */
+@container (max-width: 1167px) { .theme-console .rep-table .rep-cell--first { display: none; } }
+@container (max-width: 1073px) { .theme-console .rep-table .rep-cell--sources { display: none; } }
+
+.theme-console .rep-fit { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-console .rep-plane { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .theme-console .rep-table__sort {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 0; border: 0; background: transparent; cursor: pointer;
@@ -751,17 +781,20 @@
 .theme-console a.rep-table__id:hover,
 .theme-console .rep-table__link:hover { text-decoration: underline; }
 .theme-console a.rep-table__id:focus-visible,
-.theme-console .rep-table__link:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .rep-table__link:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
 .theme-console .rep-table__link { color: inherit; text-decoration: none; }
 .theme-console .rep-table__sub {
-  display: block; margin-top: 3px; max-width: 200px;
+  display: block; margin-top: 3px;
   font: 400 10.5px/1.3 var(--font-ui); color: var(--tx3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.theme-console .rep-table__num,
-.theme-console .rep-table__when { white-space: nowrap; }
-.theme-console .rep-table__outcomes { min-width: 150px; }
-.theme-console .rep-table__act { white-space: nowrap; text-align: right; }
+.theme-console .rep-table .rep-cell--runs,
+.theme-console .rep-table .rep-cell--reviewed,
+.theme-console .rep-table .rep-cell--last,
+.theme-console .rep-table .rep-cell--first { white-space: nowrap; }
+.theme-console .rep-table .rep-cell--action .kit-btn { padding: 6px 9px; white-space: nowrap; }
 .theme-console .rep-table .rep-chips { margin-top: 0; }
+/* In a cell, a state wraps inside its column instead of running past it. */
+.theme-console .rep-table .rep-chip,
+.theme-console .rep-table .kit-status { white-space: normal; }
 /* A list cell wraps between items, never inside one. */
 .theme-console .rep-clip__item { white-space: nowrap; }

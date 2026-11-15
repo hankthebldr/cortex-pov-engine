@@ -147,8 +147,9 @@ const hits = (o) => (o ? (o.detected || 0) + (o.prevented || 0) : null)
  *
  * The scenario table reads as the mapping, left to right: scenario, plane,
  * techniques, UC / TC, its runs, and the outcome. Sources and First run come
- * last because they are the two a narrow window scrolls to; the row's name and
- * its action are pinned (coverage.css).
+ * last because they are the two that give way when the window is too narrow
+ * for twelve columns (coverage.css): the table always fits its card, and
+ * nothing is pinned over another column.
  */
 export const COLUMNS = Object.freeze({
   scenario: [

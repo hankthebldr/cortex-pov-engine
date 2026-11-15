@@ -250,14 +250,14 @@ function ReportTable({ report, grouping, sort, onSort, onNavigate }) {
   )
   const label = GROUPINGS.find(([id]) => id === grouping)[1]
   return (
-    <div className="dash__card dash__scroll">
-      <table className="rep-table" data-testid="rep-table">
+    <div className="dash__card dash__scroll rep-scroll">
+      <table className={`rep-table rep-table--${grouping}`} data-testid="rep-table">
         <caption className="sr-only">Executions, {label.toLowerCase()}</caption>
         <thead>
           <tr>
             {columns.map((c) => (
               <th key={c.id} scope="col" aria-sort={ariaSort(c, sort)} title={c.title}
-                className={c.id === 'action' ? 'rep-table__act' : undefined}>
+                className={`rep-cell--${c.id}`}>
                 {c.sort ? (
                   <button
                     type="button"
@@ -274,7 +274,7 @@ function ReportTable({ report, grouping, sort, onSort, onNavigate }) {
         <tbody>
           {sorted.map((row) => (
             <tr key={keyOf(row)} data-testid={`rep-row-${keyOf(row)}`}>
-              {columns.map((c) => <Cell key={c.id} column={c.id} row={row} report={report} onNavigate={onNavigate} />)}
+              {columns.map((c) => <Cell key={c.id} column={c.id} row={row} onNavigate={onNavigate} />)}
             </tr>
           ))}
         </tbody>
@@ -283,16 +283,24 @@ function ReportTable({ report, grouping, sort, onSort, onNavigate }) {
   )
 }
 
-/** A short list: the first few, then "+N" with the rest in its tooltip. */
-function Clip({ list, shown = 2, render = (v) => v }) {
+/** One line that ends in an ellipsis when its column is narrower; the tooltip has it whole. */
+function Fit({ text, className = '' }) {
+  return <span className={`rep-fit ${className}`.trim()} title={text || undefined}>{text || ''}</span>
+}
+
+/**
+ * A short list: the first few, then "+N" with the rest in its tooltip. `fit`
+ * keeps it on one line with an ellipsis, and the tooltip always has the list.
+ */
+function Clip({ list, shown = 2, render = (v) => v, fit = false, mono = true }) {
   const c = clip(list, shown)
   if (!c.all.length) return <span className="rep-quiet">—</span>
   return (
-    <span className="rep-clip" title={c.more ? c.all.join(', ') : undefined}>
+    <span className={'rep-clip' + (fit ? ' rep-fit' : '')} title={fit || c.more ? c.all.join(', ') : undefined}>
       {c.shown.map((v, i) => (
         <React.Fragment key={v}>
           {i > 0 && ' '}
-          <span className="mono rep-clip__item">{render(v)}{i < c.shown.length - 1 && ','}</span>
+          <span className={(mono ? 'mono ' : '') + 'rep-clip__item'}>{render(v)}{i < c.shown.length - 1 && ','}</span>
         </React.Fragment>
       ))}
       {c.more > 0 && <span className="rep-quiet rep-clip__item"> +{c.more}</span>}
@@ -300,10 +308,12 @@ function Clip({ list, shown = 2, render = (v) => v }) {
   )
 }
 
-function When({ value }) {
+/** A time as "3h ago"; the tooltip has the instant, and `also` adds a second line to it. */
+function When({ value, column, also }) {
+  const title = [absoluteTime(value), also].filter(Boolean).join('\n')
   return (
-    <td className="rep-table__when">
-      <span className="mono" title={absoluteTime(value) || undefined}>{relativeTime(value)}</span>
+    <td className={`rep-cell--${column}`}>
+      <span className="mono" title={title || undefined}>{relativeTime(value)}</span>
     </td>
   )
 }
@@ -315,64 +325,65 @@ function Outcomes({ outcomes }) {
   return <Chips chips={chips} />
 }
 
-function Cell({ column, row, report, onNavigate }) {
+function Cell({ column, row, onNavigate }) {
   switch (column) {
     case 'scenario':
       return (
-        <th scope="row">
-          <a className="rep-table__id mono" href={scenarioHref(row.scenario_id)}>{row.scenario_id}</a>
-          <span className="rep-table__sub">{row.name || ''}</span>
+        <th scope="row" className="rep-cell--scenario">
+          <a className="rep-table__id rep-fit mono" href={scenarioHref(row.scenario_id)} title={row.scenario_id}>
+            {row.scenario_id}
+          </a>
+          <Fit text={row.name} className="rep-table__sub" />
         </th>
       )
     case 'technique':
       return (
-        <th scope="row">
+        <th scope="row" className="rep-cell--technique">
           <span className="rep-table__id mono">{row.technique}</span>
-          <span className="rep-table__sub">{row.name || ''}</span>
+          <Fit text={row.name} className="rep-table__sub" />
         </th>
       )
     case 'tc':
       return (
-        <th scope="row">
+        <th scope="row" className="rep-cell--tc">
           <span className="rep-table__id mono">{row.tc_ref}</span>
-          <span className="rep-table__sub">{row.name || ''}</span>
+          <Fit text={row.name} className="rep-table__sub" />
         </th>
       )
     case 'plane':
       return (
-        <td>
+        <td className="rep-cell--plane">
           {row.plane ? (
-            <span className="dash-grid__plane">
+            <span className="rep-plane" title={row.plane}>
               <span className="dash-grid__tint" style={{ background: planeTint(row.plane) }} aria-hidden="true" />
-              <span className="mono">{row.plane}</span>
+              <span className="rep-fit mono">{row.plane}</span>
             </span>
           ) : <span className="rep-quiet">—</span>}
         </td>
       )
     case 'techniques':
-      return <td><Clip list={row.techniques} /></td>
+      return <td className="rep-cell--techniques"><Clip list={row.techniques} /></td>
     case 'uctc':
       return (
-        <td>
-          <span className="mono">{row.uc_ref || '—'}</span>
-          <span className="rep-table__sub"><Clip list={row.tc_refs} shown={1} /></span>
+        <td className="rep-cell--uctc">
+          <Fit text={row.uc_ref || '—'} className="mono" />
+          <span className="rep-table__sub"><Clip list={row.tc_refs} shown={1} fit /></span>
         </td>
       )
     case 'uc':
-      return <td><span className="mono">{row.uc_ref || '—'}</span></td>
+      return <td className="rep-cell--uc"><Fit text={row.uc_ref || '—'} className="mono" /></td>
     case 'sources':
       if (row.detection_sources === null) {
-        return (
-          <td>
-            <StatusIcon status="unknown" word="Can't check"
-              className={report.detection_sources?.reason ? 'rep-nocheck' : undefined} />
-          </td>
-        )
+        return <td className="rep-cell--sources"><StatusIcon status="unknown" word="Can't check" /></td>
       }
-      return <td><Clip list={row.detection_sources.map((s) => s.label)} shown={1} /></td>
+      return (
+        <td className="rep-cell--sources">
+          <Clip list={row.detection_sources.map((s) => s.label)} shown={1} fit mono={false} />
+        </td>
+      )
     case 'scenarios':
       return (
-        <td>
+        <td className="rep-cell--scenarios">
           <Clip list={row.scenarios} render={(id) => <a className="rep-table__link" href={scenarioHref(id)}>{id}</a>} />
         </td>
       )
@@ -380,27 +391,31 @@ function Cell({ column, row, report, onNavigate }) {
       const by = row.runs_by_status
         ? Object.entries(row.runs_by_status).map(([s, n]) => `${n} ${runStatusMeta(s).word.toLowerCase()}`).join(', ')
         : undefined
-      return <td className="rep-table__num mono" title={by}>{fmt(row.runs)}</td>
+      return <td className="rep-cell--runs mono" title={by}>{fmt(row.runs)}</td>
     }
     case 'first':
-      return <When value={row.first_run_at} />
+      return <When value={row.first_run_at} column="first" />
     case 'last':
-      return <When value={row.last_run_at} />
+      // The First run column gives way on a narrow window; the fact stays here.
+      return (
+        <When value={row.last_run_at} column="last"
+          also={row.first_run_at ? `First run ${absoluteTime(row.first_run_at)}` : null} />
+      )
     case 'status': {
       const meta = runStatusMeta(row.last_status)
-      return <td><StatusIcon status={meta.status} word={meta.word} /></td>
+      return <td className="rep-cell--status" title={meta.word}><StatusIcon status={meta.status} word={meta.word} /></td>
     }
     case 'reviewed':
       return (
-        <td className="rep-table__num mono">
+        <td className="rep-cell--reviewed mono">
           {fmt(row.reviewed_runs ?? row.reviewed_scenarios)} of {fmt(row.scenarios ? row.scenarios.length : row.runs)}
         </td>
       )
     case 'outcomes':
-      return <td className="rep-table__outcomes"><Outcomes outcomes={row.outcomes} /></td>
+      return <td className="rep-cell--outcomes"><Outcomes outcomes={row.outcomes} /></td>
     case 'action':
       return (
-        <td className="rep-table__act">
+        <td className="rep-cell--action">
           {row.last_reviewed_run_id ? (
             <Button verb="Open results" aria-label={`Open results of ${row.scenario_id}`}
               onClick={() => onNavigate('proof', { run: row.last_reviewed_run_id })} />
@@ -411,6 +426,6 @@ function Cell({ column, row, report, onNavigate }) {
         </td>
       )
     default:
-      return <td />
+      return <td className={`rep-cell--${column}`} />
   }
 }
