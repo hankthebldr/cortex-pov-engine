@@ -223,6 +223,20 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   to have made the folder: run alone, they exit 1 with
   `sandbox … is missing or not ours`.
 
+### Added
+
+- **Agents › Fleet: delete agent rows in one click, or in bulk (#339).** A
+  row's Delete opens an inline "Delete `<id>`?" confirm on the same card; the
+  host-side uninstall command sits behind a collapsed "Uninstall command"
+  disclosure. A toolbar adds **Delete offline (N)**, which never counts the
+  active agent or an online or stale one, and a **Select** mode with **Delete
+  selected (N)**. Bulk deletes call `DELETE /api/agents/{id}` one at a time,
+  announce progress, carry on past a refusal, keep each 409's run ids and
+  Abort control on its row, and refresh the list once at the end. The Fleet
+  page now uses kit controls only (new verbs Deploy, Set active, Download,
+  Copy, Delete, Select and Refresh) and shows liveness as a status icon and
+  one word. The backend is unchanged.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is

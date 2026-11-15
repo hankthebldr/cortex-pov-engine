@@ -124,9 +124,8 @@
 
 /* ── 4. Cards — soften the console's sharp 6px corners toward the
    redesign's 8-10px card language, and give a colored top edge so a
-   card reads its state before you read the pill. `:has()` reads the
-   pill already rendered inside the card, so the row-tone lives once
-   (the pill) instead of a second parallel switch in the JSX. ────── */
+   card reads its state before you read its StatusIcon. TargetsView
+   sets one `target-card--<liveness>` modifier per agent card. ────── */
 .theme-console .targets .target-card { border-radius: 8px; }
 .theme-console .targets .target-card--push,
 .theme-console .targets .target-card--iac {
@@ -137,29 +136,23 @@
   border-radius: 4px 4px 8px 8px;
   overflow: hidden;
 }
-.theme-console .targets .target-card--agent:has(.target-card__pill--live) { border-top:3px solid var(--pos); }
-.theme-console .targets .target-card--agent:has(.target-card__pill--stale) { border-top: 3px solid var(--warn); }
-.theme-console .targets .target-card--agent:has(.target-card__pill--unknown) { border-top: 3px solid var(--tx3); }
+.theme-console .targets .target-card--live { border-top:3px solid var(--pos); }
+.theme-console .targets .target-card--stale { border-top: 3px solid var(--warn); }
+.theme-console .targets .target-card--unknown { border-top: 3px solid var(--tx3); }
 .theme-console .targets .target-card.is-active {
   border-color:var(--ac-line);
   box-shadow:0 0 0 1px var(--ac-line);
 }
 
-/* ── 5. State pills — outlined mono chips (the redesign's chip()
-   pattern) instead of the console's soft-filled badges. One border
-   color IS the state; nothing else needs to repeat it. ─────────── */
-.theme-console .targets .target-card__pill {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px; font-weight: 600; letter-spacing: .06em;
-  background: transparent; border-radius: 3px; padding: 3px 7px;
-  border: 1px solid currentColor;
-}
-.theme-console .targets .target-card__pill--live { color: var(--ac-ink); }
-.theme-console .targets .target-card__pill--stale { color: var(--warn); }
-.theme-console .targets .target-card__pill--ready { color: var(--ac-ink); }
-.theme-console .targets .target-card__pill--unknown { color: var(--tx3); }
-.theme-console .targets .target-card__pill--active {
-  color: var(--ac-ink); background: var(--ac-soft); border-color: var(--ac-line);
+/* ── 5. Card head: id, an Active tag (a selection, not a status), and
+   the liveness StatusIcon pushed right. ─────────────────────────── */
+.theme-console .targets .target-card__head .target-card__title { min-width: 0; overflow-wrap: anywhere; }
+.theme-console .targets .target-card__status { margin-left: auto; flex: none; }
+.theme-console .targets .target-card__tag {
+  flex: none;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  color: var(--ac-ink); background: var(--ac-soft);
+  border: 1px solid var(--ac-line); border-radius: 4px; padding: 1px 6px;
 }
 
 /* ── 5b. Capabilities + execution identity — neutral chips (a roster,
@@ -188,8 +181,17 @@
 }
 .theme-console .targets .target-card__identity--warn { color: var(--warn); }
 
-/* ── 6. Small ghost actions on the agent card footer ─────────────── */
-.theme-console .targets .card-action { border-radius: 4px; }
+/* ── 6. Card footer: kit buttons; Delete sits at the far right. Column
+   titles are uppercase mono; a kit button inside one keeps its own case. */
+.theme-console .targets .target-card__actions { flex-wrap: wrap; }
+.theme-console .targets .target-card__actions-end { margin-left: auto; }
+.theme-console .targets .target-col__title .kit-btn {
+  text-transform: none; letter-spacing: normal; font-family: var(--font-ui);
+}
+.theme-console .targets .target-card__link {
+  align-self: flex-start;
+  font-family: var(--font-ui); font-size: 12px; color: var(--ac-ink);
+}
 
 /* ── 7. Deploy modal — round to the card language, keep its own
    fixed-dark drop shadow (a dark shadow under a modal reads fine on
@@ -202,3 +204,116 @@
 }
 .theme-console .targets .deploy-os { border-radius: 6px; }
 .theme-console .targets .deploy-snippet { border-radius: 6px; }
+
+/* ── 8. Fleet: removing agent rows (#339) ──────────────────────────
+   Triggers (Select, Delete all offline, Delete selected, a row's
+   Delete) are outlined; only the confirmed step is the filled coral
+   kit destructive button. The trigger hover is the console's
+   .btn--danger pattern, carried onto a kit button. ─────────────── */
+.theme-console .targets .fleet-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.theme-console .targets .kit-btn.btn--danger:hover:not(:disabled) {
+  border-color: var(--crit); color: var(--crit); background: var(--crit-soft);
+}
+.theme-console .targets .fleet-toolbar__select[aria-pressed="true"] {
+  background: var(--ac-soft); border-color: var(--ac-line); color: var(--ac-ink);
+}
+
+.theme-console .targets .fleet-bulk {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+  font-family: var(--font-ui); font-size: 12px; line-height: 1.5; color: var(--tx2);
+}
+.theme-console .targets .fleet-bulk--confirm {
+  border-color: var(--crit); box-shadow: 0 0 0 1px var(--crit-soft);
+}
+.theme-console .targets .fleet-bulk__q {
+  margin: 0; font-size: 13px; font-weight: 600; color: var(--tx);
+}
+/* Eight rows show; a longer list scrolls inside the panel and is a tab
+   stop (TargetsView sets tabIndex past BULK_LIST_SCROLLS_AT). */
+.theme-console .targets .fleet-bulk__ids {
+  list-style: none; margin: 0; padding: 6px 10px;
+  max-height: 154px; overflow-y: auto;
+  background: var(--s0); border: 1px solid var(--bd); border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6;
+  color: var(--tx);
+}
+.theme-console .targets .fleet-bulk__ids li { overflow-wrap: anywhere; }
+.theme-console .targets .fleet-bulk__ids:focus-visible {
+  outline: 2px solid var(--ac); outline-offset: 2px;
+}
+.theme-console .targets .fleet-bulk__note { margin: 0; font-size: 11px; }
+.theme-console .targets .fleet-bulk__actions {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px;
+}
+.theme-console .targets .fleet-bulk__bar {
+  height: 4px; border-radius: 2px; overflow: hidden; background: var(--s2);
+}
+.theme-console .targets .fleet-bulk__bar > span {
+  display: block; height: 100%; background: var(--tx2);
+  transition: width 160ms ease-out;
+}
+.theme-console .targets .fleet-bulk__counts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+}
+.theme-console .targets .fleet-bulk__refused {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; overflow-wrap: anywhere;
+}
+.theme-console .targets .fleet-bulk__refused-id { color: var(--tx); font-weight: 600; }
+.theme-console .targets .fleet-bulk__refused code { color: var(--crit); }
+
+/* Select mode: one checkbox strip at the top of each card. */
+.theme-console .targets .target-card__pick {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px 0;
+  font-family: var(--font-ui); font-size: 11px; color: var(--tx2);
+  cursor: pointer;
+}
+/* A console-wide input rule makes inputs full width; a checkbox is not one. */
+.theme-console .targets .target-card__pick input {
+  width: auto; flex: none; margin: 0; accent-color: var(--ac);
+}
+.theme-console .targets .target-card.is-picked { border-color: var(--crit); }
+
+/* Per-row inline confirm: the question left, Cancel / Delete right, the
+   "Uninstall command" disclosure one line below. */
+.theme-console .targets .target-card__confirm { flex-wrap: wrap; }
+.theme-console .targets .target-card__confirm-q { margin-right: auto; }
+.theme-console .targets .target-card__how {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 0 12px 10px; background: var(--c-void);
+}
+.theme-console .targets .target-card__how .target-card__remove {
+  align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 10px 0 0;
+}
+.theme-console .targets .target-card__how .target-card__remove p { margin: 0; }
+.theme-console .targets .target-card__how .deploy-snippet { align-self: stretch; margin: 0; }
+.theme-console .targets .target-card__fallback {
+  align-self: stretch;
+  display: block; padding: 8px 10px;
+  background: var(--s2); border: 1px solid var(--bd); border-radius: 6px;
+  font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* A refused delete: one line, the server's words in its tooltip, then
+   each open run with its Abort. */
+.theme-console .targets .target-card__refused {
+  padding: 10px 12px; border-top: 1px solid var(--bd);
+  font-family: var(--font-ui); font-size: 12px; color: var(--tx2);
+}
+.theme-console .targets .target-card__refused p {
+  margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .targets .target-card__refused strong { color: var(--crit); }
+.theme-console .targets .target-card__refused ul {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.theme-console .targets .target-card__refused li { display: flex; align-items: center; gap: 10px; }
+.theme-console .targets .fleet-bulk__dismiss { margin-left: auto; }

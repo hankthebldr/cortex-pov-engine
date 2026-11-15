@@ -7,7 +7,7 @@
  */
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, renderHook } from '@testing-library/react'
+import { render, screen, waitFor, renderHook, within } from '@testing-library/react'
 import { parseServerTime } from '../../api/time.js'
 import TargetsView from '../console/TargetsView.jsx'
 import EventStream from '../console/EventStream.jsx'
@@ -63,8 +63,8 @@ describe('agent liveness on the Agents surface', () => {
     process.env.TZ = 'America/Los_Angeles'
     renderAgents([{ agent_id: 'jb-dead', hostname: 'jb', last_seen: naiveUtc(10 * 60_000) }])
     const card = screen.getByText('jb-dead').closest('.target-card')
-    expect(card.querySelector('.target-card__pill--stale')).not.toBeNull()
-    expect(card.querySelector('.target-card__pill--live')).toBeNull()
+    expect(within(card).getByRole('img', { name: 'Stale' })).toBeTruthy()
+    expect(within(card).queryByRole('img', { name: 'Online' })).toBeNull()
     expect(card.textContent).toContain('seen 10m ago')
   })
 
@@ -72,8 +72,8 @@ describe('agent liveness on the Agents surface', () => {
     process.env.TZ = 'Asia/Tokyo'
     renderAgents([{ agent_id: 'jb-live', hostname: 'jb', last_seen: naiveUtc(5_000) }])
     const card = screen.getByText('jb-live').closest('.target-card')
-    expect(card.querySelector('.target-card__pill--live')).not.toBeNull()
-    expect(card.querySelector('.target-card__pill--stale')).toBeNull()
+    expect(within(card).getByRole('img', { name: 'Online' })).toBeTruthy()
+    expect(within(card).queryByRole('img', { name: 'Stale' })).toBeNull()
     expect(card.textContent).toMatch(/seen \ds ago/)
   })
 })
