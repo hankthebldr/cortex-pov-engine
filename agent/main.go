@@ -4,6 +4,7 @@
 //
 //	cortexsim-agent --server http://localhost:8888 --id <agent-id> [--interval 10] [--log-file <path>]
 //	cortexsim-agent --server http://simcore:8888 --enroll-token-file <path> [--state-dir <dir>] [--expires-at <RFC3339>]
+//	cortexsim-agent eal ...   (run by the beacon for a step that calls SimCore's EAL CLI; see agent/ealrelay)
 //
 // The agent registers with SimCore on startup — first enrolling itself from a
 // token file when it is given one instead of an --id — then enters a polling
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"github.com/hankthebldr/cortexsim/agent/beacon"
+	"github.com/hankthebldr/cortexsim/agent/ealrelay"
 	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
 	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
@@ -301,6 +303,13 @@ func exitOnConfigError(err error) {
 }
 
 func main() {
+	// `cortexsim-agent eal ...` is not the beacon. It is what a step runs in
+	// place of SimCore's EAL CLI (agent/ealrelay): a short-lived child of the
+	// step's shell that talks to the beacon which started it.
+	if len(os.Args) > 1 && os.Args[1] == "eal" {
+		os.Exit(ealrelay.Main(os.Args[2:], os.Stdout, os.Stderr))
+	}
+
 	// ----------------------------------------------------------------
 	// CLI flags
 	// ----------------------------------------------------------------

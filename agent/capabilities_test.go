@@ -83,11 +83,23 @@ func TestAgentCapabilities_POSIXUnchanged(t *testing.T) {
 	// Deliberately changed in the artifact-staging pass: the roster gained
 	// "artifact-fetch". The load-bearing half of this assertion is unchanged —
 	// POSIX still claims identity-harness and the exact set is still pinned, so
-	// a future capability cannot be added by accident.
+	// a future capability cannot be added by accident. "eal-relay" joined it
+	// with the EAL relay (agent/ealrelay).
 	for _, goos := range []string{"linux", "darwin"} {
 		caps := agentCapabilities(goos, false)
-		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch" {
-			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch]", goos, caps)
+		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch,eal-relay" {
+			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch eal-relay]", goos, caps)
+		}
+	}
+}
+
+// SimCore marks a step that calls its EAL CLI only for a beacon that says it
+// can run one. Every platform's beacon carries the `eal` subcommand.
+func TestAgentCapabilities_EalRelayAdvertisedOnEveryPlatform(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		if !has(agentCapabilities(goos, false), "eal-relay") {
+			t.Errorf("agentCapabilities(%s) does not advertise eal-relay: %v",
+				goos, agentCapabilities(goos, false))
 		}
 	}
 }

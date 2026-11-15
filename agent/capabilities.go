@@ -46,6 +46,10 @@ func agentCapabilities(goos string, inContainer bool) []string {
 	} else {
 		caps = []string{"shell", "identity-harness", "artifact-fetch"}
 	}
+	// "eal-relay": this beacon runs a step that calls SimCore's EAL CLI through
+	// its own `eal` subcommand (agent/ealrelay). SimCore marks such a step only
+	// for a beacon that says so; an older one gets the step as it always did.
+	caps = append(caps, "eal-relay")
 	if inContainer {
 		caps = append(caps, "container")
 	}

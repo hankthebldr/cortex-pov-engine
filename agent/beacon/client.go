@@ -130,6 +130,9 @@ type Step struct {
 	// TimeoutSeconds defines the maximum execution duration for this step in
 	// seconds. If zero or unset, the client's StepTimeout or defaultStepTimeout is used.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// EalRelay marks a step whose command calls the SimCore-only EAL CLI. The
+	// beacon runs that call through SimCore instead (see eal_relay.go).
+	EalRelay bool `json:"eal_relay,omitempty"`
 	// RequiredBinaries names executables the step's command needs on PATH. Each
 	// is checked with exec.LookPath before the step runs; a miss records the
 	// step not_run / TOOL_ABSENT instead of running it (see preflightTools).
@@ -1057,6 +1060,10 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		_ = c.completeTask(task, 0, fmt.Sprintf("SUCCESS | scenario=%s | no steps", task.ScenarioID), []StepOutcome{})
 		return
 	}
+
+	// EAL relay: steps SimCore marked run the EAL CLI through this beacon.
+	// Here, above the dispatch, so all three execution paths get it.
+	defer c.prepareEalRelay(task)()
 
 	// ---- Artifact staging: all-or-nothing, BEFORE step 1 ----
 	//
