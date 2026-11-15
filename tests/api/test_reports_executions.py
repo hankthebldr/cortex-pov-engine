@@ -141,6 +141,26 @@ def _seed_engine(SessionLocal):
     )
 
 
+class _Index:
+    """A stand-in for the process-wide UC/TC index."""
+
+    def __init__(self, rows=None):
+        self.loaded = rows is not None
+        self._rows = rows or {}
+
+    def tc(self, tc_ref):
+        return self._rows.get(tc_ref)
+
+
+@pytest.fixture(autouse=True)
+def _no_index(monkeypatch):
+    """The index is a process-wide singleton another test may have loaded; the
+    rollup reads test-case names from it, so every test here states its own."""
+    import api.reports as reports
+
+    monkeypatch.setattr(reports, "uctc_registry", _Index())
+
+
 @pytest.fixture
 def client(make_client):
     from api.reports import router
@@ -344,6 +364,25 @@ def test_the_test_case_view_follows_tc_refs(engine_client):
         assert tcs[tc]["scenarios"] == ["SIM-EDR-001"] and tcs[tc]["runs"] == 3
         assert tcs[tc]["outcomes"]["expected"] == 4
     assert tcs["TC-EDR-09"]["outcomes"] is None
+    # No index loaded: a test case that is not a scenario's primary has no name to give.
+    assert tcs["TC-EDR-05"]["name"] is None and tcs["TC-EDR-05"]["uc_ref"] is None
+
+
+def test_the_test_case_view_names_rows_from_the_index_when_it_is_loaded(engine_client, monkeypatch):
+    from types import SimpleNamespace
+
+    import api.reports as reports
+
+    monkeypatch.setattr(reports, "uctc_registry", _Index({
+        "TC-EDR-05": SimpleNamespace(title="Behavioural detection", ucs_id="UCS-EDR-03", uc_id="UC-EDR"),
+        "TC-EDR-03": SimpleNamespace(title="Index title", ucs_id="", uc_id="UC-EDR"),
+    }))
+    tcs = {r["tc_ref"]: r for r in _get(engine_client)["by_test_case"]}
+    assert (tcs["TC-EDR-05"]["name"], tcs["TC-EDR-05"]["uc_ref"]) == ("Behavioural detection", "UCS-EDR-03")
+    # The index wins over the scenario's own copy of the title.
+    assert (tcs["TC-EDR-03"]["name"], tcs["TC-EDR-03"]["uc_ref"]) == ("Index title", "UC-EDR")
+    # A test case the index does not hold falls back to the scenario that binds it.
+    assert tcs["TC-NDR-01"]["name"] == "TC-NDR-01 title"
 
 
 def test_planes_and_agents_count_runs(engine_client):
