@@ -187,3 +187,24 @@ describe('<RunDetailView /> failure banner', () => {
     expect(banner.textContent).toMatch(/no output captured/i)
   })
 })
+
+describe('<DetectionStoryline /> on a step that failed on the host (#323)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('says the step failed — never a detection gap, never Missed', async () => {
+    const body = storylineFor('complete', 'not_executed')
+    for (const d of body.detection_storyline.steps[0].detections) d.outcome_reason = 'STEP_FAILED'
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }))
+    render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
+    await screen.findByText(/Credential extraction tool/)
+
+    expect(screen.getAllByText(/the step failed on the host, so a miss can't be claimed/))
+      .toHaveLength(2)
+    expect(screen.getAllByText('Not executed')).toHaveLength(2)
+    expect(screen.queryByText(/detection gap/i)).toBeNull()
+    expect(screen.queryByText('Missed')).toBeNull()
+    expect(screen.queryByText(/STEP_FAILED/)).toBeNull()
+  })
+})

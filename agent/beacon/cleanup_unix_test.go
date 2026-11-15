@@ -41,6 +41,8 @@ func taskWithCleanupTimeout(t *testing.T, timeoutSeconds int, steps []map[string
 	t.Helper()
 	body := map[string]any{
 		"task_id": "t-1", "run_id": "r-1", "scenario_id": "SIM-EDR-003", "steps": steps,
+		// Every task SimCore sends also asks for live output (liveout.go).
+		"live_output": map[string]any{"flush_ms": 1000, "max_chunk_bytes": 16384, "max_step_bytes": 262144},
 	}
 	if len(cleanup) > 0 {
 		cmds := make([]map[string]any, 0, len(cleanup))
@@ -56,10 +58,19 @@ func taskWithCleanupTimeout(t *testing.T, timeoutSeconds int, steps []map[string
 	return decodeTask(t, string(raw))
 }
 
-// outputFrame is one /output body.
+// outputFrame is one /output body. Kind is set on a live frame (a step's start
+// or a chunk of its output while it runs) and empty on a frame SimCore stores.
 type outputFrame struct {
-	Output string `json:"output"`
-	StepID string `json:"step_id"`
+	Output  string `json:"output"`
+	StepID  string `json:"step_id"`
+	Kind    string `json:"kind"`
+	Command string `json:"command"`
+}
+
+// isStoredFrame reports whether a recorded request is an /output frame SimCore
+// stores: a step's final frame or the cleanup section, not a live frame.
+func isStoredFrame(rec recorded) bool {
+	return strings.HasSuffix(rec.Path, "/output") && !strings.Contains(rec.Body, `"kind"`)
 }
 
 // cleanupFrames returns the /output frames that carry a cleanup section.
@@ -157,17 +168,26 @@ func TestCleanupRunsAfterFailedStep(t *testing.T) {
 	if !strings.Contains(section, "--- cleanup 1/1 exit_code=0 duration=") {
 		t.Errorf("cleanup section has no footer for its command: %q", section)
 	}
-	// SimCore reads a step id on /output as "that step started".
-	if frames[0].StepID != "" {
-		t.Errorf("cleanup frame is attributed to step %q", frames[0].StepID)
+	// SimCore reads a step id on /output as "that step started", and a `kind`
+	// as a live frame it publishes and never stores. The section is neither.
+	if frames[0].StepID != "" || frames[0].Kind != "" {
+		t.Errorf("cleanup frame is attributed to step %q with kind %q", frames[0].StepID, frames[0].Kind)
+	}
+	// Cleanup is not a step: no live frame announces or streams its commands.
+	for _, rec := range rs.find("POST", "/output") {
+		var f outputFrame
+		_ = json.Unmarshal([]byte(rec.Body), &f)
+		if f.Kind != "" && (strings.Contains(f.Command, "rm -f") || strings.Contains(f.Output, "CLEANUP")) {
+			t.Errorf("a live %q frame carries cleanup: %s", f.Kind, rec.Body)
+		}
 	}
 	// The section lands after the failed step's frame and before /complete.
 	failedAt, cleanupAt, completeAt := -1, -1, -1
 	for i, rec := range rs.records() {
 		switch {
-		case strings.HasSuffix(rec.Path, "/output") && strings.Contains(rec.Body, `"step_id":"step-02"`):
+		case isStoredFrame(rec) && strings.Contains(rec.Body, `"step_id":"step-02"`):
 			failedAt = i
-		case strings.HasSuffix(rec.Path, "/output") && strings.Contains(rec.Body, "=== CLEANUP"):
+		case isStoredFrame(rec) && strings.Contains(rec.Body, "=== CLEANUP"):
 			cleanupAt = i
 		case strings.HasSuffix(rec.Path, "/complete"):
 			completeAt = i
@@ -397,7 +417,7 @@ func TestCleanupKeepsTheControlChannelAlive(t *testing.T) {
 	stepAt, cleanupAt := -1, -1
 	recs := rs.records()
 	for i, rec := range recs {
-		if !strings.HasSuffix(rec.Path, "/output") {
+		if !isStoredFrame(rec) {
 			continue
 		}
 		if strings.Contains(rec.Body, `"step_id":"step-01"`) {

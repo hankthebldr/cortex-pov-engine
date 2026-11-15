@@ -295,6 +295,11 @@ def test_cleanup_output_is_not_read_as_a_step_that_did_not_run(client, session_f
     authored. The same words from a cleanup command say nothing about a step."""
     _seed(session_factory, output=STEP_FRAME)
     assert client.post("/api/runs/r1/output", json={"output": SECTION}).status_code == 200
+    # The section is a stored frame that belongs to no step: it is not a live
+    # frame (no `kind`), and it starts no step and leaves no step outcome.
+    run = client.get("/api/runs/r1").json()
+    assert run["output"].endswith(SECTION)
+    assert (run["step_starts"], run["step_outcomes"], run["live_tail"]) == ([], [], [])
     assert _complete(client, cleanup={"status": "failed", "ran": 2, "failed": 1,
                                       "reason": "COMMAND_FAILED"}).status_code == 200
 

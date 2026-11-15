@@ -33,6 +33,7 @@ from sqlalchemy.orm import defer
 from database import get_db
 from engine import efficacy_scorecard
 from engine import host_evidence
+from engine import live_output
 from engine import pull_cleanup
 from engine import report_generator
 from engine.outcome import (
@@ -759,9 +760,19 @@ class OutputRequest(BaseModel):
     step_id: Optional[str] = None
     # The beacon's key for a retried frame (RG-AGENT-06): "<task_id>:<n>",
     # the same on every attempt. A frame already stored for this run is not
-    # appended again. Absent from an older beacon and from live streaming
-    # chunks, which append every time exactly as before.
+    # appended again. Absent from an older beacon, whose frames append every
+    # time exactly as before.
     frame_id: Optional[str] = Field(default=None, max_length=128)
+    # Live frames (engine/live_output.py). `kind` is absent on the final
+    # per-step frame, which is the only kind that is stored. "start" announces
+    # a step with its `command`, `identity`, `index` and `total`; "chunk" is
+    # output while the step runs, numbered by a rising `seq`.
+    kind: Optional[str] = None
+    seq: Optional[int] = None
+    command: Optional[str] = None
+    index: Optional[int] = None
+    total: Optional[int] = None
+    identity: Optional[str] = None
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
@@ -1362,7 +1373,8 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
     logger.info("get_run run_id=%s status=%s", run_id, run.status)
-    return {**run.to_dict(), "step_outcomes": await _step_outcomes_view(db, run)}
+    return {**run.to_dict(), "step_outcomes": await _step_outcomes_view(db, run),
+            **await live_output.run_view(db, run_id, in_flight=not _is_terminal(run))}
 
 
 @router.get("/{run_id}/pair")
@@ -1810,7 +1822,13 @@ async def append_output(
     ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once (the guard is
     in SQL too). The step-start record below is host evidence, not output,
     and is written either way.
+
+    A body with ``kind`` is a live frame (a step start or an output chunk):
+    it is published and never stored, and writes no ``step_outcomes`` row.
     """
+    if body.kind:
+        return await live_output.handle_frame(
+            db, run_id, body, is_terminal=_is_terminal, not_found=_run_not_found)
     frame_id = (body.frame_id or "").strip()
     if frame_id:
         # Claimed FIRST, in the same transaction as the append: a conflict
@@ -1863,6 +1881,8 @@ async def append_output(
             .on_conflict_do_nothing(index_elements=["run_id", "step_id"])
         )
     await db.commit()
+    # A step's final frame ends its live stream for the rest of the run.
+    await live_output.frame_stored(db, run_id, body, is_terminal=_is_terminal)
 
     if appended:
         await _safe_publish(

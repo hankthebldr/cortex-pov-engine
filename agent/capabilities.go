@@ -51,6 +51,10 @@ func agentCapabilities(goos string, inContainer bool) []string {
 	} else {
 		caps = []string{"shell", "identity-harness", "artifact-fetch", "cleanup"}
 	}
+	// "live-output": this beacon reports each step's command before it runs and
+	// streams the step's output while it runs, when the task asks for it
+	// (beacon/liveout.go). A beacon without it posts each step once, at the end.
+	caps = append(caps, "live-output")
 	if inContainer {
 		caps = append(caps, "container")
 	}

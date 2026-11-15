@@ -255,7 +255,7 @@ if [ -s "$ART_TOKEN_FILE" ]; then
   fi
 fi
 AGENT="${CORTEXSIM_AGENT_BIN:-/cortexsim/cortexsim-agent}"
-"$AGENT" --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 --stream-output &
+"$AGENT" --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 &
 pid=$!
 wait $pid
 rc=$?

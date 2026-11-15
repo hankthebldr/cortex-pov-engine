@@ -56,7 +56,9 @@ def test_step_index_non_string_returns_none():
 
 def test_ui_event_always_has_required_keys_and_synthetic_false():
     ui = _to_ui_event({"type": "run.status", "ts": "T", "data": {"status": "running"}})
-    assert set(ui.keys()) == {"id", "timestamp", "level", "stepIndex", "message", "synthetic"}
+    assert set(ui.keys()) == {"id", "timestamp", "level", "stepIndex", "message", "synthetic",
+                              # the live runtime log (engine/live_output.py)
+                              "stepId", "live", "phase", "command", "seq"}
     assert ui["synthetic"] is False
     assert ui["timestamp"] == "T"
     assert ui["level"] in _UI_LEVELS
@@ -102,6 +104,43 @@ def test_run_output_carries_chunk_and_step_index():
     assert ui["level"] == "info"
     assert ui["message"] == "hello\n"
     assert ui["stepIndex"] == 1
+
+
+def test_stored_run_output_is_not_live_and_names_its_step():
+    ui = _to_ui_event(
+        {"type": "run.output", "ts": "T", "data": {"step_id": "step-02", "chunk": "hello\n"}}
+    )
+    assert (ui["stepId"], ui["live"], ui["phase"]) == ("step-02", False, "output")
+    assert ui["command"] is None and ui["seq"] is None
+
+
+def test_live_run_output_chunk_is_marked_live():
+    ui = _to_ui_event(
+        {"type": "run.output", "ts": "T",
+         "data": {"step_id": "step-02", "chunk": "tick 3\n", "live": True, "seq": 3}}
+    )
+    # The fields an existing console reads are unchanged ...
+    assert (ui["level"], ui["message"], ui["stepIndex"]) == ("info", "tick 3\n", 1)
+    # ... and a console that knows about live output can tell it from a stored frame.
+    assert (ui["stepId"], ui["live"], ui["phase"], ui["seq"]) == ("step-02", True, "output", 3)
+
+
+def test_run_step_start_carries_the_command():
+    ui = _to_ui_event(
+        {"type": "run.step", "ts": "T",
+         "data": {"step_id": "step-02", "phase": "start", "command": "id; whoami",
+                  "identity": "www-data", "index": 2, "total": 3}}
+    )
+    assert ui["level"] == "step" and ui["stepIndex"] == 1
+    assert (ui["stepId"], ui["phase"], ui["command"], ui["live"]) == (
+        "step-02", "start", "id; whoami", False)
+    assert ui["message"] == "Running: id; whoami"
+
+
+def test_events_without_a_step_carry_empty_live_fields():
+    ui = _to_ui_event({"type": "agent.status", "ts": "T",
+                       "data": {"agent_id": "jb-1", "status": "online"}})
+    assert (ui["stepId"], ui["live"], ui["phase"], ui["command"]) == (None, False, None, None)
 
 
 def test_run_step_boundary_is_step_level():

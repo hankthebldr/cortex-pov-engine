@@ -9,12 +9,24 @@ Both return ``text/event-stream`` and emit one SSE frame per event in the
 exact shape the UI consumer (``ui/src/components/console/useRunEventStream.js``)
 parses with ``EventSource.onmessage`` + ``JSON.parse``:
 
-    { id, timestamp, level, stepIndex, message, synthetic }
+    { id, timestamp, level, stepIndex, message, synthetic,
+      stepId, live, phase, command, seq }
 
 with ``level ∈ info | warn | error | detect | step``. The canonical bus
 event (``core/events.py``) carries a richer ``{type, run_id, ts, data}``
 shape; :func:`_to_ui_event` is the pure translation into the UI shape so
 live and poll-fallback streams render identically.
+
+The last five fields are the live runtime log (``engine/live_output.py``):
+
+    stepId   the step the event belongs to ("step-02"), else null
+    phase    "start"  — the beacon is about to run the step; ``command`` is set
+             "output" — step output; ``live`` says which kind
+             null     — any other event
+    live     true only for output streamed while the step runs. It is not
+             stored; the step's stored frame (``live: false``) replaces it.
+    command  the command the beacon reported, on a "start" event only
+    seq      the chunk number of a live output event, else null
 """
 
 from __future__ import annotations
@@ -64,8 +76,9 @@ def _to_ui_event(bus_evt: dict[str, Any]) -> dict[str, Any]:
     """Translate a canonical bus event into the UI's flat SSE event shape.
 
     Always returns a dict with ``{id, timestamp, level, stepIndex,
-    message, synthetic}``. ``synthetic`` is always ``False`` from the live
-    endpoint — the UI's synthetic projector owns the poll-fallback path.
+    message, synthetic, stepId, live, phase, command, seq}`` (see the module
+    docstring for the last five). ``synthetic`` is always ``False`` from the
+    live endpoint — the UI's synthetic projector owns the poll-fallback path.
     """
     etype = bus_evt.get("type")
     data = bus_evt.get("data") or {}
@@ -74,6 +87,10 @@ def _to_ui_event(bus_evt: dict[str, Any]) -> dict[str, Any]:
     level = "info"
     message = ""
     step_index: Optional[int] = None
+    phase: Optional[str] = None
+    command: Optional[str] = None
+    live = False
+    seq: Optional[int] = None
 
     if etype == "run.status":
         status = data.get("status", "?")
@@ -87,11 +104,18 @@ def _to_ui_event(bus_evt: dict[str, Any]) -> dict[str, Any]:
         level = "info"
         step_index = _step_index(data.get("step_id"))
         message = data.get("chunk", "")
+        phase = "output"
+        live = bool(data.get("live"))
+        seq = data.get("seq") if live else None
     elif etype == "run.step":
         # Synthetic-style step boundary marker (see 3.3 "step" level note).
         level = "step"
         step_index = _step_index(data.get("step_id"))
         message = data.get("message", "")
+        phase = data.get("phase")
+        if phase == "start":
+            command = data.get("command") or ""
+            message = message or f"Running: {command}"
     elif etype == "result.observed":
         level = "detect"
         plane = data.get("plane", "?")
@@ -113,6 +137,11 @@ def _to_ui_event(bus_evt: dict[str, Any]) -> dict[str, Any]:
         "stepIndex": step_index,
         "message": message,
         "synthetic": False,
+        "stepId": (data.get("step_id") or None) if isinstance(data, dict) else None,
+        "live": live,
+        "phase": phase,
+        "command": command,
+        "seq": seq,
     }
 
 

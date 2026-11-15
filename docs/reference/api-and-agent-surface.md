@@ -316,7 +316,7 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. `warnings[]` is what the launch would carry for the same body, the runtime-dependency warnings included (it reads `allow_runtime_install`). No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
-| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1). `cleanup` is one entry per task that was sent the scenario's cleanup, or null (§1.3.3); 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1), `step_starts[]` and, only while the run is in flight, `live_tail[]` (§1.3.3). `cleanup` is one entry per task that was sent the scenario's cleanup, or null (§1.3.4); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | POST | `/api/runs/{run_id}/tenant-evidence` | Read the run's tenant evidence: its issues, their cases and the run host's endpoint record (`core/api/tenant_evidence.py`, `connectors/tenant_evidence.py::read_run_evidence`). Explicit operator action, OUTBOUND, read-only, metered; nothing polls it. Stores a snapshot in `tenant_evidence_reads` | query: `force=true\|false` (default false), `integration?` (default: the first credential of kind `xsiam` or `xsiam_tenant`) | 200 `{run_id, read, status, code, detail, retry_after_seconds, snapshot, issues}` (`status` `ok`/`degraded`/`pending`; `snapshot` is the stored row, `issues` its payload's issues section). No read (`read: false`): `NO_TENANT_CONFIGURED` (`pending`, `issues: null`, no credential), `NO_RUN_WINDOW` (`degraded`, no request, nothing stored: a push run, whose execution time is unknown (`push_execution_time_unknown`), or a run where no Result has `executed_at`), `TENANT_EVIDENCE_READ_RECENTLY` (this run and tenant were read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`, through either of that tenant's credentials; the latest snapshot and `retry_after_seconds`; `force=true` reads anyway). Two requests for one run and tenant at once spend one read: the second waits for the first and returns its snapshot (`TENANT_EVIDENCE_READ_RECENTLY`), even when the first read outlasted the interval and even with `force=true`. A read's `code`: `OK`, `NO_ATTRIBUTED_ISSUES` (degraded: the detail names ingestion latency, the hostname, the window and the Security domain filter), `UNSCOPED` (no run host), `QUOTA_REFUSED` (with `retry_after_seconds`) or the issue read's failure code (`XSIAM_*`). 404 `RUN_NOT_FOUND`; 404 `INTEGRATION_NOT_FOUND`; 500 `CREDENTIAL_ERROR` |
@@ -325,8 +325,8 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
-| POST | `/api/runs/{run_id}/output` | Agent streams output (append), bounded | `OutputRequest`: `{output}` | `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?, task_id?, agent_id?, cleanup?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`; `cleanup` is the scenario-cleanup outcome, §1.3.3) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
+| POST | `/api/runs/{run_id}/output` | Agent posts a step's output. A body with no `kind` is the step's final frame: appended to `Run.output`, bounded. A body with `kind` is a live frame: published, never stored (§1.3.3) | `OutputRequest`: `{output, step_id?, frame_id?}`; a live frame adds `kind` (`start` \| `chunk`), `seq`, and on `start` `command`, `identity`, `index`, `total` | final frame: `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; live frame: `{"status":"ok","run_id","live":true,"kind"}` (+ `dropped: true` when it was not used); 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?, task_id?, agent_id?, cleanup?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`; `cleanup` is the scenario-cleanup outcome, §1.3.4) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?, remediation?, retry_after_seconds?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 200 + `pending` + `reason:"refused_locally"` with `remediation` and (when the refusal names one) `retry_after_seconds` when CortexSim's own per-tenant budget refused the query before the tenant answered (not an attempt: it never advances the attempt cap or the backoff); 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -516,7 +516,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -538,6 +538,17 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
   `prevent` rows follow the same rule. `kpi_verdict` is left to the Tier-2 verifier. A later matched
   alert replaces `missed` with `detected`.
+- **A failed step is not a miss (1.2.1, #323).** `exited` means "ended on its own, any
+  exit status". When the host record carries a non-zero `exit_code`, the step failed on
+  the host (`ModuleNotFoundError`, a missing runtime dependency, a permission error), so
+  once its window closes with no alert its silent `detect` rows — and `prevent` rows
+  scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
+  `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
+  notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  `anchor_terminated` are unchanged; an alert matched inside the window still credits
+  the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
+  `missed`, and the block-mode two-witness branch does not read `exit_code`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
@@ -805,7 +816,92 @@ them under `excluded`, so silence on records never sent cannot read `fail`. A st
 that delivered at least one record stays in the denominator. ***tenant-verified
 is 0***: nothing on this path has delivered to a live tenant.
 
-#### 1.3.3 Pull cleanup wire contract
+#### 1.3.3 Live runtime log: step starts and output while a step runs
+
+A beacon used to post one `/output` frame per step, after the step ended, and
+never said which command it ran. Three additions change that. None of them
+changes what is stored on `Run.output`, a `step_outcomes` row, an outcome or a
+verdict. Code: `core/engine/live_output.py`, `agent/beacon/liveout.go`.
+
+**1. The pull task asks for it.** Every task from
+`GET /api/agents/{id}/tasks` carries:
+
+```json
+"live_output": {"flush_ms": 1000, "max_chunk_bytes": 16384, "max_step_bytes": 262144}
+```
+
+A beacon that predates it drops the key and behaves as before. A beacon that
+understands it advertises the capability `live-output`.
+
+**2. Two more `/output` frame kinds.** `kind` is absent on the final per-step
+frame, which is unchanged and is the only kind that is stored.
+
+```json
+{"kind": "start", "seq": 0, "step_id": "step-02", "output": "",
+ "command": "id; whoami", "identity": "www-data", "index": 2, "total": 5}
+
+{"kind": "chunk", "seq": 3, "step_id": "step-02", "output": "uid=33(www-data)\n"}
+```
+
+| Frame | Sent | SimCore does |
+|---|---|---|
+| `start` | before the step's process is started; not sent for a step that does not run (refused, tool absent, dependency missing) | writes one `step_starts` row `(run_id, step_id, command, identity, started_at)` and publishes `run.step`, once per step. No `step_outcomes` row |
+| `chunk` | every `flush_ms` while the step runs, or sooner once `max_chunk_bytes` is waiting; `seq` counts from 1 per step; stops after `max_step_bytes` of step output with a one-line notice | publishes `run.output` with `live: true`; keeps the newest `max_step_bytes` per step in memory. Never appended to `Run.output` |
+| (no `kind`) | when the step ends, exactly as before, retried, with `frame_id` | appends to `Run.output`, stamps `step_outcomes.started_at`, publishes `run.output`; drops that step's live tail and closes the step |
+
+- `command` is the command the beacon is about to execute on that host: the
+  step's command after the per-OS variant is chosen, before the identity
+  harness wraps it. It is cut to 65,536 characters.
+- `StepOutcome.started_at` still means "the step had finished by then". The
+  start time is `step_starts.started_at`.
+- Live frames are best effort. The beacon sends each once, never retries, and
+  never holds a step for one: a step waits at most 250 ms for its `start`
+  frame to be acknowledged, and a live POST still in flight when the step ends
+  is abandoned. A 4xx to a live frame stops live frames for the rest of that
+  task. The final frame is built and sent the same either way.
+- **A step's live stream ends once.** A step runs once per run, so its final
+  frame closes it for the rest of the run: a `start` or `chunk` for a closed
+  step is answered `dropped: true`, writes nothing and publishes nothing,
+  however late, replayed or forged it is. A step's final frame is the stored
+  frame that carries its `--- exit_code=` footer. Other frames stored under a
+  step's id do not close it (the beacon stores its `ANCHOR NOT HONOURED`
+  notice under the first step's id before that step runs).
+- **The first `start` is the record.** A second `start` for the same step is
+  dropped: it does not replace the stored command and is not published.
+- **A run that is no longer in flight takes no live frame.** Every `start` and
+  `chunk` for it is dropped. An unknown `kind` is dropped too; it is never
+  stored.
+- Which steps are closed is held in memory beside the tail, separately from
+  it: evicting tail text never reopens a step. Like the tail, it is empty
+  after a SimCore restart.
+- stdout and stderr share one live stream, in the order the beacon read them.
+
+**3. `GET /api/runs/{run_id}` returns both.**
+
+```json
+"step_starts": [{"step_id": "step-02", "command": "id; whoami",
+                 "identity": "www-data", "started_at": "2026-11-15T18:04:11.512345"}],
+"live_tail":   [{"step_id": "step-02", "text": "uid=33(www-data)\n", "seq": 3, "truncated": false}]
+```
+
+`step_starts` is always present (empty for a run whose beacon sent none) and
+stays after the run ends, so a finished run shows the command that was
+attempted. `live_tail` is present only while the run is in flight: a step's
+entry goes when its final frame arrives, the whole key when the run ends. It
+is process memory, so it is empty after a SimCore restart. `seq` is the last
+chunk folded into `text`; a console that reads the tail and then follows the
+stream skips chunks up to it.
+
+**Older beacon, older SimCore.** An older beacon ignores `live_output`: one
+frame per step, `step_starts` empty, no `live_tail` entries. A new beacon
+against an older SimCore receives no `live_output` and sends nothing new.
+
+**`--stream-output` is retired.** The flag posted once per pipe write from
+inside the step's own writer, skipped chained steps, and SimCore stored that
+output twice (the chunks, then the step's frame). The beacon still accepts
+the flag and ignores it.
+
+#### 1.3.4 Pull cleanup wire contract
 
 A pull run cleans up after itself (#324). The task a beacon collects carries
 the scenario's `cleanup.commands` resolved for that agent's OS, the beacon runs
@@ -855,8 +951,11 @@ grace while a cleanup is in flight. A supervisor with a shorter stop timer
 still kills the beacon at its own deadline: a pod's 30 s
 `terminationGracePeriodSeconds`, launchd's default 20 s.
 
-**Run output.** One `/output` frame, with no `step_id`, sent before
-`/complete`:
+**Run output.** One `/output` frame, with no `step_id` and no `kind`, sent
+before `/complete`. With no `kind` it is stored like a step's final frame,
+never taken as a live frame (§1.3.3); with no `step_id` it records no step
+start and closes no step's live stream. Cleanup commands are not streamed
+and get no `start` frame:
 
 ```
 === CLEANUP · 2 commands · identity=direct ===
@@ -1323,7 +1422,7 @@ build stayed Running in CI.
   (`409 PULL_TARGET_UNSATISFIABLE`) or skipped on the host (`!! STEP NOT RUN:
   PLATFORM_UNSATISFIABLE`, scored `not_executed`).
 - Scenario `cleanup.commands` run when the task ends, the lines SimCore resolved
-  for Windows under `powershell` or `cmd` (§1.3.3). No Windows host has run this
+  for Windows under `powershell` or `cmd` (§1.3.4). No Windows host has run this
   path yet.
 - There is no Windows canary (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
 
@@ -1507,9 +1606,25 @@ Authoring surface (gated on `CORTEXSIM_AUTHORING_ENABLED=true`, else 403 `AUTHOR
 | GET | `/api/events` | SSE stream of every event across all runs + agent status | `text/event-stream` |
 
 - Both return `text/event-stream` and emit one SSE frame per event. The browser
-  consumes them with `EventSource.onmessage` + `JSON.parse`; each event carries a
-  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `result.observed`,
-  `agent.status`, `agent.install`, `run.verdict`, …).
+  consumes them with `EventSource.onmessage` + `JSON.parse`. On the bus each
+  event is a `{type, run_id, ts, data}` envelope (`run.status`, `run.output`,
+  `run.step`, `result.observed`, `agent.status`, `agent.install`, `run.verdict`, …);
+  the stream sends its flat translation (`_to_ui_event`):
+  `{id, timestamp, level, stepIndex, message, synthetic, stepId, live, phase, command, seq}`.
+- **Live runtime log fields (§1.3.3).** `stepId` is the step the event belongs
+  to, else null. `phase` is `start` (the beacon is about to run the step;
+  `command` is set, `level` is `step`, `message` is `Running: <command>`),
+  `output` (step output, `message` is the text) or null. `live` is true only
+  for output streamed while the step runs, with its chunk number in `seq`; that
+  text is not stored, and the step's stored frame (`phase: output`,
+  `live: false`) replaces it. The first six fields are unchanged.
+
+  | Bus event | `level` | `phase` | `live` | `command` | `seq` |
+  |---|---|---|---|---|---|
+  | `run.step`, a step start | `step` | `start` | false | the command | null |
+  | `run.output`, a live chunk | `info` | `output` | true | null | chunk number |
+  | `run.output`, a stored frame | `info` | `output` | false | null | null |
+  | anything else | as before | null | false | null | null |
 - **`run.verdict` (new, 2026-08-02)** is published whenever `Run.tc_verdict` is
   written — i.e. from `complete_run` (seeds the verdict, typically `pending` at
   t=0) and from `connectors/service.py::apply_verdicts`, the single funnel for
@@ -1800,13 +1915,28 @@ recorded under `tc_verdict_detail.measurement` with `family`, `basis`, `value`,
 
 | scenario `primary_kpi` (unit `%`) | value | basis |
 |---|---|---|
-| Detection Accuracy | `observed / seeded` over results that executed | `reconcile` or `manual` |
+| Detection Accuracy | `observed / seeded` over results that executed, less unmatched verify-only XQL rows | `reconcile` or `manual` |
 | Cross-Source Correlation Rate · Stitch Completeness · Correlation Coverage | `(alerts − incidents) / (alerts − 1)` | `alert_incident_ids` when the tenant stamps `incident_id`/`case_id` on alerts, else `host_incidents` from one `get_incidents` read scoped to the run's host |
 
 The guard: an **unscoped** pull withholds a PASS, a **truncated** pull
 withholds a FAIL, **zero matched** stays `pending`, and fewer than two alerts
 cannot yield a correlation rate. A re-score with no new evidence keeps the last
 measured value.
+
+**Verify-only XQL rows (2026-11-15, issue #272).** A row is verify-only when its
+declared type is `XQL` and no alert-raising card object backs it: its card
+object (`Result.detection_kind`, else the catalog entry for `ttp_ref` +
+`detection_id`) is an `xql_queries[]` query or a modeling rule, or there is no
+card (`connectors/measures.py::is_verify_only`). A query raises no alert, so
+while such a row is unmatched it leaves the Detection Accuracy numerator and
+denominator, as `not_reached` / `not_executed` rows do. A matched one counts on
+both sides. Its outcome is not changed: it still reads `missed`, and its own
+verdict is the Tier-2 verify verdict when it carries a `verification_xql`. With
+no alert-backed row left the measure is withheld and the run reads `pending`,
+never PASS. `measurement.verify_only` reports `{excluded, credited,
+no_verification_xql}`; the last counts excluded rows that Tier 2 cannot score
+either. Coverage (`coverage_pct`, the report's coverage table and the efficacy
+scorecard) is a different number and still counts these rows.
 
 **Credential config keys the `xsiam` connector reads:** `base_url` |
 `fqdn` | `tenant_url`, `api_key_id` | `auth_id`, `auth_mode`
@@ -2313,7 +2443,7 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         ├─ build Task{task_id, run_id, scenario_id,
         │            steps=_resolve_adapter_placeholders(scenario.steps),
         │            identity_context,
-        │            cleanup=<cleanup.commands for the agent's OS, §1.3.3>}
+        │            cleanup=<cleanup.commands for the agent's OS, §1.3.4>}
         │
         ├─ orchestrator._enqueue(target_agent_id, task)   # in-memory dict[agent_id]->[Task]
         │
@@ -2324,9 +2454,12 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         → orchestrator.dequeue(agent_id) pops Task → {"task": <task.to_dict()>}
                 │
                 ▼
-   Beacon executes via identity harness (see §5), runs the task's cleanup, then:
-        POST /api/runs/{run_id}/output    (full combined STDOUT/STDERR)
-        POST /api/runs/{run_id}/output    (the === CLEANUP section)
+   Beacon executes via identity harness (see §5). Per step:
+        POST /api/runs/{run_id}/output    kind=start, the command   (live, §1.3.3)
+        POST /api/runs/{run_id}/output    kind=chunk, while it runs (live, §1.3.3)
+        POST /api/runs/{run_id}/output    (full combined STDOUT/STDERR; stored)
+   then, after running the task's cleanup (§1.3.4):
+        POST /api/runs/{run_id}/output    (the === CLEANUP section; stored)
         POST /api/runs/{run_id}/complete  {exit_code, summary, steps[], cleanup}
                 │
                 ▼
@@ -2542,11 +2675,14 @@ Go 1.21+, **stdlib only**.
   60 s with `SERVICE_EXIT_CODE` 3. `signal.Notify` is kept off the service
   path so a user logoff does not stop it. Host *shutdown* gives services only a
   few seconds, which may be too short for the final `/complete`.
-- **Capabilities.** POSIX: `["shell","identity-harness","artifact-fetch","cleanup"]`.
-  Windows: `["shell","powershell","artifact-fetch","cleanup"]`, plus `elevated` only when
-  the process token's `TOKEN_ELEVATION` says so. A Windows beacon **never**
-  claims `identity-harness`. `cleanup` says the beacon runs the scenario
-  cleanup a task carries (§1.3.3).
+- **Capabilities.** POSIX:
+  `["shell","identity-harness","artifact-fetch","cleanup","live-output"]`.
+  Windows: `["shell","powershell","artifact-fetch","cleanup","live-output"]`, plus
+  `elevated` (before `live-output`) only when the process token's
+  `TOKEN_ELEVATION` says so. A Windows beacon **never** claims
+  `identity-harness`. `cleanup` says the beacon runs the scenario cleanup a
+  task carries (§1.3.4). `live-output` means the beacon reports each step's
+  command and streams its output when the task asks (§1.3.3).
 
 ### 5.2 Poll loop (`beacon.Run`)
 ```
@@ -2623,9 +2759,17 @@ ctx cancelled → return (clean exit)
   background helper left by run N answered run N+1 and the run still read
   SUCCESS. Helpers a step starts in a new session (`runuser -l`, `setsid`) are
   outside the group.
+- **Live output (§1.3.3).** When the task carries `live_output`, the beacon
+  posts a `start` frame with the step's command before the step runs and
+  `chunk` frames while it runs, on all three execution paths (per-step, chained,
+  and the chained path's per-step fallback). The step's pipe writers only
+  append to a bounded buffer; one goroutine per step posts. Chained steps
+  stream line by line as the anchor prints them. On Windows a chained step's
+  live stderr is the raw stream; the stored frame carries the decoded text as
+  before.
 - **Output streaming is real, per-step** (GAP-AGENT-004, closed 2026-06-08). The
   beacon now iterates `task.Steps[]` sequentially and POSTs each step's output to
-  `/output` as it completes (one `/output` POST per step), so the SSE stream and the
+  `/output` as it completes (one stored `/output` POST per step), so the SSE stream and the
   console see incremental progress instead of a single final blob. Identity is
   resolved **agent-side** per step via `identity.ResolveIdentity(username)` (the
   server emits a username string in `step.identity` / `task.identity_context`; the
@@ -2634,14 +2778,15 @@ ctx cancelled → return (clean exit)
 
 ### 5.4 Report
 - `POST /api/runs/{run_id}/output` with combined `=== STDOUT === / === STDERR ===`.
-  Every non-streaming frame now ends with `\n`, so the next frame's `=== STEP`
+  Every stored frame ends with `\n`, so the next frame's `=== STEP`
   header starts a line (before, 4 of 5 frames were glued to the previous
   `--- exit_code=… ---`). Each carries `frame_id` = `"<task_id>:<n>"` (n from 1
   per task; `"<agent_id>:<n>"` with no task), fixed before the first attempt
   so a retry carries the same key; SimCore stores a repeated `(run_id,
-  frame_id)` once (§11). Live streaming chunks carry no `frame_id`.
+  frame_id)` once (§11). Live frames (`kind` set, §1.3.3) carry no `frame_id`
+  and do not use up a number.
 - **Scenario cleanup.** Before `/complete`, a task that carries `cleanup` runs
-  its commands and posts one `=== CLEANUP` frame (§1.3.3).
+  its commands and posts one `=== CLEANUP` frame (§1.3.4).
 - `POST /api/runs/{run_id}/complete` with `{exit_code, summary, steps[], task_id,
   agent_id, cleanup?}` where summary is
   `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...` and `steps[]` is the
@@ -2649,11 +2794,11 @@ ctx cancelled → return (clean exit)
   SimCore counts a fan-out completion once per task with them (§11).
 - On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
   interrupted", steps)` (exit 130) then return. A task with `cleanup` first gets
-  up to 30 s to run it (§1.3.3).
+  up to 30 s to run it (§1.3.4).
 - **Retries (2026-11, BEACON-11).** `/complete` and each step's `/output` retry
   transport errors and 5xx with backoff 1, 2, 4, 8, 16 s: 5 retries, 6 attempts.
   A 409 (`RUN_ALREADY_TERMINAL`) is treated as success; 404 and other 4xx stop
-  at once. Live streaming chunks are not retried. Since round 2 the ladder
+  at once. Live frames (§1.3.3) are sent once and never retried. Since round 2 the ladder
   yields to a shutdown: a stop during a backoff wait buys one final attempt,
   an attempt in flight at (or started after) the stop is cut after 3 s, and
   nothing that fails after the stop is retried. Without a stop the ladder is

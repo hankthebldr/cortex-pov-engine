@@ -410,7 +410,10 @@ Flags added for containers (all optional; the VM installer is unchanged):
 | `--expires-at <RFC3339>` | stop taking tasks and exit 0 after this time; checked before enrollment, so a beacon started after it exits 0 (`LIFETIME_EXPIRED`) without redeeming the token or registering |
 | `--subreaper` | become a child subreaper (Linux) and reap orphans of finished steps. On darwin / windows it logs `SUBREAPER_UNAVAILABLE` |
 
-`start.sh` also passes `--long-poll 30 --stream-output`. Enrollment retries
+`start.sh` also passes `--long-poll 30`. (`--stream-output` is retired: the
+beacon still accepts it and ignores it. Output is streamed while a step runs
+whenever SimCore asks for it in the task; see
+`docs/reference/api-and-agent-surface.md` §1.3.3.) Enrollment retries
 `SERVER_UNREACHABLE` five times, 3 s apart. A rescheduled pod enrolls afresh; the
 old row goes `offline` through the existing sweep.
 
@@ -524,9 +527,10 @@ place. All four were fixed in code and re-run.
 * `SIM-CDR-001` in a pod: its payload shelf was not staged, so the shelf gate
   fires before the agent gate. `SIM-CDR-015` stood in; the namespace-rule path is
   proven by unit and API tests only.
-* **Mid-step output streaming in chained execution**: SimCore holds nothing for a
-  step until it ends (`--stream-output` does not stream chained steps). This is
-  pre-existing, not specific to containers.
+* **Mid-step output streaming in chained execution** was not exercised in a pod.
+  Chained steps stream since the live runtime log
+  (`docs/reference/api-and-agent-surface.md` §1.3.3); that was verified on a host
+  beacon, not in a container.
 * The missing-Secret symptom (`FailedMount`) and the Linux CI `agent` job running
   the subreaper unit test are likewise not seen.
 * The console's **Kubernetes tab was not checked in a real browser**. Its tests
