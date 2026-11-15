@@ -1507,6 +1507,60 @@ passes a host.** Keeping this override rather than a docs-only "push detect read
 pending" is an open decision for Henry. A run that never executed
 (`not_executed`) is never matched at all.
 
+**One run per alert (2026-11-15, #347).** Host scoping narrows the pull to the
+endpoint, not to the run, and a row's match window (1 h, or
+`CORTEXSIM_RECONCILE_WINDOW_ANALYTICS` for Analytics / ABIOC) outlasts its run.
+On an endpoint that runs scenarios back to back, a row's window therefore
+holds the alerts of the runs that followed, and a technique match credited
+SIM-EDR-018's ABIOC row with the alert SIM-MP-003 raised 32 minutes later
+(MTTD 1,920 s). Both reconcile paths now place the run among the other pull
+runs a beacon collected (`connectors/attribution.py`, built by
+`service.run_attribution`) and ask one rule, a pure function of those runs, so
+every run's reconcile reaches the same answer in any order:
+
+- A row's window is unchanged: `executed_at` to `result_window_end` (the later
+  of `executed_at` and the step's host record, plus the type's window). That
+  window is the settle time an alert may lag by.
+- A run **holds its endpoint** from its launch (`Run.started_at`), or from
+  `delivered_at` when it was queued behind a run still executing there, until
+  the next run takes the endpoint over.
+- An alert a row matches only on a **technique or name** (a weak key) credits
+  the row only while its run holds the endpoint. After a later run took over
+  it is refused `LATER_RUN_STARTED`; before a queued run began, `RUN_NOT_BEGUN`.
+- An alert that carries the row's **rule name, detection id, or the run's own
+  id** in its record (a strong key) is the run's for the whole window, lag
+  included. When two runs hold a strong key, the run holding the endpoint at
+  the alert's time takes it and the other is refused `TIED_TO_ANOTHER_RUN`.
+- An alert goes to **at most one run**. One that matches rows of more than one
+  run with nothing to single one out (an alert that names no host while two
+  endpoints were running; two runs that took the endpoint at the same instant)
+  is **unattributed**: `AMBIGUOUS_RUNS`, credited to neither.
+
+The summary gains `not_credited[]` (one entry per refused alert:
+`alert_external_id`, `alert_name`, `alert_source`, `observed_at`, `matched_on`,
+`reason`, `run_id` and `scenario_id` of the run it belongs to, `runs[]` when
+ambiguous, `result_ids[]`), `unattributed` (how many were `AMBIGUOUS_RUNS`) and
+a warning for each. Unattributed alerts are stored on `Run.alert_attribution`
+(`unattributed[]`, with `reviewed_at`, `source`, `host`), a nullable JSON
+column added at startup. An unscoped reconcile has no endpoint to place the run
+on and is unchanged (`UNSCOPED_MATCH`).
+
+**A stored cross-run credit is withdrawn on re-review, never silently.** Nothing
+rewrites a stored run at upgrade. When a run is reconciled again, each row an
+alert on record credited (an `Observation` whose time is the row's
+`observed_at`; an operator's attestation has none and is never touched) is put
+to the same rule. A refused one goes back to unobserved and unjudged, so the
+same reconcile can credit it from the run's own alert or judge it silent; its
+note reads `credit withdrawn on re-review: alert <id> at <time> UTC is not this
+run's (<why>)`; the `Observation` stays on the run with no row; the alert
+leaves the run's case ledger; and the summary lists it under
+`withdrawn_credits[]` (`result_id`, `step_id`, `alert_external_id`,
+`alert_name`, `observed_at`, `mttd_seconds`, `reason`, `run_id`) with a warning.
+The auto-reconcile sweep reaches a stored run only while it is inside the
+lookback, under the attempt cap and still has an unobserved row; any other
+stored run changes when `POST /api/runs/{id}/reconcile` (or `/observations`) is
+called for it.
+
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
 naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
 `scope_alerts` → `alert_shape` (kind `xsiam`) / `scope_xql` → `datasets`

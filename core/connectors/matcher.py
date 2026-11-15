@@ -18,6 +18,12 @@ Result when ALL of:
 Each Result takes its **earliest** qualifying observation (lowest MTTD). The
 matcher is pure (no DB/IO) so it is exhaustively unit-tested; the API layer
 applies the verdicts to the ORM and emits SSE.
+
+**One run (#347).** Reconcile reads a HOST's alerts, so a row's window also
+holds the alerts of every later run on that host. The caller passes an
+``attribution`` (``connectors.attribution``) that says whether this run may
+take an alert at all; one it may not take is skipped and reported in
+``refused``, never credited.
 """
 from __future__ import annotations
 
@@ -357,6 +363,8 @@ def reconcile(
     only_unobserved: bool = True,
     window_seconds_by_type: Optional[dict[str, int]] = None,
     window_end_by_result: Optional[dict[Any, Any]] = None,
+    attribution: Any = None,
+    refused: Optional[list[dict[str, Any]]] = None,
 ) -> list[MatchVerdict]:
     """Match observations to results and return a verdict per *candidate* result.
 
@@ -374,6 +382,14 @@ def reconcile(
     silent-row judgement uses (round 5). The matcher does not re-derive it; a
     result it omits falls back to ``executed_at + window``. The lower bound and
     the MTTD start are always ``executed_at``.
+
+    ``attribution`` (``connectors.attribution.Attribution``) decides whether
+    THIS run may take an alert one of its rows matched (#347): the window of a
+    row reaches past its own run, into the alerts of later runs on the host.
+    An alert it refuses is skipped, so the row can still take a later one, and
+    is appended to ``refused`` as ``{result_id, alert, matched_on, reason,
+    run_id, runs}``. Without it every match in the window is taken, which is
+    only right when the alerts were already narrowed to one run.
     """
     window = timedelta(seconds=window_seconds)
     by_type = window_seconds_by_type or {}
@@ -433,6 +449,18 @@ def reconcile(
                 idx += 1
                 continue
             keys = _keys_for(rs, prepared[idx])
+            if keys and attribution is not None:
+                decision = attribution.decide(timed[idx], keys)
+                if not decision.allowed:
+                    if refused is not None:
+                        refused.append({
+                            "result_id": rid, "alert": timed[idx],
+                            "matched_on": list(decision.keys),
+                            "reason": decision.reason, "run_id": decision.run_id,
+                            "runs": list(decision.runs)})
+                    idx += 1
+                    continue
+                keys = decision.keys
             if keys:
                 if "rule_name" in keys:
                     consumed.add(idx)

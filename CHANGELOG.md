@@ -8,6 +8,43 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A run is never credited with another run's alert (#347).** Reconcile reads
+  the alerts of the run's endpoint, and a detection's match window (one hour,
+  a day for Analytics / ABIOC) is longer than the run. On an endpoint running
+  scenarios back to back, a later run's alert fell inside an earlier run's
+  window and credited it on a shared technique: SIM-EDR-018 read "detected"
+  from an alert SIM-MP-003 raised 32 minutes later, with an MTTD of 1,920 s.
+  Now an alert matched only on a technique or name credits a detection only
+  while its run holds the endpoint: from the run's launch (or, when it was
+  queued behind another run, from the moment the beacon collected it) until the
+  next run starts there. An alert that carries the detection's rule name, its
+  detection id or the run's own id still credits it later, up to the end of
+  the detection's window, so an Analytics alert that lags behind its run is
+  not lost. One alert credits at most one run; if two runs match it and
+  nothing ties it to one, it credits neither and is listed as unattributed.
+  The reconcile summary names every alert a run was not given, why, and the
+  run it belongs to (`not_credited`).
+
+### Upgrading from 1.2.x
+
+- **One new nullable column, added at startup:** `runs.alert_attribution`
+  (JSON). No action is needed; a run stored before the upgrade reads `NULL`,
+  meaning "not reviewed", until it is reconciled again.
+- **A stored run that carries a cross-run credit is not rewritten at upgrade.**
+  It changes when the run is reviewed again: `POST /api/runs/{id}/reconcile`,
+  `POST /api/runs/{id}/observations`, Read back in the console, or the
+  auto-reconcile sweep while the run is still inside its lookback. On that
+  review, a detection credited by an alert that belongs to another run goes
+  back to unobserved, loses its MTTD and is judged again in the same pass (so
+  it is credited from the run's own alert when there is one). The detection's
+  note says which alert was withdrawn and why, the reconcile summary lists it
+  under `withdrawn_credits` with a warning, and the alert stays on the run's
+  record with no detection attached. A detection a person marked observed is
+  never withdrawn. Coverage and a Detection Accuracy verdict that counted the
+  false credit drop accordingly.
+
 ## [1.2.1] - 2026-11-15
 
 **Hotfix for v1.2.0: a step that failed on the host no longer reads as
