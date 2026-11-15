@@ -109,6 +109,19 @@ describe('Detections — tiles say one number and at most one short line', () =>
 })
 
 describe('Detections — the MTTD panel', () => {
+  it('a row says its MTTD the way the tile does, never a sub-second one as 0:00', async () => {
+    await mount({
+      results: [
+        row(21, { outcome: 'detected', observed: true, mttd_seconds: 0.4 }),
+        row(22, { outcome: 'detected', observed: true, mttd_seconds: 42 }),
+        row(23, { outcome: 'detected', observed: true, mttd_seconds: 75 }),
+      ],
+      coverage: { denominator: 3, observed_in_denominator: 3, pct: 100, excluded: {} },
+    })
+    const mttd = (text) => rowOf(text).querySelector('.scorecard__mttd').textContent
+    expect([mttd('det-21'), mttd('det-22'), mttd('det-23')]).toEqual(['0.4s', '42s', '1m 15s'])
+  })
+
   it('is one line when there is no MTTD', async () => {
     await mount({ results: [row(3, { outcome: 'missed' })], coverage: { denominator: 1, observed_in_denominator: 0, pct: 0, excluded: {} } })
     const panel = screen.getByTestId('mttd-panel')

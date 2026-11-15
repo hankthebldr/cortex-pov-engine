@@ -41,6 +41,9 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   hand. A row now offers Mark detected until it reads Detected, and Reset on a
   row a hand mark made detected (it sends `observed: false`). A row matched to
   an alert offers neither.
+- **A scorecard row's MTTD reads the way the tile does** ("0.4s", "42s",
+  "1m 15s"). A sub-second detection used to read "0:00" beside a tile saying
+  0.4s.
 - **Techniques and Topology no longer repeat the run verdict.** The verdict
   line at the top of Results says it once. Their totals and explanations are
   one line each, with the detail in a tooltip.

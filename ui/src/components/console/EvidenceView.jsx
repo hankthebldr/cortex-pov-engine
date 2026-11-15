@@ -360,10 +360,11 @@ function ScorecardRow({ row, reviewed, isSelected, onSelect, onValidate }) {
   )
 }
 
+/** A row's MTTD, the way the tiles and the drawer say it: "0.4s", "42s", "1m 15s". */
 function formatMttd(seconds) {
   if (seconds == null) return '—'
-  if (seconds < 60) return `0:${String(Math.floor(seconds)).padStart(2, '0')}`
+  if (seconds < 60) return `${tidySeconds(seconds)}s`
   const mm = Math.floor(seconds / 60)
   const ss = Math.floor(seconds % 60)
-  return `${mm}:${String(ss).padStart(2, '0')}`
+  return `${mm}m ${String(ss).padStart(2, '0')}s`
 }
