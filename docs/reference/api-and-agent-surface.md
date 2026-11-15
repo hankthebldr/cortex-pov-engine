@@ -495,7 +495,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -517,6 +517,17 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
   `prevent` rows follow the same rule. `kpi_verdict` is left to the Tier-2 verifier. A later matched
   alert replaces `missed` with `detected`.
+- **A failed step is not a miss (1.2.1, #323).** `exited` means "ended on its own, any
+  exit status". When the host record carries a non-zero `exit_code`, the step failed on
+  the host (`ModuleNotFoundError`, a missing runtime dependency, a permission error), so
+  once its window closes with no alert its silent `detect` rows — and `prevent` rows
+  scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
+  `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
+  notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  `anchor_terminated` are unchanged; an alert matched inside the window still credits
+  the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
+  `missed`, and the block-mode two-witness branch does not read `exit_code`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
