@@ -1062,8 +1062,9 @@ with its shell intact, and the one call is relayed (`core/engine/eal_relay.py`,
 launch        a step whose command (or a platform variant) matches
               python3? -m scripts.eal_simulator.cli  is sent with "eal_relay": true,
               and one eal_relay_steps row records run, step, agent and the launch's consent
-beacon        swaps that call for   '<agent binary>' eal --relay 127.0.0.1:<port> --ticket-file '<path>'
-              (every other byte of the command is unchanged) and runs the step as usual
+beacon        as the step is executed, swaps that call for
+                '<agent binary>' eal --relay 127.0.0.1:<port> --ticket-file '<path>'
+              (every other byte is unchanged, and the step keeps its own text)
 eal           reads its ticket from that file and the campaign file the step wrote,
               and hands both to the beacon over loopback
 beacon        POST /api/eal/relay  {agent_id, run_id, step_id, verb, campaign_yaml, plugin, live}
@@ -1199,8 +1200,14 @@ the step's own account can open.
 shell, so what it prints is the step's stdout and stderr: it streams as that
 step's `chunk` frames and lands in the step's final frame like any other
 output. Nothing on the relay path posts an `/output` frame of its own. The
-step's `start` frame carries the command the beacon runs, so for a marked
-step it shows the `eal` call and the ticket file's path, never the ticket.
+call is swapped only in the text handed to the executor. The step keeps the
+command its author wrote, and that is what its `start` frame and
+`step_starts` carry: never the `eal` call, the loopback port or the ticket
+file's path.
+
+**With pull cleanup (§1.3.4).** Cleanup commands are not steps. They are
+never swapped and never hold a ticket, so one that called the EAL CLI would
+run as written. No scenario's cleanup does.
 
 **An older beacon** does not advertise the `eal-relay` capability. Its steps are
 not marked, they fail as before, and the launch carries

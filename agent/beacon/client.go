@@ -1352,7 +1352,10 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			res = depOutcome.synthetic
 		} else {
 			wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
-				Mode: idRes.Mode, Username: idRes.Username, Command: step.Command,
+				Mode: idRes.Mode, Username: idRes.Username,
+				// A marked step's EAL call is swapped in what is executed,
+				// never in step.Command (eal_relay.go).
+				Command: ealRelayCommand(task.RunID, step.ID, step.Command, plan.shell),
 			})
 			if wrapErr != nil {
 				depOutcome.cleanup()
@@ -1618,6 +1621,9 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 // on timeout, abort (or parent cancel) the child context is cancelled, which signals
 // the step's process group via the executor's RunCommandCtx.
 func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, *ControlState, bool, error) {
+	// A marked step's EAL call is swapped here, in what is executed, never in
+	// the step itself (eal_relay.go).
+	execID.Command = ealRelayCommand(runID, stepID, execID.Command, execID.Shell)
 	defer ealRelayStep(runID, stepID)() // a marked step's EAL ticket lives exactly this long
 	if timeout <= 0 {
 		timeout = defaultStepTimeout

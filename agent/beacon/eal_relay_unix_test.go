@@ -23,74 +23,35 @@ import (
 	"testing"
 
 	"github.com/hankthebldr/cortexsim/agent/ealrelay"
+	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
 )
 
-// relaySimCore is a SimCore that answers the beacon's run callbacks and
-// records what the relay endpoint was asked.
-type relaySimCore struct {
-	*httptest.Server
-	mu       sync.Mutex
-	relays   []map[string]interface{}
-	outputs  []string
-	frames   []map[string]interface{} // every /output body, live frames included
-	complete map[string]interface{}
+// realExec runs each command for real and records the text it was handed.
+type realExec struct {
+	mu   sync.Mutex
+	cmds []string
 }
 
-func newRelaySimCore(t *testing.T, answer func() ealrelay.Response) *relaySimCore {
-	t.Helper()
-	s := &relaySimCore{}
-	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var decoded map[string]interface{}
-		_ = json.Unmarshal(body, &decoded)
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		switch {
-		case r.URL.Path == "/api/eal/relay":
-			s.relays = append(s.relays, decoded)
-			_ = json.NewEncoder(w).Encode(answer())
-		case strings.HasSuffix(r.URL.Path, "/control"):
-			_ = json.NewEncoder(w).Encode(ControlState{Status: "running"})
-		case strings.HasSuffix(r.URL.Path, "/output"):
-			s.outputs = append(s.outputs, decoded["output"].(string))
-			s.frames = append(s.frames, decoded)
-		case strings.HasSuffix(r.URL.Path, "/complete"):
-			s.complete = decoded
-		default:
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(s.Close)
-	return s
+func (r *realExec) exec(ctx context.Context, id identity.ExecutionIdentity, on executor.OutputChunkFunc) (identity.ExecResult, error) {
+	r.mu.Lock()
+	r.cmds = append(r.cmds, id.Command)
+	r.mu.Unlock()
+	return identity.ExecuteCtxStream(ctx, id, on)
 }
 
-func directClient(url string) *BeaconClient {
-	c := New(url, "agent-7", 0)
-	c.resolveIdentity = func(string) identity.Resolution {
-		return identity.Resolution{Mode: "direct", Username: "root"}
-	}
-	return c
-}
-
-// runMarkedStep runs a one-step task whose step is marked, and returns the
-// task as the beacon left it (its command rewritten).
-func runMarkedStep(t *testing.T, s *relaySimCore, command string) *Task {
+// runMarkedStep runs a one-step task whose step is marked. It returns the
+// task and the commands the executor was handed.
+func runMarkedStep(t *testing.T, s *relaySimCore, command string) (*Task, []string) {
 	t.Helper()
 	task := &Task{TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-NDR-001", Steps: []Step{
 		{ID: "step-03", Command: command, Identity: "root", EalRelay: true},
 	}}
-	directClient(s.URL).executeTask(context.Background(), task)
-	return task
-}
-
-func ticketFileOf(t *testing.T, step Step) string {
-	t.Helper()
-	m := rewrittenCall.FindStringSubmatch(step.Command)
-	if m == nil {
-		t.Fatalf("no rewritten call in: %s", step.Command)
-	}
-	return m[3]
+	run := &realExec{}
+	c := directClient(s.URL)
+	c.execStep = run.exec
+	c.executeTask(context.Background(), task)
+	return task, run.cmds
 }
 
 // askRelay makes one request to the beacon's listener, as anything on this
@@ -175,7 +136,8 @@ func TestMarkedStepRunsItsCampaignThroughSimCoreAndSendsFromHere(t *testing.T) {
 
 // With the live runtime log on, the `eal` child is one more process of the
 // step: what it prints streams as that step's chunks, the start frame shows
-// the command the beacon ran, and the relay posts no /output frame of its own.
+// the command the step's author wrote, and the relay posts no /output frame of
+// its own.
 func TestMarkedStepStreamsItsEalOutputAsTheStepsLiveChunks(t *testing.T) {
 	dest := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer dest.Close()
@@ -218,15 +180,13 @@ func TestMarkedStepStreamsItsEalOutputAsTheStepsLiveChunks(t *testing.T) {
 		}
 	}
 
-	// The command on record is the one the beacon ran: the eal call and the
-	// path of the ticket file (TestTicketNeverInArgvOrEnv: never the ticket).
+	// The command on record is the step's own, as its author wrote it
+	// (TestStartFrameCarriesAuthoredCommandForRelayedStep).
 	if len(starts) != 1 || starts[0]["step_id"] != "step-03" {
 		t.Fatalf("start frames: %v", starts)
 	}
-	command, _ := starts[0]["command"].(string)
-	if command != task.Steps[0].Command || !rewrittenCall.MatchString(command) ||
-		strings.Contains(command, ealCall) {
-		t.Errorf("the start frame's command is not the rewritten one:\n%s", command)
+	if command, _ := starts[0]["command"].(string); command != ealStepCommand {
+		t.Errorf("the start frame's command is not the step's own:\n%s", command)
 	}
 
 	// SimCore's output reached the live stream while the step was running.
@@ -245,6 +205,50 @@ func TestMarkedStepStreamsItsEalOutputAsTheStepsLiveChunks(t *testing.T) {
 	if len(s.relays) != 1 {
 		t.Errorf("SimCore saw %d relay calls, want 1", len(s.relays))
 	}
+}
+
+// A scenario with a causality contract runs its steps through one anchor
+// shell. A marked step there gets the same treatment: its call is swapped in
+// what the anchor shell is fed, and its start frame shows its own text.
+func TestMarkedStepRunsThroughTheChainedPath(t *testing.T) {
+	s := newRelaySimCore(t, func() ealrelay.Response {
+		return ealrelay.Response{Stdout: "{\"status\": \"complete\"}\n"}
+	})
+	task := &Task{TaskID: "t-1", RunID: "r-chain", ScenarioID: "SIM-MP-001",
+		CgoAnchor:  &CgoAnchor{ImageName: "sh"},
+		LiveOutput: &LiveOutput{FlushMs: 10},
+		Steps: []Step{
+			{ID: "step-01", Command: "echo first", Identity: "root"},
+			{ID: "step-02", Command: ealStepCommand, Identity: "root", EalRelay: true,
+				Causality: &StepCausality{ParentStep: "step-01"}},
+		}}
+	directClient(s.URL).executeTask(context.Background(), task)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.relays) != 1 || s.relays[0]["step_id"] != "step-02" || s.relays[0]["run_id"] != "r-chain" {
+		t.Fatalf("SimCore saw relay calls %v, want one for step-02 of this run", s.relays)
+	}
+	campaign, _ := s.relays[0]["campaign_yaml"].(string)
+	if !strings.HasPrefix(campaign, "campaign_id: CMP-NDR-001\n") {
+		t.Errorf("campaign text is not the file the step wrote:\n%s", campaign)
+	}
+	out := strings.Join(s.outputs, "\n")
+	if !strings.Contains(out, "{\"status\": \"complete\"}") {
+		t.Errorf("the step's output does not carry SimCore's:\n%s", out)
+	}
+	if code, _ := s.complete["exit_code"].(float64); code != 0 {
+		t.Errorf("run completed with %v:\n%s", s.complete["exit_code"], out)
+	}
+	for _, f := range s.frames {
+		if f["kind"] == "start" && f["step_id"] == "step-02" {
+			if command, _ := f["command"].(string); command != ealStepCommand {
+				t.Errorf("the start frame's command is not the step's own:\n%s", command)
+			}
+			return
+		}
+	}
+	t.Errorf("no start frame for step-02: %v", s.frames)
 }
 
 func TestMarkedStepExitsWithSimCoresCode(t *testing.T) {
@@ -280,7 +284,7 @@ func TestTicketNeverInArgvOrEnv(t *testing.T) {
 	t.Setenv(ealChildDumpEnv, dump)
 
 	s := newRelaySimCore(t, func() ealrelay.Response { return ealrelay.Response{Stdout: "ok\n"} })
-	task := runMarkedStep(t, s, ealStepCommand)
+	task, ran := runMarkedStep(t, s, ealStepCommand)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -300,12 +304,19 @@ func TestTicketNeverInArgvOrEnv(t *testing.T) {
 	}
 
 	// The command the step's shell was handed: a path, never the ticket.
-	command := task.Steps[0].Command
+	if len(ran) != 1 {
+		t.Fatalf("the executor was handed %d commands, want the step's: %q", len(ran), ran)
+	}
+	command := ran[0]
 	if strings.Contains(command, child.Ticket) {
 		t.Errorf("the ticket is in the step's command:\n%s", command)
 	}
 	if !strings.Contains(command, " --ticket-file '") {
 		t.Errorf("the command does not carry a ticket file:\n%s", command)
+	}
+	// The step itself still holds the text its author wrote.
+	if task.Steps[0].Command != ealStepCommand {
+		t.Errorf("the step's own command was changed:\n%s", task.Steps[0].Command)
 	}
 	// The child's own argv and environment.
 	for _, arg := range child.Args {
@@ -323,7 +334,7 @@ func TestTicketNeverInArgvOrEnv(t *testing.T) {
 		t.Error("the ticket reached SimCore")
 	}
 	// And its file went with the step.
-	if _, err := os.Stat(ticketFileOf(t, task.Steps[0])); !os.IsNotExist(err) {
+	if _, err := os.Stat(ticketFileOf(t, command)); !os.IsNotExist(err) {
 		t.Errorf("the ticket file outlived its step (err=%v)", err)
 	}
 }
@@ -349,7 +360,7 @@ func TestTicketFileModeAndOwner(t *testing.T) {
 	task := &Task{RunID: "r-mode", Steps: []Step{
 		{ID: "step-01", Command: ealStepCommand, Identity: "root", EalRelay: true}}}
 	done := directClient("http://127.0.0.1:1").prepareEalRelay(task)
-	file := ticketFileOf(t, task.Steps[0])
+	file := ticketFileOf(t, executed(task, 0))
 	dir := filepath.Dir(file)
 
 	// The directory is the beacon's, and closed to every other account.
@@ -404,7 +415,7 @@ func TestTicketFileModeAndOwner(t *testing.T) {
 	}
 	done = c.prepareEalRelay(task)
 	defer done()
-	file = ticketFileOf(t, task.Steps[0])
+	file = ticketFileOf(t, executed(task, 0))
 	if mode, uid := statOwner(t, filepath.Dir(file)); mode != 0o711 || uid != me {
 		t.Errorf("shared ticket directory is %o owned by %d, want 711 owned by %d", mode, uid, me)
 	}
@@ -426,7 +437,7 @@ func TestTicketRefusedAfterStepEnds(t *testing.T) {
 		{ID: "step-01", Command: ealCall + " list-plugins\n" + ealCall + " list-plugins", EalRelay: true}}}
 	done := directClient(s.URL).prepareEalRelay(task)
 	defer done()
-	m := rewrittenCall.FindStringSubmatch(task.Steps[0].Command)
+	m := rewrittenCall.FindStringSubmatch(executed(task, 0))
 	addr, file := m[2], m[3]
 
 	end := ealRelayStep("r-life", "step-01") // the step starts

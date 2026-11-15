@@ -20,10 +20,17 @@ import (
 
 // The beacon's half of the EAL relay (see agent/ealrelay). SimCore marks a step
 // `eal_relay` when its command calls the SimCore-only EAL CLI. Before the task
-// runs, the beacon opens a loopback listener and swaps that one call in each
-// marked step for its own `eal` subcommand. While a marked step runs, and only
-// then, the step holds a ticket; the beacon forwards what the subcommand asks
-// to SimCore under this task's run and that step's id.
+// runs, the beacon opens a loopback listener. As a marked step is about to be
+// executed, and only in the text handed to the executor, that one call is
+// swapped for the beacon's own `eal` subcommand: the step itself keeps the
+// command its author wrote, which is what the live runtime log reports. While
+// a marked step runs, and only then, the step holds a ticket; the beacon
+// forwards what the subcommand asks to SimCore under this task's run and that
+// step's id.
+//
+// Only a step's command is ever swapped. Cleanup commands (cleanup.go) do not
+// pass through here: they are not steps, are never rewritten and never hold a
+// ticket.
 //
 // The ticket is never in the step's argv or environment. It is in a file:
 //
@@ -55,29 +62,35 @@ type ticketOwner struct {
 // stepRelay is one marked step of the running task.
 type stepRelay struct {
 	file  string       // where its ticket is while it runs
-	calls int          // EAL CLI calls in the command it will run
 	owner *ticketOwner // nil: the beacon's own account
+	// calls is how many EAL CLI calls the text handed to the executor has: the
+	// number of requests its ticket is good for. Set by ealRelayCommand, on the
+	// task's goroutine, before ealRelayStep reads it.
+	calls int
 }
 
 // taskRelay is the relay state of one running task.
 type taskRelay struct {
 	srv   *ealrelay.Server
+	exe   string
 	dir   string
 	steps map[string]*stepRelay
 }
 
-// relayTasks holds the running task's relay state by run id, so the two
-// functions that run a step's command can open and close its ticket without
-// the state being threaded through every execution path.
+// relayTasks holds the running task's relay state by run id, so the places
+// that hand a step's command to the executor can swap its EAL call and open
+// and close its ticket without the state being threaded through every
+// execution path.
 var relayTasks sync.Map // run id -> *taskRelay
 
-// prepareEalRelay rewrites the EAL CLI call in every step the task marked and
-// returns the teardown to defer. A task with no marked step is not touched and
-// opens nothing.
+// prepareEalRelay opens the relay for a task that has marked steps and returns
+// the teardown to defer. It does not touch the task: a step's command stays as
+// SimCore sent it, and is swapped only on its way to the executor
+// (ealRelayCommand). A task with no marked step opens nothing.
 //
-// If the relay cannot be set up, the commands are left as SimCore sent them:
-// the step then fails as it always did on a target, loudly, instead of the
-// beacon guessing at another route.
+// If the relay cannot be set up, the commands run as SimCore sent them: the
+// step then fails as it always did on a target, loudly, instead of the beacon
+// guessing at another route.
 func (c *BeaconClient) prepareEalRelay(task *Task) func() {
 	type planned struct {
 		step  *Step
@@ -91,7 +104,7 @@ func (c *BeaconClient) prepareEalRelay(task *Task) func() {
 		if !step.EalRelay {
 			continue
 		}
-		// Count the calls in the text this host will actually run.
+		// Look at the text this host will actually run.
 		plan := planStep(step, beaconGOOS)
 		calls := ealrelay.CountCalls(plan.command)
 		if plan.refuse != "" || calls == 0 {
@@ -124,21 +137,14 @@ func (c *BeaconClient) prepareEalRelay(task *Task) func() {
 		return func() {}
 	}
 
-	tr := &taskRelay{srv: srv, dir: dir, steps: map[string]*stepRelay{}}
+	tr := &taskRelay{srv: srv, exe: exe, dir: dir, steps: map[string]*stepRelay{}}
 	for _, p := range steps {
 		name, err := randomName()
 		if err != nil {
 			log.Printf("[beacon] EAL relay: step %s left as sent: %v", p.step.ID, err)
 			continue
 		}
-		file := filepath.Join(dir, name)
-		inv := ealrelay.Invocation{Exe: exe, Relay: srv.Addr(), TicketFile: file}
-		p.step.Command, _ = ealrelay.Rewrite(p.step.Command, beaconGOOS, p.step.Shell, inv)
-		// A variant only ever runs on Windows, under PowerShell (planStep).
-		for variant, text := range p.step.PlatformVariants {
-			p.step.PlatformVariants[variant], _ = ealrelay.Rewrite(text, beaconGOOS, "", inv)
-		}
-		tr.steps[p.step.ID] = &stepRelay{file: file, calls: p.calls, owner: p.owner}
+		tr.steps[p.step.ID] = &stepRelay{file: filepath.Join(dir, name), owner: p.owner}
 		log.Printf("[beacon] EAL relay: step %s — %d EAL CLI call(s) go through this beacon", p.step.ID, p.calls)
 	}
 	relayTasks.Store(task.RunID, tr)
@@ -149,11 +155,36 @@ func (c *BeaconClient) prepareEalRelay(task *Task) func() {
 	}
 }
 
+// ealRelayCommand returns the text to execute for a step: command, with each
+// EAL CLI call swapped for this beacon's `eal` subcommand when the step is one
+// the task marked. For any other step it returns command unchanged.
+//
+// It is called where a step's command is handed to the executor, after the
+// per-OS variant is chosen and before the identity harness wraps it. The step
+// keeps its own text, so what is reported as the command that was attempted
+// (the live `start` frame) is what the scenario's author wrote, not a path
+// into this beacon's ticket directory.
+func ealRelayCommand(runID, stepID, command, shell string) string {
+	v, ok := relayTasks.Load(runID)
+	if !ok {
+		return command
+	}
+	tr := v.(*taskRelay)
+	st := tr.steps[stepID]
+	if st == nil {
+		return command
+	}
+	inv := ealrelay.Invocation{Exe: tr.exe, Relay: tr.srv.Addr(), TicketFile: st.file}
+	command, st.calls = ealrelay.Rewrite(command, beaconGOOS, shell, inv)
+	return command
+}
+
 // ealRelayStep opens a marked step's ticket and returns what closes it. It is
 // deferred by the two functions that run a step's command (runStep and
 // runChainedStep), so the ticket exists exactly while that command runs: it is
 // made and written as the step starts, and revoked and its file removed as the
-// step ends. For any other step it does nothing.
+// step ends. For any other step, and for a marked step whose text had no call
+// to swap, it does nothing.
 func ealRelayStep(runID, stepID string) func() {
 	v, ok := relayTasks.Load(runID)
 	if !ok {
@@ -161,7 +192,7 @@ func ealRelayStep(runID, stepID string) func() {
 	}
 	tr := v.(*taskRelay)
 	st := tr.steps[stepID]
-	if st == nil {
+	if st == nil || st.calls == 0 {
 		return func() {}
 	}
 	ticket, err := tr.srv.Open(stepID, st.calls)
