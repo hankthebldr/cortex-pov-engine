@@ -8,39 +8,46 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-15
+
+**Hotfix for v1.2.2: an alert credits at most one run, and the alerts a run did
+not expect are listed instead of dropped (#347, #346).** One attribution rule,
+one matcher family rule and one nullable column; no scenario, card, emitter or
+beacon change.
+
 ### Fixed
 
-- **A run is never credited with another run's alert (#347).** Reconcile reads
-  the alerts of the run's endpoint, and a detection's match window (one hour,
-  a day for Analytics / ABIOC) is longer than the run. On an endpoint running
-  scenarios back to back, a later run's alert fell inside an earlier run's
-  window and credited it on a shared technique: SIM-EDR-018 read "detected"
-  from an alert SIM-MP-003 raised 32 minutes later, with an MTTD of 1,920 s.
-  Now an alert matched only on a technique or name credits a detection only
-  while its run holds the endpoint: from the run's launch (or, when it was
-  queued behind another run, from the moment the beacon collected it) until the
-  next run starts there. An alert that carries the detection's rule name, its
-  detection id or the run's own id still credits it later, up to the end of
-  the detection's window, so an Analytics alert that lags behind its run is
-  not lost. One alert credits at most one run; if two runs match it and
-  nothing ties it to one, it credits neither and is listed as unattributed.
-  The reconcile summary names every alert a run was not given, why, and the
-  run it belongs to (`not_credited`).
-- **Real alerts on a run's own steps are credited or shown (#346).** On the
-  same sweep, 22 of the 25 alerts Cortex raised on the endpoint credited
+- **An alert credits at most one run (#347).** Reconcile reads the alerts of
+  the run's endpoint, and a detection's match window (one hour, a day for
+  Analytics / ABIOC) is longer than the run. On an endpoint running scenarios
+  back to back, a later run's alert fell inside an earlier run's window and
+  credited it on a shared technique: SIM-EDR-018 read "detected" from an alert
+  SIM-MP-003 raised 32 minutes later, with an MTTD of 1,920 s. Now an alert
+  matched only on a technique or name credits a detection only while its run
+  holds the endpoint: from the run's launch (or, when it was queued behind
+  another run, from the moment the beacon collected it) until the next run
+  starts there. An alert that carries the detection's rule name, its detection
+  id or the run's own id still credits it later, up to the end of the
+  detection's window, so an Analytics alert that lags behind its run is not
+  lost. If two runs match an alert and nothing ties it to one, it credits
+  neither and is listed as unattributed. The reconcile summary names every
+  alert a run was not given, why, and the run it belongs to (`not_credited`).
+- **Alerts a run did not expect are listed as "Also raised by Cortex" (#346).**
+  On the same sweep, 22 of the 25 alerts Cortex raised on the endpoint credited
   nothing in their own run and appeared nowhere. Now every one is either
   credited or listed on its run:
   - *An alert from an XDR Agent module on a run that expects no Prevention
     detection (15 of them)* is listed as an **additional detection**:
-    "Also raised by Cortex (N)" on the Results page, one line each (name,
-    source, step, time); "Other alerts Cortex raised for this run" in the
-    Markdown report; `additional_detections` in the JSON report, in
-    `GET /api/results/{run_id}` and in the reconcile summary. It does not mark
-    any expected detection "detected", and it is not counted in coverage or
-    Detection Accuracy, which still measure the expected detections only. The
-    list holds the alerts raised on the run's endpoint, from its launch until
-    the next run starts there or an hour after it ended, that match none of
-    its expected detections.
+    "Also raised by Cortex (N)" on the Results page, one line per alert (name,
+    source, step, time), with identical alerts on one line and a count;
+    "Other alerts Cortex raised for this run" in the Markdown report;
+    `additional_detections` in the JSON report, in `GET /api/results/{run_id}`
+    and in the reconcile summary. It does not mark any expected detection
+    "detected", and it stays out of coverage and Detection Accuracy, which
+    still measure the expected detections only. The list holds the alerts
+    raised on the run's endpoint, from its launch until the next run starts
+    there or an hour after it ended, that match none of its expected
+    detections.
   - *A BIOC raised where an Analytics BIOC was expected, or the reverse (4)*:
     the two labels are now one family when something else identifies the
     detection, namely the exact technique, the rule name or the detection id.
@@ -59,27 +66,28 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
     so the scenarios are unchanged and the alerts are listed as additional
     detections.
 
-### Upgrading from 1.2.x
+### Upgrading from 1.2.2
 
 - **One new nullable column, added at startup:** `runs.alert_attribution`
   (JSON). It holds a run's additional detections and its unattributed alerts.
   No action is needed; a run stored before the upgrade reads `NULL`, meaning
   "not reviewed", and shows no "Also raised by Cortex" section until it is
-  reconciled again (Read back). Nothing is back-filled at upgrade.
-- **A stored run that carries a cross-run credit is not rewritten at upgrade.**
-  It changes when the run is reviewed again: `POST /api/runs/{id}/reconcile`,
-  `POST /api/runs/{id}/observations` or Read back in the console. The
+  reviewed again. Nothing is back-filled at upgrade.
+- **A stored cross-run credit is withdrawn on the next review of that run,
+  with a note.** Nothing is rewritten at upgrade. A run is reviewed when it is
+  reconciled again: `POST /api/runs/{id}/reconcile`,
+  `POST /api/runs/{id}/observations`, or the same action in the console. The
   auto-reconcile sweep reviews a stored run only while it is inside the
   lookback, under the attempt cap and still has an unobserved detection, so
-  read back the runs of a back-to-back sweep yourself. On that review, a
-  detection credited by an alert that belongs to another run goes
-  back to unobserved, loses its MTTD and is judged again in the same pass (so
-  it is credited from the run's own alert when there is one). The detection's
-  note says which alert was withdrawn and why, the reconcile summary lists it
-  under `withdrawn_credits` with a warning, and the alert stays on the run's
-  record with no detection attached. A detection a person marked observed is
-  never withdrawn. Coverage and a Detection Accuracy verdict that counted the
-  false credit drop accordingly.
+  review the runs of a back-to-back sweep yourself. On that review, a
+  detection credited by an alert that belongs to another run goes back to
+  unobserved, loses its MTTD and is judged again in the same pass (so it is
+  credited from the run's own alert when there is one). The detection's note
+  says which alert was withdrawn and why, the reconcile summary lists it under
+  `withdrawn_credits` with a warning, and the alert stays on the run's record
+  with no detection attached. A detection a person marked observed is never
+  withdrawn. Coverage and a Detection Accuracy verdict that counted the false
+  credit drop accordingly.
 
 ## [1.2.2] - 2026-11-15
 
