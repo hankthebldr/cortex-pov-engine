@@ -81,13 +81,26 @@ func TestAgentCapabilities_WindowsAdvertisesElevationOnlyWhenTrue(t *testing.T) 
 // not shift as a side effect of the Windows work.
 func TestAgentCapabilities_POSIXUnchanged(t *testing.T) {
 	// Deliberately changed in the artifact-staging pass: the roster gained
-	// "artifact-fetch". The load-bearing half of this assertion is unchanged —
-	// POSIX still claims identity-harness and the exact set is still pinned, so
-	// a future capability cannot be added by accident.
+	// "artifact-fetch"; and again for pull cleanup (#324): it gained "cleanup".
+	// The load-bearing half of this assertion is unchanged — POSIX still claims
+	// identity-harness and the exact set is still pinned, so a future
+	// capability cannot be added by accident.
 	for _, goos := range []string{"linux", "darwin"} {
 		caps := agentCapabilities(goos, false)
-		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch" {
-			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch]", goos, caps)
+		if strings.Join(caps, ",") != "shell,identity-harness,artifact-fetch,cleanup" {
+			t.Errorf("agentCapabilities(%s) = %v, want [shell identity-harness artifact-fetch cleanup]", goos, caps)
+		}
+	}
+}
+
+// SimCore tells the operator at launch when a target's beacon will not run the
+// scenario's cleanup, and it knows that from this roster. A beacon that does
+// run it says so on every platform it compiles for.
+func TestAgentCapabilities_CleanupAdvertisedOnEveryPlatform(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		if !has(agentCapabilities(goos, false), "cleanup") {
+			t.Errorf("agentCapabilities(%s) does not advertise cleanup: %v",
+				goos, agentCapabilities(goos, false))
 		}
 	}
 }

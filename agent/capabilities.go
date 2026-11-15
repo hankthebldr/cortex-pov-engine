@@ -28,6 +28,11 @@ var beaconElevated = identity.ProcessElevated
 // agent that does not advertise this, so the claim must be true whenever the
 // beacon can honour it.
 //
+// "cleanup" is advertised on every platform: this beacon runs the scenario
+// cleanup a task carries when the task ends (beacon/cleanup.go). SimCore sends
+// the commands either way; for an agent that does not advertise this it tells
+// the operator at launch that the host will not be cleaned.
+//
 // inContainer appends "container": the beacon is running in a pod/container, so
 // SimCore applies container-agent launch rules to it.
 func agentCapabilities(goos string, inContainer bool) []string {
@@ -35,7 +40,7 @@ func agentCapabilities(goos string, inContainer bool) []string {
 	if goos == "windows" {
 		// "powershell" names the interpreter the executor drives; the absence of
 		// "identity-harness" is the load-bearing part.
-		caps = []string{"shell", "powershell", "artifact-fetch"}
+		caps = []string{"shell", "powershell", "artifact-fetch", "cleanup"}
 		// CONT-14: steps that assert root / container-runtime / administrator
 		// need an elevated token, and a non-elevated beacon records each one as
 		// IDENTITY NOT HONOURED. Advertising it lets the roster say so BEFORE a
@@ -44,7 +49,7 @@ func agentCapabilities(goos string, inContainer bool) []string {
 			caps = append(caps, "elevated")
 		}
 	} else {
-		caps = []string{"shell", "identity-harness", "artifact-fetch"}
+		caps = []string{"shell", "identity-harness", "artifact-fetch", "cleanup"}
 	}
 	if inContainer {
 		caps = append(caps, "container")

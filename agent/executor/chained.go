@@ -314,8 +314,9 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 // running is torn down — on POSIX. Safe to call more than once; only the first
 // Close or Abandon acts.
 //
-// RG-AGENT-01: pull mode runs no scenario cleanup, so this teardown is the only
-// one a chained run's background helpers get. BEACON-04 had removed it (nothing
+// RG-AGENT-01: a scenario's cleanup commands need not stop what its steps left
+// running (and an older SimCore sends the beacon none), so this teardown is the
+// one a chained run's background helpers can count on. BEACON-04 had removed it (nothing
 // was signalled once the anchor had exited), and a helper left by run N then
 // answered run N+1's health check. It is back for POSIX, as a probe-guarded
 // signal to the anchor's process GROUP (treeKiller.reapSurvivors). Windows still

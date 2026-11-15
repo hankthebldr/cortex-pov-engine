@@ -2,9 +2,10 @@
 
 package executor
 
-// RG-AGENT-01 / RG-AGENT-02 (POSIX). Pull mode never runs a scenario's
-// cleanup.commands, so the process-group signal a chained run fires when it
-// ends is the ONLY teardown its background helpers get. c1cc90c removed it
+// RG-AGENT-01 / RG-AGENT-02 (POSIX). A scenario's cleanup.commands need not
+// stop what its steps left running, so the process-group signal a chained run
+// fires when it ends is the teardown its background helpers can count on.
+// c1cc90c removed it
 // (Close stopped signalling once the anchor had exited), and a helper left by
 // run N then served run N+1: SIM-AIRS-001..005 each background
 // `cortex-vulnerable-llm serve --port 8089 --vuln <one> &` and only probe
