@@ -25,6 +25,11 @@
       pssa       PSScriptAnalyzer: PSUseCompatibleSyntax 5.1 plus
                  PSUseCompatibleCommands / PSUseCompatibleTypes against the
                  Server 2016 / 2019 Windows PowerShell 5.1 profiles.
+      sandbox    each fixed scratch folder a Windows step runs or loads from
+                 (SIM-MP-023, -026, -029): the step's own guard, cut from the
+                 rendered text, refuses a folder or junction a standard account
+                 planted, and a planted folder raced against a junction never
+                 gets past it.
       boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout.
       install    the console's token one-liner (iwr | iex) in a child
                  powershell.exe; service Running, no SCM failures, beaconing.
@@ -42,7 +47,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('floor', 'go', 'build', 'render', 'parse', 'pssa', 'boot', 'install', 'pull', 'abort', 'push', 'uninstall', 'collect')]
+    [ValidateSet('floor', 'go', 'build', 'render', 'parse', 'pssa', 'sandbox', 'boot', 'install', 'pull', 'abort', 'push', 'uninstall', 'collect')]
     [string]$Phase,
 
     [string]$Server = 'http://127.0.0.1:8888'
@@ -1426,6 +1431,232 @@ function Invoke-PhaseCollect {
 }
 
 # ---------------------------------------------------------------------------
+# sandbox: a scenario's scratch folder cannot be planted by another account
+# ---------------------------------------------------------------------------
+#
+# SIM-MP-023, -026 and -029 keep what the beacon account (SYSTEM in a service
+# install) runs or loads in a folder with a fixed name, under C:\ProgramData or
+# %TEMP%, where any account can create a folder or a junction first. Each first
+# step makes the folder itself: rmdir (which removes a junction, not its
+# target), then one CreateDirectory call that gives the folder its protected ACL
+# as it is made (SYSTEM, Administrators, the running account and a marker ACE no
+# other folder carries), so no other account can open it in between; a Get-Acl
+# then refuses anything that was already there. Every later step checks it with
+# the same Get-Acl. A planted folder fails on its owner; a junction, followed or
+# not, fails on its owner or its missing marker, so swapping the two cannot pass.
+
+$script:SandboxSpecs = @(
+    @{ Sid = 'SIM-MP-023'; Path = 'C:\ProgramData\cortexsim-mp023'; Marker = 'S-1-9-4243-23'; Create = 'step-01'; Checks = @('step-03', 'step-04') },
+    @{ Sid = 'SIM-MP-026'; Path = 'C:\ProgramData\cortexsim-mp026'; Marker = 'S-1-9-4243-26'; Create = 'step-01'; Checks = @('step-02', 'step-03', 'step-06', 'step-07', 'step-08', 'step-09') },
+    @{ Sid = 'SIM-MP-029'; Path = (Join-Path $env:TEMP 'cortexsim-mp-029'); Marker = 'S-1-9-4243-29'; Create = 'step-01'; Checks = @('step-02', 'step-03') }
+)
+$script:PlantUser = 'cortexsim-ci-plant'
+
+function Get-CsStepText {
+    # The step as the render phase wrote it. The render phase writes only the
+    # scenarios that resolve for Windows as a whole; SIM-MP-023, -026 and -029
+    # do not yet (some of their steps have no Windows variant), so a step of
+    # theirs is read from the scenario: its Windows variant, which is the text
+    # a Windows host would be sent once the rest of the scenario resolves.
+    param([string]$Sid, [string]$StepId)
+    $file = Join-Path $script:RenderDir ('steps\' + $Sid + '\' + $StepId + '.ps1')
+    if (Test-Path -LiteralPath $file) { return [System.IO.File]::ReadAllText($file) }
+    $helper = Join-Path $script:ProofDir 'sandbox-step-text.py'
+    $code = @(
+        'import pathlib, sys, yaml',
+        'for p in sorted(pathlib.Path("scenarios").rglob("*.yml")):',
+        '    d = yaml.safe_load(p.read_text(encoding="utf-8"))',
+        '    if isinstance(d, dict) and d.get("scenario_id") == sys.argv[1]:',
+        '        for s in d.get("steps") or []:',
+        '            if s.get("id") == sys.argv[2]:',
+        '                sys.stdout.write((s.get("platform_variants") or {}).get("windows") or "")'
+    ) -join "`n"
+    [System.IO.File]::WriteAllText($helper, $code, (New-Object System.Text.UTF8Encoding($false)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = (Get-Command python -ErrorAction Stop).Source
+    $psi.Arguments = '"' + $helper + '" ' + $Sid + ' ' + $StepId
+    $psi.WorkingDirectory = $script:Workspace
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $text = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    if ($p.ExitCode -ne 0 -or -not $text) { throw ('no rendered step and no Windows variant for ' + $Sid + ' ' + $StepId + ' (python exit ' + $p.ExitCode + ')') }
+    return $text
+}
+
+function Get-CsGuard {
+    # The step's guard exactly as the host gets it: every line up to the last one
+    # that refuses with "sandbox ...", then a line that says the step went on.
+    param([string]$Sid, [string]$StepId)
+    $lines = (Get-CsStepText -Sid $Sid -StepId $StepId) -split "`r?`n"
+    $end = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match 'Write-Error "sandbox ') { $end = $i }
+    }
+    if ($end -lt 0) { throw ($Sid + ' ' + $StepId + ' has no sandbox guard') }
+    return ((@($lines[0..$end]) + 'Write-Output REACHED') -join "`r`n")
+}
+
+function Invoke-CsGuard {
+    # Quiet on purpose: the race calls this hundreds of times.
+    param([string]$Script)
+    $file = Join-Path $script:ProofDir 'sandbox-guard.ps1'
+    [System.IO.File]::WriteAllText($file, $Script, (New-Object System.Text.UTF8Encoding($true)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell.exe'
+    $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $file + '"'
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $errText = $p.StandardError.ReadToEndAsync()
+    $outText = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    return New-Object PSObject -Property @{
+        ExitCode = $p.ExitCode; Reached = ($outText -match 'REACHED'); Stdout = $outText; Stderr = $errText.Result }
+}
+
+function Remove-CsPlant {
+    # cmd's rmdir removes a junction itself, never what it points to.
+    param([string]$Path)
+    cmd.exe /c ('rmdir /s /q "' + $Path + '" >nul 2>&1')
+    cmd.exe /c ('del /f /q "' + $Path + '" >nul 2>&1')
+}
+
+function Set-CsFolderAcl {
+    param([string]$Path, [string]$Sddl, [string]$Owner = '', [switch]$Link)
+    $sd = New-Object System.Security.AccessControl.DirectorySecurity
+    $sd.SetSecurityDescriptorSddlForm($Sddl, [System.Security.AccessControl.AccessControlSections]::Access)
+    if (-not $Link) { Set-Acl -LiteralPath $Path -AclObject $sd }
+    if ($Owner) {
+        $flags = '/C /Q'
+        if ($Link) { $flags = '/L /C /Q' }
+        cmd.exe /c ('icacls "' + $Path + '" /setowner ' + $Owner + ' ' + $flags + ' >nul 2>&1')
+    }
+}
+
+function Get-CsOwnerSid {
+    param([string]$Path)
+    # dir /q would show it too; Get-Acl is enough to prove the plant took.
+    return (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+}
+
+function New-CsJunction {
+    param([string]$Path, [string]$Target)
+    cmd.exe /c ('mklink /J "' + $Path + '" "' + $Target + '" >nul 2>&1')
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    return ($item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint))
+}
+
+function Invoke-PhaseSandbox {
+    Assert-Cs (Test-CsElevated) 'the sandbox phase runs elevated (it plants folders as another account)'
+    $pw = 'Cx!' + [guid]::NewGuid().ToString('N').Substring(0, 9) + 'Q7'
+    cmd.exe /c ('net user ' + $script:PlantUser + ' ' + $pw + ' /add >nul 2>&1')
+    $plantSid = (New-Object System.Security.Principal.NTAccount($script:PlantUser)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    $decoys = Join-Path $script:RunnerTemp 'cortexsim-sandbox-decoys'
+    Remove-CsPlant $decoys
+    New-Item -ItemType Directory -Force -Path $decoys | Out-Null
+    $rows = New-Object System.Collections.ArrayList
+    try {
+        foreach ($spec in $script:SandboxSpecs) {
+            $path = $spec.Path
+            $ours = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1;;;' + $spec.Marker + ')'
+            $create = Get-CsGuard -Sid $spec.Sid -StepId $spec.Create
+            Assert-Cs ($create -match [regex]::Escape($spec.Marker)) ($spec.Sid + ' ' + $spec.Create + ': the guard sets this sandbox''s marker')
+            # A folder only Administrators own, protected to SYSTEM + Administrators, no
+            # marker: what a junction could point at without this sandbox's marker.
+            $sysDecoy = Join-Path $decoys ($spec.Sid + '-system')
+            Remove-CsPlant $sysDecoy
+            New-Item -ItemType Directory -Force -Path $sysDecoy | Out-Null
+            Set-CsFolderAcl -Path $sysDecoy -Sddl 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'
+            # The planted account's folder dressed exactly like ours, marker included.
+            $userDecoy = Join-Path $decoys ($spec.Sid + '-theirs')
+            Remove-CsPlant $userDecoy
+            New-Item -ItemType Directory -Force -Path $userDecoy | Out-Null
+            Set-CsFolderAcl -Path $userDecoy -Sddl $ours -Owner $script:PlantUser
+            Assert-Cs ((Get-CsOwnerSid $userDecoy) -eq $plantSid) ($spec.Sid + ': setup -- the planted folder is owned by ' + $script:PlantUser)
+
+            # --- the creating step ---
+            Remove-CsPlant $path
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+            Set-Content -LiteralPath (Join-Path $path 'planted.txt') -Value 'planted'
+            Set-CsFolderAcl -Path $path -Sddl $ours -Owner $script:PlantUser
+            $r = Invoke-CsGuard $create
+            $ownerAfter = ''
+            if (Test-Path -LiteralPath $path) { $ownerAfter = Get-CsOwnerSid $path }
+            Assert-Cs ((-not $r.Reached -and $r.ExitCode -ne 0) -or ($ownerAfter -ne $plantSid -and -not (Get-ChildItem -LiteralPath $path -Force))) `
+                ($spec.Sid + ' ' + $spec.Create + ': a folder another account planted is replaced or the step stops') (Limit-Cs ($r.Stdout + $r.Stderr))
+            Remove-CsPlant $path
+            Set-Content -LiteralPath (Join-Path $sysDecoy 'keep.txt') -Value 'keep'
+            Assert-Cs (New-CsJunction -Path $path -Target $sysDecoy) ($spec.Sid + ': setup -- a junction at the path')
+            $r = Invoke-CsGuard $create
+            Assert-Cs (Test-Path -LiteralPath (Join-Path $sysDecoy 'keep.txt')) ($spec.Sid + ' ' + $spec.Create + ': a junction at the path is removed, its target is left alone')
+            Remove-CsPlant (Join-Path $sysDecoy 'keep.txt')
+            Remove-CsPlant $path
+            $r = Invoke-CsGuard $create
+            Assert-Cs ($r.Reached -and $r.ExitCode -eq 0) ($spec.Sid + ' ' + $spec.Create + ': with nothing at the path the step makes its folder') (Limit-Cs ($r.Stdout + $r.Stderr))
+
+            # --- every checking step: the folder the creating step made passes ---
+            foreach ($stepId in $spec.Checks) {
+                $check = Get-CsGuard -Sid $spec.Sid -StepId $stepId
+                $r = Invoke-CsGuard $check
+                Assert-Cs ($r.Reached -and $r.ExitCode -eq 0) ($spec.Sid + ' ' + $stepId + ': the folder the creating step made is accepted') (Limit-Cs ($r.Stdout + $r.Stderr))
+            }
+            # --- and nothing planted does ---
+            $check = Get-CsGuard -Sid $spec.Sid -StepId $spec.Checks[0]
+            $plants = @(
+                @{ Name = 'missing'; Make = { } },
+                @{ Name = 'their folder, our ACL and marker'; Make = { New-Item -ItemType Directory -Force -Path $path | Out-Null; Set-CsFolderAcl -Path $path -Sddl $ours -Owner $script:PlantUser } },
+                @{ Name = 'their folder, open to everyone'; Make = { New-Item -ItemType Directory -Force -Path $path | Out-Null; Set-CsFolderAcl -Path $path -Sddl 'D:P(A;OICI;FA;;;WD)' -Owner $script:PlantUser } },
+                @{ Name = 'junction to a SYSTEM-only folder'; Make = { $null = New-CsJunction -Path $path -Target $sysDecoy; Set-CsFolderAcl -Path $path -Sddl $ours -Owner $script:PlantUser -Link } },
+                @{ Name = 'junction to their folder with our marker'; Make = { $null = New-CsJunction -Path $path -Target $userDecoy; Set-CsFolderAcl -Path $path -Sddl $ours -Owner $script:PlantUser -Link } }
+            )
+            foreach ($plant in $plants) {
+                Remove-CsPlant $path
+                & $plant.Make
+                $r = Invoke-CsGuard $check
+                Assert-Cs ((-not $r.Reached) -and $r.ExitCode -eq 1) ($spec.Sid + ' ' + $spec.Checks[0] + ' refuses: ' + $plant.Name) (Limit-Cs ($r.Stdout + $r.Stderr))
+            }
+
+            # --- the race: their folder and a junction swap places at the path ---
+            Remove-CsPlant $path
+            $alt = $path + '.alt'
+            Remove-CsPlant $alt
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+            Set-CsFolderAcl -Path $path -Sddl $ours -Owner $script:PlantUser
+            $null = New-CsJunction -Path $alt -Target $sysDecoy
+            $swap = 'while ($true) { try { [System.IO.Directory]::Move(''' + $path + ''', ''' + $path + '.tmp''); [System.IO.Directory]::Move(''' + $alt + ''', ''' + $path + '''); [System.IO.Directory]::Move(''' + $path + '.tmp'', ''' + $alt + ''') } catch { } }'
+            $swapper = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -NonInteractive -Command "' + $swap + '"') -PassThru -WindowStyle Hidden
+            # Control: a guard that only refuses a reparse point. It passes whenever their
+            # folder is in place, which shows the swap is landing while guards run.
+            $control = '$i = Get-Item -LiteralPath ''' + $path + ''' -Force -ErrorAction SilentlyContinue' + "`r`n" +
+                       'if (-not ($i -and -not ($i.Attributes -band [System.IO.FileAttributes]::ReparsePoint))) { exit 1 }' + "`r`n" + 'Write-Output REACHED'
+            $passed = 0
+            $controlPassed = 0
+            for ($n = 0; $n -lt 200; $n++) {
+                if ((Invoke-CsGuard $check).Reached) { $passed++ }
+                if ((Invoke-CsGuard $control).Reached) { $controlPassed++ }
+            }
+            Stop-Process -Id $swapper.Id -Force -ErrorAction SilentlyContinue
+            $null = $rows.Add((New-Object PSObject -Property @{ scenario = $spec.Sid; guard_passed = $passed; control_passed = $controlPassed; runs = 200 }))
+            Assert-Cs ($controlPassed -gt 0) ($spec.Sid + ': the swap landed while guards ran (control passed ' + $controlPassed + ' of 200)')
+            Assert-Cs ($passed -eq 0) ($spec.Sid + ' ' + $spec.Checks[0] + ': their folder raced against a junction never gets past the guard (' + $passed + ' of 200)')
+            Remove-CsPlant $path
+            Remove-CsPlant $alt
+            Remove-CsPlant ($path + '.tmp')
+        }
+    } finally {
+        foreach ($spec in $script:SandboxSpecs) { Remove-CsPlant $spec.Path; Remove-CsPlant ($spec.Path + '.alt'); Remove-CsPlant ($spec.Path + '.tmp') }
+        Remove-CsPlant $decoys
+        cmd.exe /c ('net user ' + $script:PlantUser + ' /delete >nul 2>&1')
+    }
+    Write-CsProof -Name 'sandbox-race.json' -Text (($rows | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join "`n")
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -1436,6 +1667,7 @@ $phases = @{
     'render'    = { Invoke-PhaseRender }
     'parse'     = { Invoke-PhaseParse }
     'pssa'      = { Invoke-PhasePssa }
+    'sandbox'   = { Invoke-PhaseSandbox }
     'boot'      = { Invoke-PhaseBoot }
     'install'   = { Invoke-PhaseInstall }
     'pull'      = { Invoke-PhasePull }

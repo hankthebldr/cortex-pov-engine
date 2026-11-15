@@ -84,7 +84,7 @@ moat_tier: "LEAD"
 steps:
   - id: step-01
     name: "SSH logon burst from a single jumphost to many ESXi hosts"
-    command: "ansible -i /tmp/pov-esxi-hosts -m ping esxi -f 16; echo '[*] SSH fan-out to lab ESXi cluster complete (single source -> many hypervisors)'"
+    command: "[ \"$(stat -c %F:%u:%a /var/lib/cortexsim/edr-007 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"/var/lib/cortexsim/edr-007 is missing or not this account's 0700 directory: stage the inventory and playbooks with TTP-2026-0006's payload first\" >&2; exit 1; }; ansible -i /var/lib/cortexsim/edr-007/pov-esxi-hosts -m ping esxi -f 16; echo '[*] SSH fan-out to lab ESXi cluster complete (single source -> many hypervisors)'"
     identity: root
     mitre_technique: "T1021.004"
     expected_detections:
@@ -106,7 +106,7 @@ steps:
 
   - id: step-02
     name: "Mass VM power-off across the cluster (lab — reversed by cleanup)"
-    command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags poweroff -f 16; echo '[*] vim-cmd power.off burst issued across cluster'"
+    command: "[ \"$(stat -c %F:%u:%a /var/lib/cortexsim/edr-007 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"/var/lib/cortexsim/edr-007 is missing or not this account's 0700 directory: stage the inventory and playbooks with TTP-2026-0006's payload first\" >&2; exit 1; }; ansible-playbook -i /var/lib/cortexsim/edr-007/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /var/lib/cortexsim/edr-007/pov-encrypt.yml --tags poweroff -f 16; echo '[*] vim-cmd power.off burst issued across cluster'"
     identity: root
     mitre_technique: "T1490"
     causality:
@@ -131,7 +131,7 @@ steps:
 
   - id: step-03
     name: "Drop inert encryption-marker files adjacent to VMDKs (SAFE-MODE — no encryption)"
-    command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags markers -f 16; echo '[*] SAFE-MODE markers (.tttt) dropped — NO VMDKs were encrypted'"
+    command: "[ \"$(stat -c %F:%u:%a /var/lib/cortexsim/edr-007 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"/var/lib/cortexsim/edr-007 is missing or not this account's 0700 directory: stage the inventory and playbooks with TTP-2026-0006's payload first\" >&2; exit 1; }; ansible-playbook -i /var/lib/cortexsim/edr-007/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /var/lib/cortexsim/edr-007/pov-encrypt.yml --tags markers -f 16; echo '[*] SAFE-MODE markers (.tttt) dropped — NO VMDKs were encrypted'"
     identity: root
     mitre_technique: "T1486"
     causality:
@@ -166,8 +166,8 @@ steps:
 
 cleanup:
   commands:
-    - "ansible-playbook -i /tmp/pov-esxi-hosts /tmp/pov-cleanup.yml -f 16 || echo '[CortexSim] run the TTP-2026-0006 cleanup playbook to power VMs back on and remove markers'"
-    - "rm -f /tmp/pov-esxi-hosts /tmp/pov-encrypt.yml /tmp/pov-cleanup.yml"
+    - "ansible-playbook -i /var/lib/cortexsim/edr-007/pov-esxi-hosts /var/lib/cortexsim/edr-007/pov-cleanup.yml -f 16 || echo '[CortexSim] run the TTP-2026-0006 cleanup playbook to power VMs back on and remove markers'"
+    - "rm -rf /var/lib/cortexsim/edr-007"
     - "echo '[CortexSim] SIM-EDR-007 cleanup complete — markers removed, VMs powered back on'"
 
 author: "Henry Reed"

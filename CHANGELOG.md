@@ -115,13 +115,60 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   `ground-truth` and `lab-readiness` regenerate with no diff.
 - **Not fixed here.** SIM-CDR-006's root unit and watchdog were fixed in 1.2.0.
   SIM-EDR-003's macOS variant appends a `/tmp/.cortexsim_beacon` launcher to
-  root's `~/.zshrc` that cleanup does not remove: a planted file at that path
-  runs as root at root's next zsh login. SIM-EDR-007 runs `ansible-playbook` on
-  `/tmp/pov-encrypt.yml`, an operator-staged file no step writes. Root steps
+  the beacon account's `~/.zshrc`, and cleanup does not remove it. Root steps
   still write about 35 output-only files to fixed `/tmp` names, and SIM-CDR-001
   keeps `/tmp/linpeas.sh` and `/tmp/deepce.sh`, the payload shelf's
   `stage_path`. Service-account steps (SIM-MP-028's EAL files, SIM-EDR-011's
-  target list) were not in scope.
+  target list) were not in scope. The next entry covers SIM-EDR-007 and three
+  Windows scenarios.
+
+### Security — nothing a scenario installs or runs as root or SYSTEM points at a plantable path
+
+- **What was wrong.** SIM-EDR-007 ran `ansible-playbook` as root on
+  `/tmp/pov-esxi-hosts` and `/tmp/pov-encrypt.yml`, which no step writes, so a
+  file planted there first became a root playbook against the ESXi lab. Three
+  scenarios' Windows variants had the same shape, written for a beacon running
+  as SYSTEM: SIM-MP-023 made `C:\ProgramData\cortexsim-mp023` with
+  `New-Item -Force`, ran a copied debugger from it with a script from the same
+  folder, and registered an `onstart` task that runs it at every boot;
+  SIM-MP-026's LocalSystem service side-loads a DLL from
+  `C:\ProgramData\cortexsim-mp026`; SIM-MP-029 extracted and ran its lure in
+  `%TEMP%\cortexsim-mp-029`, which is `C:\Windows\Temp` for SYSTEM. Any account
+  can create a folder or a junction at those paths first, and even a
+  SYSTEM-made subfolder of `C:\ProgramData` lets users add files. None of the
+  three resolves for Windows as a whole yet (some of their steps have no
+  Windows variant), so a Windows launch is refused and no `.ps1` is served:
+  these variants have not reached a Windows host. They are fixed now so they
+  are safe on the day the rest of the scenario resolves.
+- **The fix.** SIM-EDR-007 reads from `/var/lib/cortexsim/edr-007`, a root-only
+  directory each step checks first; TTP-2026-0006's staging script writes
+  there. The three Windows scenarios keep their folder names, which their
+  detections key on, and make the folder like the Linux rule: `rmdir` (which
+  removes a junction, not its target), then one
+  `[System.IO.Directory]::CreateDirectory(path, DirectorySecurity)` call that
+  gives the folder its protected ACL as it is made: SYSTEM, Administrators,
+  the running account and a marker ACE unique to that folder. A `mkdir`
+  followed by `Set-Acl` would leave the new folder open, between the two, to
+  every account that may add files to `C:\ProgramData` or `C:\Windows\Temp`,
+  and a handle opened then keeps its access after the ACL lands. A `Get-Acl`
+  then refuses anything that was already at the path, and every later step
+  runs the same check: a planted folder fails on its owner, and a junction
+  fails on its owner or its missing marker. Removals that used
+  `Remove-Item -Recurse`, which Windows PowerShell 5.1 can follow into a
+  junction's target, use `rd /s /q`.
+- **How it is proven.** Linux: the sandbox test runs SIM-EDR-007's guards as
+  root in the CI image against planted directories, links and the exchange
+  race. Windows: a new `sandbox` phase in the `windows` CI job runs each step's
+  guard on Windows PowerShell 5.1 against a folder and a junction a standard
+  account planted, and races one against the other. Those guards are read from
+  the scenario's Windows variant, because the render phase writes only
+  scenarios that resolve for Windows. Nothing here has run on Windows until
+  that job runs on this change.
+- **What an operator will notice.** Stage SIM-EDR-007's inventory and
+  playbooks with TTP-2026-0006's payload, which now writes them to
+  `/var/lib/cortexsim/edr-007`; a step finding anything else exits 1 and says
+  so. A Windows step of SIM-MP-023, -026 or -029 whose first step did not run
+  exits 1 with `sandbox … is missing or not ours`.
 
 ## [1.2.0] - 2026-11-14
 

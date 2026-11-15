@@ -679,6 +679,8 @@ jobs:
   #              then control fixtures the 5.1 parser must REJECT (a PS7-only
   #              file, a BOM-less em dash) so the phase can be seen to fail
   #   pssa       PSScriptAnalyzer compatibility rules vs Server 2016/2019 5.1
+  #   sandbox    each fixed scratch folder a Windows step runs from refuses a
+  #              folder or junction another account planted, raced included
   #   boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout
   #   install    the console's token one-liner in a child powershell.exe
   #   pull       exit codes, fail-fast, step_outcomes, stderr as plain text
@@ -776,6 +778,11 @@ jobs:
         if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
         timeout-minutes: 15
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pssa
+
+      - name: sandbox (a planted scratch folder or junction never gets past a step)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
+        timeout-minutes: 15
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase sandbox
 
       # Gated on build_dist (the exe exists), not on the build assertion phase:
       # one assertion failure there must not skip every e2e phase after it.
