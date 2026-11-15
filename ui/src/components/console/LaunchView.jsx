@@ -11,6 +11,8 @@ import { preflightScenario } from './readiness/scenarioPreflight.js'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
 import NewRunPanel from './NewRunPanel.jsx'
+import EalConsentRow from './EalConsentRow.jsx'
+import { ealSteps } from './ealConsent.js'
 import { runTargets, runPlan, runBlockers } from './newRun.js'
 
 /**
@@ -218,6 +220,12 @@ export default function LaunchView({
   const toggleConsent = (key) =>
     launch.setConsent((c) => ({ ...c, [key]: !c[key] }))
 
+  // ── EAL consent ───────────────────────────────────────────────────────
+  // Asked only when the armed scenario has an EAL step. Unticked, the launch
+  // is the one sent before and those steps run dry.
+  const hasEal = useMemo(() => ealSteps(scenario).length > 0, [scenario])
+  const ealUnnamed = hasEal && launch.ealLive && !launch.ealAuthorizedBy.trim()
+
   // Every independent reason Launch is dead, in one list the operator can read.
   // The hook owns scenario/agent readiness; the target pick and the consent
   // gate are this view's, so they are folded in here rather than duplicated.
@@ -230,6 +238,7 @@ export default function LaunchView({
     if (needsC2 && !launch.consent.c2_authorized) {
       out.push('Tick the C2-framework consent for this scenario')
     }
+    if (ealUnnamed) out.push('Name who authorised the live EAL traffic')
     for (const name of missingDeclaredPayloads) {
       out.push(
         `${name} is declared by this scenario but is not ready on this instance — the launch will `
@@ -247,7 +256,7 @@ export default function LaunchView({
     }
     return out
   }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads,
-      preflight.blocking])
+      preflight.blocking, ealUnnamed])
 
   // ── New POV run panel (design C1) ─────────────────────────────────────
   // The authorisation tick starts unticked for every run; the dual-use / C2
@@ -366,7 +375,19 @@ export default function LaunchView({
             onIdentity={launch.setIdentity}
             authorised={authorised}
             onAuthorised={setAuthorised}
-            consentExtra={(needsSim || needsC2) ? (
+            consentExtra={(needsSim || needsC2 || hasEal) ? (
+              <>
+              {hasEal && (
+                <EalConsentRow
+                  live={launch.ealLive}
+                  onLive={launch.setEalLive}
+                  authorizedBy={launch.ealAuthorizedBy}
+                  onAuthorizedBy={launch.setEalAuthorizedBy}
+                  c2={launch.ealC2}
+                  onC2={launch.setEalC2}
+                />
+              )}
+              {(needsSim || needsC2) && (
               <div className={'launch-consent' + (consentBlocked ? ' launch-consent--blocking' : '')}>
                 <div className="launch-consent__title">
                   Tool consent required
@@ -399,6 +420,8 @@ export default function LaunchView({
                   </label>
                 )}
               </div>
+              )}
+              </>
             ) : null}
             blockers={runBlocked}
             running={launch.launching || launch.downloading}

@@ -66,7 +66,17 @@ describe('Button', () => {
       'Pause', 'Clear', 'Screenshot',
       'Open run',
       'Validate all',
+      'Mark detected', 'Reset', 'Save',
     ])
+  })
+
+  it('an icon-only verb button draws just its icon and names itself in a tooltip', () => {
+    render(<Button verb="Mark detected" iconOnly />)
+    const b = screen.getByRole('button', { name: 'Mark detected' })
+    expect(b).toHaveAttribute('title', 'Mark detected')
+    expect(b).toHaveClass('kit-btn', 'kit-btn--icon')
+    expect(b.textContent).toBe('')
+    expect(b.querySelector('svg')).toHaveAttribute('data-icon', 'check-circle')
   })
 
   it('the Fleet verbs draw their own icons (#339)', () => {
@@ -169,7 +179,7 @@ describe('Icon', () => {
       'back', 'forward',
       'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
       'pause', 'clear', 'camera', 'down', 'terminal',
-      'x', 'check-all',
+      'x', 'check-all', 'check-circle', 'save',
     ])
   })
 

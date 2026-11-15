@@ -10,15 +10,19 @@
  * when `refreshKey` changes (the row's status or output size moved).
  *
  * The record, not the frame, is what the page shows: a frame is only the
- * reason to read again.
+ * reason to read again. The one exception is output streamed while a step
+ * runs, which the record keeps only as a tail: the frames are handed back as
+ * `events` so the page can append them between reads (liveOutput.js).
  *
  * @param {string|null} runId
  * @param {Object}  [opts]
  * @param {boolean} [opts.settled]     the caller already knows the run ended
  * @param {string}  [opts.refreshKey]  read again when this changes
  * @returns {{ record: Object|null, failed: boolean,
- *             stream: {connected: boolean, mode: string}|null }}
- *   `stream` is null once nothing is being followed.
+ *             stream: {connected: boolean, mode: string}|null,
+ *             events: Array }}
+ *   `stream` is null once nothing is being followed; `events` are the run's
+ *   stream frames so far, oldest first.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getRun } from '../../api/client.js'
@@ -74,5 +78,5 @@ export default function useRunRecord(runId, { settled = false, refreshKey = '' }
     return () => clearTimeout(t)
   }, [live, frames, read])
 
-  return { record, failed, stream: live ? { connected, mode } : null }
+  return { record, failed, stream: live ? { connected, mode } : null, events }
 }

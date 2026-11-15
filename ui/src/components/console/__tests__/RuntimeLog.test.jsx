@@ -96,13 +96,95 @@ describe('<RuntimeLog />', () => {
   })
 
   it('keeps the lines the transcript carries outside any step, in place', () => {
-    const run = { status: 'aborted', output: `!! TARGET_AGENT_OS_UNKNOWN: POSIX assumed\n${OUTPUT}\n--- ABORTED (operator) ---` }
+    const run = { status: 'aborted', output: `!! PLATFORM VARIANT: step=step-02 ran its windows variant\n${OUTPUT}\n--- ABORTED (operator) ---` }
     render(<RuntimeLog log={log(run)} />)
     const items = [...screen.getByRole('region', { name: 'Runtime log' }).querySelectorAll('.rtlog__steps > li')]
     expect(items.map((li) => li.getAttribute('data-testid'))).toEqual(
       ['runtime-note', 'runtime-step', 'runtime-step', 'runtime-note'],
     )
-    expect(items[0]).toHaveTextContent('TARGET_AGENT_OS_UNKNOWN')
+    expect(items[0]).toHaveTextContent('PLATFORM VARIANT')
     expect(items[3]).toHaveTextContent('ABORTED (operator)')
+  })
+})
+
+describe('<RuntimeLog /> — a command preview leads with what the step does', () => {
+  const PRE = `C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT`
+  const COMMAND = `${PRE}\ncurl -sS https://example.test/a.sh -o "$C/a.sh"\nbash "$C/a.sh"`
+
+  it('skips the scratch-folder line in the preview, and Show all still shows every line', () => {
+    const run = { status: 'complete', output: OUTPUT }
+    render(<RuntimeLog log={log(run, [{ ...STEPS[0], command: COMMAND }, STEPS[1]])} />)
+    const more = within(steps()[0]).getByTestId('runtime-step-command').querySelector('details')
+    expect(more).not.toBeNull()
+    expect(more.querySelector('summary code')).toHaveTextContent('curl -sS https://example.test/a.sh -o "$C/a.sh"')
+    expect(more.querySelector('summary')).not.toHaveTextContent('mktemp')
+    expect(more.querySelector('summary')).toHaveTextContent('Show all')
+    expect(more.querySelector('pre').textContent).toBe(COMMAND)
+  })
+})
+
+describe('<RuntimeLog /> — cleanup is its own block, after the steps', () => {
+  const CLEANUP = [
+    '=== CLEANUP · 3 commands · identity=direct ===',
+    '$ rm -rf /tmp/cortexsim-edr001',
+    '--- cleanup 1/3 exit_code=0 duration=4ms ---',
+    '$ systemctl disable --now cortexsim-demo.service',
+    'Failed to disable unit: Unit file cortexsim-demo.service does not exist.',
+    '--- cleanup 2/3 exit_code=1 duration=12ms ---',
+    '$ userdel svc-demo',
+    '--- cleanup 3/3 exit_code=0 duration=9ms ---',
+  ].join('\n')
+  const entry = (over) => [{ agent_id: 'ag-1', task_id: 't-1', commands: 3, status: 'clean', ran: 3, failed: 0, reason: null, ...over }]
+  const cleanup = () => screen.getByTestId('runtime-cleanup')
+
+  it('says Cleanup, a state as a StatusIcon and a word, and keeps the commands behind one line', () => {
+    const run = { status: 'complete', output: `${OUTPUT}\n${CLEANUP}`, cleanup: entry({ status: 'failed', failed: 1, reason: 'COMMAND_FAILED' }) }
+    render(<RuntimeLog log={log(run)} />)
+    // After the steps, and not inside the last one.
+    const region = screen.getByRole('region', { name: 'Runtime log' })
+    expect(region.querySelectorAll('[data-testid="runtime-step"] [data-testid="runtime-cleanup"]')).toHaveLength(0)
+    expect(steps()[1].compareDocumentPosition(cleanup()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(steps()[1]).not.toHaveTextContent('userdel')
+
+    expect(cleanup()).toHaveTextContent('Cleanup')
+    expect(within(cleanup()).getByRole('img', { name: '1 of 3 failed' })).toBeInTheDocument()
+    const more = cleanup().querySelector('details')
+    expect(more.open).toBe(false)
+    expect(more.querySelector('summary code')).toHaveTextContent('rm -rf /tmp/cortexsim-edr001')
+    expect(more.querySelector('summary')).toHaveTextContent('Show all')
+    const full = more.querySelector('.rtlog__cleanup-cmds')
+    expect(full).not.toBeVisible()
+    more.open = true
+    expect(full).toBeVisible()
+    expect(full).toHaveTextContent('systemctl disable --now cortexsim-demo.service')
+    expect(full).toHaveTextContent('Failed to disable unit')
+    expect(full).toHaveTextContent('exit 1 · 12ms')
+  })
+
+  it.each([
+    ['clean', {}, 'Clean'],
+    ['not_run', { status: 'not_run', ran: 0, reason: 'NO_STEP_STARTED' }, 'Not run'],
+  ])('a %s cleanup reads its one word', (_key, over, word) => {
+    const run = { status: 'complete', output: OUTPUT, cleanup: entry(over) }
+    render(<RuntimeLog log={log(run)} />)
+    expect(within(cleanup()).getByRole('img', { name: word })).toBeInTheDocument()
+  })
+
+  it('a live run whose cleanup has not run reads Pending', () => {
+    const run = { status: 'running', output: OUTPUT.split('\n').slice(0, 3).join('\n'), cleanup: entry({ status: 'pending', ran: 0 }) }
+    render(<RuntimeLog log={log(run)} stream={{ connected: true, mode: 'stream' }} />)
+    expect(within(cleanup()).getByRole('img', { name: 'Pending' })).toBeInTheDocument()
+  })
+
+  it('renders the reason the host reported as text', () => {
+    const run = { status: 'complete', output: `${OUTPUT}\n${CLEANUP}`, cleanup: entry({ status: 'failed', failed: 1, reason: '<b>disk full</b>' }) }
+    render(<RuntimeLog log={log(run)} />)
+    expect(cleanup()).toHaveTextContent('<b>disk full</b>')
+    expect(cleanup().querySelector('b')).toBeNull()
+  })
+
+  it('a run with no cleanup shows no cleanup block', () => {
+    render(<RuntimeLog log={log({ status: 'complete', output: OUTPUT })} />)
+    expect(screen.queryByTestId('runtime-cleanup')).toBeNull()
   })
 })

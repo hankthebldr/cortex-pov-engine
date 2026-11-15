@@ -6,11 +6,18 @@ import React, { useMemo } from 'react'
  *
  * Surfaces beyond the median: lets DCs say things like "75th percentile
  * MTTD was 90 seconds" or "two outliers landed in the 2-5 minute bucket
- * — investigate the cause." Plain SVG, no external chart lib.
+ * — investigate the cause." Plain SVG, no external chart lib. With no MTTD
+ * to draw it is one line.
  *
  * Props:
  *   rows — array of useResultsData rows ({ mttd, observed, ... })
  */
+
+/** Seconds as one tidy number: a tenth under ten seconds, whole seconds above. */
+export function tidySeconds(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return n
+  return n < 10 ? Math.round(n * 10) / 10 : Math.round(n)
+}
 
 // Bucket edges in seconds. Bins inclusive of the lower bound, exclusive
 // of the upper. The last bin catches anything 120s+ in one tail.
@@ -29,21 +36,20 @@ export default function MttdHistogram({ rows = [] }) {
 
   if (detected.length === 0) {
     return (
-      <div className="mttd-histogram mttd-histogram--empty">
-        <div className="mttd-histogram__head">
-          <h3 className="mttd-histogram__title">MTTD distribution</h3>
-        </div>
-        <div className="mttd-histogram__empty-state mono">
-          no detected results with MTTD yet — validate detections to populate
-        </div>
-      </div>
+      <p
+        className="mttd-histogram mttd-histogram--empty"
+        data-testid="mttd-panel"
+        title="A detection has an MTTD once it is detected with a time"
+      >
+        No MTTD yet
+      </p>
     )
   }
 
   const maxCount = Math.max(...bins.map((b) => b.count), 1)
 
   return (
-    <div className="mttd-histogram">
+    <div className="mttd-histogram" data-testid="mttd-panel">
       <div className="mttd-histogram__head">
         <h3 className="mttd-histogram__title">MTTD distribution</h3>
         <div className="mttd-histogram__stats">
@@ -74,9 +80,8 @@ export default function MttdHistogram({ rows = [] }) {
         })}
       </div>
 
-      <div className="mttd-histogram__hint mono">
-        {detected.length} detection{detected.length === 1 ? '' : 's'} with MTTD ·
-        the bin containing the median is highlighted
+      <div className="mttd-histogram__hint">
+        {detected.length} detection{detected.length === 1 ? '' : 's'} · median bin highlighted
       </div>
     </div>
   )
@@ -87,7 +92,7 @@ function Stat({ label, value, suffix = '', highlight = false }) {
     <div className={'mttd-histogram__stat' + (highlight ? ' mttd-histogram__stat--alert' : '')}>
       <div className="mttd-histogram__stat-label mono">{label}</div>
       <div className="mttd-histogram__stat-value">
-        {value != null ? value : '—'}
+        {value != null ? tidySeconds(value) : '—'}
         {value != null && (
           <span className="mttd-histogram__stat-unit">{suffix}</span>
         )}

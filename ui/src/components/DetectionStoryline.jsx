@@ -224,20 +224,27 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
       ) : key === 'not_executed' && det.outcome_reason === STEP_FAILED ? (
         // #323: the step ran and exited non-zero, so its silence says nothing
         // about Cortex. The exit status is in the row's notes.
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
-          Signal never generated — the step failed on the host, so a miss can't be
-          claimed.
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--unproven"
+          title="The step failed on the host, so a miss can't be claimed."
+        >
+          Signal never generated · step failed
         </div>
       ) : key === 'not_executed' ? (
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
-          Signal never generated — the run did not complete, so this detection was
-          never put to the test.
-          {det.outcome_reason && <> {det.outcome_reason}</>}
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--unproven"
+          title="The run did not complete, so this detection was never put to the test."
+        >
+          Signal never generated · run did not complete
+          {det.outcome_reason && <> · {det.outcome_reason}</>}
         </div>
       ) : key === 'not_reached' ? (
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--not-reached">
-          Not reached — an earlier step was stopped, so this step never ran.
-          {det.outcome_reason && <> {det.outcome_reason}</>}
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--not-reached"
+          title="An earlier step was stopped, so this step never ran."
+        >
+          Not reached · an earlier step was stopped
+          {det.outcome_reason && <> · {det.outcome_reason}</>}
         </div>
       ) : key === 'missed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--missed">
@@ -246,7 +253,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
       ) : isAwaitingReconcile(status, det) ? (
         <div className="storyline-detection__awaiting">
           <span className="storyline-scan" aria-hidden="true" />
-          Awaiting reconcile — no alert has been judged for this detection yet.
+          No alert judged yet
         </div>
       ) : (
         <div className="storyline-detection__awaiting">

@@ -1,17 +1,14 @@
 /**
- * #340 — a finished run's STDOUT panel shows the output SimCore stored.
+ * #340 — a finished run's page shows the output SimCore stored.
  *
- * The panel used to show only the live SSE stream, so a run that had already
- * ended read "waiting for agent…" while `GET /api/runs/{id}` held its whole
- * transcript. A settled run (complete · failed · aborted · staged) now renders
- * that stored output, split on the beacon's per-step grammar
- * (agent/beacon/client.go::formatStepOutput, and refuseStep for a step the
- * host would not run). A live run keeps the stream.
+ * `GET /api/runs/{id}` holds a run's whole transcript. It is split on the
+ * beacon's per-step grammar (agent/beacon/client.go::formatStepOutput, and
+ * refuseStep for a step the host would not run), and the run's runtime log is
+ * built from it.
  */
 import React from 'react'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import EventStream from '../console/EventStream.jsx'
+import { render, screen, waitFor } from '@testing-library/react'
 import { splitStepTranscript } from '../console/useRunStepTail.js'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
@@ -51,26 +48,12 @@ const MIXED_OUTPUT = [
   '--- exit_code=none duration=0s ---',
 ].join('\n')
 
-const liveRun = {
-  id: 'r-live',
-  scenario_id: 'SIM-CDR-006',
-  mode: 'pull',
-  status: 'running',
-  started_at: '2026-11-14T22:00:00Z',
-  current_step: 1,
-  steps: [{ id: 'step-01', mitre_technique: 'T1543.002', identity: 'root', status: 'pending' }],
-  results: [],
-}
-
 beforeEach(() => {
   if (typeof window !== 'undefined' && 'EventSource' in window) delete window.EventSource
   installRoutes({
     'GET /api/runs/r-done': { id: 'r-done', status: 'complete', output: CDR_006_OUTPUT, steps: [], results: [] },
-    'GET /api/runs/r-live': liveRun,
   })
 })
-
-const steps = () => screen.queryAllByTestId('stdout-step')
 
 describe('splitStepTranscript', () => {
   it('keeps each step with its own lines, exit code and duration', () => {
@@ -97,48 +80,6 @@ describe('splitStepTranscript', () => {
   })
 })
 
-describe('<EventStream /> — a finished run', () => {
-  it('shows the stored output split by step, with each exit code', () => {
-    render(<EventStream runId="r-done" status="complete" output={CDR_006_OUTPUT} />)
-    expect(screen.queryByText(/waiting for agent/i)).toBeNull()
-    expect(steps()).toHaveLength(3)
-    for (const step of steps()) {
-      expect(within(step).getByRole('img', { name: 'Ran' })).toBeInTheDocument()
-      expect(step).toHaveTextContent('exit 0')
-    }
-    expect(steps()[0]).toHaveTextContent('step-01')
-    expect(steps()[0]).toHaveTextContent('[*] systemd unit written: /etc/systemd/system/cortexsim-node.service')
-  })
-
-  it('says how each step ended: Ran, Failed (exit N), Timed out, Did not run', () => {
-    render(<EventStream runId="r-done" status="failed" output={MIXED_OUTPUT} />)
-    const words = steps().map((s) => within(s).getByRole('img').getAttribute('aria-label'))
-    expect(words).toEqual(['Ran', 'Failed (exit 1)', 'Timed out', 'Did not run'])
-    expect(screen.getByTestId('stdout-note')).toHaveTextContent('!! PLATFORM VARIANT: step=step-01 linux')
-  })
-
-  it('reads stored output for every settled status, not only complete', () => {
-    for (const status of ['complete', 'failed', 'aborted', 'staged']) {
-      const { unmount } = render(<EventStream runId="r-done" status={status} output={CDR_006_OUTPUT} />)
-      expect(steps(), status).toHaveLength(3)
-      unmount()
-    }
-  })
-
-  it('an empty stored output reads "No output recorded", never "waiting for agent…"', () => {
-    render(<EventStream runId="r-done" status="complete" output="" />)
-    expect(screen.getByText('No output recorded')).toBeInTheDocument()
-    expect(screen.queryByText(/waiting for agent/i)).toBeNull()
-  })
-
-  it('before the record arrives it says the output is not loaded, not that none was recorded', () => {
-    render(<EventStream runId="r-done" status="complete" output={null} />)
-    expect(screen.getByText('Output not loaded')).toBeInTheDocument()
-    expect(screen.queryByText('No output recorded')).toBeNull()
-    expect(screen.queryByText(/waiting for agent/i)).toBeNull()
-  })
-})
-
 describe('Run detail — the runtime log is built from the record the page fetched', () => {
   it('a finished run shows its stored steps', async () => {
     const run = {
@@ -159,14 +100,5 @@ describe('Run detail — the runtime log is built from the record the page fetch
     // Step 2 ran and printed nothing: it says so rather than waiting on a stream.
     expect(blocks[1]).toHaveTextContent('No output')
     expect(screen.queryByText(/waiting for agent/i)).toBeNull()
-  })
-})
-
-describe('<EventStream /> — a live run', () => {
-  it('keeps the stream and does not render stored output', async () => {
-    render(<EventStream runId="r-live" status="running" output={CDR_006_OUTPUT} />)
-    expect(steps()).toHaveLength(0)
-    await waitFor(() => expect(screen.getByText(/run started/i)).toBeInTheDocument(), { timeout: 4000 })
-    expect(steps()).toHaveLength(0)
   })
 })

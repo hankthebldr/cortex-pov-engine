@@ -93,6 +93,44 @@
   border: 1px dashed var(--bd2);
 }
 
+/* The scenario cleanup, after the steps: a block of its own. */
+.theme-console .rtlog__cleanup {
+  min-width: 0; margin-top: 8px;
+  padding: 11px 13px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+}
+.theme-console .rtlog__cleanup--failed { border-left: 3px solid var(--crit); }
+.theme-console .rtlog__cleanup-cmds { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.theme-console .rtlog__cleanup-cmd { min-width: 0; }
+.theme-console .rtlog__cleanup-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.theme-console .rtlog__cleanup-line .rtlog__cmd-full { flex: 1; min-width: 0; margin: 0; padding: 2px 7px; max-height: 120px; }
+.theme-console .rtlog__cleanup-line .rtlog__meta { flex: none; margin-left: 0; }
+.theme-console .rtlog__cleanup-cmd .rtlog__out { margin-top: 5px; max-height: 160px; }
+
+/* What SimCore said about the launch: one line above the chain. */
+.theme-console .run-notice {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 0 0 14px; padding: 8px 12px; min-width: 0;
+  background: var(--s1); border: 1px solid var(--bd); border-left: 3px solid var(--warn);
+  border-radius: 8px;
+}
+.theme-console .run-notice__line { font: 400 13px/1.5 var(--font-ui); color: var(--tx); min-width: 0; }
+.theme-console .run-notice__more { flex: 1; min-width: 0; }
+.theme-console .run-notice__more > summary {
+  display: flex; align-items: baseline; gap: 10px;
+  cursor: pointer; list-style: none;
+}
+.theme-console .run-notice__more > summary::-webkit-details-marker { display: none; }
+.theme-console .run-notice__more > summary:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; border-radius: 4px; }
+.theme-console .run-notice__first { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-console .run-notice__toggle { flex: none; font: 600 11px/1.5 var(--font-ui); color: var(--ac-ink, var(--ac)); white-space: nowrap; }
+.theme-console .run-notice__more > summary:hover .run-notice__toggle { text-decoration: underline; }
+.theme-console .run-notice__toggle--hide,
+.theme-console .run-notice__more[open] .run-notice__toggle--show,
+.theme-console .run-notice__more[open] .run-notice__first { display: none; }
+.theme-console .run-notice__more[open] .run-notice__toggle--hide { display: inline; margin-left: auto; }
+.theme-console .run-notice__list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+
 /* The run's state, under its title. */
 .theme-console .run-detail__state { margin-top: 9px; }
 .theme-console .run-detail__back { display: inline-flex; align-items: center; gap: 6px; }

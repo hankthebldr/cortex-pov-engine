@@ -222,14 +222,14 @@ describe('lines outside any step', () => {
   it('launch markers lead the log; a stop notice follows the step it came after', () => {
     const run = {
       status: 'aborted',
-      output: ['!! TARGET_AGENT_OS_UNKNOWN: POSIX assumed', ...BLOCK_1, '--- ABORTED (operator) ---'].join('\n'),
+      output: ["!! AGENT_NO_RBAC_FOR_KUBECTL: agent 'pod-1'; steps step-01", ...BLOCK_1, '--- ABORTED (operator) ---'].join('\n'),
     }
     const log = buildRuntimeLog({ steps: STEPS.slice(0, 1), run })
-    expect(log.preface).toEqual([['!! TARGET_AGENT_OS_UNKNOWN: POSIX assumed']])
+    expect(log.preface).toEqual([["!! AGENT_NO_RBAC_FOR_KUBECTL: agent 'pod-1'; steps step-01"]])
     expect(log.blocks[0].notes).toEqual([['--- ABORTED (operator) ---']])
   })
 
   it('a run with no record at all yields no blocks and no lines', () => {
-    expect(buildRuntimeLog()).toEqual({ blocks: [], preface: [] })
+    expect(buildRuntimeLog()).toEqual({ blocks: [], preface: [], cleanup: null })
   })
 })

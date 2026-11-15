@@ -11,7 +11,7 @@ void React
 describe('<MttdHistogram />', () => {
   it('shows empty state when no detected rows', () => {
     render(<MttdHistogram rows={[]} />)
-    expect(screen.getByText(/no detected results with MTTD/i)).toBeInTheDocument()
+    expect(screen.getByTestId('mttd-panel')).toHaveTextContent(/^No MTTD yet$/)
   })
 
   it('shows empty state when no rows have observed=true', () => {
@@ -19,7 +19,7 @@ describe('<MttdHistogram />', () => {
       { observed: false, mttd: 30 },
       { observed: null,  mttd: 60 },
     ]} />)
-    expect(screen.getByText(/no detected results with MTTD/i)).toBeInTheDocument()
+    expect(screen.getByTestId('mttd-panel')).toHaveTextContent(/^No MTTD yet$/)
   })
 
   it('renders 7 bucket columns when data is present', () => {

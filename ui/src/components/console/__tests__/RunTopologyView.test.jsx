@@ -3,7 +3,8 @@
  *
  * Pins: five lane bands, one per signal path; cells sit in the lane `laneOf`
  * derives from what each step does; an empty lane is dimmed and says so; the
- * Engine terminal is always present and carries the verdict; a missing
+ * Engine terminal is always present (the run's verdict is Results' own line,
+ * not repeated here); a missing
  * scenario places no step and says why, but a scenario still loading draws no
  * board at all; a failed run never shows a miss; a failed results fetch says
  * "could not load", never 0.
@@ -57,15 +58,14 @@ function routes(status = 'complete', extra = {}) {
 }
 
 describe('RunTopologyView', () => {
-  it('the Engine terminal names a pending run where nothing executed', async () => {
+  it('the Engine terminal does not repeat the run verdict', async () => {
     routes('complete', { 'GET /api/runs/r1': runRecord('complete', {
       tc_verdict: 'pending', tc_verdict_detail: { reason: 'not_executed' } }) })
     render(<RunTopologyView runId="r1" run={{ run_id: 'r1', scenario_id: 'SIM-MP-001', status: 'complete' }} />)
-    await waitFor(() => expect(screen.getByTestId('topo-verdict')).toHaveTextContent('pending'))
-    const reason = screen.getByTestId('topo-verdict-reason')
-    expect(reason).toHaveAttribute('data-reason', 'not_executed')
-    expect(reason).toHaveTextContent('nothing executed')
-    expect(screen.getByTestId('topo-verdict-reason-sentence')).toHaveTextContent(/re-run/i)
+    const eng = await screen.findByTestId('topo-engine')
+    expect(screen.queryByTestId('topo-verdict')).toBeNull()
+    expect(eng).not.toHaveTextContent(/verdict/i)
+    expect(eng).toHaveTextContent('0 of 1 engine rows detected')
   })
 
   it('draws the five signal paths in order, places cells by laneOf, dims the empty lanes, pins the Engine', async () => {
@@ -93,12 +93,11 @@ describe('RunTopologyView', () => {
     // the Engine terminal
     const eng = screen.getByTestId('topo-engine')
     expect(eng).toHaveAttribute('data-empty', 'false')
-    expect(screen.getByTestId('topo-verdict')).toHaveTextContent('fail')
     expect(within(eng).getAllByTestId('topo-engine-row')).toHaveLength(1)
     expect(within(eng).getByTestId('topo-engine-row')).toHaveTextContent('C2 ↔ process stitch')
     expect(screen.getByTestId('topo-crossings')).toHaveTextContent('ENDPOINT → COLLECTOR at step-02')
-    expect(screen.getByTestId('topo-totals')).toHaveTextContent('tenant-verified: 0')
-    expect(screen.getByTestId('run-topology')).toHaveTextContent('Authored is not proven.')
+    expect(screen.getByTestId('topo-totals')).toHaveTextContent('3 steps · 1 of 3 detected · 3 of 5 paths used')
+    expect(screen.getByTestId('run-topology')).toHaveTextContent('Lanes are signal paths; status is the host’s record')
   })
 
   it('keeps the Engine terminal even when nothing fires there', async () => {
@@ -109,7 +108,7 @@ describe('RunTopologyView', () => {
     render(<RunTopologyView runId="r1" />)
     await waitFor(() => expect(screen.getByTestId('topo-engine')).toBeInTheDocument())
     expect(screen.getByTestId('topo-engine')).toHaveAttribute('data-empty', 'true')
-    expect(screen.getByTestId('topo-engine')).toHaveTextContent(/no Correlation/)
+    expect(screen.getByTestId('topo-engine')).toHaveTextContent('No engine rows on this run')
     expect(screen.queryAllByTestId('topo-engine-row')).toHaveLength(0)
   })
 
@@ -120,7 +119,8 @@ describe('RunTopologyView', () => {
     render(<RunTopologyView runId="r1" />)
     await waitFor(() => expect(screen.getByTestId('topo-scenario-note')).toBeInTheDocument())
     expect(screen.getByTestId('run-topology')).toHaveAttribute('data-steps-from', 'run')
-    expect(screen.getByTestId('topo-scenario-note')).toHaveTextContent(/signal path is read from each step's command/)
+    expect(screen.getByTestId('topo-scenario-note')).toHaveTextContent('Scenario not loaded · steps not placed')
+    expect(screen.getByTestId('topo-scenario-note')).toHaveAttribute('title', expect.stringMatching(/read from each step's command/))
     expect(screen.queryAllByTestId('topo-cell')).toHaveLength(0)
     const rows = screen.getAllByTestId('topo-unplaced-row')
     expect(rows.map((r) => r.textContent)).toEqual([
@@ -140,7 +140,7 @@ describe('RunTopologyView', () => {
     expect(screen.getAllByTestId('topo-cell').some((c) => c.dataset.tone === 'miss')).toBe(false)
     expect(screen.getAllByTestId('topo-lane').some((l) => l.dataset.tone === 'miss')).toBe(false)
     expect(screen.getByTestId('topo-engine').dataset.tone).not.toBe('miss')
-    expect(screen.getByTestId('topo-verdict')).toHaveTextContent('not scored')
+    expect(screen.getByTestId('topo-unproven')).toHaveTextContent('Run failed · unfired detections read pending')
   })
 
   it('holds the board while the scenario request is in flight — loading is never drawn as "not loaded"', async () => {
@@ -158,7 +158,7 @@ describe('RunTopologyView', () => {
     expect(screen.queryByTestId('topo-scenario-note')).toBeNull()
     expect(screen.queryByTestId('topo-unplaced')).toBeNull()
     expect(screen.queryByTestId('run-topology')).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('loading topology')
+    expect(screen.getByRole('status')).toHaveTextContent('Loading…')
     // The scenario lands: every step is placed, and on a failed run none is a miss.
     releaseScenario()
     await waitFor(() => expect(screen.getByTestId('run-topology')).toHaveAttribute('data-steps-from', 'scenario'))

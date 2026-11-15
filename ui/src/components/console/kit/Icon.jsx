@@ -31,8 +31,12 @@
  *   camera   Screenshot (the verb)
  *   down     jump to the newest line of a log
  *   terminal Open run (the verb): the run's own page
- *   x        close a sheet; mark a detection missed
+ *   x        close a sheet
  *   check-all  Validate all (the verb)
+ *   check-circle  Mark detected (the verb)
+ *   save     Save (the verb)
+ *
+ * `repeat` also draws Reset (the verb).
  *
  * `target` also draws Set active (the verb).
  */
@@ -162,6 +166,18 @@ const SHAPES = {
   terminal: <path d="M2 3h12v10H2zM4.8 6.6l2 1.8-2 1.8M8.6 10.4h2.6" {...STROKE} />,
   x: <path d="M4 4l8 8M12 4l-8 8" {...STROKE} />,
   'check-all': <path d="M1.8 8.6l2.6 2.6 5-5.6M7.4 10.4l.8.8 6-6.8" {...STROKE} />,
+  'check-circle': (
+    <g {...STROKE}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M5.4 8.2l1.9 1.9 3.4-3.8" />
+    </g>
+  ),
+  save: (
+    <g {...STROKE}>
+      <path d="M3 3h8.2L13 4.8V13H3z" />
+      <path d="M5.4 3v3.2h4.6V3M5.4 13V9.4h5.2V13" />
+    </g>
+  ),
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

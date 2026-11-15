@@ -5,6 +5,7 @@ import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { triStateFromValue } from '../../outcomes.js'
 import { AGENT_REFRESH_HINT_S } from './readiness/scenarioPreflight.js'
 import { normalizeLaunchWarnings, rememberLaunchWarnings } from './launchWarnings.js'
+import { ealLaunchFields, rememberAuthorizer, rememberedAuthorizer } from './ealConsent.js'
 
 /**
  * Push-bundle formats GET /api/scenarios/{id}/download serves. One list, so the
@@ -171,9 +172,11 @@ export function bundleRetryFormat(result, scenario) {
   return null
 }
 
-const GATE_WARNING_SHOWN_KEYS = new Set(['code', 'text', 'agent_id', 'steps'])
+// `level` says how the console treats a warning (an `info` one does not hold
+// the launch, see warningHoldsLaunch). It is not part of what the warning says.
+const GATE_WARNING_SHOWN_KEYS = new Set(['code', 'text', 'agent_id', 'steps', 'level'])
 
-/** One container-agent gate warning object as a line of text, no field dropped. */
+/** One launch warning object as a line of text: who, which steps, then what SimCore said. */
 function gateWarningText(w) {
   const parts = []
   if (w.agent_id) parts.push(`agent ${w.agent_id}`)
@@ -284,6 +287,12 @@ export default function useLaunchScenario(scenario, {
   const [downloadResult, setDownloadResult] = useState(null)
   // Launch-time consent for gated tool adapters (dual-use / c2-framework).
   const [consent, setConsent]             = useState({})          // { simulation_authorized?, c2_authorized? }
+  // Launch-time consent for the scenario's EAL steps (ealConsent.js). Kept
+  // apart from the tool consent above: unticking one must not withdraw the
+  // other. The name is remembered per browser; the ticks never are.
+  const [ealLive, setEalLive]             = useState(false)
+  const [ealAuthorizedBy, setEalAuthorizedBy] = useState(rememberedAuthorizer)
+  const [ealC2, setEalC2]                 = useState(false)
   const [launching, setLaunching]         = useState(false)
   const [downloading, setDownloading]     = useState(false)
   const [lastRun, setLastRun]             = useState(null)        // { status, message }
@@ -321,6 +330,9 @@ export default function useLaunchScenario(scenario, {
     setPairedWith('')
     setCanaryRunId('')
     setCanaryError(null)
+    // Live traffic is authorised for one scenario, not carried to the next.
+    setEalLive(false)
+    setEalC2(false)
   }, [scenario?.scenario_id, defaultIdentity])
 
   // Terminal runs of this scenario on the chosen target: the only valid pair
@@ -431,7 +443,15 @@ export default function useLaunchScenario(scenario, {
         identity: identity || undefined,
       }
       if (mode === 'pull' && selectedAgent) body.target_agent_id = selectedAgent
-      if (consent && Object.keys(consent).length) body.consent = consent
+      // Sent only when ticked and named; otherwise the body is the one sent
+      // before, and the EAL steps run dry.
+      const eal = ealLaunchFields(scenario, { live: ealLive, authorizedBy: ealAuthorizedBy, c2: ealC2 })
+      const sentConsent = { ...(consent || {}), ...(eal ? eal.consent : {}) }
+      if (Object.keys(sentConsent).length) body.consent = sentConsent
+      if (eal) {
+        body.authorized_by = eal.authorized_by
+        rememberAuthorizer(eal.authorized_by)
+      }
       if (mode === 'pull') {
         if (profileMode && profileMode !== 'unknown') body.agent_profile_mode = profileMode
         const bas = triStateFromValue(basMode)
@@ -486,7 +506,8 @@ export default function useLaunchScenario(scenario, {
     }
   }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
       payloadPlanResolving, onRunComplete, onError, holdOnWarnings,
-      profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId])
+      profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId,
+      ealLive, ealAuthorizedBy, ealC2])
 
   // Leave a launch whose warnings were held (holdOnWarnings) for its run.
   const continueToRun = useCallback(() => {
@@ -546,6 +567,9 @@ export default function useLaunchScenario(scenario, {
     selectedAgent, setSelectedAgent,
     pushFormat, setPushFormat,
     consent, setConsent,
+    ealLive, setEalLive,
+    ealAuthorizedBy, setEalAuthorizedBy,
+    ealC2, setEalC2,
     launching, downloading,
     lastRun,
     downloadResult,

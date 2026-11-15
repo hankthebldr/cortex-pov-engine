@@ -34,7 +34,7 @@ The canvas should follow this. Slice 2 of three, as built:
 | Page | Its one job | What the code does |
 |---|---|---|
 | **Runs › a run** | What was attempted | Lifecycle strip, the chain, Abort, and one panel: the **runtime log** (`RuntimeLog.jsx`, model in `runtimeLog.js`). One block per step: number, name, technique, the account it ran as; the command attempted (the scenario's, or the agent's own record when the run carries `step_starts`); a state as StatusIcon + one word (Queued · Running · Ran · Failed · Timed out · Did not run · Aborted · Staged for a push bundle) with `exit N · duration`; then its output. The chain's cards read the same blocks (`runState.EXEC_VOCABULARY`), so a card and its log block agree. No detection word anywhere on the page or on a Runs row. |
-| **Results** (`#/proof?run=&tab=`) | What Cortex saw, for one run | Result-of bar and switcher, a collapsed "Read with care · N caveats" line, one verdict line, then Detections · Storyline · Techniques · Topology · Causality · Tenant evidence (`ResultsView.jsx`, tab list in `app/resultTabs.js`). The views are the ones that were a run's tabs, moved unchanged. Not reviewed: the Review notice, and every detection tab says "Not reviewed". |
+| **Results** (`#/proof?run=&tab=`) | What Cortex saw, for one run | Result-of bar and switcher, a collapsed "Read with care · N caveats" line, one verdict line, then Detections · Storyline · Techniques · Topology · Causality · Tenant evidence (`ResultsView.jsx`, tab list in `app/resultTabs.js`). The views are the ones that were a run's tabs (put on kit controls and one-line copy in the pass below). Not reviewed: the Review notice, and every detection tab says "Not reviewed". |
 | **Reports** | Everything fired on this engine | Slice 1 (its own change). |
 
 Old run-tab links (`#/runs?run=<id>&tab=evidence|storyline|techniques|
@@ -46,10 +46,39 @@ the icons `x` (close a sheet; mark a detection missed) and `check-all`; and a
 sixth StatusIcon status, **running** (● in the accent wash, for a run, a step
 or a review in progress — "Unknown ?" is for what POVengine cannot see).
 
-Left for a later slice: the beacon reporting each step's start and streaming
-its output while it runs. The log already takes both (a start record feeds
-the command and the Running state; streamed output lands in the Running
-block), so that slice is the beacon and the API, not this page.
+The beacon reporting each step's start and streaming its output while it runs
+landed after this slice; the pass below is the console's side of it.
+
+### Results on kit, a live runtime log, EAL consent (2026-11-15)
+
+Same owner rules (one short line per state; kit controls only). As built:
+
+| Where | What the code does |
+|---|---|
+| **Runs › a run: live** | A running step shows what it has printed so far: the record's `live_tail` when the page opens, then the stream's chunks, skipped by `seq` when already shown (`liveOutput.js`). The step's stored frame replaces the live text; the two are never shown together. A step the agent announced (`step_starts`, or a start event) reads Running with the agent's command. |
+| **Runs › a run: command preview** | The one line is the first that does something (`runtimeLog.commandLead`): the scratch-folder set-up is skipped (the `mktemp` line, the shared-sandbox create/check lines, the Windows `$sandbox` block). "Show all" shows the whole command. |
+| **Runs › a run: cleanup** | Its own block after the steps: "Cleanup", StatusIcon + Clean · "1 of 3 failed" · Not run · Pending, the commands and their output behind one line. State from `Run.cleanup`, commands from the beacon's `=== CLEANUP` section (the scenario's own until it runs). |
+| **Runs › a run: notice** | One line above the chain for what SimCore said at launch (`runNotices.js`, `RunNotices.jsx`): `TARGET_AGENT_*`, `TARGET_EGRESS_REQUIRED`, `RUNTIME_DEPENDENCY_GAP`, `RUNTIME_INSTALL_NOT_ENABLED`, `CLEANUP_NOT_RUN`, `EAL_RELAY_UNAVAILABLE`, and "Live output needs the new beacon" while a run is live on a beacon without `live-output`. Several notices are still one line, opened in place. SimCore's sentence is the tooltip. These lines are no longer raw notes in the log. |
+| **Results › Detections** | A row's state is StatusIcon + one word from `detectionState.js`: Detected · Prevented · Missed · Pending · Not reached · Not executed · Not reviewed, plus Not prevented (a block that only detected). An unjudged row reads Pending on a reviewed run, Not reviewed otherwise; "Awaiting reconcile" is retired everywhere. Tiles: sentence-case label, one number, at most one line ("3 of 6 detected · 2 not counted"). The MTTD panel is one line when empty. Row actions are icon-only kit buttons; the drawer uses kit buttons and a StatusIcon. |
+| **Results › Techniques, Topology** | No "Run verdict" chip (the verdict line at the top of Results owns it) and no status boilerplate in the totals. Each explanation is one line with its detail in a tooltip. The Storyline's per-detection sentences are one line each, same rule. |
+| **Launch gate: EAL consent** | Shown only when the armed scenario has an EAL step (`channel: eal`, or a command that calls the EAL CLI): one row, "Send live EAL traffic" · "Authorized by" (remembered per browser) · "Includes C2-shaped traffic" (`EalConsentRow.jsx`, `ealConsent.js`). Ticked, the launch sends `consent.simulation_authorized`, `authorized_by` and, with the third box, `consent.c2_authorized`; unticked it sends nothing new. The third box shows with the first: the console has no way yet to ask SimCore which plugins it counts as C2-shaped. |
+
+Kit additions in this pass: the verbs **Mark detected** (icon `check-circle`),
+**Reset** (icon `repeat`) and **Save** (icon `save`); the icons `check-circle`
+and `save`; and `Button iconOnly`, which draws a verb as its icon alone with
+the verb as its accessible name and tooltip (a row of small actions).
+
+A row offers only the marks `PUT /api/results/{id}/validate` takes
+(`detectionState.rowActions`): Mark detected until it reads Detected, and
+Reset (`observed: false`, a withdrawn hand mark) on a row a hand mark made
+detected. There is no "Mark missed": the API never writes a miss by hand
+(the old ✗ withdrew the mark and left the row Pending), and the old Reset
+sent `observed: null`, which the API rejects.
+
+Removed: `InflightView`, `EventStream`, `NarrativeTimeline`, `useTimelineData`
+(unmounted since the split) and their styles. The verbs Pause and Screenshot
+and the icons `pause`, `camera` and `down` are now unused by any page; they
+stay in the kit.
 
 ## Design v33 — changes C1–C10 and the Launch gate MVP (2026-11-13)
 

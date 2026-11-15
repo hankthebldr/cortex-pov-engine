@@ -8,6 +8,57 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — Results on kit controls, a live runtime log, and EAL consent at launch
+
+- **A run's runtime log is live.** Output a step prints while it runs shows in
+  that step's block: what the run record held when the page opened, then each
+  chunk from the run's stream. When the step ends, its stored output replaces
+  the live text. A step the agent has announced reads Running with the command
+  the agent reported. Needs a beacon with live output; on an older one the
+  page says "Live output needs the new beacon" while the run is live.
+- **A command's one-line preview starts with what the step does.** It skips
+  the scratch-folder set-up (the `mktemp` line, the shared-sandbox create and
+  check lines, and the Windows `$sandbox` block). "Show all" still shows the
+  whole command.
+- **Cleanup is its own block after the steps.** It says Clean, "1 of 3
+  failed", Not run or Pending, with each command, its output and its exit code
+  behind one line. It is no longer mixed into the last step's output.
+- **What SimCore said about the launch is one line on the run's page**, not
+  raw `!!` lines in the log: an offline agent, an unknown agent OS, a missing
+  interpreter, runtime install being off, a beacon that does not run cleanup
+  or cannot relay EAL steps, and tools the target must already carry.
+  SimCore's own sentence is in the tooltip.
+- **Results › Detections uses one word per state.** Each row is a status icon
+  and one of Detected · Prevented · Missed · Pending · Not reached · Not
+  executed · Not reviewed (and Not prevented, for a block that only detected).
+  "Awaiting reconcile" is gone: a row nothing has judged reads Pending on a
+  reviewed run. The tiles are a label, one number and at most one short line
+  ("3 of 6 detected · 2 not counted"); with no MTTD the MTTD panel is one line.
+  Row actions and the detail drawer use the kit buttons.
+- **A detection's hand marks do what they say.** Reset sent `observed: null`,
+  which the API rejects, so it never worked; the ✗ "missed" button withdrew a
+  hand mark and left the row Pending, because the API never writes a miss by
+  hand. A row now offers Mark detected until it reads Detected, and Reset on a
+  row a hand mark made detected (it sends `observed: false`). A row matched to
+  an alert offers neither.
+- **A scorecard row's MTTD reads the way the tile does** ("0.4s", "42s",
+  "1m 15s"). A sub-second detection used to read "0:00" beside a tile saying
+  0.4s.
+- **Techniques and Topology no longer repeat the run verdict.** The verdict
+  line at the top of Results says it once. Their totals and explanations are
+  one line each, with the detail in a tooltip.
+- **The Launch gate asks before sending live EAL traffic.** A scenario with an
+  EAL step shows one row: "Send live EAL traffic", "Authorized by" (remembered
+  in the browser) and "Includes C2-shaped traffic". Ticked, the launch sends
+  `consent.simulation_authorized`, `authorized_by` and, with the third box,
+  `consent.c2_authorized`. Unticked, the launch is unchanged and EAL steps run
+  dry, as every console launch did before. The console cannot yet tell which
+  plugins SimCore counts as C2-shaped, so the third box shows with the first.
+- A launch warning object no longer prints its `level` as text.
+- Removed four unmounted views (`InflightView`, `EventStream`,
+  `NarrativeTimeline`, `useTimelineData`) and their styles.
+- No API, scoring or beacon change.
+
 ### Added — Reports rolls up every execution on this engine
 
 - **Reports › Executions.** The first tab of the Reports page lists everything

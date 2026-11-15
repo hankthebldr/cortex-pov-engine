@@ -39,8 +39,8 @@ export const STEP_FAILED = 'STEP_FAILED'
  * that never ran (`not_reached`) or a detector still soaking as ❌ Missed.
  *
  * A row with NO outcome is awaiting judgement (residual R4): `observed=false`
- * is the seed value, not a verdict, so it is `pending` ("Awaiting reconcile",
- * see `statusLabel`) — never `missed`. `observed === true` with no outcome is
+ * is the seed value, not a verdict, so it is `pending` (see `statusLabel`) —
+ * never `missed`. `observed === true` with no outcome is
  * a manual validation (incl. pre-branch runs) → `detected`. `legacyStatus` is
  * a server-decided status the caller already holds (the storyline's
  * `status`); it is honoured except that an outcome-less `missed` is the same
@@ -66,18 +66,22 @@ export function resultStatus(result, legacyStatus) {
   return 'pending'
 }
 
-/** The label for a row with no outcome yet: unjudged, not a gap. */
-export const AWAITING_RECONCILE = 'Awaiting reconcile'
+/** What a row nothing has judged reads on a run that has not been reviewed. */
+export const NOT_REVIEWED = 'Not reviewed'
 
 /** True when nothing has judged this row: no outcome and no validation. */
 export function isAwaitingReconcile(status, row) {
   return outcomeKey(status) === 'pending' && !!row && row.outcome == null
 }
 
-/** The rendered label for a status on a row: `outcomeMeta`, except an
- *  outcome-less pending row reads "Awaiting reconcile" (no reason token). */
-export function statusLabel(status, row) {
-  if (isAwaitingReconcile(status, row)) return AWAITING_RECONCILE
+/**
+ * The rendered label for a status on a row: `outcomeMeta`. A row nothing has
+ * judged is unjudged, not a gap: it reads Pending on a reviewed run (the
+ * review did not settle it) and Not reviewed on one that has not been
+ * reviewed (`reviewed: false`).
+ */
+export function statusLabel(status, row, { reviewed = true } = {}) {
+  if (!reviewed && isAwaitingReconcile(status, row)) return NOT_REVIEWED
   return outcomeMeta(status).label
 }
 

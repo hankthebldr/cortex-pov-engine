@@ -132,7 +132,7 @@ describe('<DetectionStoryline /> on a completed run', () => {
 
   it('still reports a real detection gap as a gap', async () => {
     // An engine-decided miss (`outcome: 'missed'`). An outcome-less row on a
-    // complete run is awaiting reconcile, never a gap (residual R4).
+    // complete run is pending, never a gap (residual R4).
     mockStoryline('complete', 'missed')
     render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
     await screen.findByText(/Credential extraction tool/)
@@ -204,8 +204,8 @@ describe('<DetectionStoryline /> on a step that failed on the host (#323)', () =
     render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
     await screen.findByText(/Credential extraction tool/)
 
-    expect(screen.getAllByText(/the step failed on the host, so a miss can't be claimed/))
-      .toHaveLength(2)
+    expect(screen.getAllByText(/Signal never generated · step failed/)).toHaveLength(2)
+    expect(screen.getAllByTitle(/the step failed on the host, so a miss can't be claimed/i)).toHaveLength(2)
     expect(screen.getAllByText('Not executed')).toHaveLength(2)
     expect(screen.queryByText(/detection gap/i)).toBeNull()
     expect(screen.queryByText('Missed')).toBeNull()
