@@ -189,29 +189,30 @@ const naiveUtc = (msAgo) => new Date(Date.now() - msAgo).toISOString().replace('
 describe('Agent cards · server liveness, not a browser-clock guess (UI-13 / UI-05)', () => {
   function card(id) { return screen.getByText(id).closest('.target-card') }
 
-  it('renders SimCore\'s offline, with an offline pill', () => {
+  it('renders SimCore\'s offline, as an Offline status', () => {
     mount({ agents: [{ agent_id: 'jb-off', hostname: 'jb', os: 'linux', status: 'offline', last_seen: naiveUtc(900_000), last_seen_age_seconds: 900 }] })
     const c = card('jb-off')
-    expect(c.querySelector('.target-card__pill--offline')).not.toBeNull()
-    expect(c.querySelector('.target-card__pill--live')).toBeNull()
+    expect(within(c).getByRole('img', { name: 'Offline' })).toBeTruthy()
+    expect(within(c).queryByRole('img', { name: 'Online' })).toBeNull()
   })
 
   it('trusts SimCore\'s stale and its age over a skewed browser clock', () => {
     // The laptop clock says 2 s ago; SimCore measured 95 s and said stale.
     mount({ agents: [{ agent_id: 'jb-skew', hostname: 'jb', os: 'linux', status: 'stale', last_seen: naiveUtc(2_000), last_seen_age_seconds: 95 }] })
     const c = card('jb-skew')
-    expect(c.querySelector('.target-card__pill--stale')).not.toBeNull()
-    expect(c.querySelector('.target-card__pill--live')).toBeNull()
+    expect(within(c).getByRole('img', { name: 'Stale' })).toBeTruthy()
+    expect(within(c).queryByRole('img', { name: 'Online' })).toBeNull()
     expect(c.textContent).toContain('seen 1m ago')
   })
 
-  it('a row the installer only enrolled is "enrolled — waiting for first beacon poll", not live', () => {
+  it('a row the installer only enrolled reads Enrolled, waiting for its first poll, not live', () => {
     const t = naiveUtc(3_000)
     mount({ agents: [{ agent_id: 'jb-new', hostname: 'jb', os: 'linux', status: 'online', registered_at: t, last_seen: t, last_seen_age_seconds: 3 }] })
     const c = card('jb-new')
-    expect(c.querySelector('.target-card__pill--enrolled')).not.toBeNull()
-    expect(c.querySelector('.target-card__pill--live')).toBeNull()
-    expect(c.textContent).toContain('enrolled — waiting for first beacon poll')
+    expect(within(c).getByRole('img', { name: 'Enrolled' })).toBeTruthy()
+    expect(within(c).queryByRole('img', { name: 'Online' })).toBeNull()
+    expect(within(c).getByTestId('agent-enrolled').textContent).toBe('Waiting for first poll · do not launch')
+    expect(within(c).getByTestId('agent-liveness').getAttribute('title')).toBe('enrolled — waiting for first beacon poll')
   })
 
   it('a Windows row without the powershell capability is enrolled, with one that has it online', () => {
@@ -219,8 +220,8 @@ describe('Agent cards · server liveness, not a browser-clock guess (UI-13 / UI-
       { agent_id: 'win-enr', hostname: 'W1', os: 'windows', status: 'online', capabilities: ['shell'], registered_at: naiveUtc(20_000), last_seen: naiveUtc(4_000), last_seen_age_seconds: 4 },
       { agent_id: 'win-run', hostname: 'W2', os: 'windows', status: 'online', capabilities: ['shell', 'powershell', 'artifact-fetch'], registered_at: naiveUtc(20_000), last_seen: naiveUtc(4_000), last_seen_age_seconds: 4 },
     ] })
-    expect(card('win-enr').querySelector('.target-card__pill--enrolled')).not.toBeNull()
-    expect(card('win-run').querySelector('.target-card__pill--live')).not.toBeNull()
+    expect(within(card('win-enr')).getByRole('img', { name: 'Enrolled' })).toBeTruthy()
+    expect(within(card('win-run')).getByRole('img', { name: 'Online' })).toBeTruthy()
   })
 })
 
@@ -233,7 +234,7 @@ describe('Agent cards · installer OS is an exact match (UI-12)', () => {
     ['linux', 'linux'],
   ])('a %s agent re-downloads the %s installer', (os, expected) => {
     mount({ agents: [{ agent_id: `a-${os}`, hostname: 'h', os, status: 'online', last_seen_age_seconds: 1 }] })
-    const href = within(card(`a-${os}`)).getByRole('link', { name: /installer/ }).getAttribute('href')
+    const href = within(card(`a-${os}`)).getByRole('link', { name: /installer/i }).getAttribute('href')
     expect(new URL(href, 'http://localhost').searchParams.get('os')).toBe(expected)
   })
 
@@ -246,22 +247,25 @@ describe('Agent cards · delete says what it does and how to really remove a bea
     const c = screen.getByText(agent.agent_id).closest('.target-card')
     fireEvent.click(within(c).getByRole('button', { name: /delete/i }))
     // The host-side steps sit behind a disclosure under the inline confirm (#339).
-    fireEvent.click(within(c).getByRole('button', { name: /How to remove the beacon from the host/ }))
+    fireEvent.click(within(c).getByRole('button', { name: 'Uninstall command' }))
     // Same element: the card keeps its key across the confirm re-render.
     return c
   }
 
   it('Linux: registry row only, beacon re-registers, and the removal line runs as the installing user (RG-UI-02)', () => {
     const c = confirmFor({ agent_id: 'jb-l', hostname: 'h', os: 'linux', status: 'online', last_seen_age_seconds: 1 })
-    expect(c.textContent).toMatch(/removes the registry row only/i)
-    expect(c.textContent).toMatch(/re-registers/i)
+    const help = within(c).getByTestId('agent-remove-help')
+    expect(help.textContent).toMatch(/removes the row only/i)
+    expect(help.querySelector('p').getAttribute('title')).toMatch(/re-registers/i)
     // No sudo: under sudo the script resolves per-user paths from root's
     // environment, misses the per-user unit and still prints "done".
     expect(within(c).getByTestId('agent-uninstall-cmd').textContent)
       .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | bash`)
-    const note = within(c).getByTestId('agent-uninstall-note').textContent
-    expect(note).toMatch(/same user who ran the installer/i)
-    expect(note).toContain('NEEDS_ROOT')
+    const note = within(c).getByTestId('agent-uninstall-note')
+    expect(note.textContent).toBe('Installed as root?')
+    expect(note.getAttribute('title')).toMatch(/same user who ran the installer/i)
+    expect(note.getAttribute('title')).toContain('NEEDS_ROOT')
+    fireEvent.click(note)
     expect(within(c).getByTestId('agent-uninstall-root-cmd').textContent)
       .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | sudo bash`)
   })
@@ -279,6 +283,8 @@ describe('Agent cards · delete says what it does and how to really remove a bea
     const c = confirmFor({ agent_id: 'win-l', hostname: 'W', os: 'windows', status: 'online', capabilities: ['shell', 'powershell'], last_seen_age_seconds: 1 })
     expect(within(c).getByTestId('agent-uninstall-cmd').textContent)
       .toBe(`${TLS}iwr -useb '${ORIGIN}/api/agents/install?os=windows&uninstall=1' | iex`)
+    expect(within(c).getByTestId('agent-remove-help').textContent).toMatch(/as Administrator/)
+    fireEvent.click(within(c).getByRole('button', { name: 'Host can’t reach POVengine?' }))
     expect(within(c).getByTestId('agent-uninstall-manual').textContent)
       .toBe(WINDOWS_MANUAL_UNINSTALL)
   })
@@ -329,7 +335,7 @@ describe('Agent cards · a refused delete says why and offers the abort (OPS-08)
     const alert = await screen.findByTestId('agent-delete-refused')
     expect(alert.getAttribute('role')).toBe('alert')
     expect(alert.textContent).toContain('AGENT_HAS_OPEN_RUNS')
-    expect(alert.textContent).toMatch(/still owed, or is running, 1 run/)
+    expect(alert.getAttribute('title')).toMatch(/still owed, or is running, 1 run/)
     const link = within(alert).getByRole('link', { name: 'run-abc' })
     expect(link.getAttribute('href')).toBe('#/runs?run=run-abc')
     fireEvent.click(within(alert).getByRole('button', { name: /Abort run-abc/i }))
@@ -344,6 +350,7 @@ describe('Agent cards · a refused delete says why and offers the abort (OPS-08)
       }),
     })
     const alert = await screen.findByTestId('agent-delete-refused')
-    expect(alert.textContent).toMatch(/boom/)
+    expect(alert.textContent).toContain('INTERNAL')
+    expect(alert.getAttribute('title')).toMatch(/boom/)
   })
 })

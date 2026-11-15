@@ -9,7 +9,7 @@
  * Tier-D e2e modules) took 44. There was no bulk action at all.
  *
  * DELETE /api/agents/{id} is unchanged. These tests pin what the console does
- * with it: one inline confirm per row, "Delete all offline (N)" and a select
+ * with it: one inline confirm per row, "Delete offline (N)" and a select
  * mode, sequential calls, every refusal reported, one refresh at the end.
  *
  * jsdom only. Layout is checked in a real browser, not here.
@@ -125,12 +125,12 @@ describe('Fleet · per row: one click, then an inline confirm on the same row', 
 
     // Nothing sits between the click and the confirm.
     expect(within(c).queryByTestId('agent-uninstall-cmd')).toBeNull()
-    const how = within(c).getByRole('button', { name: /How to remove the beacon from the host/ })
+    const how = within(c).getByRole('button', { name: 'Uninstall command' })
     expect(how).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(how)
     expect(how).toHaveAttribute('aria-expanded', 'true')
     expect(within(c).getByTestId('agent-uninstall-cmd')).toBeTruthy()
-    expect(c.textContent).toMatch(/removes the registry row only/i)
+    expect(c.textContent).toMatch(/removes the row only/i)
   })
 
   it('Delete on the confirm calls DELETE once for that agent and refreshes', async () => {
@@ -157,7 +157,7 @@ describe('Fleet · per row: one click, then an inline confirm on the same row', 
     mount({ agents: [row('jb-1')] })
     const c = cardOf('jb-1')
     fireEvent.click(within(c).getByRole('button', { name: /delete/i }))
-    const how = within(c).getByRole('button', { name: /How to remove the beacon from the host/ })
+    const how = within(c).getByRole('button', { name: 'Uninstall command' })
     fireEvent.click(how)
     fireEvent.keyDown(within(c).getByRole('button', { name: 'Copy removal command for jb-1' }), { key: 'Escape' })
     expect(within(c).queryByRole('group', { name: 'Delete jb-1?' })).toBeNull()
@@ -165,10 +165,10 @@ describe('Fleet · per row: one click, then an inline confirm on the same row', 
   })
 })
 
-describe('Fleet · Delete all offline (N)', () => {
+describe('Fleet · Delete offline (N)', () => {
   it('counts offline rows only: never the active agent, an online or a stale one', () => {
     mount({ active: FLEET[1] })
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all offline (3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete offline (3)' }))
     const confirm = screen.getByRole('group', { name: 'Delete 3 offline agents?' })
     expect(listed(within(confirm).getByRole('list', { name: 'Agents to delete' })))
       .toEqual(['off-1', 'off-2', 'off-3'])
@@ -177,7 +177,7 @@ describe('Fleet · Delete all offline (N)', () => {
 
   it('is not offered when no row qualifies', () => {
     mount({ agents: [row('on-1'), row('off-active', 'offline')], active: row('off-active', 'offline') })
-    expect(screen.queryByRole('button', { name: /Delete all offline/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Delete offline/ })).toBeNull()
     // Select mode still exists for the rows that remain.
     expect(screen.getByRole('button', { name: 'Select' })).toBeTruthy()
   })
@@ -185,8 +185,8 @@ describe('Fleet · Delete all offline (N)', () => {
   it('deletes one agent at a time and refreshes the list once, at the end', async () => {
     const del = deleteRecorder()
     const { refreshAgents } = mount({ active: FLEET[1], routes: { 'DELETE /api/agents/:id': del.route } })
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all offline (3)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 3 agents' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete offline (3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 3' }))
     await screen.findByTestId('fleet-bulk-summary')
     expect(del.calls).toEqual(['off-1', 'off-2', 'off-3'])
     expect(del.maxInFlight).toBe(1)
@@ -202,35 +202,35 @@ describe('Fleet · Delete all offline (N)', () => {
     expect(live).toHaveAttribute('role', 'status')
     expect(live).toHaveAttribute('aria-live', 'polite')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all offline (3)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 3 agents' }))
-    await waitFor(() => expect(live).toHaveTextContent('Deleting 1 of 3…'))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete offline (3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 3' }))
+    await waitFor(() => expect(live).toHaveTextContent('Deleting 1 of 3'))
     await waitFor(() => expect(gates['off-1']).toBeTypeOf('function'))
     await act(async () => { gates['off-1']({}) })
-    await waitFor(() => expect(live).toHaveTextContent('Deleting 2 of 3…'))
+    await waitFor(() => expect(live).toHaveTextContent('Deleting 2 of 3'))
     await waitFor(() => expect(gates['off-2']).toBeTypeOf('function'))
     await act(async () => { gates['off-2']({}) })
     await waitFor(() => expect(gates['off-3']).toBeTypeOf('function'))
     await act(async () => { gates['off-3']({}) })
-    await waitFor(() => expect(live).toHaveTextContent('Deleted 3 of 3.'))
+    await waitFor(() => expect(live).toHaveTextContent('Deleted 3'))
   })
 
   it('a 409 mid-batch does not stop the rest and is in the summary with its code and run ids', async () => {
     const del = deleteRecorder((id) => (id === 'off-2' ? json(REFUSAL_409, 409) : {}))
     const { refreshAgents } = mount({ active: FLEET[1], routes: { 'DELETE /api/agents/:id': del.route } })
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all offline (3)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 3 agents' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete offline (3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 3' }))
 
     const summary = await screen.findByTestId('fleet-bulk-summary')
     expect(del.calls).toEqual(['off-1', 'off-2', 'off-3'])
     expect(refreshAgents).toHaveBeenCalledTimes(1)
     expect(within(summary).getByRole('img', { name: 'Deleted 2' })).toBeTruthy()
-    expect(within(summary).getByRole('img', { name: 'Refused 1' })).toBeTruthy()
+    expect(within(summary).getByRole('img', { name: '1 refused' })).toBeTruthy()
     const refused = within(summary).getByRole('list', { name: 'Refused deletes' })
     expect(refused.textContent).toContain('off-2')
     expect(refused.textContent).toContain('AGENT_HAS_OPEN_RUNS')
     expect(within(refused).getByRole('link', { name: 'run-abc' })).toHaveAttribute('href', '#/runs?run=run-abc')
-    expect(screen.getByTestId('fleet-bulk-live')).toHaveTextContent('Deleted 2 of 3. Refused 1.')
+    expect(screen.getByTestId('fleet-bulk-live')).toHaveTextContent('Deleted 2 · 1 refused')
 
     // The refused row keeps the single-delete refusal, abort control included.
     const alert = within(cardOf('off-2')).getByTestId('agent-delete-refused')
@@ -243,11 +243,11 @@ describe('Fleet · Delete all offline (N)', () => {
       return {}
     })
     mount({ active: FLEET[1], routes: { 'DELETE /api/agents/:id': del.route } })
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all offline (3)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 3 agents' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete offline (3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 3' }))
     const summary = await screen.findByTestId('fleet-bulk-summary')
     expect(del.calls).toEqual(['off-1', 'off-2', 'off-3'])
-    expect(within(summary).getByRole('img', { name: 'Refused 1' })).toBeTruthy()
+    expect(within(summary).getByRole('img', { name: '1 refused' })).toBeTruthy()
   })
 })
 
@@ -271,9 +271,9 @@ describe('Fleet · select mode', () => {
     // Fleet order, not click order.
     expect(listed(within(confirm).getByRole('list', { name: 'Agents to delete' }))).toEqual(['on-1', 'off-active'])
     expect(confirm.textContent).toMatch(/active agent/i)
-    expect(confirm.textContent).toMatch(/re-registers/i)
+    expect(confirm.textContent).toMatch(/re-register/i)
 
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete 2 agents' }))
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete 2' }))
     await screen.findByTestId('fleet-bulk-summary')
     expect(del.calls).toEqual(['on-1', 'off-active'])
     expect(del.maxInFlight).toBe(1)
@@ -305,7 +305,7 @@ describe('Fleet · select mode', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select jb-active' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete selected (1)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 agent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 1' }))
 
     await waitFor(() => expect(summary()).toHaveTextContent('active agent: jb-online'))
     expect(window.localStorage.getItem('cortexsim.activeAgent')).toBe('jb-online')

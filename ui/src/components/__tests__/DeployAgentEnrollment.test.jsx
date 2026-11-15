@@ -56,7 +56,7 @@ describe('TargetsView — enrollment-token deploy flow', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: /Deploy agent/i }).length)
         .toBeGreaterThanOrEqual(2))
-    expect(screen.getByText(/Mint an enrollment token/i)).toBeTruthy()
+    expect(screen.getByText('Deploy a beacon, or use the push bundle.')).toBeTruthy()
   })
 
   it('mints a token via POST /api/agents/enroll/tokens and reveals it once', async () => {

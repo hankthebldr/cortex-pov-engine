@@ -180,7 +180,7 @@ describe('Deploy modal — every Copy says what it copies (UI-23)', () => {
     ] })
     const card = screen.getByText('jb-1').closest('.target-card')
     fireEvent.click(within(card).getByRole('button', { name: /delete/i }))
-    fireEvent.click(within(card).getByRole('button', { name: /How to remove the beacon from the host/ }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Uninstall command' }))
     expect(within(card).getByRole('button', { name: 'Copy removal command for jb-1' })).toBeTruthy()
   })
 })

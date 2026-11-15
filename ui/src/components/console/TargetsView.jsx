@@ -56,15 +56,14 @@ function fmtAge(seconds) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-// Pill / dot modifier per liveness state. Online keeps the `live` modifier the
-// shared stylesheets already colour; offline and enrolled are defined in
-// deploy-console.css.
-const LIVENESS_CLASS = {
-  [LIVENESS.ONLINE]: 'live',
-  [LIVENESS.STALE]: 'stale',
-  [LIVENESS.OFFLINE]: 'offline',
-  [LIVENESS.ENROLLED]: 'enrolled',
-  [LIVENESS.UNKNOWN]: 'unknown',
+// Liveness as a kit status: a glyph and one word. The card keeps a
+// `target-card--<state>` modifier so its top edge carries the same tone.
+const LIVENESS_STATUS = {
+  [LIVENESS.ONLINE]:   { status: 'up',       word: 'Online',   tone: 'live' },
+  [LIVENESS.STALE]:    { status: 'degraded', word: 'Stale',    tone: 'stale' },
+  [LIVENESS.OFFLINE]:  { status: 'down',     word: 'Offline',  tone: 'offline' },
+  [LIVENESS.ENROLLED]: { status: 'degraded', word: 'Enrolled', tone: 'enrolled' },
+  [LIVENESS.UNKNOWN]:  { status: 'unknown',  word: 'Unknown',  tone: 'unknown' },
 }
 
 /**
@@ -74,33 +73,36 @@ const LIVENESS_CLASS = {
  * executor collapses every non-direct identity to `direct` — so a Windows row
  * reads "not honoured" even if it lists identity-harness (enroll defaults an
  * empty roster to ["shell","identity-harness"]). A row with no roster makes no
- * identity claim either way.
+ * identity claim either way. An honoured harness needs no line of its own:
+ * the identity-harness chip says it, with the meaning in its tooltip. Only the
+ * exception, a row that runs every step as its own user, gets a line.
  */
+const HARNESS_TITLE = 'Runs steps as the service accounts each scenario declares.'
+
 function AgentCapabilities({ agent }) {
   const caps = Array.isArray(agent.capabilities)
     ? [...new Set(agent.capabilities.map((c) => String(c).trim()).filter(Boolean))]
     : []
   const windows = installerOS(agent.os || agent.platform) === 'windows'
   const harness = caps.some((c) => c.toLowerCase() === 'identity-harness')
-  let identity = null
-  if (harness && !windows) {
-    identity = (
-      <p className="target-card__identity" data-testid="agent-identity">
-        Runs steps as their declared service accounts
-      </p>
-    )
-  } else if (caps.length > 0 || windows) {
-    identity = (
-      <p className="target-card__identity target-card__identity--warn" data-testid="agent-identity">
-        Identity not honoured — steps run as the agent&apos;s own user
-      </p>
-    )
-  }
+  const honoured = harness && !windows
+  const identity = !honoured && (caps.length > 0 || windows) ? (
+    <p className="target-card__identity target-card__identity--warn" data-testid="agent-identity"
+      title="Identity not honoured: every step runs as the agent's own user, not the service account the scenario declares.">
+      Runs as its own user
+    </p>
+  ) : null
   return (
     <div className="target-card__caps" data-testid="agent-capabilities">
       {caps.length > 0 ? (
         <ul className="target-card__chips" aria-label="Capabilities">
-          {caps.map((c) => <li key={c} className="target-card__chip mono">{c}</li>)}
+          {caps.map((c) => (
+            <li
+              key={c}
+              className="target-card__chip mono"
+              title={honoured && c.toLowerCase() === 'identity-harness' ? HARNESS_TITLE : undefined}
+            >{c}</li>
+          ))}
         </ul>
       ) : (
         <p className="target-card__caps-none">Capabilities not reported</p>
@@ -222,6 +224,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // The per-row confirm keeps the host-side uninstall steps behind a
   // disclosure, so nothing sits between the Delete click and the confirm.
   const [howOpen, setHowOpen] = useState(false)
+  const [howMoreOpen, setHowMoreOpen] = useState(false) // the by-hand / root fallback
   const rowConfirmRef = useRef(null)
   const deleteTriggerRefs = useRef({})   // agent_id → that row's Delete button
   const rowReturnFocusRef = useRef(null) // agent_id whose Delete gets focus back
@@ -268,6 +271,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const openRowDelete = useCallback((agentId) => {
     setBulkConfirm(null)
     setHowOpen(false)
+    setHowMoreOpen(false)
     setPendingDelete(agentId)
   }, [])
 
@@ -353,9 +357,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     let text
     try {
       await abortRun(runId)
-      text = `${runId} aborted. Delete the agent again once no run is left.`
+      text = `${runId} aborted · delete again`
     } catch (err) {
-      text = `Abort of ${runId} failed: ${err?.message || 'unknown error'}`
+      text = `Abort failed: ${err?.message || 'unknown error'}`
     }
     setDeleteRefusal((m) => (m[agentId]
       ? { ...m, [agentId]: { ...m[agentId], aborted: { ...m[agentId].aborted, [runId]: text } } }
@@ -496,12 +500,13 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // Fleet order, and only rows that are still on the list.
   const selectedIds = agentIds.filter((id) => selected.includes(id))
 
+  const bulkSummaryText = bulkSummary
+    ? `Deleted ${bulkSummary.deleted.length}`
+      + (bulkSummary.refused.length ? ` · ${bulkSummary.refused.length} refused` : '')
+    : ''
   const bulkLiveText = bulkProgress
-    ? `Deleting ${bulkProgress.current} of ${bulkProgress.total}…`
-    : bulkSummary
-      ? `Deleted ${bulkSummary.deleted.length} of ${bulkSummary.total}.`
-        + (bulkSummary.refused.length ? ` Refused ${bulkSummary.refused.length}.` : '')
-      : ''
+    ? `Deleting ${bulkProgress.current} of ${bulkProgress.total}`
+    : bulkSummaryText
 
   let bulkPanel = null
   if (bulkConfirm) {
@@ -511,6 +516,12 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     const notOffline = ids.filter((id) => agentLiveness(byId.get(id)).state !== LIVENESS.OFFLINE).length
     const question = `Delete ${n} ${kind === 'offline' ? 'offline' : 'selected'} ${plural(n, 'agent')}?`
     const scrolls = n > BULK_LIST_SCROLLS_AT
+    const note = kind === 'offline'
+      ? ['Skips the active, online and stale agents.']
+      : [
+        ids.includes(activeAgentId) && 'Includes the active agent.',
+        notOffline > 0 && `${notOffline} not offline · may re-register.`,
+      ].filter(Boolean)
     bulkPanel = (
       <div
         className="fleet-bulk fleet-bulk--confirm"
@@ -522,29 +533,20 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
       >
         <p className="fleet-bulk__q" id="fleet-bulk-question">{question}</p>
         <ul
-          className={'fleet-bulk__ids' + (scrolls ? ' fleet-bulk__ids--scroll' : '')}
+          className="fleet-bulk__ids"
           aria-label="Agents to delete"
           tabIndex={scrolls ? 0 : undefined}
         >
           {ids.map((id) => <li key={id} className="mono">{id}</li>)}
         </ul>
-        <p className="fleet-bulk__note">
-          {kind === 'offline'
-            ? 'The active agent and agents that are online, stale or waiting for a first poll are not included. '
-            : ''}
-          {kind === 'selected' && ids.includes(activeAgentId)
-            ? 'Includes the active agent: the header switcher moves to another agent. '
-            : ''}
-          {kind === 'selected' && notOffline > 0
-            ? `${notOffline} of these ${plural(notOffline, 'is', 'are')} not offline: a beacon still running re-registers on its next poll and its row comes back. `
-            : ''}
-          Each delete removes the registry row only. Run history stays.
-        </p>
+        {note.length > 0 && (
+          <p className="fleet-bulk__note" title="Deleting removes the registry row only. Run history stays.">
+            {note.join(' ')}
+          </p>
+        )}
         <div className="fleet-bulk__actions">
           <Button variant="secondary" data-confirm-cancel="" onClick={cancelBulk}>Cancel</Button>
-          <Button variant="destructive" onClick={() => runBulk(ids)}>
-            Delete {n} {plural(n, 'agent')}
-          </Button>
+          <Button variant="destructive" verb="Delete" onClick={() => runBulk(ids)}>Delete {n}</Button>
         </div>
       </div>
     )
@@ -553,7 +555,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     bulkPanel = (
       // Visual only; the live region below is what assistive tech hears.
       <div className="fleet-bulk fleet-bulk--progress" aria-hidden="true">
-        <p className="fleet-bulk__q">Deleting {current} of {total}…</p>
+        <p className="fleet-bulk__q">Deleting {current} of {total}</p>
         <div className="fleet-bulk__bar"><span style={{ width: `${((current - 1) / total) * 100}%` }} /></div>
       </div>
     )
@@ -563,39 +565,28 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
       <div className="fleet-bulk fleet-bulk--summary" ref={bulkRef} data-testid="fleet-bulk-summary">
         <div className="fleet-bulk__counts">
           <StatusIcon status={deleted.length ? 'up' : 'off'} word={`Deleted ${deleted.length}`} />
-          {refused.length > 0 && <StatusIcon status="down" word={`Refused ${refused.length}`} />}
+          {refused.length > 0 && <StatusIcon status="down" word={`${refused.length} refused`} />}
+          <Button variant="secondary" className="fleet-bulk__dismiss" data-summary-dismiss="" onClick={() => setBulkSummary(null)}>
+            Dismiss
+          </Button>
         </div>
         {refused.length > 0 && (
-          <>
-            <ul className="fleet-bulk__refused" aria-label="Refused deletes">
-              {refused.map((r) => (
-                <li key={r.id}>
-                  <span className="mono fleet-bulk__refused-id">{r.id}</span>
-                  {r.code && <>{' '}<code className="mono">{r.code}</code></>}
-                  {r.runIds.length > 0 ? (
-                    <>
-                      {' '}· open {plural(r.runIds.length, 'run')}:{' '}
-                      {r.runIds.map((rid, i) => (
-                        <React.Fragment key={rid}>
-                          {i > 0 && ', '}
-                          <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>
-                        </React.Fragment>
-                      ))}
-                    </>
-                  ) : (
-                    <> · {r.message}</>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="fleet-bulk__note">
-              Each refused row keeps its reason, with an Abort control for every open run.
-            </p>
-          </>
+          <ul className="fleet-bulk__refused" aria-label="Refused deletes">
+            {refused.map((r) => (
+              <li key={r.id} title={r.message}>
+                <span className="mono fleet-bulk__refused-id">{r.id}</span>
+                {' · '}
+                {r.code ? <code className="mono">{r.code}</code> : r.message}
+                {r.runIds.map((rid) => (
+                  <React.Fragment key={rid}>
+                    {' · '}
+                    <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>
+                  </React.Fragment>
+                ))}
+              </li>
+            ))}
+          </ul>
         )}
-        <div className="fleet-bulk__actions">
-          <Button variant="secondary" data-summary-dismiss="" onClick={() => setBulkSummary(null)}>Dismiss</Button>
-        </div>
       </div>
     )
   }
@@ -606,11 +597,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
         <div>
           <Title>Agents &amp; targets</Title>
           <p className="view-head__meta">
-            Manage where the simulation runs and pick the <strong>active agent</strong>. The active
-            agent is shared with the header switcher — switch here or there, every surface follows.
-            {tenant && (
-              <> Scoped to tenant <strong className="mono">{tenant.name || tenant.id}</strong>.</>
-            )}
+            Pick the active agent; the header switcher follows.
+            {tenant && <> Tenant <strong className="mono">{tenant.name || tenant.id}</strong>.</>}
           </p>
         </div>
         <div className="targets__head-actions">
@@ -620,7 +608,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               ? <strong className="mono">{activeAgentId}</strong>
               : <em className="targets__active--none">none</em>}
           </span>
-          <button type="button" className="btn" onClick={refresh}>↻ Refresh</button>
+          <Button verb="Refresh" onClick={refresh} />
         </div>
       </header>
 
@@ -630,22 +618,22 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           <div className="target-col__title">
             <span className="plane-dot plane-dot--detected" /> Pull agents
             <span className="target-col__count">{agents.length}</span>
-            <button type="button" className="btn btn--xs target-col__action" data-tour-id="agent-enroll" onClick={() => setDeployOpen(true)}>
-              + Deploy agent
-            </button>
+            <Button verb="Deploy" className="target-col__action" data-tour-id="agent-enroll" onClick={() => setDeployOpen(true)}>
+              Deploy agent
+            </Button>
           </div>
           {agents.length > 0 && (
             <div className="fleet-toolbar" role="group" aria-label="Remove agent rows" ref={bulkToolbarRef}>
               <Button
-                variant="secondary"
+                verb="Select"
                 className="fleet-toolbar__select"
                 aria-pressed={selectMode}
                 disabled={bulkBusy}
                 onClick={toggleSelectMode}
-              >Select</Button>
+              />
               {selectMode && (
                 <Button
-                  variant="secondary"
+                  verb="Delete"
                   className="btn--danger"
                   data-bulk-action="selected"
                   disabled={bulkBusy || selectedIds.length === 0}
@@ -654,12 +642,12 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               )}
               {offlineIds.length > 0 && (
                 <Button
-                  variant="secondary"
+                  verb="Delete"
                   className="btn--danger"
                   data-bulk-action="offline"
                   disabled={bulkBusy}
                   onClick={() => askBulk('offline', offlineIds, 'offline')}
-                >Delete all offline ({offlineIds.length})</Button>
+                >Delete offline ({offlineIds.length})</Button>
               )}
             </div>
           )}
@@ -669,44 +657,39 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
           {agentsError && (
             <div className="target-card target-card--empty" role="alert" data-testid="agents-load-error">
-              <div className="target-card__title">Agent list could not be loaded</div>
-              <p className="target-card__sub">
-                <span className="mono">{agentsError}</span> — the roster below is the last one
-                SimCore returned{agents.length === 0 ? ' (none yet)' : ''}, not a fresh answer.
+              <div className="target-card__title">Agent list not loaded</div>
+              <p className="target-card__sub" title="The list below is the last one SimCore returned, not a fresh answer.">
+                <span className="mono">{agentsError}</span> · showing the last list
               </p>
-              <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+              <Button verb="Refresh" onClick={refresh}>Retry</Button>
             </div>
           )}
           {!loading && !agentsError && agents.length === 0 && (
             <div className="target-card target-card--empty">
               <div className="target-card__title">No agents registered</div>
-              <p className="target-card__sub">
-                Pull mode needs one beacon on the target host. Mint an enrollment token and
-                run the one-liner it gives you — SimCore assigns the agent id. No agent?
-                Use the offline push bundle instead, or provision a lab below.
-              </p>
-              <button type="button" className="btn btn--primary" onClick={() => setDeployOpen(true)}>
-                + Deploy agent ▸
-              </button>
+              <p className="target-card__sub">Deploy a beacon, or use the push bundle.</p>
+              <Button verb="Deploy" onClick={() => setDeployOpen(true)}>Deploy agent</Button>
             </div>
           )}
           {agents.map((a) => {
             const id = agentIdOf(a)
             const live = agentLiveness(a)
-            const st = LIVENESS_CLASS[live.state] || 'unknown'
+            const liveness = LIVENESS_STATUS[live.state] || LIVENESS_STATUS[LIVENESS.UNKNOWN]
             const os = a.os || a.platform || 'linux'
             const targetOs = installerOS(os)
             const confirming = pendingDelete === id
             const isActive = id === activeAgentId
             const removeCmd = uninstallCommand({ os: targetOs, origin })
+            const refusal = deleteRefusal[id]
             const ageTitle = live.ageSource === 'server'
               ? 'age measured on SimCore\'s clock'
               : live.ageSource === 'browser' ? 'age from this browser\'s clock — SimCore sent none' : undefined
+            const copied = cardCopy.isCopied(`uninstall-${id}`)
             return (
               <div
                 key={id}
                 className={
-                  'target-card target-card--agent'
+                  `target-card target-card--agent target-card--${liveness.tone}`
                   + (isSel('agent', id) ? ' is-selected' : '')
                   + (isActive ? ' is-active' : '')
                   + (selectMode && selected.includes(id) ? ' is-picked' : '')
@@ -721,7 +704,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       onChange={() => toggleSelected(id)}
                       aria-label={`Select ${id}`}
                     />
-                    <span aria-hidden="true">Select for delete</span>
+                    <span aria-hidden="true">Select</span>
                   </label>
                 )}
                 <button
@@ -731,11 +714,10 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   onClick={() => chooseAgent(a)}
                 >
                   <div className="target-card__head">
-                    <span className={`status-dot status-dot--${st}`} />
                     <span className="target-card__title mono">{id}</span>
-                    {isActive && <span className="target-card__pill target-card__pill--active">active</span>}
-                    <span className={`target-card__pill target-card__pill--${st}`} title={live.label}>
-                      {live.state === LIVENESS.UNKNOWN ? 'unknown' : live.state}
+                    {isActive && <span className="target-card__tag">Active</span>}
+                    <span className="target-card__status" title={live.label} data-testid="agent-liveness">
+                      <StatusIcon status={liveness.status} word={liveness.word} />
                     </span>
                   </div>
                   <p className="target-card__sub">
@@ -748,20 +730,19 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     </p>
                   )}
                   {live.state === LIVENESS.ENROLLED && (
-                    <span className="target-card__waiting">
-                      {live.label}. The installer reached SimCore; no beacon has polled yet, so do not
-                      launch onto it.{targetOs === 'windows'
-                        ? ' If this does not change within a minute, check the CortexSimAgent service on the host and the install attempts in Deploy agent.'
-                        : ' If this does not change within a minute, the beacon did not start — check the install attempts in Deploy agent.'}
-                    </span>
+                    <span
+                      className="target-card__waiting"
+                      data-testid="agent-enrolled"
+                      title={'The installer reached SimCore; no beacon has polled yet. '
+                        + (targetOs === 'windows'
+                          ? 'If this does not change within a minute, check the CortexSimAgent service and the install attempts in Deploy agent.'
+                          : 'If this does not change within a minute, the beacon did not start: check the install attempts in Deploy agent.')}
+                    >Waiting for first poll · do not launch</span>
                   )}
                   {live.state === LIVENESS.UNKNOWN && live.label !== 'unknown' && (
-                    <span className="target-card__waiting">SimCore {live.label}.</span>
+                    <span className="target-card__waiting">SimCore {live.label}</span>
                   )}
-                  {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
-                  {!isSel('agent', id) && isActive && (
-                    <span className="target-card__selected">✓ active agent</span>
-                  )}
+                  {isSel('agent', id) && <span className="target-card__selected">Selected · pull mode</span>}
                 </button>
 
                 <AgentCapabilities agent={a} />
@@ -780,78 +761,67 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       ref={rowConfirmRef}
                     >
                       <span className="target-card__confirm-q">Delete <strong className="mono">{id}</strong>?</span>
-                      <Button variant="secondary" data-confirm-cancel="" onClick={() => cancelRowDelete(id)}>Cancel</Button>
+                      <Button data-confirm-cancel="" onClick={() => cancelRowDelete(id)}>Cancel</Button>
                       <Button
                         variant="destructive"
+                        verb="Delete"
                         disabled={busyDelete === id || bulkBusy}
                         onClick={() => removeAgent(id)}
                       >{busyDelete === id ? 'Deleting…' : 'Delete'}</Button>
                     </div>
                     <div className="target-card__how">
-                      <button
-                        type="button"
-                        className="target-card__how-toggle"
-                        aria-expanded={howOpen}
-                        onClick={() => setHowOpen((v) => !v)}
-                      >
-                        <span aria-hidden="true">{howOpen ? '▾' : '▸'}</span> How to remove the beacon from the host
-                      </button>
-                    </div>
-                    {howOpen && (
-                    <div className="target-card__remove" data-testid="agent-remove-help">
-                      <p>
-                        Delete <strong>removes the registry row only</strong>. A beacon still running on the
-                        host re-registers on its next poll and the row comes back. To remove the beacon
-                        itself, run this on the host{targetOs === 'windows' ? ' in Windows PowerShell as Administrator' : ', as the user who installed it'}:
-                      </p>
-                      <div className="deploy-snippet">
-                        <code data-testid="agent-uninstall-cmd" ref={uninstallRef}>{removeCmd}</code>
-                        <CopyButton
-                          copier={cardCopy}
-                          id={`uninstall-${id}`}
-                          text={removeCmd}
-                          selectRef={uninstallRef}
-                          what="removal command"
-                          name={`removal command for ${id}`}
-                        />
-                      </div>
-                      {targetOs === 'windows' ? (
-                        <p>
-                          If the host cannot reach SimCore, remove it by hand:{' '}
-                          <code className="mono" data-testid="agent-uninstall-manual">{WINDOWS_MANUAL_UNINSTALL}</code>
-                        </p>
-                      ) : (
-                        <p data-testid="agent-uninstall-note">
-                          {POSIX_UNINSTALL_NOTE}{' '}
-                          <code className="mono" data-testid="agent-uninstall-root-cmd">{posixRootUninstallCommand({ origin })}</code>
-                        </p>
+                      <Button aria-expanded={howOpen} onClick={() => setHowOpen((v) => !v)}>Uninstall command</Button>
+                      {howOpen && (
+                        <div className="target-card__remove" data-testid="agent-remove-help">
+                          <p title="A beacon still running re-registers on its next poll and the row comes back.">
+                            Deleting removes the row only. Run this on the host
+                            {targetOs === 'windows' ? ' as Administrator' : ''} to remove the beacon.
+                          </p>
+                          <div className="deploy-snippet">
+                            <code data-testid="agent-uninstall-cmd" ref={uninstallRef}>{removeCmd}</code>
+                            <Button
+                              verb="Copy"
+                              aria-label={`${copied ? 'Copied' : 'Copy'} removal command for ${id}`}
+                              onClick={() => cardCopy.copy(`uninstall-${id}`, removeCmd, uninstallRef, 'removal command')}
+                            >{copied ? 'Copied' : 'Copy'}</Button>
+                          </div>
+                          <Button
+                            aria-expanded={howMoreOpen}
+                            data-testid={targetOs === 'windows' ? undefined : 'agent-uninstall-note'}
+                            title={targetOs === 'windows' ? undefined : POSIX_UNINSTALL_NOTE}
+                            onClick={() => setHowMoreOpen((v) => !v)}
+                          >{targetOs === 'windows' ? 'Host can’t reach POVengine?' : 'Installed as root?'}</Button>
+                          {howMoreOpen && (targetOs === 'windows'
+                            ? <code className="mono target-card__fallback" data-testid="agent-uninstall-manual">{WINDOWS_MANUAL_UNINSTALL}</code>
+                            : <code className="mono target-card__fallback" data-testid="agent-uninstall-root-cmd">{posixRootUninstallCommand({ origin })}</code>)}
+                          <CopyLive feedback={cardCopy.feedback} testId="agent-copy-live" />
+                        </div>
                       )}
-                      <CopyLive feedback={cardCopy.feedback} testId="agent-copy-live" />
                     </div>
-                    )}
                   </div>
                 ) : (
                   <>
-                  {deleteRefusal[id] && (
-                    <div className="target-card__remove" role="alert" data-testid="agent-delete-refused">
+                  {refusal && (
+                    <div className="target-card__refused" role="alert" data-testid="agent-delete-refused" title={refusal.message}>
                       <p>
-                        <strong>Not deleted{deleteRefusal[id].code ? ` (${deleteRefusal[id].code})` : ''}.</strong>{' '}
-                        {deleteRefusal[id].message}
+                        <strong>Not deleted</strong>
+                        {' · '}
+                        {refusal.code ? <code className="mono">{refusal.code}</code> : refusal.message}
                       </p>
-                      {deleteRefusal[id].runIds.length > 0 && (
+                      {refusal.runIds.length > 0 && (
                         <ul>
-                          {deleteRefusal[id].runIds.map((rid) => (
+                          {refusal.runIds.map((rid) => (
                             <li key={rid}>
-                              <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>{' '}
-                              {deleteRefusal[id].aborted[rid] ? (
-                                <span>{deleteRefusal[id].aborted[rid]}</span>
+                              <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>
+                              {refusal.aborted[rid] ? (
+                                <span>{refusal.aborted[rid]}</span>
                               ) : (
-                                <button
-                                  type="button"
-                                  className="btn btn--xs btn--danger"
+                                <Button
+                                  verb="Abort run"
+                                  className="btn--danger"
                                   onClick={() => abortOpenRun(id, rid)}
                                   aria-label={`Abort ${rid}`}
-                                >Abort</button>
+                                >Abort</Button>
                               )}
                             </li>
                           ))}
@@ -861,39 +831,39 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   )}
                   <div className="target-card__actions">
                     {!isActive && (
-                      <button
-                        type="button"
-                        className="card-action"
-                        onClick={() => chooseAgent(a)}
-                        title="Make this the active agent"
-                      >◉ set active</button>
+                      <Button verb="Set active" onClick={() => chooseAgent(a)} title="Make this the active agent" />
                     )}
                     {agentIdProblem(id) ? (
                       // A beacon may have REGISTERED with an id the installer
                       // route refuses (register does not apply the id rule). A
                       // download link for it would save a 400 as a script.
-                      <span
-                        className="card-action card-action--off"
+                      <Button
+                        verb="Download"
+                        disabled
                         data-testid="agent-installer-unavailable"
                         title={`SimCore refuses to build an installer for this id (400 BAD_AGENT_ID): ${agentIdProblem(id)}. Deploy a fresh agent with an enrollment token instead.`}
-                      >no installer for this id</span>
+                      >No installer</Button>
                     ) : (
-                      <a
-                        className="card-action"
+                      <Button
+                        verb="Download"
                         href={agentInstallUrl({ os: targetOs, id })}
                         download={targetOs === 'windows' ? WINDOWS_INSTALLER_FILE : POSIX_INSTALLER_FILE}
                         title="Re-download this agent's installer"
-                      >↓ installer</a>
+                      >Installer</Button>
                     )}
-                    <button
-                      type="button"
-                      ref={(el) => { deleteTriggerRefs.current[id] = el }}
-                      className="card-action card-action--danger"
-                      disabled={bulkBusy}
-                      onClick={() => openRowDelete(id)}
-                      aria-label={`Delete ${id}`}
-                      title="Delete this agent's registry row"
-                    >✕ delete</button>
+                    <span
+                      className="target-card__actions-end"
+                      ref={(el) => { deleteTriggerRefs.current[id] = el?.querySelector('button') || null }}
+                    >
+                      <Button
+                        verb="Delete"
+                        className="btn--danger"
+                        disabled={bulkBusy}
+                        onClick={() => openRowDelete(id)}
+                        aria-label={`Delete ${id}`}
+                        title="Delete this agent's registry row"
+                      />
+                    </span>
                   </div>
                   </>
                 )}
@@ -913,20 +883,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             onClick={() => onSelectTarget({ kind: 'push', id: 'bundle', label: 'Offline push bundle' })}
           >
             <div className="target-card__head">
-              <span className="status-dot status-dot--ready" />
               <span className="target-card__title">Offline bundle</span>
-              {/* What is always true is that SimCore can GENERATE a bundle with no
-                  agent. Whether the bundle runs is a property of the target. */}
-              <span className="target-card__pill target-card__pill--ready">no agent needed</span>
             </div>
-            <p className="target-card__sub">
-              Generate a self-contained bundle the DC runs on the target: bash for a clean Ubuntu 22.04 host, PowerShell (.ps1) for Windows PowerShell 5.1, or a K8s manifest.
-              No agent, no inbound connection.
+            {/* What is always true is that SimCore can GENERATE a bundle with no
+                agent. Whether the bundle runs is a property of the target. */}
+            <p className="target-card__sub" title="Self-contained: bash for a clean Ubuntu 22.04 host, PowerShell 5.1 for Windows, or a K8s manifest. No inbound connection.">
+              Bash, PowerShell or K8s · no agent needed
             </p>
-            <p className="target-card__sub target-card__sub--caveat" data-testid="push-windows-caveat">
-              {WINDOWS_BUNDLE_UNPROVEN}
+            <p className="target-card__sub target-card__sub--caveat" data-testid="push-windows-caveat" title={WINDOWS_BUNDLE_UNPROVEN}>
+              Windows .ps1 not yet run on a host
             </p>
-            {isSel('push', 'bundle') && <span className="target-card__selected">✓ selected · push mode</span>}
+            {isSel('push', 'bundle') && <span className="target-card__selected">Selected · push mode</span>}
           </button>
         </section>
 
@@ -941,13 +908,11 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           )}
           {!loading && bundles.length === 0 && (
             <div className="target-card target-card--empty">
-              <div className="target-card__title">No environments provisioned</div>
-              <p className="target-card__sub">
-                Generate a Terraform bundle (EDR / CDR / NDR / identity labs) the customer can apply.
-              </p>
-              <button type="button" className="btn btn--primary" onClick={onGoToLab}>
-                Provision environment ▸
-              </button>
+              <div className="target-card__title">No environments yet</div>
+              {/* Navigation, so a link (design v33 C10). */}
+              <a className="target-card__link" href="#/environments" onClick={(e) => { e.preventDefault(); onGoToLab() }}>
+                Provision an environment
+              </a>
             </div>
           )}
           {bundles.map((b) => {
@@ -960,7 +925,6 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 onClick={() => onSelectTarget({ kind: 'iac', id, label: id })}
               >
                 <div className="target-card__head">
-                  <span className="status-dot status-dot--ready" />
                   <span className="target-card__title mono">{id}</span>
                 </div>
                 <p className="target-card__sub">
@@ -971,7 +935,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             )
           })}
           {bundles.length > 0 && (
-            <button type="button" className="btn" onClick={onGoToLab}>+ New environment</button>
+            <a className="target-card__link" href="#/environments" onClick={(e) => { e.preventDefault(); onGoToLab() }}>
+              New environment
+            </a>
           )}
         </section>
       </div>

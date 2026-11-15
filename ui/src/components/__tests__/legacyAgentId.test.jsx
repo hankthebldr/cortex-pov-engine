@@ -106,10 +106,11 @@ describe('Agent cards — "↓ installer" is offered only for an id the server w
       { agent_id: 'aa:bb:cc:dd:ee:ff', hostname: 'old', os: 'linux', status: 'online', last_seen_age_seconds: 1 },
       { agent_id: 'jb-ok', hostname: 'new', os: 'linux', status: 'online', last_seen_age_seconds: 1 },
     ] })
-    expect(within(card('aa:bb:cc:dd:ee:ff')).queryByRole('link', { name: /installer/ })).toBeNull()
+    expect(within(card('aa:bb:cc:dd:ee:ff')).queryByRole('link', { name: /installer/i })).toBeNull()
     const why = within(card('aa:bb:cc:dd:ee:ff')).getByTestId('agent-installer-unavailable')
     expect(why.textContent).toMatch(/no installer/i)
+    expect(why).toBeDisabled()
     expect(why.getAttribute('title')).toContain('BAD_AGENT_ID')
-    expect(within(card('jb-ok')).getByRole('link', { name: /installer/ })).toBeTruthy()
+    expect(within(card('jb-ok')).getByRole('link', { name: /installer/i })).toBeTruthy()
   })
 })

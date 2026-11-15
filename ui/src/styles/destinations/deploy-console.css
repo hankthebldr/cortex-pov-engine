@@ -8,26 +8,12 @@
    is declared in cortex-tokens.css or cortex-console.css.
    ───────────────────────────────────────────────────────────────────── */
 
-/* ── Liveness pills the base stylesheet does not define ─────────────── */
-.theme-console .target-card__pill--offline { color: var(--c-missed); background: var(--c-missed-soft); }
-.theme-console .target-card__pill--enrolled { color: var(--c-pending); background: var(--c-pending-soft); }
-.theme-console .targets .target-card__pill--offline { color: var(--crit); background: transparent; }
-.theme-console .targets .target-card__pill--enrolled { color: var(--warn); background: transparent; }
-.theme-console .status-dot--offline { background: var(--c-missed); }
-.theme-console .status-dot--enrolled { background: var(--c-pending); }
-.theme-console .targets .target-card--agent:has(.target-card__pill--offline) { border-top: 3px solid var(--crit); }
-.theme-console .targets .target-card--agent:has(.target-card__pill--enrolled) { border-top: 3px dashed var(--warn); }
+/* ── Agent card liveness edges (the StatusIcon carries glyph + word) ── */
+.theme-console .targets .target-card--offline { border-top: 3px solid var(--crit); }
+.theme-console .targets .target-card--enrolled { border-top: 3px dashed var(--warn); }
 .theme-console .target-card__waiting {
   display: block; margin-top: 6px;
   font-size: 11px; line-height: 1.5; color: var(--c-text-secondary);
-}
-
-/* An action the card deliberately does not offer (no installer for an id
-   SimCore refuses). Text, not a control: muted, dashed, no hover. */
-.theme-console .card-action--off,
-.theme-console .card-action--off:hover {
-  color: var(--c-text-muted); border-style: dashed; border-color: var(--c-hairline);
-  cursor: help;
 }
 
 /* ── Removal help in the delete confirm ─────────────────────────────── */
