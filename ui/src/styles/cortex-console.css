@@ -5239,9 +5239,20 @@
 .theme-console .preflight__check:first-child { border-top: none; padding-top: 0; }
 .theme-console .preflight__check-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .theme-console .preflight__check-label { font-size: 11.5px; font-weight: 600; color: var(--c-text); }
-.theme-console .preflight__check-summary { font-size: 10.5px; color: var(--c-text-secondary); flex: 1 1 140px; }
-.theme-console .preflight__check-detail { font-size: 11px; line-height: 1.6; color: var(--c-text); margin-top: 4px; }
-.theme-console .preflight__check-fix { font-size: 11px; line-height: 1.6; color: var(--c-pending); margin-top: 3px; }
+.theme-console .preflight__check-summary { font-size: 11px; color: var(--c-text-secondary); flex: 1 1 140px; min-width: 0; }
+/* A check that is not Ready: its line is the toggle; "Why" opens its detail
+   and its fix, a short line each. */
+.theme-console .preflight__why > summary { cursor: pointer; list-style: none; }
+.theme-console .preflight__why > summary::-webkit-details-marker { display: none; }
+.theme-console .preflight__why > summary:focus-visible { outline: 2px solid var(--ac, var(--c-action-bright)); outline-offset: 2px; border-radius: 4px; }
+.theme-console .preflight__why-toggle {
+  flex: none; margin-left: auto; font-size: 11px; font-weight: 600;
+  color: var(--ac-ink, var(--ac, var(--c-action-bright)));
+}
+.theme-console .preflight__why > summary:hover .preflight__why-toggle { text-decoration: underline; }
+.theme-console .preflight__why-body { margin: 5px 0 0; padding-left: 2px; }
+.theme-console .preflight__check-detail { margin: 0; font-size: 11px; line-height: 1.6; color: var(--c-text); }
+.theme-console .preflight__check-fix { margin: 2px 0 0; font-size: 11px; line-height: 1.6; color: var(--c-pending); }
 .theme-console .preflight__unknown {
   margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--c-text-secondary);
   border-left: 2px solid var(--c-text-muted); padding-left: 8px;
@@ -6740,7 +6751,7 @@
 .theme-console .stack-coverage__cell-actions { display: flex; gap: 8px; }
 
 /* ─── ScenarioPreflightCard.jsx ─── */
-.theme-console .preflight-verdict { margin-left: 8px; }
+.theme-console .preflight-verdict { margin-left: 8px; text-transform: none; letter-spacing: 0; }
 
 /* ─── ScenarioGrid.jsx ─── */
 .theme-console .scenario-grid-empty {

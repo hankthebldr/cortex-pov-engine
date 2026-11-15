@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { installRoutes } from '../../test/mockFetch.js'
 import LaunchView from '../console/LaunchView.jsx'
@@ -79,8 +79,50 @@ describe('LaunchView preflight', () => {
     await waitFor(() => expect(screen.getByTestId('preflight-verdict')).toBeInTheDocument())
     // The identity account has not been probed on this target, so the run is
     // NOT ready — it is degraded-or-unknown, and the card says which.
-    expect(screen.getByTestId('preflight-verdict')).not.toHaveTextContent('READY')
+    const verdict = screen.getByTestId('preflight-verdict')
+    expect(verdict).not.toHaveTextContent('Ready')
+    expect(within(verdict).getByRole('img').getAttribute('aria-label')).toMatch(/^(Degraded|Unknown)$/)
     expect(screen.getByTestId('preflight-identity')).toHaveAttribute('data-status', 'unknown')
+  })
+
+  // The data path is one line: a StatusIcon and one word, the label, the count.
+  // What it means and what to do sit behind a collapsed "Why", two short lines.
+  it('shows the data path as one line, with its explanation behind a collapsed Why', async () => {
+    installRoutes(ROUTES({
+      'GET /api/scenarios/:id/doors': {
+        readiness: {
+          scenario_id: 'SIM-EDR-022', state: 'needs_doors', scorable: 0, total: 10,
+          route_blocked: 10, underived: 0, unevaluated: 0, not_open: [],
+        },
+      },
+      'GET /api/doors': { doors: [], registry_loaded: true, tenant_verified: 0, outbound_calls: 0 },
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const row = await screen.findByTestId('preflight-data-path')
+    await waitFor(() => expect(row).toHaveAttribute('data-status', 'warn'))
+    expect(within(row).getByRole('img', { name: 'Degraded' })).toBeInTheDocument()
+    expect(row.querySelector('.chip')).toBeNull()
+
+    const why = row.querySelector('details')
+    expect(why).not.toBeNull()
+    expect(why.open).toBe(false)
+    const summary = why.querySelector('summary')
+    expect(summary).toHaveTextContent('Data path')
+    expect(summary).toHaveTextContent('0 of 10 detections can fire')
+    expect(summary).toHaveTextContent(/Why$/)
+    expect(summary).not.toHaveTextContent(/XDM/)
+
+    const lines = [...why.children].filter((el) => el.tagName !== 'SUMMARY')
+      .flatMap((el) => [...el.children])
+    expect(lines.map((el) => el.textContent)).toEqual([
+      'no detection here is confirmed able to fire yet; each one is still scored as today; '
+        + '10 of 10 on an unresolved collector route',
+      'BIOC and IOC never fire on a collector route; Analytics and ABIOC need an XDM rule, '
+        + 'XQL and Correlation the dataset.',
+    ])
+
+    fireEvent.click(summary)
+    expect(why.open).toBe(true)
   })
 
   // Who runs the scenario's cleanup depends on the beacon chosen: one that
