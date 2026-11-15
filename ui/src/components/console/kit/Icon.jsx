@@ -14,7 +14,7 @@
  *   check    Test (the verb), and "What proves it"
  *   gear     Configure (the verb), and "What it needs"
  *   pencil   Customize (the verb)
- *   rotate   Read back (the verb)
+ *   rotate   Review (the verb)
  *   external Open results (the verb)
  *   target   a deep dive's thesis ("Why this matters")
  *   back     the header's Back: the previous place in the console's history
@@ -25,6 +25,11 @@
  *   upload   Deploy (the verb)
  *   copy     Copy (the verb)
  *   select   Select (the verb): pick rows for a bulk action
+ *   swap     Switch (the verb): make another agent the active one
+ *   pause    Pause (the verb): hold a live stream
+ *   clear    Clear (the verb): empty a buffer this browser holds
+ *   camera   Screenshot (the verb)
+ *   down     jump to the newest line of a log
  *
  * `target` also draws Set active (the verb).
  */
@@ -126,6 +131,31 @@ const SHAPES = {
       <path d="M5.2 8.2l2 2 3.6-4" />
     </g>
   ),
+  swap: (
+    <g {...STROKE}>
+      <path d="M2.5 5.5h10M10 3l2.5 2.5L10 8" />
+      <path d="M13.5 10.5h-10M6 8l-2.5 2.5L6 13" />
+    </g>
+  ),
+  pause: (
+    <g fill="currentColor">
+      <rect x="4" y="3.5" width="2.6" height="9" rx="0.6" />
+      <rect x="9.4" y="3.5" width="2.6" height="9" rx="0.6" />
+    </g>
+  ),
+  clear: (
+    <g {...STROKE}>
+      <circle cx="8" cy="8" r="5.4" />
+      <path d="M4.2 11.8l7.6-7.6" />
+    </g>
+  ),
+  camera: (
+    <g {...STROKE}>
+      <path d="M2.4 5.4h2.4l1.2-1.8h4l1.2 1.8h2.4v7H2.4z" />
+      <circle cx="8" cy="8.8" r="2.2" />
+    </g>
+  ),
+  down: <path d="M8 3v10M4 9l4 4 4-4" {...STROKE} />,
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

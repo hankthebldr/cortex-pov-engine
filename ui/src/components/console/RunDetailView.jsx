@@ -141,10 +141,10 @@ function tailOutput(output, lines = 8) {
  *   onError    — (msg) => void
  *
  * Where the run is (design v26 §4.6) leads the page: the five-stage strip, one
- * line saying what it means, and the one action for the phase — Read back on a
- * finished run nobody has read back, Open results once it has been. Before the
- * read back there is no detection claim on this page: the Evidence tab shows
- * why there are no results and offers Read back instead of a scorecard.
+ * line saying what it means, and the one action for the phase — Review on a
+ * finished run nobody has reviewed, Open results once it has been. Before the
+ * review there is no detection claim on this page: the Evidence tab shows
+ * why there are no results and offers Review instead of a scorecard.
  */
 
 /**
@@ -262,8 +262,8 @@ function stageSubs(run, lifecycle, { activeRun, isThisActive, detail }) {
         ? (lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.step : 'no step ran')
         : reported ? `${reported} step${reported === 1 ? '' : 's'} reported` : 'ran',
     lifecycle.ended ? (absoluteTime(run?.completed_at) || lifecycle.ended.toLowerCase()) : 'not yet',
-    lifecycle.phase === PHASE.READY ? `from ${lifecycle.readBack.from}`
-      : lifecycle.phase === PHASE.READING ? 'reading…' : 'not yet',
+    lifecycle.phase === PHASE.READY ? `via ${lifecycle.readBack.from}`
+      : lifecycle.phase === PHASE.READING ? 'reviewing…' : 'not yet',
     lifecycle.phase === PHASE.READY ? res.text : 'none yet',
   ]
 }
@@ -273,25 +273,25 @@ function lifecycleMessage(run, lifecycle) {
   const agent = runAgent(run)
   switch (lifecycle.phase) {
     case PHASE.RUNNING:
-      return `Running on ${agent}. It can be read back from the tenant once it finishes.`
+      return `Running on ${agent}`
     case PHASE.NOTHING:
       return lifecycle.nothing === NOTHING.NOT_EXECUTED
         ? NOT_EXECUTED_COPY.message
-        : 'No step reached its agent, so there is nothing to read back. Check the agent and run it again.'
+        : 'Nothing reached the agent — check it'
     case PHASE.READING:
-      return 'Reading alerts back from the tenant and matching them to what this run expected…'
+      return 'Reviewing against the tenant…'
     case PHASE.UNREAD:
-      return `${lifecycle.ended || 'Ended'}. Nothing has been read back from the tenant yet, so there are no results.`
+      return `${lifecycle.ended || 'Ended'} · not reviewed`
     default: {
       const res = resultCell(run, lifecycle)
       if (res.tone === 'unproven') {
-        return `The run did not complete, so what was read back from ${lifecycle.readBack.from} is not a measurement of the tenant.`
+        return 'Incomplete run — not a measurement'
       }
       const expected = run?.expected_detections
       if (typeof expected === 'number' && expected > 0 && typeof run.detected_count === 'number') {
-        return `${run.detected_count} of ${expected} expected detections were seen in the tenant (read back from ${lifecycle.readBack.from}).`
+        return `${run.detected_count} of ${expected} detected · ${lifecycle.readBack.from}`
       }
-      return `Read back from ${lifecycle.readBack.from}.`
+      return `Reviewed · ${lifecycle.readBack.from}`
     }
   }
 }
@@ -508,13 +508,13 @@ export default function RunDetailView({
         <div className="run-detail__actions">
           {canAbort && <AbortControl runId={runId} onAbort={onAbort} />}
           {lifecycle?.phase === PHASE.UNREAD && (
-            <Button variant="primary" onClick={() => readBack(runId)}>Read back</Button>
+            <Button variant="primary" verb="Review" onClick={() => readBack(runId)} />
           )}
           {lifecycle?.phase === PHASE.READING && (
-            <Button variant="secondary" disabled>Reading…</Button>
+            <Button variant="secondary" verb="Review" disabled>Reviewing…</Button>
           )}
           {lifecycle?.phase === PHASE.READY && (
-            <Button variant="primary" onClick={() => onNavigate('proof', { run: runId })}>Open results</Button>
+            <Button variant="primary" verb="Open results" onClick={() => onNavigate('proof', { run: runId })} />
           )}
           {lifecycle?.phase === PHASE.NOTHING && descriptor.scenarioId && (
             <Button variant="primary" onClick={() => onNavigate('preflight', { arm: descriptor.scenarioId })}>Run</Button>
@@ -540,7 +540,7 @@ export default function RunDetailView({
       )}
 
       {/* The chain leads the page (design v26 §9.3): ChainStage, live, fed by
-          this run's steps, the host's record and — once read back — its
+          this run's steps, the host's record and — once reviewed — its
           results. */}
       {lifecycle && (
         <RunChain runId={runId} run={lcRun} lifecycle={lifecycle} onNavigate={onNavigate} />
@@ -591,7 +591,7 @@ export default function RunDetailView({
         </section>
       )}
 
-      {/* Read back here only where a verdict is already on screen, and not on the
+      {/* Review here only where a verdict is already on screen, and not on the
           Evidence tab, whose tenant evidence panel carries the one button. */}
       <RunCasePanel
         ledger={run?.case_ledger ?? null}
@@ -625,6 +625,9 @@ export default function RunDetailView({
             lastRun={isThisActive ? null : descriptor}
             caveats={caveats}
             onError={onError}
+            status={lcRun?.status ?? null}
+            output={output}
+            outputPartial={partial}
           />
         )}
         {tab === 'evidence' && (lifecycle && lifecycle.phase !== PHASE.READY ? (

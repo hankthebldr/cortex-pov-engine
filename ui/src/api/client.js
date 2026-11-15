@@ -560,7 +560,7 @@ export async function getRun(runId) {
 /**
  * POST /api/runs/:id/reconcile?connector=xsiam — read this run back from the
  * tenant: pull the alerts in its window, match them to what it expected, and
- * score it (the console's "Read back"). Read-only toward Cortex; it writes only
+ * score it (the console's "Review"). Read-only toward Cortex; it writes only
  * SimCore's own Result rows. With no tenant credential SimCore answers 400
  * NO_INTEGRATION and nothing is read — the thrown Error carries `.code`.
  *

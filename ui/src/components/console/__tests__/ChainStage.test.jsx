@@ -158,7 +158,7 @@ describe('ChainStage — live (Run detail)', () => {
     expect(within(card('step-01')).getByRole('img', { name: 'Detected' })).toBeInTheDocument()
     expect(card('step-01')).toHaveTextContent('Detected')
     expect(within(card('step-02')).getByRole('img', { name: 'Broken' })).toBeInTheDocument()
-    expect(within(card('step-03')).getByRole('img', { name: 'Ran — not read back' })).toBeInTheDocument()
+    expect(within(card('step-03')).getByRole('img', { name: 'Ran — not reviewed' })).toBeInTheDocument()
     expect(card('step-02')).toHaveAttribute('data-state', 'broken')
   })
 
@@ -168,7 +168,7 @@ describe('ChainStage — live (Run detail)', () => {
       broken: 'Broken',
       waiting: 'Waiting',
       not_seen: 'Not seen',
-      ran: 'Ran — not read back',
+      ran: 'Ran — not reviewed',
       did_not_run: 'Did not run',
     })
     const all = SPINE.concat([step('step-04'), step('step-05'), step('step-06')])
@@ -176,7 +176,7 @@ describe('ChainStage — live (Run detail)', () => {
       'step-01': 'detected', 'step-02': 'broken', 'step-03': 'waiting',
       'step-04': 'not_seen', 'step-05': 'ran', 'step-06': 'did_not_run',
     }} />)
-    for (const word of ['Detected', 'Broken', 'Waiting', 'Not seen', 'Ran — not read back', 'Did not run']) {
+    for (const word of ['Detected', 'Broken', 'Waiting', 'Not seen', 'Ran — not reviewed', 'Did not run']) {
       expect(screen.getByRole('img', { name: word })).toBeInTheDocument()
     }
   })
@@ -191,7 +191,7 @@ describe('ChainStage — live (Run detail)', () => {
     const legend = screen.getByTestId('chain-stage-legend')
     expect(legend).toHaveTextContent('1 detected')
     expect(legend).toHaveTextContent('1 broken')
-    expect(legend).toHaveTextContent('1 ran — not read back')
+    expect(legend).toHaveTextContent('1 ran — not reviewed')
   })
 
   it('a card opens the step (a Broken step opens its troubleshooting) and a lane header opens its component', () => {

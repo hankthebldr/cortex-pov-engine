@@ -212,7 +212,7 @@ function notesFor(data, payload, lastRead, readError, loadError) {
  * (normally a ReadBackButton). The panel's own hook owns the stored read, so a
  * function is handed an `onDone` that reloads that read and then calls
  * `onScored`; a plain node gets neither. `onDone` does nothing once the panel
- * has unmounted: under the real provider a run that is being read back leaves
+ * has unmounted: under the real provider a run that is being reviewed leaves
  * the READY phase, so this panel can be gone before the read resolves. The
  * refresh button here never calls `onScored`: it cannot change a score.
  */
@@ -235,9 +235,9 @@ export default function TenantEvidencePanel({
 
   const payload = payloadOf(data)
   const notes = notesFor(data, payload, lastRead, readError, loadError)
-  // The one rule for where Read back lives. The case panel is embedded only once
+  // The one rule for where Review lives. The case panel is embedded only once
   // an answer of a known shape is in; it carries the button in the two states a
-  // read back advances (no ledger, NO_CASE_YET). Otherwise the head carries it.
+  // review advances (no ledger, NO_CASE_YET). Otherwise the head carries it.
   // While the first GET is pending and the case panel will embed, neither shows
   // it, so it does not jump between the two when the GET lands.
   const embedsCase = showCaseLedger && !!data && payload !== undefined

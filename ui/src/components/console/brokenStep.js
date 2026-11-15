@@ -2,7 +2,7 @@
  * brokenStep.js — why a Broken step may have broken, in the order to check
  * (design v26 §4.6). Pure, no React.
  *
- * A card reads Broken once the run is read back, when the host recorded the
+ * A card reads Broken once the run is reviewed, when the host recorded the
  * step failing (a non-zero exit, or the agent stopped reporting) and the
  * tenant showed nothing for it. Every cause here is read from that host
  * record (`buildStepRows`: status, rc, signal, termination, and the two notes
@@ -66,7 +66,7 @@ export function brokenStepCauses(row, { runId, scenarioId } = {}) {
       title: signal
         ? `Something other than POVengine killed the step (signal ${signal})`
         : 'Something other than POVengine ended the step',
-      detail: 'That is the host half of a prevention. The read back found no alert for this step, so check whether the endpoint blocked it and its alert has not arrived yet (read back again), or whether the host itself ended it (out of memory, a watchdog).',
+      detail: 'That is the host half of a prevention. The review found no alert for this step, so check whether the endpoint blocked it and its alert has not arrived yet (review again), or whether the host itself ended it (out of memory, a watchdog).',
       place: place('Results', 'proof', { run: runId }),
     })
   }

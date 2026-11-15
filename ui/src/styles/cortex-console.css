@@ -3692,82 +3692,19 @@
   text-transform: uppercase;
   color: var(--c-text-muted);
 }
-.theme-console .event-stream__mode {
-  padding: 1px 6px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  border-radius: 2px;
-  text-transform: uppercase;
-}
-.theme-console .event-stream__mode--live {
-  color: var(--c-detected);
-  background: var(--c-detected-soft);
-  animation: pulse-pending 1.6s var(--ease-in-out) infinite;
-}
-.theme-console .event-stream__mode--poll {
-  color: var(--c-pending);
-  background: var(--c-pending-soft);
-}
-.theme-console .event-stream__mode--err {
-  color: var(--c-missed);
-  background: var(--c-missed-soft);
-}
-
 .theme-console .event-stream__filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   justify-content: center;
 }
-.theme-console .event-stream__filter {
-  height: 20px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-disabled);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__filter:hover {
-  border-color: var(--c-text-muted);
-  color: var(--c-text-secondary);
-}
-.theme-console .event-stream__filter.is-active {
-  color: var(--c-text);
-  border-color: var(--c-text-secondary);
-  background: var(--c-surface);
-}
-.theme-console .event-stream__filter--info.is-active   { color: var(--c-text);     border-color: var(--c-text); }
-.theme-console .event-stream__filter--step.is-active   { color: var(--c-signal);   border-color: var(--c-signal); background: var(--c-signal-soft); }
-.theme-console .event-stream__filter--detect.is-active { color: var(--c-detected); border-color: var(--c-detected); background: var(--c-detected-soft); }
-.theme-console .event-stream__filter--warn.is-active   { color: var(--c-pending);  border-color: var(--c-pending); background: var(--c-pending-soft); }
-.theme-console .event-stream__filter--error.is-active  { color: var(--c-missed);   border-color: var(--c-missed); background: var(--c-missed-soft); }
+/* Level filters and Pause / Clear are kit Buttons (povengine-kit.css); this
+   only makes them the stream head's compact size. */
+.theme-console .event-stream__head .kit-btn { padding: 4px 8px; font-size: 11px; }
 
 .theme-console .event-stream__controls {
   display: flex;
   gap: 6px;
-}
-.theme-console .event-stream__btn {
-  height: 22px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__btn:hover {
-  border-color: var(--c-signal);
-  color: var(--c-signal);
 }
 
 .theme-console .event-stream__scroller {
@@ -3843,28 +3780,28 @@
   letter-spacing: var(--tracking-mono);
 }
 
+/* A settled run's stored output, one block per step (#340). */
+.theme-console .event-stream--stored .event-stream__scroller { max-height: 360px; }
+.theme-console .event-stream__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.theme-console .event-stream__step-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  font-family: var(--font-ui);
+}
+.theme-console .event-stream__step-name { min-width: 0; color: var(--c-text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.theme-console .event-stream__step-meta { margin-left: auto; color: var(--c-text-disabled); font-size: 10px; }
+.theme-console .event-stream__out {
+  margin: 4px 0 0 22px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--c-text); font-size: 11px; line-height: 1.45;
+}
+.theme-console .event-stream__note .event-stream__out { margin-left: 0; color: var(--c-text-muted); }
+
 .theme-console .event-stream__jump-live {
   position: sticky;
   bottom: 6px;
-  left: 50%;
-  display: block;
+  display: flex;
   margin: 6px auto 0;
-  padding: 4px 14px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-void);
-  background: var(--c-signal);
-  border: 0;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4),
-              0 0 0 3px var(--c-signal-soft);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__jump-live:hover {
-  background: color-mix(in srgb, var(--c-signal) 92%, white);
+  background: var(--s2);
+  box-shadow: var(--shadow);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

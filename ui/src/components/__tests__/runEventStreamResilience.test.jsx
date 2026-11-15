@@ -36,7 +36,8 @@ const line = (id, message) => ({
   id, timestamp: '2026-10-04T12:00:00', level: 'info', stepIndex: 0, message, synthetic: false,
 })
 
-const badge = () => document.querySelector('.event-stream__mode').textContent
+// The connection state is a kit StatusIcon; its word is the accessible name.
+const badge = () => document.querySelector('.event-stream__title .kit-status__icon').getAttribute('aria-label')
 
 let savedES
 beforeEach(() => {
@@ -57,15 +58,15 @@ describe('run event stream — the badge tells the truth about the connection', 
     render(<EventStream runId="r-1" />)
     const es = FakeEventSource.instances[0]
     act(() => { es.open() })
-    expect(badge()).toBe('LIVE')
+    expect(badge()).toBe('Live')
     act(() => { es.emit(line('e1', 'step one ran')) })
     expect(screen.getByText('step one ran')).toBeInTheDocument()
 
     act(() => { es.fail() })   // the stream drops mid-run
-    await waitFor(() => expect(badge()).not.toBe('LIVE'))
+    await waitFor(() => expect(badge()).not.toBe('Live'))
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(fetchMock.mock.calls[0][0]).toContain('/api/runs/r-1')
-    expect(badge()).toBe('POLL')
+    expect(badge()).toBe('Polling')
     // What already arrived over SSE is still on screen.
     expect(screen.getByText('step one ran')).toBeInTheDocument()
   })
@@ -79,10 +80,10 @@ describe('run event stream — the badge tells the truth about the connection', 
         : { id: 'r-2', scenario_id: 'SIM-EDR-001', status: 'running', started_at: '2026-10-04T12:00:00', steps: [] }),
     })
     render(<EventStream runId="r-2" />)
-    await waitFor(() => expect(badge()).toBe('ERR'))
+    await waitFor(() => expect(badge()).toBe('Error'))
 
     fail = false
-    await waitFor(() => expect(badge()).toBe('POLL'), { timeout: 5000 })
+    await waitFor(() => expect(badge()).toBe('Polling'), { timeout: 5000 })
   })
 })
 

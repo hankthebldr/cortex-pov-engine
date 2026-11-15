@@ -25,7 +25,7 @@ export const ABOUT_LINES = Object.freeze([
 export const COMPONENT_ABOUT = Object.freeze({
   pov: {
     what: 'The engine itself: the SimCore API, this console and the run queue, running in Docker on the jumpbox.',
-    why: 'Every run is dispatched and recorded here, and read back from here once a tenant is connected.',
+    why: 'Every run is dispatched and recorded here, and reviewed from here once a tenant is connected.',
     unlocks: 'Everything. Nothing else works until it is up.',
     where: 'Jumpbox · Docker Compose · port 8888 by default',
   },
@@ -37,8 +37,8 @@ export const COMPONENT_ABOUT = Object.freeze({
   },
   tenant: {
     what: "The customer's Cortex XSIAM / XDR tenant, reached with a read-only API key. POVengine never writes to it.",
-    why: 'Read back asks the tenant which detections fired. Without a tenant, no run is read back.',
-    unlocks: "Read-back: each run's expected detections checked against the tenant's own alerts.",
+    why: 'Review asks the tenant which detections fired. Without a tenant, no run is reviewed.',
+    unlocks: "Review: each run's expected detections checked against the tenant's own alerts.",
     where: 'Cortex › Settings › Configurations › Integrations › API Keys',
   },
   http: {

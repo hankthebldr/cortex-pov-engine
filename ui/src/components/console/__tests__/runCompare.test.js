@@ -68,7 +68,7 @@ describe('compareCell — the honesty rule', () => {
 
   it('speaks the chain stage’s words', () => {
     expect(cellMeta('detected')).toBe(LIVE_STATES.detected)
-    expect(cellMeta('ran').word).toBe('Ran — not read back')
+    expect(cellMeta('ran').word).toBe('Ran — not reviewed')
     expect(cellMeta('did_not_run').word).toBe('Did not run')
   })
 })

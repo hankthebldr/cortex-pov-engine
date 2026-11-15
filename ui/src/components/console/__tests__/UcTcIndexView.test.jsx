@@ -924,11 +924,11 @@ describe('UC / TC Index — tiles, Verdict and the Runs rollup (C5)', () => {
     render(<EnvHarness env={{ ...ENV, runs }} />)
     await waitFor(() => expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toBeInTheDocument())
 
-    expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toHaveTextContent('2 runs · 1 read back')
+    expect(screen.getByTestId('uctc-runs-TC-EDR-03')).toHaveTextContent('2 runs · 1 reviewed')
     const chip = screen.getByTestId('uctc-runs-reason-TC-EDR-03-not_executed')
     expect(chip).toHaveTextContent('1 nothing executed')
     expect(chip.className).toContain('verdict-reason--warn')
-    expect(screen.getByTestId('uctc-runs-TC-TH-05')).toHaveTextContent('1 run · 1 not read back')
+    expect(screen.getByTestId('uctc-runs-TC-TH-05')).toHaveTextContent('1 run · 1 not reviewed')
     expect(screen.getByTestId('uctc-runs-TC-NDR-06')).toHaveTextContent('No runs')
   })
 
@@ -1008,7 +1008,7 @@ describe('UC / TC Coverage (C6)', () => {
     expect(step('components')).toHaveTextContent('—of 3Components ready')
     expect(step('components')).toHaveTextContent("2 can't check")
     expect(step('ran')).toHaveTextContent('2of 3Ran')
-    expect(step('readBack')).toHaveTextContent('1of 3Read back')
+    expect(step('readBack')).toHaveTextContent('1of 3Reviewed')
     // r-2 counted 3 detections but was never read back: it does not count.
     expect(step('detected')).toHaveTextContent('1of 3Detected')
   })
@@ -1023,7 +1023,7 @@ describe('UC / TC Coverage (C6)', () => {
     expect(within(cell('TC-EDR-03', 'components')).getByRole('img', { name: "Can't check" })).toBeInTheDocument()
     expect(within(cell('TC-NDR-06', 'scenario')).getByRole('img', { name: 'None' })).toBeInTheDocument()
     expect(cell('TC-NDR-06', 'ran')).toHaveTextContent('—')
-    expect(within(cell('TC-TH-05', 'readBack')).getByRole('img', { name: 'Not read back' })).toBeInTheDocument()
+    expect(within(cell('TC-TH-05', 'readBack')).getByRole('img', { name: 'Not reviewed' })).toBeInTheDocument()
     expect(cell('TC-TH-05', 'detected')).toHaveTextContent('—')
     // Posture rows are not on the detection path.
     expect(screen.queryByTestId('uctc-cov-row-TC-EDR-05')).toBeNull()
@@ -1085,7 +1085,7 @@ describe('UC / TC Gaps (C6)', () => {
     expect(screen.getByTestId('uctc-gapfilter-no_scenario')).toHaveTextContent('No scenario1')
     expect(screen.getByTestId('uctc-gapfilter-component')).toHaveTextContent('Component not ready0')
     expect(screen.getByTestId('uctc-gapfilter-never_ran')).toHaveTextContent('Never ran0')
-    expect(screen.getByTestId('uctc-gapfilter-not_read_back')).toHaveTextContent('Not read back1')
+    expect(screen.getByTestId('uctc-gapfilter-not_read_back')).toHaveTextContent('Not reviewed1')
     expect(screen.getByTestId('uctc-gapfilter-not_seen')).toHaveTextContent('Not seen yet0')
     // "Can't check" appears only when something could not be checked.
     expect(screen.queryByTestId('uctc-gapfilter-unknown')).toBeNull()
@@ -1093,7 +1093,7 @@ describe('UC / TC Gaps (C6)', () => {
     fireEvent.click(screen.getByTestId('uctc-gapfilter-not_read_back'))
     expect(screen.getByTestId('uctc-gapfilter-not_read_back')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByTestId('uctc-gap-TC-NDR-06')).toBeNull()
-    expect(screen.getByTestId('uctc-gap-why-TC-TH-05')).toHaveTextContent('Run r-2 finished but has not been read back')
+    expect(screen.getByTestId('uctc-gap-why-TC-TH-05')).toHaveTextContent('Run r-2 finished but has not been reviewed')
   })
 
   it('offers no verb for "No scenario", only the link to Build a chain', async () => {
@@ -1115,7 +1115,7 @@ describe('UC / TC Gaps (C6)', () => {
     render(<EnvHarness initialParams={{ tab: 'gaps' }} />)
     await waitFor(() => expect(screen.getByTestId('uctc-gap-TC-TH-05')).toBeInTheDocument())
 
-    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-TH-05')).getByRole('button', { name: 'Read back' }))
+    fireEvent.click(within(screen.getByTestId('uctc-gap-TC-TH-05')).getByRole('button', { name: 'Review' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([u, init]) => String(u).includes('/api/runs/r-2/reconcile')
       && init && init.method === 'POST')).toBe(true))
   })

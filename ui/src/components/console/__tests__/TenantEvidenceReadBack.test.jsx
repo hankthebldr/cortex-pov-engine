@@ -31,9 +31,9 @@ const stored = (ledger) => ({
 })
 const NOT_READ = { run_id: 'r1', status: 'pending', code: 'TENANT_EVIDENCE_NOT_READ', snapshot: null, history: [], case_ledger: null }
 const action = ({ onDone }) => <ReadBackButton runId="r1" onDone={onDone} />
-const buttons = () => screen.queryAllByRole('button', { name: 'Read back' })
+const buttons = () => screen.queryAllByRole('button', { name: 'Review' })
 
-describe('exactly one Read back per run on Results', () => {
+describe('exactly one Review per run on Results', () => {
   for (const [name, ledger] of [
     ['no ledger', null],
     ['NO_CASE_YET', LEDGER({ merge_class: 'NO_CASE_YET', cases: [] })],
@@ -69,7 +69,7 @@ describe('exactly one Read back per run on Results', () => {
 
   it('a plain node is accepted as the action', async () => {
     installRoutes({ 'GET /api/runs/r1/tenant-evidence': stored(LEDGER()) })
-    render(<TenantEvidencePanel runId="r1" reconcileAction={<button type="button">Read back</button>} />)
+    render(<TenantEvidencePanel runId="r1" reconcileAction={<button type="button">Review</button>} />)
     await screen.findByTestId('run-case')
     expect(buttons()).toHaveLength(1)
   })

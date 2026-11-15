@@ -139,7 +139,7 @@ describe('Runs · Compare — the honesty rule', () => {
       expect(cell.textContent).not.toMatch(/Detected|Not seen/)
     }
     expect(unread.map((c) => within(c).getByRole('img').getAttribute('aria-label')))
-      .toEqual(['Ran — not read back', 'Ran — not read back', 'Did not run'])
+      .toEqual(['Ran — not reviewed', 'Ran — not reviewed', 'Did not run'])
 
     const read = columnCells('r-read')
     expect(read.map((c) => within(c).getByRole('img').getAttribute('aria-label')))
@@ -157,7 +157,7 @@ describe('Runs · Compare — the honesty rule', () => {
 })
 
 describe('Runs · Compare — each column carries its next action', () => {
-  it('Read back on an unread run reads it back, then the column can claim', async () => {
+  it('Review on an unread run reads it back, then the column can claim', async () => {
     let readBack = false
     const { calls } = mount({
       'GET /api/runs': () => (readBack ? [READ, { ...UNREAD, tc_verdict_detail: READ_DETAIL }] : [READ, UNREAD]),
@@ -167,8 +167,8 @@ describe('Runs · Compare — each column carries its next action', () => {
     })
     await pick('r-read', 'r-unread')
     const head = await waitFor(() => screen.getAllByTestId('run-compare-head').find((h) => h.dataset.runId === 'r-unread'))
-    expect(within(head).getByRole('img', { name: 'Not read back' })).toBeInTheDocument()
-    fireEvent.click(within(head).getByRole('button', { name: 'Read back' }))
+    expect(within(head).getByRole('img', { name: 'Not reviewed' })).toBeInTheDocument()
+    fireEvent.click(within(head).getByRole('button', { name: 'Review' }))
 
     await waitFor(() => {
       const h = screen.getAllByTestId('run-compare-head').find((x) => x.dataset.runId === 'r-unread')
@@ -191,8 +191,8 @@ describe('Runs · Compare — each column carries its next action', () => {
     }, { onOpenResults })
     await pick('r-read', 'r-unread')
     const head = await waitFor(() => screen.getAllByTestId('run-compare-head').find((h) => h.dataset.runId === 'r-read'))
-    expect(within(head).getByRole('img', { name: 'Read back' })).toBeInTheDocument()
-    expect(within(head).queryByRole('button', { name: 'Read back' })).toBeNull()
+    expect(within(head).getByRole('img', { name: 'Reviewed' })).toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: 'Review' })).toBeNull()
     fireEvent.click(within(head).getByRole('button', { name: 'Open results' }))
     expect(onOpenResults).toHaveBeenCalledWith('r-read')
   })

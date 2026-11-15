@@ -4,7 +4,7 @@
  *   editable  the Composer's Lanes lens: every card is a button that selects
  *             its step; tenant rules sit in the Cortex Engine band.
  *   live      Run detail: every card carries a state pip AND a word
- *             (Detected · Broken · Waiting / Not seen · Ran — not read back ·
+ *             (Detected · Broken · Waiting / Not seen · Ran — not reviewed ·
  *             Did not run); a lane header opens its component page.
  *   preview   a scenario's sheet: no state, no controls, scaled to fit its box
  *             and never below 0.62 — past that it scrolls in its own box.
@@ -20,7 +20,7 @@
  *               (`composerDraft.draftFromScenario(scenario).steps`)
  *   states      { [stepId]: 'detected' | 'broken' | 'waiting' | 'not_seen'
  *                          | 'ran' | 'did_not_run' } — the caller derives these
- *               from the run and its read-back. Before a read-back a step is only
+ *               from the run and its review. Before a review a step is only
  *               'ran' or 'did_not_run'; a step absent from `states` reads Waiting.
  *   onSelect    (stepId) => void — a card becomes a button (e.g. a Broken step
  *               opens its troubleshooting sheet). Omit for a read-only stage.

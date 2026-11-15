@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import useRunEventStream from './useRunEventStream.js'
+import { splitStepTranscript } from './useRunStepTail.js'
+import { isRunSettled } from './runStatus.js'
+import { StatusIcon, Button, Icon } from './kit/index.js'
 import { serverDate } from '../../api/time.js'
 
 /**
@@ -13,13 +16,21 @@ import { serverDate } from '../../api/time.js'
  * Operator behavior:
  *   - Auto-scrolls to bottom by default (terminal-like)
  *   - User scroll-up pins the viewport; "↓ jump to live" pill appears
- *   - Level filter chips: info · step · detect · warn · error
- *   - Pause / resume / clear controls
- *   - Connection status badge: live (green) · poll (amber) · error (red)
+ *   - Level filters (kit toggle Buttons): info · step · detect · warn · error
+ *   - Pause (a pressed toggle) and Clear, kit verb Buttons
+ *   - Connection status as a StatusIcon: Live · Polling · Connecting · Error · Paused
+ *
+ * A settled run (complete · failed · aborted · staged) has nothing left to
+ * stream, so the panel shows the output SimCore stored for it instead
+ * (GET /api/runs/{id} → output, fetched by the run's page), one block per
+ * step with how the step ended (#340).
  *
  * Props:
  *   runId   — string|null
  *   compact — boolean (smaller in inflight footer; bigger when full-tab)
+ *   status  — the run's status; a settled one shows the stored output
+ *   output  — Run.output, or null while the record has not loaded
+ *   partial — output is the record's last 2 KB only
  */
 const LEVELS = ['info', 'step', 'detect', 'warn', 'error']
 
@@ -31,14 +42,16 @@ const LEVEL_LABEL = {
   error:  'error',
 }
 
-export default function EventStream({ runId, compact = false }) {
+export default function EventStream({ runId, compact = false, status = null, output = null, partial = false }) {
   const [paused, setPaused] = useState(false)
   const [enabled, setEnabled] = useState(new Set(LEVELS))
   const [stuckToBottom, setStuckToBottom] = useState(true)
   const scrollerRef = useRef(null)
   const endRef = useRef(null)
+  const settled = !!runId && isRunSettled(status)
 
-  const { events, connected, mode, reset } = useRunEventStream(runId, { paused })
+  // A settled run streams nothing more: subscribe only while it is live.
+  const { events, connected, mode, reset } = useRunEventStream(settled ? null : runId, { paused })
 
   const filtered = useMemo(
     () => events.filter((e) => enabled.has(e.level)),
@@ -83,20 +96,21 @@ export default function EventStream({ runId, compact = false }) {
   if (!runId) {
     return (
       <div className={'event-stream' + (compact ? ' event-stream--compact' : '')}>
-        <div className="event-stream__empty mono">
-          no active run — launch a scenario to see live agent output
-        </div>
+        <div className="event-stream__empty mono">No active run</div>
       </div>
     )
   }
 
+  if (settled) return <StoredOutput compact={compact} output={output} partial={partial} />
+
   // ERR is checked FIRST: the hook reports a failed fetch as mode 'error' with
   // connected=false, and nesting ERR inside the `connected` branch meant it
   // could never render — a dead SimCore read as "..." (still connecting).
-  const modeBadge = mode === 'error' ? { text: 'ERR',   cls: 'event-stream__mode--err'  }
-    : !connected                     ? { text: '...',   cls: 'event-stream__mode--poll' }
-    : mode === 'stream'              ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
-    :                                  { text: 'POLL',  cls: 'event-stream__mode--poll' }
+  const modeBadge = paused             ? { status: 'off',      word: 'Paused' }
+    : mode === 'error'                 ? { status: 'down',     word: 'Error' }
+    : !connected                       ? { status: 'unknown',  word: 'Connecting' }
+    : mode === 'stream'                ? { status: 'up',       word: 'Live' }
+    :                                    { status: 'degraded', word: 'Polling' }
 
   return (
     <section
@@ -106,43 +120,29 @@ export default function EventStream({ runId, compact = false }) {
       <div className="event-stream__head">
         <div className="event-stream__title">
           <span className="event-stream__title-text mono">agent · stdout</span>
-          <span className={`event-stream__mode mono ${modeBadge.cls}`}>
-            {modeBadge.text}
-          </span>
+          <StatusIcon status={modeBadge.status} word={modeBadge.word} />
         </div>
         <div className="event-stream__filters" role="group" aria-label="Level filters">
-          {LEVELS.map((level) => (
-            <button
-              key={level}
-              type="button"
-              className={
-                'event-stream__filter event-stream__filter--' + level +
-                (enabled.has(level) ? ' is-active' : '')
-              }
-              onClick={() => toggleLevel(level)}
-              aria-pressed={enabled.has(level)}
-            >
-              {LEVEL_LABEL[level]}
-            </button>
-          ))}
+          {LEVELS.map((level) => {
+            const on = enabled.has(level)
+            return (
+              <Button
+                key={level}
+                className={'event-stream__filter event-stream__filter--' + level}
+                onClick={() => toggleLevel(level)}
+                aria-pressed={on}
+                title={on ? `Hide ${LEVEL_LABEL[level]} lines` : `Show ${LEVEL_LABEL[level]} lines`}
+              >
+                {on && <Icon name="check" size={12} />}
+                {LEVEL_LABEL[level]}
+              </Button>
+            )
+          })}
         </div>
         <div className="event-stream__controls">
-          <button
-            type="button"
-            className="event-stream__btn"
-            onClick={() => setPaused((p) => !p)}
-            title={paused ? 'Resume' : 'Pause'}
-          >
-            {paused ? '▶ resume' : '⏸ pause'}
-          </button>
-          <button
-            type="button"
-            className="event-stream__btn"
-            onClick={reset}
-            title="Clear buffer (does not affect server-side history)"
-          >
-            ⊘ clear
-          </button>
+          <Button verb="Pause" aria-pressed={paused} onClick={() => setPaused((p) => !p)}
+            title={paused ? 'Resume the stream' : 'Hold the stream'} />
+          <Button verb="Clear" onClick={reset} title="Empty this view (SimCore keeps the run's output)" />
         </div>
       </div>
 
@@ -191,17 +191,81 @@ export default function EventStream({ runId, compact = false }) {
         )}
 
         {!stuckToBottom && (
-          <button
-            type="button"
-            className="event-stream__jump-live"
-            onClick={jumpToLive}
-            aria-label="Jump to live"
-          >
-            ↓ live
-          </button>
+          <Button className="event-stream__jump-live" onClick={jumpToLive} aria-label="Jump to live">
+            <Icon name="down" size={12} />
+            Live
+          </Button>
         )}
       </div>
     </section>
+  )
+}
+
+/* ─── stored output (a settled run) ──────────────────────────────── */
+
+/** How a step ended, as a StatusIcon tone and one word. */
+export function stepEnding(step) {
+  if (step.notRun) return { status: 'off', word: 'Did not run' }
+  if (!step.finished) return { status: 'unknown', word: 'Did not finish' }
+  if (step.timedOut) return { status: 'down', word: 'Timed out' }
+  if (step.exitCode === 0) return { status: 'up', word: 'Ran' }
+  return { status: 'down', word: `Failed (exit ${step.exitCode})` }
+}
+
+function StoredOutput({ compact, output, partial }) {
+  const segments = useMemo(() => splitStepTranscript(output), [output])
+  let body
+  if (typeof output !== 'string') {
+    body = <div className="event-stream__empty mono">Output not loaded</div>
+  } else if (segments.length === 0) {
+    body = <div className="event-stream__empty mono">No output recorded</div>
+  } else {
+    body = (
+      <ol className="event-stream__steps">
+        {segments.map((seg, i) => (seg.kind === 'step'
+          ? <StoredStep key={`${seg.id}-${i}`} step={seg} />
+          : (
+            <li key={`note-${i}`} className="event-stream__note" data-testid="stdout-note">
+              <pre className="event-stream__out mono">{seg.lines.join('\n')}</pre>
+            </li>
+          )))}
+      </ol>
+    )
+  }
+  return (
+    <section
+      className={'event-stream event-stream--stored' + (compact ? ' event-stream--compact' : '')}
+      aria-label="Agent output"
+    >
+      <div className="event-stream__head">
+        <div className="event-stream__title">
+          <span className="event-stream__title-text mono">agent · stdout</span>
+          <StatusIcon status="off" word={partial ? 'Stored · last 2 KB' : 'Stored'} />
+        </div>
+      </div>
+      <div className="event-stream__scroller" role="log">{body}</div>
+    </section>
+  )
+}
+
+function StoredStep({ step }) {
+  const ending = stepEnding(step)
+  const meta = [
+    step.exitCode != null ? `exit ${step.exitCode}` : null,
+    step.duration && step.duration !== '0s' ? step.duration : null,
+  ].filter(Boolean).join(' · ')
+  return (
+    <li className="event-stream__step-block" data-testid="stdout-step" data-step={step.id}>
+      <div className="event-stream__step-head">
+        <StatusIcon status={ending.status} word={ending.word} />
+        <span className="event-stream__step-name mono">
+          {step.index}/{step.total} · {step.id}{step.technique ? ` · ${step.technique}` : ''}
+          {step.identity ? ` · ${step.identity}` : ''}
+        </span>
+        {meta && <span className="event-stream__step-meta mono">{meta}</span>}
+      </div>
+      {step.lines.length > 0 && <pre className="event-stream__out mono">{step.lines.join('\n')}</pre>}
+    </li>
   )
 }
 
