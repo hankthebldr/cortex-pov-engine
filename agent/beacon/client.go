@@ -1453,6 +1453,7 @@ func (c *BeaconClient) runChainedStep(
 	sessCtx context.Context, sessCancel context.CancelFunc,
 	session *executor.ChainSession, runID, stepID, shell, wrapped string, timeout time.Duration,
 ) (identity.ExecResult, *ControlState, bool, error) {
+	defer ealRelayStep(runID, stepID)() // a marked step's EAL ticket lives exactly this long
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}
@@ -1607,6 +1608,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 // on timeout, abort (or parent cancel) the child context is cancelled, which signals
 // the step's process group via the executor's RunCommandCtx.
 func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, *ControlState, bool, error) {
+	defer ealRelayStep(runID, stepID)() // a marked step's EAL ticket lives exactly this long
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}

@@ -26,8 +26,10 @@ const (
 	// maxCampaignBytes mirrors SimCore's limit, so an over-long file is
 	// refused here with the file's name instead of there without it.
 	maxCampaignBytes = 256 * 1024
-	usage            = "usage: eal --relay <host:port> --ticket <ticket> " +
+	usage            = "usage: eal --relay <host:port> --ticket-file <path> " +
 		"(run <campaign.yml> [--live] | describe <plugin> | list-plugins)"
+	// maxTicketBytes is far more than a ticket; it only bounds the read.
+	maxTicketBytes = 256
 )
 
 // Main is the `eal` subcommand: the beacon's stand-in for
@@ -39,7 +41,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 }
 
 func run(args []string, stdout, stderr io.Writer, runner *Runner, transport *http.Transport) int {
-	relay, ticket, rest, err := splitGlobal(args)
+	relay, ticketFile, rest, err := splitGlobal(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n%s\n", err, usage)
 		return exitUsage
@@ -49,7 +51,13 @@ func run(args []string, stdout, stderr io.Writer, runner *Runner, transport *htt
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return exitUsage
 	}
-	req.Ticket = ticket
+	// The ticket is read from a file only this step's account can read. It is
+	// never on a command line or in an environment.
+	req.Ticket, err = readTicket(ticketFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "EAL_RELAY_REFUSED: EAL_RELAY_TICKET_UNREADABLE: %v\n", err)
+		return exitRelay
+	}
 
 	// The beacon is on loopback. No proxy is ever the way there.
 	transport.Proxy = nil
@@ -93,25 +101,40 @@ func nonZero(code int) int {
 	return code
 }
 
-// splitGlobal takes --relay and --ticket off the front of args.
-func splitGlobal(args []string) (relay, ticket string, rest []string, err error) {
+// splitGlobal takes --relay and --ticket-file off the front of args.
+func splitGlobal(args []string) (relay, ticketFile string, rest []string, err error) {
 	i := 0
 flags:
 	for i+1 < len(args) {
 		switch args[i] {
 		case "--relay":
 			relay = args[i+1]
-		case "--ticket":
-			ticket = args[i+1]
+		case "--ticket-file":
+			ticketFile = args[i+1]
 		default:
 			break flags
 		}
 		i += 2
 	}
-	if relay == "" || ticket == "" {
-		return "", "", nil, errors.New("this command is run by the beacon for a step SimCore marked; it needs --relay and --ticket")
+	if relay == "" || ticketFile == "" {
+		return "", "", nil, errors.New("this command is run by the beacon for a step SimCore marked; it needs --relay and --ticket-file")
 	}
-	return relay, ticket, args[i:], nil
+	return relay, ticketFile, args[i:], nil
+}
+
+// readTicket reads the step's ticket from the file the beacon wrote for it.
+// The file is gone once the step has ended.
+func readTicket(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", errors.New("this step's ticket file cannot be read (the step has ended, or it runs as another account)")
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxTicketBytes))
+	if err != nil || strings.TrimSpace(string(data)) == "" {
+		return "", errors.New("this step's ticket file is empty")
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 // parseVerb reads the CLI's own arguments: the same three verbs and flags

@@ -43,19 +43,17 @@ func (r *Refusal) Error() string { return r.Code + ": " + r.Detail }
 // Forward sends one request to SimCore for the step a ticket belongs to.
 type Forward func(stepID string, req Request) (Response, error)
 
-const (
-	// maxRequestBytes bounds what the subcommand may send the beacon. SimCore
-	// refuses a campaign over 256 KiB; this only keeps a stray writer out.
-	maxRequestBytes = 2 << 20
-	// maxTicketUses is how many calls one step may make (a describe and a run,
-	// a handful of campaigns). SimCore keeps its own, lower, count.
-	maxTicketUses = 32
-)
+// maxRequestBytes bounds what the subcommand may send the beacon. SimCore
+// refuses a campaign over 256 KiB; this only keeps a stray writer out.
+const maxRequestBytes = 2 << 20
 
-// Server is the beacon's end of the relay: a loopback listener that exists
-// only while a task with marked steps runs. A ticket names one of those steps;
-// the step's own subcommand presents it, and the beacon forwards the call to
-// SimCore under the run and step it issued the ticket for. The caller chooses
+// Server is the beacon's end of the relay: a listener on loopback, and only
+// loopback, that exists while a task with marked steps runs.
+//
+// A step may ask only while it is running, and only as often as its command
+// calls the EAL CLI. Open is called when the step starts and returns its
+// ticket; Revoke is called when the step ends. The beacon forwards a call to
+// SimCore under the run and step it opened the ticket for. The caller chooses
 // neither.
 type Server struct {
 	ln      net.Listener
@@ -68,7 +66,7 @@ type Server struct {
 
 type ticket struct {
 	stepID string
-	uses   int
+	left   int // calls the step may still make
 }
 
 // Listen starts the listener on a free loopback port.
@@ -88,17 +86,26 @@ func Listen(forward Forward) (*Server, error) {
 // Addr is the host:port the subcommand connects to.
 func (s *Server) Addr() string { return s.ln.Addr().String() }
 
-// Issue returns a new ticket for stepID.
-func (s *Server) Issue(stepID string) (string, error) {
+// Open lets stepID make up to calls requests and returns the ticket that
+// proves a request is the step's. Call it when the step starts.
+func (s *Server) Open(stepID string, calls int) (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err
 	}
 	t := hex.EncodeToString(raw[:])
 	s.mu.Lock()
-	s.tickets[t] = &ticket{stepID: stepID}
+	s.tickets[t] = &ticket{stepID: stepID, left: calls}
 	s.mu.Unlock()
 	return t, nil
+}
+
+// Revoke ends a ticket. Call it when the step ends: a request that presents
+// the ticket afterwards is refused.
+func (s *Server) Revoke(t string) {
+	s.mu.Lock()
+	delete(s.tickets, t)
+	s.mu.Unlock()
 }
 
 // Close stops the listener. Every ticket dies with it.
@@ -107,6 +114,21 @@ func (s *Server) Close() {
 	s.tickets = map[string]*ticket{}
 	s.mu.Unlock()
 	_ = s.srv.Close()
+}
+
+// claim spends one of a ticket's calls and returns the step it belongs to.
+func (s *Server) claim(t string) (stepID string, refusal string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tk := s.tickets[t]
+	switch {
+	case tk == nil:
+		return "", "this ticket is not for a step that is running"
+	case tk.left <= 0:
+		return "", "this step has already made every EAL CLI call its command contains"
+	}
+	tk.left--
+	return tk.stepID, ""
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
@@ -119,18 +141,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, "EAL_RELAY_BAD_REQUEST", "the request is not JSON")
 		return
 	}
-	s.mu.Lock()
-	t := s.tickets[req.Ticket]
-	ok := t != nil && t.uses < maxTicketUses
-	var stepID string
-	if ok {
-		t.uses++
-		stepID = t.stepID
-	}
-	s.mu.Unlock()
-	if !ok {
-		refuse(w, http.StatusForbidden, "EAL_RELAY_TICKET_REFUSED",
-			"this ticket is not good for a step of the task that is running")
+	stepID, refusal := s.claim(req.Ticket)
+	if refusal != "" {
+		refuse(w, http.StatusForbidden, "EAL_RELAY_TICKET_REFUSED", refusal)
 		return
 	}
 	req.Ticket = ""

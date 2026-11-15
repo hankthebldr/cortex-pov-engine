@@ -8,13 +8,18 @@ package beacon
 // loopback.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/hankthebldr/cortexsim/agent/ealrelay"
@@ -58,16 +63,46 @@ func newRelaySimCore(t *testing.T, answer func() ealrelay.Response) *relaySimCor
 	return s
 }
 
-func runMarkedStep(t *testing.T, s *relaySimCore) {
-	t.Helper()
-	task := &Task{TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-NDR-001", Steps: []Step{
-		{ID: "step-03", Command: ealStepCommand, Identity: "root", EalRelay: true},
-	}}
-	c := New(s.URL, "agent-7", 0)
+func directClient(url string) *BeaconClient {
+	c := New(url, "agent-7", 0)
 	c.resolveIdentity = func(string) identity.Resolution {
 		return identity.Resolution{Mode: "direct", Username: "root"}
 	}
-	c.executeTask(context.Background(), task)
+	return c
+}
+
+// runMarkedStep runs a one-step task whose step is marked, and returns the
+// task as the beacon left it (its command rewritten).
+func runMarkedStep(t *testing.T, s *relaySimCore, command string) *Task {
+	t.Helper()
+	task := &Task{TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-NDR-001", Steps: []Step{
+		{ID: "step-03", Command: command, Identity: "root", EalRelay: true},
+	}}
+	directClient(s.URL).executeTask(context.Background(), task)
+	return task
+}
+
+func ticketFileOf(t *testing.T, step Step) string {
+	t.Helper()
+	m := rewrittenCall.FindStringSubmatch(step.Command)
+	if m == nil {
+		t.Fatalf("no rewritten call in: %s", step.Command)
+	}
+	return m[3]
+}
+
+// askRelay makes one request to the beacon's listener, as anything on this
+// host that had a ticket could.
+func askRelay(t *testing.T, addr, ticket string) (status int, body string) {
+	t.Helper()
+	payload, _ := json.Marshal(ealrelay.Request{Ticket: ticket, Verb: "list-plugins"})
+	resp, err := http.Post("http://"+addr+"/relay", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
 }
 
 func TestMarkedStepRunsItsCampaignThroughSimCoreAndSendsFromHere(t *testing.T) {
@@ -95,7 +130,7 @@ func TestMarkedStepRunsItsCampaignThroughSimCoreAndSendsFromHere(t *testing.T) {
 			Allowlist: []string{dest},
 		}
 	})
-	runMarkedStep(t, s)
+	runMarkedStep(t, s, ealStepCommand)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seenMu.Lock()
@@ -140,7 +175,7 @@ func TestMarkedStepExitsWithSimCoresCode(t *testing.T) {
 	s := newRelaySimCore(t, func() ealrelay.Response {
 		return ealrelay.Response{ExitCode: 3, Stdout: "EAL_WIRE_NOT_RELAYABLE: llm_provider_egress\n"}
 	})
-	runMarkedStep(t, s)
+	runMarkedStep(t, s, ealStepCommand)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -158,5 +193,206 @@ func TestMarkedStepExitsWithSimCoresCode(t *testing.T) {
 	step := steps[0].(map[string]interface{})
 	if step["termination"] != TermExited || step["exit_code"].(float64) != 3 {
 		t.Errorf("the step's host record: %v", step)
+	}
+}
+
+// What lets a step ask is a ticket. Endpoint telemetry records every command
+// line, and any local account can read the process list, so the ticket must
+// be in neither a command line nor an environment.
+func TestTicketNeverInArgvOrEnv(t *testing.T) {
+	dump := filepath.Join(t.TempDir(), "child.json")
+	t.Setenv(ealChildDumpEnv, dump)
+
+	s := newRelaySimCore(t, func() ealrelay.Response { return ealrelay.Response{Stdout: "ok\n"} })
+	task := runMarkedStep(t, s, ealStepCommand)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	raw, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("the step's eal child never ran: %v\n%s", err, strings.Join(s.outputs, "\n"))
+	}
+	var child ealChildDump
+	if err := json.Unmarshal(raw, &child); err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(child.Ticket) {
+		t.Fatalf("the child read %q from its ticket file, not a ticket", child.Ticket)
+	}
+	if len(s.relays) != 1 {
+		t.Fatalf("the ticket the child read did not get its call served: %v", s.outputs)
+	}
+
+	// The command the step's shell was handed: a path, never the ticket.
+	command := task.Steps[0].Command
+	if strings.Contains(command, child.Ticket) {
+		t.Errorf("the ticket is in the step's command:\n%s", command)
+	}
+	if !strings.Contains(command, " --ticket-file '") {
+		t.Errorf("the command does not carry a ticket file:\n%s", command)
+	}
+	// The child's own argv and environment.
+	for _, arg := range child.Args {
+		if strings.Contains(arg, child.Ticket) || arg == "--ticket" {
+			t.Errorf("the ticket is on the child's command line: %q", child.Args)
+		}
+	}
+	for _, kv := range child.Env {
+		if strings.Contains(kv, child.Ticket) {
+			t.Errorf("the ticket is in the child's environment: %q", strings.SplitN(kv, "=", 2)[0])
+		}
+	}
+	// It stops at the beacon: SimCore is told the run and the step, not it.
+	if strings.Contains(strings.Join(s.outputs, "\n")+mustJSON(s.relays), child.Ticket) {
+		t.Error("the ticket reached SimCore")
+	}
+	// And its file went with the step.
+	if _, err := os.Stat(ticketFileOf(t, task.Steps[0])); !os.IsNotExist(err) {
+		t.Errorf("the ticket file outlived its step (err=%v)", err)
+	}
+}
+
+func mustJSON(v interface{}) string {
+	data, _ := json.Marshal(v)
+	return string(data)
+}
+
+func statOwner(t *testing.T, path string) (os.FileMode, uint32) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm(), info.Sys().(*syscall.Stat_t).Uid
+}
+
+func TestTicketFileModeAndOwner(t *testing.T) {
+	me := uint32(os.Getuid())
+
+	// A step that runs as the beacon's own account.
+	task := &Task{RunID: "r-mode", Steps: []Step{
+		{ID: "step-01", Command: ealStepCommand, Identity: "root", EalRelay: true}}}
+	done := directClient("http://127.0.0.1:1").prepareEalRelay(task)
+	file := ticketFileOf(t, task.Steps[0])
+	dir := filepath.Dir(file)
+
+	// The directory is the beacon's, and closed to every other account.
+	if mode, uid := statOwner(t, dir); mode != 0o700 || uid != me {
+		t.Errorf("ticket directory is %o owned by %d, want 700 owned by %d", mode, uid, me)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("the ticket file exists before its step started (err=%v)", err)
+	}
+
+	end := ealRelayStep("r-mode", "step-01") // the step starts
+	if mode, uid := statOwner(t, file); mode != 0o600 || uid != me {
+		t.Errorf("ticket file is %o owned by %d, want 600 owned by %d", mode, uid, me)
+	}
+	if raw, _ := os.ReadFile(file); !regexp.MustCompile(`^[0-9a-f]{32}\n$`).Match(raw) {
+		t.Errorf("ticket file holds %q", raw)
+	}
+	end() // the step ends
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("the ticket file outlived its step (err=%v)", err)
+	}
+	done() // the task ends
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("the ticket directory outlived its task (err=%v)", err)
+	}
+
+	// A step that runs as a service account: the file goes to that account,
+	// and the directory lets it through without letting it look around.
+	type chown struct {
+		path     string
+		uid, gid int
+	}
+	var chowned []chown
+	realChown, realIDs := ealChown, ealAccountIDs
+	ealChown = func(f *os.File, uid, gid int) error {
+		chowned = append(chowned, chown{f.Name(), uid, gid})
+		return nil // this test is not root; record who the file would go to
+	}
+	ealAccountIDs = func(name string) (int, int, error) {
+		if name != "svc-backup" {
+			t.Errorf("looked up %q, want the step's account", name)
+		}
+		return 4242, 4243, nil
+	}
+	defer func() { ealChown, ealAccountIDs = realChown, realIDs }()
+
+	task = &Task{RunID: "r-mode-svc", Steps: []Step{
+		{ID: "step-01", Command: ealStepCommand, Identity: "svc-backup", EalRelay: true}}}
+	c := New("http://127.0.0.1:1", "agent-7", 0)
+	c.resolveIdentity = func(name string) identity.Resolution {
+		return identity.Resolution{Mode: "runuser", Username: name, Honoured: true}
+	}
+	done = c.prepareEalRelay(task)
+	defer done()
+	file = ticketFileOf(t, task.Steps[0])
+	if mode, uid := statOwner(t, filepath.Dir(file)); mode != 0o711 || uid != me {
+		t.Errorf("shared ticket directory is %o owned by %d, want 711 owned by %d", mode, uid, me)
+	}
+	end = ealRelayStep("r-mode-svc", "step-01")
+	defer end()
+	if mode, _ := statOwner(t, file); mode != 0o600 {
+		t.Errorf("ticket file is %o, want 600", mode)
+	}
+	if len(chowned) != 1 || chowned[0] != (chown{file, 4242, 4243}) {
+		t.Errorf("ticket file was handed to %+v, want the step's account 4242:4243", chowned)
+	}
+}
+
+// A ticket is good while its step runs. Before the step starts there is none,
+// and once it ends the same ticket is refused.
+func TestTicketRefusedAfterStepEnds(t *testing.T) {
+	s := newRelaySimCore(t, func() ealrelay.Response { return ealrelay.Response{Stdout: "served\n"} })
+	task := &Task{RunID: "r-life", Steps: []Step{
+		{ID: "step-01", Command: ealCall + " list-plugins\n" + ealCall + " list-plugins", EalRelay: true}}}
+	done := directClient(s.URL).prepareEalRelay(task)
+	defer done()
+	m := rewrittenCall.FindStringSubmatch(task.Steps[0].Command)
+	addr, file := m[2], m[3]
+
+	end := ealRelayStep("r-life", "step-01") // the step starts
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket := strings.TrimSpace(string(raw))
+	if status, body := askRelay(t, addr, ticket); status != http.StatusOK {
+		t.Fatalf("while the step runs: %d %s", status, body)
+	}
+
+	end() // the step ends, with one of its two calls unspent
+
+	status, body := askRelay(t, addr, ticket)
+	if status != http.StatusForbidden || !strings.Contains(body, "EAL_RELAY_TICKET_REFUSED") {
+		t.Errorf("after the step ended: %d %s", status, body)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.relays) != 1 {
+		t.Errorf("SimCore was asked %d times, want only the call made while the step ran", len(s.relays))
+	}
+}
+
+// A step may ask as often as its command calls the EAL CLI. A command that
+// calls it once and loops gets one call served.
+func TestTicketRefusedBeyondDeclaredCalls(t *testing.T) {
+	s := newRelaySimCore(t, func() ealrelay.Response { return ealrelay.Response{Stdout: "served\n"} })
+	runMarkedStep(t, s, "for i in 1 2 3; do "+ealCall+" list-plugins; done")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.relays) != 1 {
+		t.Errorf("SimCore was asked %d times, want 1: the command contains one call", len(s.relays))
+	}
+	out := strings.Join(s.outputs, "\n")
+	if strings.Count(out, "served") != 1 || strings.Count(out, "EAL_RELAY_TICKET_REFUSED") != 2 {
+		t.Errorf("want one call served and two refused:\n%s", out)
+	}
+	// The step ends with the refused call's exit code.
+	if code, _ := s.complete["exit_code"].(float64); code != 4 {
+		t.Errorf("run completed with %v, want 4", s.complete["exit_code"])
 	}
 }

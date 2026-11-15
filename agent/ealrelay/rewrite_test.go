@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-var testInv = Invocation{Exe: "/usr/local/bin/cortexsim-agent", Relay: "127.0.0.1:40123", Ticket: "0123abcd"}
+var testInv = Invocation{Exe: "/usr/local/bin/cortexsim-agent", Relay: "127.0.0.1:40123",
+	TicketFile: "/tmp/cortexsim-eal-1/0123abcd"}
 
-const posixCall = "'/usr/local/bin/cortexsim-agent' eal --relay 127.0.0.1:40123 --ticket 0123abcd"
+const posixCall = "'/usr/local/bin/cortexsim-agent' eal --relay 127.0.0.1:40123 --ticket-file '/tmp/cortexsim-eal-1/0123abcd'"
 
 // The step SIM-NDR-001 step-03 runs: a quoted heredoc that writes the campaign,
 // then the call. Only the call may change.
@@ -50,15 +51,16 @@ func TestRewriteShapesInTheCorpus(t *testing.T) {
 			posixCall + ` run /tmp/x.yml`},
 		{"PowerShell needs the call operator", "windows", "",
 			`python -m scripts.eal_simulator.cli run $sandbox\itdr-002.yml --live`,
-			`& 'C:\Program Files\CortexSim\cortexsim-agent.exe' eal --relay 127.0.0.1:40123 --ticket 0123abcd run $sandbox\itdr-002.yml --live`},
+			`& 'C:\Program Files\CortexSim\cortexsim-agent.exe' eal --relay 127.0.0.1:40123 --ticket-file 'C:\Windows\Temp\cortexsim-eal-1\0123abcd' run $sandbox\itdr-002.yml --live`},
 		{"cmd quotes with double quotes", "windows", "cmd",
 			`python.exe -m scripts.eal_simulator.cli list-plugins`,
-			`"C:\Program Files\CortexSim\cortexsim-agent.exe" eal --relay 127.0.0.1:40123 --ticket 0123abcd list-plugins`},
+			`"C:\Program Files\CortexSim\cortexsim-agent.exe" eal --relay 127.0.0.1:40123 --ticket-file "C:\Windows\Temp\cortexsim-eal-1\0123abcd" list-plugins`},
 	}
 	for _, tc := range cases {
 		inv := testInv
 		if tc.goos == "windows" {
 			inv.Exe = `C:\Program Files\CortexSim\cortexsim-agent.exe`
+			inv.TicketFile = `C:\Windows\Temp\cortexsim-eal-1\0123abcd`
 		}
 		if got, n := Rewrite(tc.in, tc.goos, tc.shell, inv); got != tc.want || n != 1 {
 			t.Errorf("%s:\n got: %s (%d)\nwant: %s", tc.name, got, n, tc.want)
@@ -80,9 +82,9 @@ func TestRewriteLeavesOtherPythonAlone(t *testing.T) {
 }
 
 func TestRewriteQuotesAnAwkwardBinaryPath(t *testing.T) {
-	inv := Invocation{Exe: "/opt/it's here/agent", Relay: "127.0.0.1:1", Ticket: "t"}
+	inv := Invocation{Exe: "/opt/it's here/agent", Relay: "127.0.0.1:1", TicketFile: "/tmp/d/f"}
 	got, _ := Rewrite("python3 -m scripts.eal_simulator.cli list-plugins", "linux", "", inv)
-	want := `'/opt/it'\''s here/agent' eal --relay 127.0.0.1:1 --ticket t list-plugins`
+	want := `'/opt/it'\''s here/agent' eal --relay 127.0.0.1:1 --ticket-file '/tmp/d/f' list-plugins`
 	if got != want {
 		t.Errorf("got %s\nwant %s", got, want)
 	}
