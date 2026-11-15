@@ -16,6 +16,7 @@ The control plane is intentionally narrow:
   GET  /api/eal/bundles/{bundle_id}/download     download that bundle's tar.gz
   GET  /api/eal/runs                     list executed runs
   GET  /api/eal/runs/{run_id}            single run detail (with step results)
+  POST /api/eal/relay                    run an EAL CLI call for a beacon step
 
 Long-running campaigns execute in the background via FastAPI BackgroundTasks
 and update the ``EalCampaignRun`` row when complete. Operators poll
@@ -35,7 +36,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -1204,3 +1205,47 @@ def _run_dict(row: EalCampaignRun) -> dict[str, Any]:
     payload = row.to_dict()
     payload["delivery"] = summarise_step_results(payload.get("step_results") or [])
     return payload
+
+
+# ---------------------------------------------------------------------------
+# The relay — a beacon step that calls the SimCore-only EAL CLI (#325).
+# The logic, and the trust model, live in engine/eal_relay.py.
+# ---------------------------------------------------------------------------
+
+
+class RelayRequest(BaseModel):
+    agent_id: str = Field(..., max_length=200)
+    run_id: str = Field(..., max_length=200)
+    step_id: str = Field(..., max_length=200)
+    verb: Literal["run", "describe", "list-plugins"]
+    # The campaign file's text, for ``run``. The relay checks its size in
+    # bytes; this bound only keeps an absurd body out of the parser.
+    campaign_yaml: Optional[str] = Field(default=None, max_length=1_048_576)
+    plugin: Optional[str] = Field(default=None, max_length=200)
+    live: bool = False
+
+
+@router.post("/relay")
+async def relay_eal_step(
+    body: RelayRequest, db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Run one EAL CLI call for a beacon step SimCore marked ``eal_relay``.
+
+    Returns ``{exit_code, stdout, stderr, ops, allowlist}``. Authenticated as
+    every agent endpoint is, by the ids in the body, and served only for a step
+    this SimCore marked for that agent in a run still in flight.
+    """
+    from api.runs import _is_terminal  # noqa: PLC0415
+    from engine import eal_relay  # noqa: PLC0415
+
+    try:
+        return await eal_relay.relay(
+            db, agent_id=body.agent_id, run_id=body.run_id, step_id=body.step_id,
+            verb=body.verb, campaign_yaml=body.campaign_yaml, plugin=body.plugin,
+            live=body.live, is_terminal=_is_terminal,
+        )
+    except eal_relay.RelayRefused as exc:
+        raise HTTPException(
+            status_code=exc.status,
+            detail={"error": "EAL relay refused", "code": exc.code, "detail": exc.detail},
+        ) from exc
