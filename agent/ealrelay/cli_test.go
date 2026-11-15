@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // standIn is the beacon's listener with SimCore replaced by a function, so the
@@ -133,7 +134,7 @@ func TestEalPerformsReturnedOperationsAndReportsThem(t *testing.T) {
 		t.Errorf("operations not performed in order: %v", fake.trace)
 	}
 	if !strings.HasPrefix(stdout, "{\"status\": \"complete\"}\n") ||
-		!strings.Contains(stdout, `"network_operations": 2`) || !strings.Contains(stdout, `"reached": 2`) {
+		!strings.Contains(stdout, `"network_operations": 2`) || !strings.Contains(stdout, `"sent": 2`) {
 		t.Errorf("stdout does not carry SimCore's output then the account of what was sent:\n%s", stdout)
 	}
 }
@@ -152,7 +153,7 @@ func TestEalExitsNonZeroWhenThePlanIsRefusedOrNothingArrives(t *testing.T) {
 		t.Errorf("refused plan: exit=%d trace=%v stdout=%s", code, fake.trace, stdout)
 	}
 
-	// Allowed, but no request gets an answer.
+	// Allowed, but no request gets a connection, so none is sent.
 	s, ticketFile = newStandIn(t, 1, func(Request) (Response, error) {
 		return Response{Ops: []Op{op}, Allowlist: []string{"c2.example.test:8080"}}, nil
 	})
@@ -160,7 +161,7 @@ func TestEalExitsNonZeroWhenThePlanIsRefusedOrNothingArrives(t *testing.T) {
 		return nil, os.ErrDeadlineExceeded
 	}}
 	code, stdout, _ = eal(t, dead, "--relay", s.Addr(), "--ticket-file", ticketFile, "run", path)
-	if code == 0 || !strings.Contains(stdout, "EAL_WIRE_NOT_DELIVERED: 0 of 1") {
+	if code == 0 || !strings.Contains(stdout, "EAL_WIRE_NOT_DELIVERED: 0 of 1 sent · 1 not sent\n") {
 		t.Errorf("undelivered plan: exit=%d stdout=%s", code, stdout)
 	}
 }
@@ -293,5 +294,32 @@ func TestEalUsageErrorsMatchTheCLI(t *testing.T) {
 	}
 	if code, _, _ := eal(t, &Runner{}, "--relay", s.Addr(), "--ticket", s.ticket, "list-plugins"); code != exitUsage {
 		t.Errorf("a ticket passed as an argument was accepted: exit=%d", code)
+	}
+}
+
+// #374: every request left the endpoint and the far end reset each one. The
+// firewall logged every session, so the step did its work: it exits 0.
+func TestEalRequestsTheFarEndResetsStillCountAsSent(t *testing.T) {
+	addr, requests := resetAfterRequest(t)
+	ops := []Op{
+		{Op: "http", Method: "GET", URL: "http://" + addr + "/uid/index.html?q=a", TimeoutS: 5},
+		{Op: "sleep", Seconds: 2},
+		{Op: "http", Method: "GET", URL: "http://" + addr + "/uid/index.html?q=b", TimeoutS: 5},
+		{Op: "sleep", Seconds: 2},
+		{Op: "http", Method: "GET", URL: "http://" + addr + "/uid/index.html?q=c", TimeoutS: 5},
+	}
+	s, ticketFile := newStandIn(t, 1, func(Request) (Response, error) {
+		return Response{Stdout: "{\"status\": \"complete\"}\n", Ops: ops, Allowlist: []string{addr}}, nil
+	})
+	runner := &Runner{Sleep: func(time.Duration) {}} // the real network, no waiting
+	code, stdout, _ := eal(t, runner,
+		"--relay", s.Addr(), "--ticket-file", ticketFile, "run", writeCampaign(t, "x: 1\n"), "--live")
+	for i := 0; i < 3; i++ {
+		<-requests
+	}
+	if code != 0 || strings.Contains(stdout, "EAL_WIRE_NOT_DELIVERED") ||
+		!strings.Contains(stdout, `"sent": 3`) ||
+		!strings.HasSuffix(stdout, "EAL_WIRE_SENT: 3 of 3 sent · 3 reset by peer\n") {
+		t.Errorf("three requests the far end read and reset: exit=%d\n%s", code, stdout)
 	}
 }

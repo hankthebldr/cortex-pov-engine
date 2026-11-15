@@ -11,9 +11,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -75,19 +80,94 @@ const (
 var qtypes = map[string]uint16{"A": 1, "NS": 2, "CNAME": 5, "MX": 15, "TXT": 16, "AAAA": 28}
 
 // Summary is what the subcommand prints after performing a plan.
+//
+// A network operation is counted by what left the endpoint, never by what came
+// back. It is sent once its request is on the wire: for http, a connection was
+// made and the whole request written to it; for dns, the query was written (or
+// the host's resolver answered); for tcp, a connection was made and its first
+// frame written (a connect-only op once it connected; a probe once it tried).
+// What the far end did next (an answer, an HTTP 500, a reset, silence) is the
+// op's reply class in Replies. It is not sent when nothing of it left: the
+// destination did not resolve, the connection was refused or timed out, the
+// TLS handshake failed, or the write failed before the request was complete.
+// A firewall sees a sent operation whatever the reply.
 type Summary struct {
 	Operations   int            `json:"operations"`
 	Network      int            `json:"network_operations"`
-	Reached      int            `json:"reached"`
-	Failed       int            `json:"failed"`
+	Sent         int            `json:"sent"`
+	NotSent      int            `json:"not_sent"`
+	Replies      map[string]int `json:"replies"` // sent operations by reply class
 	SleptSeconds float64        `json:"slept_seconds"`
 	BytesSent    int64          `json:"bytes_sent"`
 	ByKind       map[string]int `json:"by_kind"`
-	Failures     []string       `json:"failures,omitempty"`
+	Failures     []string       `json:"failures,omitempty"`     // why an op was not sent
+	ReplyErrors  []string       `json:"reply_errors,omitempty"` // the error a sent op's reply ended in
 }
 
-// maxListedFailures bounds Summary.Failures: a /24 sweep can fail 700 times.
+// maxListedFailures bounds Summary.Failures and Summary.ReplyErrors: a /24
+// sweep can fail 700 times.
 const maxListedFailures = 20
+
+// Reply classes: what came back for a sent operation. An HTTP response is
+// "http_<status>".
+const (
+	replyAnswered = "answered"              // a tcp or dns reply came back
+	replyReset    = "reset"                 // the far end reset the connection
+	replyClosed   = "closed"                // the far end closed it without a reply
+	replyTimeout  = "timeout_waiting_reply" // nothing came back in time
+	replyRefused  = "refused"               // a sweep probe's port was closed
+	replyNotAsked = "no_reply_asked"        // the op waits for no reply
+	replyError    = "error"                 // the reply ended in another error
+)
+
+// replyWords is how Line says each reply class.
+var replyWords = map[string]string{
+	replyAnswered: "answered",
+	replyReset:    "reset by peer",
+	replyClosed:   "closed by peer",
+	replyTimeout:  "no reply in time",
+	replyRefused:  "refused",
+	replyNotAsked: "no reply asked",
+	replyError:    "reply error",
+}
+
+// Line is the one-line account of a plan, e.g.
+// "12 of 12 sent · 12 reset by peer".
+func (s Summary) Line() string {
+	parts := []string{fmt.Sprintf("%d of %d sent", s.Sent, s.Network)}
+	classes := make([]string, 0, len(s.Replies))
+	for c := range s.Replies {
+		classes = append(classes, c)
+	}
+	sort.Slice(classes, func(i, j int) bool {
+		if s.Replies[classes[i]] != s.Replies[classes[j]] {
+			return s.Replies[classes[i]] > s.Replies[classes[j]]
+		}
+		return classes[i] < classes[j]
+	})
+	for _, c := range classes {
+		words, ok := replyWords[c]
+		if !ok {
+			words = "answered HTTP " + strings.TrimPrefix(c, "http_")
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", s.Replies[c], words))
+	}
+	if s.NotSent > 0 {
+		parts = append(parts, fmt.Sprintf("%d not sent", s.NotSent))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// outcome is what one network operation put on the wire.
+type outcome struct {
+	sent  bool
+	bytes int64
+	reply string // for a sent op
+	// err is why an op was not sent, or the error a sent op's reply ended in.
+	err error
+}
+
+func notSent(err error) outcome { return outcome{err: err} }
 
 // Runner performs operations. Every network touch goes through a field, so a
 // test can stand in a fake network and no test contacts a real host.
@@ -220,10 +300,10 @@ func httpDestination(rawURL string) (string, error) {
 
 // Run checks the plan, then performs every operation in order. A plan that
 // fails the check is not started: the error is returned and nothing is sent.
-// An operation that fails (no route, refused, timed out) is counted and the
-// plan carries on, as the plugin it was rendered from does.
+// An operation that is not sent (no route, refused, timed out) is counted and
+// the plan carries on, as the plugin it was rendered from does.
 func (r *Runner) Run(ctx context.Context, ops []Op, allowlist []string) (Summary, error) {
-	sum := Summary{Operations: len(ops), ByKind: map[string]int{}}
+	sum := Summary{Operations: len(ops), ByKind: map[string]int{}, Replies: map[string]int{}}
 	if err := Check(ops, allowlist); err != nil {
 		return sum, err
 	}
@@ -235,25 +315,29 @@ func (r *Runner) Run(ctx context.Context, ops []Op, allowlist []string) (Summary
 			continue
 		}
 		sum.Network++
-		var sent int64
-		var err error
+		var o outcome
 		switch op.Op {
 		case "http":
-			sent, err = r.doHTTP(ctx, op)
+			o = r.doHTTP(ctx, op)
 		case "tcp":
-			sent, err = r.doTCP(ctx, op)
+			o = r.doTCP(ctx, op)
 		case "dns":
-			sent, err = r.doDNS(ctx, op)
+			o = r.doDNS(ctx, op)
 		}
-		sum.BytesSent += sent
-		if err != nil {
-			sum.Failed++
+		sum.BytesSent += o.bytes
+		detail := fmt.Sprintf("operation %d (%s): %v", i+1, op.Op, o.err)
+		if !o.sent {
+			sum.NotSent++
 			if len(sum.Failures) < maxListedFailures {
-				sum.Failures = append(sum.Failures, fmt.Sprintf("operation %d (%s): %v", i+1, op.Op, err))
+				sum.Failures = append(sum.Failures, detail)
 			}
 			continue
 		}
-		sum.Reached++
+		sum.Sent++
+		sum.Replies[o.reply]++
+		if o.err != nil && len(sum.ReplyErrors) < maxListedFailures {
+			sum.ReplyErrors = append(sum.ReplyErrors, detail)
+		}
 	}
 	return sum, nil
 }
@@ -281,9 +365,10 @@ func seconds(s, fallback float64) time.Duration {
 	return time.Duration(s * float64(time.Second))
 }
 
-// doHTTP sends one request. Any HTTP response counts as reaching the
-// destination, whatever its status: the request is the signal.
-func (r *Runner) doHTTP(ctx context.Context, op Op) (int64, error) {
+// doHTTP sends one request. The request is the signal: it is sent once it is
+// written in full, whatever comes back. An HTTP response of any status, a
+// reset, a closed connection or no answer at all is only its reply class.
+func (r *Runner) doHTTP(ctx context.Context, op Op) outcome {
 	var body io.Reader
 	var size int64
 	switch {
@@ -296,15 +381,16 @@ func (r *Runner) doHTTP(ctx context.Context, op Op) (int64, error) {
 	case op.BodyB64 != "":
 		raw, err := base64.StdEncoding.DecodeString(op.BodyB64)
 		if err != nil {
-			return 0, fmt.Errorf("body is not base64: %w", err)
+			return notSent(fmt.Errorf("body is not base64: %w", err))
 		}
 		body, size = strings.NewReader(string(raw)), int64(len(raw))
 	}
 	ctx, cancel := context.WithTimeout(ctx, seconds(op.TimeoutS, 30))
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, op.Method, op.URL, body)
+	wire := newWireWatch()
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, wire.trace()), op.Method, op.URL, body)
 	if err != nil {
-		return 0, err
+		return notSent(err)
 	}
 	if size > 0 {
 		req.ContentLength = size
@@ -316,13 +402,94 @@ func (r *Runner) doHTTP(ctx context.Context, op Op) (int64, error) {
 	if do == nil {
 		do = r.realHTTP
 	}
+	written := size + int64(len(op.URL))
 	resp, err := do(req, op)
-	if err != nil {
-		return 0, err
+	if err == nil {
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return outcome{sent: true, bytes: written, reply: fmt.Sprintf("http_%d", resp.StatusCode)}
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	return size + int64(len(op.URL)), nil
+	if !wire.wrote() {
+		return notSent(err)
+	}
+	return outcome{sent: true, bytes: written, reply: replyClass(err), err: err}
+}
+
+// wroteGrace is how long doHTTP waits, after a request that got a connection
+// failed, for the transport to say whether it had written the request. The
+// transport writes from a goroutine of its own and reports just after the
+// write, which can be a moment after the reply's error has come back.
+const wroteGrace = 250 * time.Millisecond
+
+// wireWatch follows one request onto the wire through the transport's trace
+// hooks: whether a connection was made, and whether the whole request was
+// written to it.
+type wireWatch struct {
+	connected atomic.Bool
+	written   chan error
+}
+
+func newWireWatch() *wireWatch { return &wireWatch{written: make(chan error, 1)} }
+
+func (w *wireWatch) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { w.connected.Store(true) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			select {
+			case w.written <- info.Err:
+			default:
+			}
+		},
+	}
+}
+
+// wrote says whether the whole request was written. A request that never got
+// a connection (the name did not resolve, the connect was refused or timed
+// out, the TLS handshake failed) was not.
+func (w *wireWatch) wrote() bool {
+	if !w.connected.Load() {
+		return false
+	}
+	select {
+	case err := <-w.written:
+		return err == nil
+	case <-time.After(wroteGrace):
+		return false
+	}
+}
+
+// replyClass names how a sent operation's reply ended in err.
+func replyClass(err error) string {
+	var ne net.Error
+	switch {
+	case isErrno(err, resetErrnos):
+		return replyReset
+	case isErrno(err, refusedErrnos):
+		return replyRefused
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return replyClosed
+	case errors.Is(err, os.ErrDeadlineExceeded), errors.Is(err, context.DeadlineExceeded),
+		errors.As(err, &ne) && ne.Timeout():
+		return replyTimeout
+	}
+	return replyError
+}
+
+func isErrno(err error, set []syscall.Errno) bool {
+	for _, e := range set {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
+
+// readReply names what one read of a reply got: any bytes are an answer.
+func readReply(n int, err error) string {
+	if n > 0 || err == nil {
+		return replyAnswered
+	}
+	return replyClass(err)
 }
 
 // realHTTP sends through a client built for this op. A redirect is not
@@ -340,76 +507,98 @@ func (r *Runner) realHTTP(req *http.Request, op Op) (*http.Response, error) {
 	return client.Do(req)
 }
 
-// doTCP connects, walks the frames, and closes. For a probe, an attempt that
-// is refused or times out still counts: the attempt is the signal.
-func (r *Runner) doTCP(ctx context.Context, op Op) (int64, error) {
+// doTCP connects, walks the frames, and closes. It is sent once it connected
+// and wrote its first frame in full (a connect-only op once it connected): a
+// later frame the far end no longer takes, or a reply that never comes, is its
+// reply class. For a probe the attempt is the signal, so one that is refused
+// or times out is still sent.
+func (r *Runner) doTCP(ctx context.Context, op Op) outcome {
 	timeout := seconds(op.TimeoutS, 5)
 	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	conn, err := r.dial(dctx, "tcp", net.JoinHostPort(op.Host, strconv.Itoa(op.Port)))
 	if err != nil {
 		if op.Probe {
-			return 0, nil
+			return outcome{sent: true, reply: replyClass(err)}
 		}
-		return 0, err
+		return notSent(err)
 	}
 	defer conn.Close()
 	var sent int64
+	wrote := false // a frame has been written in full
+	stop := func(err error) outcome {
+		if !wrote {
+			return outcome{bytes: sent, err: err}
+		}
+		return outcome{sent: true, bytes: sent, reply: replyClass(err), err: err}
+	}
+	reply := replyNotAsked
 	buf := make([]byte, 4096)
 	for _, f := range op.Frames {
 		if f.SendB64 != "" {
 			raw, err := base64.StdEncoding.DecodeString(f.SendB64)
 			if err != nil {
-				return sent, fmt.Errorf("frame is not base64: %w", err)
+				return stop(fmt.Errorf("frame is not base64: %w", err))
 			}
 			_ = conn.SetWriteDeadline(time.Now().Add(timeout))
 			n, err := conn.Write(raw)
 			sent += int64(n)
 			if err != nil {
-				return sent, err
+				return stop(err)
 			}
+			wrote = true
 		}
 		if f.Read > 0 {
 			_ = conn.SetReadDeadline(time.Now().Add(seconds(f.Read, 0)))
-			_, _ = conn.Read(buf) // a reply is welcome, never required
+			reply = readReply(conn.Read(buf)) // a reply is welcome, never required
 		}
 	}
-	return sent, nil
+	return outcome{sent: true, bytes: sent, reply: reply}
 }
 
 // doDNS sends one query. With a named resolver it is one UDP packet to that
-// resolver, exactly the name and type asked for. Without one the host's own
-// resolver is asked. No answer is needed either way.
-func (r *Runner) doDNS(ctx context.Context, op Op) (int64, error) {
+// resolver, exactly the name and type asked for, sent once it is written.
+// Without one the host's own resolver is asked, and any answer it gives
+// (NXDOMAIN included) means the query was sent. No answer is needed either way.
+func (r *Runner) doDNS(ctx context.Context, op Op) outcome {
 	qtype := strings.ToUpper(op.QType)
 	if op.Resolver == "" {
 		lookup := r.Lookup
 		if lookup == nil {
 			lookup = systemLookup
 		}
-		return int64(len(op.QName)), lookup(ctx, qtype, op.QName)
+		err := lookup(ctx, qtype, op.QName)
+		var dnsErr *net.DNSError
+		switch {
+		case err == nil:
+			return outcome{sent: true, bytes: int64(len(op.QName)), reply: replyAnswered}
+		case errors.As(err, &dnsErr) && dnsErr.IsTimeout:
+			return outcome{sent: true, bytes: int64(len(op.QName)), reply: replyTimeout}
+		case errors.As(err, &dnsErr):
+			return outcome{sent: true, bytes: int64(len(op.QName)), reply: replyAnswered}
+		}
+		return notSent(err)
 	}
 	packet, err := dnsQuery(op.QName, qtypes[qtype])
 	if err != nil {
-		return 0, err
+		return notSent(err)
 	}
 	dctx, cancel := context.WithTimeout(ctx, dnsReplyWait)
 	defer cancel()
 	conn, err := r.dial(dctx, "udp", op.Resolver)
 	if err != nil {
-		return 0, err
+		return notSent(err)
 	}
 	defer conn.Close()
 	if _, err := conn.Write(packet); err != nil {
-		return 0, err
+		return notSent(err)
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(dnsReplyWait))
-	_, _ = conn.Read(make([]byte, 4096))
-	return int64(len(packet)), nil
+	return outcome{sent: true, bytes: int64(len(packet)), reply: readReply(conn.Read(make([]byte, 4096)))}
 }
 
-// systemLookup asks the host's resolver. NXDOMAIN, or any other answer the
-// resolver gives, means the query was sent, which is all that is needed.
+// systemLookup asks the host's resolver. A *net.DNSError is the resolver's
+// answer (NXDOMAIN, a timeout), which doDNS reads as a sent query.
 func systemLookup(ctx context.Context, qtype, qname string) error {
 	var err error
 	res := net.DefaultResolver
@@ -426,10 +615,6 @@ func systemLookup(ctx context.Context, qtype, qname string) error {
 		_, err = res.LookupIP(ctx, "ip6", qname)
 	default:
 		_, err = res.LookupIP(ctx, "ip4", qname)
-	}
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return nil
 	}
 	return err
 }

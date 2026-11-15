@@ -1,6 +1,7 @@
 package ealrelay
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -10,12 +11,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -219,7 +222,7 @@ func TestOpsExecutedInOrderFromSpecCases(t *testing.T) {
 				t.Errorf("operations were not performed as pinned\n got:\n  %s\nwant:\n  %s",
 					strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 			}
-			if sum.Operations != len(tc.Ops) || sum.Failed != 0 || sum.Reached != sum.Network {
+			if sum.Operations != len(tc.Ops) || sum.NotSent != 0 || sum.Sent != sum.Network {
 				t.Errorf("summary does not account for every operation: %+v", sum)
 			}
 		})
@@ -282,7 +285,7 @@ func TestHTTPOpSendsTheRequestAsRendered(t *testing.T) {
 		BodyRandomBytes: 2048,
 		Headers:         map[string]string{"User-Agent": "CortexSimBeacon/1.0", "X-Simulation-Run-ID": "cortexsim-t"}}
 	sum, err := (&Runner{}).Run(context.Background(), []Op{op}, []string{host})
-	if err != nil || sum.Reached != 1 || sum.Failed != 0 {
+	if err != nil || sum.Sent != 1 || sum.NotSent != 0 {
 		t.Fatalf("run: err=%v sum=%+v", err, sum)
 	}
 	want := seen{"POST", "/checkin?q=abc123", "CortexSimBeacon/1.0", "cortexsim-t", 2048}
@@ -336,7 +339,7 @@ func TestTCPOpSendsFramesInOrderAndProbesAClosedPort(t *testing.T) {
 		t.Errorf("listener received %q", data)
 	}
 	// The session and the probe reached; the plain connect to a closed port failed.
-	if sum.Reached != 2 || sum.Failed != 1 || len(sum.Failures) != 1 {
+	if sum.Sent != 2 || sum.NotSent != 1 || len(sum.Failures) != 1 {
 		t.Errorf("summary: %+v", sum)
 	}
 }
@@ -365,7 +368,150 @@ func TestDNSOpSendsOneQueryToTheNamedResolver(t *testing.T) {
 	if name, qtype := parseQuery(t, buf[:n]); name != op.QName || qtype != "TXT" {
 		t.Errorf("resolver was asked %s %s", qtype, name)
 	}
-	if sum := <-done; sum.Reached != 1 {
+	if sum := <-done; sum.Sent != 1 {
 		t.Errorf("summary: %+v", sum)
+	}
+}
+
+// resetAfterRequest is a loopback listener that reads each HTTP request in
+// full and then resets the connection instead of answering, as the lab's
+// server did in #374. It reports each request it read.
+func resetAfterRequest(t *testing.T) (addr string, requests <-chan string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	got := make(chan string, 64)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				req, err := http.ReadRequest(bufio.NewReader(c))
+				if err == nil {
+					_, _ = io.Copy(io.Discard, req.Body)
+					got <- req.Method + " " + req.URL.RequestURI()
+				}
+				_ = c.(*net.TCPConn).SetLinger(0) // close with a reset, not a FIN
+				_ = c.Close()
+			}(conn)
+		}
+	}()
+	return ln.Addr().String(), got
+}
+
+func TestHTTPOpResetAfterTheRequestIsWrittenCountsAsSent(t *testing.T) {
+	addr, requests := resetAfterRequest(t)
+	op := Op{Op: "http", Method: "GET", URL: "http://" + addr + "/uid/index.html?q=abc123", TimeoutS: 5}
+	sum, err := (&Runner{}).Run(context.Background(), []Op{op}, []string{addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := <-requests; got != "GET /uid/index.html?q=abc123" {
+		t.Errorf("the listener read %q", got)
+	}
+	if sum.Sent != 1 || sum.NotSent != 0 || sum.BytesSent == 0 || sum.Replies["reset"] != 1 {
+		t.Errorf("a request the far end read and then reset was not counted as sent: %+v", sum)
+	}
+	if line := sum.Line(); line != "1 of 1 sent · 1 reset by peer" {
+		t.Errorf("line: %q", line)
+	}
+	if len(sum.ReplyErrors) != 1 || !strings.Contains(sum.ReplyErrors[0], "reset") {
+		t.Errorf("the reset is not on record: %v", sum.ReplyErrors)
+	}
+}
+
+func TestHTTPOpServerErrorCountsAsSent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	sum, err := (&Runner{}).Run(context.Background(),
+		[]Op{{Op: "http", Method: "GET", URL: srv.URL + "/x", TimeoutS: 5}}, []string{host})
+	if err != nil || sum.Sent != 1 || sum.NotSent != 0 || sum.Replies["http_500"] != 1 {
+		t.Errorf("a request answered 500 was not counted as sent: err=%v sum=%+v", err, sum)
+	}
+	if line := sum.Line(); line != "1 of 1 sent · 1 answered HTTP 500" {
+		t.Errorf("line: %q", line)
+	}
+}
+
+func TestHTTPOpToAClosedPortIsNotSent(t *testing.T) {
+	closed, _ := net.Listen("tcp", "127.0.0.1:0")
+	addr := closed.Addr().String()
+	closed.Close()
+	sum, err := (&Runner{}).Run(context.Background(),
+		[]Op{{Op: "http", Method: "GET", URL: "http://" + addr + "/x", TimeoutS: 2}}, []string{addr})
+	if err != nil || sum.Sent != 0 || sum.NotSent != 1 || sum.BytesSent != 0 || len(sum.Failures) != 1 {
+		t.Errorf("a refused connection was counted as sent: err=%v sum=%+v", err, sum)
+	}
+	if line := sum.Line(); line != "0 of 1 sent · 1 not sent" {
+		t.Errorf("line: %q", line)
+	}
+}
+
+// The same rule through an injected transport, which says through the
+// request's trace hooks how far the request got before the error.
+func TestHTTPOpIsSentOnceTheWholeRequestIsWritten(t *testing.T) {
+	reset := &net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}
+	cases := []struct {
+		name  string
+		got   func(trace *httptrace.ClientTrace) error
+		sent  bool
+		reply string
+	}{
+		{"written, then reset", func(tr *httptrace.ClientTrace) error {
+			tr.GotConn(httptrace.GotConnInfo{})
+			tr.WroteRequest(httptrace.WroteRequestInfo{})
+			return reset
+		}, true, "reset"},
+		{"written, then no reply in time", func(tr *httptrace.ClientTrace) error {
+			tr.GotConn(httptrace.GotConnInfo{})
+			tr.WroteRequest(httptrace.WroteRequestInfo{})
+			return context.DeadlineExceeded
+		}, true, "timeout_waiting_reply"},
+		{"written, then closed without a reply", func(tr *httptrace.ClientTrace) error {
+			tr.GotConn(httptrace.GotConnInfo{})
+			tr.WroteRequest(httptrace.WroteRequestInfo{})
+			return io.EOF
+		}, true, "closed"},
+		{"connected, the write failed", func(tr *httptrace.ClientTrace) error {
+			tr.GotConn(httptrace.GotConnInfo{})
+			tr.WroteRequest(httptrace.WroteRequestInfo{Err: reset})
+			return reset
+		}, false, ""},
+		{"connected, nothing written", func(tr *httptrace.ClientTrace) error {
+			tr.GotConn(httptrace.GotConnInfo{})
+			return reset
+		}, false, ""},
+		{"the name did not resolve", func(*httptrace.ClientTrace) error {
+			return &net.DNSError{Err: "no such host", Name: "c2.example.test", IsNotFound: true}
+		}, false, ""},
+	}
+	op := Op{Op: "http", Method: "GET", URL: "http://c2.example.test:8080/checkin"}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &Runner{HTTP: func(req *http.Request, _ Op) (*http.Response, error) {
+				return nil, tc.got(httptrace.ContextClientTrace(req.Context()))
+			}}
+			sum, err := runner.Run(context.Background(), []Op{op}, []string{"c2.example.test:8080"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := sum.Sent == 1; got != tc.sent {
+				t.Fatalf("sent=%v, want %v: %+v", got, tc.sent, sum)
+			}
+			if tc.sent && (sum.Replies[tc.reply] != 1 || sum.BytesSent == 0) {
+				t.Errorf("reply class or bytes: %+v", sum)
+			}
+			if !tc.sent && (sum.NotSent != 1 || sum.BytesSent != 0 || len(sum.Failures) != 1) {
+				t.Errorf("not counted as not sent: %+v", sum)
+			}
+		})
 	}
 }
