@@ -104,12 +104,13 @@ steps:
   - id: step-01
     name: "Start cortex-vulnerable-llm Flask target on port 8089"
     command: |
+      rm -rf /tmp/cortexsim-airs-001 && mkdir -m 700 /tmp/cortexsim-airs-001 || { echo "sandbox /tmp/cortexsim-airs-001 could not be created fresh: something else is at that path" >&2; exit 1; }
       # Phase 2 — cortex-vulnerable-llm runs the canary LLM locally
       cortex-vulnerable-llm serve --port 8089 --vuln llm01 &
       VLLM_PID=$!
       sleep 2
       curl -sSf http://127.0.0.1:8089/healthz > /dev/null
-      echo "vllm_pid=$VLLM_PID" > /tmp/airs-001.env
+      echo "vllm_pid=$VLLM_PID" > /tmp/cortexsim-airs-001/airs-001.env
     identity: container-runtime
     mitre_technique: "T1059.004"
     platforms: ["linux", "container"]
@@ -123,13 +124,14 @@ steps:
   - id: step-02
     name: "Run cortex-prompt-attacker LLM01 probe pack with mutator chain"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-airs-001 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-airs-001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       cortex-prompt-attacker run \
         --probes scenarios/airs/probes/llm01/*.yml \
         --target-url http://127.0.0.1:8089/owasp/llm01/chat \
         --mutators noop,base64,leetspeak \
         --scorers system_prompt_leak,instruction_override \
-        --out /tmp/airs-001-events.jsonl
-      jq '.[].outcome' /tmp/airs-001-events.jsonl | sort | uniq -c
+        --out /tmp/cortexsim-airs-001/airs-001-events.jsonl
+      jq '.[].outcome' /tmp/cortexsim-airs-001/airs-001-events.jsonl | sort | uniq -c
     identity: container-runtime
     mitre_technique: "T1656"
     # The attacker client POSTs the LLM01 injection to the step-01 Flask target
@@ -159,7 +161,8 @@ steps:
   - id: step-03
     name: "Verify the prompt-attacker JSONL conforms to garak Attempt schema"
     command: |
-      head -1 /tmp/airs-001-events.jsonl | jq -e \
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-airs-001 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-airs-001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      head -1 /tmp/cortexsim-airs-001/airs-001-events.jsonl | jq -e \
         '.entry_type and .uuid and .probe_classname and .prompt and .outputs' > /dev/null
       echo "[CortexSim] AIRS-001 events conform to expected schema"
     identity: container-runtime
@@ -179,8 +182,8 @@ steps:
 
 cleanup:
   commands:
-    - "if [ -f /tmp/airs-001.env ]; then . /tmp/airs-001.env && kill $vllm_pid 2>/dev/null || true; fi"
-    - "rm -f /tmp/airs-001.env /tmp/airs-001-events.jsonl"
+    - "if [ \"$(stat -c %F:%u:%a /tmp/cortexsim-airs-001 2>/dev/null)\" = \"directory:$(id -u):700\" ] && [ -f /tmp/cortexsim-airs-001/airs-001.env ]; then . /tmp/cortexsim-airs-001/airs-001.env && kill $vllm_pid 2>/dev/null || true; fi"
+    - "rm -rf /tmp/cortexsim-airs-001"
 
 author: "Henry Reed"
 created: "2026-05-05"

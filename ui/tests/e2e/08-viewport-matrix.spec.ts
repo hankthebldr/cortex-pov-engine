@@ -232,6 +232,107 @@ test('the two rails share a top — a global notice must not push only one of th
   ).toBeLessThanOrEqual(48)
 })
 
+test('the plane filter rail is a full-height column beside the nav rail', async ({ page }) => {
+  // The rail itself used to be the sticky element, so `align-self: start`
+  // sized it to its own content: it ended partway down the panel, 26px right
+  // of the nav rail and 22px below the top, and read as a floating card. It is
+  // a column of the panel now, and only its body sticks.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.rail--filter .plane-item')
+  await page.waitForSelector('.scenario-card')
+
+  const g = await page.evaluate(async () => {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)))
+    const view = document.querySelector('.view') as HTMLElement
+    const nav = document.querySelector('.rail--nav') as HTMLElement
+    const rail = document.querySelector('.rail--filter') as HTMLElement
+    const body = rail.querySelector('.rail__body') as HTMLElement | null
+    view.scrollTop = 0
+    await frame()
+    const v = view.getBoundingClientRect()
+    const n = nav.getBoundingClientRect()
+    const f = rail.getBoundingClientRect()
+    const out = {
+      gapToNav: Math.round(f.left - n.right),
+      topToView: Math.round(f.top - v.top),
+      bottomPastView: Math.round(f.bottom - v.bottom),
+      hasBody: !!body,
+      bodyTopAfterScroll: NaN,
+    }
+    view.scrollTop = 3000
+    await frame()
+    if (body) out.bodyTopAfterScroll = Math.round(body.getBoundingClientRect().top - view.getBoundingClientRect().top)
+    view.scrollTop = 0
+    return out
+  })
+
+  expect(Math.abs(g.gapToNav), `the filter rail starts ${g.gapToNav}px from the nav rail`).toBeLessThanOrEqual(1)
+  expect(Math.abs(g.topToView), `the filter rail starts ${g.topToView}px below the view's top`).toBeLessThanOrEqual(1)
+  expect(
+    g.bottomPastView,
+    `the filter rail ends ${-g.bottomPastView}px above the bottom of the panel`,
+  ).toBeGreaterThanOrEqual(-1)
+  expect(g.hasBody, 'the filter rail has no .rail__body to stick').toBe(true)
+  expect(
+    Math.abs(g.bodyTopAfterScroll),
+    `scrolled, the plane list parks ${g.bodyTopAfterScroll}px from the top edge`,
+  ).toBeLessThanOrEqual(1)
+})
+
+test('stacked under 860px, the planes are a grid, not a list that buries the cards', async ({ page }) => {
+  // Below 860px the nav rail retracts to icons and the filter rail stacks above
+  // the results. One plane per row, the 16 planes filled 572px of a 620px
+  // window and the first scenario card started 344px below the fold.
+  await page.setViewportSize({ width: 845, height: 620 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.rail--filter .plane-item')
+  await page.waitForSelector('.scenario-card')
+  const m = await page.evaluate(() => {
+    const view = document.querySelector('.view') as HTMLElement
+    view.scrollTop = 0
+    const rail = document.querySelector('.rail--filter') as HTMLElement
+    const group = rail.querySelector('.rail__group') as HTMLElement
+    const items = [...rail.querySelectorAll('.plane-item')] as HTMLElement[]
+    const first = items[0].getBoundingClientRect()
+    const last = items[items.length - 1].getBoundingClientRect()
+    return {
+      // From the first plane's top to the last plane's bottom.
+      planesH: Math.round(last.bottom - first.top),
+      // What the same planes take one per row: the list this replaced.
+      listH: Math.round(items.reduce((a, i) => a + i.getBoundingClientRect().height, 0)),
+      columns: getComputedStyle(group).gridTemplateColumns.split(' ').length,
+    }
+  })
+  expect(m.columns, 'the stacked planes are one per row').toBeGreaterThan(1)
+  expect(
+    m.planesH,
+    `the stacked planes take ${m.planesH}px; one per row they took ${m.listH}px`,
+  ).toBeLessThanOrEqual(m.listH / 2)
+})
+
+for (const w of [1204, 1280, 1440, 1600]) {
+  test(`the header fits its width at ${w}px — no control past the edge`, async ({ page }) => {
+    // Back / Forward and the breadcrumb (design C9) pushed a bar that already
+    // filled 1280 to ~1625px: Search, the tour, the theme toggle and the
+    // avatar sat past the edge, reachable only by scrolling the header. 1204
+    // is the desktop app's browser pane.
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.goto('/#/library')
+    await page.waitForSelector('.pov-instance')
+    await page.waitForSelector('[data-testid="header-agent"]')
+    await page.waitForLoadState('networkidle')
+    const m = await page.evaluate(() => {
+      const h = document.querySelector('.pov-header') as HTMLElement
+      return { scroll: h.scrollWidth, client: h.clientWidth }
+    })
+    expect(
+      m.scroll,
+      `the header is ${m.scroll - m.client}px wider than its ${m.client}px width`,
+    ).toBeLessThanOrEqual(m.client + 1)
+  })
+}
+
 test('chrome leaves the content most of the viewport height', async ({ page }) => {
   // The reported console spent 437px of 620 (70%) on stacked chrome rows,
   // leaving 183px for the Library. Every row was individually defensible;

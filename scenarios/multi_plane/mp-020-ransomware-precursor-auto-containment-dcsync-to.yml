@@ -216,7 +216,7 @@ steps:
 
   - id: step-05
     name: "Renamed-rclone bulk exfiltration (~400GB) (T1020)"
-    command: "mkdir -p /tmp/.cortexsim-mp020 && tar -czf /tmp/.cortexsim-mp020/stage.tgz /etc/hostname 2>/dev/null; ls -la /tmp/.cortexsim-mp020"
+    command: "rm -rf /tmp/.cortexsim-mp020 && mkdir -m 700 /tmp/.cortexsim-mp020 || { echo \"sandbox /tmp/.cortexsim-mp020 could not be created fresh: something else is at that path\" >&2; exit 1; }; tar -czf /tmp/.cortexsim-mp020/stage.tgz /etc/hostname 2>/dev/null; ls -la /tmp/.cortexsim-mp020"
     identity: svc-backup
     mitre_technique: "T1020"
     platforms: ["windows", "linux"]

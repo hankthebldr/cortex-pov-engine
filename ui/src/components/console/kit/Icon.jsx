@@ -19,7 +19,15 @@
  *   target   a deep dive's thesis ("Why this matters")
  *   back     the header's Back: the previous place in the console's history
  *   forward  the header's Forward: the next place, after a Back
+ *   trash    Delete (the verb)
+ *   download Download (the verb)
+ *   refresh  Refresh (the verb)
+ *   upload   Deploy (the verb)
+ *   copy     Copy (the verb)
+ *   select   Select (the verb): pick rows for a bulk action
  *   swap     Switch (the verb): make another agent the active one
+ *
+ * `target` also draws Set active (the verb).
  */
 import React from 'react'
 
@@ -81,6 +89,44 @@ const SHAPES = {
   ),
   back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
   forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
+  trash: (
+    <g {...STROKE}>
+      <path d="M2.8 4.2h10.4M6.2 4.2V2.6h3.6v1.6" />
+      <path d="M4 4.2l.7 9.2h6.6l.7-9.2" />
+      <path d="M6.6 6.8v4.4M9.4 6.8v4.4" />
+    </g>
+  ),
+  download: (
+    <g {...STROKE}>
+      <path d="M8 2.4v7.4M4.8 6.8L8 10l3.2-3.2" />
+      <path d="M2.8 12.6h10.4" />
+    </g>
+  ),
+  refresh: (
+    <g {...STROKE}>
+      <path d="M12.8 6.4A5 5 0 0 0 3.6 5.2" />
+      <path d="M3.2 9.6a5 5 0 0 0 9.2 1.2" />
+      <path d="M3.4 2.6v2.8h2.8M12.6 13.4v-2.8H9.8" />
+    </g>
+  ),
+  upload: (
+    <g {...STROKE}>
+      <path d="M8 10.4V3M4.8 6.2L8 3l3.2 3.2" />
+      <path d="M2.8 12.6h10.4" />
+    </g>
+  ),
+  copy: (
+    <g {...STROKE}>
+      <rect x="5.4" y="5.4" width="7.8" height="7.8" rx="1.2" />
+      <path d="M10.6 5.4V3.8a1 1 0 0 0-1-1H3.8a1 1 0 0 0-1 1v5.8a1 1 0 0 0 1 1h1.6" />
+    </g>
+  ),
+  select: (
+    <g {...STROKE}>
+      <rect x="2.6" y="2.6" width="10.8" height="10.8" rx="2" />
+      <path d="M5.2 8.2l2 2 3.6-4" />
+    </g>
+  ),
   swap: (
     <g {...STROKE}>
       <path d="M2.5 5.5h10M10 3l2.5 2.5L10 8" />

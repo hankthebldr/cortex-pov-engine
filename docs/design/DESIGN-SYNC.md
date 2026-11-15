@@ -69,6 +69,14 @@ Decided by the owner in live review on 2026-11-13; the code follows them.
   Packages is a plain catalog (#279).
 - **Launch.** One page and one Run (the v33 MVP above); C2b's lab target and
   WAITING state are not built.
+- **Launch gate is about one scenario** (2026-11-14). It no longer carries
+  "This POVengine" under the run, which made it read as both "this run" and
+  "the whole app". That status (connector ladder, tenants, attested facts,
+  This SimCore, Not checked) is tracked on Get started, under the setup
+  steps, and the old `readiness` route lands there. The gate states its scope
+  in one line and links to Get started. This takes the alternative to D-1 of
+  the 2026-11-13 one-model spec (which merged Get started into the gate); its
+  server-side readiness model is unaffected.
 
 ### Not built, or found and left (follow-ups)
 
@@ -264,7 +272,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button labels come from the closed verb set (`VERBS`: Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run · Switch); Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). Switch is the header's offer to make an online agent active when the active one is offline (#341). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |

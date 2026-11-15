@@ -88,7 +88,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Dormancy-break activation burst — spike DNS query volume for the aged sleeper apex"
-    command: "mkdir -p /tmp/cortexsim-tim-003 && echo \"SAFE-MODE simulated sleeper-domain activation of avsvmcloud.com at $(date -u +%FT%TZ)\" > /tmp/cortexsim-tim-003/activation.marker; for i in $(seq 1 120); do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dormancy-break-activation-burst"
+    command: "rm -rf /tmp/cortexsim-tim-003 && mkdir -m 700 /tmp/cortexsim-tim-003 || { echo \"sandbox /tmp/cortexsim-tim-003 could not be created fresh: something else is at that path\" >&2; exit 1; }; echo \"SAFE-MODE simulated sleeper-domain activation of avsvmcloud.com at $(date -u +%FT%TZ)\" > /tmp/cortexsim-tim-003/activation.marker; for i in $(seq 1 120); do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dormancy-break-activation-burst"
     identity: svc-backup
     mitre_technique: "T1071.004"
     platforms: ["linux", "windows", "macos"]

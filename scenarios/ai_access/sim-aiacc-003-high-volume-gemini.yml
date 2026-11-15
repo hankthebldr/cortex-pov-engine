@@ -111,7 +111,8 @@ steps:
   - id: step-02
     name: "Fire 30 sequential prompts to trigger volume baseline"
     command: |
-      cat > /tmp/aiacc-003.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-003.yml" <<'YML'
       campaign_id: CMP-AIACC-003
       name: "AI Access — Gemini burst"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -129,7 +130,7 @@ steps:
             iterations: 30
             sleep_seconds: 2
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-003.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     # Same containerized workload / source identity as the pre-flight — no
@@ -166,9 +167,10 @@ steps:
   - id: step-03
     name: "Cool-off window then a single probe to confirm baseline restoration"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo "[CortexSim] sleeping 120s to allow baseline restoration"
       sleep 120
-      cat > /tmp/aiacc-003-cool.yml <<'YML'
+      cat > "$C/aiacc-003-cool.yml" <<'YML'
       campaign_id: CMP-AIACC-003
       name: "AI Access — Gemini cool-off probe"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -184,7 +186,7 @@ steps:
             payload_type: benign
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003-cool.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-003-cool.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     # Negative-control probe from the same workload/identity as the burst,
@@ -202,8 +204,7 @@ steps:
         detection_id: xql-aiacc-003-post-cooloff-single-gemini-request-below-baseline
 
 cleanup:
-  commands:
-    - "rm -f /tmp/aiacc-003.yml /tmp/aiacc-003-cool.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

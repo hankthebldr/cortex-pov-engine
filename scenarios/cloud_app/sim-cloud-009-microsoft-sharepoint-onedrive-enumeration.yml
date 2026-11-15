@@ -94,7 +94,8 @@ steps:
   - id: step-02
     name: "SharePoint enumeration sweep — SearchQueryPerformed / PageViewed burst"
     command: |
-      cat > /tmp/sim-cloud-009-sharepoint.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-cloud-009-sharepoint.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-009
       name: "Microsoft SharePoint enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -111,7 +112,7 @@ steps:
             event_pattern: sharepoint_enumeration
             burst_count: 24
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-cloud-009-sharepoint.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-cloud-009-sharepoint.yml" --live
     identity: container-runtime
     mitre_technique: "T1526"
     platforms: ["linux", "container"]
@@ -133,7 +134,8 @@ steps:
   - id: step-03
     name: "OneDrive enumeration sweep — FileAccessed burst across distinct files"
     command: |
-      cat > /tmp/sim-cloud-009-onedrive.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-cloud-009-onedrive.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-009
       name: "Microsoft OneDrive enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -150,7 +152,7 @@ steps:
             event_pattern: onedrive_enumeration
             burst_count: 30
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-cloud-009-onedrive.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-cloud-009-onedrive.yml" --live
     identity: container-runtime
     mitre_technique: "T1526"
     platforms: ["linux", "container"]
@@ -181,8 +183,7 @@ steps:
         detection_id: CR-CLOUD-0009
 
 cleanup:
-  commands:
-    - "rm -f /tmp/sim-cloud-009-sharepoint.yml /tmp/sim-cloud-009-onedrive.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-07-25"

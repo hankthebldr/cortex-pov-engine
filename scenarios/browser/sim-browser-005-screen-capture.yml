@@ -101,7 +101,8 @@ steps:
   - id: step-02
     name: "Drive Prisma Browser to sensitive page and attempt screen captures"
     command: |
-      cat > /tmp/sim-browser-005-eal.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-browser-005-eal.yml" <<'YML'
       campaign_id: CMP-BROWSER-005
       name: "Browser — screen capture"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -120,7 +121,7 @@ steps:
             headless: true
             timeout_seconds: 90.0
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-005-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-browser-005-eal.yml" --live
     identity: container-runtime
     mitre_technique: "T1113"
     platforms: ["macos"]
@@ -163,7 +164,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/sim-browser-005-eal.yml /tmp/browser-005-cap*.png"
+    - "rm -f /tmp/browser-005-cap*.png"
 
 author: "Henry Reed"
 created: "2026-05-05"

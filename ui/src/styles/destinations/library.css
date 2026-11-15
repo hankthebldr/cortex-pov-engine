@@ -39,8 +39,17 @@
      for the shell's non-theme-aware dark surface, and it has to paint edge to
      edge or a strip of near-black shows through beside the light theme. */
   margin: calc(var(--view-pad) * -1);
-  padding: 22px 26px 30px;
+  /* No inset of its own: the filter rail is a column of the panel, flush
+     against the nav rail and the top edge. The 22/26/30 inset belongs to the
+     results column below. With it on the layout, the rail started 26px right
+     of the nav rail and 22px down, and read as a floating card. */
+  padding: 0;
   align-items: start;
+}
+
+.theme-console .library-layout > .operations {
+  padding: 22px 26px 30px;
+  min-width: 0;
 }
 
 /* ── View head ─────────────────────────────────────────────────────── */
@@ -764,19 +773,48 @@
 
 
 /* ── The plane filter rail ──────────────────────────────────────────────────
-   It filters a grid that is ~18,000px tall, so it has to stay reachable while
-   that grid scrolls — otherwise changing plane means scrolling back to the top.
-   Sticky (moves with the page, parks at the top) rather than its own
-   `overflow-y: auto` box, which is what made it read as a SECOND shell sidebar
-   with its own scrollbar sitting at a different vertical origin from the real
-   one. `align-self: start` stops the grid stretching it to the full 18,000px
-   row height, which would defeat the sticky entirely. */
+   A column of the panel, like the nav rail beside it: it stretches to the
+   full height of the layout (at least the view, by the layout's min-height),
+   so its surface and its hairline run to the bottom of the panel. Before, the
+   rail itself was the sticky element, so `align-self: start` sized it to its
+   own content and it ended partway down as a short box.
+
+   What sticks is its body. It filters a grid that is ~18,000px tall, so the
+   planes have to stay in reach while that grid scrolls. `.view` stays the one
+   scroll owner: the rail must not clip (`overflow: visible`), or it becomes
+   the body's scroll container and the body never sticks. */
 .theme-console .library-layout .rail--filter {
+  align-self: stretch;
+  padding: 0;
+  overflow: visible;
+}
+.theme-console .library-layout .rail--filter > .rail__body {
   position: sticky;
-  top: 0;
-  align-self: start;
+  /* `.view` is padded, and a sticky box parks that far inside its scroller;
+     minus the padding, it parks where it started, against the top edge. */
+  top: calc(var(--view-pad) * -1);
+  padding: 16px 0;
   max-height: calc(100vh - var(--h-header, 56px));
   overflow-y: auto;
+}
+
+/* Below 860px the rail stacks above the results (cortex-console.css), so its
+   body stops being a sticky scroll box with it, and its planes become a grid
+   of their own. As a one-per-row list the 16 planes filled 572px of a 620px
+   window and the scenario cards started 344px below the fold: retracting the
+   sidebars left a list where the grid of cards should have been. */
+@media (max-width: 860px) {
+  .theme-console .library-layout .rail--filter > .rail__body {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    padding: 12px 0;
+  }
+  .theme-console .library-layout .rail--filter .rail__group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  }
+  .theme-console .library-layout .rail--filter .rail__section-title { grid-column: 1 / -1; }
 }
 
 /* `.plane-item` is shared by BOTH rails, but its two `__code` shapes are not

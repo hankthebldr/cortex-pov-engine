@@ -122,7 +122,8 @@ steps:
   - id: step-02
     name: "Emulate marketplace fetch of the .vsix over HTTPS"
     command: |
-      cat > /tmp/koi-004.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/koi-004.yml" <<'YML'
       campaign_id: CMP-KOI-004
       name: "KOI — vsix fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -140,7 +141,7 @@ steps:
             artifact_name: helpful-ai-assistant
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/koi-004.yml" --live
     identity: container-runtime
     mitre_technique: "T1195"
     platforms: ["linux", "macos", "container"]
@@ -192,8 +193,7 @@ steps:
         detection_id: xql-koi-004-vscode-child-process-emits-post-install-beacon-traffic
 
 cleanup:
-  commands:
-    - "rm -f /tmp/koi-004.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

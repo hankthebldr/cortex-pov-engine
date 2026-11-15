@@ -106,7 +106,8 @@ steps:
   - id: step-01
     name: "Dry-run: verify CIDR coverage and authorisation"
     command: |
-      cat > /tmp/smb-sweep-dry.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/smb-sweep-dry.yml" <<'YML'
       campaign_id: CMP-NDR-004
       name: "NDR validation — SMB sweep dry"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -125,7 +126,7 @@ steps:
             inter_host_delay: 0.05
             max_hosts: 64
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-dry.yml
+      python3 -m scripts.eal_simulator.cli run "$C/smb-sweep-dry.yml"
     identity: container-runtime
     mitre_technique: "T1046"
     platforms: ["linux", "container"]
@@ -139,7 +140,8 @@ steps:
   - id: step-02
     name: "Live SMB/RPC sweep against ITDR lab subnet"
     command: |
-      cat > /tmp/smb-sweep-live.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/smb-sweep-live.yml" <<'YML'
       campaign_id: CMP-NDR-004
       name: "NDR validation — SMB sweep live"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -158,7 +160,7 @@ steps:
             inter_host_delay: 0.1
             max_hosts: 16
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/smb-sweep-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1018"
     platforms: ["linux", "container"]
@@ -183,8 +185,7 @@ steps:
         detection_id: xql-xsiam-correlation-sweep-src-host-stitched-with-workstation-context
 
 cleanup:
-  commands:
-    - "rm -f /tmp/smb-sweep-dry.yml /tmp/smb-sweep-live.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

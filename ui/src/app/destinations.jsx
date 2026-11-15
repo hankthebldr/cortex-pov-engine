@@ -391,7 +391,11 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+              : <>It checks and starts one scenario&apos;s run. Arm one from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+          </div>
+          <div className="view-head__meta guided-flow__scope" data-testid="launch-gate-scope">
+            This POVengine&apos;s own status (tenant, agents, collectors) is on{' '}
+            <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('start')}>Get started</button>.
           </div>
         </div>
       </div>
@@ -427,16 +431,30 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
 }
 
 // ─── Launch gate (MVP, design v33) ───────────────────────────────────────────
-// The one place a run is started: the armed scenario's launch flow (What runs ›
-// Readiness › Where it runs › What it will do › authorisation › one Run), then
-// this POVengine's own readiness. The guided "New POV run" route and the old
-// readiness route both land here. The compose → simulate stepper sits on top;
-// `?arm=` is the scenario the launch is for, carried on to the other steps.
+// The one place a run is started, and it is about ONE scenario: the armed
+// scenario's launch flow (What runs › Readiness › Where it runs › What it will
+// do › authorisation › one Run). This POVengine's own status used to sit under
+// it, so the page read as both "this run" and "the whole app"; that status is
+// Get started's now, and the gate says so in one line. The guided "New POV
+// run" route lands here. The compose → simulate stepper sits on top; `?arm=`
+// is the scenario the launch is for, carried on to the other steps.
 function LaunchGateSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div className="launch-gate-page">
       <FlowStepper current="preflight" scenarioId={params.arm || null} onNavigate={onNavigate} />
       <GuidedPovFlow params={params} onNavigate={onNavigate} title="Launch gate" />
+    </div>
+  )
+}
+
+// ─── Get started ────────────────────────────────────────────────────────────
+// Where the app's own status is tracked: the setup steps, then this
+// POVengine's live readiness (connector ladder, tenants, attested facts, the
+// SimCore components). Both halves stay lazily loaded surfaces.
+function GetStartedSurface({ params = {}, onNavigate = () => {} }) {
+  return (
+    <div className="get-started-page">
+      <GetStartedView params={params} onNavigate={onNavigate} />
       <ReadinessSurface embedded onNavigate={onNavigate} />
     </div>
   )
@@ -825,7 +843,7 @@ export const JOURNEYS = [
 
 export const DESTINATIONS = [
   // ── 1 · Onboard & connect ──
-  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedView, badge: 'setupLeft' },
+  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedSurface, badge: 'setupLeft' },
   // `children: 'components'` makes this rail item expand into the eight
   // components (componentModel.js), each with its live status.
   { id: 'components', label: 'Components',    group: 'onboard',   icon: 'settings-edit',  Component: ComponentsView, badge: 'componentIssues', children: 'components' },
@@ -884,7 +902,8 @@ export const DESTINATIONS = [
   { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
   { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
-  { id: 'readiness', label: 'Launch gate',       hidden: true, redirect: true, navParent: 'preflight', icon: 'user-lock',      Component: redirectTo('preflight') },
+  // The old Readiness page was this POVengine's status, which is Get started's.
+  { id: 'readiness', label: 'Get started',       hidden: true, redirect: true, navParent: 'start', icon: 'keyboard',       Component: redirectTo('start') },
 ]
 
 /**

@@ -122,7 +122,8 @@ steps:
   - id: step-02
     name: "Stream 1 GiB random payload across 4 chunked POSTs"
     command: |
-      cat > /tmp/bulk-exfil.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/bulk-exfil.yml" <<'YML'
       campaign_id: CMP-NDR-005
       name: "NDR validation — bulk HTTPS exfil"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -142,7 +143,7 @@ steps:
             method: POST
             request_timeout: 600
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/bulk-exfil.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/bulk-exfil.yml" --live
     identity: container-runtime
     mitre_technique: "T1041"
     # Same containerized host / session as the receiver reachability check (no
@@ -213,8 +214,7 @@ steps:
         detection_id: "CR-NDR-0008"
 
 cleanup:
-  commands:
-    - "rm -f /tmp/bulk-exfil.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

@@ -114,7 +114,8 @@ steps:
   - id: step-02
     name: "Emulate an agent client receiving the poisoned MCP tools/call result on the wire"
     command: |
-      cat > /tmp/koi-006.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/koi-006.yml" <<'YML'
       campaign_id: CMP-KOI-006
       name: "KOI — pa-firewall-mcp runtime tool-result poisoning"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -132,7 +133,7 @@ steps:
             artifact_name: pa-firewall-mcp
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/koi-006.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/koi-006.yml" --live
     identity: container-runtime
     mitre_technique: "T1059"
     platforms: ["linux", "macos"]
@@ -177,7 +178,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/koi-006.yml"
     - "echo '[CortexSim] SIM-KOI-006 cleanup complete'"
 
 author: "Henry Reed"

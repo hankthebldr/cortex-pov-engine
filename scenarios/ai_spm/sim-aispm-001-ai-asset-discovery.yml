@@ -94,14 +94,15 @@ steps:
   - id: step-01
     name: "Snapshot planted-asset manifest from Terraform output"
     command: |
+      rm -rf /tmp/cortexsim-aispm-001 && mkdir -m 700 /tmp/cortexsim-aispm-001 || { echo "sandbox /tmp/cortexsim-aispm-001 could not be created fresh: something else is at that path" >&2; exit 1; }
       echo '[AISPM-001] Capturing ground-truth manifest of planted AI assets';
       # Pulls findings_summary.* from the ai-spm module's outputs and writes
-      # to /tmp/aispm-planted.json — the validator reads this back at assertion time.
+      # to /tmp/cortexsim-aispm-001/aispm-planted.json — the validator reads this back at assertion time.
       cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
-        terraform output -json findings_summary > /tmp/aispm-planted.json || \
-        echo '{"_note":"manifest not available — running in standalone validation mode"}' > /tmp/aispm-planted.json
-      cat /tmp/aispm-planted.json | jq -r '.value // .' 2>/dev/null || cat /tmp/aispm-planted.json
-      echo '[*] Manifest captured. Total assets planted: '$(cat /tmp/aispm-planted.json | jq -r '.value.total_assets_planted // "unknown"')
+        terraform output -json findings_summary > /tmp/cortexsim-aispm-001/aispm-planted.json || \
+        echo '{"_note":"manifest not available — running in standalone validation mode"}' > /tmp/cortexsim-aispm-001/aispm-planted.json
+      cat /tmp/cortexsim-aispm-001/aispm-planted.json | jq -r '.value // .' 2>/dev/null || cat /tmp/cortexsim-aispm-001/aispm-planted.json
+      echo '[*] Manifest captured. Total assets planted: '$(cat /tmp/cortexsim-aispm-001/aispm-planted.json | jq -r '.value.total_assets_planted // "unknown"')
     identity: root
     mitre_technique: "T1526"
     expected_detections:
@@ -134,6 +135,7 @@ steps:
   - id: step-03
     name: "Probe Cortex Cloud Inventory API for AI assets"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-001 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[AISPM-001] Querying Cortex Cloud inventory for AI-tagged assets';
       # Operator supplies CORTEX_CLOUD_API_BASE + CORTEX_CLOUD_API_TOKEN via the
       # SimCore secrets injection layer (or the bundle's parameters.json).
@@ -141,8 +143,8 @@ steps:
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         -H "Accept: application/json" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/inventory?asset_type=ai&tag=CortexSimAISPMFinding" \
-        | tee /tmp/aispm-discovered.json | jq '.assets | length' || true
-      echo '[*] Discovered assets written to /tmp/aispm-discovered.json'
+        | tee /tmp/cortexsim-aispm-001/aispm-discovered.json | jq '.assets | length' || true
+      echo '[*] Discovered assets written to /tmp/cortexsim-aispm-001/aispm-discovered.json'
     identity: root
     mitre_technique: "T1526"
     causality:
@@ -171,9 +173,10 @@ steps:
   - id: step-04
     name: "Compute Asset Discovery Coverage and assert KPI"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-001 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-001 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[AISPM-001] Reconciling discovered vs. planted';
-      PLANTED=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-planted.json)
-      DISCOVERED=$(jq -r '[.assets[] | select(.tags["CortexSimAISPMFinding"]!=null)] | length' /tmp/aispm-discovered.json 2>/dev/null || echo "0")
+      PLANTED=$(jq -r '.value.total_assets_planted // 6' /tmp/cortexsim-aispm-001/aispm-planted.json)
+      DISCOVERED=$(jq -r '[.assets[] | select(.tags["CortexSimAISPMFinding"]!=null)] | length' /tmp/cortexsim-aispm-001/aispm-discovered.json 2>/dev/null || echo "0")
       if [ "$PLANTED" -gt 0 ]; then
         COVERAGE=$(awk "BEGIN { printf \"%.1f\", ($DISCOVERED / $PLANTED) * 100 }")
       else
@@ -209,7 +212,7 @@ steps:
 # from the bundle dir when the POV concludes.
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-planted.json /tmp/aispm-discovered.json"
+    - "rm -rf /tmp/cortexsim-aispm-001"
     - "echo '[CortexSim] SIM-AISPM-001 cleanup complete. To destroy planted AWS assets: terraform destroy in the bundle directory.'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

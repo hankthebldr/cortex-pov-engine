@@ -120,17 +120,18 @@ steps:
   - id: step-01
     name: "Snapshot ground-truth manifest of planted misconfigurations"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[CSPM-001] Capturing ground-truth manifest of planted CSPM findings';
       # Pull findings_summary.* from the cspm module's Terraform outputs. The
       # validator reads this back at reconciliation time. Falls back to a tag
       # query against the account if the bundle output is unavailable.
       cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
-        terraform output -json findings_summary > /tmp/cspm-planted.json || \
+        terraform output -json findings_summary > "$C/cspm-planted.json" || \
         aws resourcegroupstaggingapi get-resources \
           --tag-filters Key=CortexSimCSPMFinding \
-          --profile "${AWS_PROFILE:-cortexsim-lab}" > /tmp/cspm-planted.json 2>/dev/null || \
-        echo '{"_note":"manifest not available — running in standalone validation mode"}' > /tmp/cspm-planted.json
-      cat /tmp/cspm-planted.json | jq -r '.value // .' 2>/dev/null || cat /tmp/cspm-planted.json
+          --profile "${AWS_PROFILE:-cortexsim-lab}" > "$C/cspm-planted.json" 2>/dev/null || \
+        echo '{"_note":"manifest not available — running in standalone validation mode"}' > "$C/cspm-planted.json"
+      cat "$C/cspm-planted.json" | jq -r '.value // .' 2>/dev/null || cat "$C/cspm-planted.json"
       echo '[*] Expected planted finding classes: 9'
     identity: root
     mitre_technique: "T1580"
@@ -219,6 +220,7 @@ steps:
   - id: step-04
     name: "Reconcile total finding coverage and assert posture KPI"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[CSPM-001] Reconciling discovered CSPM findings vs. planted manifest';
       # Probe Cortex Cloud posture API for CortexSim-tagged findings and compute
       # coverage against the 9 planted classes.
@@ -226,9 +228,9 @@ steps:
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         -H "Accept: application/json" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/posture/findings?tag=CortexSimCSPMFinding" \
-        | tee /tmp/cspm-discovered.json \
+        | tee "$C/cspm-discovered.json" \
         | jq -r '[.findings[].finding_class] | unique | length' 2>/dev/null || echo "0"
-      DISCOVERED=$(jq -r '[.findings[].finding_class] | unique | length' /tmp/cspm-discovered.json 2>/dev/null || echo "0")
+      DISCOVERED=$(jq -r '[.findings[].finding_class] | unique | length' "$C/cspm-discovered.json" 2>/dev/null || echo "0")
       PLANTED=9
       COVERAGE=$(awk "BEGIN { printf \"%.1f\", ($DISCOVERED / $PLANTED) * 100 }" 2>/dev/null || echo "0.0")
       echo "[*] Planted finding classes:    $PLANTED"
@@ -267,7 +269,6 @@ steps:
 cleanup:
   commands:
     - "rm -rf /tmp/prowler-cortexsim"
-    - "rm -f /tmp/cspm-planted.json /tmp/cspm-discovered.json"
     - "echo '[CortexSim] SIM-CSPM-001 cleanup complete (local scratch only). To destroy the planted AWS misconfigurations: terraform destroy in the cspm bundle directory — IaC owns teardown.'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

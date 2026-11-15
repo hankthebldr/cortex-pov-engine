@@ -48,19 +48,22 @@ function mount(agents) {
 
 function card(id) { return screen.getByText(id).closest('.target-card') }
 
-const HONOURED = 'Runs steps as their declared service accounts'
-const NOT_HONOURED = 'Identity not honoured — steps run as the agent\'s own user'
+// An honoured harness has no line of its own: the identity-harness chip says
+// it, with the meaning in its tooltip. Only the exception gets a line.
+const HONOURED = 'Runs steps as the service accounts each scenario declares.'
+const NOT_HONOURED = 'Runs as its own user'
+const harnessTitle = (c) => within(c).queryByText('identity-harness')?.getAttribute('title') ?? null
 
 describe('Agent cards · capabilities and execution identity', () => {
   beforeEach(() => { window.localStorage.clear() })
 
-  it('an agent with identity-harness lists its capabilities and says steps run as their service accounts', () => {
+  it('an agent with identity-harness lists its capabilities and its chip says steps run as their service accounts', () => {
     mount([row({ agent_id: 'lin-jb', capabilities: ['shell', 'identity-harness', 'artifact-fetch'] })])
     const c = card('lin-jb')
     const list = within(c).getByRole('list', { name: 'Capabilities' })
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent))
       .toEqual(['shell', 'identity-harness', 'artifact-fetch'])
-    expect(c.textContent).toContain(HONOURED)
+    expect(harnessTitle(c)).toBe(HONOURED)
     expect(c.textContent).not.toContain(NOT_HONOURED)
   })
 
@@ -71,7 +74,7 @@ describe('Agent cards · capabilities and execution identity', () => {
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent))
       .toEqual(['shell', 'powershell', 'artifact-fetch'])
     expect(c.textContent).toContain(NOT_HONOURED)
-    expect(c.textContent).not.toContain(HONOURED)
+    expect(harnessTitle(c)).toBeNull()
   })
 
   it('a Windows row that claims identity-harness still says identity is not honoured', () => {
@@ -81,7 +84,7 @@ describe('Agent cards · capabilities and execution identity', () => {
     mount([row({ agent_id: 'win-claims', os: 'windows', capabilities: ['shell', 'identity-harness', 'powershell'] })])
     const c = card('win-claims')
     expect(c.textContent).toContain(NOT_HONOURED)
-    expect(c.textContent).not.toContain(HONOURED)
+    expect(harnessTitle(c)).toBeNull()
   })
 
   it.each([
@@ -92,6 +95,6 @@ describe('Agent cards · capabilities and execution identity', () => {
     const c = card('legacy-jb')
     expect(c.textContent).toContain('Capabilities not reported')
     expect(within(c).queryByRole('list', { name: 'Capabilities' })).toBeNull()
-    expect(c.textContent).not.toContain(HONOURED)
+    expect(c.textContent).not.toContain(NOT_HONOURED)
   })
 })

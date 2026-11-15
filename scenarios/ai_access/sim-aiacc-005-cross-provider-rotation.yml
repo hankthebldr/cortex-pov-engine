@@ -101,7 +101,8 @@ steps:
   - id: step-01
     name: "Provider 1 — OpenAI"
     command: |
-      cat > /tmp/aiacc-005-openai.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-005-openai.yml" <<'YML'
       campaign_id: CMP-AIACC-005
       name: "AI Access — rotation step 1 OpenAI"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -118,7 +119,7 @@ steps:
             payload_type: source
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-005-openai.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     platforms: ["linux", "container", "windows", "macos"]
@@ -138,8 +139,9 @@ steps:
   - id: step-02
     name: "Provider 2 — Gemini (overlapping content within 60s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       sleep 30
-      cat > /tmp/aiacc-005-gemini.yml <<'YML'
+      cat > "$C/aiacc-005-gemini.yml" <<'YML'
       campaign_id: CMP-AIACC-005
       name: "AI Access — rotation step 2 Gemini"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -155,7 +157,7 @@ steps:
             payload_type: source
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-005-gemini.yml" --live
     identity: container-runtime
     mitre_technique: "T1090"
     # Same user rotates to the second provider ~30s later — one identity, no
@@ -174,8 +176,9 @@ steps:
   - id: step-03
     name: "Provider 3 — Anthropic completes the rotation triangle"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       sleep 30
-      cat > /tmp/aiacc-005-anthropic.yml <<'YML'
+      cat > "$C/aiacc-005-anthropic.yml" <<'YML'
       campaign_id: CMP-AIACC-005
       name: "AI Access — rotation step 3 Anthropic"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -191,7 +194,7 @@ steps:
             payload_type: source
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-005-anthropic.yml" --live
     identity: container-runtime
     mitre_technique: "T1090"
     # Same user completes the rotation triangle at the third provider, closing

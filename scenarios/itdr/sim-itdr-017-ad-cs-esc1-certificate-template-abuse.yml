@@ -120,7 +120,7 @@ moat_tier: "LEAD"
 steps:
   - id: step-01
     name: "AD CS template / CA LDAP reconnaissance (Certipy find — Security 1644/30)"
-    command: "mkdir -p /tmp/cortexsim-itdr-017 && echo '[SIM-ITDR-017] SAFE-MODE 1644/30: Certipy find would enumerate pKICertificateTemplate, PKI-Enrollment-Service and msDS-KeyCredentialLink over LDAP' | tee /tmp/cortexsim-itdr-017/1644-adcs-ldap-recon.marker; echo cortexsim-itdr-017-adcs-ldap-recon"
+    command: "rm -rf /tmp/cortexsim-itdr-017 && mkdir -m 700 /tmp/cortexsim-itdr-017 || { echo \"sandbox /tmp/cortexsim-itdr-017 could not be created fresh: something else is at that path\" >&2; exit 1; }; echo '[SIM-ITDR-017] SAFE-MODE 1644/30: Certipy find would enumerate pKICertificateTemplate, PKI-Enrollment-Service and msDS-KeyCredentialLink over LDAP' | tee /tmp/cortexsim-itdr-017/1644-adcs-ldap-recon.marker; echo cortexsim-itdr-017-adcs-ldap-recon"
     identity: svc-backup
     mitre_technique: "T1087.002"
     # Root step — links from the python3 (Certipy) CGO session run by the
@@ -138,7 +138,7 @@ steps:
 
   - id: step-02
     name: "ESC1 certificate request with attacker-chosen SAN (Certipy req — Security 4886)"
-    command: "echo '[SIM-ITDR-017] SAFE-MODE 4886: Certipy req would enroll against the ESC1 template (CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) supplying upn=administrator@corp.local in the SAN' | tee /tmp/cortexsim-itdr-017/4886-esc1-san-request.marker; echo cortexsim-itdr-017-esc1-san-request"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-017 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-017 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; echo '[SIM-ITDR-017] SAFE-MODE 4886: Certipy req would enroll against the ESC1 template (CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) supplying upn=administrator@corp.local in the SAN' | tee /tmp/cortexsim-itdr-017/4886-esc1-san-request.marker; echo cortexsim-itdr-017-esc1-san-request"
     identity: svc-backup
     mitre_technique: "T1649"
     # Same requesting identity / operator session as the recon — the ESC1 request
@@ -160,7 +160,7 @@ steps:
 
   - id: step-03
     name: "CA issues certificate with requester != subject SAN mismatch (Security 4887)"
-    command: "printf '[SIM-ITDR-017] SAFE-MODE 4887: CA issues certificate serial=1a2b3c4d requester=svc-backup subject/SAN=administrator@corp.local (requester!=subject)\\n' | tee /tmp/cortexsim-itdr-017/4887-san-mismatch-issuance.marker; echo cortexsim-itdr-017-san-mismatch-issuance"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-017 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-017 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '[SIM-ITDR-017] SAFE-MODE 4887: CA issues certificate serial=1a2b3c4d requester=svc-backup subject/SAN=administrator@corp.local (requester!=subject)\\n' | tee /tmp/cortexsim-itdr-017/4887-san-mismatch-issuance.marker; echo cortexsim-itdr-017-san-mismatch-issuance"
     identity: svc-backup
     mitre_technique: "T1649"
     # The issuance (4887) follows the request (4886) at the CA within seconds —
@@ -184,7 +184,7 @@ steps:
 
   - id: step-04
     name: "PKINIT TGT + service tickets as the impersonated Domain Admin (Security 4768/4769)"
-    command: "echo '[SIM-ITDR-017] SAFE-MODE 4768/4769: Certipy auth / PKINITtools would use the issued PFX for PKINIT to obtain a TGT (pre-auth type 16) as administrator@corp.local, then request service tickets as the target' | tee /tmp/cortexsim-itdr-017/4768-pkinit-privileged-auth.marker; echo cortexsim-itdr-017-pkinit-privileged-auth"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-017 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-017 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; echo '[SIM-ITDR-017] SAFE-MODE 4768/4769: Certipy auth / PKINITtools would use the issued PFX for PKINIT to obtain a TGT (pre-auth type 16) as administrator@corp.local, then request service tickets as the target' | tee /tmp/cortexsim-itdr-017/4768-pkinit-privileged-auth.marker; echo cortexsim-itdr-017-pkinit-privileged-auth"
     identity: svc-backup
     mitre_technique: "T1550"
     # The PKINIT authentication (4768) follows the SAN-mismatch issuance within a
@@ -211,7 +211,7 @@ steps:
 
   - id: step-05
     name: "Optional shadow-credential write to target msDS-KeyCredentialLink (Security 5136)"
-    command: "echo '[SIM-ITDR-017] SAFE-MODE 5136: pyWhisker would write a key credential to the target account msDS-KeyCredentialLink for durable passwordless PKINIT re-entry' | tee /tmp/cortexsim-itdr-017/5136-shadow-credential-write.marker; echo cortexsim-itdr-017-shadow-credential-write"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-017 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-017 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; echo '[SIM-ITDR-017] SAFE-MODE 5136: pyWhisker would write a key credential to the target account msDS-KeyCredentialLink for durable passwordless PKINIT re-entry' | tee /tmp/cortexsim-itdr-017/5136-shadow-credential-write.marker; echo cortexsim-itdr-017-shadow-credential-write"
     identity: svc-backup
     mitre_technique: "T1556"
     # Persistence extension by the same requesting identity — the shadow-cred

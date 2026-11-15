@@ -307,12 +307,13 @@ steps:
   - id: step-06
     name: "NGFW WildFire threat log - gs-netcat transfer to this host (published SHA-256)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-024-gsocket-threat.yml <<YML
+      cat > "$C/mp-024-gsocket-threat.yml" <<YML
       campaign_id: CMP-MP-GSOCKET-024
       name: "CL-UNK-1211 - gs-netcat WildFire threat record"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -337,7 +338,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-024-gsocket-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-024-gsocket-threat.yml" --live
     identity: root
     mitre_technique: "T1090"
     causality:
@@ -359,6 +360,7 @@ steps:
   - id: step-07
     name: "SysGoRAT WebSocket C2 beacon to the published default IP; resolve the report domains via the lab resolver"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       dig +short magento.ink @${LAB_RESOLVER:-127.0.0.53}
@@ -368,7 +370,7 @@ steps:
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-024-sysgorat-c2.yml <<YML
+      cat > "$C/mp-024-sysgorat-c2.yml" <<YML
       campaign_id: CMP-MP-SYSGORAT-024
       name: "CL-UNK-1211 - SysGoRAT WebSocket C2 beacon"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -392,7 +394,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-024-sysgorat-c2.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-024-sysgorat-c2.yml" --live
     identity: root
     mitre_technique: "T1071.001"
     causality:
@@ -465,12 +467,13 @@ steps:
   - id: step-09
     name: "NGFW EAL massive upload of the mailbox archives to a rare storage domain (un-enrichable leg)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-024-mail-upload.yml <<YML
+      cat > "$C/mp-024-mail-upload.yml" <<YML
       campaign_id: CMP-MP-MAIL-024
       name: "CL-UNK-1211 - mailbox archive upload"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -491,7 +494,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-024-mail-upload.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-024-mail-upload.yml" --live
     identity: root
     mitre_technique: "T1567"
     causality:
@@ -571,7 +574,6 @@ steps:
 cleanup:
   commands:
     - "rm -rf /tmp/cortexsim-mp-024 /dev/shm/.gs-cortexsim-mp024"
-    - "rm -f /tmp/mp-024-gsocket-threat.yml /tmp/mp-024-sysgorat-c2.yml /tmp/mp-024-mail-upload.yml"
 
 author: "Henry Reed"
 created: "2026-10-27"

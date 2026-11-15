@@ -54,10 +54,10 @@ export const COMPONENT_ABOUT = Object.freeze({
     where: 'Customer network (VM image) · Cortex › Settings › Configurations › Data Broker › Broker VMs',
   },
   ngfw: {
-    what: "The customer's Palo Alto Networks firewall, registered with a read-only key, and a POV test rule you add. POVengine never writes to it.",
-    why: 'Egress and command-and-control steps have to be seen on the wire; its logs carry that.',
+    what: "The customer's Palo Alto Networks firewall, streaming its logs to Cortex through Strata Logging Service. POVengine reads its policy with a read-only key and never writes to it.",
+    why: 'Egress and command-and-control steps have to be seen on the wire: its traffic, threat and URL logs carry that, and only if its rules log, forward and alert.',
     unlocks: 'NDR egress and C2 test cases, and the endpoint-to-network stitch (network_story).',
-    where: 'PAN-OS · logs go to a Broker VM or Strata Logging Service',
+    where: 'PAN-OS › Cloud Logging → Strata Logging Service → Cortex › Data Sources & Integrations › NGFW',
   },
   xdrc: {
     what: 'The XDR Collector: a light log shipper for hosts that do not run the full XDR agent.',

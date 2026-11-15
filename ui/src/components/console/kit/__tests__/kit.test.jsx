@@ -58,7 +58,28 @@ describe('Button', () => {
   })
 
   it('names the closed verb set from the design', () => {
-    expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run', 'Switch'])
+    expect(VERBS).toEqual([
+      'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
+      'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
+      'Switch',
+    ])
+  })
+
+  it('the Fleet verbs draw their own icons (#339)', () => {
+    expect(VERB_ICONS).toMatchObject({
+      Deploy: 'upload', 'Set active': 'target', Download: 'download', Copy: 'copy',
+      Delete: 'trash', Select: 'select', Refresh: 'refresh',
+    })
+  })
+
+  it('with href it is a link that keeps the look and the verb icon', () => {
+    render(<Button verb="Download" href="/api/agents/install?id=jb-1" download="install.sh">Installer</Button>)
+    const a = screen.getByRole('link', { name: 'Installer' })
+    expect(a).toHaveAttribute('href', '/api/agents/install?id=jb-1')
+    expect(a).toHaveAttribute('download', 'install.sh')
+    expect(a).toHaveClass('kit-btn', 'kit-btn--secondary')
+    expect(a.querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('gives every verb, and only a verb, an icon from the closed Icon set (design v33 C10)', () => {
@@ -135,7 +156,8 @@ describe('Icon', () => {
     expect(ICONS).toEqual([
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
-      'back', 'forward', 'swap',
+      'back', 'forward',
+      'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
     ])
   })
 

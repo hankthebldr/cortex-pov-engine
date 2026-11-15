@@ -114,7 +114,8 @@ steps:
   - id: step-02
     name: "Single secret POST to api.anthropic.com via EAL plugin"
     command: |
-      cat > /tmp/aiacc-002.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-002.yml" <<'YML'
       campaign_id: CMP-AIACC-002
       name: "AI Access — AWS key leak to Anthropic"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -131,7 +132,7 @@ steps:
             payload_type: secret
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-002.yml" --live
     identity: container-runtime
     mitre_technique: "T1552"
     causality:
@@ -157,7 +158,8 @@ steps:
   - id: step-03
     name: "Verify per-session block-action policy (4 attempts)"
     command: |
-      cat > /tmp/aiacc-002-burst.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-002-burst.yml" <<'YML'
       campaign_id: CMP-AIACC-002
       name: "AI Access — secret burst"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -174,7 +176,7 @@ steps:
             iterations: 4
             sleep_seconds: 3
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002-burst.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-002-burst.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     causality:
@@ -188,8 +190,7 @@ steps:
         detection_id: xql-aiacc-002-repeated-secret-egress-to-anthropic-block-policy-trigger
 
 cleanup:
-  commands:
-    - "rm -f /tmp/aiacc-002.yml /tmp/aiacc-002-burst.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

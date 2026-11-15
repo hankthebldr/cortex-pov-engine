@@ -116,9 +116,10 @@ steps:
   - id: step-02
     name: "Help-desk agent (lab role) resets the victim's MFA factors, then attacker enrolls a new factor and signs in from a new device"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-008-okta.yml <<YML
+      cat > "$C/itdr-008-okta.yml" <<YML
       campaign_id: CMP-ITDR-008
       name: "ITDR — Okta help-desk MFA reset account takeover"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -137,7 +138,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-008-okta.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-008-okta.yml" --live
       echo '[*] ITDR should flag the reset_factors → factor.activate → session.start chain from a new device fingerprint'
     identity: container-runtime
     mitre_technique: "T1556.006"
@@ -163,9 +164,10 @@ steps:
   - id: step-03
     name: "Repeat with Microsoft (Entra ID) event shape and confirm the post-takeover privileged-action escalation hunt"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-008-ms.yml <<YML
+      cat > "$C/itdr-008-ms.yml" <<YML
       campaign_id: CMP-ITDR-008
       name: "ITDR — Microsoft help-desk MFA reset account takeover"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -183,7 +185,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-008-ms.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-008-ms.yml" --live
       echo '[*] Hunt: a help-desk MFA reset followed by a privileged group-membership add within 1h is the Muddled Libra escalation tell'
     identity: container-runtime
     mitre_technique: "T1078.004"
@@ -208,7 +210,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/itdr-008-okta.yml /tmp/itdr-008-ms.yml"
     - "echo '[CortexSim] SIM-ITDR-008 cleanup complete — revert any lab tenant factor/session change via the card cleanup API calls'"
 
 author: "Henry Reed"
