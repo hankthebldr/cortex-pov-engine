@@ -166,9 +166,12 @@ async def ingest_observations(
     """
     from connectors.matcher import scope_to_host
     from connectors.service import (NEVER_DELIVERED_WARNING, apply_verdicts,
+                                    attribution_warnings, credited_alert_ids,
                                     host_source, match_window_ends,
-                                    reconcile_candidates, reported_step_ids,
-                                    resolve_run_host, window_by_type)
+                                    reconcile_candidates,
+                                    reported_step_ids, resolve_run_host,
+                                    run_attribution, window_by_type,
+                                    withdraw_foreign_credits)
 
     run, results = await _load_run_results(db, run_id)
     # OPS-01 defence in depth: a pull run no beacon ever collected ran nothing,
@@ -181,11 +184,21 @@ async def ingest_observations(
     scope_host = override if override is not None else await resolve_run_host(db, run)
     alerts, host_scope = scope_to_host(submitted, scope_host)
     unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
+    window_ends = await match_window_ends(db, run_id, results,
+                                          window_seconds=body.window_seconds)
+    # #347: a pasted alert is the host's, not the run's. The same one-run rule
+    # as a connector pull, and the same re-review of a stored credit.
+    attribution = await run_attribution(
+        db, run, candidates, host=host_scope["host"],
+        window_seconds=body.window_seconds, window_ends=window_ends)
+    withdrawn = await withdraw_foreign_credits(db, run, candidates, attribution)
+    refused: list[dict[str, Any]] = []
     verdicts = reconcile(candidates, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate,
                          window_seconds_by_type=window_by_type(),
-                         window_end_by_result=await match_window_ends(
-                             db, run_id, results, window_seconds=body.window_seconds))
+                         window_end_by_result=window_ends,
+                         attribution=attribution, refused=refused,
+                         already_credited=await credited_alert_ids(db, run_id))
     matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(
@@ -198,14 +211,15 @@ async def ingest_observations(
                       "host_unresolved": host_scope["host"] is None,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
                                           if e in by_ext}},
-        observations=alerts, window_seconds=body.window_seconds)
+        observations=alerts, window_seconds=body.window_seconds,
+        attribution=attribution, refused=refused, withdrawn=withdrawn)
     summary["host_scope"] = host_scope
     summary["host_source"] = host_source(override, host_scope)
     if unscoped:
         summary["unscoped"] = True
     summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
-    warnings: list[str] = []
+    warnings: list[str] = attribution_warnings(summary)
     if never_delivered:
         summary["never_delivered"] = True
         warnings.append(NEVER_DELIVERED_WARNING)
