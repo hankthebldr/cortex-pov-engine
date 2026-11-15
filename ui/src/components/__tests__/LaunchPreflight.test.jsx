@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { installRoutes } from '../../test/mockFetch.js'
 import LaunchView from '../console/LaunchView.jsx'
@@ -79,8 +79,102 @@ describe('LaunchView preflight', () => {
     await waitFor(() => expect(screen.getByTestId('preflight-verdict')).toBeInTheDocument())
     // The identity account has not been probed on this target, so the run is
     // NOT ready — it is degraded-or-unknown, and the card says which.
-    expect(screen.getByTestId('preflight-verdict')).not.toHaveTextContent('READY')
+    const verdict = screen.getByTestId('preflight-verdict')
+    expect(verdict).not.toHaveTextContent('Ready')
+    expect(within(verdict).getByRole('img').getAttribute('aria-label')).toMatch(/^(Degraded|Unknown)$/)
     expect(screen.getByTestId('preflight-identity')).toHaveAttribute('data-status', 'unknown')
+  })
+
+  // The data path is one line: a StatusIcon and one word, the label, the count.
+  // What it means and what to do sit behind a collapsed "Why", two short lines.
+  it('shows the data path as one line, with its explanation behind a collapsed Why', async () => {
+    installRoutes(ROUTES({
+      'GET /api/scenarios/:id/doors': {
+        readiness: {
+          scenario_id: 'SIM-EDR-022', state: 'needs_doors', scorable: 0, total: 10,
+          route_blocked: 10, underived: 0, unevaluated: 0, not_open: [],
+        },
+      },
+      'GET /api/doors': { doors: [], registry_loaded: true, tenant_verified: 0, outbound_calls: 0 },
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const row = await screen.findByTestId('preflight-data-path')
+    await waitFor(() => expect(row).toHaveAttribute('data-status', 'warn'))
+    expect(within(row).getByRole('img', { name: 'Degraded' })).toBeInTheDocument()
+    expect(row.querySelector('.chip')).toBeNull()
+
+    const why = row.querySelector('details')
+    expect(why).not.toBeNull()
+    expect(why.open).toBe(false)
+    const summary = why.querySelector('summary')
+    expect(summary).toHaveTextContent('Data path')
+    expect(summary).toHaveTextContent('0 of 10 detections can fire')
+    expect(summary).toHaveTextContent(/Why$/)
+    expect(summary).not.toHaveTextContent(/XDM/)
+
+    const lines = [...why.children].filter((el) => el.tagName !== 'SUMMARY')
+      .flatMap((el) => [...el.children])
+    expect(lines.map((el) => el.textContent)).toEqual([
+      'no detection here is confirmed able to fire yet; each one is still scored as today; '
+        + '10 of 10 on an unresolved collector route',
+      'BIOC and IOC never fire on a collector route; Analytics and ABIOC need an XDM rule, '
+        + 'XQL and Correlation the dataset.',
+    ])
+
+    fireEvent.click(summary)
+    expect(why.open).toBe(true)
+  })
+
+  // The card is its checks. Why they are checked first is one line, kept as
+  // the Preflight label's tooltip rather than a paragraph above them.
+  it('keeps why it checks first in the Preflight tooltip, not a paragraph', async () => {
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const card = await screen.findByTestId('scenario-preflight')
+    expect(card).not.toHaveTextContent(/every failure below|same artefact/)
+    expect(within(card).getByText('Preflight')).toHaveAttribute(
+      'title', "A step that did not run as authored reads as a gap in the customer's coverage.")
+  })
+
+  // Tool consent is one compact row per gated tool class, like the EAL row:
+  // the checkbox and one sentence, and "Required" while the run waits on it.
+  it('asks for tool consent in one compact row, Required until it is ticked', async () => {
+    installRoutes(ROUTES({
+      'GET /api/tools/adapters': {
+        adapters: [{ ...ADAPTERS.adapters[0], safety_class: 'dual-use-lab-only' }], total: 1,
+      },
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const box = await screen.findByRole('checkbox', { name: 'I authorize lab-only use of dual-use tools (LinPEAS)' })
+    const row = box.closest('.launch-consent__row')
+    expect(within(row).getByRole('img', { name: 'Required' })).toBeInTheDocument()
+    expect(screen.queryByText(/tool consent required|blocking run/i)).toBeNull()
+    expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/lab-only consent/)
+
+    fireEvent.click(box)
+    expect(box).toBeChecked()
+    expect(within(row).queryByRole('img', { name: 'Required' })).toBeNull()
+    expect(screen.getByTestId('launch-blockers')).not.toHaveTextContent(/lab-only consent/)
+  })
+
+  // Who runs the scenario's cleanup depends on the beacon chosen: one that
+  // advertises `cleanup` runs it after the run; an older one does not (#361).
+  it('says who runs the teardown for the agent that is chosen', async () => {
+    const CURRENT = {
+      ...AGENT, agent_id: 'lab-new-01', hostname: 'lab-new-01',
+      capabilities: ['shell', 'identity-harness', 'artifact-fetch', 'cleanup'],
+    }
+    installRoutes(ROUTES({ 'GET /api/agents': { agents: [AGENT, CURRENT], total: 2 } }))
+    const withCleanup = { ...SCENARIO, cleanup: { commands: ['rm -f /tmp/x', 'userdel t'] } }
+    const teardown = () => screen.getByText('Teardown').closest('.new-run__plan-row')
+    const { rerender } = render(
+      <LaunchView scenario={withCleanup} selectedTarget={{ kind: 'agent', id: 'lab-new-01', label: 'lab-new-01' }} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run by the agent after the run'))
+
+    rerender(<LaunchView scenario={withCleanup} selectedTarget={TARGET} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run them yourself'))
+
+    rerender(<LaunchView scenario={withCleanup} selectedTarget={{ kind: 'push', id: 'bundle', label: 'Offline bundle' }} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run by the bundle'))
   })
 
   it('folds a BLOCKING preflight row into the launch blockers list', async () => {

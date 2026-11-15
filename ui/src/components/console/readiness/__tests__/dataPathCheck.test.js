@@ -17,7 +17,10 @@ const BOTH_CLOSED = [
   { key: 'ngfw_traffic', door_id: 'ngfw_traffic', label: 'NGFW traffic logs', state: 'closed', rung: 'verified' },
 ]
 const UNCHECKED = [{ door_id: 'ngfw_traffic', detections: 3 }]
-const ROUTE = 'detections are on a collector route this console has not resolved (BIOC and IOC never fire there)'
+// One short line each: the route clause, then (as the fix) what a collector route costs.
+const ROUTE = 'on an unresolved collector route'
+const ROUTE_FIX = 'BIOC and IOC never fire on a collector route; Analytics and ABIOC need an XDM rule, '
+  + 'XQL and Correlation the dataset.'
 const NOTHING = 'no detection here is confirmed able to fire yet'
 
 // Every shape the check can be handed, for the sweeps below.
@@ -76,7 +79,7 @@ describe('dataPathCheck', () => {
     expect(c.status).toBe(PF.WARN)
     expect(c.detail).toBe(`2 of 5 ${ROUTE}`)
     expect(c.detail).not.toMatch(/cannot raise/)
-    expect(c.remediation).toMatch(/BIOC and IOC never fire/)
+    expect(c.remediation).toBe(ROUTE_FIX)
   })
 
   it('data_path_route_blocked_combines_with_closed', () => {

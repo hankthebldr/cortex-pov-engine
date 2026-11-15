@@ -43,11 +43,38 @@ describe('runPlan', () => {
     expect(rows['Writes to Cortex or the firewall']).toBe('never')
   })
 
-  it('says who tears down: the bundle does, an agent run does not', () => {
-    const teardown = (mode) => runPlan(scenario, { mode }).find((r) => r.k === 'Teardown').v
-    expect(teardown('push')).toBe('2 commands, run by the bundle')
-    expect(teardown('pull')).toMatch(/not run by the agent/)
-    expect(runPlan({ steps: [] }, { mode: 'pull' }).find((r) => r.k === 'Teardown').v).toBe('nothing to tear down')
+  // A bundle (bash, PowerShell or the k8s bootstrap) always runs its cleanup.
+  // A beacon runs it only when it advertises `cleanup` (#361); an older one is
+  // sent the commands and ignores them, so the DC cleans the host by hand.
+  describe('says who tears down', () => {
+    const teardown = (s, opts) => runPlan(s, opts).find((r) => r.k === 'Teardown').v
+    const current = { agent_id: 'a1', capabilities: ['shell', 'identity-harness', 'cleanup'] }
+    const older = { agent_id: 'a2', capabilities: ['shell', 'identity-harness'] }
+
+    it('an offline bundle runs it', () => {
+      expect(teardown(scenario, { mode: 'push' })).toBe('2 commands, run by the bundle')
+      expect(teardown(scenario, { mode: 'push', agent: older })).toBe('2 commands, run by the bundle')
+    })
+
+    it('a beacon that advertises cleanup runs it after the run', () => {
+      expect(teardown(scenario, { mode: 'pull', agent: current })).toBe('2 commands, run by the agent after the run')
+    })
+
+    it('a beacon without it leaves it to the DC', () => {
+      expect(teardown(scenario, { mode: 'pull', agent: older })).toBe('2 commands, run them yourself')
+      expect(teardown({ steps: [], cleanup: { commands: ['rm -f /tmp/x'] } }, { mode: 'pull', agent: older }))
+        .toBe('1 command, run it yourself')
+    })
+
+    it('an agent whose record is not loaded is not credited with running it', () => {
+      expect(teardown(scenario, { mode: 'pull' })).toBe('2 commands, run them yourself')
+      expect(teardown(scenario, { mode: 'pull', agent: { agent_id: 'a3' } })).toBe('2 commands, run them yourself')
+    })
+
+    it('nothing to run is said once, whoever runs it', () => {
+      expect(teardown({ steps: [] }, { mode: 'pull', agent: current })).toBe('nothing to tear down')
+      expect(teardown({ steps: [] }, { mode: 'push' })).toBe('nothing to tear down')
+    })
   })
 })
 

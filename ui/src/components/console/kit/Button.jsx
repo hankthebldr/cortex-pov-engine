@@ -40,6 +40,9 @@ export const VERBS = Object.freeze([
   'Mark detected', 'Reset',
   // Keep what was typed (a note on a detection).
   'Save',
+  // Launch gate › Prevention context: a known-benign run that shows the block
+  // profile is real before the paired report/block run.
+  'Run canary',
 ])
 
 /** The kit Icon each verb carries. */
@@ -68,6 +71,7 @@ export const VERB_ICONS = Object.freeze({
   'Mark detected': 'check-circle',
   Reset: 'repeat',
   Save: 'save',
+  'Run canary': 'flask',
 })
 
 export default function Button({

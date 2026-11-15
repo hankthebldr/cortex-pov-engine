@@ -1,5 +1,53 @@
 import React, { useMemo } from 'react'
-import { preflightScenario, PF, PF_CHIP, PF_LABEL } from './readiness/scenarioPreflight.js'
+import { preflightScenario, PF, PF_STATUS } from './readiness/scenarioPreflight.js'
+import { StatusIcon } from './kit/index.js'
+
+// Why these are checked before the run, as the Preflight label's tooltip.
+const WHY_FIRST = "A step that did not run as authored reads as a gap in the customer's coverage."
+
+/** A severity as the kit's StatusIcon and one word. */
+function Severity({ status }) {
+  const s = PF_STATUS[status] || PF_STATUS[PF.UNKNOWN]
+  return <StatusIcon status={s.status} word={s.word} />
+}
+
+/**
+ * One check, one line: state, label, the count or short summary. A check that
+ * is not Ready keeps what it means and what to do behind a collapsed "Why"
+ * (its detail and its fix, a line each); the line itself is the toggle.
+ */
+function CheckRow({ check: c }) {
+  const head = (
+    <>
+      <Severity status={c.status} />
+      <span className="preflight__check-label">{c.label}</span>
+      <span className="preflight__check-summary">{c.summary}</span>
+    </>
+  )
+  const why = c.status !== PF.PASS && (c.detail || c.remediation)
+  return (
+    <li
+      className={`preflight__check preflight__check--${c.status}`}
+      data-testid={`preflight-${c.id}`}
+      data-status={c.status}
+    >
+      {why ? (
+        <details className="preflight__why">
+          <summary className="preflight__check-head">
+            {head}
+            <span className="preflight__why-toggle">Why</span>
+          </summary>
+          <div className="preflight__why-body">
+            {c.detail && <p className="preflight__check-detail">{c.detail}</p>}
+            {c.remediation && <p className="preflight__check-fix">{c.remediation}</p>}
+          </div>
+        </details>
+      ) : (
+        <div className="preflight__check-head">{head}</div>
+      )}
+    </li>
+  )
+}
 
 /**
  * ScenarioPreflightCard — the per-scenario readiness check, rendered where the
@@ -46,43 +94,14 @@ export default function ScenarioPreflightCard({
   return (
     <section className="launch-card launch-card--preflight" data-testid="scenario-preflight">
       <div className="launch-card__kicker">
-        Preflight
-        <span
-          className={PF_CHIP[pf.verdict] + ' preflight-verdict'}
-          data-testid="preflight-verdict"
-          data-verdict={pf.verdict}
-        >
-          {PF_LABEL[pf.verdict]}
+        <span title={WHY_FIRST}>Preflight</span>
+        <span className="preflight-verdict" data-testid="preflight-verdict" data-verdict={pf.verdict}>
+          <Severity status={pf.verdict} />
         </span>
       </div>
 
-      <p className="preflight__lede">
-        Checked before the run, because every failure below produces the same artefact: a run that
-        did not execute as authored, whose absent detections read in a POV report as a gap in the{' '}
-        <strong>customer&apos;s</strong> coverage.
-      </p>
-
       <ul className="preflight__checks">
-        {pf.checks.map((c) => (
-          <li
-            key={c.id}
-            className={`preflight__check preflight__check--${c.status}`}
-            data-testid={`preflight-${c.id}`}
-            data-status={c.status}
-          >
-            <div className="preflight__check-head">
-              <span className={PF_CHIP[c.status]}>{PF_LABEL[c.status]}</span>
-              <span className="preflight__check-label">{c.label}</span>
-              <span className="preflight__check-summary mono">{c.summary}</span>
-            </div>
-            {c.status !== PF.PASS && c.detail && (
-              <div className="preflight__check-detail">{c.detail}</div>
-            )}
-            {c.status !== PF.PASS && c.remediation && (
-              <div className="preflight__check-fix">→ {c.remediation}</div>
-            )}
-          </li>
-        ))}
+        {pf.checks.map((c) => <CheckRow key={c.id} check={c} />)}
       </ul>
 
       {pf.verdict === PF.UNKNOWN && (
