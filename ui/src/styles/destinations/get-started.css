@@ -109,3 +109,7 @@
   font: 400 13px/1.6 var(--font-ui); color: var(--tx2);
 }
 .theme-console .gs-alert b { color: var(--tx); }
+
+/* This POVengine's status, under the setup steps (destinations.jsx,
+   GetStartedSurface). Inset to line up with the steps above it. */
+.theme-console .get-started-page > .readiness { padding: 6px 26px 26px; }

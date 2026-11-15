@@ -179,8 +179,9 @@ describe('AppConsole — immersive Composer mount and exit routing', () => {
 
   it('a non-immersive surface never receives onExit', async () => {
     // ReadinessView is mounted directly (withSuspense is a passthrough), so it
-    // sees exactly the props AppConsole hands a surface.
-    window.location.hash = '#/preflight'
+    // sees exactly the props AppConsole hands a surface. It lives on Get
+    // started now, under the setup steps.
+    window.location.hash = '#/start'
     const { container } = render(<AppConsole />)
 
     const stub = await screen.findByTestId('readiness-stub')

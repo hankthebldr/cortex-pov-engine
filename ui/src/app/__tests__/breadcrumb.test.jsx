@@ -73,7 +73,8 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
   })
 
   it('an alias that shares its rail item\'s name is not named twice', () => {
-    expect(labels(breadcrumbFor('readiness'))).toEqual(['Compose & simulate', 'Launch gate'])
+    // The old Readiness page was this POVengine's status, which is Get started's.
+    expect(labels(breadcrumbFor('readiness'))).toEqual(['Onboard & connect', 'Get started'])
   })
 
   it('an unknown destination has no crumbs', () => {
