@@ -8,6 +8,28 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — the Firewall page walks Strata Logging Service and the firewall's policy
+
+- **The Firewall setup defaulted to syslog through a Broker VM.** Its two
+  paths read as if that were how NGFW data reaches Cortex. The data a POV is
+  after streams from the firewall through Strata Logging Service and lands in
+  the `panw_ngfw_*` datasets, stitched into `network_story`; the Cortex docs
+  keep the syslog path as a fallback for when that collector cannot be used.
+  The page now walks that one path, in the documented order: add the NGFW in
+  Cortex › Data Sources & Integrations, turn on cloud logging and Enhanced
+  Application Logging, install the certificate, forward every log type to
+  Strata Logging Service, then commit and confirm logs arrive. The old step
+  that said only tenants with Strata Logging Service could use it was wrong:
+  new tenants get the direct NGFW integration.
+- **The rest of the setup is the firewall's own policy.** "Log and alert on
+  the POV traffic" asks for rules that log at session end through the
+  forwarding profile, with security profiles set to alert, and "Decrypt the
+  POV traffic" for the decryption rule. Each Test runs the existing read-only
+  check. The overview gains rows for the log forwarding profile, decryption,
+  and the rule each enrolled agent's traffic meets.
+- POVengine still never writes to the firewall, and the registration's
+  forwarding path setting (auto · sls · syslog · both) is unchanged.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is
