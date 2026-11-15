@@ -316,7 +316,7 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. `warnings[]` is what the launch would carry for the same body, the runtime-dependency warnings included (it reads `allow_runtime_install`). No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
-| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1). `cleanup` is what each beacon task reported about the scenario's cleanup, or null (§1.3.3); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | POST | `/api/runs/{run_id}/tenant-evidence` | Read the run's tenant evidence: its issues, their cases and the run host's endpoint record (`core/api/tenant_evidence.py`, `connectors/tenant_evidence.py::read_run_evidence`). Explicit operator action, OUTBOUND, read-only, metered; nothing polls it. Stores a snapshot in `tenant_evidence_reads` | query: `force=true\|false` (default false), `integration?` (default: the first credential of kind `xsiam` or `xsiam_tenant`) | 200 `{run_id, read, status, code, detail, retry_after_seconds, snapshot, issues}` (`status` `ok`/`degraded`/`pending`; `snapshot` is the stored row, `issues` its payload's issues section). No read (`read: false`): `NO_TENANT_CONFIGURED` (`pending`, `issues: null`, no credential), `NO_RUN_WINDOW` (`degraded`, no request, nothing stored: a push run, whose execution time is unknown (`push_execution_time_unknown`), or a run where no Result has `executed_at`), `TENANT_EVIDENCE_READ_RECENTLY` (this run and tenant were read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`, through either of that tenant's credentials; the latest snapshot and `retry_after_seconds`; `force=true` reads anyway). Two requests for one run and tenant at once spend one read: the second waits for the first and returns its snapshot (`TENANT_EVIDENCE_READ_RECENTLY`), even when the first read outlasted the interval and even with `force=true`. A read's `code`: `OK`, `NO_ATTRIBUTED_ISSUES` (degraded: the detail names ingestion latency, the hostname, the window and the Security domain filter), `UNSCOPED` (no run host), `QUOTA_REFUSED` (with `retry_after_seconds`) or the issue read's failure code (`XSIAM_*`). 404 `RUN_NOT_FOUND`; 404 `INTEGRATION_NOT_FOUND`; 500 `CREDENTIAL_ERROR` |
@@ -326,7 +326,7 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
 | POST | `/api/runs/{run_id}/output` | Agent streams output (append), bounded | `OutputRequest`: `{output}` | `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?, task_id?, agent_id?, cleanup?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`; `cleanup` is the scenario-cleanup outcome, §1.3.3) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?, remediation?, retry_after_seconds?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 200 + `pending` + `reason:"refused_locally"` with `remediation` and (when the refusal names one) `retry_after_seconds` when CortexSim's own per-tenant budget refused the query before the tenant answered (not an attempt: it never advances the attempt cap or the backoff); 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -397,7 +397,8 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   is dropped. That may matter for the prevention two-witness rule.
 - **Output bounds (2026-11, SEC-14 / OPS-06).** A chunk over 1 MiB is accepted and
   cut. Every step frame line (`=== STEP`, `=== ARTIFACT STAGING`,
-  `--- exit_code=`) and every line carrying an execution-integrity marker
+  `--- exit_code=`, and the cleanup section's `=== CLEANUP` and
+  `--- cleanup `) and every line carrying an execution-integrity marker
   (`!! `, `__CORTEXSIM`, `cortexsim-`, `IDENTITY NOT HONOURED`, …) is kept.
   Ordinary lines are kept from the top until the budget is spent, and
   `[OUTPUT CHUNK TRUNCATED: N of M bytes kept …]` is appended. The cut runs in a
@@ -804,6 +805,128 @@ them under `excluded`, so silence on records never sent cannot read `fail`. A st
 that delivered at least one record stays in the denominator. ***tenant-verified
 is 0***: nothing on this path has delivered to a live tenant.
 
+#### 1.3.3 Pull cleanup wire contract
+
+A pull run cleans up after itself (#324). The task a beacon collects carries
+the scenario's `cleanup.commands` resolved for that agent's OS, the beacon runs
+them when the task ends, and the run keeps what the beacon reported. Server
+side: `core/engine/pull_cleanup.py`. Beacon side: `agent/beacon/cleanup.go`.
+
+**Task.** Omitted when no command runs on the target (no `cleanup.commands`,
+or every line is for the other OS family):
+
+```json
+"cleanup": {
+  "commands": [{"command": "rm -f /tmp/cortexsim_marker", "shell": ""}],
+  "timeout_seconds": 120
+}
+```
+
+- The lines come from `push_generator._resolve_cleanup(scenario, target)`, the
+  resolver the push bundle uses, so both modes run the same lines: a
+  Windows-only teardown line is withheld from a POSIX agent and a POSIX line
+  from a Windows one. Commands are sent verbatim (no `{adapter:*}` /
+  `{stitch:*}` rendering, as in a push bundle).
+- `shell` is `""` on POSIX (`sh -c`) and `powershell` or `cmd` on Windows, the
+  same meaning as a step's `shell`.
+- `timeout_seconds` bounds each command, not the list.
+- Each endpoint of a composed run gets its own task and the lines for its own
+  OS. The schema has one cleanup list per scenario, so every endpoint runs the
+  whole list for its OS family.
+- The key is in the durable `queued_tasks` payload and survives `rehydrate()`.
+
+**When the beacon runs it.** Once, inside the task's completion, when at least
+one step started: after the last step, after a failed step, after a timeout
+and after an abort (operator abort or a lost control channel). It is skipped
+when no step started (aborted before step 1, staging refused, every step
+refused for this platform). Each command runs as the beacon's own account
+(identity `direct`), in its own shell, never as a child of a chained run's
+anchor. A failed command does not stop the ones after it. A cleanup failure
+never changes the task's exit code, its summary or any step's outcome.
+
+While cleanup runs the beacon polls `GET /api/runs/{id}/control` every 2 s, as
+it does during a step, so `Agent.last_seen` stays fresh; the answer is ignored
+(cleanup is what follows an abort).
+
+**On agent shutdown** the whole cleanup has 30 s from the stop
+(`beacon.CleanupShutdownBudget`); the command then in flight is killed and the
+rest are reported as not run. `main` waits up to 30 s past its usual 20 s
+grace while a cleanup is in flight. A supervisor with a shorter stop timer
+still kills the beacon at its own deadline: a pod's 30 s
+`terminationGracePeriodSeconds`, launchd's default 20 s.
+
+**Run output.** One `/output` frame, with no `step_id`, sent before
+`/complete`:
+
+```
+=== CLEANUP · 2 commands · identity=direct ===
+$ rm -f /tmp/cortexsim_marker
+--- cleanup 1/2 exit_code=0 duration=4ms ---
+$ userdel -r cortexsim_testuser
+--- STDERR ---
+userdel: user 'cortexsim_testuser' does not exist
+--- cleanup 2/2 exit_code=6 duration=11ms ---
+```
+
+Each command is echoed after `$ `, then its output (`--- STDOUT ---` /
+`--- STDERR ---`, as in a step frame), then its footer. A command stopped at
+its timeout reads `exit_code=124`; one cut by the shutdown budget
+`exit_code=130`; one never started `exit_code=none duration=0s`. The header and
+footers survive the output cap (§1.3). The report's execution-integrity check
+does not read this section: `command not found` from a cleanup command is not
+a step that did not run.
+
+**`/complete`.** The beacon adds, and a beacon that predates this omits:
+
+```json
+"cleanup": {"status": "clean", "ran": 2, "failed": 0, "reason": null}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `clean` (every command ran and exited 0), `failed`, or `not_run` |
+| `ran` | Commands started |
+| `failed` | Of those, the ones that did not exit 0 (a timeout and a kill count) |
+| `reason` | null when clean; `NO_STEP_STARTED` (with `not_run`), `COMMAND_FAILED`, `COMMAND_TIMEOUT`, `SHUTDOWN_BUDGET_SPENT` |
+
+A task without the `cleanup` key (an older SimCore, or nothing to run) sends
+no `cleanup` object and writes no section: the beacon behaves as before.
+
+**`runs.cleanup`.** A nullable JSON column (added at startup by
+`_migrate_run_cleanup_columns`), exposed as `cleanup` on the run:
+
+```json
+[{"agent_id": "jumpbox-01", "task_id": "<uuid>",
+  "status": "failed", "ran": 2, "failed": 1, "reason": "COMMAND_FAILED"}]
+```
+
+One entry per task. A retried `/complete` adds nothing. A `/complete` that
+reaches an already-terminal run (an abort always wins that race) still answers
+`409 RUN_ALREADY_TERMINAL` and its cleanup outcome is still stored. `null`
+means no beacon reported one, which is not `clean`. Nothing that scores a run
+reads this column.
+
+**An agent that does not advertise `cleanup`.** The task still carries the
+commands (the roster is the beacon's last registration and can be older than
+the beacon; an old beacon ignores the key). The launch and its dry run carry
+one info-level warning per such agent in `warnings[]`, which the console shows
+without holding the launch; the launch also writes it onto `Run.output` as
+`!! CLEANUP_NOT_RUN: agent '<id>'; …`:
+
+```json
+{"code": "CLEANUP_NOT_RUN", "level": "info", "agent_id": "jumpbox-01",
+ "detail": "this beacon does not run scenario cleanup; update it, or clean the host by hand after the run"}
+```
+
+**Report.** The markdown report's "Cleanup Not Run" caveat (with the commands
+to run by hand) now appears only when the run stored no cleanup outcome. A
+run whose cleanup failed, or ran on only some endpoints, gets "Cleanup
+Incomplete" naming the agents; a clean one gets no caveat.
+
+Not covered: `cleanup.k8s_teardown` is not sent to a beacon. No Windows host
+has run this path; the Windows half is covered by cross-compilation and a
+test that checks what reaches the executor.
+
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 
 | Method | Full path | Purpose | Request body | Response |
@@ -1176,8 +1299,9 @@ build stayed Running in CI.
   target, 69 carry a Windows label). Others are refused at launch
   (`409 PULL_TARGET_UNSATISFIABLE`) or skipped on the host (`!! STEP NOT RUN:
   PLATFORM_UNSATISFIABLE`, scored `not_executed`).
-- Pull mode never runs scenario `cleanup.commands`; the POV report lists what it
-  did not run.
+- Scenario `cleanup.commands` run when the task ends, the lines SimCore resolved
+  for Windows under `powershell` or `cmd` (§1.3.3). No Windows host has run this
+  path yet.
 - There is no Windows canary (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
 
 **Uninstall** (elevated; idempotent):
@@ -2165,7 +2289,8 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         │
         ├─ build Task{task_id, run_id, scenario_id,
         │            steps=_resolve_adapter_placeholders(scenario.steps),
-        │            identity_context}
+        │            identity_context,
+        │            cleanup=<cleanup.commands for the agent's OS, §1.3.3>}
         │
         ├─ orchestrator._enqueue(target_agent_id, task)   # in-memory dict[agent_id]->[Task]
         │
@@ -2176,9 +2301,10 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         → orchestrator.dequeue(agent_id) pops Task → {"task": <task.to_dict()>}
                 │
                 ▼
-   Beacon executes via identity harness (see §5), then:
+   Beacon executes via identity harness (see §5), runs the task's cleanup, then:
         POST /api/runs/{run_id}/output    (full combined STDOUT/STDERR)
-        POST /api/runs/{run_id}/complete  {exit_code, summary}
+        POST /api/runs/{run_id}/output    (the === CLEANUP section)
+        POST /api/runs/{run_id}/complete  {exit_code, summary, steps[], cleanup}
                 │
                 ▼
    Run.status = complete|failed; completed_at stamped
@@ -2393,10 +2519,11 @@ Go 1.21+, **stdlib only**.
   60 s with `SERVICE_EXIT_CODE` 3. `signal.Notify` is kept off the service
   path so a user logoff does not stop it. Host *shutdown* gives services only a
   few seconds, which may be too short for the final `/complete`.
-- **Capabilities.** POSIX: `["shell","identity-harness","artifact-fetch"]`.
-  Windows: `["shell","powershell","artifact-fetch"]`, plus `elevated` only when
+- **Capabilities.** POSIX: `["shell","identity-harness","artifact-fetch","cleanup"]`.
+  Windows: `["shell","powershell","artifact-fetch","cleanup"]`, plus `elevated` only when
   the process token's `TOKEN_ELEVATION` says so. A Windows beacon **never**
-  claims `identity-harness`.
+  claims `identity-harness`. `cleanup` says the beacon runs the scenario
+  cleanup a task carries (§1.3.3).
 
 ### 5.2 Poll loop (`beacon.Run`)
 ```
@@ -2490,13 +2617,16 @@ ctx cancelled → return (clean exit)
   per task; `"<agent_id>:<n>"` with no task), fixed before the first attempt
   so a retry carries the same key; SimCore stores a repeated `(run_id,
   frame_id)` once (§11). Live streaming chunks carry no `frame_id`.
+- **Scenario cleanup.** Before `/complete`, a task that carries `cleanup` runs
+  its commands and posts one `=== CLEANUP` frame (§1.3.3).
 - `POST /api/runs/{run_id}/complete` with `{exit_code, summary, steps[], task_id,
-  agent_id}` where summary is
+  agent_id, cleanup?}` where summary is
   `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...` and `steps[]` is the
   per-step host evidence (§1.3.1). `task_id` / `agent_id` are new in round 2;
   SimCore counts a fan-out completion once per task with them (§11).
 - On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
-  interrupted", steps)` (exit 130) then return.
+  interrupted", steps)` (exit 130) then return. A task with `cleanup` first gets
+  up to 30 s to run it (§1.3.3).
 - **Retries (2026-11, BEACON-11).** `/complete` and each step's `/output` retry
   transport errors and 5xx with backoff 1, 2, 4, 8, 16 s: 5 retries, 6 attempts.
   A 409 (`RUN_ALREADY_TERMINAL`) is treated as success; 404 and other 4xx stop
