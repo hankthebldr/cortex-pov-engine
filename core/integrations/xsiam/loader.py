@@ -26,4 +26,5 @@ async def load_xsiam_client(session: AsyncSession, name: str) -> XsiamClient:
     except Exception as exc:  # noqa: BLE001 — pydantic ValidationError et al.
         raise XsiamConfigError(f"tenant '{name}' has invalid config: {exc}") from exc
     api_key = await store.get_integration_secret(name)
-    return XsiamClient(config, api_key)
+    return XsiamClient(config, api_key,
+                       capabilities=(row.config or {}).get("capabilities"))

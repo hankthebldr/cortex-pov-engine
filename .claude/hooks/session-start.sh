@@ -7,7 +7,7 @@
 # for an environmental reason that looks exactly like a code defect:
 #
 #   make check-adapters     FAIL  tier-2 submodule source missing on disk
-#                                 (GAP-ADAPT-01 guard — 10 uninitialised
+#                                 (GAP-ADAPT-01 guard — 9 uninitialised
 #                                  submodules under sources/)
 #   make validate-detection FAIL  env: Install jsonschema>=4.18
 #   make e2e-tierc          FAIL  No module named pytest

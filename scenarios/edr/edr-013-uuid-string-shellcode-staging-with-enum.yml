@@ -7,7 +7,6 @@ plane: EDR
 detection_types:
   - ABIOC
   - XQL
-  - Correlation
 
 uc_ref: UCS-EDR-02
 tc_ref: TC-EDR-03
@@ -79,14 +78,46 @@ success_criteria: |
   misses" proof: there is no VirtualAlloc(RWX), no CreateThread, and no
   injection to key on, so the catch comes from the causality chain. Mean time
   from deviation to alert is within the MTTD budget.
+  In THIS lab only the side-load stage is executed (and scored); the fileless
+  stage and the correlation are narrated, so they are not declared and cannot be
+  claimed from a lab run.
 moat_tier: "LEAD"
 
 external_tools: []
 
 steps:
+  # CONT-04: the pre-beta chain was three steps that wrote marker files while
+  # declaring a module-load ABIOC + query, an unbacked-execution ABIOC + query
+  # and CR-EDR-0013 — none of which a marker produces. It is now one step that
+  # performs a REAL, inert side-load. The UUID-string reassembly and the
+  # enumeration-callback execution are narrated only, so the unbacked-execution
+  # ABIOC, its hunt query and CR-EDR-0013 (a conjunction that needs it) are not
+  # declared — a declared-but-unfirable detection scores a working tenant as a
+  # miss (the SIM-KOI-009 precedent). They stay on TTP-2026-0109.
   - id: step-01
     name: "Stage a DLL side-load: unsigned module dropped in a user-writable path beside a signed host binary"
-    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; New-Item -ItemType Directory -Force -Path $stage | Out-Null; Set-Content -Path (Join-Path $stage 'SAFE-MODE-sideloaded-module.dll.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models an unsigned DLL side-loaded from a user-writable path into a signed host process. No executable code is present.'; Write-Host 'cortexsim-edr-013-dll-sideload-staged'"
+    # REAL but INERT: csc.exe compiles a one-method unsigned library into the
+    # user-writable CortexSim stage directory, and a child powershell.exe
+    # (signed, under \Windows\) loads it — an unsigned module loaded from
+    # \AppData\...\Temp\ by a signed binary, the shape both detections key
+    # on. The load runs in a child so the library is unlocked, and deleted in
+    # this step, the moment the child exits. The library only returns a string.
+    command: |
+      $stage = Join-Path $env:TEMP 'cortexsim-edr-013'
+      New-Item -ItemType Directory -Force -Path $stage | Out-Null
+      $cs = Join-Path $stage 'cortexsim-sideload.cs'
+      $dll = Join-Path $stage 'cortexsim-sideload.dll'
+      Set-Content -Path $cs -Encoding ASCII -Value 'public static class CortexSimEdr013 { public static string Id() { return "cortexsim-edr-013-inert-module"; } }'
+      $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+      if (-not (Test-Path -LiteralPath $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+      & $csc /nologo /target:library "/out:$dll" $cs
+      if (-not (Test-Path -LiteralPath $dll)) { Remove-Item -Recurse -Force $stage; Write-Error 'csc.exe produced no library: the .NET Framework 4 compiler is missing, so the side-load did not run'; exit 1 }
+      powershell.exe -NoProfile -NonInteractive -Command "[Reflection.Assembly]::LoadFile('$dll').GetType('CortexSimEdr013').GetMethod('Id').Invoke(`$null, `$null)"
+      $rc = $LASTEXITCODE
+      Write-Output 'SAFE-MODE: the UUID-string shellcode reassembly and the enumeration-callback execution that follow the side-load are narrated only; nothing is placed on, or run from, an executable heap.'
+      Remove-Item -Recurse -Force $stage
+      if ($rc -ne 0) { Write-Error "side-load child exited $rc"; exit $rc }
+      Write-Output 'cortexsim-edr-013-unsigned-module-loaded-from-user-writable-path'
     identity: user
     mitre_technique: "T1574.002"
     platforms: ["windows"]
@@ -101,43 +132,6 @@ steps:
         description: "Validation query surfaces the unsigned module-load from a user-writable path by a signed host binary in xdr_data within the run window."
         ttp_ref: "TTP-2026-0109"
         detection_id: "xql-edr-013-unsigned-dll-side-loaded-from-a-user-writable-path-by-a-signed-host-binary"
-
-  - id: step-02
-    name: "Reassemble shellcode from UUID strings into a private executable heap and transfer control via an enumeration callback"
-    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; $uuids = @('00010203-0405-0607-0809-0a0b0c0d0e0f','10111213-1415-1617-1819-1a1b1c1d1e1f'); $bytes = foreach ($u in $uuids) { ([guid]$u).ToByteArray() }; Set-Content -Path (Join-Path $stage 'SAFE-MODE-decoded-blob.marker') -Value (\"CortexSim SIM-EDR-013 SAFE-MODE: reassembled {0} inert bytes from {1} benign UUID strings (models UuidFromStringA). Never placed on an executable heap and never run.\" -f $bytes.Count, $uuids.Count); Set-Content -Path (Join-Path $stage 'SAFE-MODE-enum-callback-exec.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models control transfer into a private executable heap via an EnumSystemLocalesA / EnumChildWindows callback. Telemetry-shape marker only.'; Write-Host 'cortexsim-edr-013-uuid-reassembly-and-enum-callback-modeled'"
-    identity: user
-    mitre_technique: "T1620"
-    causality:
-      parent_step: "step-01"
-      pivot: process_lineage
-    platforms: ["windows"]
-    expected_detections:
-      - plane: EDR
-        type: ABIOC
-        description: "The signed host process transfers execution into a private, executable, unbacked memory region reached through a locale/window enumeration callback (EnumSystemLocalesA/EnumChildWindows) — no VirtualAlloc(RWX), no CreateThread, no injection. Auto-tuned ABIOC fires on the in-process causality deviation the learned profile has never exhibited."
-        ttp_ref: "TTP-2026-0109"
-        detection_id: "abioc-edr-013-unbacked-private-heap-execution-reached-via-locale-or-window-enumeration-callback"
-      - plane: EDR
-        type: XQL
-        description: "Hunt query surfaces the unsigned, unbacked module load (no on-disk image) by the signed host process in xdr_data."
-        ttp_ref: "TTP-2026-0109"
-        detection_id: "xql-edr-013-fileless-unbacked-unsigned-module-loaded-by-a-signed-host-process"
-
-  - id: step-03
-    name: "Correlation stitches the side-load and fileless-execution deviations into one incident"
-    command: "Write-Host 'cortexsim-edr-013-cr-edr-0013-stitched-uuid-string-staging-incident'"
-    identity: user
-    mitre_technique: "T1106"
-    causality:
-      parent_step: "step-02"
-      pivot: shared_entity
-    platforms: ["windows"]
-    expected_detections:
-      - plane: EDR
-        type: Correlation
-        description: "Correlation rule fuses the DLL-side-load ABIOC and the unbacked enum-callback-execution ABIOC on the same host + causality process into a single UUID-string-staging intrusion incident anchored to the signed-host-binary causality chain."
-        ttp_ref: "TTP-2026-0109"
-        detection_id: "CR-EDR-0013"
 
 cleanup:
   commands:

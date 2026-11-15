@@ -58,6 +58,8 @@ def test_report_mode_scores_prevent_as_detect_and_flags_contradiction():
 def test_host_outcomes_and_soak_reasons():
     assert oc.host_outcome_for_step("not_run", oc.UPSTREAM_SEVERED) == "not_reached"
     assert oc.host_outcome_for_step("not_run", oc.TOOL_ABSENT) == "not_executed"
+    # The Windows beacon refuses a step its platform cannot run; never a miss.
+    assert oc.host_outcome_for_step("not_run", oc.PLATFORM_UNSATISFIABLE) == "not_executed"
     assert oc.host_outcome_for_step("exited", None) is None
     assert oc.soak_pending_reason(signal_type="ABIOC", soakless_attested=None, first_run_observed=False) == oc.ANALYTICS_ACTIVATION_PERIOD
     assert oc.soak_pending_reason(signal_type="Analytics", soakless_attested=False, first_run_observed=True) == oc.DEDUP_WINDOW

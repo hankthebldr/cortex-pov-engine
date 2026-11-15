@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1082",
     "T1083",
@@ -9,11 +11,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(EDR-022 Service Account Spawns Interpreter Under Web Server CGO) AND (BIOC(EDR-022 Automated Discovery Binary Breadth Burst) OR BIOC(EDR-022 Privilege Escalation Read Fan Out From One Causality Chain) OR BIOC(EDR-022 High Rate Proc Cmdline Sweep Across Distinct Pids) OR BIOC(EDR-022 Filesystem Wide Suid Sgid Sweep By Service Account) OR BIOC(EDR-022 Staging Directory Script Executed By Service Account)) grouped by causality_id within 15m",
       "name": "Shelf-Staged Enumeration Chain \u2014 One Causality Owner",
-      "rule_id": "CR-EDR-0022",
-      "severity": "high"
+      "rule_id": "CR-EDR-0022"
     }
   ],
   "ttp_ref": "TTP-2026-0176"

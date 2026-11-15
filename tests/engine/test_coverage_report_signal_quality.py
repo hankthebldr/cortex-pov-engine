@@ -143,9 +143,21 @@ def test_floor_breach_exits_1(module, tmp_path):
     ("echo m && echo n", True),
     ("echo p | bash", False),
     ("echo m; curl -s http://127.0.0.1:8080/ || true", True),
+    # A scratch-directory ownership guard is a test, an echo and an exit: no attack
+    # action, so it leaves a marker-only step marker-only and a real step real.
+    ('[ "$(stat -c %F:%u:%a /tmp/x 2>/dev/null)" = "directory:$(id -u):700" ] || { echo \'not ours\' >&2; exit 1; }; '
+     "printf 'marker\\n' > /tmp/x/m; echo done", True),
+    ('[ "$(stat -c %F:%u:%a /tmp/x 2>/dev/null)" = "directory:$(id -u):700" ] || { echo \'not ours\' >&2; exit 1; }; '
+     "cat /etc/shadow", False),
+    ('[ "$(curl -s http://198.51.100.7/x)" = ok ] || exit 1; echo m', False),   # any other substitution is a real command
 ])
 def test_marker_only_canonical_vectors(module, cmd, expected):
     assert module.is_marker_only_step({"command": cmd}) is expected
+
+
+def test_eal_channel_step_is_not_marker_only(module):
+    assert module.is_marker_only_step({"channel": "eal", "command": "true"}) is False
+    assert module.is_marker_only_step({"command": "true"}) is True
 
 
 def test_marker_ceiling_compares_before_rounding(module, tmp_path, monkeypatch):

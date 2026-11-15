@@ -15,9 +15,9 @@
  * So this suite asserts the join, in both directions:
  *   1. every brand hue the console claims to source from the DS resolves to
  *      the DS's own current value, and
- *   2. the console has not started painting chrome in the status hue (the
- *      accent inversion this pass shipped), which is the one drift a value
- *      comparison alone would not catch.
+ *   2. the console's accent is the one design v26 §9.1 chose (Cortex green;
+ *      2026-11-13), not the DS's presentation accent (orange) — the one
+ *      drift a value comparison alone would not catch.
  *
  * Reads raw CSS text rather than rendering: vitest runs with `css: false` and
  * jsdom does not resolve custom-property cascades reliably enough to assert
@@ -75,10 +75,12 @@ describe('design-system drift', () => {
   // The five hues the console actually reproduces. Each pair is
   // [DS token name, the console token that must equal it].
   const SOURCED = [
-    ['panw-orange', 'ac', 'chrome accent — the one dominant brand color'],
-    ['panw-orange', 'ac-brand', 'the brand orange every orange alias resolves to'],
-    ['panw-green', 'pos-str', 'Cortex green — status only'],
-    ['panw-yellow', 'warn-str', 'Strata yellow — warn'],
+    ['panw-green', 'br', 'Cortex green — the brand, primary action and selected state (v26 §9.1)'],
+    ['panw-green', 'pos-str', 'Cortex green — healthy / done / detected'],
+    ['gold-600', 'warn-str', 'gold-600 — warn, muted to an accent (Henry, 2026-11-13)'],
+    ['panw-green-700', 'gr-matte', 'matte green — the selected line'],
+    ['green-500', 'gr-mid', 'mid green — secondary green'],
+    ['green-200', 'gr-pale', 'pale green — secondary green'],
   ]
 
   it.each(SOURCED)('--%s from the DS is what --%s paints (%s)', (dsName, ours) => {
@@ -89,6 +91,12 @@ describe('design-system drift', () => {
     expect(norm(dark[ours]), `dark --${ours}`).toBe(expected)
   })
 
+  it('keeps PANW orange on the NGFW family tint, its only remaining use', () => {
+    // Theme-independent block (product-family accents), so read from all
+    // declarations rather than the light/dark pair.
+    expect(norm(declarations(TOKENS)['family-ngfw'])).toBe(norm(ds['panw-orange']))
+  })
+
   it('keeps the categorical plane tints on DS hues', () => {
     // Plane tints are the DS's own sub-brand hues and tint/shade families.
     // Spot-check the ones that map to a named DS token; the rest are tint
@@ -96,17 +104,22 @@ describe('design-system drift', () => {
     const all = declarations(TOKENS)
     expect(norm(all['plane-edr'])).toBe(norm(ds['panw-cyan']))
     expect(norm(all['plane-itdr'])).toBe(norm(ds['panw-yellow']))
-    expect(norm(all['plane-analytics'])).toBe(norm(ds['panw-orange']))
+    // Not orange: v26 keeps PANW orange for the NGFW family tint alone.
+    expect(norm(all['plane-analytics'])).toBe(norm(ds['ink-400']))
+    expect(norm(all['plane-analytics'])).not.toBe(norm(ds['panw-orange']))
     expect(norm(all['plane-cdr'])).toBe(norm(ds['panw-teal']))
     expect(norm(all['plane-cspm'])).toBe(norm(ds['panw-green-700']))
   })
 
-  it('agrees with the DS that the accent is orange, not the status hue', () => {
-    // The DS states it outright; this is the assertion that catches a revert
-    // of the inversion, which matching-hex checks alone would not.
+  it('paints the v26 accent (Cortex green), not the DS presentation accent (orange)', () => {
+    // The DS is a presentation system and names orange its accent. The console
+    // deliberately departs from it: design v26 §9.1 (the owner's direction)
+    // makes Cortex green the primary action and selected colour. This is the
+    // assertion that catches a silent revert either way.
     expect(norm(ds['color-accent'])).toBe('VAR(--PANW-ORANGE)')
-    expect(norm(light['ac'])).not.toBe(norm(ds['panw-green']))
-    expect(norm(dark['ac'])).not.toBe(norm(ds['panw-green']))
+    expect(norm(dark['ac'])).toBe(norm(ds['panw-green']))
+    expect(norm(light['ac'])).not.toBe(norm(ds['panw-orange']))
+    expect(norm(dark['ac'])).not.toBe(norm(ds['panw-orange']))
   })
 
   it('uses the DS display family for console display type', () => {

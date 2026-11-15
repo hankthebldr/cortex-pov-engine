@@ -290,7 +290,7 @@ export default function PayloadComposer({
       {/* ── 5 · the resolved plan ────────────────────────────────────── */}
       <section className="payload-compose__section">
         <div className="competitive__detail-label">Resolved plan</div>
-        {composing && <p className="payload-compose__muted mono">resolving against the shelf…</p>}
+        {composing && <p className="payload-compose__muted mono">resolving the tools for this run…</p>}
         {planError && (
           <div className="payload-compose__error" data-testid="compose-plan-error">
             <p>
@@ -311,8 +311,8 @@ export default function PayloadComposer({
             {plan.air_gapped === false && (
               <p className="payload-compose__warn" data-testid="compose-not-airgapped">
                 ⚠ This scenario is <strong>not</strong> air-gapped: {(plan.unstaged_adapters || []).length}{' '}
-                referenced adapter(s) have no staged artifact, so the target still reaches the public
-                internet for them.
+                referenced tool(s) are not ready on this instance, so the target still needs internet
+                access for them.
               </p>
             )}
             {(plan.warnings || []).map((w) => (
@@ -345,7 +345,7 @@ export default function PayloadComposer({
                 : 'This SimCore\'s POST /api/runs does not accept a payload_plan, so the console will not send one. '}
               Sending it anyway would be silently ignored and the run would execute the scenario&apos;s
               own commands unchanged — while this screen claimed a rename. Arm the scenario normally;
-              the artifact is staged and served either way.
+              the tool is ready and supplied either way.
             </p>
           </>
         )}

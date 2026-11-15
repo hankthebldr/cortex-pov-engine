@@ -217,3 +217,111 @@ def test_a_context_value_that_could_reshape_the_query_is_refused(
         assert body["tc_verdict"] == "pending"
     finally:
         ae.catalog._by_id, ae.catalog._loaded_from = saved
+
+
+def test_dry_run_reports_zero_queries_issued(client):
+    body = client.post("/api/assertions/POS-CSPM-001/run", json={}).json()
+    assert body["queries_issued"] == 0
+    assert body["reason"] == "dry_run"
+
+
+def test_live_run_reports_one_query_per_runner_call(client, monkeypatch):
+    import api.assertions as mod
+
+    calls: list[str] = []
+
+    async def stub_runner(query):
+        calls.append(query)
+        return [{"finding_class": "a"}, {"finding_class": "b"}, {"finding_class": "c"}]
+
+    async def fake_resolve(db, body):
+        return stub_runner, "t1", None
+
+    monkeypatch.setattr(mod, "_resolve_runner", fake_resolve)
+    # persist: false takes the early return path; persisted path checked below.
+    early = client.post("/api/assertions/POS-CSPM-001/run",
+                        json={"dry_run": False, "persist": False}).json()
+    assert calls and early["queries_issued"] == len(calls)
+    n_first = len(calls)
+    persisted = client.post("/api/assertions/POS-CSPM-001/run",
+                            json={"dry_run": False}).json()
+    assert "run_id" in persisted
+    assert persisted["queries_issued"] == len(calls) - n_first > 0
+
+
+def test_a_query_that_raises_still_counts(client, monkeypatch):
+    import api.assertions as mod
+
+    calls: list[str] = []
+
+    async def boom(query):
+        calls.append(query)
+        raise RuntimeError("tenant 500")
+
+    async def fake_resolve(db, body):
+        return boom, "t1", None
+
+    monkeypatch.setattr(mod, "_resolve_runner", fake_resolve)
+    body = client.post("/api/assertions/POS-CSPM-001/run",
+                       json={"dry_run": False, "persist": False}).json()
+    assert calls and body["queries_issued"] == len(calls)
+
+
+def test_no_tenant_reports_zero_and_says_why(client, monkeypatch):
+    import api.assertions as mod
+
+    async def fake_resolve(db, body):
+        return None, None, None
+
+    monkeypatch.setattr(mod, "_resolve_runner", fake_resolve)
+    body = client.post("/api/assertions/POS-CSPM-001/run",
+                       json={"dry_run": False}).json()
+    assert body["queries_issued"] == 0
+    assert body["reason"] == "no_tenant_integration"
+
+
+def test_a_credential_without_xql_capability_never_runs_xql(client, session_factory, monkeypatch):
+    """D-18 (spec §5.6): configuring alert read-back does not authorise XQL.
+
+    A credential whose capabilities lack "xql" resolves pending with reason
+    xql_not_authorised, issues 0 queries and never builds or calls a runner —
+    the same answer the verify path gives for the same credential.
+    """
+    import asyncio
+
+    from engine import verifier
+    from integrations.xsiam import loader
+    from security.credentials import CredentialStore
+
+    built: list[str] = []
+
+    async def _no_client(db, name):
+        built.append(f"client:{name}")
+        raise AssertionError("a client was built for a credential without xql")
+
+    def _no_runner(*a, **k):
+        built.append("runner")
+        raise AssertionError("an XQL runner was built for a credential without xql")
+
+    monkeypatch.setattr(loader, "load_xsiam_client", _no_client)
+    monkeypatch.setattr(verifier, "xsiam_rows_runner", _no_runner)
+
+    async def _seed():
+        async with session_factory() as db:
+            await CredentialStore(db).put_integration(
+                name="alerts-only", kind="xsiam_tenant", plaintext_secret="k" * 40,
+                config={"base_url": "https://api-t.xdr.us.paloaltonetworks.com", "region": "us",
+                        "api_key_id": "1", "capabilities": ["read_alerts"]})
+            await db.commit()
+    asyncio.run(_seed())
+
+    resp = client.post("/api/assertions/POS-CSPM-001/run",
+                       json={"dry_run": False, "integration": "alerts-only"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["tc_verdict"] == "pending"
+    assert body["reason"] == "xql_not_authorised"
+    assert body["queries_issued"] == 0
+    assert body["tenant"] == "alerts-only"
+    assert built == []
+    assert all(c["taxonomy_code"] == "XQL_NOT_AUTHORISED" for c in body["checks"])

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { isRunUnproven } from './console/runStatus.js'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
@@ -98,14 +99,10 @@ function StatusPill({ status, det }) {
   )
 }
 
-// Run states in which NO claim about the customer's detection posture is
-// defensible: the simulation itself did not finish, so an un-fired detection
-// means "we never generated the signal", not "Cortex missed it".
-const UNPROVEN_RUN_STATUSES = new Set(['failed', 'aborted'])
-
-export function isRunUnproven(runStatus) {
-  return UNPROVEN_RUN_STATUSES.has(String(runStatus || '').toLowerCase())
-}
+// The unproven-run rule moved to console/runStatus.js (one definition, pure)
+// so the Runs row can read it without pulling this component in. Re-exported
+// here because every proof surface imports it from this module.
+export { isRunUnproven }
 
 /**
  * Reconcile the server's per-detection status with the run's own outcome.

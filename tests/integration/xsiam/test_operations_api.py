@@ -30,6 +30,9 @@ async def _ret(value):
 class _StubClient:
     """Records request() calls so tests can assert a live call did/didn't happen."""
 
+    capabilities = ["xql"]
+    _base = "https://api-stub.xdr.us.paloaltonetworks.com"
+
     def __init__(self):
         self.calls = []
 
@@ -74,7 +77,8 @@ def _build_app(tmp_path, monkeypatch):
     async def _h(request: Request, exc: XsiamError):
         return JSONResponse(status_code=exc.http_status,
                             content={"error": "XSIAM integration error",
-                                     "code": exc.code, "detail": exc.detail})
+                                     "code": exc.code, "detail": exc.detail,
+                                     "upstream_status": exc.upstream_status})
     return TestClient(app), stub, xsiam_api
 
 
@@ -175,3 +179,26 @@ def test_missing_path_param_is_rejected(tmp_path, monkeypatch):
                     json={})
     assert r.status_code == 400
     assert r.json()["code"] == "XSIAM_CONFIG_ERROR"
+
+
+# ── executor: request envelope ───────────────────────────────────────────────
+
+def test_bodyless_post_gets_request_data_envelope(tmp_path, monkeypatch):
+    """The default most POST ops expect, kept for every op that does not opt out."""
+    client, _stub, _ = _build_app(tmp_path, monkeypatch)
+    r = client.post("/api/xsiam/tenants/acme/operations/OP-BIOC-INSERT", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["request"]["body"] == {"request_data": {}}
+
+
+def test_bare_envelope_op_previews_without_request_data(tmp_path, monkeypatch):
+    """BYOS ingest rejects the wrapper; a preview that shows one would mislead the DC."""
+    client, stub, _ = _build_app(tmp_path, monkeypatch)
+    r = client.post(
+        "/api/xsiam/tenants/acme/operations/OP-VULN-MGMT-EXTERNAL-SCANS-ASSETS",
+        json={})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dry_run"] is True
+    assert body["request"]["body"] == {}
+    assert stub.calls == []

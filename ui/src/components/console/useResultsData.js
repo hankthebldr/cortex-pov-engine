@@ -81,6 +81,7 @@ export default function useResultsData(runId) {
         || r.alert_name || '(unnamed)',
       mttd: r.mttd_seconds ?? null,
       alertId: r.alert_id || null,
+      alertSource: r.alert_source || null,
       observed: r.observed,        // true | false | null  (null = pending)
       outcome: r.outcome ?? null,
       outcome_reason: r.outcome_reason ?? null,

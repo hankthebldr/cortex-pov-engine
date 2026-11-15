@@ -74,7 +74,8 @@ def test_a_completion_inside_the_launch_window_is_not_overwritten(file_db, monke
     orch = Orchestrator()
     collected: list = []
 
-    async def _fast_beacon_during_eal(self, run_id, scenario, eal_steps, binding, executed_at, db):
+    async def _fast_beacon_during_eal(self, run_id, scenario, eal_steps, binding, executed_at, db,
+                                      *, authorized_by=None):
         # A beacon long-polling agent-1 collects whatever is deliverable NOW,
         # runs its (fast) step and reports — all before the launch commits.
         async with file_db() as beacon_db:

@@ -17,8 +17,10 @@
  *
  * What the palette itself owns is presentation only: the NICE tab bar and the
  * two filters that narrow what is shown — the active tab (via each group's
- * `tab` field) and the free-text query (over each item's name + meta). Neither
- * mutates anything; both are pure functions of props, so the same groups always
+ * `tab` field) and the free-text query (over each item's name, meta and tags).
+ * Tag chips are a shortcut into that query: a chip is a tag the active tab's
+ * items carry, and clicking it filters to the tag. Nothing here mutates
+ * anything; all of it is a pure function of props, so the same groups always
  * render the same rail.
  *
  * CSS is unchanged from the `bench` era on purpose: the class names
@@ -27,14 +29,20 @@
  * in the component tree, not in the stylesheet.
  */
 import React, { useMemo } from 'react'
+import { Icon } from './kit/index.js'
+
+// A chip row longer than this stops being a shortcut and becomes a second list.
+const MAX_TAG_CHIPS = 10
 
 /**
  * @param {Object}   props
- * @param {Array}    [props.tabs]      NICE-organized tab descriptors `[{id,label}]`.
+ * @param {Array}    [props.tabs]      NICE-organized tab descriptors `[{id,label,icon?}]`. A tab
+ *                                     with an `icon` is drawn as the icon alone, named by `label`.
  *                                     When empty/absent, no tab bar renders and every group shows.
  * @param {string}   [props.activeTab] The id of the selected tab; groups whose `tab` differs are hidden.
  * @param {Function} [props.onTab]     `(id) => void` — the container flips `activeTab`.
- * @param {Array}    props.groups      `[{label, tone, tab?, items:[{key,name,meta,add,disabled?,title?}]}]`.
+ * @param {Array}    props.groups      `[{label, tone, tab?, items:[{key,name,meta,add,disabled?,title?,tags?,starred?}]}]`.
+ *                                     `starred` marks one of the system's best scenarios (★).
  *                                     All content is API-sourced upstream; the palette never invents a group.
  * @param {string}   [props.query]     Free-text filter over each item's `name` + `meta`.
  * @param {Function} [props.onQuery]   `(str) => void` — the container owns the query string.
@@ -60,16 +68,39 @@ export default function ComposerPalette({
   // Two pure narrowings, in order: keep groups on the active tab (a group with
   // no `tab` is tab-agnostic and always shows), then keep items matching the
   // query. Empty groups drop out so the rail never shows a bare title.
+  const tabGroups = useMemo(
+    () => groups.filter((g) => !tabs.length || !g.tab || g.tab === activeTab),
+    [groups, tabs.length, activeTab],
+  )
+
   const visibleGroups = useMemo(() => {
-    const match = (a, b) => !q || `${a ?? ''} ${b ?? ''}`.toLowerCase().includes(q)
-    return groups
-      .filter((g) => !tabs.length || !g.tab || g.tab === activeTab)
-      .map((g) => ({
-        ...g,
-        items: (g.items || []).filter((it) => match(it.name, it.meta)),
-      }))
+    const match = (it) => !q
+      || `${it.name ?? ''} ${it.meta ?? ''} ${(it.tags || []).join(' ')}`.toLowerCase().includes(q)
+    return tabGroups
+      .map((g) => ({ ...g, items: (g.items || []).filter(match) }))
       .filter((g) => g.items.length)
-  }, [groups, tabs.length, activeTab, q])
+  }, [tabGroups, q])
+
+  // The tags this tab's items carry, most common first. Tags that differ only
+  // in case are one chip (the ANALYTICS plane and the Analytics detection type
+  // filter the same way). A tag every item shares narrows nothing, so it is
+  // not offered.
+  const tagChips = useMemo(() => {
+    const tagged = tabGroups.flatMap((g) => g.items || []).filter((it) => it.tags?.length)
+    const chips = new Map()   // lowercased tag -> { label, n }
+    for (const it of tagged) {
+      for (const key of new Set(it.tags.map((t) => t.toLowerCase()))) {
+        const chip = chips.get(key) || { label: it.tags.find((t) => t.toLowerCase() === key), n: 0 }
+        chip.n += 1
+        chips.set(key, chip)
+      }
+    }
+    return [...chips.values()]
+      .filter((c) => c.n < tagged.length)
+      .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+      .slice(0, MAX_TAG_CHIPS)
+      .map((c) => c.label)
+  }, [tabGroups])
 
   const nothingShown = !visibleGroups.length
 
@@ -96,10 +127,31 @@ export default function ComposerPalette({
                 'composer-bench__tab' + (t.id === activeTab ? ' composer-bench__tab--active' : '')
               }
               onClick={() => onTab(t.id)}
+              aria-label={t.icon ? t.label : undefined}
+              title={t.icon ? t.label : undefined}
             >
-              {t.label}
+              {t.icon ? <Icon name={t.icon} size={13} /> : t.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {tagChips.length > 0 && (
+        <div className="composer-bench__tags" role="group" aria-label="Filter by tag">
+          {tagChips.map((t) => {
+            const on = q === t.toLowerCase()
+            return (
+              <button
+                type="button"
+                key={t}
+                className={'composer-bench__tag' + (on ? ' composer-bench__tag--on' : '')}
+                aria-pressed={on}
+                onClick={() => onQuery(on ? '' : t)}
+              >
+                {t}
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -120,10 +172,14 @@ export default function ComposerPalette({
                 e.dataTransfer.effectAllowed = 'copy'
               } : undefined}
             >
-              <span
-                className={`bench-item__dot bench-item__dot--${group.tone}`}
-                aria-hidden="true"
-              />
+              {it.starred
+                ? <Icon name="star" size={11} className="bench-item__star" />
+                : (
+                  <span
+                    className={`bench-item__dot bench-item__dot--${group.tone}`}
+                    aria-hidden="true"
+                  />
+                )}
               <span className="bench-item__text">
                 <span className="bench-item__name">{it.name}</span>
                 <span className="bench-item__meta mono">{it.meta}</span>
@@ -138,7 +194,9 @@ export default function ComposerPalette({
         <div className="composer-bench__empty">loading…</div>
       )}
       {nothingShown && !loading && (
-        <div className="composer-bench__empty">nothing matches “{query}”</div>
+        <div className="composer-bench__empty">
+          {q ? <>nothing matches “{query}”</> : 'nothing on this tab yet'}
+        </div>
       )}
     </aside>
   )

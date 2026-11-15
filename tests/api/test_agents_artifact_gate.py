@@ -156,3 +156,54 @@ def test_refusal_does_not_redeliver_the_task(client, session_factory):
     second = client.get("/api/agents/a-old/tasks")
     assert second.status_code == 200
     assert second.json()["task"] is None
+
+
+# ---------------------------------------------------------------------------
+# The refusal names both causes, and a fix the agent's own OS can run
+# ---------------------------------------------------------------------------
+#
+# The roster the gate reads is not always the beacon's. An enrolled row carries
+# what the INSTALLER sent (Windows: shell, powershell; POSIX: shell,
+# identity-harness) until the beacon's own Register lands, and the beacon only
+# re-registers on a 404. If its boot-time Register failed, a current beacon that
+# CAN stage is refused, and the message told the DC, as fact, that "it predates
+# artifact staging" and to run a `curl ... os=linux | bash` on a Windows host.
+
+
+def _refusal_for(client, session_factory, *, agent_os: str, caps: list[str]) -> str:
+    client.post("/api/agents/register",
+                json={"agent_id": "a-enrolled", "hostname": "h", "os": agent_os,
+                      "capabilities": caps}).raise_for_status()
+    _seed_run(session_factory, "run-x")
+    _queue_task("a-enrolled", "run-x", [ARTIFACT])
+    r = client.get("/api/agents/a-enrolled/tasks")
+    assert r.status_code == 409
+    return r.json()["detail"]["detail"]
+
+
+def test_the_refusal_does_not_assert_one_cause_as_fact(client, session_factory):
+    detail = _refusal_for(client, session_factory, agent_os="linux",
+                          caps=["shell", "identity-harness"])
+    assert "predates artifact staging" in detail
+    assert "has not registered since it was enrolled" in detail, detail
+    assert "it predates artifact staging and would" not in detail, (
+        "one of two possible causes is still stated as fact")
+
+
+def test_a_windows_agent_is_given_a_windows_fix(client, session_factory):
+    detail = _refusal_for(client, session_factory, agent_os="windows",
+                          caps=["shell", "powershell"])
+    assert "Restart-Service CortexSimAgent" in detail, detail
+    assert "/api/agents/install?os=windows" in detail and "| iex" in detail, detail
+    assert "curl" not in detail and "| bash" not in detail and "os=linux" not in detail, detail
+    assert "$env:CORTEXSIM_TOKEN" in detail, "the token belongs in the env var, not the URL"
+
+
+def test_a_posix_agent_is_given_a_posix_fix_naming_this_server(client, session_factory):
+    detail = _refusal_for(client, session_factory, agent_os="linux",
+                          caps=["shell", "identity-harness"])
+    assert "restart" in detail and "cortexsim-agent" in detail, detail
+    # The beacon reached SimCore at this address, so it is the one to name.
+    assert "curl -fsSL 'http://testserver/api/agents/install?os=linux'" in detail, detail
+    assert "<server>" not in detail
+    assert "iex" not in detail and "Restart-Service" not in detail, detail

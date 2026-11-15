@@ -5,9 +5,17 @@
 > **This file is the contract three other tracks author against.** If you need
 > something here to change, change it here first.
 
-For a cloud-native target **the deployment is the agent**. There is no beacon to
-enroll and no binary to drop on a host: `kubectl apply` is the delivery, the
-kubelet pulls the image, the entrypoint runs the payload.
+A cloud-native target now has **two paths**.
+
+* **Push manifest (this document).** **The deployment is the agent**: no beacon to
+  enroll and no binary to drop on a host. `kubectl apply` is the delivery, the
+  kubelet pulls the image, the entrypoint runs the payload, once. Use it for a
+  one-off, an air-gapped cluster, or a scenario that plants its own posture.
+* **Enrolled container agent.** The beacon runs in a standing pod and enrolls with
+  SimCore, so cluster scenarios get the full pull lifecycle (run record, live
+  output, abort, MTTD). Use it for repeated runs from the console. Its pod has one
+  fixed posture. See `docs/reference/k8s-container-agent.md`; authored, not
+  tenant-verified.
 
 That makes an intentionally over-permissioned workload **three artifacts at
 once**:

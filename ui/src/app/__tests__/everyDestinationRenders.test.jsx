@@ -37,15 +37,22 @@ void React
 // itself from data (a run id), the expectation is the stable part of it.
 const TITLES = {
   start: /^get started$/i,
-  library: /^library$/i,
+  components: /^components$/i,
+  library: /^scenarios$/i,
   runs: /^runs$/i,
   proof: /.+/,
   ttps: /ttp cards/i,
-  agents: /agents/i,
-  tenants: /^tenant$/i,
+  'component-agents': /^agents$/i,
+  'component-tenant': /^tenant$/i,
+  'component-firewall': /^firewall$/i,
+  'component-pov': /^povengine$/i,
+  'component-http': /^http collector$/i,
+  'component-bvm': /^broker vm$/i,
+  'component-xdrc': /^xdr collector$/i,
+  'component-engine': /^cortex engine$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
-  coverage: /coverage/i,
+  coverage: /^dashboards$/i,
   adapters: /^packages$/i,
   streams: /data\s*streams/i,
   uctc: /uc \/ tc index/i,
@@ -58,10 +65,10 @@ const FOREIGN = [
   ['start', /^get started$/i],
   ['preflight', /launch gate/i],
   ['overview', /prove what the stack/i],
-  ['tenants', /^tenant$/i],
+  ['component-tenant', /^tenant$/i],
 ]
 
-// The five tasks and the Manage pair are the rail; their tab pages are walked
+// The three journeys and Reference are the rail; their tab pages are walked
 // too, because a tab is a page a DC lands on as often as a rail item. Redirect
 // stubs (retired seed pages) render nothing by design, and the legacy aliases
 // (guided/eal/environments/readiness) compose other surfaces and are covered
@@ -88,19 +95,22 @@ describe('every destination renders itself, and only itself', () => {
       'GET /api/health': { status: 'ok' },
       'GET /api/ttps': { ttps: [] },
       'GET /api/tools/adapters': { adapters: [] },
+      'GET /api/ngfw': { firewalls: [], write_enabled: false, tenant_verified: 0 },
+      'GET /api/collector-targets': { targets: [], count: 0 },
     })
   })
   afterEach(cleanup)
 
-  it('the rail is the five tasks plus the Manage pair', () => {
+  it('the rail is the three journeys plus Reference', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Simulate', 'Runs', 'Results', 'Catalog', 'Agents', 'Tenant'],
+      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Dashboards', 'Catalog'],
     )
   })
 
   it('retired seed pages redirect instead of rendering', () => {
     const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
-    expect(retired).toEqual(['cli', 'scope', 'setup', 'validation'])
+    // guided and readiness land on the Launch gate (the MVP merged them into it).
+    expect(retired).toEqual(['agents', 'cli', 'firewall', 'guided', 'readiness', 'scope', 'setup', 'tenants', 'validation'])
   })
 
   it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {

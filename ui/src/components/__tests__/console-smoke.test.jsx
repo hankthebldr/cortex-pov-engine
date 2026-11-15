@@ -8,7 +8,7 @@
  * etc.) live in their own files.
  */
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 
 import AppShell from '../console/AppShell.jsx'
@@ -97,10 +97,9 @@ describe('console-view smoke renders', () => {
   })
 
 
-  it('CommandPalette mounts closed (no overlay visible)', () => {
+  it('CommandPalette mounts closed (no overlay rendered)', () => {
     render(<CommandPalette open={false} items={[]} />)
-    // dialog is in DOM but hidden via display:none; just confirm no throw + role exists
-    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { hidden: true })).not.toBeInTheDocument()
   })
 
   it('CommandPalette renders items when open', () => {
@@ -208,7 +207,7 @@ describe('console-view smoke renders', () => {
     }
     render(<ScenarioInspector scenario={scenario} open launch={launch} pinned={false} />)
     expect(screen.getByText(/APT29 Cloud Credential Theft/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /launch/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
   it('NarrativeTimeline renders nothing with empty frames', () => {
@@ -224,8 +223,8 @@ describe('console-view smoke renders', () => {
     })
     render(<OperationsView />)
     await waitFor(() => {
-      // Redesign v2: the Operations view heading is now "Library".
-      expect(screen.getByRole('heading', { name: /library/i })).toBeInTheDocument()
+      // The h1 repeats the tab label — Simulate › Scenarios (see headingMatchesTab).
+      expect(screen.getByRole('heading', { name: /scenarios/i })).toBeInTheDocument()
     })
   })
 
@@ -307,8 +306,10 @@ describe('console-view smoke renders', () => {
     })
   })
 
-  it('CoverageView mounts and fetches the heatmap data', async () => {
-    installRoutes({
+  it('CoverageView (Dashboards) mounts and fetches the heatmap data on its MITRE tab', async () => {
+    const fetchMock = installRoutes({
+      'GET /api/scenarios': { scenarios: [{ scenario_id: 'SIM-EDR-001', plane: 'EDR', steps: [] }] },
+      'GET /api/runs': { runs: [], total: 0 },
       'GET /api/mitre/coverage': {
         summary: { total_techniques: 0, detected: 0, run_not_detected: 0, not_run: 0 },
         by_tactic: [],
@@ -316,7 +317,11 @@ describe('console-view smoke renders', () => {
     })
     render(<CoverageView />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /coverage/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: /dashboards/i })).toBeInTheDocument()
+    })
+    fireEvent.click(await screen.findByRole('tab', { name: /MITRE/ }))
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/mitre/coverage'))).toBe(true)
     })
   })
 })

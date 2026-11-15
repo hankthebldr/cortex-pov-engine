@@ -42,10 +42,15 @@ def public_urls(monkeypatch):
     return _set
 
 
+#: Mint-shaped (``cxs_`` + token_urlsafe(32)): the installer refuses a token of
+#: any other length with BAD_TOKEN before it looks at ?server=.
+_TOKEN = "cxs_" + "abc" * 14 + "d"
+
+
 @pytest.mark.parametrize("os_", ["linux", "darwin", "windows"])
 def test_a_link_naming_another_server_gets_no_script(client_at, os_):
     r = client_at("http://simcore.lab:8888").get("/api/agents/install", params={
-        "os": os_, "server": "http://c2.attacker.example:443", "token": "cxs_abc",
+        "os": os_, "server": "http://c2.attacker.example:443", "token": _TOKEN,
     })
     assert r.status_code == 400, r.text
     assert r.headers["content-type"].startswith("application/json")
@@ -74,10 +79,14 @@ def test_a_default_port_spelled_out_is_the_same_origin(client_at):
     assert "SERVER='https://simcore.lab'" in r.text
 
 
-def test_a_configured_public_url_is_accepted_and_others_are_not(client_at, public_urls):
+def test_a_configured_public_url_is_accepted_and_others_are_not(client_at, public_urls, monkeypatch):
     """The console is open at localhost; the jumpbox reaches SimCore on a LAN
     address the request cannot show. The operator lists it; nothing else passes."""
     public_urls(" http://10.0.10.5:8888/ , HTTPS://SimCore.Corp.Local:443 ")
+    # A listed DNS name must also pass the Host guard, or the beacon's every
+    # call gets HOST_NOT_ALLOWED (SERVER_HOST_NOT_ALLOWED, RG-GUARD-05).
+    import config
+    monkeypatch.setattr(config.settings, "CORTEXSIM_ALLOWED_HOSTS", "simcore.corp.local")
     client = client_at("http://localhost:8888")
 
     for server in ("http://10.0.10.5:8888", "https://simcore.corp.local"):

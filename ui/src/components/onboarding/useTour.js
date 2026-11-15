@@ -97,7 +97,10 @@ export function useTour({ stops, onNavigate, autoStart = false, anchorTimeoutMs 
   const search = useCallback(async (from, dir, myRequestId) => {
     for (let i = from; i >= 0 && i < stops.length; i += dir) {
       const candidate = stops[i]
-      if (onNavigate) onNavigate(candidate.destination)
+      if (onNavigate) {
+        if (candidate.params) onNavigate(candidate.destination, candidate.params)
+        else onNavigate(candidate.destination)
+      }
       // eslint-disable-next-line no-await-in-loop
       const ok = await waitForAnchor(candidate.anchor, anchorTimeoutMs)
       if (requestIdRef.current !== myRequestId || !mountedRef.current) return -1

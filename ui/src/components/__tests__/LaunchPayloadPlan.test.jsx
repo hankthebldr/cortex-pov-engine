@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import LaunchView from '../console/LaunchView.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
 
@@ -92,7 +92,7 @@ describe('LaunchView — payload plan resolving (I-1)', () => {
     )
     await waitFor(() => expect(screen.getByTestId('launch-payload-plan-resolving')).toBeInTheDocument())
     expect(screen.queryByTestId('launch-payload-plan')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Launch run/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
     expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/resolving/i)
   })
 
@@ -136,7 +136,7 @@ describe('LaunchView — payload plan', () => {
     render(<LaunchView scenario={{ ...SCENARIO, cluster_posture: {} }} selectedTarget={target} />)
     await waitFor(() => expect(screen.getByTestId('launch-payload-egress')).toBeInTheDocument())
     expect(screen.getByTestId('launch-payload-egress')).toHaveTextContent(/Hydra/)
-    const launch = screen.getByRole('button', { name: /Launch run/ })
+    const launch = screen.getByRole('button', { name: 'Run' })
     // Consent is the only thing gating it here, not the egress warning.
     expect(screen.getByTestId('launch-blockers')).not.toHaveTextContent(/Hydra/)
     expect(launch).toBeInTheDocument()
@@ -147,7 +147,7 @@ describe('LaunchView — payload plan', () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={target} />)
     await waitFor(() => expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/linpeas\.sh is declared/))
     expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/PAYLOAD_NOT_STAGED/)
-    expect(screen.getByRole('button', { name: /Launch run/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
   })
 
   it('says UNKNOWN — not "fine" — when the shelf cannot be read', async () => {
@@ -200,8 +200,9 @@ describe('LaunchView — payload plan', () => {
     // tick the dual-use consent, then fire
     const consent = document.querySelector('.launch-consent__row input')
     consent.click()
-    await waitFor(() => expect(screen.getByRole('button', { name: /Launch run/ })).toBeEnabled())
-    screen.getByRole('button', { name: /Launch run/ }).click()
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled())
+    screen.getByRole('button', { name: 'Run' }).click()
     await waitFor(() => expect(seen.length).toBe(1))
     expect(seen[0].payload_plan).toEqual(PLAN.artifacts)
   })

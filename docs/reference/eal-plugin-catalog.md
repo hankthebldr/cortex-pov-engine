@@ -131,6 +131,59 @@ of taxonomy codes with per-code `remediation`. Taxonomy:
   `target_allowlist` gates it; a non-allowlisted host is reported as
   `target_not_authorised` and never contacted.
 
+### Collector targets (`targets.py`, `target_preflight.py`) — one set of doors per POV
+
+A SimCore instance serves one POV against one tenant, so the ingestion doors the
+collector emitters POST to are **instance configuration**, entered once at
+`/api/collector-targets` (console: **Tenant › Collector targets**) and persisted in
+the instance database, with each key in the encrypted vault. Kinds:
+`xsiam_http_collector` (the tenant's `/logs/v1/event`, key required) and
+`http_forwarder`. **Broker VM targets are not modelled yet**: they wait on
+confirmation of which applets a POV uses.
+
+One resolver, `targets.apply_targets`, decides where every in-process collector
+step POSTs: an explicit `params.collector_target` name, then the one target
+bound to the step's plugin, then the default target, then the step's own inline
+`collector_url`, else nothing. A resolved target **replaces** an inline URL and
+the resolution records the URL it replaced. The target's exact `host:port` is
+pinned into the campaign's effective `target_allowlist`. Its callers: campaign
+create (a step may omit `collector_url`), `GET …/collectors` (adds
+`resolutions[]`, `blocking[]`, `failing[]`, `degraded[]`), campaign preflight,
+launch, the offline bundle (URL, header and scheme from the target; the key
+never), and the Composer / scenario-run in-process dispatch. That dispatch runs
+dry-run (nothing delivered), without keys, unless the run launched with
+`consent.simulation_authorized` and a named `authorized_by` and every eal step's
+params validate and it resolves to a keyed target whose last check did not fail,
+with at most 30 s of total sleep; only then are the keys
+decrypted and the campaign delivers live, and otherwise each step says why with
+an `EAL_DRY_RUN_*` code (`api-and-agent-surface.md` §1.3.2). The stored campaign
+spec is never rewritten; the key is decrypted only at launch, into the in-memory
+campaign.
+
+Per-target preflight, `POST /api/collector-targets/{name}/preflight`, is a
+ladder: **configured** (URL valid, key present when the kind needs one) →
+**reachable** (DNS + TCP + TLS handshake, **no HTTP request**) → **accepted**
+(only with `write_canary: true`: the discard-safe canary POST, classified by the
+delivery taxonomy). Verdict `not_configured` · `unreachable` · `reachable` ·
+`refused` · `accepted`; `accepted` means a 2xx, not that the record was parsed or
+fired anything (`tenant_verified: 0`). The reachable rung skips certificate
+verification, matching the live run.
+
+A **live** launch refuses a collector step with nothing to send to or an unknown
+target name (422 `COLLECTOR_TARGET_NOT_CONFIGURED` / `_UNKNOWN`), and a target
+whose last check was `not_configured`, `unreachable` or `refused` (409
+`COLLECTOR_TARGET_FAILING`). A target never checked, or only `reachable`, runs
+with `COLLECTOR_TARGET_UNPROVEN` in the launch response's `degraded[]`; an inline
+URL runs with `COLLECTOR_TARGET_INLINE`. The resolution is stored on the run
+(`collector_resolution`, never the key). Dry runs are never refused. The delivery
+ledger still decides green.
+
+**Not covered yet:** the 89 scenario steps that run the EAL CLI on a beacon still
+read `$COLLECTOR_URL` from the beacon's shell. Delivering a target, key included,
+into an identity-wrapped step (`runuser -l` resets the environment) without
+putting the key on a command line is a separate beacon change (spec §10).
+Spec: `docs/superpowers/specs/2026-11-10-collector-targets-design.md`.
+
 ### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
 
 Collector preflight answers *"will this record land?"*. It cannot answer the
@@ -179,6 +232,58 @@ input class: `coerce_utc` parses *tenant-supplied* alert timestamps where
 tolerance beats a crash; this reads an *operator-typed config date*, where
 assuming UTC shifts the gate by the DC's own offset and answers wrongly with no
 error anywhere. **Do not unify them.**
+
+#### Route and soakless (2026-11-10, LogSimv2 port phase 1)
+
+The gate now asks a question before training time: **can the record reach the
+detector at all?** Three documented facts make the answer often no:
+
+- *"Analytics, IOC, and BIOC issues are only generated on normalized logs."*
+  ([Ingest data from Next-Generation Firewall](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall))
+- A custom HTTP log collector writes `<Vendor>_<Product>_raw`, which analytics
+  reads only once an XDM modeling rule maps it. Every streamer in this family
+  delivers this way.
+- On the Cribl receiver, out-of-the-box analytics run only on dedicated-UUID
+  sources, never the generic UUID
+  ([Data source UUIDs](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/vendor-specific-data-sources-and-connectors/cribl/ingest-data-from-cribl/data-souce-uuids)).
+
+`core/eal_simulator/ingestion_routes.py` records, per catalogue source, each
+documented route: pipe, the dataset the tenant creates, Cribl source UUID,
+vendor/product, and whether out-of-the-box analytics run on it (`yes` / `no` /
+`requires_xdm`). Dataset and analytics claims carry **separate** evidence
+(`documented` / `inferred` / `reported`). `reported` means only LogSimv2 states
+it, and it is never quoted as a vendor statement.
+
+The endpoint reads each step's route from the URL launch would send to: its
+resolved collector target's, else its inline `collector_url`
+(`/logs/v1/event` is the HTTP collector; `/logs/v1/integrated/cribl/data` is the
+Cribl receiver, whose UUID is in a header and so unresolved; anything else is an
+unknown forwarder; a step no target resolves is `undeclared`). Then, in order:
+
+| Gate | Result |
+|---|---|
+| Route analytics never reads (`cribl_generic`, ingestion-only sources) | `not_armable` · `DETECTOR_ROUTE_NO_ANALYTICS`. A soakless tenant does not change this |
+| Route needs XDM and `xdm_modeled_sources` does not attest it | `unknown` · `DETECTOR_ROUTE_REQUIRES_XDM` |
+| Route cannot be read from the URL, or one emitter uses two doors (`mixed`) | `unknown` · `DETECTOR_ROUTE_UNRESOLVED` |
+| `soakless_attested: true` | `armed` · `DETECTOR_ARMED_SOAKLESS`, `armed_basis: "attested:soakless"`. The documented periods stay in the verdict |
+| Otherwise | the onboarding-date gate above, `armed_basis: "onboarding_date"` when armed |
+
+**Behaviour change.** Before this pass, an HTTP-collector campaign whose source
+had been onboarded long enough read `armed` and `ready: true`. It now reads
+`unknown` until the DC attests the XDM rule, because the vendor says built-in
+analytics never see that data otherwise.
+
+`GET /api/eal/data-streams` source rows gain `routes[]` and `dataset_check[]`
+(does each emitter name a dataset the tenant creates for that source:
+`match` / `mismatch` / `no_documented_route`). Top-level `generic_routes[]` and
+`ingestion_only[]` list the two routes any source can take and the four sources
+with real data but no published analytics (Proofpoint TAP, Infoblox NIOS, Apache
+httpd, VMware ESXi). Those four sit outside the 34-source coverage figure by
+construction. Counted 2026-11-10: **21 of 31** addressable sources have a
+documented route, and **12** emitter-to-source pairs name a dataset no
+documented route creates (`counts.emitter_dataset_mismatch`). That is measured,
+not fixed; renaming is decision D-2 in
+`docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
 
 #### Counted state (2026-09-20)
 
@@ -271,7 +376,7 @@ Plugins fall into three implementation families:
 | 5 | `bulk_https_exfil` | NDR | Large outbound HTTPS upload (random bytes, streamed, up to 16 GiB ceiling) | `target_url` | T1041, T1567 | `plugins/bulk_https_exfil.py` |
 | 6 | `ftp_egress` | NDR | Cleartext FTP control session (banner→USER→PASS→SYST→NOOP→PASV→STOR→QUIT) + optional STOR data channel | `target_host:target_port` (default 21) | T1071, T1048.003 | `plugins/ftp_egress.py` |
 | 7 | `ssh_egress` | NDR | Outbound SSH banner (RFC-4253) + synthesised `SSH_MSG_KEXINIT` pseudo-frame; stops before key exchange | `target_host:target_port` (default 22) | T1021.004, T1572 | `plugins/ssh_egress.py` |
-| 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 5 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
+| 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 9 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
 | 9 | `oauth_grant_emulator` | Cloud App / CASB | Outbound OAuth 2.0 authorize GETs with planted risky scopes + bogus client_id | Okta/Microsoft/Google authorize endpoint | T1550.001, T1528, T1078.004, T1098 | `plugins/oauth_grant_emulator.py` |
 | 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini/DeepSeek/OpenRouter carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
 | 11 | `airs_prompt_attack` | AIRS | Shells out to `cortex-prompt-attacker`; Probe→Mutator→Target→Scorer pipeline against a vulnerable LLM; JSONL→ECS | `target_url` (the AIRS target) | T1656, T1059, T1499 | `plugins/airs_prompt_attack.py` |
@@ -504,7 +609,7 @@ Per-session event `ssh_session`.
 **Attack shape.** Builds shape-true IdP audit events (Okta system-log,
 Microsoft Entra signInLogs, Google Workspace login-activity subsets) and POSTs
 them as JSON to an **operator-supplied collector URL** — never a real tenant.
-Five behavioural presets, each producing a burst:
+Nine behavioural presets (`event_pattern`), each producing a burst:
 
 | `event_pattern` | What it emits |
 |-----------------|---------------|
@@ -513,10 +618,14 @@ Five behavioural presets, each producing a burst:
 | `credential_stuffing` | `burst_count` failed logins across `user000..N` from one source IP (sa-east) |
 | `token_replay` | a session-start + token reuse from a different geo/UA with shared `session_token_id` |
 | `brute_force_lockout` | `burst_count` failures + 1 `user.account.lock` event |
+| `azure_risky_login` | a baseline sign-in from us-west, then a successful sign-in from `anon-vpn` flagged risky (`riskLevelDuringSignIn: high`, `riskEventTypes` unfamiliarFeatures + anonymizedIPAddress); marker `risky_login_marker` |
+| `azure_ad_powershell_first_use` | one successful sign-in from eu-central through the Azure AD PowerShell first-party app (`appId` `1b730954-1685-4b74-9bfd-dac224a7b894`); markers `azure_ad_powershell_marker`, `first_operation` |
+| `entra_mfa_reported_suspicious` | `max(2, burst_count-1)` denied MFA pushes from `anon-vpn`, then one `user.mfa.reported_fraud` (`fraudReported: true`); marker `mfa_reported_suspicious_marker` |
+| `vishing_passkey_enrollment` | provider `microsoft` only: an interactive Entra sign-in (password plus approved number-matched push, from `anon-vpn`) then a "User registered security info" audit record (Passkey) from the same IP 90 s later; both carry `vishing_passkey_marker`. Under `canary_token` both carry the canary principal (`userPrincipalName` on the sign-in, `initiatedBy.user.userPrincipalName` on the audit record); the audit record's `targetResources[]` keeps `target_user` |
 
-Source locations are 5 canned `_SourceLocation` entries (us-west, eu-central,
-apac-east, africa-south, sa-east) using documentation-range IPs (203.0.113.x,
-198.51.100.x, 192.0.2.x). Default target user is `*.invalid` canary.
+Source locations are 6 canned `_SourceLocation` entries (us-west, eu-central,
+apac-east, africa-south, sa-east, anon-vpn) using documentation-range IPs
+(203.0.113.x, 198.51.100.x, 192.0.2.x). Default target user is `*.invalid` canary.
 
 **Safety gating.** `ctx.authorise(collector_url-host)` only. Each request gets a
 per-request `x-simulation-run-id`. Body carries `cortexsim_run_id`. `verify=False`.
@@ -525,8 +634,10 @@ per-request `x-simulation-run-id`. Body carries `cortexsim_run_id`. `verify=Fals
 |-------|----------------|--------|
 | `collector_url` | str (required) | http/https + hostname |
 | `provider` | str = "okta" | okta/microsoft/google |
-| `event_pattern` | str = "impossible_travel" | the 5 presets |
+| `event_pattern` | str = "impossible_travel" | the 9 presets |
 | `target_user` | str = `ada.lovelace@cortexsim-canary.invalid` | must contain `@` |
+| `event_time_offset_seconds` | int = 0 | -86400–0; back-dates every record's body timestamp (delivery time unchanged) |
+| `source_ip` | str? = None | valid IP; replaces the IP of every record not from the us-west home baseline |
 | `iterations` | int = 1 | 1–200 |
 | `sleep_seconds` | float = 0.0 | 0–600 |
 | `request_timeout` | float = 15.0 | 1–300 |
@@ -822,6 +933,192 @@ partial); their additions are recorded here. No plugin-count change (27).
   params: `public_ip` (default far documentation IP), `private_ip` (default random
   `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
   (`02:00:00:00:00:07`).
+
+- **`m365_activity_emitter`** (2026-11-11) — new optional params, all absent by
+  default (every existing record is unchanged): `source_ip` (valid IP, replaces
+  `ClientIP` on every record), `user_agents` (list, cycled into each record's
+  `UserAgent` body field; never the collector POST header), `storage_targets`
+  (`onedrive`/`sharepoint`, `storage_exfiltration` cycles records over them),
+  `event_time_offset_seconds` (-86400-0, back-dates `CreationTime`). New
+  `event_pattern` `internal_extortion_notice` (marker
+  `internal_extortion_notice_marker`): one Exchange `Send` (RecordType 2) whose
+  recipients are `recipientList` (`{Address, Name}`) + `recipientCount`, to
+  `burst_count` internal `colleague-NN@<target domain>` addresses, then one Teams
+  `MessageSent` (RecordType 25) per recipient. Names per the Office 365 Management
+  Activity API schema.
+
+#### `cloud_audit_emitter` (CDR / Analytics) — logging-service presets (v1.2.0, 2026-11-11)
+
+`cloud_audit_emitter` has no row in §2.1 (the table is partial); this is its
+entry. No plugin-count change (27). It is an analytics log-streamer on the
+shared `analytics_emitter` spine: it POSTs shape-true AWS CloudTrail
+(`provider: aws`) or GCP Cloud Audit Log (`provider: gcp`) records to an operator
+`collector_url`, and `event_pattern` selects the preset. Nothing in it calls a
+cloud API; every record is synthetic JSON built in-process.
+
+**Eleven original presets, unchanged.** `storage_object_download`,
+`secrets_dump`, `ssm_parameter_retrieval`, `iam_enumeration`,
+`iam_enumeration_non_user`, `s3_bucket_enumeration`, `bigquery_exfiltration`,
+`service_account_impersonation`, `iam_privilege_escalation`, `s3_public_exposure`,
+`console_login_anomaly`. `TestLegacyPresetsUnchanged` pins the rendered records
+of all eleven, for both providers, with and without a canary token, byte for
+byte against the plugin at `origin/dev` `8c90739`.
+
+**Eight logging-service presets, added in 1.2.0.** Cloud log tampering and log
+re-routing against CloudTrail and Cloud Logging. Each emits the *victim-side*
+audit events of one technique. Event names, event sources and request field
+names are the providers' documented ones, not CLI spellings (`stop-logging`) or
+IAM permission names (`logging.sinks.update`).
+
+| `event_pattern` | `aws` records | `gcp` records | MITRE |
+|---|---|---|---|
+| `log_stop` | 1 × `StopLogging` (`cloudtrail.amazonaws.com`), `requestParameters {name: <trail ARN>}` | 1 × `google.logging.v2.ConfigServiceV2.UpdateSink` (`logging.googleapis.com`), request `sinkName`, `sink {name, destination, disabled: true}`, `updateMask: "disabled"` | T1562.008 |
+| `log_destination_delete` | `burst_count` × `DeleteObject` (`s3.amazonaws.com`, data event, `{bucketName, key}`, a different key per record), then 1 × `DeleteBucket` (management event, `{bucketName}`) on the trail's bucket | 1 × `…ConfigServiceV2.DeleteBucket`, request `name: <log bucket>`. One call whatever `burst_count` is: a Cloud Logging log bucket has no object-level API | T1485 |
+| `log_router_delete` | 1 × `DeleteTrail`, `{name: <trail ARN>}` | 1 × `…ConfigServiceV2.DeleteSink`, request `sinkName` | T1562.008 |
+| `log_key_swap` | 1 × `UpdateTrail`, `{name, kmsKeyId: <key in another account>}` | 1 × `…ConfigServiceV2.UpdateBucket`, request `name: <log bucket>`, `bucket.cmekSettings.kmsKeyName: <key in another project, same region as the bucket>`, `updateMask: "cmekSettings"` | T1562.008 |
+| `log_object_overwrite` | `GetObject` (`readOnly: true`) then `PutObject`, both data events on the same `{bucketName, key}` | `storage.objects.get` then `storage.objects.create` (`storage.googleapis.com`, Data Access) on the same object | T1565.001 |
+| `log_router_create` | 1 × `CreateTrail`, `{name, s3BucketName: <attacker bucket>, isMultiRegionTrail: true}` | 1 × `…ConfigServiceV2.CreateSink`, request `parent`, `sink {name, destination: <attacker bucket>}`, `uniqueWriterIdentity: true` | T1537 |
+| `log_router_redirect` | 1 × `UpdateTrail`, `{name, s3BucketName: <attacker bucket>}` | 1 × `…ConfigServiceV2.UpdateSink`, request `sinkName`, `sink {name, destination: <attacker bucket>}`, `updateMask: "destination"`, `uniqueWriterIdentity: true` | T1562.008 |
+| `stream_bucket_delete` | `burst_count` × `DeleteObject`, then 1 × `DeleteBucket`, on a data stream's destination bucket | `burst_count` × `storage.objects.delete` (Data Access), then 1 × `storage.buckets.delete` (Admin Activity), on the sink's Cloud Storage bucket | T1485 |
+
+Each record carries the marker `<event_pattern>_marker: true` and
+`cortexsim_run_id`. All calls are made by one identity per provider
+(`arn:aws:iam::123456789012:user/cortexsim-canary`;
+`cortexsim-canary@cortexsim-canary.invalid`), so a rule can group on the caller.
+
+The Cloud Logging log bucket is regional:
+`projects/cortexsim-canary/locations/us-central1/buckets/cortexsim-canary-log-bucket`,
+and the external key of `log_key_swap` is in the same region. Google does not
+allow CMEK on a log bucket in the `global` location and requires the key's
+region to match the bucket's ("Configure CMEK for log buckets", Limitations), so
+a successful key change on a global bucket is a record no tenant can produce.
+`log_destination_delete` (`gcp`) deletes that same bucket.
+
+| Param | Type / default | Notes |
+|-------|----------------|-------|
+| `collector_url` | str (required) | http/https + hostname |
+| `provider` | str = `aws` | `aws` / `gcp` |
+| `event_pattern` | str = `iam_privilege_escalation` | one of the nineteen presets; anything else raises `event_pattern must be one of […]` |
+| `burst_count` | int = 8 | 2–200. Sizes the object-delete burst of `log_destination_delete` (`aws`) and `stream_bucket_delete`; the bucket delete after it is always one record. Ignored by the other six |
+| `iterations` | int = 1 | 1–200; the whole preset is emitted once per iteration, with the same resource names, so with `iterations` > 1 `log_destination_delete`, `log_router_delete`, `log_router_create` and `stream_bucket_delete` repeat a delete or create of one named resource, which no tenant could produce |
+| `source_ip` | str? | dotted quad; overrides `sourceIPAddress` / `requestMetadata.callerIp` (default `203.0.113.201`) |
+| `request_timeout` | float = 15.0 | 1–300 |
+| `auth_token` | SecretStr? | collector key, sent as the bare `Authorization` value; never written into a record |
+| `canary_token`, `batch`, `compress`, `sleep_seconds` | — | shared spine fields |
+
+**What the logging-service records carry beyond the original presets.**
+
+- `aws`: `requestParameters` (lower-camel keys, as CloudTrail records them) and
+  `eventCategory` (`Management` for trail and bucket calls, `Data` for S3 object
+  calls), next to the existing `readOnly` / `managementEvent`.
+- `gcp`: `protoPayload.request` (the `google.logging.v2` request message, `@type`
+  first; absent on Cloud Storage calls, which log a request only under detailed
+  audit logging mode), a per-call `protoPayload.resourceName`
+  (`projects/cortexsim-canary/sinks/…`, `…/locations/us-central1/buckets/…`,
+  `projects/_/buckets/<bucket>[/objects/<object>]`), `logName` ending
+  `cloudaudit.googleapis.com%2Factivity` or `%2Fdata_access`, and for Cloud
+  Storage calls the `gcs_bucket` monitored-resource block.
+- Both: flat top-level hint keys, so a query needs no nested-JSON access. Each
+  restates a provider-true field of the same record.
+
+| Hint key | On | Value |
+|---|---|---|
+| `audit_provider` | every record | `aws` / `gcp`: the `provider` param as given, lower-case |
+| `api_operation` | every record | the `eventName` / `methodName` |
+| `principal_id` | every record | on `gcp` the `principalEmail`, which follows a planted canary; on `aws` the caller ARN, which the canary plant does not change (it rewrites `userIdentity.userName`). To find one run's records on either provider, join on `cortexsim_canary` |
+| `log_resource_name` | every record | the trail ARN, sink, log bucket, or storage bucket acted on (`arn:aws:s3:::<bucket>` / `projects/_/buckets/<bucket>` for object calls too) |
+| `log_object_key` | object calls only | the S3 key / Cloud Storage object name |
+| `log_destination` | `log_router_create`, `log_router_redirect` | `cortexsim-canary-attacker-logs-999` (`aws`) / `storage.googleapis.com/cortexsim-canary-attacker-log-drop` (`gcp`) |
+| `kms_key_id` | `log_key_swap` | `arn:aws:kms:us-east-1:444455556666:alias/cortexsim-canary-external-key` (`aws`) / `projects/attacker-project-999/locations/us-central1/keyRings/cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key` (`gcp`) |
+| `log_disabled` | `log_stop` (`gcp`) | `true` |
+
+The provider hint is `audit_provider`, not `cloud_provider`. `cloud_provider` is
+a field of normalised `cloud_audit_logs`, which existing cards filter as `"AWS"`
+/ `"GCP"`; a collector record is not that dataset, so the hint has its own name
+and carries the param's lower-case values. A query written to the
+`cloud_provider = "AWS"` convention reads zero on these records. The name also
+matters to a gate: `scripts/check-streamer-fidelity.py` counts every dict-literal
+key of a plugin as emitted, so a hint called `cloud_provider` hid its advisory on
+`TTP-2026-0155` and `TTP-2026-0158`, whose presets write no such field
+(`test_new_record_keys_do_not_silence_a_streamer_fidelity_advisory` holds that).
+
+**Not emitted, on purpose.** Anything the attacker does in their own account or
+project: creating the external key, changing or deleting its policy, re-creating
+a deleted bucket name. A victim's audit log does not contain those events.
+`PutEventSelectors` and Azure are out too (not in the source research; no Azure
+provider).
+
+**Honest limits.**
+
+- *Dataset.* Every record carries the body key `dataset: cloud_audit_logs`. That
+  is a hint, not a route: on an XSIAM HTTP collector the tenant dataset is
+  `<Vendor>_<Product>_raw` from the collector's own settings, and
+  `cloud_audit_logs` is filled by platform normalisation of natively onboarded
+  audit data, which a POST does not pass through. A scored query has to name the
+  collector's dataset. That dataset is `cortexsim_cloud_audit_raw` (decided
+  2026-11-12): the operator creates the HTTP collector with Vendor `cortexsim`
+  and Product `cloud_audit`. It is registered in `KNOWN_DATASETS` and
+  `spec/dataset_requirements.yml`, and SIM-CDR-030 is the first scenario to
+  query it. The name is a rule the operator follows, not a tenant fact: no
+  record has been ingested by a tenant.
+- *Vendor analytics alerts.* The Cortex alerts these calls correspond to on a
+  natively onboarded account — "AWS CloudTrail has been stopped", "AWS CloudTrail
+  modification", "CloudTrail logging deletion", "Suspicious activity on logging
+  bucket", "Logging was impaired via external encryption key", "GCP logging sink
+  modification", "GCP logging sink deletion", "GCP Logging Bucket Deletion", "GCP
+  Storage Bucket deletion" — each document a 14-day activation and 30-day
+  training period over the AWS / GCP Audit Log source. Collector records do not
+  arm them, so the plugin declares no `Meta.detectors` for them and its
+  `eal_targets` name XQL / Correlation only.
+- *Field literals not seen on a provider page.* The CloudTrail request keys
+  `s3BucketName` and `kmsKeyId` follow the lower-camel convention AWS's own
+  UpdateTrail example record shows for `name` and `isMultiRegionTrail`; no AWS
+  page was found printing those two literals in a record.
+  `responseElements` and the S3 `resources` list are not written. Prefer the flat
+  hints in scored queries.
+- *Two `gcp` builder defaults, not provider-documented.* (1) Cloud Logging
+  configuration records (sink and log-bucket calls) keep the project-level
+  `resource` block: Google lists `logging_sink` as a monitored-resource type,
+  but no page read says these audit entries carry it, and none was found for a
+  log bucket. (2) Data Access entries (`storage.objects.get` / `.create` /
+  `.delete`) carry `severity: NOTICE`, the builder's value for every successful
+  call: Google's sample entry shows `NOTICE` on an Admin Activity entry and
+  nothing read states the Data Access value. Both are pinned in
+  `test_unverified_builder_defaults_are_pinned_as_such`, apart from the
+  documentation-match test, so a correction changes one test. Do not key a query
+  on either.
+- *tenant-verified is 0.* No record of these presets has been ingested by a live
+  tenant.
+
+Sample campaign steps. `step_id` must be `step-NN` (anything else is rejected
+when the campaign loads); this is the form the CDR emitter scenarios use, for
+example `scenarios/cdr/cdr-020-aws-credential-secret-harvesting-behavioral-chain.yml`.
+A scenario puts them in a campaign file that also carries `campaign_id`,
+`authorized_by`, `simulation_authorized`, `target_allowlist` and `dry_run`.
+`TestCatalogEntry` loads and dry-runs this block as written.
+
+```yaml
+steps:
+  - step_id: step-01
+    plugin: cloud_audit_emitter
+    params:
+      collector_url: "$COLLECTOR_URL"
+      provider: aws
+      event_pattern: log_stop
+      iterations: 1
+  - step_id: step-02
+    plugin: cloud_audit_emitter
+    params:
+      collector_url: "$COLLECTOR_URL"
+      provider: gcp
+      event_pattern: stream_bucket_delete
+      burst_count: 25
+      iterations: 1
+```
+
+Supports no negative control. The collector-POST transport, authorisation,
+delivery accounting and offline-bundle rendering are the shared
+`analytics_emitter` spine's, unchanged.
 
 ## 3. Safety model — exhaustive
 

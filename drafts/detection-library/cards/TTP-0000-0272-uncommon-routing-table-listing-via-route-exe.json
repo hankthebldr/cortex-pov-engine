@@ -1,0 +1,187 @@
+{
+  "id": "TTP-0000-0272",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Routing Table Listing via route.exe",
+    "summary": "An attacker uses route.exe to list routing table entries, which is uncommon behavior for a standard user session. Cortex detects this through process execution and network telemetry. The behavioral AB",
+    "description": "An attacker uses route.exe to list routing table entries, which is uncommon behavior for a standard user session. Cortex detects this through process execution and network telemetry. The behavioral ABIOC flags this activity as a deviation from normal routing table access patterns."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1016",
+        "name": "System Network Configuration Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "C:\\Windows\\System32\\route.exe print\nC:\\Windows\\System32\\route.exe add 192.0.2.0 mask 255.255.255.0 10.0.0.1\nC:\\Windows\\System32\\route.exe delete 192.0.2.0\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of route.exe with print argument",
+        "expected_value": "action_process_image_name = 'route.exe' and action_file_path = 'C:\\\\Windows\\\\System32\\\\route.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to test network IP",
+        "expected_value": "dst_ip = '192.0.2.1' and dst_port = 80"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon routing table listing via route.exe",
+        "description": "Detection of route.exe being executed with print argument in an unusual context",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'route.exe'\n| filter action_file_path = 'C:\\\\Windows\\\\System32\\\\route.exe'\n| filter actor_process_image_name != 'cmd.exe' and actor_process_image_name != 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1046"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon routing table listing behavior",
+        "description": "Detection of route.exe being used in an unexpected way, deviating from typical user behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'route.exe'\n| filter actor_process_image_name != 'cmd.exe' and actor_process_image_name != 'powershell.exe'\n| filter causality_actor_process_image_name != 'explorer.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "route.exe process start",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1046"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Route.exe process start detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'route.exe'\n| filter action_file_path = 'C:\\\\Windows\\\\System32\\\\route.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon routing table listing via route.exe; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-routing-table-listing-via-route-exe"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon routing table listing via route.exe",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-routing-table-listing-via-route-exe",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1016",
+      "url": "https://attack.mitre.org/techniques/T1016/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

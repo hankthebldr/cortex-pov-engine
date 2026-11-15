@@ -239,12 +239,32 @@ def render_modeling(ttp: dict[str, Any]) -> Optional[str]:
     return "\n".join(out) + "\n"
 
 
-def render_correlation(ttp: dict[str, Any]) -> Optional[str]:
-    """Correlation-rule JSON in a generic shape XSIAM operators can adapt.
+# The only correlation-rule shape this exporter knows: the authoring note every
+# card carries today. The card schema forbids anything else.
+_CORRELATION_STUB_KEYS = frozenset({"name", "rule_id", "logic"})
+_CORRELATION_NOTE = (
+    "Every rule here is intent-only: a name, an id and a logic line that names "
+    "the detections the rule would join. There is no query, schedule, severity "
+    "or alert mapping, so nothing in this file can be imported into a tenant "
+    "as-is. Author the rule in the XSIAM console from the logic line."
+)
 
-    The shape mirrors the corpus's own ``correlation_rules`` block but adds
-    the originating TTP id and MITRE techniques so the operator has full
-    context when they paste it into the XSIAM rule editor.
+
+def render_correlation(ttp: dict[str, Any]) -> Optional[str]:
+    """Correlation rules exactly as the card holds them, with their status.
+
+    A card's correlation rule is an AUTHORING NOTE: ``name``, ``rule_id`` and a
+    ``logic`` line such as ``XQL(a) OR XQL(b)``. This export adds the
+    originating TTP id and MITRE techniques for context and states the status
+    in the file. It invents nothing: there is no default severity and no
+    synthesised description (it used to stamp ``severity: "high"`` on every
+    rule, a value no card authored).
+
+    STRICT. A rule carrying any other key raises ``ValueError``. The day a card
+    holds a deployable rule body this function must be taught what to emit for
+    it; guessing here would put an unreviewed rule in a file a DC pastes into a
+    customer tenant. ``tests/engine/test_export_artifacts.py`` pins the emitted
+    status to ``engine.tenant_content.classify_rule``.
     """
     rules = (ttp.get("detections") or {}).get("correlation_rules") or []
     if not rules:
@@ -258,20 +278,31 @@ def render_correlation(ttp: dict[str, Any]) -> Optional[str]:
     ]
     techniques = [t for t in techniques if t]
 
+    exported = []
+    for r in rules:
+        if not isinstance(r, dict):
+            continue
+        extra = sorted(set(r) - _CORRELATION_STUB_KEYS)
+        if extra:
+            raise ValueError(
+                f"{ttp_id} {r.get('rule_id') or r.get('name')}: correlation rule carries "
+                f"{extra}, a shape this exporter does not know. It only renders the "
+                "intent-only stub (name, rule_id, logic); teach it before exporting."
+            )
+        exported.append({
+            "rule_id": r.get("rule_id"),
+            "name": r.get("name"),
+            "logic": r.get("logic"),
+            "content_status": "intent-only",
+            "deploy": None,
+        })
+
     payload = {
         "ttp_ref": ttp_id,
         "mitre_techniques": techniques,
-        "rules": [
-            {
-                "rule_id": r.get("rule_id"),
-                "name": r.get("name"),
-                "logic": r.get("logic"),
-                "severity": r.get("severity") or "high",
-                "description": r.get("description"),
-            }
-            for r in rules
-            if isinstance(r, dict)
-        ],
+        "importable_rules": 0,
+        "content_note": _CORRELATION_NOTE,
+        "rules": exported,
     }
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 

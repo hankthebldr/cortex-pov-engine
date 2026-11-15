@@ -103,13 +103,33 @@ def test_values_outside_the_aws_shapes_are_422(api, field, value):
     assert client.post("/api/infra/generate", json=body).status_code == 422
 
 
-def test_tag_values_render_as_text_not_as_templates(api):
+def _without_the_request_gate(monkeypatch):
+    """Switch off the beta's SEC-17 allow-list (route and generator) so a test
+    can reach the templates' own escaping, the second layer, on its own."""
+    from api import infra as infra_module
+    from engine import infra_generator
+
+    monkeypatch.setattr(infra_module, "hcl_param_problems", lambda _req: [])
+    monkeypatch.setattr(infra_generator, "hcl_param_problems", lambda _req: [])
+
+
+def test_tag_values_render_as_text_not_as_templates(api, monkeypatch):
     """``tags`` reached both .tf files through ``tojson``, which escapes quotes
     and newlines but not HCL's ``${`` / ``%{`` template sequences. A tag value
     holding either was read as a template, so Terraform refused the bundle
-    ("Function calls not allowed") instead of tagging with the text."""
+    ("Function calls not allowed") instead of tagging with the text.
+
+    Since the merge the route refuses such a tag up front (SEC-17: ``$``, ``%``,
+    ``{`` and ``"`` are outside the characters AWS allows in a tag), and the
+    templates still render one as text if anything lets it through."""
     client, blueprints = api
     tags = {"Owner": '${pathexpand("~")}', "Note": "%{ if true }x%{ endif }"}
+    resp = client.post("/api/infra/generate", json=_body(params={"tags": tags}))
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["code"] == "BAD_INFRA_PARAM"
+    assert _generated(blueprints, "terraform.tfvars") == []
+
+    _without_the_request_gate(monkeypatch)
     resp = client.post("/api/infra/generate", json=_body(params={"tags": tags}))
     assert resp.status_code == 200, resp.text
 
@@ -120,11 +140,16 @@ def test_tag_values_render_as_text_not_as_templates(api):
     assert f"default     = {literal}\n" in variables
 
 
-def test_the_templates_render_any_value_as_one_string_literal(repo_root: Path, tmp_path: Path):
+def test_the_templates_render_any_value_as_one_string_literal(repo_root: Path, tmp_path: Path,
+                                                              monkeypatch):
     """The request model is not the only caller of the generator, so the
-    templates themselves must keep a value inside its literal."""
+    templates themselves must keep a value inside its literal.
+
+    Since the merge the generator refuses these values first (the beta's
+    SEC-17 gate, GenerationError); with that gate switched off the templates
+    alone must still hold."""
     from engine.infra_catalog import InfraCatalog
-    from engine.infra_generator import InfraGenerator
+    from engine.infra_generator import GenerationError, InfraGenerator
     from engine.infra_models import InfraGenerateParams, InfraGenerateRequest
 
     gen = InfraGenerator(catalog=InfraCatalog(modules_root=repo_root / "infra" / "modules"),
@@ -136,6 +161,11 @@ def test_the_templates_render_any_value_as_one_string_literal(repo_root: Path, t
     req = InfraGenerateRequest.model_construct(
         provider="aws", region='us"${file("/etc/passwd")}', modules=["base"],
         params=params, adapter_refs=[])
+    with pytest.raises(GenerationError, match="region"):
+        gen.generate(req)
+    assert list(tmp_path.iterdir()) == []
+
+    _without_the_request_gate(monkeypatch)
     gen.generate(req)
 
     for text in _generated(tmp_path, "variables.tf") + _generated(tmp_path, "terraform.tfvars"):

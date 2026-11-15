@@ -75,7 +75,11 @@ recorded binding row.
      AUT        -> M5
 
 2. For DET/HNT, split by SIGNAL ORIGIN (not by the `platforms` label,
-   which ~13 scenarios mislabel — classify on the detection's data source):
+   which ~13 scenarios mislabel — classify on the detection's data source;
+   correction 2026-11-10, CONT-18: the measured figure was 28 scenarios /
+   100 steps labelled `windows` with only POSIX text, plus 11 steps whose
+   Windows primaries the resolver refuses; all 111 were relabelled, and
+   boot warnings S-28/S-29/S-30 now keep the drift out):
      detection keys on endpoint process lineage / local network causality
                                     -> M1   (identity-harness scenario)
      detection keys on an ingested data source

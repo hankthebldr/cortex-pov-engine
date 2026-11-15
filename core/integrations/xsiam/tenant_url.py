@@ -84,6 +84,26 @@ def normalize_tenant_base_url(value: str) -> str:
     return candidate.rstrip("/")
 
 
+def tenant_endpoint_url(base: str, path: str) -> str:
+    """``base`` + ``path`` for a request to the tenant, or raise.
+
+    A credential may override a connector's API path (``alerts_path``,
+    ``issues_path``, ``cases_path``, ``endpoints_path`` ...). The path is
+    appended to a base that :func:`normalize_tenant_base_url` has already
+    checked, so a path that does not start with ``/`` re-opens exactly what
+    that check closes: ``https://api-t...paloaltonetworks.com`` followed by
+    ``@evil.example/x`` is a URL whose host is ``evil.example``, and the API key
+    goes there. Starting with ``/`` ends the host; nothing after it can move it.
+    """
+    p = str(path or "")
+    if not p.startswith("/") or "\\" in p or any(c.isspace() or ord(c) < 0x20 for c in p):
+        raise XsiamConfigError(
+            "an API path override must start with '/' so it stays on the tenant "
+            f"host (got {_safe(p)})"
+        )
+    return base + p
+
+
 def is_valid_tenant_base_url(value: str) -> bool:
     """Non-raising form, for callers that only need a boolean (preflight)."""
     try:

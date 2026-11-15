@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1102.002",
     "T1071.001",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline) AND ABIOC(NDR-011 avp.exe Masquerade Spawning Command Shell Stitched to Telegram C2) \u2014 fuses the network Bot-API C2 egress deviation and the avp.exe->cmd.exe masquerade dispatch on the same agent_hostname/src_ip into a single LampoRAT Telegram-C2 incident anchored to the SaaS-egress-plus-masquerade causality chain, surviving the SaaS allowlist that defeats reputation and IOC matching.",
       "name": "LampoRAT Telegram-Bot-API C2 on Allowlisted SaaS \u2014 ABIOC Causality Stitch",
-      "rule_id": "CR-NDR-0011",
-      "severity": "high"
+      "rule_id": "CR-NDR-0011"
     }
   ],
   "ttp_ref": "TTP-2026-0115"

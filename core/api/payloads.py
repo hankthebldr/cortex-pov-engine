@@ -690,7 +690,13 @@ def _resolution_http_error(exc) -> HTTPException:
 def _server_for(request: Request, override: Optional[str]) -> str:
     from api.agents import _resolve_server  # noqa: PLC0415 — one resolver, not two
 
-    return _resolve_server(request, override)
+    # The installer's wording names ?server= and "an installer"; this route
+    # takes the value from the compose body's `server` field (or ?server= on
+    # /resolve) and bakes it into a payload plan (RG-INSTALL-07).
+    return _resolve_server(
+        request, override,
+        baked_into="a payload plan (the URLs a consumer fetches artifacts from)",
+        override_name="`server` (the compose body field, or ?server= on /api/shelf/resolve)")
 
 
 async def _compose(

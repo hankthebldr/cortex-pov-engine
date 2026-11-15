@@ -174,6 +174,123 @@ def _emitter(name: str, sources: list[str], detectors: list[dict]):
     return _E
 
 
+class TestSoaklessAndRoute:
+    """The two gates the 2026-11-10 LogSimv2 port added, and their order.
+
+    Route first, because a soakless attestation cannot make a path analytics
+    never reads start firing. Soakless second, because it waives the training
+    wait that the onboarding gate measures.
+    """
+
+    def _profile(self) -> AlertProfile:
+        return get_alert("port-scan")
+
+    def test_soakless_arms_a_detector_with_no_onboarding_date(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None,
+            now=UTC_NOW, soakless_attested=True,
+        )
+        assert r.state == "armed"
+        assert r.armed is True
+        assert r.code == "DETECTOR_ARMED_SOAKLESS"
+        assert r.armed_basis == "attested:soakless"
+        # The vendor's numbers stay quotable beside the waiver.
+        assert (r.activation_days, r.training_days) == (14, 30)
+        assert "attestation" in r.detail
+
+    def test_soakless_arms_a_recently_onboarded_source(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", UTC_NOW - timedelta(days=2),
+            now=UTC_NOW, soakless_attested=True,
+        )
+        assert r.state == "armed"
+        assert r.days_of_data == 2
+
+    @pytest.mark.parametrize("flag", [None, False])
+    def test_soakless_not_attested_leaves_the_onboarding_gate_in_charge(self, flag):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None,
+            now=UTC_NOW, soakless_attested=flag,
+        )
+        assert r.state == "unknown"
+        assert r.code == "DETECTOR_READINESS_UNKNOWN"
+
+    def test_onboarding_armed_carries_its_basis(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", UTC_NOW - timedelta(days=40),
+            now=UTC_NOW,
+        )
+        assert r.armed_basis == "onboarding_date"
+
+    def test_generic_cribl_route_is_not_armable_even_when_soakless(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None, now=UTC_NOW,
+            soakless_attested=True, pipe="cribl_generic",
+        )
+        assert r.state == "not_armable"
+        assert r.armed is False
+        assert r.code == "DETECTOR_ROUTE_NO_ANALYTICS"
+        assert r.route["pipe"] == "cribl_generic"
+
+    def test_http_collector_without_xdm_is_unknown_even_when_soakless(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None, now=UTC_NOW,
+            soakless_attested=True, pipe="http_collector",
+        )
+        assert r.state == "unknown"
+        assert r.code == "DETECTOR_ROUTE_REQUIRES_XDM"
+
+    def test_http_collector_with_xdm_attested_and_soakless_is_armed(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None, now=UTC_NOW,
+            soakless_attested=True, pipe="http_collector", xdm_modeled_attested=True,
+        )
+        assert r.state == "armed"
+        assert r.route["xdm_modeled_attested"] is True
+
+    def test_a_route_that_feeds_analytics_hands_over_to_the_onboarding_gate(self):
+        r = readiness_for(
+            self._profile(), "pan_firewall_traffic_logs", UTC_NOW - timedelta(days=5),
+            now=UTC_NOW, pipe="native_integration",
+        )
+        assert r.state == "not_armed"
+        assert r.route["tenant_dataset"] == "panw_ngfw_traffic_raw"
+
+    @pytest.mark.parametrize("pipe", [
+        "cribl_receiver", "unknown_forwarder", "undeclared", "mixed",
+    ])
+    def test_a_route_the_url_cannot_name_is_unknown_never_armed(self, pipe):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", UTC_NOW - timedelta(days=90),
+            now=UTC_NOW, soakless_attested=True, pipe=pipe,
+        )
+        assert r.state == "unknown"
+        assert r.code == "DETECTOR_ROUTE_UNRESOLVED"
+
+    def test_a_pipe_with_no_way_into_the_source_is_unknown(self):
+        r = readiness_for(
+            self._profile(), "third_party_firewalls", None, now=UTC_NOW,
+            soakless_attested=True, pipe="broker_wec",
+        )
+        assert r.state == "unknown"
+        assert r.route == {"pipe": "broker_wec", "resolved": False}
+
+    def test_an_unknown_pipe_raises(self):
+        with pytest.raises(ValueError, match="unknown pipe"):
+            readiness_for(
+                self._profile(), "third_party_firewalls", None,
+                now=UTC_NOW, pipe="carrier_pigeon",
+            )
+
+    def test_a_naive_onboarding_date_still_raises_when_soakless(self):
+        # The waiver must not become a way around the timezone guard.
+        with pytest.raises(ValueError, match="naive"):
+            readiness_for(
+                self._profile(), "third_party_firewalls", datetime(2026, 8, 1),
+                now=UTC_NOW, soakless_attested=True,
+            )
+
+
 class TestDetectorBinding:
     def test_detector_declaring_neither_alert_ref_nor_reason_raises(self):
         reg = [_emitter("e", ["third_party_firewalls"], [{"alert": "Port scan detected"}])]

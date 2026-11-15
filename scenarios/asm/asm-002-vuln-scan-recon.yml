@@ -96,7 +96,10 @@ steps:
     # OS-agnostic, so the same vuln-scan detection fires whichever OS the scanner
     # runs on. The invocation is identical on Windows/macOS.
     platform_variants:
-      windows: "nuclei -target http://%ASM_TARGET_HOST% -severity low,medium,high,critical -t cves,exposures,default-logins,exposed-panels -o nuclei-asm-002.json -j -rate-limit 200"
+      # CONT-12: explicit PowerShell with an env-var default.
+      windows: |
+        $h = if ($env:ASM_TARGET_HOST) { $env:ASM_TARGET_HOST } else { '127.0.0.1' }
+        nuclei -target "http://$h" -severity low,medium,high,critical -t cves,exposures,default-logins,exposed-panels -o nuclei-asm-002.json -j -rate-limit 200
     # The nuclei scan and the step-01 reachability probe are sibling execs off the
     # same operator shell (CGO) against the same perimeter asset — shared_entity
     # (host + operator + target), not a fork — keeping the spine connected.
@@ -132,7 +135,21 @@ steps:
     # Linux/macOS; PowerShell's Invoke-WebRequest with the same UA and path list
     # emits the identical inbound 4xx-burst signature the NGFW BIOC keys on.
     platform_variants:
-      windows: "'/.git/config','/.env','/admin','/wp-login.php','/server-status','/phpinfo.php','/.aws/credentials','/backup.zip','/config.php.bak' | ForEach-Object { try { Invoke-WebRequest -UseBasicParsing -UserAgent 'Mozilla/5.0 (Nikto/2.5.0)' -Uri (\"http://%ASM_TARGET_HOST%\" + $_) } catch { $_.Exception.Response.StatusCode.value__ } }"
+      # CONT-12: %ASM_TARGET_HOST% was sent literally (PowerShell never expands
+      # it) and every failure was swallowed. An HTTP error status is the
+      # expected answer for most of these paths and is printed; a probe that got
+      # no HTTP response at all fails the step.
+      windows: |
+        $h = if ($env:ASM_TARGET_HOST) { $env:ASM_TARGET_HOST } else { '127.0.0.1' }
+        foreach ($p in '/.git/config','/.env','/admin','/wp-login.php','/server-status','/phpinfo.php','/.aws/credentials','/backup.zip','/config.php.bak') {
+          try {
+            $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -UserAgent 'Mozilla/5.0 (Nikto/2.5.0)' -Uri ("http://$h" + $p) -ErrorAction Stop
+            Write-Output ('{0} {1}' -f [int]$r.StatusCode, $p)
+          } catch {
+            if ($_.Exception.Response) { Write-Output ('{0} {1}' -f [int]$_.Exception.Response.StatusCode, $p) }
+            else { Write-Error ("probe of {0}{1} got no HTTP response: {2}" -f $h, $p, $_.Exception.Message); exit 1 }
+          }
+        }
     # Another sibling exec off the operator shell (CGO) against the same asset as
     # the nuclei scan — shared_entity keeps the spine step-01 → step-02 → step-03.
     causality:

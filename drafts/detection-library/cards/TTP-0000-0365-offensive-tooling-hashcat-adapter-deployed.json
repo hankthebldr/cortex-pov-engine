@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0365",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: hashcat (adapter-deployed)",
+    "summary": "hashcat cracks captured credential hashes offline with GPU acceleration. The tool is delivered through the Cortex POV tool adapter (TOOL-HASHCAT, installed by the pack at dispatch) rather than an ad-h",
+    "description": "hashcat cracks captured credential hashes offline with GPU acceleration. The tool is delivered through the Cortex POV tool adapter (TOOL-HASHCAT, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of hashcat and its artifacts."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.002",
+        "name": "Brute Force: Password Cracking",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# MATURE: hashcat deployed via adapter_ref TOOL-HASHCAT.\n# adapter TOOL-HASHCAT installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nhashcat -m 1000 hashes.txt wordlist.txt\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "hashcat executed by a service account.",
+        "expected_value": "action_process_image_name contains \"hashcat\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Hashcat Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs hashcat — an offensive TOOL-HASHCAT-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_path contains \"hashcat\" or action_process_command_line contains \"hashcat\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1110.002"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of hashcat on This Host",
+        "description": "A host that has never run hashcat executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"hashcat\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of hashcat -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1110.002"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hashcat Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"hashcat\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "hashcat",
+        "context": "hashcat artifact path/name on the target."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — uncommon offensive tool (hashcat) executed by a service account; Required Data: XDR Agent; ATT&CK T1110.002."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1110.002",
+      "url": "https://attack.mitre.org/techniques/T1110/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

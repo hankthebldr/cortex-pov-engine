@@ -6,16 +6,49 @@ scenarios/tools/MITRE are empty, fail loud and skip the rest.
 
 from __future__ import annotations
 
+import warnings
+
 import httpx
 import pytest
+
+
+#: Degraded components that do not fail the smoke, each ONLY with the code
+#: named. Everything else that is degraded is a real fault.
+#:
+#: * ``api_auth`` / ``API_UNAUTHENTICATED`` — every deployment, by design,
+#:   until per-request authentication lands.
+#: * ``payload_shelf`` / ``SHELF_ARTIFACTS_MISSING`` — the tier-4 tool artifacts
+#:   are gitignored build output, so a fresh checkout (and CI's compose stack)
+#:   has an empty shelf. SimCore is alive; the scenarios that bind those tools
+#:   refuse loudly at launch (``PAYLOAD_NOT_STAGED``). It is accepted here and
+#:   REPORTED as a warning, because a DC should know it before a POV.
+TOLERATED_DEGRADED = {
+    "api_auth": "API_UNAUTHENTICATED",
+    "payload_shelf": "SHELF_ARTIFACTS_MISSING",
+}
 
 
 def test_health_ok(client: httpx.Client) -> None:
     r = client.get("/api/health")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["status"] == "ok"
     assert "version" in body
+    assert body["status"] in {"ok", "degraded"}, body["status"]
+    components = body.get("components") or {}
+    unexpected = []
+    for name in body.get("degraded_components") or []:
+        code = (components.get(name) or {}).get("code")
+        if TOLERATED_DEGRADED.get(name) != code:
+            unexpected.append(f"{name} ({code})")
+    assert not unexpected, f"unexpected degraded components: {sorted(unexpected)}"
+    shelf = components.get("payload_shelf") or {}
+    if shelf.get("code") == "SHELF_ARTIFACTS_MISSING":
+        warnings.warn(
+            "payload_shelf is SHELF_ARTIFACTS_MISSING: the tool artifact shelf is "
+            f"not staged ({shelf.get('staged')} of {shelf.get('declared')}). "
+            "Scenarios that bind those tools will refuse at launch with "
+            "PAYLOAD_NOT_STAGED. Run scripts/build-payloads.sh before a POV.",
+            stacklevel=1)
 
 
 def test_openapi_reachable(client: httpx.Client) -> None:

@@ -2,12 +2,17 @@
 # Auto-generated from the operation CSV; edit to add fields or fix drift.
 category: "XQL"
 operations:
+  # access_class stays `read` only because the body is INSPECTED: XQL's
+  # `target` stage writes to a tenant dataset/lookup, so this op is not
+  # read-only by its path alone. `body-inspected` routes it through
+  # integrations.xsiam.client.inspect_operation_body (dry-run and live), which
+  # refuses a write stage with XQL_WRITE_STAGE_REFUSED. (SEC-05)
   - op_id: OP-XQL-START-XQL-QUERY
     name: "Start an XQL Query"
     method: POST
     path: "/public_api/v1/xql/start_xql_query"
     access_class: read
-    tags: [confirm-tail]
+    tags: [confirm-tail, body-inspected]
   - op_id: OP-XQL-GET-QUERY-RESULTS
     name: "Get XQL Query Results"
     method: POST

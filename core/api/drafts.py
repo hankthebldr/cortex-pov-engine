@@ -70,7 +70,7 @@ from models import Scenario
 
 # Reuse the Library list's summary projection so a draft summary row is the
 # SAME shape as a corpus summary row — one projection, no drift.
-from api.scenarios import _slim_scenario
+from api.scenarios import _slim_scenario, tenant_content_manifest
 
 logger = logging.getLogger("cortexsim.api.drafts")
 
@@ -179,20 +179,51 @@ def _tc_bound(row: Scenario) -> tuple[bool, list[str]]:
     return True, []
 
 
+def draft_launch_refusals(row: Scenario) -> list[dict[str, str]]:
+    """The draft refusals a launch makes, in launch order, as API error bodies.
+
+    The ONE source for ``POST /api/runs`` (which raises the first),
+    ``POST /api/runs/preflight`` (which reports all of them) and the verdict
+    block below. A non-draft row has none."""
+    if row.status != "draft":
+        return []
+    chain_ok, chain_reasons = _chain_valid(row)
+    tc_ok, _tc_reasons = _tc_bound(row)
+    return _refusal_bodies(chain_ok, chain_reasons, tc_ok)
+
+
+def _refusal_bodies(
+    chain_ok: bool, chain_reasons: list[str], tc_ok: bool,
+) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    if not chain_ok:
+        out.append({
+            "error": "draft chain is not launchable",
+            "code": "DRAFT_CHAIN_INVALID",
+            "detail": "; ".join(chain_reasons),
+        })
+    if not tc_ok:
+        out.append({
+            "error": "draft is not launchable",
+            "code": "DRAFT_NOT_TC_BOUND",
+            "detail": "bind a real test case from the UC/TC Index before launching",
+        })
+    return out
+
+
 def _launchable(row: Scenario) -> dict[str, Any]:
     """Compute the launch verdict block returned alongside every draft doc and
-    by ``GET /{id}/launchable``. Mirrors the orchestrator's DRAFT_NOT_TC_BOUND
-    gate exactly. Mutates nothing; makes no outbound calls."""
+    by ``GET /{id}/launchable``. ``refusal_code`` is the code ``POST /api/runs``
+    returns for this draft. Mutates nothing; makes no outbound calls."""
     chain_valid, chain_reasons = _chain_valid(row)
     tc_bound, tc_reasons = _tc_bound(row)
-    launchable = chain_valid and tc_bound
-    reasons = [*chain_reasons, *tc_reasons]
+    refusals = _refusal_bodies(chain_valid, chain_reasons, tc_bound)
     return {
-        "launchable": launchable,
+        "launchable": not refusals,
         "chain_valid": chain_valid,
         "tc_bound": tc_bound,
-        "reasons": reasons,
-        "refusal_code": None if launchable else "DRAFT_NOT_TC_BOUND",
+        "reasons": [*chain_reasons, *tc_reasons],
+        "refusal_code": refusals[0]["code"] if refusals else None,
     }
 
 
@@ -290,7 +321,10 @@ _MUTABLE_COLUMNS = (
     "mitre_technique_name",
     "additional_techniques",
     "execution_identity",
+    "threat_report",
+    "threat_report_url",
     "push_supported",
+    "push_supported_declared",
     "pull_supported",
     "external_tools",
     "steps",
@@ -342,6 +376,27 @@ async def create_draft(
 
     logger.info("create_draft scenario_id=%s author=%s", scenario_id, author)
     return _draft_doc(row)
+
+
+@router.post("/tenant-content")
+async def draft_tenant_content(body: dict[str, Any]):
+    """The tenant-content manifest for an UNSAVED draft.
+
+    Takes the body the save route takes and validates it the same way, then
+    resolves it exactly as ``GET /scenarios/{id}/tenant-content`` resolves a
+    saved row. It PERSISTS NOTHING and contacts no tenant, so the Composer can
+    export what is on the canvas before the chain is saved.
+    """
+    draft = _validate_body(body)
+    # The same projection a save would store, so an export of the canvas and an
+    # export of the row it becomes cannot differ.
+    kwargs = draft_to_orm_kwargs(draft, author=draft.author or "composer", scenario_id="unsaved-draft")
+    logger.info("draft_tenant_content steps=%d", len(kwargs.get("steps") or []))
+    return tenant_content_manifest({
+        "scenario_id": None,
+        "name": kwargs.get("name"),
+        "steps": kwargs.get("steps"),
+    })
 
 
 @router.get("")
@@ -409,9 +464,15 @@ async def update_draft(
     draft = _validate_body(body)
     # Re-derive the full ORM kwargs (detection_types, push_supported, sentinels)
     # from the new body, then overwrite ONLY the mutable columns — identity,
-    # status and provenance stay put.
+    # status and provenance stay put. The row's existing push declaration is
+    # handed in as the floor: a carried `push_supported: false` survives a PUT
+    # that omits it or sends true (never widened), while a derived false (no
+    # declaration) is re-derived from the new steps as before.
     kwargs = draft_to_orm_kwargs(
-        draft, author=row.author, scenario_id=scenario_id
+        draft,
+        author=row.author,
+        scenario_id=scenario_id,
+        prior_declared=row.push_supported_declared,
     )
     for col in _MUTABLE_COLUMNS:
         if col in kwargs:

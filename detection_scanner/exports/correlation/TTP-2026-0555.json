@@ -1,0 +1,18 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1110.004",
+    "T1070.004"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "Operator-installed correlation rule (CortexSim never writes it to the tenant). Alert name EXACTLY as this rule's name; severity Medium (only Medium or higher opens or joins a case); Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID; NO MITRE tag (the matcher reads an XQL row and a correlation issue as one engine family, so a tagged issue would also be credited to this scenario's validation rows on the shared technique). UNTESTED: this XQL has not been run in any tenant. Its filter, comp, then filter shape and its functions (count, count_distinct, min, max) follow CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11. It is built only from events SIM-EDR-029 produces on one host: sshpass process starts. It fires for one agent with at least four sshpass starts that carry at least four different command lines inside the time frame. SIM-EDR-029 produces six starts with six different command lines, so a floor of four tolerates two lost events. Expect it to fire again on every scheduled run while the events stay inside the one-hour time frame; alert suppression is the operator's choice. It also matches legitimate automation that wraps ssh in sshpass against varying targets: scope it by host before using it outside a lab. There is no current_time in the rule: the time frame bounds it. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sshpass\"\n| comp count() as starts, count_distinct(action_process_image_command_line) as distinct_lines, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter starts >= 4 and distinct_lines >= 4",
+      "name": "EDR-029 Repeated Sshpass Launches With Differing Arguments",
+      "rule_id": "CR-EDR-0029"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0555"
+}

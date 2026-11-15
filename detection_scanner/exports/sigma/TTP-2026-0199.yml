@@ -1,0 +1,173 @@
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 EDR-024 Local Account Created In Sudo Group By Root Shell"
+id: ttp-2026-0199-bioc-01
+status: experimental
+description: |
+  A shell runs useradd/adduser/usermod with a group list that includes sudo, wheel or admin. Matched read-only in the lab tenant 2026-11-11 against a real useradd -G sudo event on pov-target-01. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("useradd", "adduser", "usermod")
+    | filter action_process_image_command_line ~= "(-G|--groups|-aG)[ =]?[^ ]*(sudo|wheel|admin)"
+    | filter actor_process_image_name in ("sh", "bash", "dash", "zsh", "python3", "perl")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1136/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1136.001
+    - attack.t1098
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 EDR-024 SSH Authorized Keys Written For Local Account"
+id: ttp-2026-0199-bioc-02
+status: experimental
+description: |
+  A shell or file utility writes an authorized_keys file. sshd and ssh-copy-id are not in the actor list. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_path ~= "/[.]ssh/authorized_keys2?$"
+    | filter actor_process_image_name in ("sh", "bash", "dash", "zsh", "tee", "cp", "mv", "cat", "python3", "perl")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 EDR-024 Systemd Unit Written Under etc systemd system By Shell"
+id: ttp-2026-0199-bioc-03
+status: experimental
+description: |
+  A shell or file utility (not the package manager) writes a .service or .timer unit under /etc, /lib or /usr/lib systemd/system. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_path ~= "^/(etc|lib|usr/lib)/systemd/system/[^/]+[.](service|timer)$"
+    | filter actor_process_image_name in ("sh", "bash", "dash", "zsh", "tee", "cp", "mv", "cat", "python3", "perl")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.002
+    - attack.t1053.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 EDR-024 Systemd Service Runs Payload From Hidden Var Tmp Directory"
+id: ttp-2026-0199-bioc-04
+status: experimental
+description: |
+  A systemd-started process runs something from a dot-directory under /var/tmp. On systemd 255 the service's parent records as "9" with path /proc/self/fd/9; the actor clause was matched read-only in the lab tenant against the sysstat service's sa1 starts. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("systemd", "9") or actor_process_image_path ~= "^/proc/self/fd/[0-9]+$"
+    | filter action_process_image_command_line ~= "/var/tmp/[.][^/ ]+/" or action_process_image_path ~= "^/var/tmp/[.]"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.006
+    - attack.t1564.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 EDR-024 Immutable Attribute Set On Persistence Artifact"
+id: ttp-2026-0199-bioc-05
+status: experimental
+description: |
+  chattr +i on an SSH key, a systemd unit, a cron file or a hidden /var/tmp artefact — locking persistence in place. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: evasion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "chattr"
+    | filter action_process_image_command_line ~= "[+]i"
+    | filter action_process_image_command_line ~= "(authorized_keys|/etc/systemd/system/|/etc/cron|/var/tmp/[.])"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1222/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1222.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Self-Expiring Systemd Timer \u2014 Suspicious access to shadow file"
+id: ttp-2026-0199-abioc-06
+status: experimental
+description: |
+  PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 (issues 1500417, 1500418) on useradd and chpasswd, mapped by the tenant to T1003. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code; it matched those lab events read-only.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
+    | filter action_file_path = "/etc/shadow"
+    | filter actor_process_image_name in ("useradd", "chpasswd", "usermod", "passwd")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+    - attack.t1136.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: low

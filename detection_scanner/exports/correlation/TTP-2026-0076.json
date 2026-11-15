@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1613",
     "T1526",
@@ -7,18 +9,18 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(CDR-007 Trivy Image and IaC Critical Findings Surfaced) AND XQL(CDR-007 kube-bench CIS Benchmark Failures Surfaced) AND XQL(CDR-007 Kubescape NSA CISA Hardening Gaps Surfaced) AND XQL(CDR-007 Bulk Secret Pattern File Reads During Sweep) AND XQL(CDR-007 Cloudsplaining IAM Privilege Escalation Paths Surfaced)",
       "name": "Container & Kubernetes Posture Coverage \u2014 Full Supply-Chain & Hardening Sweep",
-      "rule_id": "CR-CDR-0007",
-      "severity": "high"
+      "rule_id": "CR-CDR-0007"
     },
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(CDR-007 Privileged Container Exec into EKS Workload) OR BIOC(CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration) \u2014 promotes the posture sweep to a runtime-discovery incident when the scan activity matches the same shape an attacker's container/cloud discovery would produce.",
       "name": "Cluster Posture-to-Runtime \u2014 Discovery Activity Detected During Sweep",
-      "rule_id": "CR-CDR-0008",
-      "severity": "high"
+      "rule_id": "CR-CDR-0008"
     }
   ],
   "ttp_ref": "TTP-2026-0076"

@@ -44,6 +44,39 @@ def test_hook_planes_mirror_loader_valid_planes():
     )
 
 
+def test_hook_detection_types_mirror_loader():
+    """The hook's DETECTION_TYPES must equal the loader's exactly.
+
+    The hook lacked "Prevention" while the loader accepted it, so the first
+    scenario to declare a Prevention expectation (SIM-EDR-023) was blocked by
+    the authoring hook although the boot loader loads it cleanly.
+    """
+    from engine.scenario_loader import DETECTION_TYPES  # noqa: PLC0415
+
+    hook = _load_hook()
+    assert hook.DETECTION_TYPES == set(DETECTION_TYPES), (
+        "lint hook DETECTION_TYPES diverged from loader DETECTION_TYPES: "
+        f"missing={set(DETECTION_TYPES) - hook.DETECTION_TYPES} "
+        f"extra={hook.DETECTION_TYPES - set(DETECTION_TYPES)}"
+    )
+
+
+def test_hook_resolves_prevention_module_ids_like_the_catalog():
+    """A card's prevention_modules[] ids resolve exactly as ttp_catalog derives them."""
+    from engine.ttp_catalog import _parse_prevention_list  # noqa: PLC0415
+
+    hook = _load_hook()
+    card = {"detections": {"prevention_modules": [
+        {"name": "Local Analysis Malware", "module": "local_analysis", "platforms": ["linux"]},
+        {"name": "Behavioral Threat Protection", "detection_id": "prevention-btp-explicit",
+         "module": "btp", "platforms": ["linux"]},
+    ]}}
+    catalog_ids = {c.detection_id for c in _parse_prevention_list(
+        "TTP-TEST", card["detections"]["prevention_modules"])}
+    assert catalog_ids == {"prevention-local-analysis-malware", "prevention-btp-explicit"}
+    assert catalog_ids <= hook._card_detection_ids(card)
+
+
 def test_hook_accepts_cgo_anchor_without_step_causality(tmp_path):
     """cgo_anchor + >=2 steps, none wiring causality: loader ACCEPTS → hook must not error."""
     base = yaml.safe_load(SAMPLE.read_text(encoding="utf-8"))
@@ -233,6 +266,16 @@ def test_fix_canonical_marker_rule(cmd, expected):
     assert _load_hook().is_marker_only(cmd) is expected
 
 
+def test_hook_no_marker_warning_on_eal_step(tmp_path):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["steps"][0]["command"] = "true"
+    d["steps"][0]["channel"] = "eal"
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert "marker-only step " + d["steps"][0]["id"] not in r.stdout
+
+
 # ── Fix round 2: loader parity + malformed-field robustness ──────────────────
 def _pairs(lines):
     import re as _re  # noqa: PLC0415
@@ -376,6 +419,29 @@ def test_hook_unsafe_lines_match_loader(name, inds, cmd, variants, cleanup):
         h_step["platform_variants"] = variants
     got = _pairs(hook.unsafe_indicator_lines(inds, [h_step], cleanup))
     assert got == expected
+
+
+_EAL_VECTORS = [
+    ("flat", "c2_http_beacon", {"target_url": "http://172.93.100.252/"}),
+    ("nested", "c2_http_beacon", {"extra": {"hosts": ["passkeyadd.com"]}}),
+    ("collector", "m365_activity_emitter", {"source_ip": "172.93.100.252"}),
+]
+
+
+@pytest.mark.parametrize("name,plugin,params", _EAL_VECTORS, ids=[v[0] for v in _EAL_VECTORS])
+def test_hook_eal_params_match_loader(name, plugin, params):
+    from engine import scenario_loader as sl  # noqa: PLC0415
+    hook = _load_hook()
+    inds = [_ind(type="ipv4", value="172.93.100.252", safe_form="log_field"),
+            _ind(type="domain", value="passkeyadd.com", safe_form="dns_lookup", id="ind-02")]
+    l_inds = [sl.IndicatorSchema.model_construct(**i) for i in inds]
+    l_step = sl.StepSchema.model_construct(
+        id="S", command="true", channel="eal", eal=sl.EalStepSchema(plugin=plugin, params=params))
+    expected = sorted(sl.unsafe_indicator_lines(l_inds, [l_step]))
+    h_step = {"id": "S", "command": "true", "channel": "eal", "eal": {"plugin": plugin, "params": params}}
+    got = sorted(hook.unsafe_indicator_lines(inds, [h_step]))
+    assert got == expected
+    assert bool(got) == (plugin not in sl.COLLECTOR_POST_PLUGINS)
 
 
 def test_hook_pins_loader_tables():

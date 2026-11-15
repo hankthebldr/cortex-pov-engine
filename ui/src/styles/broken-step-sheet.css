@@ -1,0 +1,57 @@
+/* broken-step-sheet.css — the troubleshooting sheet a Broken step opens on
+   Run detail (design v26 §4.6). Tokens only (cortex-tokens.css); no hex.
+   A right-hand sheet over a dimmed page, like the scenario sheet. */
+
+.broken-sheet__backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; justify-content: flex-end;
+  background: rgba(0, 0, 0, .45);
+}
+.broken-sheet {
+  box-sizing: border-box;
+  width: min(460px, 100vw); height: 100%; overflow-y: auto;
+  padding: 20px 20px 24px;
+  background: var(--s1); border-left: 1px solid var(--bd); box-shadow: var(--shadow);
+  color: var(--tx);
+}
+.broken-sheet__head { display: flex; align-items: flex-start; gap: 12px; }
+.broken-sheet__id { flex: 1; min-width: 0; }
+.broken-sheet__title { margin: 0; font: 600 15px/1.35 var(--font-ui); overflow-wrap: anywhere; }
+.broken-sheet__lede { margin: 6px 0 0; font: 400 12.5px/1.5 var(--font-ui); color: var(--tx2); }
+.broken-sheet__close {
+  flex: none; width: 28px; height: 28px; border-radius: 6px;
+  border: 1px solid var(--bd); background: transparent; color: var(--tx2); cursor: pointer;
+}
+.broken-sheet__close:hover { border-color: var(--bd2); color: var(--tx); }
+.broken-sheet__close:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+
+.broken-sheet__record {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  margin: 16px 0 0; padding: 10px 12px;
+  border: 1px solid var(--bd); border-left: 3px solid var(--crit); border-radius: 8px;
+  background: var(--crit-soft);
+}
+.broken-sheet__fact { display: flex; gap: 6px; align-items: baseline; }
+.broken-sheet__fact dt { font: 400 11.5px/1.4 var(--font-ui); color: var(--tx2); }
+.broken-sheet__fact dd { margin: 0; font: 600 12px/1.4 var(--font-mono); color: var(--tx); }
+
+.broken-sheet__causes {
+  list-style: decimal; margin: 16px 0 0; padding: 0 0 0 22px;
+  display: grid; gap: 8px;
+  font: 600 12px/1.4 var(--font-ui); color: var(--tx3);
+}
+.broken-sheet__cause {
+  display: grid; gap: 4px; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--bd); background: var(--s2); color: var(--tx);
+  cursor: pointer; transition: border-color 120ms ease-out;
+}
+.broken-sheet__cause:hover { border-color: var(--bd2); }
+.broken-sheet__cause:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.broken-sheet__cause-title { font: 600 13px/1.35 var(--font-ui); }
+.broken-sheet__cause-detail { font: 400 12px/1.5 var(--font-ui); color: var(--tx2); }
+.broken-sheet__cause-place { font: 600 11.5px/1.3 var(--font-ui); color: var(--ac-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .broken-sheet__cause { transition: none; }
+}

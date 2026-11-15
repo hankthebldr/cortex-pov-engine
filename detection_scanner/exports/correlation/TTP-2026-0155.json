@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1555",
     "T1528"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when abioc `Suspicious secrets dump activity` and abioc `AWS SSM parameters retrieval` both observe the same user_identity_arn and source_ip_address within a 15-minute window, stitching the Secrets Manager dump and the SSM Parameter Store retrieval into one credential-harvesting incident (raises incident severity above either ABIOC alone).",
       "name": "SIM-CDR-020 \u2014 credential & secret harvesting behavioral chain",
-      "rule_id": "CR-CDR-0020",
-      "severity": "high"
+      "rule_id": "CR-CDR-0020"
     }
   ],
   "ttp_ref": "TTP-2026-0155"

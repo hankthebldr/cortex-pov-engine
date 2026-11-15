@@ -1,0 +1,1 @@
+<response status="success"><result total-count="1" count="1"><entry name="outside"><network><layer3><member>ethernet1/1</member></layer3></network></entry></result></response>

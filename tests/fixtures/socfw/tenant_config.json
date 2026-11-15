@@ -1,0 +1,37 @@
+{
+  "shadow": {
+    "soc-star-case": {
+      "automation": false
+    },
+    "soc-close-issue": {
+      "ai": false
+    },
+    "soc-raise-case-severity": {
+      "automation": true
+    },
+    "soc-close-issue-contained": {
+      "automation": true
+    },
+    "soc-clear-sessions": {
+      "issue_emergency": true
+    },
+    "soc-revoke-tokens": {
+      "issue_emergency": true
+    },
+    "soc-isolate-endpoint": {
+      "issue_emergency": true
+    },
+    "soc-retract-email": {
+      "issue_emergency": true
+    },
+    "soc-block-domain": {
+      "issue_emergency": true
+    },
+    "soc-block-network-indicator": {
+      "issue_emergency": true
+    },
+    "soc-assign-case": {
+      "automation": false
+    }
+  }
+}

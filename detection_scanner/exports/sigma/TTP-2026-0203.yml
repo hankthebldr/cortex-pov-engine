@@ -1,0 +1,86 @@
+title: "Axios npm Supply Chain \u2014 plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill) \u2014 KOI-012 Interpreter Started On Tmp Script With HTTP URL Argument"
+id: ttp-2026-0203-bioc-01
+status: experimental
+description: |
+  A script interpreter starts with a script under /tmp (or /var/tmp) as its first argument and an http or https URL as the next. This is the shape of Figure 1's Linux launch line, python3 /tmp/ld.py followed by the C2 URL, and of the mirrored launch in SIM-KOI-012 step-03. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_command_line ~= "(python[0-9.]*|perl|ruby|node) +(/var)?/tmp/[^ ]+ +https?://"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.006
+    - attack.t1219
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Axios npm Supply Chain \u2014 plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill) \u2014 KOI-012 Interpreter Runs Hidden Dot File From Tmp"
+id: ttp-2026-0203-bioc-02
+status: experimental
+description: |
+  A script interpreter is the direct parent of a binary that runs from a hidden six-character dot-file under /tmp. Published: the RAT's peinject command drops and executes binary payloads. Linked source: on Linux the drop path is a hidden file under /tmp with a random six-character name. Matches the mirrored path in SIM-KOI-012 step-06 as well. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter actor_process_image_name ~= "^(python[0-9.]*|node|perl|ruby)$"
+    | filter action_process_image_path ~= "/tmp/[.][A-Za-z0-9]{6}$"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+    - attack.t1564.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Axios npm Supply Chain \u2014 plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill) \u2014 KOI-012 File Renamed Over Package Json Inside Node Modules"
+id: ttp-2026-0203-bioc-03
+status: experimental
+description: |
+  A file is renamed onto package.json inside an installed package directory. Published: after launching the payload the dropper replaces the tampered package.json with the clean decoy package.md. Linked source: the swap is a rename. npm writes manifests when it unpacks a package; a rename onto one afterwards is the anti-forensic step. FILE_RENAME has not been observed in this lab, so SIM-KOI-012 validates the swap by the mv process start instead. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_RENAME
+    | filter action_file_path ~= "node_modules/(@[^/]+/)?[^/]+/package[.]json$"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.004
+    - attack.t1036
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

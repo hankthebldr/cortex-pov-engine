@@ -18,6 +18,7 @@ from eal_simulator.analytics_catalogue import (
     DATA_SOURCE_CATALOGUE,
     TOTAL_SOURCES,
     UnknownDataSourceError,
+    _dataset_check,
     coverage_report,
     family_manifests,
     get_source,
@@ -167,3 +168,45 @@ class TestNegativeControlContract:
         recs = emitter.records_for(neg, sim_run_id="x", iteration=1)
         assert all(r.get("negative_control") for r in recs)
         assert len(recs) == 2
+
+
+class TestIngestionFacts:
+    """Coverage rows join each source to how it reaches a tenant (LogSimv2 port).
+
+    The counts are pinned so they cannot drift silently. When one moves, the
+    change is either a fixed emitter (good: update the pin and say so in the
+    PR) or a regression. Either way somebody has to look.
+    """
+
+    def test_dataset_check_states(self):
+        checks = _dataset_check(
+            {"a": {"okta_sso"}, "b": {"okta_sso_raw", "x"}}, {"okta_sso_raw"},
+        )
+        by = {c["emitter"]: c for c in checks}
+        assert by["a"]["state"] == "mismatch"
+        assert by["a"]["code"] == "EMITTER_DATASET_NOT_TENANT_DATASET"
+        assert by["b"]["state"] == "match"
+
+    def test_no_route_is_a_knowledge_gap_not_a_pass(self):
+        (check,) = _dataset_check({"a": {"duo_auth_raw"}}, set())
+        assert check["state"] == "no_documented_route"
+        assert check["code"] == "SOURCE_ROUTE_UNDOCUMENTED"
+
+    def test_shipped_corpus_mismatch_count_is_pinned(self):
+        # 2026-11-10: 12 emitter->source pairs name a dataset no documented
+        # route creates (okta_sso, msft_windows_security, msft_o365_audit, ...).
+        report = coverage_report(get_default_registry())
+        assert report["counts"]["emitter_dataset_mismatch"] == 12
+        assert report["counts"]["with_documented_route"] == 21
+
+    def test_an_emitter_on_the_native_dataset_name_matches(self):
+        report = coverage_report(get_default_registry())
+        gp = next(s for s in report["sources"] if s["key"] == "pan_global_protect")
+        assert [c["state"] for c in gp["dataset_check"]] == ["match"]
+
+    def test_ingestion_only_sources_never_enter_the_coverage_figure(self):
+        report = coverage_report(get_default_registry())
+        assert report["counts"]["total"] == 34
+        assert {s["key"] for s in report["sources"]}.isdisjoint(
+            {s["key"] for s in report["ingestion_only"]}
+        )

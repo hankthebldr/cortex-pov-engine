@@ -95,7 +95,7 @@ steps:
 
   - id: step-02
     name: "Register attacker self-signed CA as a trust anchor (SAFE-MODE marker)"
-    command: "mkdir -p /tmp/cortexsim-cdr-018 && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout /tmp/cortexsim-cdr-018/attacker-ca.key -out /tmp/cortexsim-cdr-018/attacker-ca.pem -subj '/CN=cortexsim-rolesanywhere-safe-marker' 2>/dev/null || true; printf 'aws rolesanywhere create-trust-anchor --name cortexsim-safe-anchor --source sourceType=CERTIFICATE_BUNDLE\\n' > /tmp/cortexsim-cdr-018/SAFE-MODE-createtrustanchor.marker; echo cortexsim-cdr-018-safe-mode-trust-anchor-marked"
+    command: "rm -rf /tmp/cortexsim-cdr-018 && mkdir -m 700 /tmp/cortexsim-cdr-018 || { echo 'sandbox /tmp/cortexsim-cdr-018 could not be created fresh: something else is at that path' >&2; exit 1; }; openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout /tmp/cortexsim-cdr-018/attacker-ca.key -out /tmp/cortexsim-cdr-018/attacker-ca.pem -subj '/CN=cortexsim-rolesanywhere-safe-marker' 2>/dev/null || true; printf 'aws rolesanywhere create-trust-anchor --name cortexsim-safe-anchor --source sourceType=CERTIFICATE_BUNDLE\\n' > /tmp/cortexsim-cdr-018/SAFE-MODE-createtrustanchor.marker; echo cortexsim-cdr-018-safe-mode-trust-anchor-marked"
     identity: container-runtime
     mitre_technique: "T1098.001"
     platforms: ["linux", "container"]
@@ -115,7 +115,7 @@ steps:
 
   - id: step-03
     name: "Mint STS credentials via CreateSession with the attacker certificate (SAFE-MODE marker)"
-    command: "printf 'aws_signing_helper credential-process --role-arn %s --trust-anchor-arn ARN --profile-arn ARN\\n' \"${TARGET_ROLE_ARN:-arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target}\" > /tmp/cortexsim-cdr-018/SAFE-MODE-createsession.marker; echo cortexsim-cdr-018-safe-mode-createsession-marked"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-cdr-018 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo 'sandbox /tmp/cortexsim-cdr-018 is missing or not ours: step-02 did not complete' >&2; exit 1; }; printf 'aws_signing_helper credential-process --role-arn %s --trust-anchor-arn ARN --profile-arn ARN\\n' \"${TARGET_ROLE_ARN:-arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target}\" > /tmp/cortexsim-cdr-018/SAFE-MODE-createsession.marker; echo cortexsim-cdr-018-safe-mode-createsession-marked"
     identity: container-runtime
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]

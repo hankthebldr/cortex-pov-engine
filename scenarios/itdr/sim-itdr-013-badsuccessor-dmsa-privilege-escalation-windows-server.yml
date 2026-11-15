@@ -113,7 +113,10 @@ steps:
     mitre_technique: "T1136.002"
     # Root step — links from the powershell.exe CGO session. dMSA / Windows
     # Server 2025 is a Windows-only technique; no cross-OS variant applies.
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -138,7 +141,10 @@ steps:
     causality:
       parent_step: step-01
       pivot: shared_entity
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -168,7 +174,10 @@ steps:
     causality:
       parent_step: step-02
       pivot: shared_entity
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: XQL
@@ -187,7 +196,10 @@ steps:
     causality:
       parent_step: step-03
       pivot: shared_entity
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: Correlation

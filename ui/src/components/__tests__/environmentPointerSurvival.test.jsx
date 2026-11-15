@@ -65,4 +65,18 @@ describe('active agent / tenant survive a failed list fetch', () => {
     expect(screen.queryByText('No agents registered')).toBeNull()
     expect(screen.getByTestId('agents-load-error').textContent).toContain('SimCore restarting')
   })
+
+  it('records a failed /api/runs read, so "no runs" and "could not read runs" differ', async () => {
+    installRoutes({
+      'GET /api/agents': { agents: [] },
+      'GET /api/scenarios': { scenarios: [] },
+      'GET /api/runs': down,
+      'GET /api/health': { status: 'ok' },
+    })
+    const wrapper = ({ children }) => <EnvironmentProvider runPollMs={60_000}>{children}</EnvironmentProvider>
+    const { result } = renderHook(() => useEnvironment(), { wrapper })
+    await waitFor(() => expect(result.current.loading.runs).toBe(false))
+    expect(result.current.runs).toEqual([])
+    expect(result.current.errors.runs).toMatch(/SimCore restarting/)
+  })
 })

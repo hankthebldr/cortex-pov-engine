@@ -68,3 +68,18 @@ operations:
     path: "/public_api/v1/endpoints/file_retrieval"
     access_class: write
     tags: [confirm-tail]
+  # ── harvested 2026-11-02 from cortex-bot (see system.yml header for provenance) ──
+  - op_id: OP-ACTIONS-GET-ACTION-STATUS
+    name: "Get action status"
+    method: POST
+    path: "/public_api/v1/actions/get_action_status/"
+    access_class: read
+    tags: [cortex-bot-observed]
+  - op_id: OP-ENDPOINTS-TERMINATE-CAUSALITY
+    name: "Terminate causality chain"
+    method: POST
+    path: "/public_api/v1/endpoints/terminate_causality"
+    # destructive, not write: it kills a process tree on the host and cannot be
+    # undone. Stricter than this pack's isolate (write), deliberately.
+    access_class: destructive
+    tags: [cortex-bot-observed]

@@ -82,7 +82,7 @@ const SPEC = [
   },
   {
     key: 'scenario_catalog', label: 'Scenario catalog', countKey: 'count', zeroIsBad: true, required: true,
-    purpose: 'the corpus the Library launches from',
+    purpose: 'the corpus the Scenarios page launches from',
     remediation:
       '0 scenarios loaded — scenarios/ is missing from this deployment or every file was '
       + 'rejected by the schema validator. Check the boot log for rejections.',
@@ -99,7 +99,7 @@ const SPEC = [
     purpose: 'every scenario external_tools[].adapter_ref resolves through this',
     remediation:
       '0 adapter packs loaded — tools/ is missing from this deployment (core/Dockerfile must '
-      + 'COPY tools/). Every adapter_ref will be unresolvable and the payload shelf can stage nothing.',
+      + 'COPY tools/). Every adapter_ref will be unresolvable and no tool can be made ready.',
   },
   {
     key: 'uctc_registry', label: 'UC / TC index', countKey: 'count', zeroIsBad: true, required: true,
@@ -114,11 +114,11 @@ const SPEC = [
     remediation: '0 EAL plugins registered — the Traffic/EAL destination cannot run a campaign.',
   },
   {
-    key: 'payload_shelf', label: 'Payload shelf', countKey: 'staged', zeroIsBad: false, required: true,
-    purpose: 'tools this SimCore serves to the target instead of the public internet',
+    key: 'payload_shelf', label: 'Tool readiness', countKey: 'staged', zeroIsBad: false, required: true,
+    purpose: 'tools this instance supplies to the target itself',
     remediation:
-      'Adapter packs declare staged artifacts that are not on the shelf. Scenarios binding them '
-      + 'refuse at compose with PAYLOAD_NOT_STAGED. Fix: ./scripts/build-payloads.sh, then rebuild.',
+      'Some declared tools are not ready on this instance. Scenarios that need them are refused '
+      + 'at launch (PAYLOAD_NOT_STAGED). Fix: ./scripts/build-payloads.sh, then rebuild.',
   },
   {
     key: 'agent_binaries', label: 'Beacon binaries', countKey: null, zeroIsBad: false, required: true,
@@ -163,6 +163,23 @@ const SPEC = [
     purpose: 'where campaign records are POSTed — reachability is NOT probed here',
     remediation: 'A campaign collector is misconfigured. Run the campaign preflight before launching.',
   },
+  {
+    key: 'master_key', label: 'Credential master key', countKey: null, zeroIsBad: false, required: false,
+    purpose: 'whether CORTEXSIM_SECRET opens the credentials already stored in this vault',
+    remediation:
+      'The master key does not open the stored credentials (a regenerated .env over an old data '
+      + 'volume reads this way). Restore the previous CORTEXSIM_SECRET, or re-enter each credential.',
+  },
+  {
+    // Degraded on EVERY deployment by design: the API has no per-request
+    // authentication yet. Labelled so it is not a raw key, and so a DC can tell
+    // this standing state from a degradation that is new.
+    key: 'api_auth', label: 'API authentication (none yet — expected)', countKey: null, zeroIsBad: false, required: false,
+    purpose: 'SimCore has no per-request authentication; this reads degraded on every deployment by design',
+    remediation:
+      'Expected, not a fault: keep SimCore on an isolated lab network and bound to a trusted interface '
+      + '(CORTEXSIM_BIND). Any OTHER degraded component is a real problem.',
+  },
 ]
 
 const SPEC_BY_KEY = new Map(SPEC.map((s) => [s.key, s]))
@@ -170,9 +187,9 @@ const SPEC_BY_KEY = new Map(SPEC.map((s) => [s.key, s]))
 /** Why a required component might be missing from THIS SimCore's response. */
 const GAP_REASON = {
   payload_shelf:
-    'This SimCore\'s /api/health does not report a payload_shelf component, so the console '
-    + 'cannot tell you from here whether declared artifacts are staged. Tools & Payloads reads '
-    + '/api/shelf directly and is authoritative.',
+    'This instance\'s /api/health does not report tool readiness, so the console cannot tell '
+    + 'you from here whether declared tools are ready. Packages reads it directly and is '
+    + 'authoritative.',
   agent_binaries:
     'This SimCore\'s /api/health does not report an agent_binaries component, so the console '
     + 'cannot tell you which OS a target can enrol from until you try.',
@@ -251,9 +268,9 @@ export function normalizeComponent(key, raw) {
     if (declared !== null && staged !== null && (staged < declared || unpinned > 0)) {
       status = HS.DEGRADED
       disagreement =
-        `This SimCore reported \`ok\` with ${staged}/${declared} artifacts staged`
-        + `${unpinned > 0 ? ` and ${unpinned} unpinned` : ''}. Anything not on the shelf is fetched `
-        + 'by the TARGET from the public internet at run time.'
+        `This instance reported \`ok\` with ${staged}/${declared} declared tools ready`
+        + `${unpinned > 0 ? ` and ${unpinned} unpinned` : ''}. Anything not ready is installed `
+        + 'by the TARGET itself, which needs internet access.'
     }
   }
 
@@ -307,6 +324,8 @@ export function buildHealthModel(body, { error = null } = {}) {
       overall: HS.ERROR,
       version: null,
       commit: null,
+      uptimeSeconds: null,
+      startedAt: null,
       components: [],
       degraded: [],
       gaps: [],
@@ -381,6 +400,10 @@ export function buildHealthModel(body, { error = null } = {}) {
     overall,
     version: body.version || null,
     commit: body.commit || null,
+    // How long THIS SimCore process has been up, by its own clock. An older
+    // build does not send it, and then it is unknown — never a zero.
+    uptimeSeconds: Number.isFinite(body.uptime_seconds) && body.uptime_seconds >= 0 ? body.uptime_seconds : null,
+    startedAt: typeof body.started_at === 'string' ? body.started_at : null,
     components,
     degraded: degradedUnion,
     gaps,

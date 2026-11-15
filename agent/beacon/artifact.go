@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -32,6 +33,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -76,6 +78,12 @@ const (
 	codeSHA256Mismatch = "ARTIFACT_SHA256_MISMATCH" // SECURITY
 	codeWriteFailed    = "ARTIFACT_WRITE_FAILED"    // host
 	codeDestNoexec     = "ARTIFACT_DEST_NOEXEC"     // host: noexec mount
+	// codeQuarantineSuspected (BEACON-16): the verified file was removed or
+	// locked between the write and the rename. That is the shape endpoint
+	// protection quarantining a staged tool takes — the customer's prevention
+	// possibly WORKING — so it must not be reported as a CortexSim write bug,
+	// nor as "not a gap".
+	codeQuarantineSuspected = "ARTIFACT_QUARANTINE_SUSPECTED" // endpoint protection, probably
 )
 
 // Stable literal markers. They are constants for the same reason
@@ -106,6 +114,14 @@ var (
 	artifactFetchTimeout = 2 * time.Minute
 	artifactRetryBase    = 2 * time.Second
 )
+
+// renameFile publishes a verified .part at its destination. A var only so a test
+// can stand in for endpoint protection removing or locking the file.
+var renameFile = os.Rename
+
+// renameRetryDelay is the pause between rename attempts. A var only so tests
+// can shrink it.
+var renameRetryDelay = 500 * time.Millisecond
 
 const (
 	artifactRetries    = 3
@@ -264,27 +280,34 @@ func (c *BeaconClient) stageOne(ctx context.Context, a Artifact, set *stagedSet)
 	var digest string
 
 	if !c.DisableArtifactCache && cacheDir != "" {
-		if valid, size := verifyFileSHA256(cachedPath, a.SHA256); valid {
-			if _, err := copyFile(cachedPath, part, openFlags(), 0o644); err == nil {
-				fromCache = true
-				wrote = size
-				digest = strings.ToLower(a.SHA256)
-			} else {
-				_ = os.Remove(part)
-			}
+		// BEACON-15: the digest is taken over the bytes that were WRITTEN to
+		// part, in the same pass that writes them. Hashing the cache file and
+		// then reopening it to copy let whoever can write the cache directory
+		// swap the file in between: the swapped bytes were staged under the
+		// pinned digest's name and a step executed them. Nothing is trusted
+		// about the cache entry except what this copy just read.
+		n, got, err := copyFileHashing(cachedPath, part, openFlags(), 0o644)
+		switch {
+		case err == nil && got == strings.ToLower(a.SHA256):
+			fromCache = true
+			wrote = n
+			digest = got
+		case err == nil:
+			_ = os.Remove(part)
+			// A cache entry is named after its digest. One that does not hash
+			// to its name is corrupt or planted: drop it and fetch from SimCore,
+			// which is verified the same way.
+			log.Printf("[beacon] artifact cache entry %s does not hash to its name (got %s) — discarded; "+
+				"fetching %s from SimCore", cachedPath, shortDigest(got), a.Name)
+			_ = os.Remove(cachedPath)
+		default:
+			_ = os.Remove(part) // a miss (no entry) or an unreadable one
 		}
 	}
 
 	if fromCache {
-		if err := applyMode(part, a.Mode); err != nil {
-			_ = os.Remove(part)
-			return &artifactFailure{Artifact: a, Code: codeWriteFailed,
-				Detail: fmt.Sprintf("chmod %s %s: %v", modeOrDefault(a.Mode), part, err)}
-		}
-		if err := os.Rename(part, dest); err != nil {
-			_ = os.Remove(part)
-			return &artifactFailure{Artifact: a, Code: codeWriteFailed,
-				Detail: fmt.Sprintf("rename %s -> %s: %v", part, dest, err)}
+		if fail := publishStaged(a, part, dest); fail != nil {
+			return fail
 		}
 		set.Files = append(set.Files, stagedFile{Artifact: a, Dest: dest, SHA256: digest, Size: wrote, FromCache: true})
 		log.Printf("[beacon] staged %s -> %s (cache-hit) sha256=%s", a.Name, dest, shortDigest(digest))
@@ -315,15 +338,8 @@ func (c *BeaconClient) stageOne(ctx context.Context, a Artifact, set *stagedSet)
 			// digest matched. It is structurally impossible for a step to find a
 			// runnable-but-unverified file. There is no CHECKSUM_SKIPPED path
 			// and there must never be one.
-			if err := applyMode(part, a.Mode); err != nil {
-				_ = os.Remove(part)
-				return &artifactFailure{Artifact: a, Code: codeWriteFailed,
-					Detail: fmt.Sprintf("chmod %s %s: %v", modeOrDefault(a.Mode), part, err)}
-			}
-			if err := os.Rename(part, dest); err != nil {
-				_ = os.Remove(part)
-				return &artifactFailure{Artifact: a, Code: codeWriteFailed,
-					Detail: fmt.Sprintf("rename %s -> %s: %v", part, dest, err)}
+			if fail := publishStaged(a, part, dest); fail != nil {
+				return fail
 			}
 			set.Files = append(set.Files, stagedFile{Artifact: a, Dest: dest, SHA256: digest, Size: wrote})
 			log.Printf("[beacon] staged %s -> %s sha256=%s", a.Name, dest, shortDigest(digest))
@@ -348,6 +364,55 @@ func (c *BeaconClient) stageOne(ctx context.Context, a Artifact, set *stagedSet)
 		}
 	}
 	return last
+}
+
+// renameRetries is how many times a quarantine-shaped rename failure is
+// retried, renameRetryDelay apart, before it is reported.
+const renameRetries = 3
+
+// publishStaged applies the mode to the verified .part and renames it to dest —
+// the moment the step's tool comes into existence.
+//
+// BEACON-16: endpoint protection scans a freshly written executable and may
+// quarantine it before the rename. On Windows the rename then fails with a
+// sharing violation or access denied while the scanner holds the file, or the
+// .part simply vanishes. A scanner that only HOLDS the file releases it within
+// moments, so a quarantine-shaped failure is retried renameRetries times; one
+// that persists is reported as ARTIFACT_QUARANTINE_SUSPECTED, not as a write
+// bug. Any other failure is still ARTIFACT_WRITE_FAILED.
+func publishStaged(a Artifact, part, dest string) *artifactFailure {
+	if err := applyMode(part, a.Mode); err != nil {
+		_ = os.Remove(part)
+		code := codeWriteFailed
+		if errors.Is(err, fs.ErrNotExist) {
+			code = codeQuarantineSuspected // the .part vanished after a verified write
+		}
+		return &artifactFailure{Artifact: a, Code: code,
+			Detail: fmt.Sprintf("chmod %s %s: %v", modeOrDefault(a.Mode), part, err)}
+	}
+	err := renameFile(part, dest)
+	for i := 0; err != nil && quarantineShaped(err) && i < renameRetries; i++ {
+		time.Sleep(renameRetryDelay)
+		err = renameFile(part, dest)
+	}
+	if err == nil {
+		return nil
+	}
+	_ = os.Remove(part)
+	if quarantineShaped(err) {
+		return &artifactFailure{Artifact: a, Code: codeQuarantineSuspected,
+			Detail: fmt.Sprintf("rename %s -> %s still failing after %d retries %s apart: %v — the verified file "+
+				"was removed or locked after it was written", part, dest, renameRetries, renameRetryDelay, err)}
+	}
+	return &artifactFailure{Artifact: a, Code: codeWriteFailed,
+		Detail: fmt.Sprintf("rename %s -> %s: %v", part, dest, err)}
+}
+
+// quarantineShaped reports whether a rename error looks like something else
+// removing or holding the file: it vanished, access was denied, or (Windows) a
+// sharing or lock violation.
+func quarantineShaped(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) || isSharingViolation(err)
 }
 
 // fetchArtifactOnce performs one GET, streaming into part while hashing.
@@ -423,7 +488,49 @@ func (c *BeaconClient) fetchArtifactOnce(ctx context.Context, a Artifact, part s
 	return nil, false, wrote, digest
 }
 
-// getArtifactCacheDir resolves the local content-addressable cache directory.
+// windowsArtifactCacheDir is where a Windows beacon keeps its artifact cache:
+// a `cache` directory NEXT TO THE BEACON'S OWN BINARY, or "" (no cache) when
+// that cannot be named safely.
+//
+// BEACON-15: Windows used to take the POSIX chain below, whose first candidate
+// is the literal /opt/cortexsim/cache. On Windows that is drive-rooted —
+// C:\opt\cortexsim\cache for a service whose working directory is on C: — a
+// SYSTEM beacon can create it, and a new folder under C:\ inherits
+// "Authenticated Users: Modify". Any local user could then plant or swap what a
+// SYSTEM step executes, or turn the beacon's cache write into a write somewhere
+// else through a junction.
+//
+// Next to the binary, the cache is exactly as trustworthy as the beacon itself:
+// whoever can write there can already replace cortexsim-agent.exe. For the
+// service install that is %ProgramData%\CortexSim, which the installer strips of
+// inheritance and grants to SYSTEM and Administrators (Users: read/execute); for
+// the per-user install it is %LOCALAPPDATA%\CortexSim, inside the user's
+// profile. The beacon sets no ACL of its own — it creates one directory under a
+// parent whose ACL it inherits.
+//
+// A binary sitting at a drive root (C:\cortexsim-agent.exe) gets NO cache:
+// C:\cache would inherit the same root ACL this exists to avoid. So does a
+// relative or UNC path. Pure string logic, so the rule is testable off Windows.
+func windowsArtifactCacheDir(exePath string) string {
+	p := strings.ReplaceAll(strings.TrimSpace(exePath), "/", `\`)
+	if !winDriveRE.MatchString(p) {
+		return ""
+	}
+	dir := cleanWindows(p)
+	i := strings.LastIndex(dir, `\`)
+	if i <= 2 { // "C:\beacon.exe": the directory is the drive root
+		return ""
+	}
+	return dir[:i] + `\cache`
+}
+
+// executablePath is os.Executable. A var only so a test can place the "binary".
+var executablePath = os.Executable
+
+var cacheDisabledOnce sync.Once
+
+// getArtifactCacheDir resolves the local content-addressable cache directory,
+// creating it. "" means this host has no cache; every artifact is then fetched.
 func (c *BeaconClient) getArtifactCacheDir() string {
 	if c.artifactCacheDirFunc != nil {
 		return c.artifactCacheDirFunc()
@@ -431,6 +538,25 @@ func (c *BeaconClient) getArtifactCacheDir() string {
 	if env := c.getenv("CORTEXSIM_CACHE_DIR"); env != "" {
 		_ = os.MkdirAll(env, 0o755)
 		return env
+	}
+	if hostGOOS() == "windows" {
+		// Never the POSIX chain: its candidates are drive-rooted or %TEMP%.
+		exe, err := executablePath()
+		dir := ""
+		if err == nil {
+			dir = windowsArtifactCacheDir(exe)
+		}
+		if dir != "" {
+			if err = os.MkdirAll(dir, 0o755); err == nil {
+				return dir
+			}
+		}
+		cacheDisabledOnce.Do(func() {
+			log.Printf("[beacon] artifact cache disabled on this host (binary=%q err=%v): it is kept next to the "+
+				"beacon binary, never in a drive-rooted or temp directory; every artifact will be fetched. "+
+				"Set CORTEXSIM_CACHE_DIR to a directory only administrators can write to enable it.", exe, err)
+		})
+		return ""
 	}
 	// Try /opt/cortexsim/cache if writable
 	optCache := "/opt/cortexsim/cache"
@@ -475,21 +601,29 @@ func copyFile(src, dst string, flags int, mode os.FileMode) (int64, error) {
 	return n, out.Close()
 }
 
-// verifyFileSHA256 reads path and reports whether its sha256 digest matches expected.
-func verifyFileSHA256(path, expectedSHA256 string) (bool, int64) {
-	f, err := os.Open(path)
+// copyFileHashing copies src to dst and returns the lowercase-hex sha256 of the
+// bytes it WROTE. The hash and the copy are one read of src, so the digest is a
+// statement about dst, not about whatever src held a moment earlier.
+func copyFileHashing(src, dst string, flags int, mode os.FileMode) (int64, string, error) {
+	in, err := os.Open(src)
 	if err != nil {
-		return false, 0
+		return 0, "", err
 	}
-	defer f.Close()
+	defer in.Close()
 
-	h := sha256.New()
-	n, err := io.Copy(h, f)
+	out, err := os.OpenFile(dst, flags, mode)
 	if err != nil {
-		return false, 0
+		return 0, "", err
 	}
-	digest := hex.EncodeToString(h.Sum(nil))
-	return strings.EqualFold(digest, expectedSHA256), n
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, maxArtifactBytes+1))
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return n, "", err
+	}
+	return n, hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // findExecutableFallback identifies an alternative staging directory when a noexec mount is detected.
@@ -1022,11 +1156,16 @@ func (c *BeaconClient) reportStagingFailure(task *Task, set *stagedSet) {
 		log.Printf("[beacon] sendOutput (staging failure summary) error: %v", err)
 	}
 
+	verdict := "This run proves NOTHING about the customer's detection coverage."
+	if seenCode[codeQuarantineSuspected] {
+		// A quarantine IS possible prevention evidence; do not erase it.
+		verdict = quarantineSummary
+	}
 	summary := fmt.Sprintf(
-		"FAILED (exit %d) | scenario=%s steps=%d | %s %d of %d artifact(s) could not be staged (%s) — NO STEPS RAN. This run proves NOTHING about the customer's detection coverage.",
+		"FAILED (exit %d) | scenario=%s steps=%d | %s %d of %d artifact(s) could not be staged (%s) — NO STEPS RAN. %s",
 		artifactStagingExitCode, task.ScenarioID, total, artifactStagingFailedMarker,
-		len(set.Failures), set.Total, strings.Join(codes, ","))
-	if err := c.Complete(task.RunID, artifactStagingExitCode, summary, []StepOutcome{}); err != nil {
+		len(set.Failures), set.Total, strings.Join(codes, ","), verdict)
+	if err := c.completeTask(task, artifactStagingExitCode, summary, []StepOutcome{}); err != nil {
 		log.Printf("[beacon] complete (staging failure) error: %v", err)
 	}
 	log.Printf("[beacon] %s run_id=%s scenario=%s codes=%s", artifactStagingFailedMarker,
@@ -1047,8 +1186,32 @@ func formatStagingFailureFrame(n, total int, step *Step, username string, fails 
 		fmt.Fprintf(&b, "   source=%s%s\n", server, f.Artifact.Path)
 		fmt.Fprintf(&b, "   dest=%s\n", f.Artifact.Dest)
 	}
-	b.WriteString("   THIS STEP DID NOT RUN. The absence of a detection here is a CortexSim\n")
-	b.WriteString("   staging failure, NOT a gap in the customer's detection coverage.\n")
+	quarantined := false
+	for _, f := range fails {
+		if f.Code == codeQuarantineSuspected {
+			quarantined = true
+		}
+	}
+	if quarantined {
+		// BEACON-16: do NOT say "NOT a gap" — a quarantine is the customer's
+		// prevention possibly working, and only the endpoint's alerts can say.
+		b.WriteString(quarantineFrame)
+	} else {
+		b.WriteString("   THIS STEP DID NOT RUN. The absence of a detection here is a CortexSim\n")
+		b.WriteString("   staging failure, NOT a gap in the customer's detection coverage.\n")
+	}
 	fmt.Fprintf(&b, "--- exit_code=%d duration=0s ---\n", artifactStagingExitCode)
 	return b.String()
 }
+
+// quarantineFrame is the per-step wording for ARTIFACT_QUARANTINE_SUSPECTED.
+const quarantineFrame = "   THIS STEP DID NOT RUN. The staged file was removed or locked after it was\n" +
+	"   written, which is consistent with endpoint protection quarantining it.\n" +
+	"   Check the endpoint's prevention alerts before reading this as either a\n" +
+	"   CortexSim failure or a coverage gap.\n"
+
+// quarantineSummary is the run-card wording when any artifact was suspected
+// quarantined.
+const quarantineSummary = "A staged file was removed or locked after it was written, which is consistent with " +
+	"endpoint protection quarantining it. Check the endpoint's prevention alerts before reading this as either a " +
+	"CortexSim failure or a coverage gap."

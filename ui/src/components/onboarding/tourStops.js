@@ -22,15 +22,19 @@ export const TOUR_STOPS = [
   },
   {
     id: 'agents-empty',
-    anchor: 'nav-agents',
-    destination: 'agents',
+    // Agents is a child of Components in the rail (design v26 §1); the
+    // submenu opens by itself while an Agents page is open.
+    anchor: 'nav-component-agent',
+    destination: 'component-agents',
     title: 'Nothing runs without a beacon',
     body: 'Agents is empty on a fresh install. Until one beacon checks in, a launch queues a task that nothing collects.',
   },
   {
     id: 'enroll',
     anchor: 'agent-enroll',
-    destination: 'agents',
+    // The enroll button lives on Agents › Fleet.
+    destination: 'component-agents',
+    params: { tab: 'fleet' },
     title: 'Deploy one now',
     body: 'Mint an enrollment token and run the single line it gives you on the target host. SimCore assigns the agent id.',
   },

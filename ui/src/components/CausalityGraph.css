@@ -38,7 +38,7 @@
   gap: var(--space-4, 16px);
   padding: var(--space-4, 16px) var(--space-5, 20px);
   background: var(--cortex-navy);
-  color: var(--cortex-white);
+  color: #FFFFFF; /* on the always-dark --cortex-navy band */
   border-radius: var(--radius-lg, 10px);
   box-shadow: var(--shadow-md);
 }
@@ -48,8 +48,9 @@
   gap: var(--space-3, 12px);
   flex-wrap: wrap;
 }
-.cg-header__title h3 {
+.cg .cg-header__title h3 {
   margin: 0;
+  color: #FFFFFF; /* on the always-dark --cortex-navy band */
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -135,7 +136,7 @@
   align-items: center;
   gap: 6px;
 }
-.cg-legend__item--hero { font-weight: 600; color: var(--cortex-navy); }
+.cg-legend__item--hero { font-weight: 600; color: var(--cortex-ink); }
 .cg-legend__swatch {
   width: 16px;
   height: 0;
@@ -195,7 +196,7 @@
   letter-spacing: 0.1em;
   dominant-baseline: middle;
 }
-.cg-lane--endpoint .cg-lane__label { fill: var(--cortex-navy); }
+.cg-lane--endpoint .cg-lane__label { fill: var(--cortex-ink); }
 .cg-lane--network  .cg-lane__label { fill: var(--cortex-teal-deep, #0090b0); }
 .cg-lane--exposure .cg-lane__label { fill: var(--cortex-warning, #f0a020); }
 
@@ -276,9 +277,9 @@
   padding: 1px 5px;
   border-radius: 999px;
   background: rgba(0, 51, 102, 0.08);
-  color: var(--cortex-navy);
+  color: var(--cortex-ink);
 }
-.cg-node__engine--cgo  { background: var(--cortex-navy); color: var(--cortex-white); }
+.cg-node__engine--cgo  { background: var(--cortex-navy); color: #FFFFFF; }
 .cg-node__engine--proc { background: rgba(107, 126, 142, 0.15); color: var(--cortex-steel); }
 .cg-node__engine--exp  { background: rgba(240, 160, 32, 0.16); color: #b9770f; }
 .cg-node__label {
@@ -340,18 +341,20 @@
 }
 
 /* ── Dark theme ──────────────────────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  .cg { color: #e6edf3; }
-  .cg-canvas {
-    background: rgba(255, 255, 255, 0.02);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-  .cg-node {
-    background: #12202e;
-    border-color: rgba(255, 255, 255, 0.14);
-  }
-  .cg-node__label { color: #e6edf3; }
-  .cg-node--cgo,
-  .cg-node--exposure { background: #16273a; }
-  .cg-edge__label { stroke: #0b141d; fill: #cfe8f4; }
+/* Keyed on the console's own theme, not the OS preference: under
+   prefers-color-scheme a DC with a dark OS who picked the console's light
+   theme got dark navy nodes carrying light-theme ink (about 2.4:1). */
+[data-theme="dark"] .cg { color: #e6edf3; }
+[data-theme="dark"] .cg-canvas {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.12);
 }
+[data-theme="dark"] .cg-node {
+  background: #12202e;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+[data-theme="dark"] .cg-node__label { color: #e6edf3; }
+[data-theme="dark"] .cg-node--cgo,
+[data-theme="dark"] .cg-node--exposure { background: #16273a; }
+[data-theme="dark"] .cg-edge__label { stroke: #0b141d; fill: #cfe8f4; }
+

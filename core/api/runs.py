@@ -16,16 +16,19 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import and_, case, func, not_, or_, select, update
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import LargeBinary, and_, case, cast, func, not_, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from database import get_db
 from engine import efficacy_scorecard
@@ -35,21 +38,26 @@ from engine.outcome import (
     HOST_WITNESS,
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOMES,
+    OUTCOME_DETECTED,
+    OUTCOME_PREVENTED,
     is_hit,
     is_in_denominator,
     PROFILE_MODES,
     TERMINATIONS,
     TERMINATION_BEACON_LOST,
     TERMINATION_NOT_RUN,
+    PLATFORM_UNSATISFIABLE,
     TOOL_ABSENT,
     UPSTREAM_FAILED,
     UPSTREAM_NOT_EXECUTED,
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
+from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, NO_CASE_YET_HINT, pair_merge
+from connectors.tenant_reader import safe_xdr_url as _safe_xdr_url
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Agent, Result, Run, Scenario, StepOutcome
+from models import Agent, Result, Run, RunOutputFrame, RunTaskCompletion, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -83,6 +91,9 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("!! TOOL_ABSENT",
      "A step's tool was not present on the target, so the step did not run "
      "and its absent detections say nothing about Cortex."),
+    ("!! STEP NOT RUN: PLATFORM_UNSATISFIABLE",
+     "A step cannot run on this endpoint's platform, so the beacon did not run "
+     "it and its absent detections say nothing about Cortex."),
     ("!! RUNTIME_DEPENDENCY_MISSING",
      "A runtime dependency the step needs was missing on the target, so the "
      "step could not execute as authored."),
@@ -92,6 +103,11 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("BEACON LOST",
      "The beacon stopped reporting mid-run, so later steps may not have run "
      "and the host evidence is incomplete."),
+    ("BEACON ABANDONED TASK",
+     "The beacon stayed alive but stopped reporting on this run (its "
+     "completion was lost, typically across a SimCore restart), so SimCore "
+     "closed it without the beacon's step record: later steps may not have "
+     "run and the host evidence is incomplete."),
     ("!! TERMINATION_UNKNOWN",
      "The beacon reported a step ending in a way it could not classify, so "
      "whether the agent severed the step is unknown."),
@@ -112,6 +128,121 @@ def _execution_integrity(run: Any) -> dict[str, Any]:
         if marker in output
     ]
     return {"ok": not problems, "problems": problems}
+
+
+_STEP_HEADER_RE = __import__("re").compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
+_PLATFORM_VARIANT_RE = __import__("re").compile(
+    r"!! PLATFORM VARIANT: step=(\S+) ran its (\S+) variant")
+#: ``engine.orchestrator.posix_family_markers`` (RG-UI-01).
+_PLATFORM_MISMATCH_RE = __import__("re").compile(
+    r"!! PLATFORM MISMATCH: step=(\S+) is authored for (\S+), not ([^\s;]+);")
+_IDENTITY_MARKER = "!! IDENTITY NOT HONOURED"
+
+
+def _identity_degraded_steps(output: str) -> list[str]:
+    """Step ids whose output carries the beacon's identity-degradation marker.
+
+    The beacon writes ``=== STEP n/N · <step-id> · ...`` then, for a step it
+    could not run as the declared identity, ``!! IDENTITY NOT HONOURED: ...``
+    (``agent/beacon/client.go::formatStepOutput``). Chunks are concatenated
+    without a separator, so the header is searched anywhere on a line. A
+    marker with no preceding header is reported as ``(unattributed)`` rather
+    than dropped.
+    """
+    steps: list[str] = []
+    current: Optional[str] = None
+    for line in (output or "").splitlines():
+        m = _STEP_HEADER_RE.search(line)
+        if m:
+            current = m.group(1)
+        if _IDENTITY_MARKER in line:
+            sid = current or "(unattributed)"
+            if sid not in steps:
+                steps.append(sid)
+    return steps
+
+
+def _report_caveats(run: Any, scenario: Optional[Any]) -> list[str]:
+    """Scoped caveats for the markdown report (UI-09 / CONT-11).
+
+    Unlike the execution-integrity section these do not void the run — each
+    names the steps a reader must not over-read. Returns ``[]`` (no section at
+    all) for an unremarkable run, so its report is byte-identical to before.
+    """
+    output = getattr(run, "output", "") or ""
+    blocks: list[list[str]] = []
+
+    degraded = _identity_degraded_steps(output)
+    if degraded:
+        blocks.append([
+            "### Identity Not Honoured",
+            "",
+            "The beacon could not run these steps as their declared identity "
+            "(`!! IDENTITY NOT HONOURED` in the run output — e.g. Windows has no "
+            "credential-free unattended impersonation, so the step ran as the "
+            "beacon's own account): "
+            + ", ".join(f"`{s}`" for s in degraded) + ".",
+            "",
+            "Detections keyed on process lineage or the acting user cannot match "
+            "by construction here — lineage-keyed misses on these steps are not a "
+            "coverage measurement.",
+        ])
+
+    variants = []
+    for sid, os_name in _PLATFORM_VARIANT_RE.findall(output):
+        if (sid, os_name) not in variants:
+            variants.append((sid, os_name))
+    if variants:
+        blocks.append([
+            "### Platform Variants",
+            "",
+            "These steps ran their `platform_variants` command, not the primary "
+            "command their expected detections were authored against, so a miss "
+            "on them is unverified for this OS:",
+            "",
+            *[f"- `{sid}` — {os_name} variant" for sid, os_name in variants],
+        ])
+
+    mismatches = []
+    for found in _PLATFORM_MISMATCH_RE.findall(output):
+        if found not in mismatches:
+            mismatches.append(found)
+    if mismatches:
+        blocks.append([
+            "### Platform Mismatch",
+            "",
+            "These steps are labelled for another POSIX platform than the beacon "
+            "that ran them. SimCore resolves POSIX versus Windows only, so it sent "
+            "the authored command unchanged; a miss on them is not a coverage "
+            "measurement:",
+            "",
+            *[f"- `{sid}` — authored for {labels}, ran on {os_name}"
+              for sid, labels, os_name in mismatches],
+        ])
+
+    cleanup = (getattr(scenario, "cleanup", None) or {}) if scenario is not None else {}
+    commands = [c for c in (cleanup.get("commands") or [])
+                if isinstance(c, str) and c.strip()]
+    if getattr(run, "mode", None) == "pull" and commands:
+        blocks.append([
+            "### Cleanup Not Run",
+            "",
+            f"pull mode does not execute cleanup.commands: {len(commands)} "
+            f"command{'s' if len(commands) != 1 else ''} not run. Run them on the "
+            "target by hand, or the scenario's artefacts stay on the endpoint:",
+            "",
+            "```",
+            *commands,
+            "```",
+        ])
+
+    if not blocks:
+        return []
+    lines = ["## ⚠ Caveats", ""]
+    for block in blocks:
+        lines.extend(block)
+        lines.append("")
+    return lines
 
 
 def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
@@ -162,17 +293,115 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
     return rows
 
 
+_MD_ESCAPE = set("\\|[]()<>*_#!~&")
+
+
+def _md_cell(value, *, code: bool = False) -> str:
+    """Neutralise a tenant-derived value for the markdown report.
+
+    Control characters and newlines are flattened to spaces and backticks become
+    apostrophes (so nothing can break out of a code span or open one). Outside a
+    code span (``code=False``) every markdown/HTML metacharacter
+    ``\\ | [ ] ( ) < > * _ # ! ~ &`` is backslash-escaped, so no link, tag,
+    heading or emphasis is interpreted. Inside a code span (``code=True``)
+    backslashes would show literally, so nothing more is added; that includes
+    ``|``, which is safe only because ``code=True`` is used in inline lines and
+    never inside a table cell (a ``|`` there would split the cell).
+    """
+    text = "" if value is None else str(value)
+    text = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in text)
+    text = text.replace("`", "'")
+    if code:
+        return text
+    return "".join("\\" + ch if ch in _MD_ESCAPE else ch for ch in text)
+
+
+def ledger_unreadable_reason(led) -> Optional[str]:
+    """A stored ledger missing a required key (or with the wrong type) is
+    degraded, never rendered as a healthy-looking section."""
+    if not isinstance(led, dict):
+        return "stored ledger is not an object"
+    if not isinstance(led.get("merge_class"), str) or not led["merge_class"]:
+        return "merge_class missing or not a string"
+    if not isinstance(led.get("cases"), list):
+        return "cases missing or not a list"
+    if not all(isinstance(c, dict) for c in led["cases"]):
+        return "cases contains a non-object entry"
+    if not isinstance(led.get("code"), str) or not led["code"]:
+        return "code missing or not a string"
+    return None
+
+
+def _case_section(run: Run) -> list[str]:
+    """Markdown ``## Case`` block from the stored case ledger.
+
+    Disposition is context, never detection evidence: nothing here is a
+    detected/missed claim, and the fixed disclaimer is always rendered.
+    Every tenant-derived string is escaped before it reaches the document.
+    """
+    out = ["## Case", ""]
+    led = run.case_ledger
+    if led is None:
+        out += ["Not read yet — reconcile the run.", "", f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    bad = ledger_unreadable_reason(led)
+    if bad:
+        out += [f"> Ledger unreadable: {bad}. Reconcile the run to rebuild it.", "",
+                f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    out.append(f"**Case merge:** `{_md_cell(led['merge_class'], code=True)}` — {_md_cell(led.get('merge_reason') or '—')}")
+    out.append("")
+    # Stored timestamps are naive UTC ISO strings: say so where they are shown.
+    read_at = f"{_md_cell(led['read_at'])} UTC" if led.get("read_at") else "—"
+    out.append(f"Read at {read_at} from `{_md_cell(led.get('integration') or '—', code=True)}` "
+               f"(basis: {_md_cell(led.get('basis') or '—')}).")
+    out.append("")
+    if led["merge_class"] == "NO_CASE_YET":
+        out += [NO_CASE_YET_HINT, ""]
+    if led["code"] != "CASE_LEDGER_OK":
+        out += [f"> Ledger status: `{_md_cell(led['code'], code=True)}`", ""]
+    ir = led.get("issue_read")
+    if isinstance(ir, dict) and not ir.get("ok", True):
+        out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—', code=True)}` — "
+                f"{_md_cell(ir.get('remediation') or 'no remediation recorded')}", ""]
+    cases = led["cases"]            # every entry is a dict: ledger_unreadable_reason
+    if cases:
+        out.append("| Case | Status | Closed by | Sealed | Issues (this run / other) | Link |")
+        out.append("|------|--------|-----------|--------|---------------------------|------|")
+        for c in cases:
+            url = c.get("xdr_url")
+            safe = _safe_xdr_url(url)
+            if safe:
+                link = f"[open]({safe})"
+            elif url:
+                link = "(invalid link withheld)"
+            else:
+                link = "—"
+            out.append(
+                f"| {_md_cell(c.get('case_id'))} | {_md_cell(c.get('status') or '—')} | "
+                f"{_md_cell(c.get('closed_by') or '—')} | "
+                f"{'yes' if c.get('sealed') else 'no'} | "
+                f"{_md_cell(c.get('issues_from_run', 0))} / {_md_cell(c.get('issues_other', 0))} | {link} |"
+            )
+        out.append("")
+    if led.get("shared_with_other_runs"):
+        other = sum(c.get("issues_other") or 0 for c in cases if isinstance(c.get("issues_other") or 0, int))
+        out += [f"Shared with other runs: {other} issues from other runs sit in these cases.", ""]
+    out += [f"*{CASE_DISCLAIMER}*", ""]
+    return out
+
+
 def _verdict_section(run: Run) -> list[str]:
     """Markdown block for a run's test-case verdict. Empty when unscored.
 
-    Reuses ``report_generator._VERDICT_LABEL`` rather than restating the four
-    labels — the wording of "NOT SCOREABLE" in particular is load-bearing and
-    must not fork between the two renderers.
+    Reuses ``report_generator.verdict_label`` rather than restating the labels —
+    the wording of "NOT SCOREABLE" in particular is load-bearing and must not
+    fork between the two renderers.
     """
     if not run.tc_verdict:
         return []
     detail = run.tc_verdict_detail if isinstance(run.tc_verdict_detail, dict) else {}
-    label = report_generator._VERDICT_LABEL.get(run.tc_verdict, run.tc_verdict)
+    label = report_generator.verdict_label(run.tc_verdict, detail)
 
     out = ["## Test-Case Verdict", "", f"**{label}**", ""]
     if detail.get("detail"):
@@ -338,7 +567,8 @@ _ATT = " — attested"
 
 def _attestations_section(run: Run) -> list[str]:
     if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
-            or run.soakless_attested is not None or run.attested_by):
+            or run.soakless_attested is not None or run.attested_by
+            or run.module_modes is not None):
         return []
 
     def _flag(v):
@@ -352,6 +582,10 @@ def _attestations_section(run: Run) -> list[str]:
         f"- BAS mode: {_flag(run.bas_mode_attested)}{_ATT if run.bas_mode_attested is not None else ''}",
         f"- soakless: {_flag(run.soakless_attested)}{_ATT if run.soakless_attested is not None else ''}",
     ]
+    if run.module_modes:
+        # Per-module Action Mode: what each prevent row was graded against.
+        modes = ", ".join(f"{k}: {v}" for k, v in sorted(run.module_modes.items()))
+        out.append(f"- module modes: {modes}{_ATT}")
     if run.block_mode_status and run.canary_run_id:
         out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
     elif run.block_mode_status:
@@ -392,6 +626,11 @@ class LaunchRequest(BaseModel):
     # POST /api/scenarios/{id}/bundle, which gates independently and also
     # demands authorized_by. See docs/reference/k8s-delivery.md.
     consent: Optional[dict[str, bool]] = None
+    # The operator authorising this launch. With consent.simulation_authorized
+    # it lets the run's in-process EAL steps deliver live to the instance's
+    # collector targets; without both, those steps stay dry-run and each says
+    # why (EAL_DRY_RUN_*). Not read for anything else.
+    authorized_by: Optional[str] = None
     # Per-run authorization for the beacon to attempt a package-manager
     # install when a step's declared `requires_interpreters` is absent on the
     # target (docs/design/agent-runtime-dependencies.md). Mirrors
@@ -409,6 +648,15 @@ class LaunchRequest(BaseModel):
     # Links this launch (the block-mode run) to its completed report-mode run.
     paired_with_run_id: Optional[str] = None
     canary_run_id: Optional[str] = None
+    # Per-module Action Mode, e.g. {"btp": "block", "local_analysis": "report"}.
+    # XDR sets Block / Report / Disabled per module, never per profile, so a
+    # block-mode launch says nothing about any ONE module until this says so.
+    # Only read in a block-mode launch; keys are PREVENTION_MODULES.
+    module_modes: Optional[dict[str, str]] = None
+    # Container agents only: run even though a step calls a tool the pod's
+    # roster lacks (the beacon still reports that step TOOL_ABSENT). Never
+    # overrides a posture refusal.
+    allow_missing_tools: bool = False
 
     @field_validator("agent_profile_mode")
     @classmethod
@@ -418,15 +666,111 @@ class LaunchRequest(BaseModel):
         return v
 
 
+#: SEC-14 / OPS-06 — run output is bounded. One /output chunk STORES at most
+#: 1 MiB of ordinary text, one run's stored output at most 32 MiB. Past the run
+#: cap only lines that survive truncation (below) are still accepted, within a
+#: further 1 MiB reserve, so a runaway step can neither fill the disk nor push
+#: the markers the report's integrity check reads out of the record.
+#:
+#: An oversized chunk is CUT, never refused. The beacon sends ONE chunk per step
+#: and does not cap it (agent/beacon/client.go::formatStepOutput), so a 422 here
+#: dropped a large step's `=== STEP` header, its `!! IDENTITY NOT HONOURED` and
+#: its step-start record together — and the step read in the report as an
+#: ordinary miss. Bounding what a request may make the process hold in memory
+#: is a whole-app request-body concern, not this route's.
+RUN_OUTPUT_CHUNK_MAX_BYTES = 1 << 20
+RUN_OUTPUT_CAP_BYTES = 32 << 20
+RUN_OUTPUT_INTEGRITY_RESERVE_BYTES = 1 << 20
+#: Line prefixes that survive the cap: `!! ` markers (IDENTITY NOT HONOURED,
+#: TOOL_ABSENT, RUNTIME_DEPENDENCY_MISSING, PLATFORM VARIANT, ...),
+#: `__CORTEXSIM` sentinels and `cortexsim-` tags.
+_INTEGRITY_LINE_PREFIXES = ("!! ", "__CORTEXSIM", "cortexsim-")
+#: The beacon's step frame: the header that ATTRIBUTES every marker after it to
+#: a step (`_identity_degraded_steps`), and the exit footer. A marker whose
+#: header was dropped reads as `(unattributed)`.
+_STEP_FRAME_PREFIXES = ("=== STEP ", "=== ARTIFACT STAGING", "--- exit_code=")
+_TRUNCATION_MARKER = "[OUTPUT TRUNCATED at "
+_CHUNK_TRUNCATION_MARKER = "[OUTPUT CHUNK TRUNCATED: "
+#: Room left in a cut chunk for its own truncation marker line.
+_CHUNK_MARKER_RESERVE_BYTES = 256
+
+
+#: One pass per line: an integrity / frame prefix at the start, or any
+#: execution-integrity marker anywhere. Compiled once — a 32 MiB chunk is
+#: about 1.6 M lines.
+_SURVIVES_RE = re.compile(
+    "^(?:" + "|".join(re.escape(p) for p in _INTEGRITY_LINE_PREFIXES + _STEP_FRAME_PREFIXES)
+    + ")|" + "|".join(re.escape(m) for m, _ in _INTEGRITY_MARKERS))
+
+
+def _survives_truncation(line: str) -> bool:
+    """A line no truncation may drop: an integrity line, a step frame, or any
+    line carrying a string the report's execution-integrity check reads."""
+    return _SURVIVES_RE.search(line) is not None
+
+
+def _bound_chunk(chunk: str) -> tuple[str, Optional[int]]:
+    """Cut one /output chunk to :data:`RUN_OUTPUT_CHUNK_MAX_BYTES`.
+
+    Returns ``(text, offered_bytes)``; ``offered_bytes`` is ``None`` when the
+    chunk fit and ``text`` is the chunk unchanged. Otherwise every line that
+    :func:`_survives_truncation` is kept, in order, ordinary lines are kept
+    from the top until the budget is spent (a line that straddles it is cut on
+    a character boundary), and one ``[OUTPUT CHUNK TRUNCATED: ...]`` line says
+    how much was kept. Surviving lines are never dropped here, even past the
+    bound; the run cap and its integrity reserve bound them.
+    """
+    raw = chunk.encode("utf-8")
+    if len(raw) <= RUN_OUTPUT_CHUNK_MAX_BYTES:
+        return chunk, None
+    lines = chunk.splitlines(keepends=True)
+    keep = [_survives_truncation(ln) for ln in lines]
+    frame_bytes = sum(len(ln.encode("utf-8")) + 1 for ln, k in zip(lines, keep) if k)
+    budget = RUN_OUTPUT_CHUNK_MAX_BYTES - frame_bytes - _CHUNK_MARKER_RESERVE_BYTES
+    out: list[str] = []
+    for ln, k in zip(lines, keep):
+        if k:
+            out.append(ln if ln.endswith("\n") else ln + "\n")
+            continue
+        if budget <= 0:
+            continue
+        b = ln.encode("utf-8")
+        if len(b) <= budget:
+            out.append(ln)
+            budget -= len(b)
+            continue
+        part = b[:max(budget - 1, 0)].decode("utf-8", "ignore")
+        if part:
+            out.append(part if part.endswith("\n") else part + "\n")
+        budget = 0
+    kept = "".join(out)
+    if kept and not kept.endswith("\n"):
+        kept += "\n"
+    kept_bytes = len(kept.encode("utf-8"))
+    marker = (f"{_CHUNK_TRUNCATION_MARKER}{kept_bytes} of {len(raw)} bytes kept — "
+              "ordinary lines past the per-chunk bound were dropped; every step "
+              "header and integrity line was kept]\n")
+    return kept + marker, len(raw)
+
+
 class OutputRequest(BaseModel):
+    # Deliberately no length limit: an oversized chunk is cut by the route
+    # (`_bound_chunk`), keeping its step frame and integrity lines. A 422 here
+    # lost them together with the step-start record.
     output: str
     # Optional step id (e.g. "step-02") so per-step output can be grouped in
     # the live SSE stream. Backward compatible — older agents omit it.
     step_id: Optional[str] = None
+    # The beacon's key for a retried frame (RG-AGENT-06): "<task_id>:<n>",
+    # the same on every attempt. A frame already stored for this run is not
+    # appended again. Absent from an older beacon and from live streaming
+    # chunks, which append every time exactly as before.
+    frame_id: Optional[str] = Field(default=None, max_length=128)
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
-_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT})
+_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT,
+                           PLATFORM_UNSATISFIABLE})
 
 
 class StepOutcomeIn(BaseModel):
@@ -463,6 +807,21 @@ class CompleteRequest(BaseModel):
     # Per-step host evidence. Absent from an old beacon, which must behave
     # exactly as before: no step_outcomes rows, status rule unchanged.
     steps: list[StepOutcomeIn] = []
+    # Which task this completion is for (RG-AGENT-03). The beacon retries
+    # /complete when the reply is lost; with an identity a repeat is counted
+    # once. Absent from an old beacon, which is counted per POST as before.
+    task_id: Optional[str] = Field(None, max_length=200)
+    agent_id: Optional[str] = Field(None, max_length=200)
+
+    def completion_key(self) -> Optional[str]:
+        """The idempotency key for this completion, or None when the beacon
+        sent no identity. ``task_id`` wins; a fan-out carries one task per
+        distinct agent, so ``agent_id`` identifies the task just as well."""
+        task = (self.task_id or "").strip()
+        if task:
+            return f"task:{task}"
+        agent = (self.agent_id or "").strip()
+        return f"agent:{agent}" if agent else None
 
 
 # Terminal Run states — reaching any of these stops the agent and makes
@@ -518,6 +877,10 @@ async def _reload_run(db: AsyncSession, run_id: str) -> Optional[Run]:
 #: says the body was malformed and sends the operator looking at their JSON.
 _LAUNCH_PRECONDITION_CODES = frozenset({
     "CONSENT_REQUIRED",
+    # Container-agent launch gate: the pod's fixed posture / tool roster cannot
+    # run this scenario. A valid body against an unmet precondition: 409.
+    "AGENT_POSTURE_INSUFFICIENT",
+    "AGENT_TOOL_ABSENT",
     "ADAPTER_MISSING_CLEANUP",
     # A composed multi-channel run named a per-step `target` agent that is not
     # enrolled. The request body is well-formed; the precondition (the second
@@ -530,7 +893,33 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # canary_run_id names a run that cannot prove this launch's profile
     # (unknown, wrong scenario/target, or not terminal).
     "CANARY_INVALID",
+    # The target agent's OS cannot run some step of this scenario (the pull
+    # twin of BUNDLE_TARGET_UNSATISFIABLE), or names no OS we can target. Both
+    # also carry http_status=409 from the orchestrator; listed so the mapping
+    # stays right for any caller that drops it.
+    "PULL_TARGET_UNSATISFIABLE",
+    "PULL_TARGET_OS_UNRECOGNISED",
+    # The scenario's stored stitch_context no longer validates: the body is
+    # fine, the content it names is not launchable as stored.
+    "STITCH_CONTEXT_INVALID",
+    # Push launch of a scenario whose cluster_posture plants gated cluster
+    # capabilities: a consent key to set, a deployment switch that is off, or
+    # a posture no consent unlocks.
+    "CLUSTER_CONSENT_REQUIRED",
+    "PRIVILEGED_K8S_DISABLED",
+    "CLUSTER_POSTURE_REFUSED",
 })
+
+
+def _refusal_status(code: Optional[str], http_status: Optional[int]) -> int:
+    """The HTTP status a launch refusal surfaces as: ONE mapping for
+    ``POST /api/runs``, ``POST /api/runs/canary`` and the dry run, so they
+    cannot disagree.
+
+    A refusal that already knows its status says so (the payload-shelf family
+    is NOT uniformly 409: PayloadDestRefused is 400). Otherwise the code
+    decides: a precondition not met is 409, anything else 422."""
+    return http_status or (409 if code in _LAUNCH_PRECONDITION_CODES else 422)
 
 
 async def _safe_publish(run_id: Optional[str], event: dict) -> None:
@@ -577,44 +966,32 @@ async def _draft_launch_gate(scenario_id: str, db: AsyncSession) -> None:
     if db is None:
         return
 
+    _is_draft, refusals = await _draft_refusals(scenario_id, db)
+    if refusals:
+        raise HTTPException(status_code=409, detail=refusals[0])
+
+
+async def _draft_refusals(
+    scenario_id: str, db: AsyncSession,
+) -> tuple[bool, list[dict[str, str]]]:
+    """``(is_draft, refusal bodies in launch order)`` for one scenario id.
+
+    Not a draft (or not found): ``(False, [])``. The orchestrator owns the
+    not-found answer, and active / deprecated corpus rows never see this gate.
+    """
     # Local import: keep one predicate implementation (the drafts router) and
     # avoid any import-order coupling at module load. Matches the repo's
     # local-import house style for cross-router reuse.
-    from api.drafts import _chain_valid, _tc_bound  # noqa: PLC0415
+    from api.drafts import draft_launch_refusals  # noqa: PLC0415
 
     row = (
         await db.execute(
             select(Scenario).where(Scenario.scenario_id == scenario_id)
         )
     ).scalar_one_or_none()
-
-    # Not a draft (or not found): the existing launch path handles it. Active
-    # and deprecated corpus rows never see this gate.
     if row is None or row.status != "draft":
-        return
-
-    chain_ok, chain_reasons = _chain_valid(row)
-    if not chain_ok:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "draft chain is not launchable",
-                "code": "DRAFT_CHAIN_INVALID",
-                "detail": "; ".join(chain_reasons),
-            },
-        )
-
-    tc_ok, _tc_reasons = _tc_bound(row)
-    if not tc_ok:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "draft is not launchable",
-                "code": "DRAFT_NOT_TC_BOUND",
-                "detail": "bind a real test case from the UC/TC Index before launching",
-            },
-        )
-
+        return False, []
+    return True, draft_launch_refusals(row)
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -659,6 +1036,9 @@ async def _launch_run_impl(
         attested_by=body.attested_by,
         paired_with_run_id=body.paired_with_run_id,
         canary_run_id=body.canary_run_id,
+        module_modes=body.module_modes,
+        allow_missing_tools=body.allow_missing_tools,
+        authorized_by=body.authorized_by,
     )
 
     if not result.success:
@@ -678,11 +1058,8 @@ async def _launch_run_impl(
         #    posture as every other precondition a launch can fail on, and the
         #    structured detail means a console offers the exact checkbox
         #    instead of regexing the sentence for a key name.
-        status = result.http_status or (
-            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
-        )
         raise HTTPException(
-            status_code=status,
+            status_code=_refusal_status(result.error_code, result.http_status),
             detail={
                 "error": result.error,
                 "code": result.error_code,
@@ -697,6 +1074,15 @@ async def _launch_run_impl(
     }
     if result.download_url:
         response["download_url"] = result.download_url
+    # Present only when there is something to say, so the response for an
+    # unremarkable launch keeps its exact historical shape. Two element shapes
+    # (see LaunchResult.warnings): a string reservation SimCore also wrote onto
+    # the run (an offline target, an unknown agent OS, a step running a
+    # platform variant), and a {code, ...} dict from the container-agent
+    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN), which
+    # SimCore also wrote onto the run as one line.
+    if result.warnings:
+        response["warnings"] = list(result.warnings)
 
     return response
 
@@ -708,6 +1094,70 @@ async def launch_run(
 ):
     """Launch a scenario run in pull or push mode. (POST /api/runs)"""
     return await _launch_run_impl(body, db)
+
+
+@router.post("/preflight")
+async def launch_preflight(
+    body: LaunchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Dry run of ``POST /api/runs``: every check the launch makes, nothing
+    written. (POST /api/runs/preflight)
+
+    Same body as the launch. Answers 200 with ``launchable``, the refusal the
+    launch would return (``would_refuse_with``, with its HTTP status), EVERY
+    refusal in launch order (``refusals``), each check judged (``checks``:
+    pass / block / skipped with a reason) and the advisory ``warnings`` a
+    launch would carry. The checks are the launch's own functions, run in the
+    launch's order (engine.orchestrator.Orchestrator._evaluate_launch), so the
+    answer here is the answer the launch gives.
+    """
+    checks: list[dict[str, Any]] = []
+    if body.mode not in ("pull", "push"):
+        checks.append({
+            "id": "launch.mode", "verdict": "block", "code": "INVALID_MODE",
+            "http_status": 400, "error": "Invalid mode",
+            "detail": "mode must be 'pull' or 'push'",
+        })
+        return _preflight_response(checks, [])
+
+    is_draft, draft_refusals = await _draft_refusals(body.scenario_id, db)
+    for refusal in draft_refusals:
+        checks.append({"id": "draft", "verdict": "block", "http_status": 409, **refusal})
+    if is_draft and not draft_refusals:
+        checks.append({"id": "draft", "verdict": "pass"})
+
+    evaluation = await orchestrator.preflight(
+        scenario_id=body.scenario_id,
+        mode=body.mode,
+        db=db,
+        target_agent_id=body.target_agent_id,
+        consent=body.consent,
+        paired_with_run_id=body.paired_with_run_id,
+        canary_run_id=body.canary_run_id,
+        allow_missing_tools=body.allow_missing_tools,
+        agent_profile_mode=body.agent_profile_mode,
+    )
+    for check in evaluation.checks:
+        row = check.to_dict()
+        if check.verdict == "block":
+            row["http_status"] = _refusal_status(check.code, check.http_status)
+        checks.append(row)
+    return _preflight_response(checks, evaluation.warnings)
+
+
+def _preflight_response(checks: list[dict[str, Any]], warnings: list[Any]) -> dict:
+    refusals = [c for c in checks if c["verdict"] == "block"]
+    first = refusals[0] if refusals else None
+    return {
+        "launchable": first is None,
+        "would_refuse_with": None if first is None else {
+            k: first.get(k) for k in ("code", "http_status", "error", "detail")
+        },
+        "refusals": refusals,
+        "checks": checks,
+        "warnings": list(warnings),
+    }
 
 
 @compat_router.post("/run", deprecated=True)
@@ -756,11 +1206,8 @@ async def launch_canary(
         agent_profile_mode="block",
     )
     if not result.success:
-        status = result.http_status or (
-            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
-        )
         raise HTTPException(
-            status_code=status,
+            status_code=_refusal_status(result.error_code, result.http_status),
             detail={
                 "error": result.error,
                 "code": result.error_code,
@@ -770,14 +1217,113 @@ async def launch_canary(
     return {"run_id": result.run_id, "scenario_id": scenario_id}
 
 
+# The SQL twin of ``engine.outcome.row_status`` for the list aggregate below:
+# an engine outcome of detected / prevented is a hit; any other outcome
+# (``pending`` included, even when the reconcile set ``observed=True``) is
+# not; a row with NO outcome has never been judged and is a hit only when a
+# DC validated it (``observed``). Kept beside ``is_hit`` on purpose — the two
+# must say the same thing, and ``tests/api/test_runs_api.py`` pins the cases.
+_RESULT_IS_HIT = case(
+    (Result.outcome.in_((OUTCOME_DETECTED, OUTCOME_PREVENTED)), 1),
+    (and_(Result.outcome.is_(None), Result.observed.is_(True)), 1),
+    else_=0,
+)
+
+
+async def _detection_aggregates(
+    db: AsyncSession, run_ids: Optional[list[str]] = None,
+) -> dict[str, tuple[int, int]]:
+    """``{run_id: (expected_detections, detected_count)}`` in ONE grouped query.
+
+    The Runs page lists every run on every poll; a per-run Result query here
+    would be N+1 on the hottest read in the console. ``run_ids`` narrows it to
+    the page being returned.
+    """
+    stmt = (select(Result.run_id, func.count(Result.id), func.sum(_RESULT_IS_HIT))
+            .group_by(Result.run_id))
+    if run_ids is not None:
+        stmt = stmt.where(Result.run_id.in_(run_ids))
+    rows = await db.execute(stmt)
+    return {rid: (int(total or 0), int(hits or 0)) for rid, total, hits in rows.all()}
+
+
+#: Default page for GET /api/runs. The list used to be unbounded.
+LIST_RUNS_DEFAULT_LIMIT = 500
+LIST_RUNS_MAX_LIMIT = 5000
+#: Characters of output a summary row carries (the tail the console shows).
+LIST_RUNS_OUTPUT_TAIL_CHARS = 2048
+
+
 @router.get("")
-async def list_runs(db: AsyncSession = Depends(get_db)):
-    """List all run records."""
-    stmt = select(Run).order_by(Run.started_at.desc())
-    result = await db.execute(stmt)
-    runs = result.scalars().all()
-    logger.info("list_runs count=%d", len(runs))
-    return {"runs": [r.to_dict() for r in runs], "total": len(runs)}
+async def list_runs(
+    fields: Optional[str] = Query(
+        None, pattern="^summary$",
+        description="`summary` drops `output` and adds `output_bytes` + `output_tail` "
+                    "(the last 2 KB). Omit for the full historical row shape."),
+    status: Optional[str] = Query(None),
+    scenario_id: Optional[str] = Query(None),
+    limit: int = Query(LIST_RUNS_DEFAULT_LIMIT, ge=1, le=LIST_RUNS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """List run records, newest first, ``limit`` / ``offset`` paged.
+
+    ``status`` and ``scenario_id`` are optional, additive equality filters.
+    ``total`` counts every row matching the filters before ``limit`` /
+    ``offset`` are applied; ``runs`` is the page. With no parameters the
+    response is the unfiltered list the console has always read, cut to the
+    default page.
+
+    Each row carries ``expected_detections`` (seeded Result rows) and
+    ``detected_count`` (hits by the one numerator rule) so the Runs list can
+    show ``detected / expected`` without opening the run. A run with no Result
+    rows reports ``0 / 0`` — the console renders that as a dash, never as a
+    measured zero.
+
+    ``total`` is the number of runs matching the filters (every run, with
+    none), not the length of this page. Without ``fields`` the row and
+    response shape are exactly the historical ones (OPS-06: the console's 10 s
+    poll used to pull every run's whole output on every tick; it switches to
+    ``fields=summary``).
+    """
+    filtered = select(Run)
+    if status is not None:
+        filtered = filtered.where(Run.status == status)
+    if scenario_id is not None:
+        filtered = filtered.where(Run.scenario_id == scenario_id)
+    total = (await db.execute(
+        select(func.count()).select_from(filtered.subquery()))).scalar_one()
+    page = filtered.order_by(Run.started_at.desc()).limit(limit).offset(offset)
+    summary = fields == "summary"
+    if summary:
+        stmt = (
+            page.options(defer(Run.output))
+            .add_columns(
+                func.length(cast(func.coalesce(Run.output, ""), LargeBinary)),
+                func.substr(func.coalesce(Run.output, ""), -LIST_RUNS_OUTPUT_TAIL_CHARS),
+            )
+        )
+        fetched = (await db.execute(stmt)).all()
+        runs = [row[0] for row in fetched]
+        extras = {row[0].run_id: (int(row[1] or 0), row[2] or "") for row in fetched}
+    else:
+        runs = (await db.execute(page)).scalars().all()
+        extras = {}
+    agg = await _detection_aggregates(db, [r.run_id for r in runs])
+    logger.info("list_runs count=%d total=%d fields=%s status=%s scenario_id=%s",
+                len(runs), total, fields, status, scenario_id)
+    rows = []
+    for r in runs:
+        expected, detected = agg.get(r.run_id, (0, 0))
+        row = {**r.to_dict(include_output=not summary),
+               "expected_detections": expected, "detected_count": detected}
+        if summary:
+            row["output_bytes"], row["output_tail"] = extras[r.run_id]
+        rows.append(row)
+    if summary:
+        return {"runs": rows, "total": total, "fields": "summary",
+                "limit": limit, "offset": offset}
+    return {"runs": rows, "total": total}
 
 
 async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:
@@ -830,8 +1376,15 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
         )
 
     a, b = run.to_dict(), partner.to_dict()
+    try:
+        merge = pair_merge(run.case_ledger, partner.case_ledger)
+    except LEDGER_READ_ERRORS as e:
+        # A corrupt stored ledger is degraded with a code, never read as a merge.
+        merge = {"merge_class": "PENDING", "basis": None, "code": "CASE_LEDGER_UNREADABLE",
+                 "merge_reason": str(e)}
     return {
         "runs": [a, b],
+        "merge": merge,
         "delta": build_pair_delta(a, await _run_result_dicts(db, run.run_id), b,
                                   await _run_result_dicts(db, partner.run_id)),
     }
@@ -921,6 +1474,7 @@ async def get_report(
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
             "tools_used": tools_used,
+            "case_ledger": run.case_ledger,
         }
 
     # --- Generate Markdown report ---
@@ -968,6 +1522,9 @@ async def get_report(
             "and re-run once staging is fixed."
         )
         lines.append("")
+
+    # Scoped caveats next — still above the coverage numbers they qualify.
+    lines.extend(_report_caveats(run, s))
 
     if s:
         lines.append("## MITRE ATT&CK Mapping")
@@ -1037,6 +1594,7 @@ async def get_report(
     # to prevent. Rendered only when a verdict exists: an unscored historical
     # run must not grow a fake section.
     lines.extend(_verdict_section(run))
+    lines.extend(_case_section(run))
 
     # MTTD
     if mttd_values:
@@ -1237,16 +1795,57 @@ async def append_output(
     never read-in-Python-then-write: the beacon's stdout and stderr writers POST
     concurrently, and a read-modify-write dropped every chunk but the last —
     including the refusal markers the POV report's integrity check reads.
+
+    Bounded (SEC-14 / OPS-06): a chunk over :data:`RUN_OUTPUT_CHUNK_MAX_BYTES`
+    is first cut by :func:`_bound_chunk` (accepted, never refused — its step
+    frame and integrity lines survive). The append is then guarded IN THE SAME
+    STATEMENT by the run's stored byte length, so concurrent writers cannot
+    jointly exceed :data:`RUN_OUTPUT_CAP_BYTES`. A chunk that does not fit
+    keeps only the lines that :func:`_survives_truncation`, and
+    ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once (the guard is
+    in SQL too). The step-start record below is host evidence, not output,
+    and is written either way.
     """
+    frame_id = (body.frame_id or "").strip()
+    if frame_id:
+        # Claimed FIRST, in the same transaction as the append: a conflict
+        # means this frame was stored by an earlier attempt whose reply was
+        # lost, so nothing below runs. A refusal further down (run not found)
+        # rolls the claim back with everything else.
+        claimed = await db.execute(
+            sqlite_insert(RunOutputFrame)
+            .values(run_id=run_id, frame_id=frame_id, recorded_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "frame_id"])
+        )
+        if claimed.rowcount == 0:
+            await db.rollback()
+            logger.info("output duplicate frame skipped run_id=%s frame_id=%s step=%s",
+                        run_id, frame_id, body.step_id)
+            return {"status": "ok", "run_id": run_id, "duplicate": True}
+    if len(body.output.encode("utf-8")) > RUN_OUTPUT_CHUNK_MAX_BYTES:
+        # Off the event loop: cutting a tens-of-MiB chunk is CPU work every
+        # other request (other beacons' /control polls included) would wait on.
+        chunk, offered_bytes = await asyncio.to_thread(_bound_chunk, body.output)
+    else:
+        chunk, offered_bytes = body.output, None
+    stored = func.length(cast(func.coalesce(Run.output, ""), LargeBinary))
     res = await db.execute(
         update(Run)
-        .where(Run.run_id == run_id)
-        .values(output=func.coalesce(Run.output, "") + body.output)
+        .where(Run.run_id == run_id,
+               stored + len(chunk.encode("utf-8")) <= RUN_OUTPUT_CAP_BYTES)
+        .values(output=func.coalesce(Run.output, "") + chunk)
         .execution_options(synchronize_session=False)
     )
+    appended = chunk
+    truncated = False
     if res.rowcount == 0:
-        await db.rollback()
-        raise _run_not_found(run_id)
+        exists = (await db.execute(
+            select(Run.id).where(Run.run_id == run_id))).scalar_one_or_none()
+        if exists is None:
+            await db.rollback()
+            raise _run_not_found(run_id)
+        truncated = True
+        appended = await _append_past_cap(db, run_id, chunk, stored)
     if body.step_id:
         # First output for a step marks when it started. One INSERT .. ON
         # CONFLICT DO NOTHING in the same transaction as the append: concurrent
@@ -1260,14 +1859,75 @@ async def append_output(
         )
     await db.commit()
 
-    await _safe_publish(
-        run_id,
-        {"type": "run.output", "run_id": run_id,
-         "data": {"step_id": body.step_id, "chunk": body.output}},
-    )
+    if appended:
+        await _safe_publish(
+            run_id,
+            {"type": "run.output", "run_id": run_id,
+             "data": {"step_id": body.step_id, "chunk": appended}},
+        )
 
-    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
-    return {"status": "ok", "run_id": run_id}
+    reply: dict[str, Any] = {"status": "ok", "run_id": run_id}
+    if offered_bytes is not None:
+        logger.warning(
+            "output chunk over the per-chunk bound run_id=%s offered=%d kept=%d step=%s",
+            run_id, offered_bytes, len(chunk.encode("utf-8")), body.step_id)
+        reply.update(chunk_truncated=True, offered_bytes=offered_bytes,
+                     accepted_bytes=len(appended.encode("utf-8")))
+    if truncated:
+        logger.warning(
+            "output over cap run_id=%s offered=%d kept=%d step=%s",
+            run_id, len(chunk), len(appended), body.step_id)
+        reply.update(truncated=True, accepted_bytes=len(appended.encode("utf-8")))
+    if offered_bytes is None and not truncated:
+        logger.info("output appended run_id=%s bytes=%d step=%s",
+                    run_id, len(chunk), body.step_id)
+    return reply
+
+
+async def _append_past_cap(db: AsyncSession, run_id: str, chunk: str, stored) -> str:
+    """The over-cap path of :func:`append_output`. Returns what was appended.
+
+    1. ``[OUTPUT TRUNCATED at N bytes]`` (N = the stored length when it was
+       written), guarded by ``instr`` so concurrent writers add it once.
+    2. The chunk's lines that :func:`_survives_truncation` — integrity lines
+       and the step frame that attributes them — within the integrity reserve.
+
+    Both are single guarded UPDATEs, like the fast path.
+    """
+    appended = ""
+    n_stored = (await db.execute(
+        select(stored).where(Run.run_id == run_id))).scalar_one()
+    marker = f"\n{_TRUNCATION_MARKER}{int(n_stored or 0)} bytes]\n"
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id,
+               func.instr(func.coalesce(Run.output, ""), _TRUNCATION_MARKER) == 0)
+        .values(output=func.coalesce(Run.output, "") + marker)
+        .execution_options(synchronize_session=False)
+    )
+    if res.rowcount:
+        appended += marker
+    kept = "".join(
+        ln if ln.endswith("\n") else ln + "\n"
+        for ln in chunk.splitlines(keepends=True)
+        if _survives_truncation(ln)
+    )
+    if kept:
+        res = await db.execute(
+            update(Run)
+            .where(Run.run_id == run_id,
+                   stored + len(kept.encode("utf-8"))
+                   <= RUN_OUTPUT_CAP_BYTES + RUN_OUTPUT_INTEGRITY_RESERVE_BYTES)
+            .values(output=func.coalesce(Run.output, "") + kept)
+            .execution_options(synchronize_session=False)
+        )
+        if res.rowcount:
+            appended += kept
+        else:
+            logger.warning(
+                "integrity reserve exhausted run_id=%s — %d marker byte(s) dropped",
+                run_id, len(kept))
+    return appended
 
 
 async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[str]) -> bool:
@@ -1294,7 +1954,8 @@ async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[s
 
 
 async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
-                               agent_profile_mode: str) -> None:
+                               agent_profile_mode: str,
+                               module_modes: Optional[dict[str, str]] = None) -> None:
     """Project reported step outcomes onto the run's Results from the stored StepOutcome rows (caller commits)."""
     if not steps:
         return
@@ -1308,8 +1969,100 @@ async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
         select(Result).where(Result.run_id == run_id,
                              Result.step_id.in_([s.step_id for s in stored]))
     )).scalars().all()
-    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode)
+    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode,
+                                      module_modes=module_modes)
     await db.flush()
+
+
+async def _record_step_outcomes(db: AsyncSession, run_id: str, steps: list) -> None:
+    """Upsert the beacon's per-step host evidence (caller commits).
+
+    A duplicate ``/complete`` upserts the same rows (idempotent); ``started_at``,
+    set by ``/output``, is deliberately not in the update set.
+    """
+    for st in steps:
+        vals = dict(exit_code=st.exit_code, termination=st.termination,
+                    signal=st.signal or None, reason=st.reason,
+                    recorded_at=datetime.utcnow())
+        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
+        # Another endpoint may report the same step. A host witness (or a lost
+        # beacon) already on the row is never downgraded by a non-witness
+        # termination; a witness may replace anything.
+        guard = None
+        if st.termination not in HOST_WITNESS:
+            col = StepOutcome.__table__.c.termination
+            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
+        await db.execute(stmt.on_conflict_do_update(
+            index_elements=["run_id", "step_id"], set_=vals, where=guard))
+
+
+async def _record_late_abort_evidence(db: AsyncSession, run: Run, steps: list) -> int:
+    """Keep ``steps[]`` from a ``/complete`` that arrived after an operator abort.
+
+    RG-RUNS-01. The abort is a guarded UPDATE that wins the race with the
+    beacon by design, so the beacon's own ``/complete`` — the one message that
+    says which steps ran before the kill reached them — always lands on a run
+    that is already terminal. Dropping it left every Result of the aborted run
+    at ``outcome`` NULL ("pending, awaiting reconcile"), and the next alert on
+    that host inside the window was credited, with an MTTD, to a step that
+    never executed.
+
+    Only host evidence is taken, and only for a run that is ``aborted`` AND was
+    delivered: ``not_run`` steps become ``not_reached`` / ``not_executed`` on
+    their Results, which ``apply_verdicts`` never credits. The run's status,
+    ``completed_at``, output, verdict and SSE stream are not touched, and the
+    caller still answers 409. A run aborted before delivery ran nothing and is
+    already stamped ``ABORTED_BEFORE_DELIVERY``; every other terminal state has
+    a closed record (its own ``/complete`` or a classified sweep wrote it).
+
+    Returns how many step records of this request were recorded.
+    """
+    if not steps or run.status != "aborted" or run.mode != "pull" or run.delivered_at is None:
+        return 0
+    await _record_step_outcomes(db, run.run_id, steps)
+    await _apply_host_evidence(db, run.run_id, steps, run.agent_profile_mode,
+                               run.module_modes)
+    await db.commit()
+    logger.info(
+        "run_complete after abort — host evidence kept run_id=%s steps=%s",
+        run.run_id, ",".join(f"{s.step_id}:{s.termination}" for s in steps))
+    return len(steps)
+
+
+async def _refuse_terminal_complete(db: AsyncSession, run: Run,
+                                    body: "CompleteRequest") -> HTTPException:
+    """The 409 for a ``/complete`` that reached a finished run (caller raises it).
+
+    409, not 200 (OPS-03). The beacon RETRIES ``/complete``, so this answer is
+    what tells it to stop: the run was already finished (by an earlier
+    ``/complete``, an operator abort, a staging refusal, or the beacon-lost /
+    abandoned-task sweep). Its summary and exit code are never applied, and
+    neither is ``steps[]`` beyond what ``host_evidence_recorded`` counts. A 200
+    here read as "accepted", which a retrying client cannot tell apart from
+    success.
+    """
+    run_id = run.run_id
+    logger.info(
+        "run_complete refused — run already terminal run_id=%s status=%s exit_code=%d",
+        run_id, run.status, body.exit_code,
+    )
+    # Run is already terminal — drop it from the orchestrator's aborted set
+    # so the in-memory set stays bounded even on the abort→late-complete path.
+    orchestrator.clear_aborted(run_id)
+    orchestrator.forget_control_poll(run_id)
+    # The one thing a late /complete may still add: after an operator abort of
+    # a delivered run, which steps the host says ran (RG-RUNS-01).
+    kept = await _record_late_abort_evidence(db, run, body.steps)
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": "Run already terminal",
+            "code": "RUN_ALREADY_TERMINAL",
+            "detail": {"run_id": run_id, "status": run.status,
+                       "already_terminal": True,
+                       "host_evidence_recorded": kept},
+        },
+    )
 
 
 @router.post("/{run_id}/complete")
@@ -1345,6 +2098,39 @@ async def complete_run(
     # re-score the run. That covers an operator abort (the agent reports exit
     # 130 on abort) and a staging refusal, which stops the surviving endpoints
     # the same way. A sticky-failed fan-out still owed endpoints is in flight.
+    #
+    # A RETRIED /complete counts once (RG-AGENT-03). The beacon re-sends the
+    # same body when the reply is lost, and the decrement below cannot tell a
+    # repeat from the fan-out's next endpoint — so one endpoint's retry used to
+    # terminalise the run, the control channel stopped the other endpoint
+    # mid-step, and its evidence was refused while the run read `complete`.
+    # When the body names its task, that identity is inserted FIRST, in this
+    # same write transaction: a conflict means this completion was already
+    # applied, and nothing below runs. A refusal further down rolls the insert
+    # back with everything else.
+    key = body.completion_key()
+    if key is not None:
+        claimed = await db.execute(
+            sqlite_insert(RunTaskCompletion)
+            .values(run_id=run_id, task_key=key,
+                    agent_id=(body.agent_id or "").strip() or None,
+                    exit_code=body.exit_code, completed_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "task_key"])
+        )
+        if claimed.rowcount == 0:
+            await db.rollback()
+            run = await _reload_run(db, run_id)
+            if run is None:
+                raise _run_not_found(run_id)
+            if not _is_terminal(run):
+                logger.info(
+                    "run_complete duplicate — already applied run_id=%s key=%s "
+                    "remaining_endpoints=%s", run_id, key, run.open_tasks)
+                return {"status": run.status, "run_id": run_id,
+                        "pending_endpoints": run.open_tasks or 0, "duplicate": True}
+            # Finished since: one rule for a terminal run, whoever asks.
+            raise await _refuse_terminal_complete(db, run, body)
+
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
     values: dict = {
         "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
@@ -1369,32 +2155,10 @@ async def complete_run(
         run = await _reload_run(db, run_id)
         if run is None:
             raise _run_not_found(run_id)
-        logger.info(
-            "run_complete ignored — run already terminal run_id=%s status=%s exit_code=%d",
-            run_id, run.status, body.exit_code,
-        )
-        # Run is already terminal — drop it from the orchestrator's aborted set
-        # so the in-memory set stays bounded even on the abort→late-complete path.
-        orchestrator.clear_aborted(run_id)
-        return {"status": run.status, "run_id": run_id, "already_terminal": True}
+        raise await _refuse_terminal_complete(db, run, body)
 
-    # Host evidence for each step, in the same write transaction. A duplicate
-    # /complete upserts the same rows (idempotent); started_at, set by /output,
-    # is deliberately not in the update set.
-    for st in body.steps:
-        vals = dict(exit_code=st.exit_code, termination=st.termination,
-                    signal=st.signal or None, reason=st.reason,
-                    recorded_at=datetime.utcnow())
-        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
-        # Another endpoint may report the same step. A host witness (or a lost
-        # beacon) already on the row is never downgraded by a non-witness
-        # termination; a witness may replace anything.
-        guard = None
-        if st.termination not in HOST_WITNESS:
-            col = StepOutcome.__table__.c.termination
-            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
-        await db.execute(stmt.on_conflict_do_update(
-            index_elements=["run_id", "step_id"], set_=vals, where=guard))
+    # Host evidence for each step, in the same write transaction.
+    await _record_step_outcomes(db, run_id, body.steps)
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
@@ -1405,7 +2169,7 @@ async def complete_run(
     # Project the host evidence onto the Results INSIDE this write transaction,
     # before any terminalising commit: a crash must not leave a terminal run
     # with unprojected Results that a duplicate /complete cannot repair.
-    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode, run.module_modes)
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
@@ -1436,8 +2200,9 @@ async def complete_run(
     run = await _reload_run(db, run_id)
 
     # Run reached a terminal state — drop it from the orchestrator's aborted
-    # set so the in-memory set stays bounded.
+    # set (and the control-poll record) so the in-memory state stays bounded.
     orchestrator.clear_aborted(run_id)
+    orchestrator.forget_control_poll(run_id)
 
     await _safe_publish(
         run_id,
@@ -1497,7 +2262,25 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
         logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
         return {"status": run.status, "run_id": run_id, "was_terminal": True}
     await db.commit()
-    await _reload_run(db, run_id)
+    aborted = await _reload_run(db, run_id)
+
+    # OPS-01: a pull run aborted before any beacon collected its task ran
+    # nothing on the target — its rows can never be credited an alert. A
+    # delivered run is left alone HERE: which of its steps ran is the host's
+    # to say, and the beacon says it on the /complete that follows this abort
+    # (kept by `_record_late_abort_evidence`, RG-RUNS-01). Until that arrives —
+    # and for good if the beacon is gone or predates steps[] — the rows stay
+    # unjudged, and `reconcile_candidates` credits an alert only to a step the
+    # host reported (RG-RUNS-01 residual).
+    if aborted is not None and aborted.mode == "pull" and aborted.delivered_at is None:
+        from engine.orchestrator import (  # noqa: PLC0415
+            REASON_ABORTED_BEFORE_DELIVERY,
+            in_process_steps,
+            stamp_not_executed,
+        )
+
+        await stamp_not_executed(db, run_id, REASON_ABORTED_BEFORE_DELIVERY,
+                                 exclude_steps=in_process_steps(aborted))
 
     # Drop any queued task (in-memory + durable) + record the id so the agent's
     # /control poll stops it.
@@ -1559,6 +2342,40 @@ async def verify_run_endpoint(
     return outcome.to_dict()
 
 
+@router.post("/{run_id}/case-ledger/refresh")
+async def refresh_case_ledger_endpoint(
+    run_id: str,
+    force: bool = Query(False, description="Read even inside CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-read the cases named in this run's stored case ledger (read-only).
+
+    Explicit operator action, its own consent like ``POST .../reconcile``.
+    Disposition drifts after a run (Auto Triage seals cases after a window that
+    is the shipped default and tenant-configurable); this refreshes it. Cases
+    only: the stored alerts are kept. Disposition is context, never detection
+    evidence. 409 ``NO_CASE_LEDGER`` when the run has none. A ledger read
+    inside ``CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`` is not re-read
+    (200, ``refreshed: false``, ``reason_code: CASE_LEDGER_READ_RECENTLY``)
+    unless ``force=true``.
+    """
+    from api.connectors import _RECONCILE_ERROR_STATUS  # noqa: PLC0415
+    from connectors.service import ReconcileError, refresh_case_ledger  # noqa: PLC0415
+
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    if run is None:
+        raise _run_not_found(run_id)
+    try:
+        out = await refresh_case_ledger(db, run, force=force)
+    except ReconcileError as e:
+        status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
+                  "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409,
+                  "CASE_LEDGER_TENANT_MISMATCH": 409}.get(e.code, 500)
+        raise HTTPException(status_code=status, detail={
+            "error": str(e), "code": e.code, "detail": e.detail})
+    return out
+
+
 @router.get("/{run_id}/control")
 async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
     """Lightweight stop-signal poll for the in-flight agent.
@@ -1577,6 +2394,13 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
 
     if _is_terminal(run):
         abort = True
+        orchestrator.forget_control_poll(run_id)
+    else:
+        # OPS-03: the one signal that a beacon is executing THIS run (the
+        # agent's last_seen only says the agent is alive). The abandoned-run
+        # sweep reads it; in memory on purpose, measured from boot after a
+        # restart.
+        orchestrator.note_control_poll(run_id)
 
     # A beacon polling here is alive: refresh its liveness so the heartbeat
     # sweep never mistakes a long-running silent step for a lost beacon. One

@@ -4,9 +4,8 @@ EAL plugin family.
 
 This module is the framework spine for a family of *analytics log-streamer*
 plugins: emitters that POST **shape-true** JSON log records to an
-operator-supplied collector (an HTTP log collector / XSIAM Broker VM HTTP
-applet / Cribl-or-nginx forwarder — all of which speak the same POST-JSON
-contract) so a customer can validate that their Cortex XSIAM **Analytics /
+operator-supplied collector (the XSIAM HTTP log collector, or a Cribl/nginx
+forwarder in front of it — both speak the same POST-JSON contract) so a customer can validate that their Cortex XSIAM **Analytics /
 ABIOC** detections fire on the data source. It extends the proven
 ``idp_signin_emulator`` / ``email_emitter`` pattern with one reusable
 transport driver so each per-data-source plugin only has to describe *its*
@@ -48,14 +47,16 @@ import json
 import logging
 import re
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
+from .collector_auth import AuthHeader, AuthScheme, AuthToken, apply_collector_auth
 from .delivery import REMEDIATION, DeliveryLedger, response_evidence
 from .safety import url_host_port
 
@@ -84,10 +85,10 @@ class AnalyticsEmitterParams(BaseModel):
         ...,
         description="HTTP collector endpoint to POST shape-true log records to. "
                     "The operator supplies the FULL URL — this fronts any of the "
-                    "three real XSIAM HTTP doors (native /logs/v1/event cloud "
-                    "collector, Broker VM HTTP applet localhost:8088/logs/v1/event, "
-                    "or a Cribl/nginx forwarder). The plugin never invents a "
-                    "tenant path.",
+                    "XSIAM HTTP log collector (https://api-<tenant>/logs/v1/event; "
+                    "the dataset is named <Vendor>_<Product>_raw from the "
+                    "collector's own settings) or a Cribl/nginx forwarder in "
+                    "front of it. The plugin never invents a tenant path.",
     )
     iterations: int = Field(default=1, ge=1, le=200)
     sleep_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
@@ -103,25 +104,10 @@ class AnalyticsEmitterParams(BaseModel):
     )
 
     # -- net-new ingestion-auth door -------------------------------------
-    auth_token: Optional[SecretStr] = Field(
-        default=None,
-        description="Optional ingestion token (HEC-style raw token, or the "
-                    "credential portion of a Bearer/Splunk header). Held as a "
-                    "SecretStr so it is never logged and never emitted into an "
-                    "event body. Comes from the operator/vault, never hardcoded.",
-    )
-    auth_header: str = Field(
-        default="Authorization",
-        description="Header name the auth token is presented under (e.g. "
-                    "Authorization for Bearer, or a custom X-... header for a "
-                    "raw HEC-style token).",
-    )
-    auth_scheme: str = Field(
-        default="Bearer",
-        description="Scheme prefix prepended to the token (e.g. 'Bearer' or "
-                    "'Splunk'). Empty string is allowed for collectors that want "
-                    "the raw token with no scheme prefix.",
-    )
+    # Declared once in collector_auth.py and shared with email_emitter.
+    auth_token: AuthToken
+    auth_header: AuthHeader
+    auth_scheme: AuthScheme
 
     # -- net-new transport toggles ---------------------------------------
     compress: bool = Field(
@@ -262,6 +248,19 @@ CANARY_RAW_FIELD = "cortexsim_canary"
 
 #: Reserved, non-resolving domain (RFC 2606 .invalid) for the canary principal.
 CANARY_DOMAIN = "cortexsim-canary.invalid"
+
+
+def body_time(offset_seconds: int = 0, *, plus_seconds: float = 0.0) -> str:
+    """ISO-8601 UTC timestamp for a record's *body* time field.
+
+    ``offset_seconds`` back-dates the record (a negative value) so a campaign
+    can place its records in the past; ``plus_seconds`` orders records within
+    one burst. The HTTP delivery time is unaffected; only the field a
+    detection reads moves.
+    """
+    return (
+        datetime.now(timezone.utc) + timedelta(seconds=offset_seconds + plus_seconds)
+    ).isoformat()
 
 
 def canary_bindings(token: str) -> dict[str, str]:
@@ -609,11 +608,7 @@ class AnalyticsLogEmitter(BaseSimulation):
         }
         if params.user_agent:
             headers["user-agent"] = params.user_agent
-        if params.auth_token is not None:
-            token = params.auth_token.get_secret_value()
-            # Empty scheme -> raw token (HEC-style); .strip() drops the leading
-            # space so 'Bearer <t>' and a bare '<t>' both come out clean.
-            headers[params.auth_header] = f"{params.auth_scheme} {token}".strip()
+        apply_collector_auth(headers, params)
         return httpx.AsyncClient(
             timeout=params.request_timeout,
             # default False (NGFW MitM friendly); opt back in per campaign via

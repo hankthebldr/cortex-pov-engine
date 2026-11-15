@@ -20,3 +20,22 @@ operations:
     path: "/public_api/v1/dashboards/delete"
     access_class: destructive
     doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/sw5z379fbcbix-delete-dashboards"
+  # ── harvested 2026-11-02 from cortex-bot (see system.yml header for provenance) ──
+  - op_id: OP-WIDGETS-GET
+    name: "Get widgets"
+    method: POST
+    path: "/public_api/v1/widgets/get"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-reply-widgets]
+  - op_id: OP-WIDGETS-INSERT
+    name: "Insert or update widgets"
+    method: POST
+    path: "/public_api/v1/widgets/insert"
+    access_class: write
+    tags: [cortex-bot-observed]
+  - op_id: OP-WIDGETS-DELETE
+    name: "Delete widgets"
+    method: POST
+    path: "/public_api/v1/widgets/delete"
+    access_class: destructive
+    tags: [cortex-bot-observed]

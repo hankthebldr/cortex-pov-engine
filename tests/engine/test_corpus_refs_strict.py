@@ -62,8 +62,17 @@ def test_the_corpus_is_the_expected_size(parsed):
     177 -> 189 on 2026-10-27: library signal expansion (SIM-MP-023..034, Unit 42 stitched chains).
     189 -> 192 on 2026-10-28: SIM-MP-035..037 (Unit 42 recent chains).
     192 -> 193 on 2026-10-28: SIM-KOI-009 (GlassWorm agentic endpoint, binds already-evidenced TC-SCA-01/TC-SSCAN-01; evidenced pins unchanged).
+    193 -> 195 on 2026-11-11: SIM-EDR-023/024 (Linux cron and systemd-timer persistence built to group into one case; bind TC-IR-02, TC-EDR-03, TC-EDR-05).
     """
-    assert len(parsed) == 193
+    # 195 -> 198 on 2026-11-11: Unit42 deep-real trio SIM-EDR-025 (Akira Linux host), SIM-KOI-010 (npm supply-chain), SIM-KOI-011 (OpenClaw malicious skill).
+    # 198 -> 199 on 2026-11-11: Unit 42 backlog build SIM-KOI-012 (Axios supply-chain Linux second-stage RAT).
+    # 199 -> 200 on 2026-11-13: Unit 42 backlog build SIM-CDR-030 (cloud logging tamper and log-bucket hijack, authored only).
+    # 200 -> 201 on 2026-11-13: SIM-MP-038 Pink CL-CRI-1147 (binds already-evidenced TC-ITDR-03/TC-ITDR-02; evidenced pins unchanged).
+    # 201 -> 202 on 2026-11-13: SIM-EDR-027 (compressed-archive exfiltration attempt over SSH, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
+    # 202 -> 203 on 2026-11-13: SIM-EDR-026 (crond masquerade from a scratch path, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
+    # 203 -> 204 on 2026-11-13: SIM-EDR-029 (sshpass credential-stuffing burst against a .invalid host, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
+    # 204 -> 205 on 2026-11-13: SIM-EDR-028 (sudoedit burst in the CVE-2021-3156 probe form, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
+    assert len(parsed) == 205
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

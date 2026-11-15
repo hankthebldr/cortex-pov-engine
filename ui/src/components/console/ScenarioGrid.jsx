@@ -2,6 +2,10 @@ import React from 'react'
 import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { isRunComplete } from './runStatus.js'
+import DoorChip from './doors/DoorChip.jsx'
+import { doorStateFor } from './doors/doorModel.js'
+import Button from './kit/Button.jsx'
+import { mappingFor } from './scenarioMapping.js'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -20,45 +24,47 @@ const DIFFICULTY_LABEL = {
 }
 
 /**
- * ScenarioCard — single scenario card for the operations grid.
+ * ScenarioCard — the v26 card anatomy (§4.1): a header (id, technique), the
+ * title, a tag row, the mapping line, and a footer that carries the verbs.
+ *
+ * The body is a button that opens the scenario's sheet. The footer's Run goes
+ * to the launch step with the scenario loaded; Customize opens Build a chain
+ * with its chain loaded. Neither opens the sheet. Every tag is read from the
+ * scenario SimCore returned: its planes and its door readiness. The mapping
+ * line names its UC/TC, its detection source (the doors its detections land
+ * on) and its MITRE techniques, each as the API reported it (see
+ * scenarioMapping.js): a gap reads "Not mapped", an answer not given reads
+ * "Not checked".
+ *
+ * A staged pair from the extended library (`scenario.staged`) is not a
+ * scenario SimCore loaded: it has no sheet, no pin and no verbs, only what it
+ * is and what it still needs.
  */
-function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, history = null }) {
+function ScenarioCard({
+  scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, onRun = null, onCustomize = null,
+  history = null, readiness, doorRows = null, doorAgentId = null, doorError = null,
+}) {
   const id      = scenario.scenario_id || scenario.id
+  const name    = scenario.name || '(unnamed scenario)'
+  const staged  = scenario.staged || null
   const planes  = collectPlanes(scenario)
-  const tids    = collectTechniques(scenario).slice(0, 6)
-  const actor   = scenario.threat_report
-    ? scenario.threat_report.split(/\s*[—\-]\s*/)[0]
-    : (scenario.tags && scenario.tags[0]) || '—'
+  const technique = scenario.mitre_technique || collectTechniques(scenario)[0] || null
   const difficulty = scenario.difficulty || scenario.tags?.find?.((t) => DIFFICULTY_LABEL[t]) || null
+  const steps = Array.isArray(scenario.steps) ? scenario.steps : []
+  const detections = steps.reduce((n, s) => n + (s.expected_detections || []).length, 0)
 
-  return (
-    <article
-      data-tour-id={isFirst ? 'scenario-card-first' : undefined}
-      className={
-        'scenario-card' +
-        (isSelected ? ' scenario-card--selected' : '') +
-        (isPinned   ? ' scenario-card--pinned'   : '')
-      }
-      onClick={() => onSelect(scenario)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(scenario) }}
-    >
-      <div className="scenario-card__corner">
-        <PinButton
-          pinned={isPinned}
-          onToggle={() => onTogglePin(id)}
-          variant="card"
-        />
-      </div>
+  const head = (
+    <>
+        <span className="sc-head" data-testid="scenario-card-head">
+          <span className="sc-id">
+            {id}
+            {isPinned && <span className="sc-id__pin-marker" aria-hidden="true">◼</span>}
+          </span>
+          {technique && <span className="sc-technique mono">{technique}</span>}
+        </span>
+        <span className="sc-title">{name}</span>
 
-      <div className="sc-id">
-        {id}
-        {isPinned && <span className="sc-id__pin-marker" aria-hidden="true">◼</span>}
-      </div>
-      <div className="sc-title">{scenario.name || '(unnamed scenario)'}</div>
-
-      <div className="sc-meta">
+      <span className="sc-meta sc-tags" data-testid="scenario-card-tags">
         {planes.map((p) => (
           <span
             key={p}
@@ -68,33 +74,110 @@ function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTog
         {difficulty && (
           <span className="chip">{DIFFICULTY_LABEL[difficulty] || difficulty}</span>
         )}
+        {staged
+          ? <span className="chip sc-staged-chip" title="A staged pair: not loaded by SimCore, not launchable, not counted as coverage">Staged draft</span>
+          : <DoorChip scenarioId={id} readiness={readiness} doorRows={doorRows} agentId={doorAgentId} error={doorError} />}
+        {staged && staged.platform && <span className="chip">{staged.platform}</span>}
+      </span>
+      <ScenarioMappingLine mapping={mappingFor(scenario, readiness)} doorRows={doorRows} />
+    </>
+  )
+
+  if (staged) {
+    const findings = Array.isArray(staged.findings) ? staged.findings : []
+    return (
+      <article data-testid={`scenario-card-${id}`} className="scenario-card scenario-card--staged">
+        <div className="scenario-card__body scenario-card__body--static">{head}</div>
+        <div className="sc-footer sc-foot" data-testid="scenario-card-foot">
+          <span className="sc-count">steps <strong className="mono">{steps.length}</strong></span>
+          <span className="sc-count">detections <strong className="mono">{detections}</strong></span>
+          {staged.card && <span className="sc-count mono">{staged.card}</span>}
+          <span className="sc-foot__spacer" />
+          <span className="sc-count" title={findings.join('\n') || undefined}>
+            findings <strong className="mono">{findings.length}</strong>
+          </span>
+        </div>
+      </article>
+    )
+  }
+
+  return (
+    <article
+      data-tour-id={isFirst ? 'scenario-card-first' : undefined}
+      data-testid={`scenario-card-${id}`}
+      className={
+        'scenario-card' +
+        (isSelected ? ' scenario-card--selected' : '') +
+        (isPinned   ? ' scenario-card--pinned'   : '')
+      }
+    >
+      <div className="scenario-card__corner">
+        <PinButton
+          pinned={isPinned}
+          onToggle={() => onTogglePin(id)}
+          variant="card"
+        />
       </div>
 
-      {tids.length > 0 && (
-        <div className="sc-tids">
-          {tids.map((t) => <span key={t}>{t}</span>)}
-        </div>
-      )}
+      <button
+        type="button"
+        className="scenario-card__body"
+        aria-label={`Open ${name}`}
+        aria-pressed={isSelected}
+        onClick={() => onSelect(scenario)}
+      >
+        {head}
+      </button>
 
-      <div className="sc-footer">
-        <div className="sc-actor">
-          Anchor · <strong>{actor}</strong>
-        </div>
-        <div className="sc-planes">
-          {['EDR', 'CDR', 'NDR', 'ANALYTICS'].map((p) => (
-            <div
-              key={p}
-              className={'plane-dot' + (planes.includes(p) ? ' plane-dot--on' : '')}
-              title={`${p}${planes.includes(p) ? ' active' : ' idle'}`}
-            />
-          ))}
-        </div>
+      <div className="sc-footer sc-foot" data-testid="scenario-card-foot">
+        <span className="sc-count">steps <strong className="mono">{steps.length}</strong></span>
+        <span className="sc-count">detections <strong className="mono">{detections}</strong></span>
+        {history && history.count > 0 && <ScenarioHistoryBadge history={history} />}
+        <span className="sc-foot__spacer" />
+        {onCustomize && <Button variant="secondary" onClick={() => onCustomize(id)}>Customize</Button>}
+        {onRun && <Button variant="primary" onClick={() => onRun(id)}>Run</Button>}
       </div>
-
-      {history && history.count > 0 && (
-        <ScenarioHistoryBadge history={history} />
-      )}
     </article>
+  )
+}
+
+const MAP_AXES = ['uctc', 'source', 'mitre']
+const MAP_LABEL = { uctc: 'UC/TC', source: 'Source', mitre: 'MITRE' }
+const MAP_EMPTY = { missing: 'Not mapped', unknown: 'Not checked' }
+
+/** `a · b +N`: the first values, and how many more the title lists. */
+function shortList(values, shown = 2) {
+  const head = values.slice(0, shown).join(' · ')
+  return values.length > shown ? `${head} +${values.length - shown}` : head
+}
+
+/**
+ * ScenarioMappingLine — UC/TC · Source · MITRE, each its values or why there
+ * are none. It sits inside the card body (a button), so it is text only. A
+ * source is a door id from the API, shown by the door's own label.
+ */
+function ScenarioMappingLine({ mapping, doorRows = null }) {
+  return (
+    <span className="sc-map" data-testid="scenario-card-map">
+      {MAP_AXES.map((axis) => {
+        const a = mapping[axis]
+        const values = axis === 'source' ? a.values.map((d) => doorStateFor(doorRows, d).label || d) : a.values
+        const text = a.state === 'mapped' ? shortList(values) : (MAP_EMPTY[a.state] || MAP_EMPTY.unknown)
+        const title = [values.join(' · '), a.title].filter(Boolean).join('\n')
+        return (
+          <span
+            key={axis}
+            className={`sc-map__item sc-map__item--${a.state}`}
+            data-map={axis}
+            data-state={a.state}
+            title={title || undefined}
+          >
+            <span className="sc-map__k">{MAP_LABEL[axis]}</span>
+            <span className={'sc-map__v' + (a.state === 'mapped' && axis !== 'source' ? ' mono' : '')}>{text}</span>
+          </span>
+        )
+      })}
+    </span>
   )
 }
 
@@ -131,14 +214,21 @@ export default function ScenarioGrid({
   scenarios = [],
   selectedScenarioId = null,
   onSelectScenario = () => {},
+  onRunScenario = null,       // (id) => void — the launch step with it loaded
+  onCustomizeScenario = null, // (id) => void — Build a chain with its chain loaded
   isPinned = () => false,
   onTogglePin = () => {},
   historyByScenario = null, // Map<scenario_id, { count, lastRunAt, lastStatus }>
+  doorReadiness = null,     // {scenario_id: readiness} from GET /api/doors/readiness
+  doorRows = null,          // GET /api/doors rows (real per-door state)
+  doorAgentId = null,
+  doorError = null,         // fetch failure text, shown in the chip tooltip
+  emptyText = 'No scenarios match the current filter.',
 }) {
   if (scenarios.length === 0) {
     return (
       <div className="scenario-grid-empty">
-        No scenarios match the current filter.
+        {emptyText}
       </div>
     )
   }
@@ -164,8 +254,14 @@ export default function ScenarioGrid({
             isSelected={id === selectedScenarioId}
             isPinned={isPinned(id)}
             onSelect={onSelectScenario}
+            onRun={onRunScenario}
+            onCustomize={onCustomizeScenario}
             onTogglePin={onTogglePin}
             history={history}
+            readiness={doorReadiness ? doorReadiness[id] : undefined}
+            doorRows={doorRows}
+            doorAgentId={doorAgentId}
+            doorError={doorError}
           />
         )
       })}

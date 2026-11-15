@@ -1,0 +1,451 @@
+# Pink / CL-CRI-1147 (Unit 42 timely threat intelligence, 2026-06-03): a new extortion brand
+# phones a user as internal IT, takes the password and an approved push on a fake Microsoft
+# passkey page, registers its own passkey on the real Entra account, pulls SharePoint and
+# OneDrive through Microsoft Graph and python-requests, then extorts the company from the
+# victim's own mailbox and Teams. No malware. The source is the TTI file in
+# PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information (there is no blog post).
+# Okta Threat Intelligence (2026-07-05) describes the kit; it shapes step-02 only and is
+# never an indicator source.
+#
+# ONE SimCore run on today's lab doors (spec 2026-11-11-pink-cl-cri-1147-chain-design.md):
+#   step-01 (agent, identity direct) runs on the enrolled beacon host. In the lab that is
+#     pov-target-01 (Ubuntu), standing in for "a host that resolved the lure"; no Windows or
+#     macOS victim is claimed. It resolves the three Pink lure domains and PANW's DNS
+#     Security phishing test domain (the positive control) with bare
+#     `dig @${LAB_RESOLVER} <domain> A +short` lines: no fetch, no session to actor
+#     infrastructure. LAB_RESOLVER is a public resolver reached THROUGH the PA-440 (not
+#     Pi-hole, which would hide the source and may block these names), so the query crosses
+#     the firewall from a known host. It has no default: the step stops if it is unset.
+#     The lookups are 40 s apart (bare `sleep 40` lines): back-to-back steps lost telemetry
+#     in the 2026-11-11 lab run (docs/lab/2026-11-11-persistence-grouping-lab-run.md).
+#   step-02..04 (channel eal) run inside SimCore at launch, never on the beacon. They POST
+#     shape-true Entra sign-in and passkey-registration, M365 download, Exchange Send and
+#     Teams records to the operator's HTTP log collector (Vendor cortexsim, Product saas,
+#     dataset cortexsim_saas_raw), resolved from the instance's collector targets; no
+#     collector_url is written here. Delivery goes live only with
+#     consent.simulation_authorized, a non-blank authorized_by and a keyed target for every
+#     eal step; otherwise the steps run dry and their rows leave the denominator. The records
+#     are back-dated (event_time_offset_seconds) so the body times tell the minutes-long
+#     story: sign-in at -25 min, passkey 90 s later, downloads from -20 min, extortion send
+#     and Teams at -5 min. Offsets and volumes are inferred; neither source publishes them.
+#     The command on an eal step is a descriptive no-op that no host runs.
+#
+# What a green run proves. Every declared row is a repo-authored XQL read back by Tier-2
+# verify (POST /api/runs/{id}/verify). A collector row proves the record landed and the
+# query finds it, NOT that a Cortex detector fired: no built-in BIOC, ABIOC or Analytics
+# detector reads a custom collector dataset. If D1 (the NGFW positive control) is empty,
+# the NGFW path is broken and nothing on that leg is evidence about Pink. There is no
+# primary_kpi and no threshold: a missing row is fail, and all rows found clamps to
+# not_applicable ("evidence, not a scored pass") because TC-ITDR-03/02 carry no measurable
+# threshold. tenant-verified stays 0.
+#
+# Hunts, not expectations (card purpose: hunt): D2 (DNS Security logged a Pink lure domain;
+# the domains may be re-categorised or gone), D4 (the Linux agent records DNS query names;
+# unverified capability) and CR-3 (lure resolution within 30 min of the sign-in; the lab
+# has no host-to-user binding).
+#
+# Indicators. 185.178.208.153 (the phishing host) is out of band: the lookup may no longer
+# return it, so nothing guarantees it on the wire. 96.232.20.66 is a residential proxy
+# that may belong to an unwitting user: it appears only inside record bodies, nothing is
+# sent to it, and it must never go into an EDL or block rule from this scenario. The three
+# published user agents appear only in step-03's record bodies, never on SimCore's own
+# requests.
+#
+# Known limits. Queries scope on the fixed canary (cortexsim_canary =
+# cortexsim-mp-038-pink, principal cortexsim-mp-038-pink@cortexsim-canary.invalid; every
+# eal step's target_user is that same principal), so two runs of this scenario with
+# overlapping windows can satisfy each other's rows. CR-MP-0038-EXTORT measures from the
+# first download, so a second run in the window cannot push its gap below zero. Collector
+# field names come from the emitters' records on dev, not from a stored collector row (lab
+# prerequisite L-1 is not done).
+scenario_id: SIM-MP-038
+name: "Pink (CL-CRI-1147) — Vishing to an Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion (Unit 42)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-ITDR-02
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1566.004"
+mitre_technique_name: "Phishing: Spearphishing Voice"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1098.005"
+    name: "Account Manipulation: Device Registration"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1213.002"
+    name: "Data from Information Repositories: Sharepoint"
+  - technique: "T1657"
+    name: "Financial Theft"
+
+threat_report: "Unit 42 Timely Threat Intelligence — Pink Extortion Brand Activity (CL-CRI-1147)"
+threat_report_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+
+execution_identity:
+  default: direct
+  options:
+    - direct
+
+# Push off: steps 02-04 need SimCore at run time to POST the collector records, which a
+# self-contained push bundle forbids.
+push_supported: false
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# No primary_kpi and no threshold (spec §7). An MTTD threshold would hold the run at
+# pending forever: Tier-2 verify never sets observed_at, so MTTD is never measured here.
+validation_methodology: "Collector Signal Injection with Tier-2 Verification, plus Endpoint and NGFW DNS Telemetry"
+methodology_family: "F1"
+success_criteria: |
+  Run as one pull-mode SimCore run with consent.simulation_authorized and a non-blank
+  authorized_by, against an instance whose collector target (kind xsiam_http_collector,
+  Vendor cortexsim, Product saas) has a key, is bound to idp_signin_emulator and
+  m365_activity_emitter, and preflights to accepted. The run's channel_dispatch ledger
+  shows steps 02-04 delivered (2xx only); step-01 completes rc 0 on the beacon host.
+  Then POST /api/runs/{id}/verify against the tenant's xsiam_tenant credential (XQL
+  granted). Ten declared rows each return at least one row: D1 (DNS Security logged the
+  PANW phishing test domain: the NGFW path works), D3 (the XDR agent recorded dig
+  resolving a Pink lure domain), D5 and D6 (Entra sign-in for the canary from the Pink
+  access IP, and a passkey registered from that IP within ten minutes), D7 and D8 (a
+  SharePoint and OneDrive download burst from that IP, through the Graph SDK and
+  python-requests user agents), D9 and D10 (an Exchange Send with a recipientCount of at
+  least five, and Teams messages, from the extortion IP), and the two chain queries
+  CR-MP-0038 and CR-MP-0038-EXTORT.
+  A hit on a collector row proves the record landed and the query finds it; it does not
+  prove a Cortex detector fired. Any missing row scores fail; all rows found reads
+  not_applicable (evidence, not a scored pass). The hunts D2, D4 and CR-3 are run by hand
+  and recorded in the lab evidence doc, never scored.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - ITDR
+  - CLOUD_APP
+stitching_key: user_principal
+
+indicators:
+  - id: ind-01
+    type: domain
+    value: "passkeyadd.com"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: dns_lookup
+    surfaces_in: [step-01]
+    in_band: true
+    description: "Pink lure second-level domain (the third level names the target). Resolved by dig @${LAB_RESOLVER} on step-01; no session is opened"
+  - id: ind-02
+    type: domain
+    value: "passkeydeploy.com"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: dns_lookup
+    surfaces_in: [step-01]
+    in_band: true
+    description: "Pink lure second-level domain. Resolved by dig @${LAB_RESOLVER} on step-01; no session is opened"
+  - id: ind-03
+    type: domain
+    value: "deploypasskey.com"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: dns_lookup
+    surfaces_in: [step-01]
+    in_band: true
+    description: "Pink lure second-level domain. Resolved by dig @${LAB_RESOLVER} on step-01; no session is opened"
+  - id: ind-04
+    type: ipv4
+    value: "185.178.208.153"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-01]
+    in_band: false
+    description: "Hosted the phishing domains (DDoS-Guard). Out of band: the step-01 lookups may no longer return it, so nothing guarantees it on the wire; the DC searches for it"
+  - id: ind-05
+    type: ipv4
+    value: "172.93.100.252"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-02, step-03]
+    in_band: true
+    description: "Account access. Carried as the client address in the sign-in, passkey-registration and download records (eal.params.source_ip); nothing is sent to it"
+  - id: ind-06
+    type: ipv4
+    value: "96.232.20.66"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-04]
+    in_band: true
+    description: "Residential proxy that created the extortion email. Carried only as ClientIP in the Exchange Send and Teams records; nothing is sent to it, and it must never go into an EDL or block rule from this scenario"
+  - id: ind-07
+    type: user_agent
+    value: "Microsoft.Graph.Client/5.62.0"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    in_band: true
+    description: "User agent seen during exfiltration. Rotated into the download records' UserAgent (eal.params.user_agents), never on SimCore's own requests"
+  - id: ind-08
+    type: user_agent
+    value: "python-requests/2.28.1"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    in_band: true
+    description: "User agent seen during exfiltration. Rotated into the download records' UserAgent, never on SimCore's own requests"
+  - id: ind-09
+    type: user_agent
+    value: "python-requests/2.33.1"
+    source_url: "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/2026-06-03-Pink-Extortion-Brand-Activity.txt"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    in_band: true
+    description: "User agent seen during exfiltration. Rotated into the download records' UserAgent, never on SimCore's own requests"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# step-01 is the root and runs on the beacon. No process or host binds the lure lookup to
+# the sign-in (the lab has no host-to-user binding), so step-02 joins it on time only
+# (temporal), which is why CR-3 stays a hunt. Steps 03 and 04 are the same principal's next
+# actions in the same tenant (shared_entity), the entity CR-MP-0038 and CR-MP-0038-EXTORT
+# join on. No cgo_anchor: the only process here is dig under the beacon.
+steps:
+  - id: step-01
+    name: "The victim's host resolves the Pink lure domains, plus the PANW DNS Security phishing test domain as the NGFW positive control"
+    command: |
+      : "${LAB_RESOLVER:?set LAB_RESOLVER to a public resolver reached through the lab firewall}"
+      dig @${LAB_RESOLVER} passkeyadd.com A +short
+      sleep 40
+      dig @${LAB_RESOLVER} passkeydeploy.com A +short
+      sleep 40
+      dig @${LAB_RESOLVER} deploypasskey.com A +short
+      sleep 40
+      dig @${LAB_RESOLVER} test-phishing.testpanw.com A +short
+    identity: direct
+    mitre_technique: "T1566.004"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Positive control: DNS Security on the lab firewall categorised and logged test-phishing.testpanw.com in panw_ngfw_threat_raw, so the NGFW-to-tenant path works. It proves nothing about Pink; if it is empty, the NGFW leg is broken, not missed. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-dns-security-logged-the-panw-phishing-test-domain"
+        verification_xql: |
+          dataset = panw_ngfw_threat_raw
+          | filter threat_name contains "test-phishing.testpanw.com" or to_string(threat_id) contains "test-phishing.testpanw.com"
+          | fields _time, source_ip, dest_ip, dest_port, sub_type, threat_id, threat_name, action, severity
+      - plane: EDR
+        type: XQL
+        description: "The XDR agent recorded the host resolving a Pink lure domain (dig PROCESS_START with the domain on its command line) in xdr_data. It does not prove that a browser opened the kit. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-endpoint-resolved-a-pink-lure-domain"
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "dig"
+          | filter action_process_image_command_line contains "passkeyadd.com" or action_process_image_command_line contains "passkeydeploy.com" or action_process_image_command_line contains "deploypasskey.com"
+          | comp count() as lookups, values(action_process_image_command_line) as command_lines by agent_hostname, actor_causality_id
+
+  - id: step-02
+    name: "Interactive Entra sign-in for the canary from the Pink access IP with a number-matched push approved, then the actor registers its own passkey"
+    command: |
+      : 'channel eal: SimCore POSTs the Entra sign-in and passkey-registration records (idp_signin_emulator) to the collector; no host runs this command'
+    channel: eal
+    eal:
+      plugin: idp_signin_emulator
+      params:
+        provider: microsoft
+        event_pattern: vishing_passkey_enrollment
+        source_ip: "172.93.100.252"
+        event_time_offset_seconds: -1500
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+        canary_token: "cortexsim-mp-038-pink"
+    identity: direct
+    mitre_technique: "T1078.004"
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "An MFA-required Entra sign-in for the canary principal from 172.93.100.252 landed in cortexsim_saas_raw and the query finds it. It does not prove Cortex ITDR raised anything. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-entra-sign-in-for-the-canary-from-the-pink-access-ip"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter userPrincipalName = "cortexsim-mp-038-pink@cortexsim-canary.invalid" and ipAddress = "172.93.100.252"
+          | filter createdDateTime != null and authenticationRequirement = "multiFactorAuthentication"
+          | fields _time, createdDateTime, userPrincipalName, ipAddress, appDisplayName, clientAppUsed, isInteractive, authenticationRequirement
+      - plane: ITDR
+        type: XQL
+        description: "A passkey registered for the canary from the sign-in's IP within ten minutes of that sign-in, by the records' body times. It does not prove Cortex ITDR raised anything. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-passkey-registered-from-the-sign-in-ip-within-ten-minutes"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | alter audit_principal = json_extract_scalar(initiatedBy, "$.user.userPrincipalName"), audit_ip = json_extract_scalar(initiatedBy, "$.user.ipAddress")
+          | alter principal = coalesce(userPrincipalName, audit_principal), source_ip = coalesce(ipAddress, audit_ip)
+          | filter principal = "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+          | alter signin_at = if(createdDateTime != null and authenticationRequirement = "multiFactorAuthentication", parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", createdDateTime), null), passkey_at = if(activityDisplayName = "User registered security info" and resultReason contains "passkey", parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", activityDateTime), null)
+          | comp min(signin_at) as first_signin_at, min(passkey_at) as passkey_registered_at by principal, source_ip
+          | filter first_signin_at != null and passkey_registered_at != null
+          | alter passkey_after_signin_seconds = timestamp_diff(passkey_registered_at, first_signin_at, "SECOND")
+          | filter passkey_after_signin_seconds >= 0 and passkey_after_signin_seconds <= 600
+
+  - id: step-03
+    name: "SharePoint and OneDrive download burst by the canary from the Pink access IP, through Microsoft Graph and python-requests"
+    command: |
+      : 'channel eal: SimCore POSTs the SharePoint and OneDrive download records (m365_activity_emitter storage_exfiltration) to the collector; no host runs this command'
+    channel: eal
+    eal:
+      plugin: m365_activity_emitter
+      params:
+        event_pattern: storage_exfiltration
+        source_ip: "172.93.100.252"
+        user_agents:
+          - "Microsoft.Graph.Client/5.62.0"
+          - "python-requests/2.28.1"
+          - "python-requests/2.33.1"
+        storage_targets:
+          - sharepoint
+          - onedrive
+        event_time_offset_seconds: -1200
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+        canary_token: "cortexsim-mp-038-pink"
+    identity: direct
+    mitre_technique: "T1530"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "A download burst by the canary from 172.93.100.252 across both SharePoint and OneDrive (at least five FileDownloaded / FileSyncDownloadedFull records) landed in cortexsim_saas_raw. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-sharepoint-and-onedrive-download-burst-from-the-pink-ip"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter UserId = "cortexsim-mp-038-pink@cortexsim-canary.invalid" and ClientIP = "172.93.100.252"
+          | filter Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull")
+          | comp count() as downloads, count_distinct(Workload) as workloads, count_distinct(ObjectId) as objects by UserId, ClientIP
+          | filter downloads >= 5 and workloads = 2
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Interactive-user file access by the canary through both the Graph SDK and python-requests user agents, the published exfiltration clients. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-file-access-through-graph-sdk-and-python-requests-user-agents"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter UserId = "cortexsim-mp-038-pink@cortexsim-canary.invalid" and to_string(UserType) = "0"
+          | filter Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull")
+          | filter UserAgent in ("Microsoft.Graph.Client/5.62.0", "python-requests/2.28.1", "python-requests/2.33.1")
+          | alter client_family = if(UserAgent contains "Microsoft.Graph.Client", "graph_sdk", "python_requests")
+          | comp count() as file_ops, count_distinct(client_family) as client_families, count_distinct(UserAgent) as user_agents by UserId, ClientIP
+          | filter client_families = 2
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-MP-0038 (operator-installed, Medium, scheduled every 10 min over 1 h, principal mapped to User Name, untested): on one principal and one source IP, an MFA sign-in, then a passkey registration, then a SharePoint and OneDrive download burst, inside 3600 s by body times. Verified here by the rule's own XQL; it does not prove XSIAM grouped anything into a case"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "CR-MP-0038"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | alter audit_principal = json_extract_scalar(initiatedBy, "$.user.userPrincipalName"), audit_ip = json_extract_scalar(initiatedBy, "$.user.ipAddress")
+          | alter principal = coalesce(userPrincipalName, audit_principal, UserId), source_ip = coalesce(ipAddress, audit_ip, ClientIP)
+          | filter principal = "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+          | alter stage = if(createdDateTime != null and authenticationRequirement = "multiFactorAuthentication", "signin", if(activityDisplayName = "User registered security info" and resultReason contains "passkey", "passkey", if(Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull"), "download", "other")))
+          | filter stage != "other"
+          | alter stage_at = parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", coalesce(createdDateTime, activityDateTime, CreationTime))
+          | alter signin_at = if(stage = "signin", stage_at, null), passkey_at = if(stage = "passkey", stage_at, null), download_at = if(stage = "download", stage_at, null)
+          | comp min(signin_at) as first_signin_at, min(passkey_at) as first_passkey_at, min(download_at) as first_download_at, count_distinct(stage) as stages, count() as records by principal, source_ip
+          | filter stages = 3
+          | alter passkey_after_signin_seconds = timestamp_diff(first_passkey_at, first_signin_at, "SECOND"), download_after_passkey_seconds = timestamp_diff(first_download_at, first_passkey_at, "SECOND"), chain_seconds = timestamp_diff(first_download_at, first_signin_at, "SECOND")
+          | filter passkey_after_signin_seconds >= 0 and download_after_passkey_seconds >= 0 and chain_seconds <= 3600
+
+  - id: step-04
+    name: "The compromised account sends the extortion notice to internal recipients and posts in Teams, from the residential proxy"
+    command: |
+      : 'channel eal: SimCore POSTs the Exchange Send and Teams MessageSent records (m365_activity_emitter internal_extortion_notice) to the collector; no host runs this command'
+    channel: eal
+    eal:
+      plugin: m365_activity_emitter
+      params:
+        event_pattern: internal_extortion_notice
+        source_ip: "96.232.20.66"
+        event_time_offset_seconds: -300
+        target_user: "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+        canary_token: "cortexsim-mp-038-pink"
+    identity: direct
+    mitre_technique: "T1657"
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "An Exchange Send by the canary (UserId) from 96.232.20.66 with a recipientCount of at least five landed in cortexsim_saas_raw. The query reads the count, not the recipients, so it does not prove they are internal. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-internal-fan-out-send-from-the-extortion-ip"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter UserId = "cortexsim-mp-038-pink@cortexsim-canary.invalid" and ClientIP = "96.232.20.66"
+          | filter Workload = "Exchange" and Operation = "Send"
+          | alter recipients = to_integer(to_string(recipientCount))
+          | filter recipients >= 5
+          | fields _time, CreationTime, UserId, ClientIP, Operation, recipients, ObjectId
+      - plane: CLOUD_APP
+        type: XQL
+        description: "At least two Teams MessageSent records by the canary from 96.232.20.66 landed in cortexsim_saas_raw. It does not prove a Cortex SaaS detector fired. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "xql-mp-038-teams-messages-by-the-canary-from-the-extortion-ip"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter UserId = "cortexsim-mp-038-pink@cortexsim-canary.invalid" and ClientIP = "96.232.20.66"
+          | filter Workload = "MicrosoftTeams" and Operation = "MessageSent"
+          | comp count() as messages, count_distinct(MessageId) as distinct_messages by UserId, ClientIP
+          | filter messages >= 2
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-MP-0038-EXTORT (operator-installed, Medium, scheduled every 10 min over 1 h, UserId mapped to User Name, untested): on one principal, the first SharePoint or OneDrive download, then the first Exchange Send or Teams message, inside 3600 s by body time (the first download, so a second run in the same window cannot push the gap below zero). Verified here by the rule's own XQL; it does not prove XSIAM grouped anything into a case"
+        ttp_ref: "TTP-2026-0551"
+        detection_id: "CR-MP-0038-EXTORT"
+        verification_xql: |
+          dataset = cortexsim_saas_raw
+          | filter cortexsim_canary = "cortexsim-mp-038-pink"
+          | filter UserId = "cortexsim-mp-038-pink@cortexsim-canary.invalid"
+          | alter stage = if(Workload in ("SharePoint", "OneDrive") and Operation in ("FileDownloaded", "FileSyncDownloadedFull"), "download", if(Workload = "Exchange" and Operation = "Send", "extortion_mail", if(Workload = "MicrosoftTeams" and Operation = "MessageSent", "extortion_teams", "other")))
+          | filter stage != "other"
+          | alter stage_at = parse_timestamp("%Y-%m-%dT%H:%M:%E*S%Ez", CreationTime)
+          | alter download_at = if(stage = "download", stage_at, null), extortion_at = if(stage in ("extortion_mail", "extortion_teams"), stage_at, null)
+          | comp min(download_at) as first_download_at, min(extortion_at) as first_extortion_at, count_distinct(stage) as stages, count_distinct(ClientIP) as source_ips by UserId
+          | filter first_download_at != null and first_extortion_at != null
+          | alter extortion_after_download_seconds = timestamp_diff(first_extortion_at, first_download_at, "SECOND")
+          | filter extortion_after_download_seconds >= 0 and extortion_after_download_seconds <= 3600
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-MP-038 cleanup: nothing to remove; step-01 only ran DNS lookups and steps 02-04 wrote nothing on this host'"
+
+author: "Henry Reed"
+created: "2026-11-13"
+last_updated: "2026-11-13"
+tags:
+  - unit42
+  - pink
+  - cl-cri-1147
+  - real-ioc-dns-lookup

@@ -1,0 +1,307 @@
+"""CortexSim API — /api/collector-targets.
+
+The tenant-side ingestion doors this instance's emitters POST to: the XSIAM
+HTTP log collector (``https://api-<tenant>/logs/v1/event``), or a forwarder
+in front of it. Broker VM targets are not modelled yet (spec §10). A SimCore
+instance serves one POV, so these are entered once and every campaign launch,
+campaign preflight, offline bundle and Composer EAL dispatch resolves its
+destination from them (``eal_simulator.targets``).
+
+  GET    /api/collector-targets               list + which collector plugins nothing serves
+  GET    /api/collector-targets/{name}        one target
+  PUT    /api/collector-targets/{name}        create or replace (key write-only)
+  DELETE /api/collector-targets/{name}        remove the target and its key
+  POST   /api/collector-targets/{name}/preflight   configured -> reachable -> accepted
+  POST   /api/collector-targets/{name}/arrival     did the tagged records arrive (read-only XQL)
+
+The key goes to the encrypted vault and is never returned — not by value, not
+by tail. The operator API is unauthenticated, so the guarantee is the key's
+absence from every response, not access control.
+
+Spec: docs/superpowers/specs/2026-11-10-collector-targets-design.md
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field, SecretStr, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database import get_db
+from eal_simulator import get_default_registry
+from eal_simulator.analytics_catalogue import UnknownDataSourceError, get_source
+from eal_simulator.analytics_emitter import CANARY_TOKEN_RE
+from eal_simulator.arrival import check_arrival, not_checked_result
+from eal_simulator.collector_declaration import NATIVE_DATASETS, TEST_CHANNEL, dataset_for, route_verdict
+from eal_simulator.ingestion_routes import tenant_datasets
+from eal_simulator.target_preflight import preflight_target
+from eal_simulator.targets import NAME_RE, TargetSpec, TargetSpecError, collector_plugin_names
+from engine import collector_targets as store
+from engine.dataset_requirements import card_dataset_index
+from engine.lab_tenants import host_of, is_lab_tenant_host
+from engine.ttp_catalog import catalog
+from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.loader import load_xsiam_client
+
+router = APIRouter(prefix="/collector-targets", tags=["collector-targets"])
+
+
+class DeclarationIn(BaseModel):
+    """Which data source the collector carries. The verdict is never taken from
+    the client; extra keys are ignored and the server computes it."""
+    source_key: str
+    vendor: str = Field(min_length=1, max_length=64)
+    product: str = Field(min_length=1, max_length=64)
+
+    @field_validator("vendor", "product", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        # Stripped before the length check and before anything compares the
+        # name: " panw" must not slip past the native-dataset check.
+        return v.strip() if isinstance(v, str) else v
+
+
+class TargetPut(BaseModel):
+    kind: str
+    url: str
+    dataset: Optional[str] = Field(default=None, max_length=200)
+    auth_header: str = Field(default="Authorization", min_length=1, max_length=100)
+    auth_scheme: str = Field(default="", max_length=40)
+    # The collector instance's Compression setting; gzip = true.
+    compress: bool = False
+    plugins: list[str] = Field(default_factory=list)
+    is_default: bool = False
+    token: Optional[SecretStr] = None
+    clear_token: bool = False
+    declaration: Optional[DeclarationIn] = None
+
+
+class PreflightBody(BaseModel):
+    write_canary: bool = False
+
+
+class ArrivalBody(BaseModel):
+    tenant: str = Field(min_length=1)
+    token: str = Field(pattern=CANARY_TOKEN_RE.pattern)
+    delivered: int = Field(ge=0)
+    since: Optional[datetime] = None
+    query_id: Optional[str] = Field(default=None, min_length=1)
+
+
+def _not_checked(body: ArrivalBody, dataset: Optional[str], code: str, reason: str) -> dict[str, Any]:
+    return not_checked_result(dataset=dataset, delivered=body.delivered, query_id=body.query_id,
+                              code=code, reason=reason)
+
+
+def _no_dataset_result(body: ArrivalBody) -> dict[str, Any]:
+    return _not_checked(body, None, "TARGET_HAS_NO_DATASET",
+                        "this target names no dataset, so there is nothing to query")
+
+
+def preflight_transports() -> tuple[Any, Any]:
+    """(connect, client_factory) for the preflight ladder. ``(None, None)``
+    uses the real network; tests override this dependency."""
+    return None, None
+
+
+def _err(status: int, code: str, error: str, detail: str) -> HTTPException:
+    return HTTPException(status_code=status,
+                         detail={"error": error, "code": code, "detail": detail})
+
+
+def _check_name(name: str) -> None:
+    if not NAME_RE.match(name):
+        raise _err(422, "TARGET_NAME_INVALID", "Invalid target name",
+                   f"{name!r} must match {NAME_RE.pattern}")
+
+
+async def _row_or_404(db: AsyncSession, name: str):
+    row = await store.get_row(db, name)
+    if row is None:
+        raise _err(404, "TARGET_NOT_FOUND", "Collector target not found", f"target='{name}'")
+    return row
+
+
+def _public(row) -> dict[str, Any]:
+    out = row.to_dict()
+    out["warnings"] = store.to_spec(row).warnings()
+    return out
+
+
+def _declare(decl: DeclarationIn, url: str, body_dataset: Optional[str]) -> tuple[str, dict]:
+    """``(dataset, stored declaration)`` for a declared collector, or an HTTP error."""
+    if decl.source_key == TEST_CHANNEL:
+        card_dataset, tenant, kinds = None, set(), set()
+    else:
+        try:
+            card_dataset = get_source(decl.source_key).dataset
+        except UnknownDataSourceError as exc:
+            raise _err(422, "DECLARATION_SOURCE_UNKNOWN", "Unknown data source",
+                       str(exc)) from exc
+        tenant = tenant_datasets(decl.source_key)
+        by_card = card_dataset_index(catalog.all_raw()).get(card_dataset or "", {})
+        kinds = set().union(*by_card.values()) if by_card else set()
+    dataset = dataset_for(decl.vendor, decl.product)
+    if body_dataset and body_dataset.lower() != dataset.lower():
+        raise _err(422, "TARGET_DATASET_DECLARATION_MISMATCH",
+                   "Dataset disagrees with the declaration",
+                   f"dataset {body_dataset!r} is not {dataset!r}, which the declared "
+                   f"vendor/product write; send one or make them agree")
+    verdict = route_verdict(decl.source_key, decl.vendor, decl.product,
+                            card_dataset=card_dataset, tenant_datasets=tenant,
+                            reading_kinds=kinds)
+    host = host_of(url)
+    lab = is_lab_tenant_host(host)
+    if verdict.verdict == "native_dataset" and not lab:
+        if dataset.lower() in NATIVE_DATASETS:
+            why = (f"{dataset!r} is a native firewall dataset and host {host!r} is not in "
+                   f"CORTEXSIM_DOOR_PROBE_TENANTS; synthetic records would mix into real "
+                   f"firewall data. Name a custom vendor/product or add the lab host.")
+        else:
+            why = (f"source {decl.source_key!r} reads the native firewall dataset "
+                   f"{card_dataset!r} and host {host!r} is not in "
+                   f"CORTEXSIM_DOOR_PROBE_TENANTS; add the lab host to that setting.")
+        raise _err(409, "NATIVE_DATASET_NOT_LAB_TENANT", "Native dataset on a non-lab tenant", why)
+    return dataset, {"source_key": decl.source_key, "vendor": decl.vendor,
+                     "product": decl.product, "verdict": verdict.verdict,
+                     "card_dataset": card_dataset, "lab_tenant": lab}
+
+
+@router.get("")
+async def list_targets(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    rows = await store.list_rows(db)
+    collector_plugins = sorted(collector_plugin_names(get_default_registry()))
+    served = {p for r in rows for p in (r.plugins or [])}
+    default = next((r.name for r in rows if r.is_default), None)
+    unbound = [] if default else [p for p in collector_plugins if p not in served]
+    payload: dict[str, Any] = {
+        "targets": [_public(r) for r in rows],
+        "count": len(rows),
+        "default_target": default,
+        "collector_plugins": collector_plugins,
+        "unbound_plugins": unbound,
+        "status": "ok" if rows else "degraded",
+        "code": None if rows else "NO_COLLECTOR_TARGETS",
+    }
+    if not rows:
+        payload["detail"] = ("No collector target is configured, so no collector step "
+                             "can run live. Add the tenant's HTTP log collector.")
+    return payload
+
+
+@router.get("/{name}")
+async def get_target(name: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    return _public(await _row_or_404(db, name))
+
+
+@router.put("/{name}")
+async def put_target(name: str, body: TargetPut,
+                     db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _check_name(name)
+    if body.token is not None and body.clear_token:
+        raise _err(422, "TARGET_INVALID", "Invalid collector target",
+                   "send either a new token or clear_token, not both")
+    token = body.token.get_secret_value() if body.token is not None else None
+    if token is not None and not token.strip():
+        raise _err(422, "TARGET_INVALID", "Invalid collector target", "token is empty")
+
+    dataset, declaration = body.dataset, None
+    if body.declaration is not None:
+        dataset, declaration = _declare(body.declaration, body.url, body.dataset)
+
+    existing = await store.get_row(db, name)
+    if (body.declaration is None and existing is not None and existing.dataset == body.dataset
+            and {"source_key", "vendor", "product"} <= set(existing.declaration or {})):
+        # The store would keep the old declaration; re-derive it for the new URL so
+        # lab_tenant and the native refusal never describe the previous host.
+        d = existing.declaration
+        dataset, declaration = _declare(
+            DeclarationIn(source_key=d["source_key"], vendor=d["vendor"], product=d["product"]),
+            body.url, body.dataset)
+    will_have_key = token is not None or (
+        existing is not None and existing.secret_name is not None and not body.clear_token)
+    try:  # validates kind + URL with the same rules the resolver reads them by
+        TargetSpec(name=name, kind=body.kind, url=body.url, dataset=dataset,
+                   auth_header=body.auth_header, auth_scheme=body.auth_scheme,
+                   plugins=tuple(body.plugins), is_default=body.is_default,
+                   has_token=will_have_key, compress=body.compress)
+    except TargetSpecError as exc:
+        raise _err(422, "TARGET_INVALID", "Invalid collector target", str(exc)) from exc
+
+    collector_plugins = collector_plugin_names(get_default_registry())
+    bad = sorted(set(body.plugins) - collector_plugins)
+    if bad:
+        raise _err(422, "TARGET_PLUGIN_NOT_COLLECTOR", "Plugin does not POST to a collector",
+                   f"{bad} are not collector plugins; choose from {sorted(collector_plugins)}")
+    for other in await store.list_rows(db):
+        clash = sorted(set(body.plugins) & set(other.plugins or [])) if other.name != name else []
+        if clash:
+            raise _err(422, "TARGET_PLUGIN_ALREADY_BOUND", "Plugin already served",
+                       f"{clash} already go to target '{other.name}'; unbind them there first")
+
+    row, previous_default = await store.upsert(
+        db, name, kind=body.kind, url=body.url, dataset=dataset,
+        auth_header=body.auth_header, auth_scheme=body.auth_scheme,
+        plugins=list(dict.fromkeys(body.plugins)), is_default=body.is_default,
+        token=token, clear_token=body.clear_token, declaration=declaration,
+        compress=body.compress,
+    )
+    out = _public(row)
+    out["previous_default"] = previous_default
+    return out
+
+
+@router.delete("/{name}", status_code=204)
+async def delete_target(name: str, db: AsyncSession = Depends(get_db)) -> Response:
+    if not await store.delete(db, name):
+        raise _err(404, "TARGET_NOT_FOUND", "Collector target not found", f"target='{name}'")
+    return Response(status_code=204)
+
+
+@router.post("/{name}/preflight")
+async def preflight(
+    name: str,
+    body: PreflightBody,
+    db: AsyncSession = Depends(get_db),
+    transports: tuple[Any, Any] = Depends(preflight_transports),
+) -> dict[str, Any]:
+    """Walk the ladder. Writes one record into the tenant only when
+    ``write_canary`` is true — opening the page never does."""
+    row = await _row_or_404(db, name)
+    spec = store.to_spec(row)
+    tokens = await store.load_tokens(db, [name]) if row.secret_name else {}
+    connect, client_factory = transports
+    result = await preflight_target(
+        spec=spec, token=tokens.get(name), write_canary=body.write_canary,
+        connect=connect, client_factory=client_factory,
+    )
+    await store.record_check(db, name, result)
+    return result
+
+
+@router.post("/{name}/arrival")
+async def arrival(name: str, body: ArrivalBody,
+                  db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Ask the tenant, read-only, how many tagged example records reached the
+    target's dataset. A counted or not_checked answer is stored as the target's
+    ``last_arrival``; a pending one is not, because it says nothing yet."""
+    row = await _row_or_404(db, name)
+    if not row.dataset:
+        result = _no_dataset_result(body)
+    else:
+        try:
+            client = await load_xsiam_client(db, body.tenant)
+        except XsiamConfigError as exc:
+            result = _not_checked(body, row.dataset, "TENANT_NOT_CONFIGURED", exc.detail)
+        else:
+            result = await check_arrival(
+                client, dataset=row.dataset, token=body.token, delivered=body.delivered,
+                since=body.since, query_id=body.query_id)
+    if result["state"] != "pending":
+        await store.record_arrival(db, name, {
+            **result, "token": body.token,
+            "checked_at": datetime.now(timezone.utc).isoformat()})
+    return result

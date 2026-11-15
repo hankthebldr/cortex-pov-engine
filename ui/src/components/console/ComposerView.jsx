@@ -12,17 +12,31 @@ import {
   getDraft,
   getRunCausality,
   getTtps,
+  getTtp,
+  getScenarioTenantContent,
+  postDraftTenantContent,
   getToolAdapters,
+  getEalDataStreams,
 } from '../../api/client.js'
+import { useChainTray, ttpTrayItem, packageTrayItem, streamTrayItem } from '../../context/ChainTrayContext.jsx'
+import { appendTrayItems } from './chainTrayDraft.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
 import useLaunchScenario from './useLaunchScenario.js'
+import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
+import { launchWarningsFor } from './launchWarnings.js'
+import { relativeTime, absoluteTime, detectionCell, runAgent, statusKey } from './runRows.js'
 import { HS } from './readiness/healthModel.js'
 import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
+import ComposerRuleInspector from './ComposerRuleInspector.jsx'
+import { deriveTenantContent } from './composerContent.js'
 import ComposerPalette from './ComposerPalette.jsx'
+import Icon from './kit/Icon.jsx'
+import FlowStepper from './FlowStepper.jsx'
+import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
 import {
@@ -47,7 +61,6 @@ import {
   removeDetection,
   setCausalityParent,
   setNodePosition,
-  setStepLane,
   setStepChannel,
   setStepEal,
   setStepTarget,
@@ -121,21 +134,22 @@ function useMediaQuery(query) {
 }
 
 const WS_TABS = [
-  ['payload', 'Payload plan'],
+  ['payload', 'Tools'],
   ['preflight', 'Preflight'],
   ['active', 'Active run'],
   ['history', 'History'],
 ]
 
-// NICE-organized palette tabs (Build · Network · Identity · Cloud · Endpoint).
-// Each group the container assembles carries a `tab`; the palette filters to the
-// active one. No preserved test asserts palette content, so these are additive.
+// The palette's tabs are what a chain is assembled from (design v26 §4.4):
+// ★ Favorites · Scenarios · TTP cards · Data streams · Packages. Each group the
+// container assembles carries a `tab`; a group with none (the step kinds, the
+// launch targets) shows on every tab.
 const PALETTE_TABS = [
-  { id: 'build', label: 'Build' },
-  { id: 'network', label: 'Network' },
-  { id: 'identity', label: 'Identity' },
-  { id: 'cloud', label: 'Cloud' },
-  { id: 'endpoint', label: 'Endpoint' },
+  { id: 'favorites', label: 'Favorites', icon: 'star' },
+  { id: 'scenarios', label: 'Scenarios' },
+  { id: 'ttps', label: 'TTP cards' },
+  { id: 'streams', label: 'Data streams' },
+  { id: 'packages', label: 'Packages' },
 ]
 
 export default function ComposerView({
@@ -144,10 +158,10 @@ export default function ComposerView({
   const env = useEnvironment()
   const shelf = useShelf({ adapters: [] })
 
-  // The origin scenario rides the URL (`#/composer?from=SIM-EDR-001`), so a
+  // The origin scenario rides the URL (`#/composer?open=SIM-EDR-001`; `?from=` is the alias), so a
   // composed draft is a link a DC can send to a colleague and so Library →
   // "Open in Composer" is a plain navigation rather than hidden shared state.
-  const fromId = params.from || null
+  const fromId = openParam(params, 'from')
   // ONE fetch, two consumers. `originDetail` is the raw API body — it is what
   // useLaunchScenario needs (execution_identity, pull/push support) — and
   // `origin` is the normalized draft derived from it.
@@ -170,8 +184,15 @@ export default function ComposerView({
   const [lens, setLens] = useState('design')              // 'design' | 'run'
   const [wsTab, setWsTab] = useState('payload')
   const [wsOpen, setWsOpen] = useState(false)
+  // The run the Active pane shows: the run a canvas launch just created,
+  // else one picked in History, else (null) the provider's own activeRun.
+  const [followRunId, setFollowRunId] = useState(null)
   const [benchQuery, setBenchQuery] = useState('')
-  const [paletteTab, setPaletteTab] = useState('build')
+  // The palette opens on ★ Favorites once the library has any, else on
+  // Scenarios; a tab the DC picks (or a "Start from…" option) wins after that.
+  const [paletteTabChoice, setPaletteTab] = useState(null)
+  const hasFavorites = env.scenarios.some((s) => s.favorite)
+  const paletteTab = paletteTabChoice ?? (hasFavorites ? 'favorites' : 'scenarios')
   const [notice, setNotice] = useState(null)
   // Design-lens stitch overlay is off by default (intent, not outcome).
   const [showStitch, setShowStitch] = useState(false)
@@ -203,7 +224,17 @@ export default function ComposerView({
 
   // ── Palette sources (API-fetched, never invented) ──────────────────────────
   const [ttps, setTtps] = useState([])
+  // Raw TTP cards the chain's steps cite, by id: `{status:'ok', card}` or
+  // `{status:'error', message}`. An id with no entry is still in flight. The
+  // tenant-content rail is derived from these and from nothing else.
+  const [cards, setCards] = useState({})
+  const [showContent, setShowContent] = useState(true)
+  // A selected RULE node. View state only: a rule is never part of the draft.
+  const [selectedRuleKey, setSelectedRuleKey] = useState(null)
   const [adapters, setAdapters] = useState([])
+  // Data-stream emitters (EAL plugins), for the palette's Data streams tab.
+  const [emitters, setEmitters] = useState([])
+  const tray = useChainTray()
 
   const say = useCallback((msg) => {
     setNotice(msg)
@@ -215,14 +246,23 @@ export default function ComposerView({
   // ── Load the origin scenario ───────────────────────────────────────────────
   // Detail shape, not the list shape: only `GET /api/scenarios/:id` carries the
   // per-step `command` and `causality` the inspector exists to show.
+  // The scenario the chain was last loaded from, so closing it (an `open` param
+  // that goes away) resets the canvas — and a mount that never had one does
+  // not. Resetting on mount wiped steps the chain tray had just added, on
+  // StrictMode's second effect pass.
+  const loadedFromRef = React.useRef(null)
   useEffect(() => {
     if (!fromId) {
-      setOrigin(null); setOriginDetail(null); setOriginError(null); setSteps([])
-      setDraftMeta({}); setSelectedId(null); setMetaOpen(false)
-      setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
-      setSavedLaunchable(null)
+      if (loadedFromRef.current) {
+        setOrigin(null); setOriginDetail(null); setOriginError(null); setSteps([])
+        setDraftMeta({}); setSelectedId(null); setMetaOpen(false)
+        setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
+        setSavedLaunchable(null)
+      }
+      loadedFromRef.current = null
       return undefined
     }
+    loadedFromRef.current = fromId
     let cancelled = false
     setLoadingOrigin(true)
     setOriginError(null)
@@ -267,6 +307,9 @@ export default function ComposerView({
     getToolAdapters()
       .then((d) => { if (!cancelled) setAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
       .catch(() => { if (!cancelled) setAdapters([]) })
+    getEalDataStreams()
+      .then((d) => { if (!cancelled) setEmitters(Array.isArray(d?.emitters) ? d.emitters : []) })
+      .catch(() => { if (!cancelled) setEmitters([]) })
     return () => { cancelled = true }
   }, [])
 
@@ -280,6 +323,56 @@ export default function ComposerView({
     [steps, selectedId],
   )
 
+  // ── Tenant content: the correlation rules this chain needs in the tenant ────
+  // Every card a step's expected detection cites is fetched once. The canvas
+  // derives from the raw cards in the browser so it follows each edit without a
+  // round trip; the server derives the same facts for the export, and one
+  // fixture (spec/tenant_content_cases.json) holds the two together.
+  const citedCardIds = useMemo(() => {
+    const ids = []
+    for (const s of steps) {
+      for (const d of s.detections || []) {
+        if (d.ttpRef && !ids.includes(d.ttpRef)) ids.push(d.ttpRef)
+      }
+    }
+    return ids
+  }, [steps])
+  const citedKey = citedCardIds.join('|')
+  const requestedCardsRef = React.useRef(new Set())
+  useEffect(() => {
+    let cancelled = false
+    for (const id of citedCardIds) {
+      if (requestedCardsRef.current.has(id)) continue
+      requestedCardsRef.current.add(id)
+      getTtp(id)
+        .then((card) => {
+          if (!cancelled) setCards((c) => ({ ...c, [id]: { status: 'ok', card } }))
+        })
+        .catch((err) => {
+          // A failed card is KEPT as failed. It reads "card not loaded" on the
+          // canvas; it is never dropped into "this chain needs no rule".
+          if (!cancelled) {
+            setCards((c) => ({ ...c, [id]: { status: 'error', message: err?.message || 'failed' } }))
+          }
+        })
+    }
+    return () => { cancelled = true }
+    // citedKey is the stable identity of citedCardIds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citedKey])
+  const cardsById = useMemo(() => {
+    const out = {}
+    for (const id of citedCardIds) if (cards[id]?.status === 'ok') out[id] = cards[id].card
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citedKey, cards])
+  const contentLoading = citedCardIds.some((id) => !cards[id])
+  const tenantContent = useMemo(() => deriveTenantContent(steps, cardsById), [steps, cardsById])
+  const selectedRule = useMemo(
+    () => tenantContent.rules.find((r) => r.key === selectedRuleKey) || null,
+    [tenantContent, selectedRuleKey],
+  )
+
   // A draft has diverged from what SimCore holds (the corpus origin) when its
   // step set differs — length, id order, or a hand-authored step.
   //
@@ -290,14 +383,14 @@ export default function ComposerView({
   // Launch, and run something other than what is on screen. Composer mode makes
   // those edits one click away (the edge pivot chip, Delete, reconnect), so the
   // comparison is the launch-relevant snapshot, minus pure presentation
-  // (`layout`, `laneOverrides`): dragging a card never forces a draft save.
+  // (`layout`): dragging a card never forces a draft save.
   const edited = useMemo(() => {
     if (!origin) return steps.length > 0
     if (steps.some((s) => s.authored)) return true
     const runShape = (d) => {
       const snap = draftSnapshot(d)
       if (!snap) return snap
-      const { layout: _l, laneOverrides: _lo, ...rest } = snap
+      const { layout: _l, ...rest } = snap
       return rest
     }
     return JSON.stringify(runShape(draft)) !== JSON.stringify(runShape(origin))
@@ -445,10 +538,24 @@ export default function ComposerView({
   // too, or Launch would run the save while the canvas shows the original.
   const viaSavedRow = edited || !!savedScenarioId
   const launchTarget = viaSavedRow ? savedDetail : originDetail
+  // The scenario the stepper carries to the Launch gate: the row a launch from
+  // here would run. An edited chain that is not saved (or has drifted since its
+  // save) has no such row yet, so nothing is carried rather than the origin.
+  const flowLaunchId = viaSavedRow
+    ? (savedScenarioId && !dirty ? savedScenarioId : null)
+    : (draft.originId || null)
+  // A launch from the canvas is FOLLOWED here, in the Active run pane, instead
+  // of bouncing the DC to the Runs page (UX review §A finding 6: the Composer's
+  // panes pointed away from the canvas). `Follow ▸` in that pane is still the
+  // deep link to Runs for the full Live / Evidence view.
   const launch = useLaunchScenario(launchTarget, {
     onRunComplete: (run) => {
+      const id = runIdOf(run) || null
+      setFollowRunId(id)
+      setWsTab('active')
+      setWsOpen(true)
       env.refreshRuns()
-      onNavigate('runs', { run: runIdOf(run), tab: 'live' })
+      say(id ? `Run ${id} started — following it below` : 'Run started')
     },
     onError: (msg) => say(msg),
   })
@@ -544,6 +651,37 @@ export default function ComposerView({
     say('Draft YAML downloaded — review it, then drop it into scenarios/ and reload SimCore')
   }, [draft, tenantName, agentName, savedScenarioId, say])
 
+  // Export what this chain needs in the tenant. READ-ONLY: the server derives
+  // the manifest from the TTP cards and contacts no tenant. The route follows
+  // what is on the canvas — an untouched scenario or a saved draft is read by
+  // id; anything edited since is sent as the draft body, so the file can never
+  // describe a chain other than the one on screen.
+  const exportTenantContent = useCallback(async () => {
+    try {
+      let manifest
+      if (fromId && !edited) manifest = await getScenarioTenantContent(fromId)
+      else if (savedScenarioId && !dirty) manifest = await getScenarioTenantContent(savedScenarioId)
+      else manifest = await postDraftTenantContent(draftToApi(draft, { author: draft.author || 'composer' }))
+      const blob = new Blob([`${JSON.stringify(manifest, null, 2)}\n`], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${manifest.scenario_id || draft.originId || 'sim-draft'}-tenant-content.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      const c = manifest.summary?.correlation || {}
+      const total = c.total ?? 0
+      say(
+        `Tenant content exported — ${total} rule${total === 1 ? '' : 's'}, ${c.deployable ?? 0} deployable. `
+        + 'Nothing was sent to a tenant.',
+      )
+    } catch (err) {
+      say(`Tenant content export failed — ${err?.message || 'unknown error'}`)
+    }
+  }, [fromId, edited, savedScenarioId, dirty, draft, say])
+
   // Declared BEFORE the palette memo that calls it: `const` bindings are in the
   // temporal dead zone until their initializer runs, and useMemo runs its
   // factory synchronously during render.
@@ -556,13 +694,15 @@ export default function ComposerView({
   // linking would itself make every other root off-chain.
   const selectedRef = React.useRef(selectedId)
   selectedRef.current = selectedId
-  // Latest-state refs for handlers React Flow can call several times in ONE
-  // tick (a multi-card lane drop calls onLaneChange once per card): reading the
-  // render-time `draft` there made the second call overwrite the first.
-  const draftRef = React.useRef(draft)
-  draftRef.current = draft
+  // Latest-state ref for handlers React Flow can call several times in ONE
+  // tick: reading the render-time `steps` there made the second call
+  // overwrite the first.
   const stepsRef = React.useRef(steps)
   stepsRef.current = steps
+  const draftMetaRef = React.useRef(draftMeta)
+  draftMetaRef.current = draftMeta
+  const originRef = React.useRef(origin)
+  originRef.current = origin
   // Every step id used this session, plus every id the origin had. A deleted
   // id is never minted again, so a new step cannot inherit the deleted one's
   // stored position, lane override or — in the Run lens — its recorded state.
@@ -597,8 +737,17 @@ export default function ComposerView({
   // fires when the selection CHANGES).
   const onSelect = useCallback((id) => {
     setSelectedId(id)
+    setSelectedRuleKey(null)
     setMetaOpen(false)
     if (id) setInspectorOpen(true)
+  }, [])
+  // Selecting a rule is view state: it swaps what the Inspector shows and
+  // touches nothing the draft, the launch snapshot or the save body reads.
+  const onSelectRule = useCallback((key) => {
+    setSelectedRuleKey(key)
+    setSelectedId(null)
+    setMetaOpen(false)
+    if (key) setInspectorOpen(true)
   }, [])
   const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
   const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
@@ -673,26 +822,6 @@ export default function ComposerView({
     })
   }, [origin])
   // Re-layout (Task 11): discard every dragged position and fall back to the
-  // Lanes lens: a step dragged into another band. Persisted on the draft like
-  // a position (so it marks the draft dirty and survives reload), and written
-  // through to the step's channel where the lane is channel-backed — see
-  // `setStepLane` for exactly which lanes change the step and which only
-  // record intent.
-  const onLaneChange = useCallback((stepId, lane) => {
-    // Compute once from the MERGED draft, then write each half to the state
-    // that owns it. Calling setSteps inside a setDraftMeta updater would be a
-    // side effect inside an updater — StrictMode double-invokes those, and the
-    // second call would see steps it had already replaced. Read the LATEST
-    // draft through the ref and advance it immediately, so a second card in
-    // the same multi-card drop builds on this one instead of erasing it.
-    const cur = draftRef.current
-    const next = setStepLane(cur, stepId, lane)
-    if (next === cur) return
-    draftRef.current = next
-    stepsRef.current = next.steps
-    if (next.steps !== cur.steps) setSteps(next.steps)
-    setDraftMeta((m) => ({ ...m, laneOverrides: next.laneOverrides }))
-  }, [])
 
   // computed layout. Same overlay shape as `onNodeMoved` above — writing
   // `layout: null` into the `draftMeta` overlay is enough on its own
@@ -743,7 +872,7 @@ export default function ComposerView({
     setSelectedId((cur) => (cur === id ? null : cur))
     setDraftMeta((m) => {
       let out = m
-      for (const key of ['layout', 'laneOverrides']) {
+      for (const key of ['layout']) {
         const cur = m[key] !== undefined ? m[key] : (origin?.[key] ?? null)
         if (cur && Object.prototype.hasOwnProperty.call(cur, id)) {
           const { [id]: _gone, ...rest } = cur
@@ -812,6 +941,43 @@ export default function ComposerView({
     addBlankAt('New command step', position, parentId)
   }, [addBlankAt])
 
+  // Append catalog items (a TTP card, a data stream, a package) as real steps
+  // — the one path the palette and the chain tray share (`chainTrayDraft`).
+  // A package also lands in `externalTools`, which the consent gate reads.
+  const addItems = useCallback((items) => {
+    if (!items || !items.length) return 0
+    const { steps: next, externalTools, added } = appendTrayItems(
+      stepsRef.current, items, freshId,
+      draftMetaRef.current.externalTools !== undefined
+        ? draftMetaRef.current.externalTools
+        : (originRef.current?.externalTools || []),
+    )
+    if (!added) return 0
+    stepsRef.current = next
+    setSteps(next)
+    setSelectedId(next[next.length - 1].id)
+    if (items.some((i) => i.kind === 'package')) {
+      setDraftMeta((m) => ({ ...m, externalTools }))
+    }
+    return added
+  }, [freshId])
+
+  // ── The chain tray: "Add to chain" from anywhere lands here ─────────────────
+  // Arriving with `?tray=1` (the tray's Customize), every item the DC added
+  // elsewhere becomes a step, after the origin scenario (if any) has loaded —
+  // appending before it arrives would be overwritten by the origin's steps.
+  // The tray is emptied as it is read, and the param dropped, so a reload or a
+  // second render never adds the same items twice.
+  const trayRequested = params.tray === '1'
+  const originSettled = !fromId || !!origin || !!originError
+  useEffect(() => {
+    if (!trayRequested || !originSettled || loadingOrigin) return
+    const items = tray.take()
+    setParams({ tray: null }, { replace: true })
+    const added = addItems(items)
+    if (added) say(`Added ${added} item${added === 1 ? '' : 's'} from your chain`)
+  }, [trayRequested, originSettled, loadingOrigin, tray.items.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Palette groups (every group API-sourced, never hardcoded content) ────────
   const paletteGroups = useMemo(() => {
     const groups = []
@@ -819,7 +985,6 @@ export default function ComposerView({
     groups.push({
       label: 'Step kinds',
       tone: 'action',
-      tab: 'build',
       items: [
         { key: 'k-command', name: 'Command', meta: 'shell · identity-scoped',
           add: () => addBlank('New command step') },
@@ -828,28 +993,43 @@ export default function ComposerView({
       ],
     })
 
+    // Opening a scenario REPLACES the draft rather than appending its steps:
+    // two chains spliced together share no causality spine. A ★ scenario is one
+    // the system measures as its best; its tooltip says why.
+    const scenarioItem = (s, keyPrefix) => {
+      const id = s.scenario_id || s.id
+      return {
+        key: `${keyPrefix}-${id}`,
+        name: id,
+        meta: s.name || s.plane || '',
+        title: s.favorite
+          ? [`★ ${s.name || id}`, ...(s.favorite_why || [])].join('\n')
+          : (s.name || s.plane || ''),
+        starred: Boolean(s.favorite),
+        tags: scenarioTags(s),
+        add: () => openScenarioRef.current(id),
+      }
+    }
+
+    groups.push({
+      label: 'Favorites',
+      tone: 'detected',
+      tab: 'favorites',
+      items: env.scenarios.filter((s) => s.favorite).map((s) => scenarioItem(s, 'fav')),
+    })
+
     groups.push({
       label: 'Scenario library',
       tone: 'detected',
-      tab: 'build',
-      items: env.scenarios.slice(0, 24).map((s) => {
-        const id = s.scenario_id || s.id
-        return {
-          key: `s-${id}`,
-          name: id,
-          meta: s.name || s.plane || '',
-          // Opening a scenario REPLACES the draft rather than appending its
-          // steps: two chains spliced together share no causality spine.
-          add: () => openScenarioRef.current(id),
-        }
-      }),
+      tab: 'scenarios',
+      items: env.scenarios.map((s) => scenarioItem(s, 's')),
     })
 
     groups.push({
       label: 'TTP cards',
       tone: 'signal',
-      tab: 'build',
-      items: ttps.slice(0, 24).map((t) => {
+      tab: 'ttps',
+      items: ttps.map((t) => {
         const id = t.ttp_id || t.id
         return {
           key: `t-${id}`,
@@ -871,17 +1051,32 @@ export default function ComposerView({
       }),
     })
 
+    // A data stream is an emitter (an EAL plugin): adding one appends a step
+    // on the EAL channel that runs it.
     groups.push({
-      label: 'Tool adapters',
+      label: 'Data streams',
+      tone: 'signal',
+      tab: 'streams',
+      items: emitters.map((e) => ({
+        key: `st-${e.name}`,
+        name: e.name,
+        meta: (e.datasets || []).join(', ') || (e.sources || []).map((s) => s.name).join(', ') || 'emitter',
+        add: () => addItems([streamTrayItem(e)]),
+      })),
+    })
+
+    // A package is a tool adapter: adding one appends a step that runs it.
+    groups.push({
+      label: 'Packages',
       tone: 'pending',
-      tab: 'build',
-      items: adapters.slice(0, 24).map((a) => {
+      tab: 'packages',
+      items: adapters.map((a) => {
         const id = a.adapter_id || a.id
         return {
           key: `ad-${id}`,
           name: id,
-          meta: [a.plane, a.tier ? `tier ${a.tier}` : null].filter(Boolean).join(' · ') || 'adapter',
-          add: () => onNavigate('adapters', { open: id }),
+          meta: [a.name, a.tier ? `tier ${a.tier}` : null].filter(Boolean).join(' · ') || 'adapter',
+          add: () => addItems([packageTrayItem(a)]),
         }
       }),
     })
@@ -889,8 +1084,7 @@ export default function ComposerView({
     groups.push({
       label: 'Targets',
       tone: 'signal',
-      tab: 'endpoint',
-      items: env.agents.slice(0, 16).map((a) => {
+      items: env.agents.map((a) => {
         const id = agentIdOf(a)
         return {
           key: `a-${id}`,
@@ -902,9 +1096,9 @@ export default function ComposerView({
     })
 
     groups.push({
-      label: 'Staged payloads',
+      label: 'Ready tools',
       tone: 'pending',
-      tab: 'build',
+      tab: 'packages',
       items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
         key: `p-${p.name}`,
         name: p.name,
@@ -914,7 +1108,7 @@ export default function ComposerView({
     })
 
     return groups
-  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, shelf.shelf, addBlank, freshId, onNavigate, say])
+  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, emitters, shelf.shelf, addBlank, addItems, freshId, onNavigate, say])
 
   // A dropped palette item resolves by its key prefix. Step- and TTP-creating
   // items place a node at the drop point; the rest reuse their click action
@@ -924,6 +1118,7 @@ export default function ComposerView({
     if (key === 'k-command') return addBlankAt('New command step', position)
     if (key === 'k-wait') return addBlankAt('Wait', position)
     if (key.startsWith('s-')) return openScenarioRef.current(key.slice(2))
+    if (key.startsWith('fav-')) return openScenarioRef.current(key.slice(4))
     if (key.startsWith('t-')) {
       const ttpId = key.slice(2)
       const card = ttps.find((t) => (t.ttp_id || t.id) === ttpId)
@@ -945,7 +1140,15 @@ export default function ComposerView({
       }
       return undefined
     }
-    if (key.startsWith('ad-')) return onNavigate('adapters', { open: key.slice(3) })
+    if (key.startsWith('ad-')) {
+      const a = adapters.find((x) => (x.adapter_id || x.id) === key.slice(3))
+      addItems([a ? packageTrayItem(a) : { kind: 'package', id: key.slice(3), label: key.slice(3) }])
+      return undefined
+    }
+    if (key.startsWith('st-')) {
+      addItems([streamTrayItem({ name: key.slice(3) })])
+      return undefined
+    }
     if (key.startsWith('a-')) {
       const id = key.slice(2)
       const a = env.agents.find((x) => agentIdOf(x) === id)
@@ -954,7 +1157,7 @@ export default function ComposerView({
     }
     if (key.startsWith('p-')) return onNavigate('adapters')
     return undefined
-  }, [addBlankAt, ttps, freshId, origin, onNavigate, env.agents, env.setAgent, say])
+  }, [addBlankAt, addItems, adapters, ttps, freshId, origin, onNavigate, env.agents, env.setAgent, say])
 
   // ── Launch button state ──────────────────────────────────────────────────────
   // The client validation gates a saved-row launch as well as the server's
@@ -1025,6 +1228,22 @@ export default function ComposerView({
       go()
     }
   }, [setParams])
+
+  // The compose → simulate stepper leaves the Composer for another page, so it
+  // asks first when the chain has unsaved edits, the same way Exit does.
+  const leaveTo = useCallback((dest, params) => {
+    const go = () => onNavigate(dest, params)
+    if (unsavedRef.current && stepsRef.current.length) {
+      setPendingConfirm({
+        title: 'Leave the Composer?',
+        body: 'This chain has unsaved edits. Leaving the Composer discards them — save the draft first to keep them. (SimCore only ever runs a saved chain, never the canvas.)',
+        confirmLabel: 'Discard and leave',
+        onConfirm: go,
+      })
+    } else {
+      go()
+    }
+  }, [onNavigate])
   const openScenarioRef = React.useRef(openScenario)
   openScenarioRef.current = openScenario
 
@@ -1049,6 +1268,7 @@ export default function ComposerView({
       if (pendingConfirm) return
       if (inspectorOpen) { closeInspector(); return }
       if (selectedId) { setSelectedId(null); return }
+      if (selectedRuleKey) { setSelectedRuleKey(null); return }
       if (paletteOpen) { closePalette(); return }
       if (!onExit) return
       if (escArmedRef.current) {
@@ -1070,7 +1290,7 @@ export default function ComposerView({
     return () => window.removeEventListener('keydown', onKey)
     // closePalette/closeInspector are stable (useCallback below, no deps).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingConfirm, inspectorOpen, selectedId, paletteOpen, onExit, attemptExit, say])
+  }, [pendingConfirm, inspectorOpen, selectedId, selectedRuleKey, paletteOpen, onExit, attemptExit, say])
 
   // ── Drawers ─────────────────────────────────────────────────────────────────
   // Opening a drawer from its tab moves keyboard focus INTO it; closing returns
@@ -1090,6 +1310,15 @@ export default function ComposerView({
     focusNextRef.current = '.composer-mode__drawer--left .composer-bench__filter'
     setPaletteOpen(true)
   }, [])
+  // The first-run "Start from a library scenario / a TTP card" options open
+  // the palette IN PLACE. They used to navigate to the Library / Catalog — an
+  // exit from the Composer with no way back carrying a selection — so the only
+  // in-Composer picker was this palette, and it listed 24 of 193.
+  const startFromPalette = useCallback((tab = 'scenarios') => {
+    setPaletteTab(tab)
+    setBenchQuery('')
+    openPalette()
+  }, [openPalette])
   const closePalette = useCallback(() => {
     focusNextRef.current = '.composer-mode__reopen--left'
     setPaletteOpen(false)
@@ -1119,8 +1348,8 @@ export default function ComposerView({
   // not explicitly closed it this selection). Closing it is a one-press Esc or
   // the drawer's own ✕; re-selecting re-opens.
   useEffect(() => {
-    if (selectedId || metaOpen) setInspectorOpen(true)
-  }, [selectedId, metaOpen])
+    if (selectedId || metaOpen || selectedRuleKey) setInspectorOpen(true)
+  }, [selectedId, metaOpen, selectedRuleKey])
 
   // ── Render ─────────────────────────────────────────────
 
@@ -1219,9 +1448,21 @@ export default function ComposerView({
           onClick={() => launch.launch()}
           title={launchTitle()}
         >
-          {launch.launching ? 'Launching…' : `Launch on ${agentName || 'agent'}`}
+          <Icon name="play" size={11} className="composer__start-glyph" />
+          {launch.launching ? 'Starting…' : `Start on ${agentName || 'agent'}`}
         </button>
       </div>
+
+      {/* ── Compose → simulate: where this chain goes next ── */}
+      <FlowStepper
+        current="composer"
+        className="flow-stepper--bar"
+        scenarioId={draft.originId || null}
+        launchId={flowLaunchId}
+        launchTitle="Save the chain to carry it to the Launch gate: SimCore runs a saved chain, never the canvas"
+        runFor={scenarioId}
+        onNavigate={leaveTo}
+      />
 
       {/* ── What this draft proves, and whether it can run ── */}
       <div className="composer__proves">
@@ -1306,8 +1547,6 @@ export default function ComposerView({
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
           onNodeMoved={onNodeMoved}
-          onLaneChange={onLaneChange}
-          laneOverrides={draft.laneOverrides}
           onConnectSteps={handleConnectSteps}
           onDeleteStepId={onDeleteStepId}
           onEdgeDelete={onEdgeDelete}
@@ -1316,8 +1555,8 @@ export default function ComposerView({
           onDropCreate={onDropCreate}
           onCanvasDrop={onCanvasDrop}
           onAddStep={() => addBlank('New command step')}
-          onStartLibrary={() => onNavigate('library')}
-          onStartTtp={() => onNavigate('ttps')}
+          onStartLibrary={() => startFromPalette('scenarios')}
+          onStartTtp={() => startFromPalette('ttps')}
           onStartBlank={() => addBlank('New command step')}
           onNavigate={onNavigate}
           stitchModel={draft.stitchContext}
@@ -1325,6 +1564,13 @@ export default function ComposerView({
           onToggleStitch={() => setShowStitch((v) => !v)}
           storedLayout={draft.layout}
           viewInsets={viewInsets}
+          content={tenantContent}
+          contentLoading={contentLoading}
+          showContent={showContent}
+          onToggleContent={() => setShowContent((v) => !v)}
+          selectedRuleKey={selectedRuleKey}
+          onSelectRule={onSelectRule}
+          onExportContent={exportTenantContent}
         />
 
         {/* Palette drawer (the node creator) — left overlay, drag items onto
@@ -1355,11 +1601,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--left"
+            className="composer-mode__reopen composer-mode__reopen--left composer-mode__reopen--icon"
             onClick={openPalette}
-            title="Open the node palette"
+            aria-label="Add to chain"
+            title="Add to chain"
           >
-            ＋ Add
+            <Icon name="plus" size={16} />
           </button>
         )}
 
@@ -1369,7 +1616,7 @@ export default function ComposerView({
           <aside className="composer-mode__drawer composer-mode__drawer--right" aria-label="Step inspector">
             <div className="composer-mode__drawer-head">
               <span className="composer-mode__drawer-title mono" tabIndex={-1}>
-                {selected ? selected.id : metaOpen ? 'Workflow' : 'Step config'}
+                {selected ? selected.id : selectedRule ? selectedRule.ruleId : metaOpen ? 'Workflow' : 'Step config'}
               </span>
               <span className="composer__spacer" />
               <button
@@ -1379,7 +1626,13 @@ export default function ComposerView({
                 ⟩
               </button>
             </div>
-            {(selected || metaOpen) ? (
+            {selectedRule && !selected && !metaOpen ? (
+              <ComposerRuleInspector
+                rule={selectedRule}
+                summary={tenantContent.summary}
+                onNavigate={onNavigate}
+              />
+            ) : (selected || metaOpen) ? (
               <ComposerInspector
                 selected={selected}
                 draft={draft}
@@ -1410,11 +1663,12 @@ export default function ComposerView({
         ) : (
           <button
             type="button"
-            className="composer-mode__reopen composer-mode__reopen--right"
+            className="composer-mode__reopen composer-mode__reopen--right composer-mode__reopen--icon"
             onClick={openInspector}
-            title="Open the inspector"
+            aria-label="Inspector"
+            title="Inspector"
           >
-            Inspector
+            <Icon name="sliders" size={16} />
           </button>
         )}
 
@@ -1432,7 +1686,7 @@ export default function ComposerView({
                 onClick={() => { setWsTab(id); setWsOpen(true) }}
               >
                 {label}
-                <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation })}</span>
+                <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation, followRunId })}</span>
               </button>
             ))}
             <span className="composer__spacer" />
@@ -1451,8 +1705,25 @@ export default function ComposerView({
             <div className="composer-ws__body" data-testid="composer-ws-body">
               {wsTab === 'payload' && <PayloadPane shelf={shelf} onNavigate={onNavigate} />}
               {wsTab === 'preflight' && <PreflightPane model={env.healthModel} validation={validation} onNavigate={onNavigate} />}
-              {wsTab === 'active' && <ActivePane activeRun={env.activeRun} onNavigate={onNavigate} />}
-              {wsTab === 'history' && <HistoryPane runs={env.runs} onNavigate={onNavigate} />}
+              {wsTab === 'active' && (
+                <ActivePane
+                  followRunId={followRunId}
+                  activeRun={env.activeRun}
+                  runs={env.runs}
+                  steps={launchTarget?.steps || steps}
+                  onNavigate={onNavigate}
+                  onUnfollow={() => setFollowRunId(null)}
+                />
+              )}
+              {wsTab === 'history' && (
+                <HistoryPane
+                  runs={env.runs}
+                  originId={fromId}
+                  followRunId={followRunId}
+                  onFollow={(id) => { setFollowRunId(id); setWsTab('active') }}
+                  onNavigate={onNavigate}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1512,18 +1783,30 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 }
 
 /** Tab subtitles. Every one is a real count or an explicit unknown. */
-function wsMeta(id, { env, shelf, validation }) {
+// A scenario's palette tags, in the Library's own words: its plane, its
+// detection types and its use case.
+function scenarioTags(s) {
+  return [s.plane, ...(s.detection_types || []), s.uc_ref].filter(Boolean)
+}
+
+function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
-    if (shelf.available === false) return 'no shelf'
-    return `${(shelf.shelf?.payloads || []).length} staged`
+    if (shelf.available === false) return 'not reported'
+    return `${(shelf.shelf?.payloads || []).length} ready`
   }
   if (id === 'preflight') {
     if (!env.healthModel) return 'unknown'
     const d = env.healthModel.degraded.length
     return d === 0 ? 'all ok' : `${d} degraded`
   }
-  if (id === 'active') return env.activeRun ? `step ${env.activeRun.step}/${env.activeRun.totalSteps}` : 'idle'
+  if (id === 'active') {
+    if (followRunId) {
+      const r = env.runs.find((x) => runIdOf(x) === followRunId)
+      return r?.status || 'following'
+    }
+    return env.activeRun ? `step ${env.activeRun.step}/${env.activeRun.totalSteps}` : 'idle'
+  }
   if (id === 'history') return String(env.runs.length)
   return validation.ok ? 'ok' : ''
 }
@@ -1532,9 +1815,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (shelf.available === false) {
     return (
       <div className="ws-empty">
-        This SimCore exposes no payload shelf, so every tool a step needs is fetched by the
-        TARGET from the public internet at run time. That is a real property of the run, not a
-        missing panel.
+        This instance supplies no tools itself, so every tool a step needs is installed by the
+        TARGET, which needs internet access. That is a real property of the run, not a missing
+        panel.
       </div>
     )
   }
@@ -1542,9 +1825,9 @@ function PayloadPane({ shelf, onNavigate }) {
   if (!payloads.length) {
     return (
       <div className="ws-empty">
-        Nothing staged on this SimCore.
+        No tools are ready on this instance.
         <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-          Open Tools &amp; Payloads
+          Open Packages
         </button>
       </div>
     )
@@ -1606,55 +1889,189 @@ function PreflightPane({ model, validation, onNavigate }) {
   )
 }
 
-function ActivePane({ activeRun, onNavigate }) {
-  if (!activeRun) {
-    return <div className="ws-empty">No run in flight. Preflight, then launch.</div>
+/** Status chip tone for a run row in the workstream. */
+function runChipClass(status) {
+  const s = statusKey(status)
+  if (s === 'running') return 'chip--signal'
+  if (s === 'complete') return 'chip--detected'
+  if (s === 'failed' || s === 'aborted') return 'chip--missed'
+  return 'chip--pending'
+}
+
+/**
+ * ActivePane — tails the FOLLOWED run inline: a header off the run record and
+ * one row per step (id · identity · status · rc · duration) from the host's
+ * step outcomes + the beacon's transcript (`useRunStepTail`). The followed run
+ * is the one a canvas launch just created, else one picked in History, else
+ * the provider's own activeRun.
+ */
+function ActivePane({ followRunId, activeRun, runs, steps, onNavigate, onUnfollow }) {
+  const runId = followRunId || activeRun?.runId || null
+  const { run, rows, error, terminal } = useRunStepTail(runId, steps)
+  if (!runId) {
+    return (
+      <div className="ws-empty">
+        No run in flight. Preflight, then launch — the run is followed here.
+      </div>
+    )
   }
+  // The list row carries the detection aggregates; the detail row carries
+  // status + transcript. Both are the same run; neither is invented.
+  const listRow = runs.find((r) => runIdOf(r) === runId) || null
+  const status = run?.status || listRow?.status || 'pending'
+  const det = listRow ? detectionCell(listRow) : { text: '—', title: 'detections not reported yet' }
+  const done = rows.filter((r) => r.status === 'ok' || r.status === 'error' || r.status === 'severed').length
+  const stepLabel = rows.length ? `step ${Math.min(done + (terminal ? 0 : 1), rows.length)}/${rows.length}` : '—'
+  const since = run?.started_at || listRow?.started_at
+  const liveIsOther = followRunId && activeRun && activeRun.runId !== followRunId
+  // Remembered from the launch response for this browser session.
+  const launchWarnings = launchWarningsFor(runId)
+
   return (
-    <div className="ws-rows">
-      <div className="ws-row">
-        <span className="mono ws-row__id">{activeRun.runId}</span>
-        <span className="ws-row__mid">{activeRun.scenarioId}</span>
-        <span className="ws-row__digest mono">
-          step {activeRun.step}/{activeRun.totalSteps} · {activeRun.detected}/{activeRun.total} detected
+    <div className="ws-active" data-testid="ws-active" data-run-id={runId}>
+      <div className="ws-row ws-row--active-head">
+        <span className="mono ws-row__id" title={runId}>{runId}</span>
+        <span className="ws-row__mid">{run?.scenario_id || listRow?.scenario_id || '—'}</span>
+        <span className="ws-row__digest mono" title={absoluteTime(since)}>
+          {stepLabel} · {det.text} detected · {runAgent(run || listRow || {})} · {relativeTime(since)}
         </span>
-        <button
-          type="button"
-          className="btn btn--xs"
-          onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
-        >
-          Follow ▸
-        </button>
+        <span className="ws-active__ctl">
+          <span className={'chip ' + runChipClass(status)} data-testid="ws-active-status">{status}</span>
+          <button
+            type="button"
+            className="btn btn--xs"
+            onClick={() => onNavigate('runs', { run: runId, tab: terminal ? 'evidence' : 'live' })}
+          >
+            Follow ▸
+          </button>
+        </span>
+      </div>
+      {error && <div className="ws-empty ws-active__error">could not load the run: {error}</div>}
+      {/* What SimCore said when it ACCEPTED this launch (an offline target, an
+          agent with no registered OS). The Composer follows the run here, so
+          the Runs page's banner never shows; the 5 s notice is not the place. */}
+      {launchWarnings.length > 0 && (
+        <div className="ws-empty ws-active__warn" role="status" data-testid="ws-launch-warnings">
+          SimCore warned about this launch:
+          <ul className="ws-active__warn-list mono">
+            {launchWarnings.map((w, i) => (
+              <li key={`${i}-${w.code || ''}`}>{w.code ? <strong>{w.code}</strong> : null}{w.code ? ' — ' : ''}{w.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {liveIsOther && (
+        <div className="ws-empty">
+          another run is in flight ({activeRun.scenarioId}).
+          <button type="button" className="btn btn--xs" onClick={onUnfollow}>show the live run</button>
+        </div>
+      )}
+      <div className="ws-steps" role="table" aria-label="Run steps">
+        <div className="ws-step ws-step--head" role="row" aria-hidden="true">
+          <span>step</span><span>identity</span><span>status</span><span>rc</span><span>duration</span>
+        </div>
+        {rows.length === 0 && (
+          <div className="ws-empty">no steps known for this run yet</div>
+        )}
+        {rows.map((r) => (
+          <div
+            className={`ws-step ws-step--${r.status}`}
+            role="row"
+            key={r.id}
+            data-testid="ws-step-row"
+            data-step-id={r.id}
+            data-status={r.status}
+          >
+            <span role="cell" className="mono ws-step__id" title={r.name || undefined}>
+              {r.index}. {r.id}{r.technique ? <span className="ws-step__tech"> · {r.technique}</span> : null}
+            </span>
+            <span role="cell" className="mono ws-step__identity" title={r.identityNote ? `IDENTITY NOT HONOURED: ${r.identityNote}` : undefined}>
+              {r.identity || '—'}{r.identityNote ? <span className="ws-step__warn"> !! not honoured</span> : null}
+            </span>
+            <span role="cell" className="mono ws-step__status" title={r.reason || r.runtimeNote || undefined}>
+              {STEP_STATUS_LABEL[r.status] || r.status}{r.signal ? ` (${r.signal})` : ''}
+            </span>
+            <span role="cell" className="mono ws-step__rc">{r.rc == null ? '—' : r.rc}</span>
+            <span role="cell" className="mono ws-step__dur">{r.duration || '—'}</span>
+          </div>
+        ))}
+      </div>
+      <div className="ws-active__foot mono">
+        rc and termination are the host's record; identity and duration are the beacon's transcript · tenant-verified: 0
       </div>
     </div>
   )
 }
 
-function HistoryPane({ runs, onNavigate }) {
+/**
+ * HistoryPane — every run on this SimCore, newest first, scoped by default to
+ * the scenario the canvas was opened from. A row click FOLLOWS the run in the
+ * Active pane (inspect without leaving the Composer); `Open ▸` is the deep
+ * link to the Runs page.
+ */
+function HistoryPane({ runs, originId, followRunId, onFollow, onNavigate }) {
+  const [all, setAll] = useState(!originId)
+  const scoped = (all || !originId) ? runs : runs.filter((r) => r.scenario_id === originId)
   if (!runs.length) return <div className="ws-empty">No runs yet.</div>
   return (
-    <div className="ws-rows">
-      {runs.slice(0, 8).map((r) => {
-        const id = runIdOf(r)
-        return (
+    <div className="ws-history" data-testid="ws-history">
+      <div className="ws-history__bar">
+        <span className="mono ws-history__count">
+          {scoped.length} of {runs.length} run{runs.length === 1 ? '' : 's'}
+          {originId && !all ? <> · <span className="mono">{originId}</span></> : null}
+        </span>
+        {originId && (
           <button
             type="button"
-            className="ws-row ws-row--button"
-            key={id}
-            onClick={() => onNavigate('runs', {
-              run: id,
-              tab: isRunTerminal(r.status) ? 'evidence' : 'live',
-            })}
+            className="btn btn--xs"
+            data-testid="ws-history-scope"
+            onClick={() => setAll((v) => !v)}
           >
-            <span className="mono ws-row__id">{id}</span>
-            <span className="ws-row__mid">{r.scenario_id || '—'}</span>
-            <span className="ws-row__digest mono">{r.started_at || ''}</span>
-            <span className={'chip ' + (isRunTerminal(r.status) ? 'chip--detected' : 'chip--pending')}>
-              {r.status || 'unknown'}
-            </span>
+            {all ? `only ${originId}` : 'all runs'}
           </button>
-        )
-      })}
+        )}
+      </div>
+      {scoped.length === 0 && (
+        <div className="ws-empty">No runs of {originId} on this SimCore yet — switch to all runs.</div>
+      )}
+      <div className="ws-rows">
+        {scoped.map((r) => {
+          const id = runIdOf(r)
+          const det = detectionCell(r)
+          return (
+            <div
+              className={'ws-row ws-row--history' + (followRunId === id ? ' ws-row--on' : '')}
+              key={id}
+              data-testid="ws-history-row"
+              data-run-id={id}
+            >
+              <button
+                type="button"
+                className="ws-row__inspect"
+                title="Inspect in the Active run pane"
+                onClick={() => onFollow(id)}
+              >
+                <span className="mono ws-row__id">{id}</span>
+                <span className="ws-row__mid">{r.scenario_id || '—'}</span>
+              </button>
+              <span className="ws-row__digest mono" title={`${absoluteTime(r.started_at)} · ${det.title}`}>
+                {relativeTime(r.started_at)} · {runAgent(r)} · {det.text}
+              </span>
+              <span className={'chip ' + runChipClass(r.status)}>{r.status || 'unknown'}</span>
+              <button
+                type="button"
+                className="btn btn--xs"
+                onClick={() => onNavigate('runs', {
+                  run: id,
+                  tab: isRunTerminal(r.status) ? 'evidence' : 'live',
+                })}
+              >
+                Open ▸
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

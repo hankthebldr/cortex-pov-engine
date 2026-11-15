@@ -26,7 +26,9 @@ def client():
     static_dir = main._static_dir
     if not os.path.isdir(static_dir):
         pytest.skip(f"no built console at {static_dir} — run `npm run build` first")
-    with TestClient(main.app) as c:
+    # The host guard 400s Starlette's default Host "testserver"; a real
+    # console is reached as localhost (always allowed), so drive it as one.
+    with TestClient(main.app, base_url="http://localhost") as c:
         yield c
 
 

@@ -1,0 +1,4 @@
+<response status="success"><result total-count="1" count="1"><syslog><entry name="lab-syslog"><server>
+<entry name="broker-a"><server>192.0.2.20</server><transport>UDP</transport><port>514</port><format>BSD</format><facility>LOG_USER</facility></entry>
+<entry name="broker-b"><server>198.51.100.20</server><transport>UDP</transport><port>1514</port><format>IETF</format><facility>LOG_LOCAL1</facility></entry>
+</server></entry><entry name="empty-profile"/></syslog></result></response>

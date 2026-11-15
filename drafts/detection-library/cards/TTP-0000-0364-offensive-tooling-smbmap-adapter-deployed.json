@@ -1,0 +1,164 @@
+{
+  "id": "TTP-0000-0364",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: smbmap (adapter-deployed)",
+    "summary": "smbmap enumerates SMB shares and permissions across reachable hosts. The tool is delivered through the Cortex POV tool adapter (TOOL-SMBMAP, installed by the pack at dispatch) rather than an ad-hoc in",
+    "description": "smbmap enumerates SMB shares and permissions across reachable hosts. The tool is delivered through the Cortex POV tool adapter (TOOL-SMBMAP, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of smbmap and its artifacts."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1135",
+        "name": "Network Share Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# MATURE: smbmap deployed via adapter_ref TOOL-SMBMAP.\n# adapter TOOL-SMBMAP installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nsmbmap -H 10.0.0.5 -u user -p pass\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "smbmap executed by a service account.",
+        "expected_value": "action_process_image_name contains \"smbmap\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Smbmap Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs smbmap — an offensive TOOL-SMBMAP-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_path contains \"smbmap\" or action_process_command_line contains \"smbmap\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1135"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of smbmap on This Host",
+        "description": "A host that has never run smbmap executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"smbmap\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of smbmap -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1135"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Smbmap Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"smbmap\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "smbmap",
+        "context": "smbmap artifact path/name on the target."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — uncommon offensive tool (smbmap) executed by a service account; Required Data: XDR Agent; ATT&CK T1135."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1135",
+      "url": "https://attack.mitre.org/techniques/T1135/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.002",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

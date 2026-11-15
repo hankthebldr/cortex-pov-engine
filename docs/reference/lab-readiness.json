@@ -619,6 +619,36 @@
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Cloud Logging Blinded \u2014 CloudTrail and Google Cloud Logging Re-Routed, Poisoned, Stopped and Destroyed, With a Log-Bucket Hijack Leg (victim-side audit records to an HTTP collector)",
+      "needs_target_egress": false,
+      "plane": "CDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-CDR-030",
+      "service_identities": [
+        "container-runtime"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 8,
+      "steps_total": 8,
+      "steps_with_detections": 8,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
         "BIOC",
         "XQL"
       ],
@@ -1109,8 +1139,7 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "ABIOC",
-        "XQL",
-        "Correlation"
+        "XQL"
       ],
       "egress_tools": [],
       "name": "UUID-String Shellcode Staging with Enum-Callback Fileless Execution (Bookworm / ToneShell)",
@@ -1126,9 +1155,9 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
+      "steps_real_signal": 1,
+      "steps_total": 1,
+      "steps_with_detections": 1,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1156,9 +1185,9 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 4,
-      "steps_with_detections": 4,
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1169,9 +1198,7 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "BIOC",
-        "ABIOC",
-        "XQL",
-        "Correlation"
+        "XQL"
       ],
       "egress_tools": [],
       "name": "The Gentlemen GentleKiller \u2014 ThrottleStop.sys BYOVD EDR-Kill Behavioral Anomaly (Cortex EDR ABIOC)",
@@ -1187,9 +1214,206 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 7,
-      "steps_total": 7,
-      "steps_with_detections": 7,
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "Prevention",
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule, Grouped Into One Case",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-023",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "BIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Systemd Timer Re-Executing on a Schedule, Grouped Into One Case",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-024",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL"
+      ],
+      "egress_tools": [],
+      "name": "Akira (Howling Scorpius) Linux-Host Kill Chain \u2014 Defense Evasion, Shadow/Key Theft, Staging and Real On-Host File Encryption",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-025",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux crond Masquerade \u2014 the Shell Copied and Renamed to crond in a Scratch Directory, Then Run From That Path",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-026",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Archive-Then-SSH Exfiltration Attempt \u2014 Decoy Tree Archived With tar and gzip, Handed to scp and Piped to ssh at a .invalid Host (the transfer fails by design)",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "scp",
+        "ssh"
+      ],
+      "scenario_id": "SIM-EDR-027",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 5,
+      "steps_total": 5,
+      "steps_with_detections": 5,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Sudoedit Execution Burst \u2014 the CVE-2021-3156 Probe Form (sudoedit -s /) Run Sixty Times in About a Minute",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "sudo",
+        "sudoedit"
+      ],
+      "scenario_id": "SIM-EDR-028",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "sshpass Credential-Stuffing Burst Against an Unreachable Host \u2014 Six Real sshpass Runs Around the OpenSSH Client (-p and -f forms) at One .invalid Name",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "ssh",
+        "sshpass"
+      ],
+      "scenario_id": "SIM-EDR-029",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1591,6 +1815,92 @@
       "steps_real_signal": 6,
       "steps_total": 6,
       "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "KOI \u2014 npm Supply-Chain Compromise on a Linux Developer Endpoint (phantom-squat install \u2192 preinstall lifecycle hook \u2192 node credential harvest \u2192 base64 stage \u2192 archive \u2192 dead-drop)",
+      "needs_target_egress": false,
+      "plane": "KOI",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "node"
+      ],
+      "scenario_id": "SIM-KOI-010",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "KOI \u2014 OpenClaw Marketplace Malicious Skill Dropper on a Linux Dev Endpoint (padded-README skill \u2192 base64 prerequisite decode \u2192 curl|bash dropper \u2192 developer-credential theft \u2192 stage/archive \u2192 beacon)",
+      "needs_target_egress": false,
+      "plane": "KOI",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-KOI-011",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "Prevention",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "KOI \u2014 Axios npm Supply Chain: plain-crypto-js Postinstall Dropper to a Python RAT on a Linux Dev Endpoint (string decode \u2192 /tmp/ld.py \u2192 rundir / runscript \u2192 peinject WildFire test ELF \u2192 kill)",
+      "needs_target_egress": false,
+      "plane": "KOI",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-KOI-012",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -5426,6 +5736,32 @@
     },
     {
       "c2_tools": [],
+      "consent_gated": true,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Pink (CL-CRI-1147) \u2014 Vishing to an Attacker Passkey, SharePoint/OneDrive Exfiltration and Internal Extortion (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "channel: eal steps POST from SimCore at launch: live only with launch consent, an authorized_by and a keyed collector target, otherwise dry-run",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-038",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "YELLOW",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
       "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
@@ -5759,15 +6095,15 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 161,
+      "GREEN": 172,
       "RED": 5,
-      "YELLOW": 27
+      "YELLOW": 28
     },
     "detection_steps_without_signal": 142,
-    "eal_delivered": 70,
-    "scenarios_consent_gated": 4,
+    "eal_delivered": 72,
+    "scenarios_consent_gated": 5,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 193,
+    "scenarios_total": 205,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5775,6 +6111,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 796
+    "total_steps": 850
   }
 }

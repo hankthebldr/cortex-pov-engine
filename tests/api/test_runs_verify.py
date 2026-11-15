@@ -56,8 +56,14 @@ def _seed(session_factory, *, run_id="run-e2e", status="running",
                 mitre_technique="T1003.001", mitre_technique_name="LSASS Memory",
                 steps=[], threshold=threshold, primary_kpi="MTTD",
             ))
+            # A delivered pull run on a resolvable host: an undelivered one is
+            # not a reconcile candidate and a host-less one is UNSCOPED_MATCH.
+            from models import Agent
+
+            db.add(Agent(agent_id="agent-1", hostname="lab-host", os="linux"))
             db.add(Run(run_id=run_id, scenario_id="SIM-EDR-001", mode="pull",
-                       status=status, started_at=executed))
+                       target="agent-1", status=status, started_at=executed,
+                       delivered_at=executed))
             for i in range(results):
                 db.add(Result(
                     run_id=run_id, step_id=f"step-0{i + 1}", plane="EDR",

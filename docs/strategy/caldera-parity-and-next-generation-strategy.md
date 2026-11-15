@@ -167,7 +167,7 @@ EXE). Stockpile ships `donut.py` for shellcode generation and 25 static payloads
 |---|---|---|
 | **stockpile** | 209 abilities · 27 adversaries · 5 planners · 9 requirement modules · 23 parsers · 3 fact sources · 25 payloads | scenarios + TTP cards (different shape) |
 | **atomic** | Imports Red Canary Atomic Red Team (~1,500 tests) as abilities at runtime | submodule registered, **never imported as executable content** |
-| **emu** | Imports CTID Adversary Emulation Library plans (APT29, FIN6, menuPass, OilRig, Sandworm, Turla, Wizard Spider …) as adversaries | `sources/MITRE-Turla-Carbon` only |
+| **emu** | Imports CTID Adversary Emulation Library plans (APT29, FIN6, menuPass, OilRig, Sandworm, Turla, Wizard Spider …) as adversaries | none. `sources/MITRE-Turla-Carbon` was registered but never read, and was retired 2026-11-10 |
 | **response** | 42 blue-team abilities across `detection`/`hunt`/`elastic_hunting`/`response` — executors that **query Elasticsearch** and parse results back into facts | none (our connector layer is the nearest cousin) |
 | **sandcat** | Go agent, multi-contact, P2P, extensions (gocat) | `agent/` — Go, HTTP-only, poll-only |
 | **manx** | Reverse shell / TTY sessions | none |
@@ -304,7 +304,7 @@ author it) · **Reject** (deliberately out of scope, with reason).
 | Event bus / webhooks | SSE only | **Adopt** | P2 |
 | Stockpile 209 abilities | — | **Import** | P5 |
 | Atomic Red Team ~1,500 tests | submodule unused | **Import** | P5 |
-| CTID emulation plans (APT29, FIN6, …) | 1 (Turla) | **Import** | P5 |
+| CTID emulation plans (APT29, FIN6, …) | 0 (the unread Turla submodule was retired 2026-11-10) | **Import** | P5 |
 | `response` blue-team ability chains | connector layer | **Adapt** — becomes the closed loop | P4 |
 | `human` benign-noise generator | none | **Adapt** — becomes the **false-positive-rate harness** | P4 |
 | `gameboard` red-vs-blue scoring | none | **Adapt** — purple-team POV mode | P6 |

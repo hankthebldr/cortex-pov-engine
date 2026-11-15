@@ -1,0 +1,525 @@
+{
+  "id": "TTP-2026-0201",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T00:00:00+00:00",
+    "updated_at": "2026-11-11T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "supply-chain",
+      "vector-npm",
+      "vector-phantom-squatting",
+      "vector-slopsquatting",
+      "platform-linux",
+      "developer-endpoint",
+      "credential-theft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "npm Supply-Chain Compromise on a Linux Developer Endpoint — Preinstall-Hook Credential Theft via a Phantom-Squatted Package",
+    "summary": "A malicious npm package (reached via an AI-hallucinated / slopsquatted name) runs a preinstall lifecycle hook that spawns node, harvests developer credential files, base64-stages and archives them, and dead-drops the archive — all executed FOR REAL against a staged decoy developer $HOME on a bare Ubuntu endpoint.",
+    "description": "Built from Unit 42's 'The npm Threat Landscape' research (https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/), with the phantom-squatting / slopsquatting entry vector drawn from Unit 42's 'Phantom Squatting' work (https://unit42.paloaltonetworks.com/phantom-squatting-hallucinated-web-domains/). The npm research documents malicious packages whose package.json carries a lifecycle hook — \"scripts\":{\"preinstall\":\"node setup.mjs\"} (also seen \"preinstall\":\"bun run index.js\") — so that `npm install` detonates attacker code, which on Linux reads ~/.ssh/id_*, ~/.ssh/keys, .git/config, ~/.npmrc, .npmrc, .env, ~/.aws/credentials, ~/.claude/mcp.json, ~/.claude.json and ~/.kiro/settings/mcp.json, encodes and stages the loot, and exfiltrates it to a GitHub dead-drop (helloworm00/hello-world) and C2 (audit.checkmarx.cx / 94.154.172.43). Unlike a SAFE-MODE echo, CortexSim EXECUTES this chain for real: it stages a fake $HOME at /var/tmp/.koi010-victim populated with literal CORTEXSIM-DECOY credential files, builds a real decoy package carrying a preinstall hook, runs `npm install --ignore-scripts=false` so the hook really spawns `node setup.mjs`, runs a real `node harvest.mjs` that reads the decoy credential files, base64-stages and tars the result, and dead-drops it locally — every read and write guarded to the /var/tmp decoy tree, never the operator's real home. The phantom-squatting stage runs a real `npm install` of a never-registered, AI-hallucinated package name pointed at a non-resolving .invalid registry, producing process and failed-resolution telemetry with no egress. Detections anchor on the npm/node install causality chain (actor_causality_id and the npm/node image-name set), never on a username, because the Causality Group Owner is the node install process. Declared (scored) expectations are only what is reachable without deploying custom content or putting a sink in path: the built-in 'uncommon Linux shell command execution' analytic on the npm->node setup.mjs detonation, the behavioural credential-access verdict on the install-hook descendant's multi-credential read, validation XQL (reachable by construction) for the package create / slopsquat-install visibility / base64 stage / archive create, and correlation CR-KOI-0010 whose terminal term is the LOCAL archive create (so it closes on the endpoint). Hunting content, deliberately NOT declared as an expectation: the fleet-wide phantom-squat / slopsquat resolution hunt, the archive-egress XQL (points at the non-resolving cortexsim-koi010.invalid placeholder and needs a firewall/sink in path), and the precise path-keyed credential BIOCs. Documented but NOT exercised, because it is GCP control-plane and not endpoint-executable: Unit 42's 'Pickle in the Middle' Vertex AI model-upload hijack — cataloged here as the cloud-plane sibling of this endpoint supply-chain chain (covered by Cortex AI-SPM / Cortex Cloud, not the XDR agent), never declared as a firing expectation. IOC note: the setup.mjs / execution.js / bw_setup.js payload SHA256s are published in the report's IOC table; this card carries their filenames and the campaign's network/dead-drop indicators with source_url to the npm post, and a DC should paste the exact hashes from the live report when deploying hash IOCs.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "npm supply-chain credential-theft wave (Unit 42 npm threat landscape)"
+    ],
+    "malware_families": [
+      {
+        "name": "npm preinstall-hook credential stealer"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "subtechnique_id": "T1195.002",
+        "name": "Supply Chain Compromise: Compromise Software Supply Chain",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.007",
+        "name": "Command and Scripting Interpreter: JavaScript",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "subtechnique_id": "T1560.001",
+        "name": "Archive Collected Data: Archive via Utility",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-KOI-010 — npm supply-chain developer-endpoint credential theft, executed for real against a staged decoy $HOME (/var/tmp/.koi010-victim) via the npm preinstall lifecycle hook.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the Linux developer endpoint so per-process causality telemetry reaches xdr_data.",
+        "check_command": "pgrep -il cortex || pgrep -il traps || pgrep -il cyserver"
+      },
+      {
+        "description": "node and npm on PATH (the developer-endpoint premise); the preinstall hook runs `node setup.mjs`.",
+        "check_command": "command -v node && command -v npm"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-010-npm-supply-chain-dev-endpoint-credential-theft.yml is the only supported delivery path. It stages the decoy $HOME, decoy credential stores and the malicious package, then detonates the preinstall hook, harvests, stages, archives and dead-drops — every step guarded to /var/tmp/.koi010-victim. This snippet only sketches the preinstall-hook mechanism.\nset -eu\nexport HOME=/var/tmp/.koi010-victim\nPKG=\"$HOME/.cache/koi010-pkg\"\n# package.json carries: \"scripts\": { \"preinstall\": \"node setup.mjs\" }\ncd \"$PKG\" && npm install --ignore-scripts=false --no-audit --no-fund --no-package-lock\n# the hook spawns node, which reads the decoy ~/.ssh, ~/.npmrc, ~/.aws/credentials, ~/.claude/mcp.json ...\n",
+      "input_variables": [
+        {
+          "name": "VICTIM_HOME",
+          "type": "path",
+          "default": "/var/tmp/.koi010-victim",
+          "description": "Staged decoy $HOME; the chain never touches the operator's real home."
+        }
+      ],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "package.json declaring an npm preinstall lifecycle hook (node setup.mjs), created under the decoy package directory.",
+        "expected_value": "action_file_path contains \"/.cache/koi010-pkg/package.json\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "node spawned by the npm install lifecycle hook running setup.mjs.",
+        "expected_value": "actor_process_image_name = \"npm\" and action_process_image_name = \"node\" and action_process_image_command_line contains \"setup.mjs\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Decoy developer credential files read by the install-hook descendant.",
+        "expected_value": "action_file_path contains_any (\".ssh/id_rsa\", \".npmrc\", \".aws/credentials\", \".env\", \".claude/mcp.json\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "base64 encoding the harvested credential bundle under the npm/node install lineage.",
+        "expected_value": "action_process_image_name = \"base64\" and causality_actor_process_image_name in (\"npm\", \"node\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "tar archive of the staged credential bundle (exfil.tgz) under the decoy tree.",
+        "expected_value": "action_file_path contains \"/.koi010/exfil.tgz\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f '/var/tmp/.koi010-victim/' 2>/dev/null || true\nrm -rf /var/tmp/.koi010-victim\necho '[CortexSim] SIM-KOI-010 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "audit.checkmarx.cx",
+        "context": "C2 / data-collection endpoint reached by the install-script credential stealers in the Unit 42 npm threat landscape.",
+        "safe_form": "dns_lookup",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "94.154.172.43",
+        "context": "C2 IP associated with the npm credential-theft wave.",
+        "safe_form": "log_field",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://github.com/helloworm00/hello-world",
+        "context": "GitHub dead-drop repository used to receive harvested developer secrets.",
+        "safe_form": "log_field",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "setup.mjs",
+        "context": "npm preinstall lifecycle-hook entrypoint (\"scripts\":{\"preinstall\":\"node setup.mjs\"}). Its exact SHA256 is published in the report's IOC table; paste it when deploying a hash IOC.",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "execution.js",
+        "context": "Install-hook credential-stealer payload file named in the report. Exact SHA256 is in the report's IOC table.",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "bw_setup.js",
+        "context": "Bun-variant install-hook payload (\"preinstall\":\"bun run index.js\" family). Exact SHA256 is in the report's IOC table.",
+        "source_url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "published": "2026-07"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-010 Multi Credential File Read Under npm Node CGO",
+        "description": "Three or more distinct developer credential-named files (SSH private keys, .npmrc token, AWS credentials, .env, agent MCP config, .git/config) are read in one window by a process in the npm/node install causality chain. An install-hook descendant that reads this set is stealing, not building. Card-only deployable content: not declared as a scenario expectation, so a tenant without it deployed is never scored a MISS; the equivalent behavioural ABIOC is the declared, agent-raised twin.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter causality_actor_process_image_name in (\"npm\", \"node\")\n| filter action_file_path contains_any (\".ssh/id_rsa\", \".ssh/id_ed25519\", \".npmrc\", \".aws/credentials\", \".env\", \".claude/mcp.json\", \".claude.json\", \".kiro/settings/mcp.json\", \".git/config\", \".git-credentials\")\n| comp count_distinct(action_file_path) as secret_files_read, values(action_file_path) as paths by agent_hostname, actor_causality_id, causality_actor_process_instance_id, actor_process_image_name\n| filter secret_files_read >= 3\n| fields agent_hostname, actor_causality_id, causality_actor_process_instance_id, actor_process_image_name, paths, secret_files_read",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "KOI-010 Credential Archive Egress From npm Install Lineage",
+        "description": "A process in the npm/node install causality chain uploads bytes to the campaign's dead-drop / C2 hosts (or the lab's non-resolving placeholder). Card-only HUNT content: it needs a firewall/sink in path, so it is not declared as a scenario expectation and a sink-less run is never scored against it.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"curl\")\n| filter action_external_hostname in (\"cortexsim-koi010.invalid\", \"audit.checkmarx.cx\") or dst_action_external_hostname in (\"cortexsim-koi010.invalid\", \"audit.checkmarx.cx\")\n| filter action_total_upload > 0\n| comp sum(action_total_upload) as bytes_out by agent_hostname, actor_causality_id, action_external_hostname\n| filter bytes_out > 0\n| fields agent_hostname, actor_causality_id, action_external_hostname, bytes_out",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "KOI-010 Malicious npm Package With Preinstall Lifecycle Hook Created On Developer Endpoint",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path contains \"/.cache/koi010-pkg/\" and action_file_name in (\"package.json\", \"setup.mjs\", \"harvest.mjs\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-010 Phantom Squatting Hallucinated Package Install Attempt",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"npm\" or action_process_image_name in (\"npm\", \"node\")\n| filter action_process_image_command_line contains \"install\" and action_process_image_command_line contains_any (\"langchain-copilot-sdk-pro\", \"registry.cortexsim-koi010.invalid\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-010 Credentials Read And base64 Staged Under npm Install Lineage",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"node\")\n| filter action_process_image_name = \"base64\"\n| filter action_process_image_command_line contains_any (\"harvest.json\", \".koi010\")\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_instance_id, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-010 Credential Archive Created Under npm Install Lineage",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter (event_type = ENUM.PROCESS and action_process_image_name = \"tar\" and action_process_image_command_line contains \"exfil.tgz\") or (event_type = ENUM.FILE and action_file_name = \"exfil.tgz\")\n| filter causality_actor_process_image_name in (\"npm\", \"node\") or actor_process_image_name in (\"node\", \"tar\", \"sh\", \"dash\")\n| fields _time, agent_hostname, actor_causality_id, action_process_image_command_line, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-010 Phantom Squatting Slopsquat Package Resolution Hunt Across Developer Fleet",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 86400\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"npm\", \"pnpm\", \"yarn\") and action_process_image_command_line contains \"install\"\n| comp count() as installs, values(action_process_image_command_line) as install_cmdlines by agent_hostname, actor_causality_id\n| fields agent_hostname, actor_causality_id, installs, install_cmdlines",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-010 npm Preinstall Hook Executes setup.mjs Payload",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"npm\" and action_process_image_name = \"node\"\n| filter action_process_image_command_line contains_any (\"setup.mjs\", \"preinstall\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-010 Credential Archive Egress From npm Install Lineage To Non Registry Host",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"curl\")\n| filter dst_action_external_hostname in (\"cortexsim-koi010.invalid\", \"audit.checkmarx.cx\") or action_external_hostname in (\"cortexsim-koi010.invalid\", \"audit.checkmarx.cx\")\n| filter action_total_upload > 0\n| fields _time, agent_hostname, actor_causality_id, dst_action_external_hostname, action_remote_ip, action_external_port, action_total_upload",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "KOI-010 Uncommon Shell Command Execution Under npm Install Hook Lineage",
+        "description": "Behavioral-ML deviation (the built-in 'uncommon Linux shell command execution' analytic, scoped to causality): the npm/node install process spawns a child exec that is anomalous for the npm/node install causality on this host — node running an install-time script (setup.mjs) out of the preinstall hook. Package installs rarely spawn arbitrary interpreters; a first-seen package doing it at install time is the lifecycle-hook detonation shape.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"npm-cli.js\") or actor_process_image_name in (\"npm\", \"node\")\n| filter action_process_image_command_line contains_any (\"setup.mjs\", \"preinstall\", \"postinstall\", \"bun run index.js\")\n| comp count() as uncommon_execs, values(action_process_image_command_line) as child_cmdlines by agent_hostname, actor_causality_id, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter uncommon_execs >= 1\n| fields agent_hostname, actor_causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, child_cmdlines, uncommon_execs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.007",
+          "T1195.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The npm/node install process (Causality Group Owner) and its causality_actor_process_instance_id; the deviation is an uncommon install-time exec (node setup.mjs from the preinstall hook) against the baseline of package installs that spawn no interpreters."
+      },
+      {
+        "name": "KOI-010 npm Install Hook Descendant Reads Multiple Developer Credential Files",
+        "description": "Behavioral credential-access verdict: a descendant of the npm/node install lineage reads three or more distinct developer credential-named files (SSH keys, .npmrc token, AWS credentials, .env, agent MCP config, .git/config) in one window. An install hook that reads this set is harvesting, not resolving dependencies.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter causality_actor_process_image_name in (\"npm\", \"node\")\n| filter action_file_path contains_any (\".ssh/id_\", \".npmrc\", \".aws/credentials\", \".env\", \".claude/mcp.json\", \".claude.json\", \".kiro/settings/mcp.json\", \".git/config\", \".git-credentials\")\n| comp count_distinct(action_file_path) as secret_files_read, values(action_file_path) as paths by agent_hostname, actor_causality_id, causality_actor_process_instance_id\n| filter secret_files_read >= 3\n| fields agent_hostname, actor_causality_id, causality_actor_process_instance_id, paths, secret_files_read",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The npm/node install process (Causality Group Owner); the deviation is an install-hook descendant reading a multi-credential set in one window against the baseline of installs that read only package metadata."
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "npm Supply-Chain Credential Theft — Preinstall-Hook Detonation, Credential Harvest, Obfuscated Stage and Archive",
+        "rule_id": "CR-KOI-0010",
+        "logic": "ABIOC(KOI-010 Uncommon Shell Command Execution Under npm Install Hook Lineage) FOLLOWED_BY ABIOC(KOI-010 npm Install Hook Descendant Reads Multiple Developer Credential Files) FOLLOWED_BY XQL(KOI-010 Credentials Read And base64 Staged Under npm Install Lineage) FOLLOWED_BY XQL(KOI-010 Credential Archive Created Under npm Install Lineage) — all stitched by shared agent_hostname and actor_causality_id (CGO = the npm/node install process) so the lifecycle-hook detonation, multi-credential read, obfuscated staging and local archive collapse into ONE npm-supply-chain incident. The chain closes on the endpoint: its terminal term is the local archive create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud Code — npm manifest scanner (package.json declaring a preinstall/postinstall lifecycle hook that runs node/bun on install, from an unknown / typosquatted / AI-hallucinated package name).",
+      "Described, not exercised (GCP control-plane, NOT endpoint-executable): Unit 42 'Pickle in the Middle' Vertex AI model-upload hijack — a malicious pickle injected into a model artifact uploaded to Google Vertex AI. CortexSim does not reproduce it; it is cataloged here as the cloud-plane sibling of this endpoint supply-chain chain, covered by Cortex AI-SPM / Cortex Cloud rather than the XDR agent, and is never declared as a firing expectation."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-ABIOC-KOI-0201-UNCOMMON-EXEC",
+          "XDR-ABIOC-KOI-0201-CREDREAD"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name in (\"npm\", \"node\") and (action_process_image_name in (\"node\", \"base64\", \"tar\") or action_file_path contains_any (\".ssh/id_\", \".npmrc\", \".aws/credentials\")) | fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_file_path"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-KOI-0010"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-KOI-0010 fuses the uncommon-exec ABIOC, the credential-read ABIOC and the base64-stage / archive validation into one npm-supply-chain incident on shared actor_causality_id; its terminal term is the local archive create, so it closes on the endpoint."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "code-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "CCS-NPM-PREINSTALL-HOOK-UNKNOWN-PUBLISHER-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Cortex Cloud Code finding: an npm package.json from an unknown / hallucinated package declares a preinstall lifecycle hook that runs node/bun on install."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "AISPM-VERTEX-MODEL-UPLOAD-PICKLE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Documented, NOT exercised here: the 'Pickle in the Middle' Vertex AI model-upload hijack is a GCP control-plane risk surfaced by Cortex AI-SPM / Cortex Cloud, not by the XDR endpoint agent, and is not a firing expectation of this scenario."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-KOI-010",
+        "name": "npm Supply-Chain Compromise on a Developer Endpoint — Phantom-Squat to Credential Theft",
+        "description": "Detect a malicious npm package end to end on a Linux developer endpoint: a hallucinated / slopsquatted install, a preinstall lifecycle hook that detonates node, a multi-credential harvest, an obfuscated local stage and archive, stitched into one causality-aware incident, with a dead-drop egress leg available for hunting when a firewall is in path.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-KOI-010A",
+            "objective": "The slopsquat install attempt is visible and the preinstall-hook detonation fires under the npm/node install causality chain.",
+            "preconditions": [
+              "Linux developer endpoint with the Cortex agent and node/npm installed."
+            ],
+            "steps": [
+              "Stage the decoy developer workspace, credential stores and the malicious package.",
+              "Run the phantom-squat `npm install` of the AI-hallucinated package name against a non-resolving registry.",
+              "Run `npm install` on the malicious package so the preinstall hook detonates node setup.mjs."
+            ],
+            "success_criteria": [
+              "XQL `KOI-010 Phantom Squatting Hallucinated Package Install Attempt` returns the slopsquat install process.",
+              "ABIOC `KOI-010 Uncommon Shell Command Execution Under npm Install Hook Lineage` fires on the preinstall-hook detonation.",
+              "XQL `KOI-010 Malicious npm Package With Preinstall Lifecycle Hook Created On Developer Endpoint` returns the package.json/setup.mjs create."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-KOI-010B",
+            "objective": "The credential harvest, obfuscated stage and archive fire and correlate into one incident on the endpoint.",
+            "preconditions": [
+              "TS-KOI-010A executed within the correlation window."
+            ],
+            "steps": [
+              "Run `node harvest.mjs` to read the decoy credential files.",
+              "base64-stage and tar the harvested bundle.",
+              "Dead-drop the archive locally and emit a hunt-only egress beacon at the non-resolving placeholder."
+            ],
+            "success_criteria": [
+              "ABIOC `KOI-010 npm Install Hook Descendant Reads Multiple Developer Credential Files` fires.",
+              "XQL `KOI-010 Credentials Read And base64 Staged Under npm Install Lineage` returns the base64 stage.",
+              "XQL `KOI-010 Credential Archive Created Under npm Install Lineage` returns the exfil.tgz create.",
+              "Correlation `CR-KOI-0010` raises exactly one npm-supply-chain incident. Its terminal term is the local archive create, so it fires on the endpoint alone: no sink and no firewall in path are required.",
+              "Not a criterion: the fleet-wide phantom-squat hunt and the archive-egress query carry `purpose: hunt`. The scenario declares neither as an expectation, so a sink-less run seeds nothing for them and scores neither a pass nor a fail against them."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Install dependencies with lifecycle scripts disabled by default (npm config set ignore-scripts true; opt in per-trusted-package) so a preinstall/postinstall hook cannot detonate on `npm install`.",
+      "Gate developer package installs through an internal registry proxy that blocks unknown / newly-published / typosquatted / AI-hallucinated names, and alert on any install of a package first seen in the fleet.",
+      "Keep long-lived credentials out of developer home directories: use short-lived tokens, a credential helper and hardware-backed SSH keys so an install-hook file read yields nothing reusable.",
+      "Pin and vet AI coding-assistant package suggestions against the registry before install, to close the slopsquatting / phantom-squatting vector where a hallucinated name is pre-registered by an attacker."
+    ],
+    "detection_engineering": [
+      "Anchor on actor_causality_id and the npm/node image-name set, never on a username: the npm/node install process is the Causality Group Owner and every later stage is its descendant.",
+      "Treat an install lineage that spawns node/base64/tar or reads SSH keys, .npmrc, cloud credentials or agent MCP config as the signal; none is part of a normal dependency install.",
+      "Require three or more distinct credential-named files read in one window by the install chain before alerting on credential theft, to keep a single settings read quiet.",
+      "Keep time windows as timestamp_diff(current_time(), _time, \"SECOND\") < N and join on actor_causality_id so the stage/archive/egress legs stitch to the same install process.",
+      "Pair the endpoint chain with NGFW egress to a non-registry destination when a firewall is in path, and with Cortex Cloud Code / AI-SPM for the package-manifest and Vertex-AI model-upload surfaces this endpoint chain does not cover."
+    ]
+  },
+  "references": [
+    {
+      "title": "The npm Threat Landscape — Monitoring npm Supply-Chain Attacks",
+      "url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+      "publisher": "Unit 42, Palo Alto Networks",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Phantom Squatting — Attacker Abuse of LLM-Hallucinated Names",
+      "url": "https://unit42.paloaltonetworks.com/phantom-squatting-hallucinated-web-domains/",
+      "publisher": "Unit 42, Palo Alto Networks",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK — T1195.002 Compromise Software Supply Chain",
+      "url": "https://attack.mitre.org/techniques/T1195/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1552.001 Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Pickle in the Middle — Hijacking Vertex AI Model Uploads for Cross-Tenant Attacks",
+      "url": "https://unit42.paloaltonetworks.com/hijacking-vertex-ai-model/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    }
+  ]
+}

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1552.001",
     "T1027",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(AISPM-004 Hardcoded Credentials In ML Pipeline Finding) OR XQL(AISPM-004 Insecure Model Serialization Pickle Finding) OR XQL(AISPM-004 Unvalidated Model Inputs Finding)",
       "name": "AI Static Risk \u2014 Hardcoded Creds Plus Insecure Pickle Plus Unvalidated Input",
-      "rule_id": "CR-AISPM-0004",
-      "severity": "high"
+      "rule_id": "CR-AISPM-0004"
     }
   ],
   "ttp_ref": "TTP-2026-0057"

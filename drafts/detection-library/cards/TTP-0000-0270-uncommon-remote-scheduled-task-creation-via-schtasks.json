@@ -1,0 +1,192 @@
+{
+  "id": "TTP-0000-0270",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Remote Scheduled Task Creation via Schtasks",
+    "summary": "An attacker creates a remote scheduled task using schtasks.exe to establish persistence on a target system. Cortex should detect this behavior as an uncommon remote scheduled task creation. The attack",
+    "description": "An attacker creates a remote scheduled task using schtasks.exe to establish persistence on a target system. Cortex should detect this behavior as an uncommon remote scheduled task creation. The attack involves creating a task on a remote host using schtasks with a command that downloads and executes a payload from a test-net C2 server."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "schtasks /create /s 192.0.2.10 /u domain\\user /p password /tn \"UpdateTask\" /tr \"powershell.exe -EncodedCommand JABwAHMAcgBpAHQAZQB0AHQAcgBpAHQAZQBzACgAJAB0AHIAZQBzAHQAdABlAHMAdAApAA==\" /sc daily /mo 1\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Remote scheduled task creation via schtasks",
+        "expected_value": "action_process_image_name = 'schtasks.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to test-net C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Remote Scheduled Task Creation",
+        "description": "Detection of scheduled task creation on remote host using schtasks.exe with unusual parameters",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'schtasks.exe'\n| filter action_file_path contains 'schtasks'\n| filter causality_actor_process_image_name != 'services.exe'\n| filter dst_ip = '192.0.2.10'",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Remote Scheduled Task Creation with Encoded Command",
+        "description": "Behavioral deviation indicating creation of a scheduled task with encoded command on remote system",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'schtasks.exe'\n| filter action_file_path contains 'schtasks'\n| filter causality_actor_process_image_name != 'services.exe'\n| filter dst_ip = '192.0.2.10'\n| filter action_file_path contains '-EncodedCommand'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "schtasks.exe process execution",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001",
+          "T1566.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Scheduled Task Creation on Remote Host",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'schtasks.exe'\n| filter dst_ip = '192.0.2.10'\n| filter action_file_path contains '/s'\n| filter action_file_path contains '/tr'\n| filter action_file_path contains 'powershell.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon remote scheduled task creation; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-scheduled-task-creation"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon remote scheduled task creation",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-scheduled-task-creation",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1053.005",
+      "url": "https://attack.mitre.org/techniques/T1053/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

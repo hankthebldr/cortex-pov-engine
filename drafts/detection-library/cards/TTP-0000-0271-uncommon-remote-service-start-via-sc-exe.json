@@ -1,0 +1,191 @@
+{
+  "id": "TTP-0000-0271",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Remote Service Start via sc.exe",
+    "summary": "An attacker uses sc.exe to start a remote service on a Windows endpoint, which is detected by Cortex analytics as an uncommon remote service start. This behavior is typically used for lateral movement",
+    "description": "An attacker uses sc.exe to start a remote service on a Windows endpoint, which is detected by Cortex analytics as an uncommon remote service start. This behavior is typically used for lateral movement or persistence."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "sc \\\\192.0.2.10 create \"TestService\" binPath= \"C:\\\\temp\\\\malware.exe\"\nsc \\\\192.0.2.10 start \"TestService\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Remote service creation via sc.exe",
+        "expected_value": "action_process_image_name = 'sc.exe' and action_file_path = 'C:\\\\temp\\\\malware.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Remote service connection to target IP",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon Remote Service Start via sc.exe",
+        "description": "Detection of sc.exe being used to start a remote service on a non-standard endpoint",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'sc.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_file_path contains 'malware.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1021.002",
+          "T1566.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Uncommon Remote Service Start via sc.exe",
+        "description": "Behavioral ABIOC that flags remote service starts via sc.exe as anomalous behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'sc.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_file_path contains 'malware.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'sc.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1021.002",
+          "T1566.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Remote Service Start via sc.exe",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'sc.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter action_file_path contains 'malware.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon remote service start via sc.exe; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-service-start-via-sc-exe"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon remote service start via sc.exe",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-remote-service-start-via-sc-exe",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.002",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

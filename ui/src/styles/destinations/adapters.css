@@ -108,26 +108,18 @@
  * The banner's own logic already decides tone via its `--*` modifier
  * classes; the redesign only needs to route each modifier onto the new
  * tokens. `--pending` states (a gap the target has to reach the
- * internet for) get --orange — the one deliberate use of it here,
- * matching the design's own "orange is warn/gap" rule.
- *
- * Every `color:` use of orange in this file (the actual warning TEXT
- * — payload-blocker copy like PAYLOAD_NOT_STAGED / compose-not-airgapped,
- * where a consultant reading it is the whole point) uses --orange-ink,
- * not --orange — --orange fails 4.5:1 text contrast against every
- * light surface (2.80-3.23:1 measured), --orange-ink clears it
- * (4.52-5.21:1). Fill/border uses of orange (this rule's own
- * `border-color:` included) stay on --orange, which already clears
- * the 3:1 non-text floor — see cortex-tokens.css's --orange-ink block
- * for the full measured table and rationale. */
+ * internet for) are a WARNING, so they take --warn: under design v26 §9.1
+ * yellow is the only warning colour and orange is no longer an accent.
+ * Light --warn (#7D5E11) clears 5.15:1 as text; dark (#FFCB06) clears 8:1+,
+ * so the same token serves the border and the warning text. */
 .theme-console .tools-destination .payload-banner {
   background: var(--s1);
-  border: 1px solid var(--orange);
+  border: 1px solid var(--warn);
   border-left-width: 3px;
   border-radius: 8px;
 }
 .theme-console .tools-destination .payload-banner__tag {
-  color: var(--orange-ink);
+  color: var(--warn);
   font-weight: 700;
 }
 .theme-console .tools-destination .payload-banner--readonly,
@@ -325,6 +317,10 @@
 .theme-console .tools-destination .adapter-card__supply:empty {
   display: none;
 }
+/* Add to chain (v26 §4.4): every package can join a chain. */
+.theme-console .tools-destination .adapter-card__supply { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .tools-destination .adapter-card__add { padding: 5px 10px; font-size: 11.5px; }
+.theme-console .adapter-detail__actions { display: inline-flex; align-items: center; gap: 8px; }
 .theme-console .tools-destination .adapter-card__egress {
   color: var(--tx3);
   line-height: 1.5;
@@ -388,8 +384,8 @@
   background: transparent;
 }
 .theme-console .tools-destination .chip--pending {
-  color: var(--orange-ink);
-  border-color: var(--orange);
+  color: var(--warn);
+  border-color: var(--warn);
   background: transparent;
 }
 .theme-console .tools-destination .chip--missed {
@@ -481,7 +477,7 @@
   color: var(--crit);
 }
 .theme-console .tools-destination .adapter-schema__type {
-  color: var(--orange-ink);
+  color: var(--tx2); /* a type label, not a warning */
 }
 .theme-console .tools-destination .adapter-schema__desc {
   color: var(--tx2);
@@ -514,7 +510,7 @@
   color: var(--ac-ink);
 }
 .theme-console .tools-destination .provenance__unpinned {
-  color: var(--orange-ink);
+  color: var(--warn);
 }
 .theme-console .tools-destination .provenance__muted {
   color: var(--tx3);
@@ -558,7 +554,7 @@
   color: var(--tx);
 }
 .theme-console .tools-destination .stage-dialog__warn {
-  color: var(--orange-ink);
+  color: var(--warn);
 }
 .theme-console .tools-destination .stage-dialog__ok {
   color: var(--ac-ink);
@@ -580,7 +576,7 @@
   color: var(--tx);
 }
 .theme-console .tools-destination .launch-blockers__item {
-  color: var(--orange-ink);
+  color: var(--warn);
 }
 .theme-console .tools-destination .launch-result__code {
   color: var(--tx3);
@@ -599,7 +595,7 @@
   border-color: var(--ac-line);
 }
 .theme-console .tools-destination .payload-compose__warn {
-  color: var(--orange-ink);
+  color: var(--warn);
 }
 .theme-console .tools-destination .payload-compose__ok {
   color: var(--ac-ink);

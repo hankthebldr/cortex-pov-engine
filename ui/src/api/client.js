@@ -39,11 +39,14 @@ function formatValidationDetail(detail) {
  * `err.detail` / `err.status` ride along so a caller that wants to explain the
  * failure precisely (the launch panel) can, without re-parsing prose.
  */
-function apiError(message, { code = null, detail = null, status = null } = {}) {
+function apiError(message, { code = null, detail = null, status = null, payload = null } = {}) {
   const err = new Error(message)
   err.code = code
   err.detail = detail
   err.status = status
+  // The whole structured body, so a field beside {error, code, detail} (for
+  // example run_ids on 409 AGENT_HAS_OPEN_RUNS) is not lost.
+  err.payload = payload
   return err
 }
 
@@ -61,6 +64,13 @@ function apiError(message, { code = null, detail = null, status = null } = {}) {
 export const REQUEST_TIMEOUT_MS = 20_000
 /** Reports and bundles are generated on demand and legitimately take longer. */
 export const DOWNLOAD_TIMEOUT_MS = 60_000
+/**
+ * POST /api/tools/{tool}/install holds the request open while it builds, and
+ * SimCore caps that build at 600 s (core/tools/instantiator.py). The default
+ * 20 s budget abandoned every real install; the next request then met
+ * 409 INSTALL_IN_PROGRESS because the first was still running.
+ */
+export const INSTALL_TIMEOUT_MS = 630_000
 
 /**
  * Attach an abort signal unless the caller brought their own.
@@ -128,6 +138,7 @@ export async function request(path, options = {}) {
     let errorMessage = fallback
     let code = null
     let detail = null
+    let payload = null
     try {
       const errorBody = await response.json()
       // FastAPI returns errors as { detail: ... } where detail is one of:
@@ -153,21 +164,24 @@ export async function request(path, options = {}) {
         // reached the operator as "HTTP 422 — Unprocessable Entity", code null.
         code = errorBody.code || null
         detail = errorBody.detail
+        payload = errorBody
         errorMessage = errorBody.error || fallback
       } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
+        payload = d
         code = d.code || null
         detail = d.detail ?? null
         errorMessage = `${d.error || d.detail || fallback}${d.code ? ` [${d.code}]` : ''}`
       } else {
         code = errorBody.code || null
         detail = errorBody.detail ?? null
+        payload = errorBody
         errorMessage = errorBody.detail || errorBody.error || errorBody.message || fallback
       }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
-    throw apiError(errorMessage, { code, detail, status: response.status })
+    throw apiError(errorMessage, { code, detail, status: response.status, payload })
   }
 
   // For blob responses (downloads), return raw Response
@@ -194,6 +208,42 @@ export async function getHealth() {
   return request('/api/health')
 }
 
+// ─── Ingestion doors (read-only, zero outbound calls) ────────────────────────
+
+function doorsShapeError(path, why) {
+  return apiError(`${path} returned an unrecognised shape: ${why}`, { code: 'DOORS_SHAPE_UNRECOGNISED', detail: { path } })
+}
+
+/** GET /api/doors → {doors[], registry_loaded, tenant_verified, outbound_calls} */
+export async function getDoors() {
+  const data = await request('/api/doors')
+  if (!data || !Array.isArray(data.doors)) throw doorsShapeError('/api/doors', 'doors is not a list')
+  return data
+}
+
+/**
+ * GET /api/doors/readiness[?agent_id=] → {scenarios: {scenario_id: readiness}, ...}
+ * An unrecognised envelope raises: an empty map would read as "nothing to check".
+ */
+export async function getDoorReadiness(agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/doors/readiness${qs}`)
+  if (!data || typeof data.scenarios !== 'object' || data.scenarios === null || Array.isArray(data.scenarios)) {
+    throw doorsShapeError('/api/doors/readiness', 'scenarios is not an object')
+  }
+  return data
+}
+
+/** GET /api/scenarios/{id}/doors[?agent_id=] → {readiness, detections[], ...} */
+export async function getScenarioDoors(scenarioId, agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/scenarios/${encodeURIComponent(scenarioId)}/doors${qs}`)
+  if (!data || typeof data.readiness !== 'object' || data.readiness === null) {
+    throw doorsShapeError(`/api/scenarios/${scenarioId}/doors`, 'readiness is missing')
+  }
+  return data
+}
+
 // ─── Scenarios ───────────────────────────────────────────────────────────────
 
 /**
@@ -212,6 +262,22 @@ export async function getScenarios(params = {}) {
   const data = await request(`/api/scenarios${query}`)
   // List endpoints wrap as {scenarios: [...], total: N}; components expect bare arrays.
   return Array.isArray(data) ? data : data?.scenarios ?? []
+}
+
+/**
+ * GET /api/scenarios/staged — the extended library: the staged draft pairs under
+ * drafts/detection-library/. Not loaded as scenarios, not launchable, not
+ * counted as coverage. `loaded: false` (with `code`) means the directory is not
+ * on this SimCore; it is not an empty library. An unrecognised envelope raises.
+ * @returns {Promise<{loaded: boolean, code: string|null, detail: string|null, scenarios: Array, total: number}>}
+ */
+export async function getStagedScenarios() {
+  const data = await request('/api/scenarios/staged')
+  if (!data || typeof data.loaded !== 'boolean' || !Array.isArray(data.scenarios)) {
+    throw apiError('/api/scenarios/staged returned an unrecognised shape: expected {loaded, scenarios[]}',
+      { code: 'STAGED_SHAPE_UNRECOGNISED', detail: { path: '/api/scenarios/staged' } })
+  }
+  return data
 }
 
 /**
@@ -250,18 +316,66 @@ export async function getScenarioInfraHints(scenarioId) {
   return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
 }
 
+/** Extension a bundle is saved under when the server names no file. */
+const BUNDLE_EXT = { bash: 'sh', powershell: 'ps1', k8s: 'yml' }
+
 /**
- * GET /api/scenarios/:id/download?format=bash|k8s
- * Returns a Blob for file download.
- * @param {string|number} id
- * @param {'bash'|'k8s'} format
- * @returns {Promise<Blob>}
+ * The filename from a Content-Disposition header, or null.
+ *
+ * Only the basename survives: a header is server-controlled text and the value
+ * becomes an `<a download>` name, so a path separator in it is dropped rather
+ * than trusted.
  */
-export async function downloadScenario(id, format = 'bash') {
-  const response = await request(`/api/scenarios/${id}/download?format=${format}`, {
-    _returnBlob: true,
-  })
-  return response.blob()
+export function filenameFromDisposition(header) {
+  if (!header || typeof header !== 'string') return null
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)
+  const plain = /filename\s*=\s*"([^"]*)"|filename\s*=\s*([^;\s]+)/.exec(header)
+  let name = null
+  if (star) {
+    try { name = decodeURIComponent(star[1].trim()) } catch { name = null }
+  }
+  if (!name && plain) name = (plain[1] ?? plain[2] ?? '').trim()
+  if (!name) return null
+  name = name.split(/[\\/]/).pop()
+  return name || null
+}
+
+/**
+ * GET /api/scenarios/:id/download?format=auto|bash|powershell|k8s
+ *
+ * `auto` (the default, and the server's own default) lets SimCore pick the
+ * target the scenario's command TEXT can satisfy: POSIX first, PowerShell for
+ * windows-only content. A bundle the content cannot satisfy is refused with 409
+ * BUNDLE_TARGET_UNSATISFIABLE naming the offending steps; the thrown error
+ * carries `.code` and `.detail` (`target=… unresolved=[step-01 (…)] — hint`).
+ *
+ * @param {string|number} id
+ * @param {'auto'|'bash'|'powershell'|'k8s'} [format='auto']
+ * @returns {Promise<{blob: Blob, filename: string, format: string,
+ *   target: ('posix'|'windows'|null), alternates: string[]}>}
+ *   `target` is the X-CortexSim-Bundle-Target header — the target SimCore
+ *   actually emitted for, which under `auto` is the only way to know whether
+ *   the file is a .sh or a .ps1. `filename` is the server's Content-Disposition
+ *   name when it sends one, else `cortexsim-<id>.<sh|ps1|yml>` by format.
+ */
+export async function downloadScenario(id, format = 'auto') {
+  const fmt = format || 'auto'
+  const response = await request(
+    `/api/scenarios/${encodeURIComponent(id)}/download?format=${encodeURIComponent(fmt)}`,
+    { _returnBlob: true },
+  )
+  const headers = response.headers
+  const target = headers?.get?.('X-CortexSim-Bundle-Target') || null
+  const alternates = (headers?.get?.('X-CortexSim-Bundle-Alternates') || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  const resolved = fmt === 'auto'
+    ? (target === 'windows' ? 'powershell' : target === 'posix' ? 'bash' : 'auto')
+    : fmt
+  const ext = BUNDLE_EXT[resolved] || 'txt'
+  const fallback = resolved === 'k8s' ? `cortexsim-${id}-k8s.${ext}` : `cortexsim-${id}.${ext}`
+  const filename = filenameFromDisposition(headers?.get?.('Content-Disposition')) || fallback
+  const blob = await response.blob()
+  return { blob, filename, format: resolved, target, alternates }
 }
 
 // ─── Composer drafts ──────────────────────────────────────────────────────────
@@ -396,13 +510,42 @@ export async function postRun(body) {
   })
 }
 
+/** Page size for GET /api/runs (SimCore's LIST_RUNS_MAX_LIMIT). */
+export const RUNS_PAGE_LIMIT = 5000
+
 /**
- * GET /api/runs
+ * GET /api/runs[?fields=summary], every page.
+ *
+ * `fields: 'summary'` asks for the list projection without each run's full
+ * `output` (rows carry `output_bytes` + `output_tail` instead). An older
+ * SimCore ignores the parameter and returns the full shape, which callers
+ * still handle. Anything that needs a run's whole transcript reads
+ * `getRun(id)` — never the list.
+ *
+ * SimCore pages the list (default 500 rows) and reports `total`. Reading only
+ * the first page silently dropped a deployment's oldest runs once it passed
+ * 500, so this follows `total` until every run is read. A body that is neither
+ * the legacy bare array nor `{runs: [...]}` is an unrecognised shape and
+ * throws, rather than reading as "no runs".
+ *
+ * @param {{fields?: 'summary'}} [opts]
  * @returns {Promise<Array>}
  */
-export async function getRuns() {
-  const data = await request('/api/runs')
-  return Array.isArray(data) ? data : data?.runs ?? []
+export async function getRuns({ fields } = {}) {
+  const all = []
+  for (let page = 0; page < 100; page += 1) {
+    const qs = new URLSearchParams({ limit: String(RUNS_PAGE_LIMIT), offset: String(all.length) })
+    if (fields) qs.set('fields', fields)
+    const data = await request(`/api/runs?${qs}`)
+    if (Array.isArray(data)) return data // a pre-paging SimCore: one unpaged list
+    if (!data || !Array.isArray(data.runs)) {
+      throw new Error('GET /api/runs returned an unrecognised shape (no runs array)')
+    }
+    all.push(...data.runs)
+    const total = Number.isInteger(data.total) ? data.total : null
+    if (total === null || data.runs.length === 0 || all.length >= total) return all
+  }
+  return all
 }
 
 /**
@@ -412,6 +555,67 @@ export async function getRuns() {
  */
 export async function getRun(runId) {
   return request(`/api/runs/${runId}`)
+}
+
+/**
+ * POST /api/runs/:id/reconcile?connector=xsiam — read this run back from the
+ * tenant: pull the alerts in its window, match them to what it expected, and
+ * score it (the console's "Read back"). Read-only toward Cortex; it writes only
+ * SimCore's own Result rows. With no tenant credential SimCore answers 400
+ * NO_INTEGRATION and nothing is read — the thrown Error carries `.code`.
+ *
+ * @param {string} runId
+ * @param {{connector?: string, integration?: string|null}} [opts]
+ * @returns {Promise<Object>} the reconcile summary (observed, denominator, queries_issued, …)
+ */
+export async function reconcileRun(runId, { connector = 'xsiam', integration = null } = {}) {
+  const qs = new URLSearchParams({ connector })
+  if (integration) qs.set('integration', integration)
+  return request(`/api/runs/${encodeURIComponent(runId)}/reconcile?${qs}`, { method: 'POST' })
+}
+
+/**
+ * GET /api/runs/:id/tenant-evidence — the latest STORED tenant-evidence
+ * snapshot for a run. SimCore makes no outbound call for this.
+ *
+ * @param {string} runId
+ * @returns {Promise<{run_id:string, status:string, code:string, snapshot:Object|null,
+ *   history:Array<{id:number, read_at:string, code:string}>, case_ledger:Object|null}>}
+ *   Never read: `snapshot: null`, `code: 'TENANT_EVIDENCE_NOT_READ'`.
+ */
+export async function getTenantEvidence(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/tenant-evidence`)
+}
+
+/**
+ * The tenant-evidence read holds the request open while SimCore reads the
+ * tenant (issue pages, the id probe, cases, the endpoint record), so it gets
+ * longer than the 20 s default. A request that gives up here still finishes on
+ * SimCore, and the next one is answered from that read.
+ */
+const TENANT_EVIDENCE_READ_TIMEOUT_MS = 60_000
+
+/**
+ * POST /api/runs/:id/tenant-evidence — read the run's issues, cases and
+ * endpoint record from the tenant ONCE (an explicit operator action; read-only,
+ * metered) and store the snapshot. Display only: it never changes a score.
+ *
+ * Always 200 with `{run_id, read, status, code, detail, retry_after_seconds,
+ * snapshot, issues}`. `read: false` with `NO_TENANT_CONFIGURED`,
+ * `NO_RUN_WINDOW` or `TENANT_EVIDENCE_READ_RECENTLY` means no new read was made.
+ *
+ * @param {string} runId
+ * @param {{force?: boolean, integration?: string|null}} [opts]
+ */
+export async function readTenantEvidence(runId, { force = false, integration = null } = {}) {
+  const qs = new URLSearchParams()
+  if (force) qs.set('force', 'true')
+  if (integration) qs.set('integration', integration)
+  const query = qs.toString()
+  return request(
+    `/api/runs/${encodeURIComponent(runId)}/tenant-evidence${query ? `?${query}` : ''}`,
+    { method: 'POST', _timeoutMs: TENANT_EVIDENCE_READ_TIMEOUT_MS },
+  )
 }
 
 /**
@@ -526,7 +730,8 @@ export async function getTools() {
  * @returns {Promise<Object>}
  */
 export async function installTool(toolName) {
-  return request(`/api/tools/${toolName}/install`, { method: 'POST' })
+  // The request stays open for the whole build, so it gets a build's budget.
+  return request(`/api/tools/${toolName}/install`, { method: 'POST', _timeoutMs: INSTALL_TIMEOUT_MS })
 }
 
 /**
@@ -746,20 +951,98 @@ export async function deleteAgent(agentId) {
 }
 
 /**
+ * POST /api/runs/:runId/abort — end a run the operator chose to stop.
+ * @param {string} runId
+ */
+export async function abortRun(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: 'POST' })
+}
+
+/**
  * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
- * Server URL is auto-derived server-side from the request.
+ *
+ * The script has the address the beacon calls back to written into it. Without
+ * `server`, SimCore takes that address from the request's Host header — right
+ * when the TARGET fetches the URL (`curl <address>/api/agents/install | bash`),
+ * and wrong when a BROWSER fetches it from wherever the console happens to be
+ * open (an SSH tunnel at localhost:8888 bakes localhost). A link the browser
+ * downloads must pass `server`: the address the target can reach. SimCore
+ * validates it and answers 400 BAD_SERVER for one it will not bake.
  *
  * Pass `token` to get the ENROLLMENT installer (SimCore assigns the agent id);
  * pass `id` for the legacy self-asserted path. Prefer the token: an operator
  * who invents ids produces duplicates and typos, and the token is revocable.
  *
- * @param {{os?:string, id?:string, interval?:number, token?:string}} opts
+ * @param {{os?:string, id?:string, interval?:number, token?:string, server?:string}} opts
  */
-export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null } = {}) {
+export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null, server = null } = {}) {
   const q = new URLSearchParams({ os, interval: String(interval) })
   if (token) q.set('token', token)
   if (id) q.set('id', id)
+  if (server) q.set('server', server)
   return `/api/agents/install?${q.toString()}`
+}
+
+/**
+ * URL of the prebuilt beacon SimCore serves for a target
+ * (GET /api/agents/binary). A link, so the browser saves the file.
+ * @param {{os?:string, arch?:string}} opts
+ */
+export function agentBinaryUrl({ os = 'linux', arch = 'amd64' } = {}) {
+  return `/api/agents/binary?${new URLSearchParams({ os, arch }).toString()}`
+}
+
+/**
+ * GET /api/agents/binary/sha256 — the digest of the beacon SimCore serves.
+ *
+ * Returns the 64 lower-case hex characters, or throws. The route answers
+ * text/plain; a body that is not a SHA-256 (a captive portal page, an empty
+ * answer) is an error with code DIGEST_UNRECOGNISED — a hash check built on a
+ * guessed digest is worse than none.
+ *
+ * @param {{os?:string, arch?:string}} opts
+ * @returns {Promise<string>}
+ */
+export async function getAgentBinarySha256({ os = 'linux', arch = 'amd64' } = {}) {
+  const path = `/api/agents/binary/sha256?${new URLSearchParams({ os, arch }).toString()}`
+  const response = await request(path, {
+    _returnBlob: true,
+    _timeoutMs: REQUEST_TIMEOUT_MS,
+    headers: { Accept: 'text/plain' },
+  })
+  const digest = String(await response.text()).trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw apiError('SimCore answered the digest request with something that is not a SHA-256', {
+      code: 'DIGEST_UNRECOGNISED', detail: { path, length: digest.length }, status: response.status,
+    })
+  }
+  return digest
+}
+
+/**
+ * Relative URL of GET /api/agents/manifest — the Kubernetes manifest that puts
+ * an enrolled beacon into a pod. Parameters equal to their server default are
+ * omitted; a consent key is added only when it is exactly `true`. Never carries
+ * a token (the token lives in the cluster Secret, not in this URL).
+ *
+ * @param {{profile?:string, image?:string, arch?:string, prepare?:string,
+ *          ttlSeconds?:number, consent?:Object<string,boolean>, authorizedBy?:string}} opts
+ */
+export function agentManifestUrl({
+  profile = 'baseline', image, arch, prepare, ttlSeconds, consent = {}, authorizedBy,
+} = {}) {
+  const q = new URLSearchParams()
+  if (profile && profile !== 'baseline') q.set('profile', profile)
+  if (image && image !== 'debian:12-slim') q.set('image', image)
+  if (arch && arch !== 'amd64') q.set('arch', arch)
+  if (prepare && prepare !== 'packages') q.set('prepare', prepare)
+  if (ttlSeconds != null && Number(ttlSeconds) !== 43200) q.set('ttl_seconds', String(ttlSeconds))
+  for (const key of ['cluster_privilege_authorized', 'node_access_authorized']) {
+    if (consent && consent[key] === true) q.set(key, 'true')
+  }
+  if (authorizedBy) q.set('authorized_by', authorizedBy)
+  const qs = q.toString()
+  return `/api/agents/manifest${qs ? `?${qs}` : ''}`
 }
 
 // ─── Agent enrollment tokens ─────────────────────────────────────────────────
@@ -836,6 +1119,39 @@ export async function getTtps(filters = {}) {
  */
 export async function getTtp(ttpId) {
   return request(`/api/ttps/${encodeURIComponent(ttpId)}`)
+}
+
+/**
+ * GET /api/scenarios/:id/tenant-content
+ *
+ * What a scenario (or a saved draft) needs to exist in the TENANT: correlation
+ * rules with their content status and binding, the BIOCs / IOCs to deploy, the
+ * queries to run. READ-ONLY and derived from the TTP cards — it never contacts
+ * a tenant. `catalog_loaded: false` must render as degraded, never as "nothing
+ * needed"; `tenant_verified` is 0 and `write_path` is false, always.
+ *
+ * @param {string} scenarioId
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function getScenarioTenantContent(scenarioId) {
+  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/tenant-content`)
+}
+
+/**
+ * POST /api/scenarios/drafts/tenant-content
+ *
+ * The same manifest for an UNSAVED draft: the body the save route takes
+ * (`draftToApi`). Persists nothing, so an export can match the canvas before
+ * the chain is saved. Throws apiError on 422 {code:'DRAFT_SCHEMA_INVALID'}.
+ *
+ * @param {Object} body  DraftCreateRequest
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function postDraftTenantContent(body) {
+  return request('/api/scenarios/drafts/tenant-content', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 /**
@@ -1320,6 +1636,15 @@ export async function getConnectors() {
 }
 
 /**
+ * GET /api/readiness — the connector ladder as the server states it, including
+ * each integration's stored `response_layer` (SOC Framework probe). Zero
+ * outbound calls server-side. Returns the RAW body.
+ */
+export async function getReadiness() {
+  return request('/api/readiness')
+}
+
+/**
  * POST /api/xsiam/tenants/:name/preflight — the staged, read-only connection
  * check (config → dns → tls → auth → scope → datasets → quota → clock).
  *
@@ -1378,4 +1703,118 @@ export async function getInstallAttempts() {
     if (err && err.status === 404) return null
     throw err
   }
+}
+
+// ── Collector targets (/api/collector-targets) ────────────────────────────────
+// The tenant-side ingestion doors this instance's emitters POST to. Keys are
+// write-only: no response carries one, so nothing here can display one.
+
+/** GET /api/collector-targets — list + collector_plugins[] + unbound_plugins[]. */
+export async function listCollectorTargets() {
+  return request('/api/collector-targets')
+}
+
+/**
+ * PUT /api/collector-targets/:name — create or replace.
+ * Omit `token` to keep the stored key; `clear_token: true` removes it.
+ */
+export async function putCollectorTarget(name, body) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /api/collector-targets/:name — the target and its key. */
+export async function deleteCollectorTarget(name) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /api/collector-targets/:name/preflight.
+ * `writeCanary: false` (the default) never writes to the tenant; `true` POSTs
+ * one discard-safe record and is the only way to prove the collector accepts.
+ */
+export async function preflightCollectorTarget(name, { writeCanary = false } = {}) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}/preflight`, {
+    method: 'POST',
+    body: JSON.stringify({ write_canary: Boolean(writeCanary) }),
+  })
+}
+
+// ─── NGFW (PAN-OS) connection ────────────────────────────────────────────────
+//
+// Read-only toward the firewall in every path. Registration rides the generic
+// integrations surface (kind `panos_ngfw`); keygen, per-agent source overrides
+// and the listing live under /api/ngfw; the staged check is the connector
+// preflight every other kind uses. Spec: 2026-11-10-ngfw-connection-wizard §4–§6.
+
+/**
+ * GET /api/ngfw — registered firewalls, metadata only (never the key).
+ * @returns {Promise<{firewalls: Array, write_enabled: false, tenant_verified: 0}>}
+ */
+export async function listFirewalls() {
+  return request('/api/ngfw')
+}
+
+/**
+ * PUT /api/credentials/integrations with `kind: 'panos_ngfw'` — register a
+ * firewall with a pasted API key. A re-PUT of a registered name keeps its
+ * per-agent overrides (`observed_sources` / `agent_addresses`) when the
+ * normalised host is unchanged, and clears them when the host changes; the
+ * response's `overrides_cleared` says which happened. Probes, zones and any
+ * setting this body does not send are kept either way. 409
+ * `INTEGRATION_KIND_CONFLICT` when the name belongs to another kind.
+ */
+export async function putFirewall({ name, host, verify_tls = true, vsys = 'vsys1', forwarding_path = 'auto', api_key }) {
+  return request('/api/credentials/integrations', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name,
+      kind: 'panos_ngfw',
+      plaintext_secret: api_key,
+      config: { host, verify_tls, vsys, forwarding_path },
+      description: `PAN-OS NGFW: ${name}`,
+    }),
+  })
+}
+
+/**
+ * POST /api/ngfw/keygen — exchange admin credentials for an API key and register
+ * the firewall. The password is sent once in this body and nowhere else.
+ * @param {{name, host, verify_tls, username, password, vsys?}} body
+ * @returns {Promise<Object>} integration metadata + `overrides_cleared` + `warnings[]`
+ */
+export async function firewallKeygen(body) {
+  return request('/api/ngfw/keygen', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * POST /api/connectors/panos_ngfw/preflight?integration=<name>[&agents=a,b]
+ * Staged, read-only check. Returns 200 with `overall: blocked` rather than an
+ * HTTP error when the firewall refuses, so the whole ladder is always shown.
+ */
+export async function firewallPreflight(name, agentIds = null) {
+  const qs = new URLSearchParams()
+  if (name) qs.set('integration', name)
+  if (Array.isArray(agentIds) && agentIds.length) qs.set('agents', agentIds.join(','))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/connectors/panos_ngfw/preflight${suffix}`, { method: 'POST', _timeoutMs: 120_000 })
+}
+
+/**
+ * PUT /api/ngfw/{name}/sources/{agent_id} — set or clear one agent's
+ * firewall-observed source and agent-side addresses. A key left out is
+ * unchanged; `null` / `[]` clears the override.
+ */
+export async function putFirewallSource(name, agentId, body) {
+  return request(
+    `/api/ngfw/${encodeURIComponent(name)}/sources/${encodeURIComponent(agentId)}`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+/** DELETE /api/credentials/integrations/{name} — remove a firewall and its key. */
+export async function deleteFirewall(name) {
+  return request(`/api/credentials/integrations/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }

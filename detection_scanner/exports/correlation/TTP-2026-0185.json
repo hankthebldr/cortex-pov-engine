@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1574.002",
     "T1543.003",
@@ -12,11 +14,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(MP-026 mscorsvc.dll Written Beside a Relocated mscorsvw.exe) AND BIOC(MP-026 Service msdnetsvc Created for a Relocated mscorsvw.exe) AND ABIOC(MP-026 Recurring Web Egress from the mscorsvw.exe Side-Load Causality) AND (IOC(file-sha256 igfx.exe) OR XQL(MP-026 HazyBeacon Toolkit sha256s Landed in panw_ngfw_threat_raw)) AND ABIOC(MP-026 Staged Archive Volumes Uploaded to Cloud-Storage API Paths) joined on agent_hostname = endpoint_device_name (src_host) within 3600 seconds -> ONE incident",
       "name": "CL-STA-1020 HazyBeacon Side-Load to Cloud-Storage Exfil \u2014 Endpoint + NGFW on src_host",
-      "rule_id": "CR-MP-0026",
-      "severity": "high"
+      "rule_id": "CR-MP-0026"
     }
   ],
   "ttp_ref": "TTP-2026-0185"

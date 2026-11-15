@@ -129,7 +129,7 @@ KNOWN_DATASETS = frozenset({
     "cloud_audit_logs", "cloud_audit", "google_workspace_audit", "msft_o365",
     "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog",
     "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
-    "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
+    "cortexsim_airs_raw", "cortexsim_cloud_audit_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
     "full_mailbox", "admin_consent", "benign",
     # Plan 02 — XDM modeling-rule raw source (un-normalized container telemetry
     # the modeling rule maps into XDM fields). Registered so the modeling-rule
@@ -182,6 +182,11 @@ KNOWN_DATASETS = frozenset({
     # (Cisco Duo Auth Log), not invented; exact tenant field mapping awaits
     # live-tenant confirmation (tenant-verified is 0).
     "duo_auth_raw",
+    # SIM-MP-038 Pink (TTP-2026-0551) — the operator's HTTP log collector
+    # (Vendor cortexsim, Product saas) that idp_signin_emulator and
+    # m365_activity_emitter POST to. Named by the tenant's <vendor>_<product>_raw
+    # rule, not read from a tenant: no record has been ingested yet.
+    "cortexsim_saas_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain

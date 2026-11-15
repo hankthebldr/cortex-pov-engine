@@ -183,3 +183,72 @@ def test_committed_exports_match_a_clean_regeneration(exporter):
         "exports a clean regeneration WOULD produce but are not committed "
         f"(run `export_artifacts.py` and commit): {missing}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Correlation export: the file says what the card holds, and nothing more
+# ---------------------------------------------------------------------------
+# Every correlation rule in the corpus is an authoring note (name, id, a logic
+# line). The export used to stamp ``severity: "high"`` on each one, a value no
+# card authored, and a DC pasting the file into a tenant inherited it.
+
+
+def _stub_card(**rule_extra):
+    return {
+        "id": "TTP-T-0001",
+        "detections": {"correlation_rules": [
+            {"name": "Fusion", "rule_id": "CR-T-0001", "logic": "XQL(a) OR XQL(b)", **rule_extra},
+        ]},
+    }
+
+
+def test_correlation_export_invents_no_severity_or_description(exporter):
+    rule = json.loads(exporter.render_correlation(_stub_card()))["rules"][0]
+    assert "severity" not in rule
+    assert "description" not in rule
+    assert rule == {
+        "rule_id": "CR-T-0001", "name": "Fusion", "logic": "XQL(a) OR XQL(b)",
+        "content_status": "intent-only", "deploy": None,
+    }
+
+
+def test_correlation_export_says_the_file_is_not_importable(exporter):
+    payload = json.loads(exporter.render_correlation(_stub_card()))
+    assert payload["importable_rules"] == 0
+    assert "nothing in this file can be imported" in payload["content_note"]
+
+
+def test_correlation_export_refuses_a_rule_shape_it_does_not_know(exporter):
+    """Strict on purpose: the day a card carries more than the stub shape, the
+    exporter must be taught what to do with it, not guess."""
+    with pytest.raises(ValueError, match="severity"):
+        exporter.render_correlation(_stub_card(severity="high"))
+    with pytest.raises(ValueError, match="deploy"):
+        exporter.render_correlation(_stub_card(deploy={"xql": "dataset = xdr_data"}))
+
+
+def test_correlation_export_status_matches_the_engine_classifier(exporter):
+    from engine import tenant_content  # noqa: PLC0415
+
+    seen = 0
+    for ttp in _active_ttps():
+        rules = (ttp.get("detections") or {}).get("correlation_rules") or []
+        if not rules:
+            continue
+        exported = json.loads(exporter.render_correlation(ttp))["rules"]
+        for rule, out in zip(rules, exported):
+            assert out["content_status"] == tenant_content.classify_rule(rule)
+            seen += 1
+    assert seen > 0
+
+
+def test_committed_correlation_exports_carry_no_invented_severity():
+    files = sorted((REPO_ROOT / "detection_scanner" / "exports" / "correlation").glob("*.json"))
+    assert files, "no committed correlation exports found"
+    for path in files:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["importable_rules"] == 0, path.name
+        for rule in payload["rules"]:
+            assert "severity" not in rule, path.name
+            assert rule["content_status"] == "intent-only", path.name
+            assert rule["deploy"] is None, path.name

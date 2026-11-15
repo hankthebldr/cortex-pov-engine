@@ -1,0 +1,23 @@
+# Identity Threat — Cortex XSIAM Platform API operations
+# Harvested 2026-11-02 from the field-built cortex-bot MCP server. Paths are kept
+# exactly as that tool sends them (trailing slash included): the sent form is the one
+# with live-tenant evidence. `cortex-bot-observed` marks that provenance; it is the
+# author's observation, NOT a CortexSim tenant verification (tenant-verified is 0).
+# `prefix-inferred` = cortex-bot sent a bare path and the official server's fetcher
+# prepended /public_api/v1; the full path here is composed, not a literal.
+# Review: docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md
+# Needs an ITDR licence: get_tenant_info identity_threat_expiration == 0 means none.
+category: "Identity Threat"
+operations:
+  - op_id: OP-GET-RISKY-HOSTS
+    name: "Get risky hosts"
+    method: POST
+    path: "/public_api/v1/get_risky_hosts"
+    access_class: read
+    tags: [cortex-bot-observed, licence-itdr]
+  - op_id: OP-GET-RISKY-USERS
+    name: "Get risky users"
+    method: POST
+    path: "/public_api/v1/get_risky_users"
+    access_class: read
+    tags: [cortex-bot-observed, licence-itdr]

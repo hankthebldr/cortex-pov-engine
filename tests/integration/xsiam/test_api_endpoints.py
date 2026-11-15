@@ -50,7 +50,8 @@ def _build_app(tmp_path, monkeypatch, stub_client):
     async def _h(request: Request, exc: XsiamError):
         return JSONResponse(status_code=exc.http_status,
                             content={"error": "XSIAM integration error",
-                                     "code": exc.code, "detail": exc.detail})
+                                     "code": exc.code, "detail": exc.detail,
+                                     "upstream_status": exc.upstream_status})
     return TestClient(app)
 
 
@@ -64,6 +65,9 @@ async def _ret(value):  # tiny awaitable wrapper for the patched loader
 
 
 class _StubClient:
+    capabilities = ["xql"]
+    _base = "https://api-stub.xdr.us.paloaltonetworks.com"
+
     def __init__(self, *, health=None, raise_exc=None, xql_reply=None, qid="q1"):
         self._health, self._raise = health, raise_exc
         self._xql_reply, self._qid = xql_reply, qid

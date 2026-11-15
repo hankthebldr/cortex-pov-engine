@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE response [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<response status="success"><result>&xxe;</result></response>

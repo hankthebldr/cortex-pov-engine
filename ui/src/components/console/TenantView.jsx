@@ -1,6 +1,7 @@
 import React from 'react'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import TenantManager from './TenantManager.jsx'
+import CollectorTargetsPanel from './CollectorTargetsPanel.jsx'
 
 /**
  * TenantView — the Cortex tenant this instance reads detections back from.
@@ -12,6 +13,10 @@ import TenantManager from './TenantManager.jsx'
  * tenant is this" on one screen is the worst kind of wrong, so the page now
  * shows only what SimCore holds: the registered tenants, their test results,
  * and the form to add one (TenantManager, the same component Get started uses).
+ *
+ * Below it, the tenant's ingestion doors (CollectorTargetsPanel): where this
+ * POV's log emitters POST. The read-only API key above and a collector key are
+ * different credentials and authorise different things.
  */
 export default function TenantView() {
   const { tenants } = useEnvironment()
@@ -24,6 +29,7 @@ export default function TenantView() {
           : 'No tenant is connected yet. Add a read-only API key below so POVengine can check which detections fired.'}
       </p>
       <TenantManager embedded />
+      <CollectorTargetsPanel />
     </div>
   )
 }

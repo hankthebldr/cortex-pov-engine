@@ -1,16 +1,17 @@
 package executor
 
+// Dialect-neutral host-shell tests: every command here means the same thing to
+// sh -c and to the PowerShell exit wrapper (echo, exit N, sleep N, an unknown
+// name), so they run on every host. POSIX-only ones are in shell_unix_test.go,
+// their PowerShell twins in shell_windows_test.go (CI-04).
+
 import (
 	"context"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestRunCommand_HappyPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
 	stdout, stderr, code, err := RunCommand("echo hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -26,29 +27,7 @@ func TestRunCommand_HappyPath(t *testing.T) {
 	}
 }
 
-func TestRunCommand_CapturesStderrSeparately(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
-	stdout, stderr, code, err := RunCommand(">&2 echo err && echo out && exit 0")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if code != 0 {
-		t.Errorf("expected 0, got %d", code)
-	}
-	if !strings.Contains(stdout, "out") {
-		t.Errorf("stdout = %q", stdout)
-	}
-	if !strings.Contains(stderr, "err") {
-		t.Errorf("stderr = %q", stderr)
-	}
-}
-
 func TestRunCommand_NonZeroExitIsNotAnError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
 	_, _, code, err := RunCommand("exit 42")
 	if err != nil {
 		t.Fatalf("non-zero exit should not surface as err, got %v", err)
@@ -59,11 +38,8 @@ func TestRunCommand_NonZeroExitIsNotAnError(t *testing.T) {
 }
 
 func TestRunCommand_BinaryNotFoundIsRealError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
-	// `sh -c "bogus-binary-xyz"` exits with 127 from sh, which IS captured
-	// as an exit code — not a Go error.  This documents that contract.
+	// A missing binary surfaces as a non-zero exit, not a Go error: 127 from
+	// `sh -c`, 1 from the PowerShell wrapper (CommandNotFound clears $?).
 	_, _, code, err := RunCommand("nonexistent-binary-cortexsim-test")
 	if err != nil {
 		t.Fatalf("sh-c-mediated 'not found' should surface via exit code, got err=%v", err)
@@ -73,23 +49,7 @@ func TestRunCommand_BinaryNotFoundIsRealError(t *testing.T) {
 	}
 }
 
-func TestRunCommand_SignaledChildReportsTermination(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX signals")
-	}
-	out, err := RunCommandCtxStreamOutcome(context.Background(), "kill -9 $$", nil)
-	if err != nil {
-		t.Fatalf("err=%v", err)
-	}
-	if out.ExitCode != 137 || out.Termination != "signaled" || out.Signal != 9 {
-		t.Fatalf("got exit=%d term=%q sig=%d, want 137/signaled/9", out.ExitCode, out.Termination, out.Signal)
-	}
-}
-
 func TestRunCommand_PlainExit137IsExitedNotSignaled(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
 	out, _ := RunCommandCtxStreamOutcome(context.Background(), "exit 137", nil)
 	if out.ExitCode != 137 || out.Termination != "exited" || out.Signal != 0 {
 		t.Fatalf("got exit=%d %q/%d", out.ExitCode, out.Termination, out.Signal)
@@ -97,9 +57,6 @@ func TestRunCommand_PlainExit137IsExitedNotSignaled(t *testing.T) {
 }
 
 func TestRunCommand_CancelReportsAborted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c is POSIX-only")
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	out, err := RunCommandCtxStreamOutcome(ctx, "sleep 30", nil)

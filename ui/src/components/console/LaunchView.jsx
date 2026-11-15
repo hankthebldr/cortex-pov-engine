@@ -1,13 +1,39 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import useLaunchScenario from './useLaunchScenario.js'
+import useLaunchScenario, { PUSH_FORMATS, bundleIsWindows } from './useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice, WindowsBundleNote } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
-import { getToolAdapters, listIntegrations } from '../../api/client.js'
+import LaunchGateNotice, { GATE_TOOL_ABSENT, GATE_POSTURE } from './LaunchGateNotice.jsx'
+import { getToolAdapters, listIntegrations, getScenarioDoors, getDoors } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
 import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
 import { preflightScenario } from './readiness/scenarioPreflight.js'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
+import NewRunPanel from './NewRunPanel.jsx'
+import { runTargets, runPlan, runBlockers } from './newRun.js'
+
+/**
+ * The launch result as LaunchGateNotice reads it. Its warning list renders a
+ * warning's `code`, `agent_id`, `steps` and string `detail`. A launch
+ * reservation parsed from a string ("TARGET_AGENT_OFFLINE: …") carries its
+ * sentence as `text` and has none of those fields, so it would show as a bare
+ * code: the sentence that says the beacon is not polling would be dropped.
+ * Such an entry gets its `text` as the `detail` the notice prints. A gate
+ * warning object keeps its own fields untouched.
+ */
+function forGateNotice(lastRun) {
+  if (!lastRun || lastRun.status !== 'success' || !Array.isArray(lastRun.warnings)) return lastRun
+  return {
+    ...lastRun,
+    warnings: lastRun.warnings.map((w) => {
+      if (!w || typeof w !== 'object') return w
+      const shown = w.agent_id || (Array.isArray(w.steps) && w.steps.length)
+        || (typeof w.detail === 'string' && w.detail)
+      return shown || !w.text ? w : { ...w, detail: w.text }
+    }),
+  }
+}
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -37,9 +63,20 @@ export default function LaunchView({
   onError = () => {},
   onGoLibrary = () => {},
   onGoTargets = () => {},
+  onSelectTarget = null,
   onNavigate = null,
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan, payloadPlanResolving })
+  const launch = useLaunchScenario(scenario, {
+    onRunComplete, onError, payloadPlan, payloadPlanResolving, holdOnWarnings: true,
+  })
+  // A gate refusal renders as LaunchGateNotice instead of the generic line: the
+  // server's sentence names an API override the operator acts on via a button.
+  const gateRefusal = launch.lastRun?.status === 'error' && launch.lastRun.gate
+    && [GATE_TOOL_ABSENT, GATE_POSTURE].includes(launch.lastRun.code)
+  // holdOnWarnings kept a warned launch here instead of navigating to its run.
+  const heldOnWarnings = launch.lastRun?.status === 'success'
+    && Array.isArray(launch.lastRun.warnings) && launch.lastRun.warnings.length > 0
+  const gateNoticeRun = useMemo(() => forGateNotice(launch.lastRun), [launch.lastRun])
 
   // First-use hint on Launch (I6 / spec §5) — one of the five named
   // consequential controls (Arm · Launch · Abort · Reconcile · Export POV).
@@ -128,6 +165,35 @@ export default function LaunchView({
     return () => { cancelled = true }
   }, [])
 
+  // Door readiness for THIS scenario against the selected agent. A failure is
+  // null readiness plus the error text, rendered UNKNOWN by the Data path check
+  // ("door readiness unavailable: …", as the library chip does), never a pass.
+  const [doorReadiness, setDoorReadiness] = useState(null)
+  const [doorRows, setDoorRows] = useState(null)
+  const [doorError, setDoorError] = useState(null)
+  const doorScenarioId = scenario ? (scenario.scenario_id || scenario.id) : null
+  const doorAgentId = selectedTarget?.kind === 'agent' ? selectedTarget.id : null
+  useEffect(() => {
+    setDoorReadiness(null)
+    setDoorRows(null)
+    setDoorError(null)
+    if (!doorScenarioId) return undefined
+    let cancelled = false
+    Promise.all([getScenarioDoors(doorScenarioId, doorAgentId), getDoors()])
+      .then(([data, doors]) => {
+        if (cancelled) return
+        setDoorReadiness(data.readiness)
+        setDoorRows(doors.doors)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDoorReadiness(null)
+        setDoorRows(null)
+        setDoorError((err && err.message) || 'door readiness failed')
+      })
+    return () => { cancelled = true }
+  }, [doorScenarioId, doorAgentId])
+
   const preflight = useMemo(() => preflightScenario({
     scenario,
     target: selectedTarget,
@@ -137,8 +203,12 @@ export default function LaunchView({
     integrations,
     identity: launch.identity,
     pushFormat: launch.pushFormat,
+    doorReadiness,
+    doorRows,
+    doorAgentId,
+    doorError,
   }), [scenario, selectedTarget, launch.agents, shelf.shelf, adapterIndex, integrations,
-       launch.identity, launch.pushFormat])
+       launch.identity, launch.pushFormat, doorReadiness, doorRows, doorAgentId, doorError])
 
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
@@ -154,7 +224,6 @@ export default function LaunchView({
   const blockersId = 'launch-blockers'
   const blockers = useMemo(() => {
     const out = [...(launch.blockers || [])]
-    if (!selectedTarget) out.push('Pick a target — an agent (pull) or the offline bundle (push)')
     if (needsSim && !launch.consent.simulation_authorized) {
       out.push('Tick the lab-only consent for the dual-use tools this scenario uses')
     }
@@ -163,8 +232,8 @@ export default function LaunchView({
     }
     for (const name of missingDeclaredPayloads) {
       out.push(
-        `${name} is declared by this scenario but is not staged — SimCore will refuse the launch `
-        + '(PAYLOAD_NOT_STAGED). Stage it in Tools & Payloads.',
+        `${name} is declared by this scenario but is not ready on this instance — the launch will `
+        + 'be refused (PAYLOAD_NOT_STAGED). Make it ready in Packages.',
       )
     }
     // Preflight rows marked BLOCK are conditions SimCore's own guards refuse
@@ -179,6 +248,33 @@ export default function LaunchView({
     return out
   }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads,
       preflight.blocking])
+
+  // ── New POV run panel (design C1) ─────────────────────────────────────
+  // The authorisation tick starts unticked for every run; the dual-use / C2
+  // consents below it are still asked for exactly the tools that need them.
+  const [authorised, setAuthorised] = useState(false)
+  const targets = useMemo(() => runTargets(launch.agents), [launch.agents])
+  const plan = useMemo(
+    () => runPlan(scenario, { mode: targetMode, identity: launch.identity }),
+    [scenario, targetMode, launch.identity],
+  )
+  const runBlocked = useMemo(
+    () => runBlockers({ base: blockers, target: selectedTarget, authorised }),
+    [blockers, selectedTarget, authorised],
+  )
+  const checkCount = useMemo(() => ({
+    pass: preflight.checks.filter((c) => c.status === 'pass').length,
+    total: preflight.checks.length,
+  }), [preflight.checks])
+  // One Run for every target. An offline bundle is written first (the DC runs
+  // it on the target), then the run is created; a failed download stops there.
+  const handleRun = async () => {
+    if (targetMode === 'push') {
+      const ok = await launch.downloadPushBundle()
+      if (!ok) return
+    }
+    handleLaunch()
+  }
 
   // ── Guard rails — guide the operator back to the missing step ──────────
   if (!scenario) {
@@ -198,210 +294,148 @@ export default function LaunchView({
 
   return (
     <div className="launch">
-      <header className="view-head">
-        <div>
-          <h1>Launch</h1>
-          <p className="view-head__meta">
-            Arm <strong className="mono">{sid}</strong> against a target, then fire the simulation.
-          </p>
-        </div>
-      </header>
-
-      <div className="launch__cols">
-        {/* armed scenario summary */}
-        <section className="launch-card">
-          <div className="launch-card__kicker">Armed scenario</div>
-          <div className="launch-card__title">{scenario.name || sid}</div>
-          <div className="launch-card__meta mono">
-            {sid} · {scenario.plane} · {scenario.mitre_technique || '—'}
-          </div>
-          <p className="launch-card__desc">{scenario.tc_name || scenario.uc_name || ''}</p>
-          <button type="button" className="btn" onClick={onGoLibrary}>Change scenario</button>
-        </section>
-
-        {/* preflight — every precondition, checked here rather than discovered
-            mid-demo. Rendered before the payload plan because tool supply is
-            one of the things it reports on. */}
-        <ScenarioPreflightCard
-          scenario={scenario}
-          target={selectedTarget}
-          agents={launch.agents}
-          shelf={shelf.shelf}
-          adapterIndex={adapterIndex}
-          integrations={integrations}
-          identity={launch.identity}
-          pushFormat={launch.pushFormat}
-          onNavigate={onNavigate}
-        />
-
-        {/* payload plan — what tooling this run carries, and who fetches it */}
-        <PayloadPlanCard
-          plan={payloadPlan}
-          resolving={payloadPlanResolving}
-          planAccepted={launch.payloadPlanAccepted}
-          egressTools={egressTools}
-          shelfAvailable={shelf.available}
-          onGoShelf={onNavigate ? () => onNavigate('adapters', { supply: SUPPLY.UNSTAGED }) : null}
-          onEdit={onNavigate && payloadPlan
-            ? () => onNavigate('adapters', {
-                tool: payloadPlan.artifacts?.[0]?.adapter_id || null,
-                panel: 'compose',
-                scenario: sid,
-              })
-            : null}
-        />
-
-        {/* target + config */}
-        <section className="launch-card launch-card--config">
-          <div className="launch-card__kicker">Target</div>
-          {selectedTarget ? (
-            <div className={`launch-target launch-target--${selectedTarget.kind}`}>
-              <span className="launch-target__label mono">{selectedTarget.label || selectedTarget.id}</span>
-              <span className="launch-target__mode">{targetMode} mode</span>
-              <button type="button" className="btn btn--xs" onClick={onGoTargets}>Change</button>
-            </div>
-          ) : (
-            <div className="launch-target launch-target--none">
-              <span>No target selected</span>
-              <button type="button" className="btn" onClick={onGoTargets}>Pick a target ▸</button>
-            </div>
-          )}
-
-          {/* identity */}
-          {launch.identityOptions.length > 0 && (
-            <label className="launch-field">
-              <span className="launch-field__label">Execution identity</span>
-              <select
-                className="launch-select"
-                value={launch.identity}
-                onChange={(e) => launch.setIdentity(e.target.value)}
-              >
-                {launch.identityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </label>
-          )}
-
-          {/* pull: agent / push: format */}
-          {targetMode === 'pull' && selectedTarget?.kind === 'agent' && (
-            <div className="launch-field">
-              <span className="launch-field__label">Beacon</span>
-              <span className="mono">{selectedTarget.id}</span>
-            </div>
-          )}
-          {targetMode === 'pull' && <AttestationFields launch={launch} />}
-          {targetMode === 'push' && (
-            <label className="launch-field">
-              <span className="launch-field__label">Bundle format</span>
-              <select
-                className="launch-select"
-                value={launch.pushFormat}
-                onChange={(e) => launch.setPushFormat(e.target.value)}
-              >
-                <option value="bash">bash (.sh)</option>
-                <option value="k8s">kubernetes (.yml)</option>
-              </select>
-            </label>
-          )}
-
-          {/* dual-use / c2 consent gate */}
-          {(needsSim || needsC2) && (
-            <div className={'launch-consent' + (consentBlocked ? ' launch-consent--blocking' : '')}>
-              <div className="launch-consent__title">
-                ⚠ Tool consent required
-                {consentBlocked && <span className="launch-consent__flag"> · blocking launch</span>}
-              </div>
-              {needsSim && (
-                <label className="launch-consent__row">
-                  <input
-                    type="checkbox"
-                    checked={!!launch.consent.simulation_authorized}
-                    onChange={() => toggleConsent('simulation_authorized')}
-                  />
-                  <span>
-                    I authorize <strong>lab-only</strong> use of dual-use tools (
-                    {gated.dualUse.map((a) => a.name).join(', ')}).
-                  </span>
-                </label>
-              )}
-              {needsC2 && (
-                <label className="launch-consent__row launch-consent__row--c2">
-                  <input
-                    type="checkbox"
-                    checked={!!launch.consent.c2_authorized}
-                    onChange={() => toggleConsent('c2_authorized')}
-                  />
-                  <span>
-                    I authorize <strong>C2 framework</strong> execution (
-                    {gated.c2.map((a) => a.name).join(', ')}) on authorized targets only.
-                  </span>
-                </label>
-              )}
-            </div>
-          )}
-
-          {/* primary action */}
-          <div className="launch-actions">
-            {targetMode === 'push' ? (
+      <div className="launch__cols launch__cols--gate">
+        <div className="launch__run">
+          <NewRunPanel
+            scenario={scenario}
+            checks={checkCount}
+            onChangeScenario={onGoLibrary}
+            readiness={(
               <>
-                <button
-                  type="button"
-                  className="btn btn--primary btn--lg"
-                  disabled={launch.launching || blockers.length > 0}
-                  aria-describedby={blockers.length ? blockersId : undefined}
-                  onClick={handleLaunch}
-                >
-                  {launch.launching ? 'Launching…' : 'Launch run ▸'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--lg"
-                  disabled={launch.downloading}
-                  onClick={launch.downloadPushBundle}
-                >
-                  {launch.downloading ? 'Building…' : '↓ Download bundle'}
-                </button>
+                <ScenarioPreflightCard
+                  scenario={scenario}
+                  target={selectedTarget}
+                  agents={launch.agents}
+                  shelf={shelf.shelf}
+                  adapterIndex={adapterIndex}
+                  integrations={integrations}
+                  identity={launch.identity}
+                  pushFormat={launch.pushFormat}
+                  doorReadiness={doorReadiness}
+                  doorRows={doorRows}
+                  doorAgentId={doorAgentId}
+                  doorError={doorError}
+                  onNavigate={onNavigate}
+                />
+                <PayloadPlanCard
+                  plan={payloadPlan}
+                  resolving={payloadPlanResolving}
+                  planAccepted={launch.payloadPlanAccepted}
+                  egressTools={egressTools}
+                  shelfAvailable={shelf.available}
+                  onGoShelf={onNavigate ? () => onNavigate('adapters', { supply: SUPPLY.UNSTAGED }) : null}
+                  onEdit={onNavigate && payloadPlan
+                    ? () => onNavigate('adapters', {
+                        tool: payloadPlan.artifacts?.[0]?.adapter_id || null,
+                        panel: 'compose',
+                        scenario: sid,
+                      })
+                    : null}
+                />
               </>
-            ) : (
-              <button
-                type="button"
-                className="btn btn--primary btn--lg"
-                disabled={launch.launching || blockers.length > 0}
-                aria-describedby={blockers.length ? blockersId : undefined}
-                onClick={handleLaunch}
-              >
-                {launch.launching ? 'Launching…' : 'Launch run ▸'}
-              </button>
             )}
-            {launchHint.show && !launchHintDismissed && (
-              <FirstUseHint
-                show
-                text="Launch fires the armed scenario against the selected target."
-                onDismiss={() => setLaunchHintDismissed(true)}
-              />
-            )}
-          </div>
-
-          {/* Why the button is dead. Rendered next to it, tied by
-              aria-describedby so a screen reader hears the reason too. */}
-          {blockers.length > 0 && (
-            <ul className="launch-blockers" id={blockersId} data-testid="launch-blockers">
-              {blockers.map((b) => (
-                <li key={b} className="launch-blockers__item">
-                  <span aria-hidden="true">▸</span> {b}
-                </li>
-              ))}
-            </ul>
+            targets={targets}
+            selected={selectedTarget}
+            onSelect={(t) => (onSelectTarget ? onSelectTarget(t) : onGoTargets())}
+            targetExtra={targetMode === 'pull' && selectedTarget?.kind === 'agent' ? (
+              <div className="new-run__extra">
+                <AttestationFields launch={launch} />
+              </div>
+            ) : targetMode === 'push' && selectedTarget ? (
+              <div className="new-run__extra">
+                <label className="launch-field">
+                  <span className="launch-field__label">Bundle format</span>
+                  <select
+                    className="launch-select"
+                    value={launch.pushFormat}
+                    onChange={(e) => launch.setPushFormat(e.target.value)}
+                  >
+                    {PUSH_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </label>
+                {/* A .ps1 is authored and parse-checked only. Said BEFORE the
+                    download, where the format is chosen, not discovered at exit 2. */}
+                {bundleIsWindows(scenario, launch.pushFormat) && (
+                  <WindowsBundleNote testId="launch-windows-bundle-note" />
+                )}
+              </div>
+            ) : null}
+            plan={plan}
+            identityOptions={launch.identityOptions}
+            identity={launch.identity}
+            onIdentity={launch.setIdentity}
+            authorised={authorised}
+            onAuthorised={setAuthorised}
+            consentExtra={(needsSim || needsC2) ? (
+              <div className={'launch-consent' + (consentBlocked ? ' launch-consent--blocking' : '')}>
+                <div className="launch-consent__title">
+                  Tool consent required
+                  {consentBlocked && <span className="launch-consent__flag"> · blocking Run</span>}
+                </div>
+                {needsSim && (
+                  <label className="launch-consent__row">
+                    <input
+                      type="checkbox"
+                      checked={!!launch.consent.simulation_authorized}
+                      onChange={() => toggleConsent('simulation_authorized')}
+                    />
+                    <span>
+                      I authorize <strong>lab-only</strong> use of dual-use tools (
+                      {gated.dualUse.map((a) => a.name).join(', ')}).
+                    </span>
+                  </label>
+                )}
+                {needsC2 && (
+                  <label className="launch-consent__row launch-consent__row--c2">
+                    <input
+                      type="checkbox"
+                      checked={!!launch.consent.c2_authorized}
+                      onChange={() => toggleConsent('c2_authorized')}
+                    />
+                    <span>
+                      I authorize <strong>C2 framework</strong> execution (
+                      {gated.c2.map((a) => a.name).join(', ')}) on authorized targets only.
+                    </span>
+                  </label>
+                )}
+              </div>
+            ) : null}
+            blockers={runBlocked}
+            running={launch.launching || launch.downloading}
+            onRun={handleRun}
+          />
+          {launchHint.show && !launchHintDismissed && (
+            <FirstUseHint
+              show
+              text="Run starts the scenario on the target you chose."
+              onDismiss={() => setLaunchHintDismissed(true)}
+            />
           )}
 
-          {launch.lastRun && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
-            <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
-              {launch.lastRun.message}
-              {launch.lastRun.code && (
-                <span className="launch-result__code mono"> [{launch.lastRun.code}]</span>
-              )}
-            </div>
+          {/* The download's own outcome. A refusal names its steps; a refusal
+              that another format can satisfy offers that format in one click. */}
+          {targetMode === 'push' && (
+            <DownloadOutcome launch={launch} scenario={scenario} testId="launch-download-result" />
           )}
-        </section>
+
+          {/* A clean start is LaunchSuccessNotice's line. A launch held on its
+              warnings is LaunchGateNotice's: it lists every warning (gate
+              advisories and launch reservations alike) and owns the "View run"
+              that continues — listing them in both would say it twice. */}
+          {!heldOnWarnings && (
+            <LaunchSuccessNotice result={launch.lastRun} testId="launch-success" />
+          )}
+          {launch.lastRun?.status === 'error' && !gateRefusal
+            && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
+            <LaunchErrorNotice result={launch.lastRun} testId="launch-error" />
+          )}
+          <LaunchGateNotice
+            lastRun={gateNoticeRun}
+            launching={launch.launching}
+            onContinue={launch.continueToRun}
+            onLaunchAnyway={() => launch.launch({ allowMissingTools: true })}
+          />
+        </div>
       </div>
     </div>
   )
@@ -431,11 +465,11 @@ function PayloadPlanCard({
   if (resolving) {
     return (
       <section className="launch-card launch-card--payload" data-testid="launch-payload-plan-resolving">
-        <div className="launch-card__kicker">Payload plan</div>
+        <div className="launch-card__kicker">Tools for this run</div>
         <p className="launch-payload__resolving">
-          Resolving the composed payload plan from this link&apos;s{' '}
+          Resolving the tools chosen for this run from this link&apos;s{' '}
           <span className="mono">?plan=</span> parameter — Launch stays disabled until it settles,
-          so the run cannot go out with the plan silently dropped.
+          so the run cannot go out with them silently dropped.
         </p>
       </section>
     )
@@ -444,7 +478,7 @@ function PayloadPlanCard({
   return (
     <section className="launch-card launch-card--payload" data-testid="launch-payload-plan">
       <div className="launch-card__kicker">
-        Payload plan
+        Tools for this run
         {onEdit && artifacts.length > 0 && (
           <button type="button" className="btn btn--xs launch-edit-btn" onClick={onEdit}>
             Edit ▸
@@ -456,7 +490,7 @@ function PayloadPlanCard({
         <div key={a.payload_name} className="launch-payload__row" data-testid={`launch-payload-${a.payload_name}`}>
           <div className="mono launch-payload__path">{a.payload_name} → {a.dest_path}</div>
           <div className="mono launch-payload__meta">
-            sha256 {shortDigest(a.sha256)} · served from this SimCore
+            sha256 {shortDigest(a.sha256)} · supplied by this instance
           </div>
           {a.renamed && (
             <div className="launch-payload__renamed" data-testid="launch-payload-renamed">
@@ -475,7 +509,7 @@ function PayloadPlanCard({
           This SimCore&apos;s <span className="mono">POST /api/runs</span> does not accept a{' '}
           <span className="mono">payload_plan</span>, so the console will not send one — an unknown
           field is silently dropped, and the run would execute the scenario&apos;s own commands
-          unchanged while this card claimed a rename. The artifact is staged and served either way;
+          unchanged while this card claimed a rename. The tool is ready and supplied either way;
           the destination above is <strong>not</strong> in effect for this run.
         </div>
       )}
@@ -483,15 +517,15 @@ function PayloadPlanCard({
       {egressTools.length > 0 && (
         <div className="launch-payload__warn" data-testid="launch-payload-egress">
           <strong>{egressTools.length}</strong>{' '}
-          {egressTools.length === 1 ? 'tool is' : 'tools are'} fetched by the target from the public
-          internet at run time:{' '}
+          {egressTools.length === 1 ? 'tool needs' : 'tools need'} internet access on the
+          target:{' '}
           <span className="mono">
             {egressTools.map((t) => t.adapter.name).join(' · ')}
           </span>
-          . A default-deny egress policy blocks that, and the step then runs without its tool.
+          . A network that blocks it leaves the step running without its tool.
           {onGoShelf && (
             <button type="button" className="btn btn--xs launch-edit-btn" onClick={onGoShelf}>
-              Stage them ▸
+              Make them ready ▸
             </button>
           )}
         </div>
@@ -499,7 +533,7 @@ function PayloadPlanCard({
 
       {shelfAvailable === false && (
         <div className="launch-payload__warn" data-testid="launch-payload-unknown">
-          This SimCore does not report shelf state, so tool supply for this run is{' '}
+          This instance does not report tool readiness, so the tools for this run are{' '}
           <strong>UNKNOWN</strong> — not &ldquo;fine&rdquo;.
         </div>
       )}

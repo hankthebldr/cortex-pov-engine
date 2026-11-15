@@ -142,5 +142,7 @@ def test_launch_unknown_scenario_rejected(client: httpx.Client) -> None:
         "/api/run",
         json={"scenario_id": "SIM-EDR-DOES-NOT-EXIST", "mode": "push"},
     )
-    assert r.status_code == 422
-    assert r.json()["detail"]["code"] == "LAUNCH_FAILED"
+    # #298: an unknown scenario is a missing resource (404 SCENARIO_NOT_FOUND),
+    # no longer LAUNCH_FAILED 422, and the refusal writes no run.
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "SCENARIO_NOT_FOUND"

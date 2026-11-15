@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1552.007"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when analytics alert `Kubernetes secrets enumeration for the first time` and analytics alert `Unusual Kubernetes secret access` both observe the same user_username (Kubernetes service account) from the same sourceIPs within a 10-minute window, stitching the first-seen enumeration and the anomalous read into one CDR credential-theft incident.",
       "name": "SIM-CDR-026 first-time enumerate-then-harvest secret theft",
-      "rule_id": "CR-CDR-0026",
-      "severity": "high"
+      "rule_id": "CR-CDR-0026"
     }
   ],
   "ttp_ref": "TTP-2026-0163"

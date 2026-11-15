@@ -1,0 +1,17 @@
+<response status="success"><result total-count="1" count="1"><entry name="lab-spyware">
+<rules>
+<entry name="scoped-allow"><threat-name>Specific.Threat</threat-name><category>spyware</category><packet-capture>disable</packet-capture><severity><member>critical</member><member>high</member></severity><action><allow/></action></entry>
+<entry name="block-severe"><threat-name>any</threat-name><category>any</category><packet-capture>disable</packet-capture><severity><member>critical</member><member>high</member></severity><action><reset-both/></action></entry>
+<entry name="alert-rest"><threat-name>any</threat-name><category>any</category><packet-capture>disable</packet-capture><severity><member>medium</member><member>low</member><member>informational</member></severity><action><alert/></action></entry>
+<entry name="shadowed"><threat-name>any</threat-name><category>any</category><severity><member>critical</member></severity><action><alert/></action></entry>
+</rules>
+<botnet-domains>
+<lists><entry name="default-paloalto-dns"><action><sinkhole/></action><packet-capture>disable</packet-capture></entry></lists>
+<dns-security-categories>
+<entry name="pan-dns-sec-cc"><log-level>default</log-level><action>sinkhole</action><packet-capture>disable</packet-capture></entry>
+<entry name="pan-dns-sec-malware"><log-level>default</log-level><action>default</action><packet-capture>disable</packet-capture></entry>
+<entry name="pan-dns-sec-phishing"><log-level>default</log-level><action>block</action><packet-capture>disable</packet-capture></entry>
+</dns-security-categories>
+<sinkhole><ipv4-address>sinkhole.paloaltonetworks.com</ipv4-address></sinkhole>
+</botnet-domains>
+</entry></result></response>

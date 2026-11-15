@@ -3,14 +3,21 @@
  *
  * We render the inspector directly with a stub launch object and the
  * runHistory prop populated — avoids spinning up OperationsView's
- * scenario fetch / launch wiring.
+ * scenario fetch / launch wiring. The section is the sheet's "Run history"
+ * tab (design v26 §4.1), so each render opens that tab first.
  */
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react'
 import ScenarioInspector from '../console/ScenarioInspector.jsx'
 
 void React
+
+function render(ui) {
+  const result = rtlRender(ui)
+  fireEvent.click(screen.getByRole('tab', { name: 'Run history' }))
+  return result
+}
 
 const stubLaunch = {
   mode: 'pull',
@@ -56,8 +63,11 @@ describe('ScenarioInspector — Run history section', () => {
         runHistory={[]}
       />,
     )
-    expect(screen.getByText(/never run/i)).toBeInTheDocument()
-    expect(screen.getByText(/no runs on record/i)).toBeInTheDocument()
+    const panel = screen.getByRole('tabpanel')
+    expect(within(panel).getByText(/never run/i)).toBeInTheDocument()
+    expect(within(panel).getByText(/no runs on record/i)).toBeInTheDocument()
+    // The sheet's header says the same thing as a status: an icon and a word.
+    expect(screen.getByRole('img', { name: 'Never run' })).toBeInTheDocument()
   })
 
   it('renders up to 5 most-recent runs', () => {

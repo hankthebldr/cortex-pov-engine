@@ -4,7 +4,7 @@ Enterprise detection simulation engine for Palo Alto Networks Cortex Domain
 Consultants. It generates controlled, high-fidelity signal into a customer's
 Cortex environment (XSIAM / XDR / Cortex Cloud) to validate detection logic
 across the full `detection_type` vocabulary — **`BIOC · XQL · Analytics ·
-Correlation · IOC · ABIOC`** — plus the XDM modeling-rule normalization
+Correlation · IOC · ABIOC · Prevention`** — plus the XDM modeling-rule normalization
 substrate and cross-plane stitching.
 
 > Not a red-team C2 — a **detection quality-assurance engine**. Real binaries,
@@ -19,31 +19,32 @@ substrate and cross-plane stitching.
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 28 assertions |
+| **Authored** | Exists and loads clean under strict validation | 199 scenarios · 28 assertions |
 | **Executed** | Has run end-to-end through a beacon or push bundle | partial |
 | **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
 
 ***tenant-verified is 0.*** Every green in the test suite and the console comes
 from an injected transport. **Authored is not proven.** The console's
-*Readiness* surface states this verbatim and renders the connector ladder as
+*Launch gate* states this verbatim and renders the connector ladder as
 four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
 
 ## Current state — counted, not estimated
 
-Measured **2026-08-30** by running the real scenario loader and the real EAL
-plugin registry over the tree. Where any prose disagrees, re-run the count and
-the count wins.
+Copied **2026-11-13** (the 1.2.0 release) from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
+which `make ground-truth` regenerates from the real loader and registries, and
+which CI diffs on every push. This page is **not** gated; where it disagrees
+with `ground-truth.md`, that file wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **177** across **16 planes** |
-| Steps · step-detections | **667 · 1116** |
-| TTP detection cards | **175** |
-| Assertion artifacts (POS/PLT/AUT) | **22** (15 · 4 · 3) |
-| EAL simulator plugins | **21** |
+| Loadable scenarios | **205** across **16 planes** |
+| Steps · step-detections | **850 · 1452** |
+| TTP detection cards | **203** |
+| Assertion artifacts (POS/PLT/AUT) | **28** (18 · 7 · 3) |
+| EAL simulator plugins | **27** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
-| HTTP routes at boot | **133** |
+| HTTP routes | **165** decorators · **175** served at boot |
 | MITRE ATT&CK tactics | **14** |
 
 ```bash
@@ -52,14 +53,14 @@ make validate && make check-refs && make coverage-strict
 
 ## The catalog
 
-- **[[Scenario Index]]** — all 177 scenarios, every plane, one table
+- **[[Scenario Index]]** — every scenario, every plane, one table
 - **[[ATT-CK-Coverage]]** — tactic → technique → scenario matrix
 - **[[Detection Planes]]** — how planes work, and the per-plane pages
 
 ## Narrative pages
 
 - **[[Architecture]]** — three-tier design, execution modes, identity harness
-- **[[EAL Simulator]]** — the 21-plugin catalog + campaign model
+- **[[EAL Simulator]]** — the 27-plugin catalog + campaign model
 - **[[AIRS Validation]]** — vulnerable-LLM canary + prompt-attacker pipeline
 - **[[KOI Validation]]** — agentic supply-chain artifact pack + `agentic_egress`
 - **[[Tools Catalog]]** — what every in-tree tool does + how to invoke it
@@ -73,19 +74,20 @@ make validate && make check-refs && make coverage-strict
 ## Repo layout
 
 ```
-core/                  ← SimCore FastAPI app — 134 routes
+core/                  ← SimCore FastAPI app — 166 routes served (156 decorators)
   api/                   REST routers
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
   connectors/            optional read-back measurement loop
-  integrations/xsiam/    ~116 read-only operation packs + Tier-2 XQL
-  eal_simulator/         EAL traffic simulator + 26 plugins
-  planes/                declarative PlaneDescriptor registry (16 planes)
+  integrations/xsiam/    152-op gated operation catalog (writes preview) + Tier-2 XQL
+  eal_simulator/         EAL traffic simulator + 27 plugins
+  planes/                declarative PlaneDescriptor registry (15 registered; dlp.py is not)
+  mcp_server/            MCP server, 41 tools (writes preview; opt-in HTTP at /mcp)
 agent/                 ← Go pull-model beacon (5-target build matrix)
 ui/                    ← React 18 + Vite console
-scenarios/             ← 177 scenario YAMLs, per plane
-assertions/            ← 22 POS/PLT/AUT artifacts
-detection_scanner/ttps ← 175 TTP detection cards
+scenarios/             ← 199 scenario YAMLs, per plane
+assertions/            ← 28 POS/PLT/AUT artifacts
+detection_scanner/ttps ← 197 TTP detection cards
 tools/packs/           ← 91 tool-adapter packs
 payloads/              ← digest-pinned payload shelf
 infra/modules/aws/     ← 11 Terraform modules

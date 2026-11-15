@@ -77,14 +77,15 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('Launch first-use hint (I6)', () => {
   it('shows the hint on a fresh profile', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /Launch run/i })).toBeInTheDocument())
-    expect(screen.getByRole('note')).toHaveTextContent(/Launch fires the armed scenario/i)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument())
+    expect(screen.getByRole('note')).toHaveTextContent(/Run starts the scenario/i)
   })
 
   it('clears PERMANENTLY when Launch is USED, not merely clicked-and-forgotten', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    const launchBtn = await screen.findByRole('button', { name: /Launch run/i })
+    const launchBtn = await screen.findByRole('button', { name: 'Run' })
     expect(screen.getByRole('note')).toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('new-run-authorised'))
 
     // findByRole returns the Launch button even while it is still DISABLED:
     // `disabled = launch.launching || blockers.length > 0`, and `blockers`
@@ -109,7 +110,7 @@ describe('Launch first-use hint (I6)', () => {
 
   it('dismissing the hint (×) hides it for this mount but does NOT mark it used', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    await screen.findByRole('button', { name: /Launch run/i })
+    await screen.findByRole('button', { name: 'Run' })
     const dismiss = screen.getByLabelText('Dismiss hint')
     fireEvent.click(dismiss)
 

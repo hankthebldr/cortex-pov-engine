@@ -101,7 +101,10 @@ steps:
         description: "XDR — IIS worker w3wp.exe spawns cmd.exe/powershell.exe (web-shell code execution), establishing the w3wp.exe Causality Group Owner"
         ttp_ref: "TTP-2026-0135"
         detection_id: "bioc-cl-unk-1068-iis-worker-w3wp-spawns-command-shell-web-shell-cgo"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
 
   - id: step-02
     name: "SAM/SYSTEM registry hive theft — reg save HKLM\\SAM + HKLM\\SYSTEM under the web-shell causality"
@@ -120,7 +123,10 @@ steps:
     causality:
       parent_step: step-01
       pivot: process_lineage
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
 
   - id: step-03
     name: "python.exe DLL side-load — signed python.exe loads python20.dll for in-memory Mimikatz"
@@ -139,7 +145,10 @@ steps:
     causality:
       parent_step: step-01
       pivot: process_lineage
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
 
   - id: step-04
     name: "certutil fileless staging — certutil -encode of the WinRAR loot under the web-shell causality"
@@ -178,7 +187,7 @@ steps:
     causality:
       parent_step: step-01
       pivot: endpoint_network_stitch
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     platform_variants:
       linux: "echo '[EDR-020] Linux FRP variant: cross-compiled frpc disguised as nginx/httpd opens the reverse tunnel'; curl -s --max-time 5 \"${FRP_C2_URL:-http://127.0.0.1/frp-tunnel}\" -o /dev/null 2>&1 || true"
 
@@ -204,7 +213,10 @@ steps:
     causality:
       parent_step: step-05
       pivot: temporal
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
 
 cleanup:
   commands:

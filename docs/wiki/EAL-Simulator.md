@@ -108,7 +108,11 @@ so SOC analysts can filter simulator traffic out of incident reviews.
 
 `deploy/helm/eal-simulator/` deploys:
 
-- `<release>-api` — FastAPI gateway pods (replicaCount 2)
+- `<release>-api` — the FastAPI gateway, one replica (chart 1.1.0; it
+  defaulted to 2, which gave two separate SimCores behind one Service, since
+  the queue, event bus and SQLite file live in the process). New values:
+  `api.allowedHosts`, `api.trustedProxies`, `api.extraEnv`, `clusterDomain`.
+  Add a Tailscale MagicDNS FQDN with `--set api.allowedHosts[0]=<name>`.
 - `<release>-worker` — worker pods scheduled onto nodes routed through
   the customer NGFW
   (`nodeSelector: cortexsim.paloaltonetworks.com/role=simulator`)

@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0292",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unusual AWS User Added to Group via CLI",
+    "summary": "An attacker uses AWS CLI to add a new user to an administrative group, triggering an anomaly detection for unusual group membership changes. Cortex should detect the AWS CLI process execution with ele",
+    "description": "An attacker uses AWS CLI to add a new user to an administrative group, triggering an anomaly detection for unusual group membership changes. Cortex should detect the AWS CLI process execution with elevated permissions and network traffic to AWS endpoints."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1531",
+        "name": "T1531",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/aws\nwget -O /tmp/aws/aws-cli https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\nunzip /tmp/aws/aws-cli -d /tmp/aws/\nchmod +x /tmp/aws/aws\n/tmp/aws/aws configure set aws_access_key_id AKIAIOSFODNN7EXAMPLE\n/tmp/aws/aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n/tmp/aws/aws iam create-user --user-name eviluser\n/tmp/aws/aws iam add-user-to-group --group-name admins --user-name eviluser\n/tmp/aws/aws iam create-access-key --user-name eviluser\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "AWS CLI process execution with elevated privileges",
+        "expected_value": "action_process_image_name = '/tmp/aws/aws'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to AWS IAM service endpoint",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "AWS CLI binary created in temporary directory",
+        "expected_value": "action_file_path = '/tmp/aws/aws'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "AWS CLI User Group Membership Change",
+        "description": "Detection of AWS CLI process adding user to administrative group",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/aws/aws'\n| filter action_process_command_line contains 'add-user-to-group'\n| filter action_process_command_line contains 'admins'",
+        "mitre_technique_ids": [
+          "T1531",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual AWS User Group Membership",
+        "description": "Behavioral deviation in AWS user being added to administrative group outside normal patterns",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/aws/aws'\n| filter action_process_command_line contains 'add-user-to-group'\n| filter action_process_command_line contains 'admins'\n| filter actor_process_image_name != 'sudo'\n| filter actor_process_image_name != '/bin/bash'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "AWS CLI process execution with group membership modification",
+        "mitre_technique_ids": [
+          "T1531",
+          "T1078"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AWS CLI Group Membership Changes",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/tmp/aws/aws'\n| filter action_process_command_line contains 'add-user-to-group'\n| filter action_process_command_line contains 'admins'\n| filter not action_process_command_line contains 'sudo'\n| fields action_process_image_name, action_process_command_line, agent_hostname",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Unusual AWS user added to group; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-aws-user-added-to-group"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Unusual AWS user added to group",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-aws-user-added-to-group",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1531",
+      "url": "https://attack.mitre.org/techniques/T1531/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566",
+      "url": "https://attack.mitre.org/techniques/T1566/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

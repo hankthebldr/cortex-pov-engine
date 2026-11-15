@@ -1,0 +1,185 @@
+{
+  "id": "TTP-0000-0115",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Office Process Injection via PowerShell",
+    "summary": "An attacker uses Microsoft Office to inject malicious code into a running process, leveraging PowerShell to execute commands. Cortex should detect the injection behavior and associated process creatio",
+    "description": "An attacker uses Microsoft Office to inject malicious code into a running process, leveraging PowerShell to execute commands. Cortex should detect the injection behavior and associated process creation."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1073",
+        "subtechnique_id": "T1073.001",
+        "name": "T1073.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1055",
+        "subtechnique_id": "T1055.001",
+        "name": "T1055.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -ExecutionPolicy Bypass -Command \"[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); [System.Windows.Forms.MessageBox]::Show('Test');\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process started with bypass execution policy",
+        "expected_value": "actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 connection to TEST-NET-1",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Office Injects Code into Process",
+        "description": "Microsoft Office launches a process that injects code into another process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'winword.exe' or actor_process_image_name = 'excel.exe'\n| filter action_process_image_name != 'winword.exe' and action_process_image_name != 'excel.exe'\n| filter causality_actor_process_image_name = 'winword.exe' or causality_actor_process_image_name = 'excel.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1073.001",
+          "T1055.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Office Process Injection Behavior",
+        "description": "Office application launching a process with code injection behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'winword.exe' or actor_process_image_name = 'excel.exe'\n| filter action_process_image_name != 'winword.exe' and action_process_image_name != 'excel.exe'\n| filter causality_actor_process_image_name = 'winword.exe' or causality_actor_process_image_name = 'excel.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Office process initiating injection",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1073.001",
+          "T1055.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Office Injection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'winword.exe' or actor_process_image_name = 'excel.exe'\n| filter action_process_image_name != 'winword.exe' and action_process_image_name != 'excel.exe'\n| filter causality_actor_process_image_name = 'winword.exe' or causality_actor_process_image_name = 'excel.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Microsoft Office injects code into a process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-injects-code-into-a-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Microsoft Office injects code into a process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/microsoft-office-injects-code-into-a-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1073.001",
+      "url": "https://attack.mitre.org/techniques/T1073/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1055.001",
+      "url": "https://attack.mitre.org/techniques/T1055/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

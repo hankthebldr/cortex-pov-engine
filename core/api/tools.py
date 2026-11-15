@@ -161,8 +161,21 @@ async def list_tools(db: AsyncSession = Depends(get_db)):
 
 def _adapter_summary(adapter) -> dict[str, Any]:
     """Slim card-payload for the UI grid — full schema is only fetched on
-    drill-down via /adapters/{adapter_id} to keep the list call cheap."""
+    drill-down via /adapters/{adapter_id} to keep the list call cheap.
+
+    ``shelf_backed`` / ``artifact_exempt`` say, per pack, whether the payload
+    shelf stages the tool and — for a tier-4 pack it does not — the pack's own
+    ``reason_code``, ``reason`` and ``revisit``. Without them the grid could
+    only repeat one generic sentence for every artifact-less pack.
+    """
+    exempt = adapter.install.artifact_exempt
     return {
+        "shelf_backed":    adapter.install.artifact is not None,
+        "artifact_exempt": None if exempt is None else {
+            "reason_code": exempt.reason_code,
+            "reason":      exempt.reason,
+            "revisit":     exempt.revisit,
+        },
         "adapter_id":      adapter.adapter_id,
         "name":            adapter.name,
         "version":         adapter.version,

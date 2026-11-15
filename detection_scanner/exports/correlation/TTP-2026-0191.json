@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1190",
     "T1059.004",
@@ -19,11 +21,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "(BIOC(MP-032 BeyondTrust bomgar-scc Spawns a Shell Running Host Discovery) OR ABIOC(MP-032 Appliance Service Process Sends Hex-Encoded Hostname as Chunked DNS Labels) OR BIOC(MP-032 bomgar-scc Descendant Writes PHP Files Into the Web Root) OR BIOC(MP-032 Process Executed From a memfd With a Kernel-Thread argv0) OR BIOC(MP-032 bomgar-scc Descendant Opens a Reverse Shell Over dev tcp to Port 4444) OR IOC(aliyundunupdate.xyz)) AND (ABIOC(MP-032 NGFW Recurring Communications From the Appliance to a Rare External IP) OR IOC(134.122.13.34) OR IOC(45.61.150.96) OR IOC(85.155.186.121) OR IOC(9f431d5549a03aee92cfd2bdbbe90f1c91e965c99e90a0c9ad5a001f4e80c350) OR IOC(98a7b0900a9072bb40af579ec372da7b27af12b15868394df51fefe290ab176b)) within 1800s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw / panw_ngfw_threat_raw endpoint_device_name, the src_host every leg carries) -> one BeyondTrust appliance-compromise incident whose summary names the bomgar-scc lineage, the webshells, the SparkRAT / VShell implants and the C2 destinations.",
       "name": "BeyondTrust RS CVE-2026-1731 \u2014 bomgar-scc Post-Exploitation and NGFW C2 on One Appliance",
-      "rule_id": "CR-MP-0032",
-      "severity": "high"
+      "rule_id": "CR-MP-0032"
     }
   ],
   "ttp_ref": "TTP-2026-0191"

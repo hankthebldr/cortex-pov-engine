@@ -214,7 +214,7 @@ How to read a degraded component, using the example above:
   the top-level status.
 - **`degraded_components`** is the flat list to check first (what a console
   banner would render).
-- **`not_checked`** is equally load-bearing: it names five reachability-shaped
+- **`not_checked`** is equally load-bearing: it names six reachability-shaped
   claims this endpoint *deliberately does not make* — no outbound tenant
   call, no beacon ping, nothing. A green `/api/health` is not "the POV will
   work"; it's "these components loaded." The gap between those two claims is

@@ -1,0 +1,22 @@
+{
+  "reply": {
+    "total_count": 1,
+    "result_count": 1,
+    "endpoints": [
+      {
+        "endpoint_id": "synthetic-endpoint-1",
+        "endpoint_name": "target-01",
+        "endpoint_type": "AGENT_TYPE_SERVER",
+        "endpoint_status": "CONNECTED",
+        "operational_status": "PROTECTED",
+        "os_type": "AGENT_OS_LINUX",
+        "endpoint_version": "9.0.0.1",
+        "content_version": "1-1",
+        "assigned_prevention_policy": "synthetic-policy-1",
+        "last_seen": 1762000090000,
+        "is_isolated": "AGENT_UNISOLATED",
+        "ip": ["192.0.2.1"]
+      }
+    ]
+  }
+}

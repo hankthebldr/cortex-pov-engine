@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1583.001",
     "T1608.001",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(TIM-002 IOC Match \u2014 Outbound Fetch From TAXII-Fed Staged-Capability Host) AND XQL(TIM-002 Newly-Registered Look-Alike Domain Resolution Surfaced (NDR DNS leg)) -> join on src_host within 300s. Promotes a benign-looking lookup + fetch to a Resource-Development incident because the destination matches the adversary infrastructure published in the subscribed mocktaxii TAXII feed before any payload detonates.",
       "name": "TIM \u2014 Adversary Resource-Development Infrastructure Reached On Estate",
-      "rule_id": "CR-TIM-0002",
-      "severity": "high"
+      "rule_id": "CR-TIM-0002"
     }
   ],
   "ttp_ref": "TTP-2026-0079"

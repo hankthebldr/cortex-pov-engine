@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1539",
     "T1550.004",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(ITDR-004 Replay Marker Boolean Explicit Match) OR XQL(ITDR-004 Session Token Reused Across Geo And User-Agent)",
       "name": "Session Token Replay Hijack \u2014 Same Identity",
-      "rule_id": "CR-ITDR-0004",
-      "severity": "high"
+      "rule_id": "CR-ITDR-0004"
     }
   ],
   "ttp_ref": "TTP-2026-0040"

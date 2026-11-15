@@ -30,6 +30,19 @@
  *                   pivot; deletable and reconnectable.
  *   - `terminal`  — each leaf step → proof. DERIVED; not deletable/selectable.
  *
+ * TENANT CONTENT (2026-11-10). When the caller passes `opts.content` (the
+ * result of `composerContent.deriveTenantContent`), the graph also carries:
+ *   - `rule`    — one node per correlation rule on a card the chain cites. It
+ *                 is what the TENANT must hold, not something the chain runs,
+ *                 so it sits on a rail BELOW the chain. Selectable (it opens
+ *                 the Inspector); never draggable, never deletable.
+ *   - `content` — step → rule. `feeds` when the step declares a detection the
+ *                 rule's logic names, or expects the rule itself; `card` when
+ *                 nothing resolves and the step merely cites the same card.
+ * Both are DERIVED and never persisted: no step, no draft field, no layout key
+ * (`composer_layout` prunes every non-step key). The Run lens draws none of
+ * it — a rule is never lent a run verdict.
+ *
  * POSITIONS. `draft.layout` ({stepId:{x,y}}) overrides a STEP's computed
  * position — the only positions the backend persists (`composer_layout` prunes
  * every non-step key). The cgo and proof nodes are derived each build from the
@@ -43,7 +56,7 @@
  */
 
 import { effectiveChannel, spineProblems } from './composerDraft.js'
-import { laneOf } from './composerLanes.js'
+import { signalOf } from './composerSignal.js'
 
 /** Reserved node ids for the two derived anchors. A real step can never take
  *  these (step ids are `step-NN`), so they cannot collide. */
@@ -58,6 +71,9 @@ export const GRAPH_LAYOUT = Object.freeze({
   padX: 56,
   padY: 48,
   anchorW: 180, // cgo / proof are a touch narrower than a step card
+  cardH: 184,   // a full step card (two-line name, chips, tools) before it is measured
+  railGap: 44,  // room under the lowest step card for the rail line and its label
+  ruleRowH: 148, // vertical pitch between rule cards stacked under one anchor
 })
 
 /** Snap grid (flow px) for a dropped node. Shared by the visual `snapGrid`
@@ -176,19 +192,28 @@ export function reparentOnDelete(steps, removedId) {
  * @param {string} [opts.selectedId]  the selected step id (→ node.selected)
  * @param {boolean}[opts.runLens]     true in the Run lens (badges + read-only)
  * @param {Object} [opts.causalityStates] {stepId:{state}} from the real graph
- * @param {Object} [opts.laneOverrides]   {stepId:lane} for the door badge
  * @param {Object} [opts.layout]      {stepId:{x,y}} stored positions (default draft.layout)
  * @param {Object} [opts.geometry]    defaults to GRAPH_LAYOUT
- * @returns {{nodes:Array, edges:Array, bounds:{width:number,height:number}}}
+ * @param {Object} [opts.content]    `deriveTenantContent` result → rule nodes + content edges
+ * @param {string} [opts.selectedRuleKey] the selected rule's key (→ node.data.selected)
+ * @param {Object} [opts.stepHeights] {stepId: px} measured card heights, so the rail
+ *                                    clears the real bottom of the lowest card
+ * @returns {{nodes:Array, edges:Array, bounds:{width:number,height:number},
+ *            rail:{y:number,x0:number,x1:number}|null}}
  */
 export function buildGraph(draft = {}, steps = [], opts = {}) {
   const {
     selectedId = null,
     runLens = false,
     causalityStates = null,
-    laneOverrides = null,
     geometry = GRAPH_LAYOUT,
+    selectedRuleKey = null,
   } = opts
+  // Tenant content is a Design/Lanes concern. The Run lens shows what RAN.
+  const content = !runLens && opts.content && Array.isArray(opts.content.rules)
+    ? opts.content
+    : null
+
   const layout = opts.layout !== undefined ? opts.layout : (draft.layout || null)
   const G = geometry || GRAPH_LAYOUT
   const list = Array.isArray(steps) ? steps : []
@@ -270,10 +295,10 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
         tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
         runState: runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null,
         runLens,
-        // Door badge — the ingestion lane this step launches through. Shown on
-        // every lens now (the windowed canvas only showed it on the Lanes
-        // lens); it is a real, honest property of the step either way.
-        door: laneOf(s, laneOverrides, draft.plane),
+        // Door badge — the step's SIGNAL PATH (where it runs, and the
+        // mechanism that produces its evidence), read from its command and
+        // channel, never its plane. Shown on every lens.
+        signal: signalOf(s),
         channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
         offChain: flagged.has(s.id),
       },
@@ -365,15 +390,89 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
     })
   }
 
+  // ── Tenant content: rule nodes on a rail below the chain ──
+  // Recomputed every build from where the steps actually ARE (a stored drag
+  // included), exactly like the cgo/proof anchors. Never stored.
+  let rail = null
+  if (content && content.rules.length && list.length) {
+    const stepPos = new Map(list.map((s) => [s.id, posOf(s)]))
+    // The rail clears the BOTTOM of the lowest card. A card's height is known
+    // only once the browser has measured it (`opts.stepHeights`); until then a
+    // full-height card is assumed, so the rail never starts inside one.
+    const heights = opts.stepHeights || null
+    let railY = G.padY + G.cardH
+    for (const [id, p] of stepPos) {
+      const h = heights && typeof heights[id] === 'number' ? heights[id] : G.cardH
+      if (p.y + h > railY) railY = p.y + h
+    }
+    railY += 20
+    const firstRow = railY + G.railGap
+    const placed = [] // {x, row} — a card never overlaps another in its row
+    let minX = Infinity
+    let maxX = -Infinity
+
+    for (const r of content.rules) {
+      const anchor = stepPos.get(r.anchorStep) || stepPos.get(list[list.length - 1].id)
+      const x = anchor.x
+      let row = 0
+      while (placed.some((p) => p.row === row && Math.abs(p.x - x) < G.nodeW + 16)) row += 1
+      placed.push({ x, row })
+      if (x < minX) minX = x
+      if (x + G.nodeW > maxX) maxX = x + G.nodeW
+      nodes.push({
+        id: r.key,
+        type: 'rule',
+        position: { x, y: firstRow + row * G.ruleRowH },
+        deletable: false,
+        draggable: false,
+        selectable: true,
+        connectable: false,
+        data: { kind: 'rule', rule: r, selected: selectedRuleKey === r.key },
+      })
+
+      const sources = r.feeders.length
+        ? r.feeders
+        : (r.anchorStep ? [{ stepId: r.anchorStep, inputs: 0, declares: false, card: true }] : [])
+      for (const f of sources) {
+        if (!ids.has(f.stepId)) continue
+        let label
+        if (f.card) label = 'same card'
+        else if (f.inputs > 0) {
+          label = `feeds · ${f.inputs} input${f.inputs === 1 ? '' : 's'}${f.declares ? ' · expects it' : ''}`
+        } else label = 'expects this rule'
+        edges.push({
+          id: `${f.stepId}~>${r.key}`,
+          source: f.stepId,
+          target: r.key,
+          sourceHandle: 'content',
+          targetHandle: 'in',
+          type: 'content',
+          deletable: false,
+          selectable: false,
+          focusable: false,
+          reconnectable: false,
+          data: {
+            kind: f.card ? 'card' : 'feeds',
+            inputs: f.inputs,
+            declares: !!f.declares,
+            label,
+            contentStatus: r.contentStatus,
+          },
+        })
+      }
+    }
+    rail = { y: railY, x0: Math.min(G.padX, minX), x1: maxX }
+  }
+
   // Bounds — recomputed over every node so a dragged-out node stays reachable.
   let maxRight = G.padX + G.nodeW
   let maxBottom = G.padY + G.rowH
   for (const n of nodes) {
-    const w = n.type === 'step' ? G.nodeW : G.anchorW
+    const w = n.type === 'step' || n.type === 'rule' ? G.nodeW : G.anchorW
     if (n.position.x + w > maxRight) maxRight = n.position.x + w
     if (n.position.y + G.rowH > maxBottom) maxBottom = n.position.y + G.rowH
   }
   const bounds = { width: maxRight + G.padX, height: maxBottom + G.padY }
 
-  return { nodes, edges, bounds }
+  return { nodes, edges, bounds, rail }
 }

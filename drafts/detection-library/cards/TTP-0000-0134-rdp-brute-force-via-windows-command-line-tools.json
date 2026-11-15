@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0134",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "RDP Brute-Force via Windows Command Line Tools",
+    "summary": "An attacker attempts to brute-force RDP access using Windows command-line tools, generating multiple failed login attempts from a single host. Cortex should detect the unusual RDP-related process exec",
+    "description": "An attacker attempts to brute-force RDP access using Windows command-line tools, generating multiple failed login attempts from a single host. Cortex should detect the unusual RDP-related process execution and network connections."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.001",
+        "name": "Brute Force: Password Guessing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.003",
+        "name": "Command and Scripting Interpreter: Windows Command Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "net use \\\\192.0.2.10\\IPC$ \"\" /user:Administrator\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process starting with net.exe",
+        "expected_value": "action_process_image_name = 'net.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to RDP target IP",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 445"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "RDP Brute Force Attempt",
+        "description": "Multiple failed RDP connection attempts from same host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_file_path contains 'net.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 445",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1110.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual RDP Access Pattern",
+        "description": "Unexpected use of net.exe to attempt RDP connection to a remote host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_file_path contains 'net.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 445",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1110.001",
+          "T1059.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "RDP Brute Force Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'net.exe'\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 445",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Possible external RDP Brute-Force; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-external-rdp-brute-force"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Possible external RDP Brute-Force",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-external-rdp-brute-force",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.001",
+      "url": "https://attack.mitre.org/techniques/T1021/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1110.001",
+      "url": "https://attack.mitre.org/techniques/T1110/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.003",
+      "url": "https://attack.mitre.org/techniques/T1059/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

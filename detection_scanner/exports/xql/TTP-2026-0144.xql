@@ -53,7 +53,7 @@ dataset = xdr_data
 | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, recon_tools, beacon_ports, burst_events
 
 ## VALIDATION — GentleKiller Vulnerable Driver Load Preceding EDR Telemetry Loss
-# purpose: validation
+# purpose: hunt
 # dataset: xdr_data
 
 dataset = xdr_data

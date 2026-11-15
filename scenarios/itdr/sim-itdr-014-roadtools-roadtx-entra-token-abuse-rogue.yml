@@ -113,7 +113,7 @@ steps:
       echo "[CortexSim] SAFE-MODE stage-1: roadtx programmatic sign-in as ada.lovelace via login.microsoftonline.com (device-code / refresh-token flow, python-requests user-agent)" | tee "$MARK/1-programmatic-signin.marker"
     identity: container-runtime
     mitre_technique: "T1078.004"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     # ROOT step — links from the CGO (roadtx / ada.lovelace). No causality block.
     expected_detections:
       - plane: ITDR
@@ -129,7 +129,7 @@ steps:
       printf 'SAFE-MODE stage-2 DRS device register name=%s os=10.0.19041.928\n' "DESKTOP-4A7B2C9E" | tee "$MARK/2-rogue-device-register.marker"
     identity: container-runtime
     mitre_technique: "T1098.005"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     # exposure_exploit: the token acquired in step-01 is exploited to register a
     # rogue device against DRS; the registration mints the device object id + PRT.
     causality:
@@ -149,7 +149,7 @@ steps:
       echo "[CortexSim] SAFE-MODE stage-3: PRT reused to silently mint access token, MFA satisfied by refresh token (no interactive challenge)" | tee "$MARK/3-prt-silent-token.marker"
     identity: container-runtime
     mitre_technique: "T1550.001"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     # shared_entity: the rogue device object id + PRT minted in step-02 is the
     # entity that silently mints fresh tokens — the MFA-bypass moment.
     causality:
@@ -191,7 +191,7 @@ steps:
       echo "[CortexSim] SAFE-MODE stage-4b: roadrecon Graph enumeration burst /users /groups /devices /servicePrincipals /applications (>100 calls/hr) bound to the rogue device identity" | tee "$MARK/4b-graph-enum-burst.marker"
     identity: container-runtime
     mitre_technique: "T1087.004"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     # endpoint_network_stitch: the Graph API enumeration burst is stitched back to
     # the same rogue device identity; the correlation fires here, folding all five
     # signals into ONE identity-owned incident.

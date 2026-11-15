@@ -63,7 +63,7 @@ export default function useShelf({ adapters = [] } = {}) {
       // A 404 is "this SimCore has no shelf endpoint" — a capability gap, not a
       // fault. Anything else is a real failure and keeps its message so the
       // banner can print the code instead of a generic shrug.
-      setError(err?.status === 404 ? null : (err || new Error('shelf unavailable')))
+      setError(err?.status === 404 ? null : (err || new Error('tool readiness unavailable')))
     }
     // /artifacts is optional enrichment (pin type/ref, used_by). Its absence
     // must never blank the surface — hence a separate try.
@@ -122,12 +122,12 @@ export default function useShelf({ adapters = [] } = {}) {
       const timedOut = err?.name === 'AbortError'
       const failure = timedOut
         ? {
-            message: `Staging timed out after ${Math.round(STAGE_TIMEOUT_MS / 1000)}s. SimCore may be `
-              + 'behind a proxy holding the connection open. The artifact was NOT staged.',
+            message: `It timed out after ${Math.round(STAGE_TIMEOUT_MS / 1000)}s. SimCore may be `
+              + 'behind a proxy holding the connection open. The tool was NOT made ready.',
             code: 'PAYLOAD_STAGE_TIMEOUT',
             status: null,
           }
-        : { message: err?.message || 'Staging failed', code: err?.code || null, status: err?.status ?? null }
+        : { message: err?.message || 'Could not make it ready', code: err?.code || null, status: err?.status ?? null }
       if (mounted.current) setJobs((j) => ({ ...j, [adapterId]: { state: 'failed', error: failure } }))
       return null
     }

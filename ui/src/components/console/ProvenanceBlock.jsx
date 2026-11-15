@@ -27,7 +27,7 @@ export default function ProvenanceBlock({ supply, adapter = null, compact = fals
   } else if (supply.state === SUPPLY.UNSTAGED) {
     rows.push(['sha256', (
       <span key="d" className="mono provenance__muted">
-        not known until it is staged — this pack declares no pin
+        not known until it is made ready — this pack declares no pin
       </span>
     )])
   }
@@ -60,10 +60,10 @@ export default function ProvenanceBlock({ supply, adapter = null, compact = fals
     rows.push(['license', (
       <span key="l">
         <span className="chip chip--missed">LICENCE MISMATCH</span>{' '}
-        <span className="mono">pack: {packLicense} · staged: {artLicense}</span>
+        <span className="mono">pack: {packLicense} · on this instance: {artLicense}</span>
         <div className="provenance__warn">
-          The pack declares {packLicense}; the staged artifact records {artLicense}. The shelf
-          may hold a different tool than this pack describes. Verify before handing it to a customer.
+          The pack declares {packLicense}; the copy on this instance records {artLicense}. It
+          may be a different tool than this pack describes. Verify before handing it to a customer.
         </div>
       </span>
     )])
@@ -74,7 +74,7 @@ export default function ProvenanceBlock({ supply, adapter = null, compact = fals
   if (adapter?.upstream?.attribution) {
     rows.push(['attribution', <span key="a" className="mono">{adapter.upstream.attribution}</span>])
   }
-  if (supply.stagedAt) rows.push(['staged', <span key="t" className="mono">{supply.stagedAt}</span>])
+  if (supply.stagedAt) rows.push(['made ready', <span key="t" className="mono">{supply.stagedAt}</span>])
   if (supply.stagePath) rows.push(['default dest', <span key="sp" className="mono">{supply.stagePath}</span>])
   if (adapter?.adapter_id) {
     rows.push(['adapter', <span key="id" className="mono">{adapter.adapter_id}{adapter.version ? ` v${adapter.version}` : ''}</span>])
@@ -107,7 +107,7 @@ export default function ProvenanceBlock({ supply, adapter = null, compact = fals
 /** The paste-ready block. Plain text on purpose — it goes into a ticket. */
 export function provenanceText(supply, adapter) {
   const lines = [
-    'CortexSim staged artifact',
+    'POVengine tool',
     `  name       ${supply.payloadName || '—'}`,
     `  sha256     ${supply.sha256 || '—'}`,
     `  size       ${formatBytes(supply.sizeBytes)}`,
@@ -115,7 +115,7 @@ export function provenanceText(supply, adapter) {
     `  host       ${hostOf(supply.sourceUrl) || '—'}`,
     `  pinned     ${supply.pinned ? `yes${supply.pinType ? ` (${supply.pinType} ${supply.pinRef || ''})` : ''}` : 'no'}`,
     `  license    ${supply.license || adapter?.upstream?.license || '—'}`,
-    `  staged     ${supply.stagedAt || '—'}`,
+    `  ready      ${supply.stagedAt || '—'}`,
     `  adapter    ${adapter?.adapter_id || supply.adapterId || '—'}${adapter?.version ? ` v${adapter.version}` : ''}`,
   ]
   return lines.join('\n')

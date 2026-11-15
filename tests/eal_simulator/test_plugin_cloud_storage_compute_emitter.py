@@ -196,7 +196,7 @@ class TestParamValidation:
         })
         assert p.auth_token is None
         assert p.auth_header == "Authorization"
-        assert p.auth_scheme == "Bearer"
+        assert p.auth_scheme == ""  # XSIAM HTTP collector wants the bare key
         assert p.compress is False
         assert p.batch is False
 
@@ -502,7 +502,7 @@ class TestAuthHeader:
         finally:
             _run(client.aclose())
 
-    def test_bearer_auth_header_set_from_token(self):
+    def test_bare_key_auth_header_set_from_token(self):
         emitter = CloudStorageComputeEmitter()
         emitter._verify_tls = False
         params = CloudStorageComputeEmitterParams.model_validate({
@@ -511,7 +511,7 @@ class TestAuthHeader:
         })
         client = emitter._build_client(params)
         try:
-            assert client.headers["authorization"] == "Bearer tok-123"
+            assert client.headers["authorization"] == "tok-123"
         finally:
             _run(client.aclose())
 

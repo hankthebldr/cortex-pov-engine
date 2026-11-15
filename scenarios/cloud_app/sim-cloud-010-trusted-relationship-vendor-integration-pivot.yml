@@ -152,7 +152,7 @@ steps:
     # ROOT. There is nothing anomalous to detect here on its own and that is the
     # point — this step exists so the readout can show the customer the entry
     # event and then show that it produced no alert, correctly.
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: ITDR
         type: XQL
@@ -176,7 +176,7 @@ steps:
       echo cortexsim-cloud010-call-rate-and-scope-deviation-emitted
     identity: www-data
     mitre_technique: "T1550.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -205,7 +205,7 @@ steps:
       echo cortexsim-cloud010-object-class-novelty-emitted
     identity: www-data
     mitre_technique: "T1114.002"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-02
       pivot: shared_entity
@@ -227,7 +227,7 @@ steps:
       echo cortexsim-cloud010-non-publisher-egress-emitted
     identity: svc-backup
     mitre_technique: "T1567"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -251,7 +251,7 @@ steps:
     # temporal: the peer app runs in the same window but is a DIFFERENT identity
     # and must not join the incident. Putting it on the spine would defeat the
     # control it exists to provide.
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -275,7 +275,7 @@ steps:
       echo cortexsim-cloud010-terminal-stitch-verified
     identity: root
     mitre_technique: "T1199"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-04
       pivot: shared_entity

@@ -11,8 +11,12 @@ would reject for lacking a UC/TC binding, a version, MITRE metadata, etc.
 ``DraftScenarioSchema`` is that schema. It RELAXES, relative to ``ScenarioSchema``:
 
   * ``uc_ref`` / ``tc_ref`` / ``uc_name`` / ``tc_name`` / ``mitre_*`` /
-    ``version`` / ``push_supported`` / ``pull_supported`` become optional and
-    are sentinel-filled by :func:`draft_to_orm_kwargs`.
+    ``version`` / ``pull_supported`` become optional and are sentinel-filled
+    by :func:`draft_to_orm_kwargs`.
+  * ``push_supported`` becomes optional and is DERIVED from the command text —
+    but an explicit ``false`` on the body is a FLOOR (:func:`effective_push_support`):
+    a draft forked from a corpus scenario that refuses push delivery must not
+    be offered the bundle its origin refuses, however POSIX-shaped its steps.
   * it does NOT run the UC/TC index FK check at rest — an ``UNBOUND`` draft is a
     legal *saved* state. Binding is enforced at LAUNCH (the D5 gate), not at save.
 
@@ -30,7 +34,11 @@ Draft-specific structural rules it ADDS (surfaced as ``DRAFT_SCHEMA_INVALID``):
 empty ``steps`` rejected, duplicate step ids rejected, and the derived
 ``detection_types`` union must be non-empty (mirrors
 ``ScenarioSchema.validate_detection_types`` — a draft with no detection anywhere
-proves nothing and is not a legal saved state).
+proves nothing and is not a legal saved state). Two hardening rules for content
+arriving over an unauthenticated API: single-line fields (name, author, tags,
+step id/name, detection description/id/ttp_ref) refuse control characters
+(SEC-13), and ``verification_xql`` refuses XQL's tenant-writing ``target`` stage
+(SEC-05, the same guard ``XsiamClient.start_xql_query`` enforces).
 
 This module NEVER touches the corpus boot path: ``scenario_loader``'s loader,
 ``ScenarioSchema`` and ``make check-refs`` stay byte-identical, and drafts live
@@ -72,6 +80,7 @@ __all__ = [
     "DraftScenarioSchema",
     "DraftValidationError",
     "draft_to_orm_kwargs",
+    "effective_push_support",
     "orm_sentinels",
 ]
 
@@ -79,6 +88,35 @@ __all__ = [
 class DraftValidationError(ValueError):
     """Raised when a composed draft is structurally invalid. The API layer maps
     this to ``422 {code: 'DRAFT_SCHEMA_INVALID'}``."""
+
+
+# ---------------------------------------------------------------------------
+# Single-line fields (SEC-13, schema half)
+# ---------------------------------------------------------------------------
+#
+# The push generator echoes a draft's name, step ids/names and detection
+# descriptions into `#` comments and echo / Write-Host lines of bash and
+# PowerShell bundles. A newline in one of them ends the comment and the next
+# line runs as a command on the customer endpoint; an ESC sequence rewrites the
+# operator's terminal. Those fields are single-line by meaning, so a control
+# character in one is refused at the door. (The generator half — escaping at
+# emit time — is the push-bundle lane's.) `command` is multi-line by design and
+# is NOT restricted here. Unicode line/paragraph separators and NEL count: some
+# consumers treat them as line breaks.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f\x85  ]")
+
+
+def _refuse_control_chars(where: str, value: Optional[str]) -> None:
+    if value is None:
+        return
+    m = _CONTROL_CHAR_RE.search(value)
+    if m:
+        raise ValueError(
+            f"{where} contains a control character ({m.group(0)!r} at position "
+            f"{m.start()}); single-line fields may not carry CR, LF, tab or other "
+            f"control characters because they are echoed into generated bash and "
+            f"PowerShell bundles"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +142,12 @@ class DraftStepSchema(StepSchema):
 
     identity: Optional[str] = None
     mitre_technique: Optional[str] = None
+
+    @field_validator("id", "name")
+    @classmethod
+    def _single_line(cls, v: str, info) -> str:  # noqa: ANN001 — pydantic ValidationInfo
+        _refuse_control_chars(f"step {info.field_name}", v)
+        return v
 
 
 class NodePosition(BaseModel):
@@ -134,6 +178,25 @@ class DraftScenarioSchema(BaseModel):
     # ── Optional identity / provenance ──────────────────────────────────────
     author: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    # Threat-intel citation carried from a fork origin. Read at run time by
+    # the POV report (api/runs.py), the markdown report generator and the
+    # bundle header, so a fork that dropped them produced a report with no
+    # Unit 42 attribution. Plain optional strings; the corpus schema validates
+    # them no further either.
+    threat_report: Optional[str] = None
+    threat_report_url: Optional[str] = None
+
+    # ── Optional push declaration — a FLOOR, never a widening ──────────────
+    # ``push_supported`` on a draft is DERIVED from the command text at
+    # ORM-conversion. This field lets a draft forked from a corpus scenario
+    # that declares ``push_supported: false`` carry that refusal: the
+    # derivation may narrow true → false, but an explicit false here is never
+    # widened to true (see :func:`effective_push_support`). An explicit true
+    # is recorded as the declaration and is otherwise not a floor. Absent =
+    # the Phase-1 behaviour, derivation alone. Persisted on its own column
+    # (``push_supported_declared``) because the row's derived ``false`` and
+    # a carried refusal must never read as one value.
+    push_supported: Optional[bool] = None
 
     # ── Optional UC/TC index binding (sentinel-filled when omitted) ─────────
     uc_ref: Optional[str] = None
@@ -188,6 +251,20 @@ class DraftScenarioSchema(BaseModel):
     def _name_non_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("name must be a non-empty string")
+        _refuse_control_chars("name", v)
+        return v
+
+    @field_validator("author")
+    @classmethod
+    def _author_single_line(cls, v: Optional[str]) -> Optional[str]:
+        _refuse_control_chars("author", v)
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def _tags_single_line(cls, v: list[str]) -> list[str]:
+        for i, tag in enumerate(v):
+            _refuse_control_chars(f"tags[{i}]", tag)
         return v
 
     @field_validator("plane")
@@ -261,6 +338,39 @@ class DraftScenarioSchema(BaseModel):
             raise ValueError(
                 f"duplicate step id(s) not allowed in a draft: {dupes}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_detections(self) -> "DraftScenarioSchema":
+        """Per-detection rules the shared ``StepExpectedDetection`` (corpus
+        loader, not this module) does not carry.
+
+        * SEC-13: ``description`` / ``detection_id`` / ``ttp_ref`` are
+          single-line.
+        * SEC-05: ``verification_xql`` may not write to the tenant. A draft is
+          launchable and its results are verified against the tenant, so a
+          saved ``| target type=lookup ...`` is a deferred write to the
+          customer's Cortex. The client refuses it at send time too; refusing at
+          save means it is never stored, never shown in a report as "the
+          verification query", and never retried by the sweep. Same guard
+          function as the client — not a second lexer.
+        """
+        from integrations.xsiam.client import (  # noqa: PLC0415
+            XqlWriteStageRefused, refuse_xql_write_stages,
+        )
+        from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+
+        for step in self.steps:
+            for j, det in enumerate(step.expected_detections):
+                where = f"step '{step.id}' expected_detections[{j}]"
+                _refuse_control_chars(f"{where}.description", det.description)
+                _refuse_control_chars(f"{where}.detection_id", det.detection_id)
+                _refuse_control_chars(f"{where}.ttp_ref", det.ttp_ref)
+                if det.verification_xql is not None:
+                    try:
+                        refuse_xql_write_stages(det.verification_xql)
+                    except (XqlWriteStageRefused, XsiamConfigError) as exc:
+                        raise ValueError(f"{where}.verification_xql: {exc.detail}") from exc
         return self
 
     @model_validator(mode="after")
@@ -345,18 +455,44 @@ def _derive_push_supported(steps: list[dict[str, Any]], cleanup: Optional[dict[s
         return False
 
 
+def effective_push_support(
+    derived: bool,
+    declared: Optional[bool],
+    prior_declared: Optional[bool] = None,
+) -> tuple[bool, Optional[bool]]:
+    """The ONE floor rule → ``(push_supported, push_supported_declared)``.
+
+    ``derived`` is what the push generator says about the command text;
+    ``declared`` is what the request body said (None = nothing); and
+    ``prior_declared`` is what the row already carries, for a PUT. A refusal —
+    an explicit ``False`` from either — is a floor: it narrows the result to
+    ``False`` and is kept as the declaration, so a fork of a refusing origin
+    stays refused for its lifetime whatever a later body omits or widens.
+    Anything else leaves the derivation alone and records the body's own
+    declaration, so a DERIVED ``False`` never hardens into a declared one and a
+    hand-authored draft recovers the moment its steps become emittable.
+    """
+    if declared is False or prior_declared is False:
+        return False, False
+    return derived, declared
+
+
 def draft_to_orm_kwargs(
     draft: DraftScenarioSchema,
     *,
     author: str = "composer",
     scenario_id: Optional[str] = None,
+    prior_declared: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Build ``Scenario`` ORM keyword args from a validated draft.
 
     Fills every ``nullable=False`` column a from-scratch draft lacks with the
     explicit sentinels in :data:`orm_sentinels`; derives ``detection_types``
     from the steps' expected detections and ``push_supported`` from the command
-    text; and stamps ``status='draft'`` and the ``'composer-draft'`` tag.
+    text — narrowed by the draft's declared refusal and, on a PUT, by
+    ``prior_declared`` (the row's existing ``push_supported_declared``), via
+    :func:`effective_push_support`; and stamps ``status='draft'`` and the
+    ``'composer-draft'`` tag.
 
     ``scenario_id`` defaults to ``SIM-DRAFT-<slug>-<rand>`` where ``<slug>`` is
     the slugified name and ``<rand>`` is a short random suffix, so a draft id is
@@ -414,6 +550,10 @@ def draft_to_orm_kwargs(
 
     cleanup = draft.cleanup.model_dump() if draft.cleanup else None
 
+    push_supported, push_supported_declared = effective_push_support(
+        _derive_push_supported(steps, cleanup), draft.push_supported, prior_declared
+    )
+
     resolved_id = scenario_id or f"SIM-DRAFT-{_slug(draft.name)}-{secrets.token_hex(3)}"
 
     kwargs: dict[str, Any] = {
@@ -441,7 +581,10 @@ def draft_to_orm_kwargs(
         ),
         "additional_techniques": [t.model_dump() for t in draft.additional_techniques],
         "execution_identity": execution_identity,
-        "push_supported": _derive_push_supported(steps, cleanup),
+        "threat_report": draft.threat_report,
+        "threat_report_url": draft.threat_report_url,
+        "push_supported": push_supported,
+        "push_supported_declared": push_supported_declared,
         # The agent beacon runs any command; channel is implicitly 'agent' in
         # Phase 1, so pull is always supported for a draft.
         "pull_supported": True,

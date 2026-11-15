@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1595",
     "T1046",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(ASM Exposed-Service Discovery Findings By Port) AND (BIOC(ASM EAL \u2014 Active-Scan Port Fan-Out Against Exposed Host) OR XQL(ASM EAL \u2014 Active-Scan Port Fan-Out (1 src to many ports on exposed host))) \u2014 raises a single exposure-management incident tying the discovered exposed services to the active scan that surfaced them.",
       "name": "Exposure Management \u2014 Internet-Exposed Surface Discovered + Actively Scanned",
-      "rule_id": "CR-ASM-0001",
-      "severity": "high"
+      "rule_id": "CR-ASM-0001"
     }
   ],
   "ttp_ref": "TTP-2026-0070"

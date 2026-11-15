@@ -225,6 +225,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
 
       <textarea
         data-testid="ttp-editor-textarea"
+        aria-label="TTP card JSON"
         value={text}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}

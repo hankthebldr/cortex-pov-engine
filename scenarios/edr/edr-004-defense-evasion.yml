@@ -93,7 +93,22 @@ steps:
     # Root step: first track-covering action of the apache2-owned operator shell.
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'wevtutil cl Security & wevtutil cl System & Clear-History'
+      # SAFE-MODE (CONT-03/PUSH-14): this variant used to clear the REAL
+      # Security and System logs — unrecoverable, and it destroys the very
+      # telemetry the POV measures. It now clears the session's PowerShell
+      # history (its own line: `& Clear-History` is not cmd) and a
+      # CortexSim-owned classic event log created, written and removed in this
+      # step. `wevtutil cl` is the real command line; only the target changed.
+      windows: |
+        Clear-History
+        Remove-EventLog -LogName CortexSim-EDR004 -ErrorAction SilentlyContinue
+        New-EventLog -LogName CortexSim-EDR004 -Source CortexSim-EDR004
+        Write-EventLog -LogName CortexSim-EDR004 -Source CortexSim-EDR004 -EventId 1000 -EntryType Information -Message 'CortexSim SIM-EDR-004 lab-owned event, cleared next'
+        wevtutil.exe cl CortexSim-EDR004
+        $rc = $LASTEXITCODE
+        Remove-EventLog -LogName CortexSim-EDR004
+        if ($rc -ne 0) { Write-Error "wevtutil cl exited $rc"; exit $rc }
+        Write-Output 'cortexsim-edr004-history-and-lab-log-cleared'
       macos: 'rm -f ~/.zsh_history && unset HISTFILE && history -c'
     expected_detections:
       - plane: EDR
@@ -122,7 +137,18 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'wevtutil cl Security & wevtutil cl "Windows PowerShell"'
+      # SAFE-MODE (CONT-03/PUSH-14): used to clear the REAL Security and
+      # "Windows PowerShell" logs. Same CortexSim-owned log pattern as step-01.
+      windows: |
+        Remove-EventLog -LogName CortexSim-EDR004 -ErrorAction SilentlyContinue
+        New-EventLog -LogName CortexSim-EDR004 -Source CortexSim-EDR004
+        Write-EventLog -LogName CortexSim-EDR004 -Source CortexSim-EDR004 -EventId 1000 -EntryType Information -Message 'CortexSim SIM-EDR-004 lab-owned audit stand-in, cleared next'
+        wevtutil.exe gli CortexSim-EDR004
+        wevtutil.exe cl CortexSim-EDR004
+        $rc = $LASTEXITCODE
+        Remove-EventLog -LogName CortexSim-EDR004
+        if ($rc -ne 0) { Write-Error "wevtutil cl exited $rc"; exit $rc }
+        Write-Output 'cortexsim-edr004-lab-log-tampered'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -150,7 +176,22 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: '$f=Get-Item C:\Windows\Temp\beacon.exe; $f.CreationTime=$f.LastWriteTime="01/01/2023 00:00"'
+      # The timestomp target used to be assumed (Get-Item on a beacon.exe that
+      # nothing created, so the step always threw). It is now created first,
+      # stomped to a culture-invariant date, shown, and removed.
+      windows: |
+        $d = Join-Path $env:TEMP 'cortexsim-edr004'
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        $f = Join-Path $d 'beacon.exe'
+        Copy-Item -Force -Path (Join-Path $env:SystemRoot 'System32\whoami.exe') -Destination $f
+        $t = [datetime]'2023-01-01T00:00:00'
+        $i = Get-Item $f
+        $i.CreationTime = $t
+        $i.LastWriteTime = $t
+        $i.LastAccessTime = $t
+        Get-Item $f | Select-Object FullName, CreationTime, LastWriteTime
+        Remove-Item -Recurse -Force $d
+        Write-Output 'cortexsim-edr004-timestomp-complete'
       macos: 'touch -t 202301010000 /tmp/cortexsim_timestomp_test; touch -r /bin/ls /tmp/cortexsim_timestomp_test'
     expected_detections:
       - plane: EDR
@@ -181,7 +222,12 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: 'copy C:\Windows\System32\cmd.exe C:\Windows\Temp\svchost.exe'
+      # The cmd.exe copy masquerading as svchost.exe is now deleted in-step
+      # (and again by cleanup) instead of being left in the system Temp dir.
+      windows: |
+        copy /Y "%SystemRoot%\System32\cmd.exe" "%SystemRoot%\Temp\svchost.exe"
+        dir "%SystemRoot%\Temp\svchost.exe"
+        del /F /Q "%SystemRoot%\Temp\svchost.exe"
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -210,7 +256,13 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'tasklist | findstr /I "cortex traps falcon sentinel cylance carbon defender"'
+      # findstr exits 1 on no match — the expected result on a host with none
+      # of these products — which fail-fast read as a failed step. Discovery is
+      # the TTP; its exit code is not, so it is reset (SIM-MP-029 precedent).
+      windows: |
+        tasklist.exe | findstr.exe /I "cortex traps falcon sentinel cylance carbon defender"
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-edr004-security-tool-discovery-complete'
       macos: 'ps aux | grep -E "cortex|falcon|sentinel|carbon" | grep -v grep'
     expected_detections:
       - plane: EDR
@@ -228,6 +280,15 @@ cleanup:
   commands:
     - "rm -f /tmp/cortexsim_auth_backup /tmp/cortexsim_fake_auth.log /tmp/cortexsim_timestomp_test"
     - "rm -f '/tmp/[kworker/0:1]' '/tmp/systemd-journald' /tmp/cortexsim_masq*"
+    # Windows teardown for a step interrupted before its in-step delete. The
+    # bash bundle and the K8s bootstrap do NOT run these: push_generator
+    # withholds a Windows-only cleanup line from the POSIX target and names it
+    # in a `# skipped (Windows-only)` comment. Each line must therefore START
+    # with something the generator recognises as Windows (an .exe it lists, a
+    # cmdlet, a %VAR%), or it would reach bash as a command-not-found.
+    - "Remove-EventLog -LogName CortexSim-EDR004 -ErrorAction SilentlyContinue"
+    - "del /F /Q %SystemRoot%\\Temp\\svchost.exe"
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr004" rd /s /q "%TEMP%\cortexsim-edr004"'
     - "echo '[CortexSim] SIM-EDR-004 cleanup complete'"
 
 author: "Henry Reed"

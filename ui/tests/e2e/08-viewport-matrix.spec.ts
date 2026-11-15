@@ -185,10 +185,11 @@ test('the two rails share a top — a global notice must not push only one of th
   // The tolerance is `.view`'s own padding, not zero: the filter rail is inside
   // a padded scroll container and legitimately starts slightly lower.
   //
-  // The task tab strip (SectionTabs: Scenarios · Build a chain · Launch gate)
-  // is the ONE thing deliberately rendered inside `.view` above content — it
-  // is page-level wayfinding, not a notice. Its own measured height is
-  // subtracted, so an unplanned notice still fails exactly as before.
+  // The task tab strip (SectionTabs) is the ONE thing deliberately rendered
+  // inside `.view` above content — it is page-level wayfinding, not a notice.
+  // Scenarios has none since its tabs became rail items (design v26 §1); when
+  // a page does carry one, its measured height is subtracted, so an unplanned
+  // notice still fails exactly as before.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.rail--filter')
@@ -392,7 +393,15 @@ test('quick-launch selects are tall enough for their own text', async ({ page })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.scenario-card')
-  await page.locator('.scenario-card').first().click()
+  // The card's body opens its sheet; the footer's Run / Customize do not (v26 §4.1).
+  // The first LOADED scenario, not the first card: the staged drafts of the
+  // extended library can render before the corpus answers, and a draft opens
+  // no sheet (it is not loaded and not launchable).
+  await page.locator('.scenario-card')
+    .filter({ hasNot: page.locator('.sc-staged-chip') })
+    .first().locator('.scenario-card__body').click()
+  // The quick launch lives on the scenario sheet's Launch options tab (v26 §4.1).
+  await page.getByRole('tab', { name: 'Launch options' }).click()
   await page.waitForSelector('.insp-select')
 
   // NOT `scrollHeight > clientHeight`. That is the natural probe and it does
@@ -490,3 +499,75 @@ test('the plane filter rail aligns its names and wraps none of them', async ({ p
       `column is now too narrow for the widest code`,
   ).toEqual([])
 })
+
+/**
+ * Results at phone width (#257 regression). The "Result of" bar was a
+ * `minmax(0, 1fr) auto auto` grid: at 375px the run switcher and the Open
+ * button kept their natural widths and squeezed the text column to about one
+ * character, so the run's facts wrapped a letter per line. The Report header
+ * was a flex row that never wrapped, so its buttons ran past the view's edge,
+ * where `.view` clips them.
+ *
+ * CI's SimCore starts empty, and Results needs a run that has been read back,
+ * so the run list and its results are stubbed. Only the layout is under test.
+ */
+const READ_BACK_RUN = {
+  run_id: 'run-layout-375',
+  scenario_id: 'SIM-EDR-001',
+  status: 'completed',
+  mode: 'pull',
+  agent_id: 'pov-target-01',
+  delivered_at: '2026-11-13T18:00:05Z',
+  started_at: '2026-11-13T18:00:00Z',
+  completed_at: '2026-11-13T18:04:00Z',
+  tc_verdict: 'pending',
+  tc_verdict_detail: { source: 'reconcile:xsiam', scored_at: '2026-11-13T18:20:00Z' },
+}
+
+for (const { w, h } of [{ w: 375, h: 812 }, { w: 845, h: 620 }]) {
+  test(`Results keeps its run bar readable and its header on screen at ${w}x${h}`, async ({ page }) => {
+    await page.route(/\/api\/runs(\?.*)?$/, (route) =>
+      route.fulfill({ json: { runs: [READ_BACK_RUN], total: 1, limit: 500, offset: 0 } }))
+    await page.route(`**/api/results/${READ_BACK_RUN.run_id}`, (route) =>
+      route.fulfill({ json: { run_id: READ_BACK_RUN.run_id, results: [] } }))
+
+    await page.setViewportSize({ width: w, height: h })
+    await page.goto(`/#/proof?run=${READ_BACK_RUN.run_id}`)
+    await page.waitForSelector('[data-testid="result-of"] select', { timeout: 15_000 })
+    await page.waitForSelector('.evidence-header__actions', { timeout: 15_000 })
+    await page.waitForTimeout(300)
+
+    const g = await page.evaluate(() => {
+      const box = (s: string) => {
+        const e = document.querySelector(s)
+        if (!e) return null
+        const b = e.getBoundingClientRect()
+        return { left: b.left, right: b.right, width: b.width }
+      }
+      return {
+        view: box('.view'),
+        bar: box('[data-testid="result-of"]'),
+        main: box('.result-of__main'),
+        actions: [...document.querySelectorAll('.evidence-header__actions > *')].map((e) => {
+          const b = e.getBoundingClientRect()
+          return { label: (e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 24), right: b.right }
+        }),
+      }
+    })
+
+    // The text column needs about 240px for a scenario name and the run's
+    // facts; in a narrower bar it gets the bar's whole inner width.
+    const floor = Math.min(240, g.bar!.width - 40)
+    expect(
+      g.main!.width,
+      `the Result-of text column is ${Math.round(g.main!.width)}px wide in a ${Math.round(g.bar!.width)}px bar: ` +
+        'the switcher and Open button must wrap below it, not squeeze it',
+    ).toBeGreaterThanOrEqual(floor)
+
+    const offscreen = g.actions.filter((a) => a.right > g.view!.right + 1)
+    expect(
+      offscreen.map((a) => `${a.label} ends at ${Math.round(a.right)} (view ends at ${Math.round(g.view!.right)})`),
+      'Report header controls run past the view, which clips them',
+    ).toEqual([])
+  })
+}

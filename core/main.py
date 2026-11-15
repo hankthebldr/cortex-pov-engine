@@ -87,9 +87,22 @@ logger = logging.getLogger("cortexsim.main")
 # Lifespan handler (startup + shutdown)
 # ---------------------------------------------------------------------------
 
+def _mcp_lifespan(app: FastAPI):
+    # Flag off: nothing was mounted and the MCP SDK is never imported.
+    if getattr(app.state, "mcp", None) is None:
+        from contextlib import nullcontext  # noqa: PLC0415
+
+        return nullcontext()
+    from mcp_server.server import lifespan_for  # noqa: PLC0415
+
+    return lifespan_for(app)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan context — runs startup logic before yielding."""
+    """FastAPI lifespan: SimCore startup before yielding, shutdown after. The
+    MCP session manager runs at the yield point when ``/mcp`` is mounted, so MCP
+    serves only once SimCore is ready and stops before SimCore shuts down."""
     logger.info("CortexSim starting up — env=%s port=%d", settings.CORTEXSIM_ENV, settings.CORTEXSIM_PORT)
 
     # 0. Validate master key before anything else.  Refuses to boot production
@@ -97,6 +110,11 @@ async def lifespan(app: FastAPI):
     #    would otherwise be cryptographically worthless.
     from config import validate_master_key  # noqa: PLC0415
     validate_master_key(settings.CORTEXSIM_SECRET, env=settings.CORTEXSIM_ENV)
+
+    # 0b. Say, loudly, what this deployment exposes (SEC-01/SEC-10). Always
+    #     fires: there is no API authentication to configure yet.
+    warn_unauthenticated()
+    warn_unusable_allowed_hosts()
 
     # 1. Initialize database (create tables).
     #    A storage fault here is a DEPLOYMENT problem, not a defect, so it gets
@@ -121,6 +139,25 @@ async def lifespan(app: FastAPI):
         os._exit(DB_BOOT_EXIT_CODE)
     logger.info("Database initialized at %s", settings.CORTEXSIM_BASE_DIR + "/data/cortexsim.db")
 
+    # 1b. Master-key check (OPS-12). A regenerated .env over a surviving data
+    #     volume leaves every stored credential undecryptable, and nothing said
+    #     so until a tenant test 500'd in front of the customer. Stamp the
+    #     key-check on first boot; on every later boot decrypt it. A mismatch
+    #     does not refuse boot (runs, scenarios and push bundles need no vault)
+    #     — it is logged here and reported by /api/health as MASTER_KEY_MISMATCH.
+    #     A local decrypt only; no tenant is contacted.
+    from security.credentials import check_master_key  # noqa: PLC0415
+    try:
+        async with _db_context() as db:
+            key_check = await check_master_key(db, stamp=True)
+            await db.commit()
+        if key_check.status == "mismatch":
+            logger.error("MASTER_KEY_MISMATCH — %s", key_check.detail)
+        else:
+            logger.info("Master-key check: %s", key_check.status)
+    except Exception:  # noqa: BLE001 — a failed check must not take boot down
+        logger.exception("master-key check failed — /api/health will report it")
+
     # 2. Load scenarios from YAML
     scenarios_dir = settings.CORTEXSIM_SCENARIOS_DIR
     if not os.path.isabs(scenarios_dir):
@@ -133,6 +170,14 @@ async def lifespan(app: FastAPI):
     corpus_dir = default_corpus_dir(settings.CORTEXSIM_BASE_DIR)
     cards_loaded = ttp_catalog.load(corpus_dir)
     logger.info("TTP catalog ready: %d detection cards", cards_loaded)
+
+    # 2a'. Dataset requirement registry vs the datasets those cards read. Needs the card
+    #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on a
+    #      malformed registry or card, or an unregistered dataset; an absent registry
+    #      leaves every card dataset unregistered, so strict refuses that too. Otherwise
+    #      it only logs, and the health component reports it degraded.
+    from engine.dataset_requirements import boot_check_dataset_requirements  # noqa: PLC0415
+    boot_check_dataset_requirements(ttp_catalog.all_raw())
 
     # 2b. Load Tool Adapter catalog (Phase A — tool framework). Same
     #     warn-not-fail pattern: missing adapter packs are advisory and the
@@ -229,7 +274,8 @@ async def lifespan(app: FastAPI):
         )
 
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
-    yield
+    async with _mcp_lifespan(app):
+        yield
 
     logger.info("CortexSim shutting down")
     sweep_task.cancel()
@@ -258,7 +304,7 @@ async def _db_context():
 
 app = FastAPI(
     title="CortexSim",
-    version="1.1.1",
+    version="1.2.0",
     description="Enterprise detection simulation engine for Palo Alto Networks Cortex",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -266,20 +312,114 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins (jumpbox internal tool, no auth exists). Per the
-# CORS spec a wildcard origin cannot carry credentials — browsers reject
-# `allow_origins=["*"]` + `allow_credentials=True` outright — so credentials
-# stay OFF. Nothing here sends them (no auth, no cookies, no session), so this
-# keeps the API fully open while making the config spec-valid. Do not flip
-# allow_credentials back to True without narrowing allow_origins off "*" — the
-# two together are invalid and a browser will refuse the response.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# ---------------------------------------------------------------------------
+# HTTP exposure: CORS opt-in + Host guard (SEC-07)
+#
+# CORS used to be allow_origins=["*"]. With no authentication anywhere, that let
+# ANY web page a DC had open read every API response — runs, the credential
+# inventory, agent ids — into its own JavaScript. Nothing needs it: the console
+# is served by SimCore and calls the API at window.location.origin
+# (ui/src/api/client.js), and the Vite dev server proxies /api, so both are
+# same-origin. CORS is therefore mounted ONLY for origins an operator names in
+# CORTEXSIM_CORS_ORIGINS, and never with credentials.
+#
+# The Host guard (security/host_guard.py) closes what CORS never did: DNS
+# rebinding, where the attacker's page becomes same-origin with SimCore. It is
+# added LAST so it is the OUTERMOST layer and refuses before anything answers.
+# Still open until SEC-01: a cross-site *simple* POST to an IP literal is
+# delivered without a preflight, so body-less POST routes remain forgeable.
+# ---------------------------------------------------------------------------
+
+from security.host_guard import (  # noqa: E402
+    HostGuardMiddleware,
+    parse_allowed_hosts,
+    unusable_allowed_hosts,
 )
+
+
+def parse_cors_origins(raw: str | None) -> list[str]:
+    """``"https://a.example, https://b.example,"`` -> the non-empty entries."""
+    return [o.strip() for o in (raw or "").split(",") if o.strip()]
+
+
+def install_http_security(app: FastAPI, *, cors_origins: list[str],
+                          allowed_hosts: list[str]) -> None:
+    """Mount CORS (only if origins are named) and then the Host guard.
+
+    Starlette's ``add_middleware`` prepends, so the guard — added second — is
+    ``user_middleware[0]``, the outermost layer.
+    """
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            # Never True: with no authentication there is nothing a credential
+            # would legitimately carry, and wildcard + credentials makes
+            # Starlette reflect every caller's Origin (tests/api/test_cors.py).
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    app.add_middleware(HostGuardMiddleware, allowed_hosts=list(allowed_hosts))
+
+
+install_http_security(
+    app,
+    cors_origins=parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS),
+    allowed_hosts=parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS),
+)
+
+
+def warn_unauthenticated() -> None:
+    """The loud boot line. It always fires today: no authentication exists.
+
+    ``CORTEXSIM_BIND`` is quoted as a SETTING, never as where SimCore listens
+    (RG-GUARD-06): it is the address docker-compose publishes the port on.
+    This process binds nothing from it and cannot see the address uvicorn was
+    started on, so "Published on 127.0.0.1 only" was false under a host-run
+    launcher that binds every interface.
+    """
+    raw_bind = (settings.CORTEXSIM_BIND or "").strip()
+    hosts = parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    logger.warning(
+        "SECURITY: SimCore's operator and agent APIs are UNAUTHENTICATED (SEC-01). "
+        "Anyone who can reach this SimCore on port %d can launch runs, start "
+        "tools, read the credential inventory and impersonate agents. %s A "
+        "host-run SimCore (scripts/dev-up-native.sh, a bare uvicorn) binds "
+        "whatever --host uvicorn was given, which this process cannot see. "
+        "Host guard: %s. CORS: %s. "
+        "Restrict the port to the DC's address (security group / host firewall) "
+        "and publish on one interface (CORTEXSIM_BIND under compose, --host for "
+        "a host-run uvicorn). GET /api/health reports "
+        "this as api_auth: API_UNAUTHENTICATED.",
+        settings.CORTEXSIM_PORT,
+        (f"CORTEXSIM_BIND={raw_bind}: docker-compose is configured to publish on "
+         f"that address (not verified by this process)." if raw_bind else
+         "CORTEXSIM_BIND is unset, so docker-compose publishes on every "
+         "interface (0.0.0.0)."),
+        ("disabled (CORTEXSIM_ALLOWED_HOSTS='*')" if "*" in hosts else
+         "localhost, IP literals, this host's names" + (f", {', '.join(hosts)}" if hosts else "")),
+        ", ".join(parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS)) or "off (same-origin only)",
+    )
+
+
+def warn_unusable_allowed_hosts() -> None:
+    """Say at boot which ``CORTEXSIM_ALLOWED_HOSTS`` entries can never match.
+
+    An entry such as ``lab*.example`` or ``jump box`` admits nothing, and the
+    beacon or browser it was meant for is refused ``HOST_NOT_ALLOWED`` with the
+    setting apparently in place. ``/api/health`` lists the same entries as
+    ``api_auth.ignored_allowed_hosts``.
+    """
+    ignored = unusable_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    if ignored:
+        logger.warning(
+            "CORTEXSIM_ALLOWED_HOSTS: %d entr%s can never match a Host header and "
+            "%s ignored: %s. Write the host name only ('jumpbox.lab'; a scheme "
+            "or port is accepted and dropped) or '*.lab' for subdomains.",
+            len(ignored), "y" if len(ignored) == 1 else "ies",
+            "is" if len(ignored) == 1 else "are",
+            ", ".join(repr(e) for e in ignored))
 
 
 # ---------------------------------------------------------------------------
@@ -316,9 +456,17 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     """XSIAM integration failures → structured {error, code, detail} envelope.
     API key values never appear in XsiamError.detail (only HTTP status text)."""
     logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
+    content = {"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
+               "upstream_status": exc.upstream_status}
+    # Additive, and only when the refusal knows when to come back.
+    retry_after = getattr(exc, "retry_after_seconds", None)
+    if retry_after is not None:
+        content["retry_after_seconds"] = retry_after
     return JSONResponse(
         status_code=exc.http_status,
-        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail},
+        # upstream_status is additive: the tenant's HTTP status (e.g. 403 on the
+        # license-gated healthcheck), so a caller never reads it out of `detail`.
+        content=content,
     )
 
 
@@ -425,6 +573,11 @@ from api.scenarios import router as scenarios_router  # noqa: E402
 # console. Registered BEFORE scenarios_router so /api/scenarios/drafts resolves
 # to this router rather than being swallowed by scenarios' /{scenario_id}.
 from api.drafts import router as drafts_router          # noqa: E402
+# Dataset prerequisites — registered BEFORE scenarios_router for the same reason as
+# drafts: /api/scenarios/{id}/prerequisites must not be swallowed by /{scenario_id}.
+from api.prerequisites import router as prerequisites_router  # noqa: E402
+# Ingestion doors read API — registered BEFORE scenarios_router (/api/scenarios/{id}/doors).
+from api.doors import router as doors_router  # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
@@ -435,15 +588,19 @@ from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
+from api.collector_targets import router as collector_targets_router  # noqa: E402
+from api.ngfw import router as ngfw_router  # noqa: E402
 from api.xsiam import router as xsiam_router  # noqa: E402
 from api.ttps import router as ttps_router              # noqa: E402
 from api.events import router as events_router          # noqa: E402
 from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
 from api.storyline import router as storyline_router    # noqa: E402
+from api.tenant_evidence import router as tenant_evidence_router  # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
+from api.readiness import router as readiness_router    # noqa: E402
 # Assertion substrate — the POS/PLT/AUT proof mechanism. The catalog loads
 # lazily on first access, so a deployment with no assertions/ directory boots
 # exactly as it did before.
@@ -461,6 +618,8 @@ from api.payloads import router as k8s_payloads_router  # noqa: E402
 from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(drafts_router, prefix="/api")
+app.include_router(prerequisites_router, prefix="/api")
+app.include_router(doors_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
 # GAP-API-008 — backward-compat alias for the historical singular launch path
@@ -474,6 +633,8 @@ app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
+app.include_router(collector_targets_router, prefix="/api")
+app.include_router(ngfw_router, prefix="/api")
 app.include_router(xsiam_router, prefix="/api")
 app.include_router(ttps_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
@@ -483,14 +644,39 @@ app.include_router(runs_reconcile_router, prefix="/api")
 # Detection Proof Layer — per-run storyline snapshot (mounts a second router
 # under the /runs prefix, same pattern as runs_reconcile_router above).
 app.include_router(storyline_router, prefix="/api")
+# Run tenant evidence — an explicit, read-only tenant read for one run (POST)
+# and its stored snapshots (GET, no outbound call); same /runs-prefixed pattern.
+app.include_router(tenant_evidence_router, prefix="/api")
 # Causality-Graph — per-run typed DAG (endpoint+network), extends the storyline
 # spine; same /runs-prefixed second-router pattern.
 app.include_router(causality_router, prefix="/api")
 app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
+app.include_router(readiness_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
 app.include_router(k8s_payloads_router, prefix="/api")
 app.include_router(shelf_router, prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# MCP streamable-HTTP at /mcp — OPT-IN (CORTEXSIM_MCP_HTTP, default off).
+# Added BEFORE the static catch-all below, which would otherwise answer /mcp.
+# Flag off: the MCP SDK is not imported and the route table is unchanged.
+# The MCP server failing to import is logged and leaves /mcp unmounted; any
+# other failure to build the server is a defect and refuses the boot. Health
+# reads the mount itself (app.state.mcp, set only by mount()), never the flag:
+# an unimportable server is mcp: degraded MCP_SDK_IMPORT_FAILED, and a flag-on
+# app with nothing mounted is MCP_NOT_MOUNTED — never a green "mounted".
+# ---------------------------------------------------------------------------
+
+if settings.CORTEXSIM_MCP_HTTP:
+    try:
+        from mcp_server.server import mount as _mount_mcp  # noqa: E402
+    except ImportError as _mcp_exc:
+        logger.error("CORTEXSIM_MCP_HTTP is set but the MCP server did not import (%s: %s) — "
+                     "/mcp is NOT mounted", type(_mcp_exc).__name__, _mcp_exc)
+    else:
+        _mount_mcp(app, settings=settings)
 
 
 # ---------------------------------------------------------------------------

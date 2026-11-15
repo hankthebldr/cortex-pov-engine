@@ -40,11 +40,39 @@ DEFAULT_WINDOW_SECONDS = 3600
 #: because every Result in a step shares the step's technique.
 _FAMILIES = ("bioc", "abioc", "analytics", "correlation", "ioc", "prevention")
 
+#: The Issues API's ``detection.method`` response codes, matched EXACTLY
+#: (case-folded) before the human-readable substring rules below. Source:
+#: https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues —
+#: the response schema's ``detection.method`` enum.
+#:
+#: Substrings cannot read these: ``ANALYTICS_BIOC`` has an underscore where the
+#: "analytics bioc" rule expects a space, so it fell through to ``analytics``
+#: and an ABIOC expectation could never match it; ``TRAPS`` and ``MAGNIFIER``
+#: contain no family word at all.
+#:
+#: TRAPS = XDR Agent and MAGNIFIER = XDR Analytics is INFERRED, not stated. The
+#: page lists the request filter's human-readable values and the response's
+#: codes in nearly the same order; once the self-describing codes are paired
+#: (FW / PAN NGFW, BIOC / XDR BIOC, IOC / XDR IOC, CORRELATION / Correlation,
+#: ANALYTICS_BIOC / XDR Analytics BIOC, ...), TRAPS and MAGNIFIER are left with
+#: XDR Agent and XDR Analytics, first and second in both lists. Only the six
+#: codes a family exists for are mapped; every other code stays None.
+_METHOD_CODE_FAMILY = {
+    "traps": "prevention",
+    "magnifier": "analytics",
+    "analytics_bioc": "abioc",
+    "bioc": "bioc",
+    "ioc": "ioc",
+    "correlation": "correlation",
+}
+
 
 def signal_family(value: Optional[str]) -> Optional[str]:
     """Map a ``Result.signal_type`` or an alert ``source`` onto a family.
 
-    The XDR agent's own prevention modules (source "XDR Agent", or a
+    An Issues API ``detection.method`` code (``ANALYTICS_BIOC``, ``TRAPS``, ...)
+    is looked up exactly in :data:`_METHOD_CODE_FAMILY` first. The XDR agent's
+    own prevention modules (source "XDR Agent", code ``TRAPS``, or a
     ``Prevention`` expectation) are the ``prevention`` family — checked before
     the rule substrings so they can never be read as a BIOC. Returns None for a
     value that names no family — None is *unconstrained*, so an unknown source
@@ -54,6 +82,8 @@ def signal_family(value: Optional[str]) -> Optional[str]:
     s = (value or "").strip().lower()
     if not s:
         return None
+    if s in _METHOD_CODE_FAMILY:
+        return _METHOD_CODE_FAMILY[s]
     if "xdr agent" in s or s == "prevention":
         return "prevention"
     if "analytics bioc" in s or s == "abioc":

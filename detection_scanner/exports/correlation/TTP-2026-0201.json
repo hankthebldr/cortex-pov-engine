@@ -1,0 +1,24 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1195.002",
+    "T1059.007",
+    "T1552.001",
+    "T1074.001",
+    "T1027",
+    "T1560.001",
+    "T1567",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "ABIOC(KOI-010 Uncommon Shell Command Execution Under npm Install Hook Lineage) FOLLOWED_BY ABIOC(KOI-010 npm Install Hook Descendant Reads Multiple Developer Credential Files) FOLLOWED_BY XQL(KOI-010 Credentials Read And base64 Staged Under npm Install Lineage) FOLLOWED_BY XQL(KOI-010 Credential Archive Created Under npm Install Lineage) \u2014 all stitched by shared agent_hostname and actor_causality_id (CGO = the npm/node install process) so the lifecycle-hook detonation, multi-credential read, obfuscated staging and local archive collapse into ONE npm-supply-chain incident. The chain closes on the endpoint: its terminal term is the local archive create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path.",
+      "name": "npm Supply-Chain Credential Theft \u2014 Preinstall-Hook Detonation, Credential Harvest, Obfuscated Stage and Archive",
+      "rule_id": "CR-KOI-0010"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0201"
+}

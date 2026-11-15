@@ -129,7 +129,7 @@ steps:
     # ROOT of the malicious chain — no causality block; links from the winword.exe
     # CGO. Impossible-travel is an identity-plane signal, OS-agnostic in origin
     # (the compromised principal can authenticate from any endpoint OS).
-    platforms: ["windows", "linux", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -156,7 +156,10 @@ steps:
     # -enc); the endpoint process is OWNED by the winword.exe CGO (process_lineage
     # from the CGO) and joined to the identity-plane sign-in on the shared
     # normalized principal (shared_entity, the cross-plane identity key).
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -188,7 +191,10 @@ steps:
     # the same host process tree as the abnormal PowerShell — a real parent->child
     # exec, so process_lineage from step-02 keeps the connected spine. net localgroup
     # is a Windows-only administrative-account abuse primitive.
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: process_lineage
@@ -220,7 +226,7 @@ steps:
     # is exactly the decoy-noise relationship the discrimination test asserts.
     # (A declared spine allows only one root, so the decoy carries a temporal edge
     # rather than hanging off the CGO as a second root.)
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -247,7 +253,7 @@ steps:
     # the shared normalized principal into ONE incident. shared_entity from step-03
     # (the last malicious signal) terminates the connected spine at the correlation
     # node without asserting a further process fork.
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: shared_entity

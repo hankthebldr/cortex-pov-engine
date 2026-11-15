@@ -257,7 +257,7 @@
     "products": [
       {
         "module": "cortex-xdr",
-        "submodule": "anti-ransomware",
+        "submodule": "behavioral-threat-protection",
         "coverage_tier": "prevention",
         "rule_ids": [
           "XDR-RANSOMWARE-LINUX-MASS-ENCRYPT-001",
@@ -326,7 +326,7 @@
   },
   "remediation_guidance": {
     "preventive_controls": [
-      "Enable Cortex XDR anti-ransomware behavioral protection on Linux hosts to block rapid mass file-rewrite with a uniform new extension.",
+      "Set Global Behavioral Threat Protection Rules to Block in the Linux malware profile to stop rapid mass file-rewrite with a uniform new extension. Linux has no Ransomware Protection module (Windows/macOS only); on Linux, mass encryption is stopped by Global Behavioral Threat Protection Rules.",
       "Keep immutable / off-host backups so recovery-inhibition on the host cannot destroy the only copy.",
       "Restrict write access to data directories and alert on uniform-extension mass renames."
     ],

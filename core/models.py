@@ -7,6 +7,7 @@ Tables:
   Result          — detection outcome per run
   StepOutcome     — host evidence per step (step_outcomes)
   Observation     — tenant evidence, raw alert per run (observations)
+  TenantEvidenceRead — one explicit tenant read of a run (tenant_evidence_reads)
   Assertion       — POS/PLT/AUT proof artifact, loaded from YAML
   AssertionRun    — execution record per assertion evaluation
   AssertionCheck  — per-check outcome within an assertion run
@@ -68,6 +69,19 @@ class Scenario(Base):
 
     push_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pull_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # What the author DECLARED for push, kept apart from what `push_supported`
+    # answers. For a corpus row the loader copies the YAML value here, so the
+    # two agree. For a Composer draft `push_supported` is DERIVED from the
+    # draft's command text and narrowed by this floor: a draft forked from an
+    # origin that declares `push_supported: false` carries that refusal here,
+    # and the drafts router never widens it on a later PUT — while a draft
+    # whose derivation merely said false once (NULL here) recovers when its
+    # steps are fixed. Without this column the row's `false` cannot say which
+    # of the two it was. NULL = nothing declared. NOTE: prod needs
+    #   ALTER TABLE scenarios ADD COLUMN push_supported_declared BOOLEAN
+    # (database._migrate_scenarios_columns does it on boot).
+    push_supported_declared: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
     external_tools: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     steps: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
@@ -159,6 +173,7 @@ class Scenario(Base):
             "threat_report_url": self.threat_report_url,
             "execution_identity": self.execution_identity,
             "push_supported": self.push_supported,
+            "push_supported_declared": self.push_supported_declared,
             "pull_supported": self.pull_supported,
             "external_tools": self.external_tools,
             "steps": self.steps,
@@ -252,6 +267,15 @@ class Run(Base):
     # _migrate_run_delivery_columns in database.py.
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # ── Case ledger (disposition CONTEXT, never detection evidence) ──────────
+    # Built by connectors.service.build_and_store_case_ledger during reconcile
+    # from the run's matched alerts: which case each landed in, how that case
+    # and each issue were closed, and the merge_class. NULL until a reconcile
+    # that matched alerts carrying case ids has run. Nothing here feeds
+    # observed_at, outcome, MTTD or a detection-family tc_verdict. Added by
+    # _migrate_case_ledger_columns in database.py.
+    case_ledger: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was
@@ -279,13 +303,19 @@ class Run(Base):
     canary_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     severed_at_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     block_mode_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Per-module Action Mode, operator-attested: {"btp": "block", ...}. XDR sets
+    # Block / Report / Disabled per module, so a block-mode run says nothing
+    # about any one module (review F1). NULL = nothing attested per module.
+    module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, *, include_output: bool = True) -> dict[str, Any]:
+        """``include_output=False`` omits ``output`` WITHOUT touching it, so a
+        caller that deferred the column (the run-list summary) never loads it."""
+        out = {
             "id": self.id,
             "run_id": self.run_id,
             "scenario_id": self.scenario_id,
@@ -299,6 +329,7 @@ class Run(Base):
             "channel_dispatch": self.channel_dispatch,
             "open_tasks": self.open_tasks,
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "case_ledger": self.case_ledger,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "agent_profile_mode": self.agent_profile_mode,
@@ -310,10 +341,13 @@ class Run(Base):
             "canary_run_id": self.canary_run_id,
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
+            "module_modes": self.module_modes,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "output": self.output,
         }
+        if include_output:
+            out["output"] = self.output
+        return out
 
 
 class Result(Base):
@@ -460,6 +494,62 @@ class StepOutcome(Base):
         }
 
 
+class RunTaskCompletion(Base):
+    """One beacon task's ``/complete``, recorded so a retry counts once.
+
+    The beacon retries ``/complete`` when the reply is lost, and
+    ``complete_run`` decrements ``Run.open_tasks`` per accepted POST. On a
+    multi-endpoint fan-out an uncounted retry terminalised the run while
+    another endpoint was still executing (RG-AGENT-03). The row is inserted in
+    the same write transaction as the decrement; the unique key makes a repeat
+    of the same task a no-op.
+
+    ``task_key`` is ``task:<task_id>`` when the beacon sent the task's id, else
+    ``agent:<agent_id>`` (a fan-out carries one task per distinct agent). A
+    beacon that sends neither writes no row and is counted as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_task_completions"
+    __table_args__ = (UniqueConstraint("run_id", "task_key",
+                                       name="uq_run_task_completions_run_task"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    task_key: Mapped[str] = mapped_column(String, nullable=False)
+    agent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    exit_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                   default=datetime.utcnow)
+
+
+class RunOutputFrame(Base):
+    """One beacon ``/output`` frame already stored, so a retry is stored once.
+
+    The beacon retries a step's ``/output`` when the reply is lost, and the
+    append is unconditional, so a stored-but-unacknowledged frame used to land
+    twice (RG-AGENT-06). Since 661047c the beacon keys every non-streaming
+    frame with ``frame_id`` (``<task_id>:<n>``); this row is inserted in the
+    same transaction as the append and the unique key makes a repeat a no-op.
+    A body without ``frame_id`` writes no row and appends as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_output_frames"
+    __table_args__ = (UniqueConstraint("run_id", "frame_id",
+                                       name="uq_run_output_frames_run_frame"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    frame_id: Mapped[str] = mapped_column(String, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                  default=datetime.utcnow)
+
+
 class Observation(Base):
     """Tenant evidence: one raw alert pulled back for a run."""
 
@@ -495,6 +585,46 @@ class Observation(Base):
             "alert_outcome": self.alert_outcome,
             "raw": self.raw,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
+        }
+
+
+class TenantEvidenceRead(Base):
+    """One explicit tenant-evidence read of a run (spec §7.4): the run's issues,
+    cases and endpoint record as the tenant held them at ``read_at``.
+
+    A table, not a column, because reads repeat and their history matters.
+    Context only: nothing that scores a run reads it. Created by
+    ``create_all``; no migration needed.
+    """
+
+    __tablename__ = "tenant_evidence_reads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    integration: Mapped[str] = mapped_column(String, nullable=False)
+    # The per-tenant ledger key of the integration's URL; None when unusable.
+    tenant: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)   # naive UTC
+    since: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    until: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    queries_issued: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reader_version: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "integration": self.integration,
+            "tenant": self.tenant,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "since": self.since.isoformat() if self.since else None,
+            "until": self.until.isoformat() if self.until else None,
+            "code": self.code,
+            "queries_issued": self.queries_issued,
+            "reader_version": self.reader_version,
+            "payload": self.payload,
         }
 
 
@@ -814,6 +944,9 @@ class Agent(Base):
     # lab-range address, never a made-up real one. See
     # engine.stitch_context.from_agent and docs/superpowers/specs §8.1(2).
     last_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # What a beacon inside a pod reports (pod, node, posture, tools, accounts).
+    # NULL = not a container agent / facts unknown — never "no tools".
+    runtime_facts: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -827,6 +960,7 @@ class Agent(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
             "last_ip": self.last_ip,
+            "runtime_facts": self.runtime_facts,
         }
 
 
@@ -979,6 +1113,9 @@ class EalCampaignRun(Base):
     operator: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     step_results: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Where each collector step was sent and why (eal_simulator.targets), as
+    # resolved at launch. Never holds a key. NULL on runs from before targets.
+    collector_resolution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     campaign_rel: Mapped["EalCampaign"] = relationship(
         "EalCampaign", back_populates="runs", foreign_keys=[campaign_id],
@@ -996,6 +1133,7 @@ class EalCampaignRun(Base):
             "operator": self.operator,
             "step_results": self.step_results,
             "error": self.error,
+            "collector_resolution": self.collector_resolution,
         }
 
 
@@ -1079,6 +1217,12 @@ class IntegrationCredential(Base):
     last_verified_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     last_verified_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # The last SOC Framework (response layer) probe a tenant preflight made, and
+    # when. Stored so Readiness, the console and the launch advisory can read it
+    # without calling the tenant again. Never a detection verdict.
+    response_layer: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    response_layer_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -1094,6 +1238,97 @@ class IntegrationCredential(Base):
             "last_verified_at": self.last_verified_at.isoformat() if self.last_verified_at else None,
             "last_verified_ok": self.last_verified_ok,
             "last_verified_error": self.last_verified_error,
+            "response_layer": self.response_layer,
+            "response_layer_read_at": (
+                self.response_layer_read_at.isoformat() if self.response_layer_read_at else None),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CollectorTargetConfig(Base):
+    """One tenant-side ingestion door for this instance's POV.
+
+    A SimCore instance serves one POV against one tenant, so the collectors
+    the emitters POST to are instance configuration, entered once and read by
+    every campaign, bundle and Composer dispatch through
+    ``eal_simulator.targets``. The key lives in the vault (``Secret`` named by
+    ``secret_name``); this row never holds it and ``to_dict`` never reports
+    more than whether one is set.
+    """
+
+    __tablename__ = "collector_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    dataset: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    auth_header: Mapped[str] = mapped_column(String, nullable=False, default="Authorization")
+    auth_scheme: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # The collector instance's Compression setting (gzip = True).
+    compress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                           server_default="0")
+    plugins: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    secret_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_check: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    declaration: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    last_arrival: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "url": self.url,
+            "dataset": self.dataset,
+            "auth_header": self.auth_header,
+            "auth_scheme": self.auth_scheme,
+            "compress": bool(self.compress),
+            "plugins": list(self.plugins or []),
+            "is_default": bool(self.is_default),
+            "has_key": self.secret_name is not None,
+            "last_check": self.last_check,
+            "declaration": self.declaration,
+            "last_arrival": self.last_arrival,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DoorEvent(Base):
+    """One state change of an ingestion door: an append-only timeline row.
+
+    A door's state at any moment is the last conclusive (open|closed) event at
+    or before it; ``unknown`` rows record a check that could not run and never
+    change the state. Nothing expires on a timer. Timestamps are naive UTC.
+    """
+
+    __tablename__ = "door_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    door_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    door_id: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False)  # open | closed | unknown
+    basis: Mapped[str] = mapped_column(String, nullable=False)  # verified | attested | check | configured
+    rung: Mapped[str] = mapped_column(String, nullable=False)  # authored | configured | reachable | verified
+    at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    attested_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    queries_issued: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "door_key": self.door_key,
+            "door_id": self.door_id,
+            "state": self.state,
+            "basis": self.basis,
+            "rung": self.rung,
+            "at": self.at.isoformat() if self.at else None,
+            "evidence": self.evidence,
+            "attested_by": self.attested_by,
+            "queries_issued": self.queries_issued,
         }

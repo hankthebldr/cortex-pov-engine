@@ -177,7 +177,7 @@ steps:
       echo '[*] Detections fire at multiple planes simultaneously'
     identity: root
     mitre_technique: "T1021.002"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: shared_entity

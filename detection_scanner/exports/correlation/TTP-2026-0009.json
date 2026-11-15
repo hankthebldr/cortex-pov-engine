@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1567"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(AIACC-003 Gemini Request Rate Exceeds Per User Baseline) OR XQL(AIACC-003 NGFW Sustained Generative AI Session Count Single Source) OR XQL(AIACC-003 Unsanctioned AI Provider Gemini For User)",
       "name": "Anomalous Gemini Usage Volume Single User",
-      "rule_id": "CR-AIACC-0003",
-      "severity": "high"
+      "rule_id": "CR-AIACC-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0009"

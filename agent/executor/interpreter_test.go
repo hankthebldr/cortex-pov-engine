@@ -2,7 +2,6 @@ package executor
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -13,16 +12,42 @@ import (
 // something.
 const noSuchInterpreter = "cortexsim-no-such-interpreter-xyz"
 
-func TestResolveInterpreter_ExactMatch(t *testing.T) {
-	// "sh" is not in the alias table at all, so this only passes via the
-	// exact-match branch — proves ResolveInterpreter checks the literal name
-	// first, not just the alias table.
-	check := ResolveInterpreter("sh")
-	if !check.Found || !check.Exact {
-		t.Fatalf("expected sh to resolve exactly on any POSIX test host, got %+v", check)
+// writeFakeBinary puts an executable named name (resolvable by exec.LookPath)
+// in dir: a `#!/bin/sh` script on POSIX, a `name.cmd` shim on Windows — which
+// LookPath finds through PATHEXT, exactly as it finds a real python3.exe
+// (CI-04: an extensionless shebang file is not executable on Windows).
+func writeFakeBinary(t *testing.T, dir, name, prints string) string {
+	t.Helper()
+	path, body := filepath.Join(dir, name), "#!/bin/sh\necho "+prints+"\n"
+	if runtime.GOOS == "windows" {
+		path, body = path+".cmd", "@echo "+prints+"\r\n"
 	}
-	if check.Resolved != "sh" {
-		t.Errorf("Resolved = %q, want %q", check.Resolved, "sh")
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// alwaysPresentBinary is a binary every host of this OS family has on PATH and
+// that is NOT in the alias table, so it can only resolve exactly.
+func alwaysPresentBinary() string {
+	if runtime.GOOS == "windows" {
+		return "cmd"
+	}
+	return "sh"
+}
+
+func TestResolveInterpreter_ExactMatch(t *testing.T) {
+	// sh (cmd on Windows) is not in the alias table at all, so this only passes
+	// via the exact-match branch — proves ResolveInterpreter checks the literal
+	// name first, not just the alias table.
+	name := alwaysPresentBinary()
+	check := ResolveInterpreter(name)
+	if !check.Found || !check.Exact {
+		t.Fatalf("expected %s to resolve exactly on this host, got %+v", name, check)
+	}
+	if check.Resolved != name {
+		t.Errorf("Resolved = %q, want %q", check.Resolved, name)
 	}
 }
 
@@ -31,10 +56,7 @@ func TestResolveInterpreter_AliasFallback(t *testing.T) {
 	// "python" itself) and confirm ResolveInterpreter("python") finds it via
 	// the alias table rather than reporting absent.
 	dir := t.TempDir()
-	fake := filepath.Join(dir, "python3")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho fake\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeFakeBinary(t, dir, "python3", "fake")
 	t.Setenv("PATH", dir)
 
 	check := ResolveInterpreter("python")
@@ -68,86 +90,6 @@ func TestResolveInterpreter_UnknownLogicalStillChecksItsOwnName(t *testing.T) {
 	}
 }
 
-// I3 — os.MkdirTemp defaults to 0700, owned by whichever euid the beacon
-// process runs as (root — the systemd unit declares no `User=`). A step that
-// runs as a different, unprivileged identity (runuser -l 'www-data') cannot
-// TRAVERSE a 0700 root-owned directory, so it can never reach the shim even
-// though the step's own output asserts "PATH-shimmed". This is latent on the
-// current corpus (its only `requires_interpreters` declaration is
-// identity: root) but goes live the moment anyone declares it on a non-root
-// step. World execute+read (0755) is what makes the directory traversable
-// and listable by any identity while the symlink inside still only points
-// at a binary that was already resolvable on this host.
-func TestNewInterpreterShim_DirIsWorldTraversable(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "python3")
-	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	shim, err := NewInterpreterShim("python", target)
-	if err != nil {
-		t.Fatalf("NewInterpreterShim: %v", err)
-	}
-	defer shim.Cleanup()
-
-	info, err := os.Stat(shim.Dir)
-	if err != nil {
-		t.Fatalf("stat shim dir: %v", err)
-	}
-	perm := info.Mode().Perm()
-	if perm&0o755 != 0o755 {
-		t.Fatalf("expected shim dir %s to be at least 0755 (world-traversable so a non-root step "+
-			"identity can reach it), got %v (this is the I3 defect: os.MkdirTemp's default 0700 locks "+
-			"out any identity other than the beacon's own euid)", shim.Dir, perm)
-	}
-}
-
-func TestNewInterpreterShim_ExposesBinaryUnderLogicalName(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "python3")
-	script := "#!/bin/sh\necho SHIM_OK\n"
-	if err := os.WriteFile(target, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	shim, err := NewInterpreterShim("python", target)
-	if err != nil {
-		t.Fatalf("NewInterpreterShim: %v", err)
-	}
-	defer shim.Cleanup()
-
-	// The shim directory must contain a binary literally named "python" that,
-	// when invoked, runs the aliased target.
-	cmd := exec.Command(filepath.Join(shim.Dir, "python"))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("running shimmed python failed: %v (output: %s)", err, out)
-	}
-	if got := string(out); got != "SHIM_OK\n" {
-		t.Errorf("shimmed python output = %q, want %q", got, "SHIM_OK\n")
-	}
-}
-
-func TestInterpreterShim_CleanupRemovesDir(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "python3")
-	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	shim, err := NewInterpreterShim("python", target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shimDir := shim.Dir
-	shim.Cleanup()
-	if _, statErr := os.Stat(shimDir); !os.IsNotExist(statErr) {
-		t.Errorf("expected shim dir %q to be removed after Cleanup, stat err = %v", shimDir, statErr)
-	}
-	// Safe to call twice / on the returned (now-empty) receiver.
-	shim.Cleanup()
-}
-
 func TestInstallPackageCommand_UnknownLogicalRefuses(t *testing.T) {
 	if _, ok := InstallPackageCommand(noSuchInterpreter); ok {
 		t.Fatalf("InstallPackageCommand must refuse an interpreter with no known package mapping")
@@ -155,9 +97,6 @@ func TestInstallPackageCommand_UnknownLogicalRefuses(t *testing.T) {
 }
 
 func TestInstallPackageCommand_NoPackageManagerOnPATHRefuses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("package-manager detection is POSIX-scoped")
-	}
 	dir := t.TempDir() // empty — no apt-get/dnf/yum/apk on this PATH
 	t.Setenv("PATH", dir)
 
@@ -168,10 +107,7 @@ func TestInstallPackageCommand_NoPackageManagerOnPATHRefuses(t *testing.T) {
 
 func TestInstallPackageCommand_DetectsFirstAvailableManager(t *testing.T) {
 	dir := t.TempDir()
-	fake := filepath.Join(dir, "apt-get")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeFakeBinary(t, dir, "apt-get", "fake")
 	t.Setenv("PATH", dir)
 
 	cmd, ok := InstallPackageCommand("python")
@@ -194,10 +130,7 @@ func TestInstallPackageCommand_DetectsFirstAvailableManager(t *testing.T) {
 // reports something present that genuinely is not.
 func TestDetectInterpreters_CoversKnownRoster(t *testing.T) {
 	dir := t.TempDir()
-	fake := filepath.Join(dir, "python3")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeFakeBinary(t, dir, "python3", "fake")
 	t.Setenv("PATH", dir) // ONLY python3 exists — perl/ruby/node are genuinely absent
 
 	checks := DetectInterpreters()

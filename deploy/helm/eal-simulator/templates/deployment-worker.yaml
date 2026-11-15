@@ -22,6 +22,8 @@ spec:
         # Disable kube-dns rewriting so DNS-tunnel plugins reach the customer
         # NGFW directly instead of being short-circuited by the cluster CNI.
         cortexsim.paloaltonetworks.com/dns-policy: "ClusterFirst"
+        # Same reason as the API pod: envFrom is read once, at pod start.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- with .Values.worker.nodeSelector }}
       nodeSelector:

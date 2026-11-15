@@ -33,11 +33,13 @@ export function nextReturnTarget(prev, dest, params) {
 /**
  * Where Exit from the immersive destination `dest` should navigate.
  *
- * The recorded page when there is one, else the destination's `navParent`
- * (a cold deep link has no previous page), else `fallback`.
+ * The recorded page when there is one, else the destination's `exitTo` (a
+ * cold deep link has no previous page; an immersive page that is itself a rail
+ * item, like Build a chain, names the page beside it), else its `navParent`,
+ * else `fallback`.
  *
  * @param {{destination:string, params:Object}|null} record
- * @param {{id:string, navParent?:string}|null} dest
+ * @param {{id:string, exitTo?:string, navParent?:string}|null} dest
  * @param {string} fallback  the console's default destination
  * @returns {{destination:string, params:Object|null}}
  */
@@ -45,5 +47,5 @@ export function exitTarget(record, dest, fallback) {
   if (record && record.destination && record.destination !== dest?.id) {
     return { destination: record.destination, params: record.params || null }
   }
-  return { destination: dest?.navParent || fallback, params: null }
+  return { destination: dest?.exitTo || dest?.navParent || fallback, params: null }
 }

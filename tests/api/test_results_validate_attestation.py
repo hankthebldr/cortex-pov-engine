@@ -111,13 +111,20 @@ def test_saving_a_note_on_a_prevented_row_is_not_an_attestation(client, session_
 # ── Round 3 R5b — observed=false only retracts an operator attestation ────
 
 def _add_observation(session_factory, rid):
-    """The provenance an engine match leaves: an Observation row for the result."""
-    from models import Observation
+    """The provenance an engine match leaves: an Observation row for the result
+    that carries the ALERT'S time — the same value ``apply_verdicts`` copies
+    onto ``Result.observed_at`` when it credits the match. That equality is
+    what tells a credited match from an uncredited candidate (RG-RUNS-03,
+    tests/api/test_reconcile_credited_rows.py drives both through the routes).
+    """
+    from models import Observation, Result
 
     async def _go():
         async with session_factory() as db:
+            row = (await db.execute(select(Result).where(Result.id == rid))).scalar_one()
             db.add(Observation(run_id="att-run", result_id=rid, source="xsiam",
-                               external_id="alert-1", name="matched alert"))
+                               external_id="alert-1", name="matched alert",
+                               observed_at=row.observed_at))
             await db.commit()
     asyncio.run(_go())
 

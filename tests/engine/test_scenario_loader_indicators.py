@@ -427,3 +427,28 @@ def test_rereview_i2_collector_campaign_still_allowed():
     assert _lines(_IP4, cmd) == []
     indented = "\n".join("      " + l if i else l for i, l in enumerate(cmd.split("\n")))
     assert _lines(_IP4, indented) == []
+
+
+# ── S-25 over eal.params (non-collector plugins) ─────────────────────────────
+
+def _eal_step(plugin, params, sid="step-01"):
+    st = _step("true", sid)
+    st.update(channel="eal", eal=dict(plugin=plugin, params=params))
+    return st
+
+
+def test_s25_ipv4_in_eal_params_of_non_collector_plugin_rejected():
+    ind = _ind(type="ipv4", value="172.93.100.252", safe_form="log_field")
+    with pytest.raises(ValueError, match=r"S-25.*eal\.params\.target_url"):
+        _scenario(indicators=[ind], steps=[_eal_step("c2_http_beacon", {"target_url": "http://172.93.100.252/"})])
+
+
+def test_s25_indicator_nested_in_eal_params_rejected():
+    ind = _ind(value="passkeyadd.com")
+    with pytest.raises(ValueError, match=r"S-25.*eal\.params\.extra\.hosts\.0"):
+        _scenario(indicators=[ind], steps=[_eal_step("c2_http_beacon", {"extra": {"hosts": ["passkeyadd.com"]}})])
+
+
+def test_s25_indicator_in_collector_plugin_params_allowed():
+    ind = _ind(type="ipv4", value="172.93.100.252", safe_form="log_field")
+    _scenario(indicators=[ind], steps=[_eal_step("m365_activity_emitter", {"source_ip": "172.93.100.252"})])

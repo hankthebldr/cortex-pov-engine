@@ -1,10 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '../../styles/destinations/get-started.css'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { agentInstallUrl, mintEnrollmentToken } from '../../api/client.js'
+import { parseServerTime } from '../../api/time.js'
 import TenantManager from './TenantManager.jsx'
 import useSetupProgress from './useSetupProgress.js'
-import { agentIsOnline } from './setupProgress.js'
+import { agentIsOnline, STEP_IDS } from './setupProgress.js'
+import {
+  attemptRole, attemptsSince, beaconShipState, installerOS, normaliseServerUrl, pullOneLiner, serverHostVerdict,
+  WINDOWS_ELEVATION_LABEL,
+} from './deployCommands.js'
+import {
+  CopyLive,
+  InstallAttemptsList,
+  LatestAttempt,
+  PosixBeaconGap,
+  WindowsBeaconMissing,
+  WindowsCaveats,
+  WindowsNoCradle,
+  useCopyFeedback,
+  useInstallAttempts,
+} from './DeployParts.jsx'
 
 /**
  * GetStartedView — the console's front door: what to do, in order, on THIS
@@ -28,10 +44,12 @@ import { agentIsOnline } from './setupProgress.js'
 // tenant ships with, which is what a first run needs to be.
 const FIRST_SCENARIO = 'SIM-EDR-001'
 
-export default function GetStartedView({ onNavigate = () => {} }) {
+export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
   const { steps, requiredLeft, next, ready, setStepConfirmed } = useSetupProgress()
   const requiredTotal = steps.filter((s) => s.required).length
-  const [openId, setOpenId] = useState(null)
+  // `?step=<id>` opens a named step, so another page (the Components hub's
+  // Configure on Broker VM) can send the DC straight to it.
+  const [openId, setOpenId] = useState(() => (STEP_IDS.includes(params.step) ? params.step : null))
   const current = openId || (next && next.id) || null
 
   return (
@@ -40,7 +58,7 @@ export default function GetStartedView({ onNavigate = () => {} }) {
         <h1 className="gs__title">Get started</h1>
         <p className="gs__lede">
           {ready
-            ? 'This instance is ready. Run any scenario from Simulate, or finish the optional steps to unlock network and log-source scenarios.'
+            ? 'This instance is ready. Run any scenario from Scenarios, or finish the optional steps to unlock network and log-source scenarios.'
             : 'Three steps take an empty instance to a detection you can show. Two more are optional and unlock network and third-party log scenarios.'}
         </p>
         <div className="gs__progress" aria-label={`${requiredTotal - requiredLeft} of ${requiredTotal} required steps done`}>
@@ -57,6 +75,7 @@ export default function GetStartedView({ onNavigate = () => {} }) {
             step={step}
             open={current === step.id}
             onToggle={() => setOpenId(current === step.id ? '__none__' : step.id)}
+            configure={CONFIGURE[step.id] ? () => onNavigate(CONFIGURE[step.id], { tab: 'setup' }) : null}
           >
             {step.id === 'agent' && <AgentStep step={step} onNavigate={onNavigate} />}
             {step.id === 'tenant' && <TenantStep step={step} />}
@@ -76,11 +95,20 @@ export default function GetStartedView({ onNavigate = () => {} }) {
   )
 }
 
-function Step({ n, step, open, onToggle, children }) {
+// Every setup step has a component behind it; Configure opens that
+// component's full Setup checklist (design v26 §11, slice 4).
+const CONFIGURE = {
+  agent: 'component-agents',
+  tenant: 'component-tenant',
+  collector: 'component-http',
+  bvm: 'component-bvm',
+}
+
+function Step({ n, step, open, onToggle, configure = null, children }) {
   const state = step.done ? 'done' : open ? 'open' : 'todo'
   return (
     <li className={`gs-step gs-step--${state}`} data-testid={`gs-step-${step.id}`} data-done={step.done}>
-      <button type="button" className="gs-step__row" onClick={onToggle} aria-expanded={open}>
+      <button type="button" className={'gs-step__row' + (configure ? ' gs-step__row--with-action' : '')} onClick={onToggle} aria-expanded={open}>
         <span className="gs-step__n" aria-hidden="true">{step.done ? '✓' : n}</span>
         <span className="gs-step__text">
           <span className="gs-step__title">
@@ -91,6 +119,9 @@ function Step({ n, step, open, onToggle, children }) {
         </span>
         <span className="gs-step__chev" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
+      {configure && (
+        <button type="button" className="kit-btn kit-btn--secondary gs-step__configure" onClick={configure}>Configure</button>
+      )}
       {open && (
         <div className="gs-step__body">
           <p className="gs-step__why">{step.why}</p>
@@ -111,9 +142,11 @@ function AgentStep({ step, onNavigate }) {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const [server, setServer] = useState(origin)
   const [token, setToken] = useState(null)
+  const [mintedAtMs, setMintedAtMs] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [copied, setCopied] = useState(false)
+  const copier = useCopyFeedback({ resetMs: 1600 })
+  const commandRef = useRef(null)
 
   // Poll while waiting: the provider polls runs and health, not agents, so
   // without this the step would sit at "waiting" after the beacon checked in.
@@ -123,12 +156,21 @@ function AgentStep({ step, onNavigate }) {
     return () => clearInterval(t)
   }, [step.done, refreshAgents])
 
-  const noBinaries = (healthModel?.degraded || []).includes('agent_binaries')
+  // Installer telemetry while this step is open and unfinished, so a failed
+  // one-liner surfaces its code here instead of an endless "waiting".
+  const attemptsState = useInstallAttempts(!step.done, { refreshKey: token ? (token.id ?? token.token) : null })
+
+  // Per target, from agent_binaries.missing[] — not the component's colour,
+  // which is degraded when ANY target is missing.
+  const ship = beaconShipState(healthModel, os)
+  const isWindows = installerOS(os) === 'windows'
 
   const mint = useCallback(async () => {
     setBusy(true); setError(null)
     try {
-      setToken(await mintEnrollmentToken({ label: 'get-started', ttl_seconds: 3600, max_uses: 1 }))
+      const t = await mintEnrollmentToken({ label: 'get-started', ttl_seconds: 3600, max_uses: 1 })
+      setMintedAtMs(Date.now())
+      setToken(t)
     } catch (err) {
       setError(err.message || 'Could not create an install token')
     } finally {
@@ -136,17 +178,26 @@ function AgentStep({ step, onNavigate }) {
     }
   }, [])
 
-  const base = server.replace(/\/+$/, '')
+  // Trimmed as SimCore trims `?server=`: a pasted address often ends in a space,
+  // which used to stop the slash strip and land inside the command's URL.
+  const base = normaliseServerUrl(server)
+  // The install line is only as good as the address in it, and SimCore's Host
+  // guard refuses names it was not told about — before the installer is served.
+  const hostVerdict = serverHostVerdict(
+    healthModel, base, typeof window !== 'undefined' ? window.location.hostname : '',
+  )
   const installUrl = `${base}${agentInstallUrl({ os })}`
-  const command = token
-    ? (os === 'windows'
-        ? `$env:CORTEXSIM_TOKEN='${token.token}'; iwr -useb "${installUrl}" | iex`
-        : `curl -fsSL "${installUrl}" | CORTEXSIM_TOKEN='${token.token}' bash`)
-    : null
+  const command = token ? pullOneLiner({ os, url: installUrl, token: token.token }) : null
 
-  const copy = () => {
-    try { navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* select manually */ }
-  }
+  const sinceMs = token
+    ? (Number.isFinite(parseServerTime(token.created_at)) ? parseServerTime(token.created_at) : mintedAtMs)
+    : NaN
+  const latest = token ? attemptsSince(attemptsState.attempts, sinceMs)[0] || null : null
+  // From the whole row: the same code can end one installer and only warn
+  // from the other (SERVICE_START_FAILED exits on Windows).
+  const latestFailed = !!latest && attemptRole(latest) === 'alert'
+
+  const resetToken = () => { setToken(null); setMintedAtMs(null) }
 
   if (step.done) {
     const online = agents.filter(agentIsOnline)
@@ -157,7 +208,7 @@ function AgentStep({ step, onNavigate }) {
             <li key={a.agent_id}><span className="gs-dot gs-dot--ok" /> <b className="mono">{a.agent_id}</b> · {a.hostname} · {a.os}</li>
           ))}
         </ul>
-        <button type="button" className="pov-btn" onClick={() => onNavigate('agents')}>Manage agents</button>
+        <button type="button" className="pov-btn" onClick={() => onNavigate('component-agents', { tab: 'fleet' })}>Manage agents</button>
       </div>
     )
   }
@@ -169,27 +220,28 @@ function AgentStep({ step, onNavigate }) {
         <div className="gs-seg" role="radiogroup">
           {[['linux', 'Linux'], ['darwin', 'macOS'], ['windows', 'Windows']].map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={os === v}
-              className={'gs-seg__opt' + (os === v ? ' is-on' : '')} onClick={() => { setOs(v); setToken(null) }}>{l}</button>
+              className={'gs-seg__opt' + (os === v ? ' is-on' : '')} onClick={() => { setOs(v); resetToken() }}>{l}</button>
           ))}
         </div>
       </div>
 
       <label className="gs-field">
         <span className="gs-label">POVengine address the host can reach</span>
-        <input className="gs-input mono" value={server} onChange={(e) => { setServer(e.target.value); setToken(null) }} />
+        <input className="gs-input mono" value={server} onChange={(e) => { setServer(e.target.value); resetToken() }} />
         {LOOPBACK.test(base) && (
-          <span className="gs-hint gs-hint--warn">
-            This is a loopback address. It only works if the agent runs on this same machine — for another host, use this machine&apos;s LAN IP or DNS name.
+          <span className="gs-hint gs-hint--warn" data-testid="gs-server-loopback">
+            This is a loopback address. It only works if the agent runs on this same machine — for another host, use this
+            machine&apos;s LAN IP. A DNS name works only if POVengine is set to answer to it
+            (<code>CORTEXSIM_ALLOWED_HOSTS</code>).
           </span>
         )}
+        <ServerHostWarning verdict={hostVerdict} />
       </label>
 
-      {noBinaries && (
-        <p className="gs-hint gs-hint--warn">
-          This server has no prebuilt agents, so the installer will build from source and needs Go on the host.
-          Run <code>make agent-dist</code> on the POVengine host to fix that.
-        </p>
-      )}
+      {isWindows
+        ? ship.state === 'missing' && <WindowsBeaconMissing className="gs-hint gs-hint--warn" testId="gs-windows-missing" />
+        : <PosixBeaconGap ship={ship} className="gs-hint gs-hint--warn" testIdPrefix="gs" />}
+      {isWindows && ship.state !== 'missing' && <WindowsCaveats ship={ship} testId="gs-windows-caveats" />}
 
       {!command ? (
         <button type="button" className="pov-btn pov-btn--primary" onClick={mint} disabled={busy} data-testid="gs-agent-generate">
@@ -197,16 +249,101 @@ function AgentStep({ step, onNavigate }) {
         </button>
       ) : (
         <div className="gs-cmd">
-          <span className="gs-label">Run this on the host (token works once, for 1 hour)</span>
-          <pre className="gs-cmd__text mono" data-testid="gs-agent-command">{command}</pre>
+          <span className="gs-label">{isWindows ? WINDOWS_ELEVATION_LABEL : 'Run this on the host'}</span>
+          <span className="gs-hint">The token works once, for 1 hour.</span>
+          <pre className="gs-cmd__text mono" data-testid="gs-agent-command" ref={commandRef}>{command}</pre>
           <div className="gs-row">
-            <button type="button" className="pov-btn pov-btn--primary" onClick={copy}>{copied ? 'Copied' : 'Copy command'}</button>
-            <span className="gs-wait"><span className="gs-dot gs-dot--pulse" /> Waiting for the agent to check in…</span>
+            <button type="button" className="pov-btn pov-btn--primary"
+              onClick={() => copier.copy('command', command, commandRef, 'install command')}>
+              {copier.isCopied('command') ? 'Copied' : 'Copy command'}
+            </button>
+            {!latestFailed && (
+              <span className="gs-wait"><span className="gs-dot gs-dot--pulse" /> Waiting for the agent to check in…</span>
+            )}
           </div>
+          <CopyLive feedback={copier.feedback} testId="gs-copy-live" />
+          <LatestAttempt attempt={latest} testId="gs-attempt-latest" />
+          {/* Get started offered only the iwr | iex line for Windows. The
+              download bakes the TYPED address, as the one-liner does — not
+              the address this console happens to be open at. */}
+          {isWindows && (
+            <WindowsNoCradle token={token.token} copier={copier} server={base} testIdPrefix="gs" buttonClassName="pov-btn" />
+          )}
         </div>
       )}
       {error && <p className="gs-hint gs-hint--err">{error}</p>}
+      {command && <InstallAttemptsList state={attemptsState} limit={3} />}
     </div>
+  )
+}
+
+/**
+ * What the Host guard will make of the typed address. Renders nothing for an
+ * address SimCore is known to answer to. The refusal happens before the
+ * installer body is served, so it can never show up as an install attempt —
+ * this line is the only place the console can say it.
+ */
+function ServerHostWarning({ verdict }) {
+  if (!verdict || verdict.state === 'admitted') return null
+  const common = { className: 'gs-hint gs-hint--warn', 'data-testid': 'gs-server-host-warn', 'data-state': verdict.state }
+  if (verdict.state === 'invalid') {
+    return (
+      <span {...common}>
+        This is not an http:// or https:// address, so the install command built from it cannot work. Use the form{' '}
+        <code>http://&lt;ip-address&gt;:8888</code>.
+      </span>
+    )
+  }
+  const symptom = (
+    <>
+      A refused name fails on the host as <code>curl: (22) … error: 400</code> (an HTTP 400 from <code>iwr</code> on
+      Windows) before the installer is served, so no install attempt is reported here and this step keeps waiting.
+    </>
+  )
+  if (verdict.state === 'unknown') {
+    return (
+      <span {...common}>
+        This console cannot confirm that POVengine answers to <b className="mono">{verdict.host}</b> ({verdict.why}).
+        A current POVengine refuses host names it was not told about with <code>400 HOST_NOT_ALLOWED</code>. {symptom}{' '}
+        An IP address always works.
+      </span>
+    )
+  }
+  // RG-UI-05: a SimCore that publishes its own names lets this say what it knows.
+  const own = Array.isArray(verdict.ownNames) ? verdict.ownNames : null
+  const ownNames = own && own.length
+    ? <>Its own host name is <span className="mono">{own.join(', ')}</span> (inside a container, the container id)</>
+    : <>Its own host name is unknown</>
+  let ownLine
+  if (!own) {
+    ownLine = <>This console cannot see the machine&apos;s own host name, and inside a container that is the container id.</>
+  } else if (verdict.certain) {
+    // The FQDN names are admitted too: name them, they are a name that works.
+    const extra = (Array.isArray(verdict.fqdnNames) ? verdict.fqdnNames : [])
+      .filter((n) => !own.includes(n))
+    ownLine = extra.length
+      ? <>{ownNames}, and its fully-qualified name is <span className="mono">{extra.join(', ')}</span>.</>
+      : <>{ownNames}, and its fully-qualified name admits nothing else.</>
+  } else {
+    ownLine = (
+      <>
+        {ownNames}. It also answers to the machine&apos;s fully-qualified DNS name, which it has not looked up yet,
+        so this is refused unless it is that name.
+      </>
+    )
+  }
+  return (
+    <span {...common}>
+      POVengine {verdict.certain ? 'refuses' : 'may refuse'} <b className="mono">{verdict.host}</b> with{' '}
+      <code>400 HOST_NOT_ALLOWED</code>. It answers
+      only to localhost, an IP address, its own host name, and names in <code>CORTEXSIM_ALLOWED_HOSTS</code>
+      {verdict.allowed && verdict.allowed.length
+        ? <> (currently <span className="mono">{verdict.allowed.join(', ')}</span>)</>
+        : <> — and <code>CORTEXSIM_ALLOWED_HOSTS is empty</code></>}
+      . {ownLine}{' '}
+      {symptom} Use the machine&apos;s IP address, or add this name to <code>CORTEXSIM_ALLOWED_HOSTS</code> and restart
+      POVengine.
+    </span>
   )
 }
 
@@ -336,7 +473,7 @@ function SimulateStep({ step, onNavigate }) {
       <div className="gs-row">
         {first && (
           <button type="button" className="pov-btn pov-btn--primary" data-testid="gs-simulate-launch"
-            onClick={() => onNavigate('guided', { arm: first.scenario_id || first.id })}>
+            onClick={() => onNavigate('preflight', { arm: first.scenario_id || first.id })}>
             Set up this run
           </button>
         )}

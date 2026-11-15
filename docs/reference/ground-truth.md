@@ -7,15 +7,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 193 |
+| Loadable scenarios | 205 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 191 |
+| TTP cards | 203 |
 | Detection planes | 16 |
-| Step-detections | 1377 |
-| Catalog detection objects | 2123 |
-| ABIOC+Analytics share (step-detections) | 15.6% |
-| Correlation share (step-detections) | 10.1% |
-| Distinct MITRE techniques (base) | 235 (128) |
+| Step-detections | 1452 |
+| Catalog detection objects | 2336 |
+| ABIOC+Analytics share (step-detections) | 15.3% |
+| Correlation share (step-detections) | 10.3% |
+| Distinct MITRE techniques (base) | 241 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
 
@@ -26,17 +26,17 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | AIRS | 5 |
 | AI_ACCESS | 6 |
 | AI_SPM | 7 |
-| ANALYTICS | 38 |
+| ANALYTICS | 39 |
 | ASM | 6 |
 | BROWSER | 6 |
-| CDR | 28 |
+| CDR | 29 |
 | CLOUD_APP | 10 |
 | CSPM | 5 |
 | DLP | 5 |
-| EDR | 22 |
+| EDR | 29 |
 | EMAIL | 5 |
 | ITDR | 20 |
-| KOI | 9 |
+| KOI | 12 |
 | NDR | 12 |
 | TIM | 9 |
 
@@ -45,23 +45,35 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1377 (17.1%) |
-| Marker-only steps | 100/796 (12.6%) |
-| Scenarios with indicators | 14 |
-| Indicators (in-band) | 87 |
-| Indicators (not in-band) | 5 |
+| High-quality signals (stitched, non-marker step-detections) | 236/1452 (16.2%) |
+| Marker-only steps | 98/850 (11.5%) |
+| Scenarios with indicators | 16 |
+| Indicators (in-band) | 95 |
+| Indicators (not in-band) | 11 |
 
 ### Step-detections by type
 
 | Type | Count |
 |---|---:|
-| ABIOC | 159 |
+| ABIOC | 166 |
 | Analytics | 56 |
-| BIOC | 365 |
-| Correlation | 139 |
+| BIOC | 374 |
+| Correlation | 149 |
 | IOC | 119 |
-| Prevention | 0 |
-| XQL | 539 |
+| Prevention | 2 |
+| XQL | 586 |
+
+### Grouping keys (`make check-grouping`)
+
+1452 step-detections in 205 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+
+| Code | Outcome | Count |
+|---|---|---:|
+| G-01 | WARN: Medium+ detections share no native key | 0 |
+| G-02 | WARN: stitched step carries only below-Medium detections | 2 |
+| G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1083 |
+| G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters
 
@@ -73,7 +85,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Tier-4 exempt | 48 |
 | Tier-4 undeclared (should be 0 — `TA-13` rejects it) | 0 |
 | Distinct adapters wired via `adapter_ref` | 49 |
-| Scenarios wiring at least one adapter | 47 |
+| Scenarios wiring at least one adapter | 48 |
 
 ## Assertions (POS/PLT/AUT)
 
@@ -90,10 +102,11 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 |---|---:|
 | Index TCs evidenced by a scenario | 90/266 |
 | DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 124 |
+| S-13 tier disagreements | 127 |
 | S-14 posture-class-primary bindings | 14 |
-| PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
-| POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
+| PLT assertions authored | 7/43 rows (7 artifact(s), 7 row(s) no scenario reaches, 0 tenant-proven) |
+| POS assertions authored | 16/110 rows (18 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
+| AUT assertions authored | 3/6 rows (3 artifact(s), 3 row(s) no scenario reaches, 0 tenant-proven) |
 
 ## HTTP routes
 
@@ -101,10 +114,10 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 137 |
-| By HTTP method | `{"api_route": 1, "delete": 5, "get": 88, "post": 37, "put": 6}` |
-| `APIRouter()` instances | 25 |
-| Router files (`core/api/*.py`) | 23 |
+| Route decorators | 165 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 103, "post": 47, "put": 8}` |
+| `APIRouter()` instances | 31 |
+| Router files (`core/api/*.py`) | 29 |
 
 ## Strict UC/TC ref validation
 

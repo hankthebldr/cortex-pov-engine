@@ -117,7 +117,10 @@ steps:
     mitre_technique: "T1562.001"
     # Root step: BYOVD is a Windows kernel-driver technique (wnbios.sys / WN_64.sys
     # + disabler.exe). No meaningful Linux/macOS equivalent, so no platform_variants.
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -146,7 +149,10 @@ steps:
       echo '[*] NGFW should record repeating outbound sessions from this host after the tamper t0'
     identity: svc-backup
     mitre_technique: "T1071.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     # The EDR tamper t0 (endpoint signal) joins the NGFW beacon session on the
     # same host: an endpoint<->firewall stitch, not a process fork.
     causality:
@@ -169,7 +175,10 @@ steps:
       echo '[*] NGFW should record a sustained egress session (bulk bytes) from this host'
     identity: svc-backup
     mitre_technique: "T1048"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     # The SFTP exfil is a second network session from the SAME tampered host,
     # after the beacon — same-entity (src_host) reuse, no direct fork.
     causality:
@@ -195,7 +204,10 @@ steps:
       echo '    - metric returns 0 rows (no t0 or no exfil join) → F6 KPI not measurable'
     identity: root
     mitre_technique: "T1562.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     # Terminal correlation groups the tamper t0 + beacon + exfil on one
     # agent_hostname (src_host) into a single time-to-contain incident.
     causality:

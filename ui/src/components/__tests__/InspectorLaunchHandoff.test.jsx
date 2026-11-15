@@ -1,11 +1,11 @@
 /**
- * Tests for the ScenarioInspector launch-convergence handoff (redesign v2).
+ * Tests for the scenario sheet's Run handoff (design v26 §4.4).
  *
- * The canonical launch surface is the dedicated ③ Launch step. When an
- * `onContinueToLaunch` handler is wired, the drawer's primary CTA becomes
- * "Continue to Launch ▸" and the inline launch is demoted to a secondary
- * "Quick launch". With no handoff (isolated render) the drawer falls back to
- * its own inline "Launch" so it stays functional.
+ * The canonical launch surface is the launch step. When an `onRun` handler is
+ * wired, the sheet's primary verb "Run" hands the scenario off to it, and the
+ * inline launch is demoted to a secondary "Quick launch" on the Launch options
+ * tab. With no handoff (isolated render) Run launches in place so the sheet
+ * stays functional.
  */
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
@@ -45,48 +45,31 @@ const scenario = {
   steps: [],
 }
 
-describe('ScenarioInspector — launch convergence', () => {
-  it('shows "Continue to Launch" and hands off when onContinueToLaunch is wired', () => {
-    const onContinue = vi.fn()
-    render(
-      <ScenarioInspector
-        scenario={scenario}
-        open
-        launch={stubLaunch}
-        onContinueToLaunch={onContinue}
-      />,
-    )
-    const cta = screen.getByRole('button', { name: /continue to launch/i })
-    expect(cta).toBeInTheDocument()
-    fireEvent.click(cta)
-    expect(onContinue).toHaveBeenCalledTimes(1)
+describe('ScenarioInspector — Run handoff', () => {
+  it('Run hands off to the launch step when onRun is wired, without launching in place', () => {
+    const onRun = vi.fn()
+    const launch = { ...stubLaunch, launch: vi.fn() }
+    render(<ScenarioInspector scenario={scenario} open launch={launch} onRun={onRun} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(onRun).toHaveBeenCalledTimes(1)
+    expect(launch.launch).not.toHaveBeenCalled()
   })
 
-  it('demotes the inline launch to a "Quick launch" secondary action', () => {
-    render(
-      <ScenarioInspector
-        scenario={scenario}
-        open
-        launch={stubLaunch}
-        onContinueToLaunch={() => {}}
-      />,
-    )
-    // The Quick-launch secondary path is present and drives launch.launch.
-    const quick = screen.getByRole('button', { name: /quick launch/i })
-    expect(quick).toBeInTheDocument()
-    fireEvent.click(quick)
-    expect(stubLaunch.launch).toHaveBeenCalled()
+  it('demotes the inline launch to a "Quick launch" on the Launch options tab', () => {
+    const launch = { ...stubLaunch, launch: vi.fn() }
+    render(<ScenarioInspector scenario={scenario} open launch={launch} onRun={() => {}} />)
+    expect(screen.queryByRole('button', { name: /quick launch/i })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Launch options' }))
+    fireEvent.click(screen.getByRole('button', { name: /quick launch/i }))
+    expect(launch.launch).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to an inline "Launch" when no handoff is provided', () => {
-    render(
-      <ScenarioInspector
-        scenario={scenario}
-        open
-        launch={stubLaunch}
-      />,
-    )
-    expect(screen.queryByRole('button', { name: /continue to launch/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /launch/i })).toBeInTheDocument()
+  it('launches in place when no handoff is provided', () => {
+    const launch = { ...stubLaunch, launch: vi.fn() }
+    render(<ScenarioInspector scenario={scenario} open launch={launch} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(launch.launch).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Launch options' }))
+    expect(screen.queryByRole('button', { name: /quick launch/i })).toBeNull()
   })
 })

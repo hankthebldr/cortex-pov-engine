@@ -503,3 +503,167 @@
 .coverage-heat-legacy .mitre-heatmap__tactic-head {
   background: var(--s2);
 }
+
+/* ── 9. Dashboards (design v33 C8) ───────────────────────────────────────
+   The `coverage` route is the Dashboards rail item: Detection source × Use
+   case, MITRE ATT&CK and Planes × doors, plus the PANW stack and Competitive
+   lenses above. Tokens only. A selected tab or filter is the green wash
+   --ac-soft with the matte line; --gr-matte falls back to --ac-line until the
+   matte token lands. State colour always rides with a StatusIcon word. */
+.theme-console .dash { padding: 22px 26px 28px; }
+.theme-console .dash__title { display: flex; align-items: center; gap: 11px; margin: 0 0 8px; }
+.theme-console .dash__title .pov-page__title { margin: 0; font-size: 26px; line-height: 1.2; }
+.theme-console .dash__stats { margin: 16px 0 0; }
+.theme-console .dash__stat-k {
+  display: block; margin-top: 7px;
+  font: 600 12px/1.2 var(--font-ui); color: var(--tx);
+}
+.theme-console .dash__stat-sub { display: block; margin-top: 4px; font: 400 11px/1.35 var(--font-ui); color: var(--tx3); }
+
+.theme-console .dash__notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 14px 0 0; padding: 11px 13px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+  font: 400 12px/1.5 var(--font-ui); color: var(--tx2);
+}
+.theme-console .dash__empty { margin: 16px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx2); }
+.theme-console .dash__note { margin: 10px 0 0; font: 400 11.5px/1.5 var(--font-ui); color: var(--tx2); max-width: 900px; }
+
+.theme-console .dash__tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+.theme-console .dash__tab {
+  padding: 7px 12px; border-radius: 6px;
+  border: 1px solid var(--bd); background: transparent;
+  font: 600 12px/1 var(--font-ui); color: var(--tx2); cursor: pointer;
+}
+.theme-console .dash__tab:hover { border-color: var(--bd2); color: var(--tx); }
+.theme-console .dash__tab--on { background: var(--ac-soft); border-color: var(--gr-matte, var(--ac-line)); color: var(--tx); }
+.theme-console .dash__tab:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .dash__panel { margin-top: 14px; }
+
+.theme-console .dash__filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.theme-console .dash__filter { display: inline-flex; align-items: center; gap: 7px; font: 400 12px/1 var(--font-ui); color: var(--tx2); }
+.theme-console .dash__select {
+  padding: 6px 8px; border-radius: 6px;
+  background: var(--s2); border: 1px solid var(--bd);
+  font: 500 12px/1 var(--font-ui); color: var(--tx);
+}
+.theme-console .dash__select--on { background: var(--ac-soft); border-color: var(--gr-matte, var(--ac-line)); }
+.theme-console .dash__select:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .dash__spacer { flex: 1; }
+.theme-console .dash__legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.theme-console .dash__legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.theme-console .dash__legend-n { font-size: 11px; color: var(--tx3); }
+
+.theme-console .dash__split {
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px; align-items: start; margin-top: 12px;
+}
+@media (max-width: 960px) { .theme-console .dash__split { grid-template-columns: minmax(0, 1fr); } }
+.theme-console .dash__card { background: var(--s1); border: 1px solid var(--bd); border-radius: 10px; }
+.theme-console .dash__scroll { overflow-x: auto; }
+
+/* Grids: Detection source × Use case, Planes × doors */
+.theme-console .dash-grid { width: 100%; border-collapse: collapse; font: 400 12px/1.3 var(--font-ui); }
+.theme-console .dash-grid th,
+.theme-console .dash-grid td { border-bottom: 1px solid var(--bd); border-right: 1px solid var(--bd); padding: 0; }
+.theme-console .dash-grid thead th {
+  padding: 9px 8px; background: var(--s2); text-align: center; vertical-align: bottom;
+  font: 700 10.5px/1.3 var(--font-ui); color: var(--tx);
+}
+.theme-console .dash-grid .dash-grid__corner {
+  text-align: left; font: 700 9px/1.4 var(--font-ui);
+  letter-spacing: .12em; text-transform: uppercase; color: var(--tx2);
+}
+.theme-console .dash-grid__col { min-width: 76px; }
+.theme-console .dash-grid__col .kit-status { margin-top: 5px; justify-content: center; }
+.theme-console .dash-grid__row { padding: 7px 12px; text-align: left; background: var(--s1); min-width: 170px; }
+.theme-console .dash-grid__row .mono { font: 600 11px/1.2 var(--font-mono); color: var(--tx); }
+.theme-console .dash-grid__sub {
+  display: block; margin-top: 3px; max-width: 190px;
+  font: 400 10px/1.3 var(--font-ui); color: var(--tx3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .dash-grid thead .dash-grid__sub { margin: 4px auto 0; text-align: center; }
+.theme-console .dash-grid__plane { display: inline-flex; align-items: center; gap: 7px; }
+.theme-console .dash-grid__tint { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.theme-console .dash-grid__none { text-align: center; color: var(--tx3); font: 400 11px/1 var(--font-mono); }
+.theme-console .dash-grid__total { text-align: center; font: 600 11px/1 var(--font-mono); color: var(--tx2); }
+
+.theme-console .dash-cell {
+  display: flex; flex-direction: column; justify-content: center; gap: 5px;
+  width: 100%; min-height: 38px; padding: 6px 8px;
+  background: var(--s1); border: 0; cursor: pointer; text-align: left;
+}
+.theme-console .dash-cell:hover { background: var(--s2); }
+.theme-console .dash-cell:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.theme-console .dash-cell--on { background: var(--ac-soft); box-shadow: inset 0 0 0 2px var(--gr-matte, var(--ac-line)); }
+.theme-console .dash-cell__n { font: 700 11px/1 var(--font-mono); color: var(--tx); }
+
+.theme-console .dash-bar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--s3); }
+.theme-console .dash-bar__seg--detected { background: var(--pos); }
+.theme-console .dash-bar__seg--not_seen { background: var(--warn-str); }
+.theme-console .dash-bar__seg--pending { background: var(--tx3); }
+
+/* MITRE ATT&CK: the 14 tactic columns (and a trailing one for a tactic id
+   the table does not know), technique tiles. */
+.theme-console .dash-attack {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(116px, 1fr);
+  gap: 6px; padding: 10px; min-width: 1620px;
+}
+.theme-console .dash-attack__col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.theme-console .dash-attack__head { padding: 7px; background: var(--s2); border-radius: 5px; }
+.theme-console .dash-attack__tactic { display: block; font: 700 10px/1.25 var(--font-ui); color: var(--tx); }
+.theme-console .dash-attack__sum { display: block; margin-top: 4px; font-size: 9.5px; color: var(--tx3); }
+.theme-console .dash-attack__none { margin: 4px 2px; font: 400 10.5px/1.3 var(--font-ui); color: var(--tx3); }
+
+.theme-console .dash-tile {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 7px; border-radius: 5px; cursor: pointer; text-align: left;
+  background: var(--s2); border: 1px solid var(--bd2);
+}
+.theme-console .dash-tile:hover { border-color: var(--tx3); }
+.theme-console .dash-tile:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .dash-tile__top { display: flex; justify-content: space-between; gap: 4px; font: 700 9px/1 var(--font-mono); color: var(--tx2); }
+.theme-console .dash-tile__name { font: 500 10px/1.25 var(--font-ui); color: var(--tx); }
+.theme-console .dash-tile .kit-status__word { font-size: 10px; }
+.theme-console .dash-tile .kit-status__icon { width: 14px; height: 14px; font-size: 8.5px; }
+.theme-console .dash-tile--detected { background: var(--pos-soft); border-color: var(--pos-line); }
+.theme-console .dash-tile--not_seen { background: var(--warn-soft); border-color: var(--warn-str); }
+.theme-console .dash-tile--pending,
+.theme-console .dash-tile--never,
+.theme-console .dash-tile--unknown { background: var(--s2); border-color: var(--bd2); }
+/* A technique no scenario in scope exercises: drawn dashed, no fill. */
+.theme-console .dash-tile--none { background: transparent; border-style: dashed; border-color: var(--bd2); }
+.theme-console .dash-tile--none .dash-tile__name { color: var(--tx3); }
+.theme-console .dash-tile--on { background: var(--ac-soft); border-color: var(--gr-matte, var(--ac-line)); }
+
+.theme-console .dash-swatch { width: 14px; height: 10px; border-radius: 2px; border: 1px solid var(--bd2); background: var(--s2); }
+.theme-console .dash-swatch--detected { background: var(--pos-soft); border-color: var(--pos-line); }
+.theme-console .dash-swatch--not_seen { background: var(--warn-soft); border-color: var(--warn-str); }
+.theme-console .dash-swatch--none { background: transparent; border-style: dashed; }
+
+/* The open cell or tile, and its scenarios. */
+.theme-console .dash__pick { padding: 14px; font: 400 12px/1.5 var(--font-ui); color: var(--tx2); }
+.theme-console .dash__pick--on { border-color: var(--gr-matte, var(--ac-line)); }
+.theme-console .dash__pick-title { font: 700 11px/1.3 var(--font-mono); color: var(--tx); }
+.theme-console .dash__pick-sub { margin-top: 4px; font: 400 11px/1.45 var(--font-ui); color: var(--tx2); }
+.theme-console .dash__pick-empty { margin: 10px 0 6px; }
+.theme-console .dash__pick-list { list-style: none; margin: 10px 0 0; padding: 0; max-height: 420px; overflow-y: auto; }
+.theme-console .dash__pick-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 7px 2px; border-top: 1px solid var(--bd); text-decoration: none; color: inherit;
+}
+.theme-console .dash__pick-row:hover { background: var(--s2); }
+.theme-console .dash__pick-row:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.theme-console .dash__pick-id { min-width: 0; }
+.theme-console .dash__pick-id .mono { display: block; font: 600 10.5px/1.3 var(--font-mono); color: var(--tx); }
+.theme-console .dash__pick-name {
+  display: block; font: 400 10px/1.3 var(--font-ui); color: var(--tx3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .dash__link {
+  padding: 0; background: transparent; border: 0; cursor: pointer;
+  font: 500 11.5px/1.4 var(--font-ui); color: var(--tx2); text-decoration: underline;
+}
+.theme-console .dash__link:hover { color: var(--tx); }
+.theme-console .dash__link:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }

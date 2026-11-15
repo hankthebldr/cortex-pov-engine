@@ -25,7 +25,7 @@ import logging
 import uuid
 from typing import Any, AsyncIterator, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from events import event_bus
@@ -121,22 +121,55 @@ def _to_ui_event(bus_evt: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-async def _stream(run_id: Optional[str]) -> AsyncIterator[str]:
+#: How often an idle stream asks whether its client is still there (OPS-10).
+#: Under uvicorn (ASGI spec 2.4) Starlette does not listen for
+#: ``http.disconnect`` on a streaming response — it waits for the next send to
+#: fail — so without this a closed tab held its subscription (and a 1000-slot
+#: queue filling with every run's output) until the next keepalive, and every
+#: EventSource auto-reconnect on a flapping network added another.
+_DISCONNECT_POLL_SECONDS = 1.0
+
+
+async def _client_gone(request: Optional[Request]) -> bool:
+    if request is None:
+        return False
+    try:
+        return await request.is_disconnected()
+    except Exception:  # pragma: no cover - defensive: a broken receive is a gone client
+        return True
+
+
+async def _stream(run_id: Optional[str],
+                  request: Optional[Request] = None) -> AsyncIterator[str]:
     """Yield SSE frames for a subscription until the client disconnects.
 
     Sends an initial comment so ``EventSource.onopen`` fires promptly, then
     drains the subscriber queue, translating each bus event to the UI shape.
-    A keepalive comment is emitted on idle so proxies keep the stream open.
+    A keepalive comment is emitted after ``_KEEPALIVE_SECONDS`` idle so proxies
+    keep the stream open.
+
+    With a ``request`` the loop asks ``request.is_disconnected()`` every
+    ``_DISCONNECT_POLL_SECONDS`` while idle and after every event, and breaks;
+    the ``finally`` unsubscribes. ``request=None`` keeps the historical
+    behaviour for direct callers (tests drive the generator without a client).
     """
     q = event_bus.subscribe(run_id)
     try:
         yield ": connected\n\n"
+        idle = 0.0
         while True:
+            if await _client_gone(request):
+                break
             try:
-                bus_evt = await asyncio.wait_for(q.get(), timeout=_KEEPALIVE_SECONDS)
+                bus_evt = await asyncio.wait_for(
+                    q.get(), timeout=min(_DISCONNECT_POLL_SECONDS, _KEEPALIVE_SECONDS))
             except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
+                idle += min(_DISCONNECT_POLL_SECONDS, _KEEPALIVE_SECONDS)
+                if idle >= _KEEPALIVE_SECONDS:
+                    idle = 0.0
+                    yield ": keepalive\n\n"
                 continue
+            idle = 0.0
             ui_evt = _to_ui_event(bus_evt)
             yield f"id: {ui_evt['id']}\ndata: {json.dumps(ui_evt)}\n\n"
     finally:
@@ -156,22 +189,22 @@ _SSE_HEADERS = {
 
 
 @router.get("/runs/{run_id}/events")
-async def run_events(run_id: str):
+async def run_events(run_id: str, request: Request):
     """SSE stream scoped to a single run (plus any global events)."""
     logger.info("sse subscribe run_id=%s", run_id)
     return StreamingResponse(
-        _stream(run_id),
+        _stream(run_id, request),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
 
 
 @router.get("/events")
-async def global_events():
+async def global_events(request: Request):
     """SSE stream of every event across all runs + agent status."""
     logger.info("sse subscribe global")
     return StreamingResponse(
-        _stream(None),
+        _stream(None, request),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

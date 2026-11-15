@@ -185,9 +185,17 @@ def test_abort_racing_completion_never_loses_a_side(file_db):
                 return await abort_run("race-ab", db)
 
         async def _done():
+            from fastapi import HTTPException
+
             async with file_db() as db:
-                return await complete_run(
-                    "race-ab", CompleteRequest(exit_code=0, summary="done"), db)
+                try:
+                    return await complete_run(
+                        "race-ab", CompleteRequest(exit_code=0, summary="done"), db)
+                except HTTPException as exc:
+                    # A completion that lands on an already-terminal run is
+                    # refused 409 RUN_ALREADY_TERMINAL, carrying its status.
+                    assert exc.status_code == 409
+                    return exc.detail["detail"]
 
         abort_out, done_out = await asyncio.gather(_abort(), _done())
         return abort_out, done_out, await _read(file_db, "race-ab")

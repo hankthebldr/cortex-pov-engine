@@ -336,3 +336,83 @@ def test_run_complete_transitions_status(client, session_factory):
     detail = client.get("/api/runs/r-fail").json()
     assert "COMPLETION SUMMARY" in detail["output"]
     assert "127" in detail["output"]
+
+
+# ─── list aggregates (Runs surface rebuild, D1) ─────────────────────────────
+# A Runs row shows `detected / expected` without opening the run. The two
+# numbers come from ONE grouped query over Result, mirroring the hit rule in
+# engine.outcome.row_status: an engine outcome of detected/prevented is a hit;
+# a `pending` outcome is NOT a hit even when the reconcile set observed=True;
+# a row with no outcome is a hit only when observed (manual validation).
+
+@pytest.fixture
+def runs_with_results(session_factory):
+    """Three runs: 1 hit of 3 rows · 0 rows · 2 hits of 2 rows. Returns ids."""
+    from models import Run, Result, Scenario
+
+    async def _seed():
+        async with session_factory() as db:
+            db.add(Scenario(scenario_id="SIM-EDR-001", name="Credential Dumping",
+                            plane="EDR", version="1.0", status="active",
+                            uc_ref="UCS-EDR-01", uc_name="Endpoint Credential Theft",
+                            tc_ref="TC-EDR-01", tc_name="Linux Credential Harvest",
+                            mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+                            mitre_technique="T1003.008", mitre_technique_name="OS Credential Dumping",
+                            steps=[]))
+            base = datetime.utcnow()
+            db.add(Run(run_id="r-mixed", scenario_id="SIM-EDR-001", mode="pull",
+                       status="complete", started_at=base - timedelta(minutes=9)))
+            db.add(Run(run_id="r-empty", scenario_id="SIM-EDR-001", mode="push",
+                       status="staged", started_at=base - timedelta(minutes=8)))
+            db.add(Run(run_id="r-full", scenario_id="SIM-EDR-001", mode="pull",
+                       status="complete", started_at=base - timedelta(minutes=7)))
+            rows = [
+                # r-mixed: one real hit, one reconcile-observed-but-pending (NOT a
+                # hit), one never judged.
+                ("r-mixed", "detected", True),
+                ("r-mixed", "pending", True),
+                ("r-mixed", None, False),
+                # r-full: a manual validation (no outcome, observed) and a prevent.
+                ("r-full", None, True),
+                ("r-full", "prevented", True),
+            ]
+            for i, (rid, outcome, observed) in enumerate(rows, start=1):
+                db.add(Result(run_id=rid, step_id=f"step-0{i}", plane="EDR",
+                              signal_type="BIOC", expected_detection=f"d{i}",
+                              observed=observed, outcome=outcome))
+            await db.commit()
+
+    asyncio.run(_seed())
+    return {"mixed": "r-mixed", "empty": "r-empty", "full": "r-full"}
+
+
+def test_list_runs_carries_detection_aggregates(client, runs_with_results):
+    r = client.get("/api/runs")
+    assert r.status_code == 200
+    by_id = {row["run_id"]: row for row in r.json()["runs"]}
+    assert by_id["r-mixed"]["expected_detections"] == 3
+    assert by_id["r-mixed"]["detected_count"] == 1
+    # No rows seeded ⇒ 0 / 0, which the console renders as a dash, never "0/0".
+    assert by_id["r-empty"]["expected_detections"] == 0
+    assert by_id["r-empty"]["detected_count"] == 0
+    assert by_id["r-full"]["expected_detections"] == 2
+    assert by_id["r-full"]["detected_count"] == 2
+
+
+def test_list_runs_aggregates_in_one_query(client, runs_with_results, monkeypatch):
+    """Three runs must not cost three Result queries — the Runs page lists
+    every run on every 10 s poll."""
+    import sqlalchemy
+    from sqlalchemy.ext.asyncio import AsyncSession
+    seen = []
+    orig = AsyncSession.execute
+
+    async def counting_execute(self, statement, *a, **kw):
+        seen.append(str(statement))
+        return await orig(self, statement, *a, **kw)
+
+    monkeypatch.setattr(AsyncSession, "execute", counting_execute)
+    r = client.get("/api/runs")
+    assert r.status_code == 200
+    result_queries = [s for s in seen if "results" in s.lower()]
+    assert len(result_queries) == 1, result_queries

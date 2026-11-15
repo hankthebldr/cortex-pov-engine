@@ -100,7 +100,7 @@ for (const { w, h } of MATRIX) {
   })
 }
 
-test('leaving composer mode gives the rail back (and entering through the tab takes it away)', async ({ page }) => {
+test('leaving composer mode gives the rail back (and entering through the rail takes it away)', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.rail--nav', { timeout: 15_000 })
@@ -111,7 +111,8 @@ test('leaving composer mode gives the rail back (and entering through the tab ta
   expect(before.rail).toBe(true)
   expect(before.mode).toBeNull()
 
-  await page.getByTestId('section-tab-composer').click()
+  // Build a chain is a rail item (design v26 §1); Scenarios has no tab strip.
+  await page.getByTestId('dest-button-composer').click()
   await page.waitForSelector('[data-testid=composer-view]')
   const inMode = await geometry(page)
   expect(inMode.mode).toBe('immersive')
@@ -122,7 +123,7 @@ test('leaving composer mode gives the rail back (and entering through the tab ta
   const after = await geometry(page)
   expect(page.url()).toMatch(/#\/library/)
   expect(after.mode).toBeNull()
-  expect(after.tabs).toBe(true)
+  expect(after.rail).toBe(true)
   const railLeft = await page.locator('.rail--nav').evaluate((el) => Math.round(el.getBoundingClientRect().left))
   expect(railLeft).toBe(0)
 })
@@ -177,7 +178,7 @@ function alphaOf(c: string) {
 }
 
 async function openPalette(page: Page) {
-  await page.getByRole('button', { name: '＋ Add' }).click()
+  await page.getByRole('button', { name: 'Add to chain' }).click()
   await page.waitForSelector('.composer-mode__drawer--left')
 }
 async function closePalette(page: Page) {
@@ -340,9 +341,10 @@ test('<=1100px: Controls, overview map and caption sit just beside the narrower 
   expect.soft(await centred({ l: left2.right, r: right.left }), 'caption not centred between both drawers').toBeLessThanOrEqual(2)
 })
 
-test('the canvas dot grid is painted in the console border token, not React Flow\'s default grey', async ({ page }) => {
+test('the canvas dot grid is painted in the console\'s dot token, not React Flow\'s default grey', async ({ page }) => {
   await openComposer(page, 1440, 900)
-  const bd2 = await tokenColor(page, '--bd2')
+  // --canvas-dot sits between the hairline and the quiet-text tokens.
+  const bd2 = await tokenColor(page, '--canvas-dot')
   const dots = () => page.evaluate(() => getComputedStyle(document.querySelector('.react-flow__background-pattern.dots')!).fill)
   expect(await dots()).toBe(bd2)
   // The stylesheet's own theme hook, without the component's `color` prop:

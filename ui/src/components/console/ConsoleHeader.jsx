@@ -1,11 +1,35 @@
 import React from 'react'
+import { agentLiveness, LIVENESS } from './setupProgress.js'
+import { StatusIcon, STATUS } from './kit/index.js'
+import HistoryNav from './HistoryNav.jsx'
+import Breadcrumb from './Breadcrumb.jsx'
+
+// The agent chip's dot per liveness state. Colour is never the only signal:
+// each state has its own SHAPE (disc / ring / square / small grey disc, see
+// povengine-shell.css), a state that is not online shows its word beside the
+// name, and the chip's accessible name carries the full label.
+const AGENT_DOT = {
+  [LIVENESS.ONLINE]: '',
+  [LIVENESS.STALE]: ' pov-chip__dot--ring',
+  [LIVENESS.ENROLLED]: ' pov-chip__dot--ring',
+  [LIVENESS.OFFLINE]: ' pov-chip__dot--down',
+  [LIVENESS.UNKNOWN]: ' pov-chip__dot--off',
+  none: ' pov-chip__dot--off',
+}
+const AGENT_TONE = {
+  [LIVENESS.STALE]: 'warn',
+  [LIVENESS.ENROLLED]: 'warn',
+  [LIVENESS.OFFLINE]: 'bad',
+  [LIVENESS.UNKNOWN]: 'muted',
+}
 
 /**
  * ConsoleHeader — the persistent global bar.
  *
- * Left→right: the Cortex product mark + POVengine wordmark + version, then
- * (pushed right) the bound tenant, the active agent, the run pill, ⌘K, help,
- * the theme toggle and the account chip.
+ * Left→right: the Cortex product mark + POVengine wordmark + version, Back /
+ * Forward and the breadcrumb, the instance status, then (pushed right) the
+ * bound tenant, the active agent, the run pill, ⌘K, help, the theme toggle and
+ * the account chip.
  *
  * Deliberately sparse. The evidence-collection pill ("Acme Financial · FY27
  * Q3 · UNEXPORTED") is gone — it named a POV this instance never had, from
@@ -38,6 +62,14 @@ import React from 'react'
  * design one — so it is recorded as an open question in
  * docs/design/DESIGN-SYNC.md rather than silently applied.)
  *
+ * THE AGENT CHIP READS LIVENESS, FROM THE ONE MODEL.
+ * It is the only always-visible statement about the active beacon, so it says
+ * whether that beacon is polling: `setupProgress.agentLiveness`, the same
+ * answer the Agents cards, Get started and the launch preflight give. A state
+ * other than online adds one short word (the header scrolls itself if that
+ * outgrows the viewport; it never wraps). The provider re-reads the agent list
+ * on its poll tick so this is not a snapshot from page load.
+ *
  * TENANT AND AGENT ARE READ-OUTS HERE, NOT SWITCHERS.
  * One tenant per instance is a design decision, and it follows from the
  * product: the instance is deployed once for a POV and dies with the lab, so a
@@ -46,12 +78,35 @@ import React from 'react'
  * agent is still available from ⌘K and from the Agents surface, so the
  * capability is intact — only the duplicate control is gone.
  *
+ * THIS INSTANCE, NOT A POV (design v26 §4.5).
+ * Beside the brand sits the status of this POVengine: a StatusIcon and its
+ * word, the uptime SimCore reports for itself, then up to four live KPIs —
+ * running · agents online · runs · issues — each read from SimCore
+ * (instanceStatus.js). It opens the POVengine component page; until that page
+ * exists it opens where the instance's readiness is shown today, and its name
+ * says which.
+ *
+ * THE RUNNING PILL IS THERE ONLY WHILE A RUN IS LIVE (v26 §4.5). It used to
+ * stay as "last run" / "no runs yet" between runs; the instance KPIs now
+ * answer "what has this done", and the pill appears when there is something
+ * live to open. It opens that run's detail.
+ *
+ * BACK / FORWARD AND THE BREADCRUMB (design C9). Beside the brand: two icon
+ * buttons that walk the console's own history (HistoryNav, ⌘[ / ⌘]), then
+ * journey › page › object (Breadcrumb, from app/breadcrumb.js). The breadcrumb
+ * is the one header child allowed to shrink, down to a floor: the outer crumbs
+ * ellipsize first and the current one last (povengine-shell.css).
+ *
  * Props:
  *   health        — { hostname, version, ... }
+ *   history       — { canBack, canForward, onBack, onForward } | null
+ *   crumbs        — breadcrumbFor() output | null
+ *   instance      — { status, uptime, kpis[] } from instanceStatus() | null
+ *   onOpenInstance — () => void
+ *   instanceTargetLabel — where onOpenInstance lands, named in the control
  *   tenant        — resolved tenant object | null
  *   agent         — resolved agent object | null
  *   activeRun     — { runId, scenarioId, step, totalSteps, elapsed } | null
- *   lastRun       — { runId, scenarioId, status } | null
  *   onOpenPalette — () => void
  *   onNavigate    — (destinationId, params?) => void
  *   onStartTour   — () => void | null   (renders the ? button when provided)
@@ -60,10 +115,12 @@ import React from 'react'
  */
 export default function ConsoleHeader({
   health = {},
+  instance = null,
+  onOpenInstance = () => {},
+  instanceTargetLabel = 'Launch gate',
   tenant = null,
   agent = null,
   activeRun = null,
-  lastRun = null,
   onOpenPalette = () => {},
   onNavigate = () => {},
   onStartTour = null,
@@ -71,6 +128,8 @@ export default function ConsoleHeader({
   userInitials = 'DC',
   colorTheme = 'dark',
   onToggleColorTheme = null,
+  history = null,
+  crumbs = null,
   povName,
 }) {
   // NOT derived from window.location. The previous env pill fell back to the
@@ -84,6 +143,11 @@ export default function ConsoleHeader({
 
   const tenantLabel = tenant ? (tenant.host || tenant.name || tenant.id) : 'no tenant bound'
   const agentLabel = agent ? (agent.hostname || agent.agent_id || agent.id) : 'no agent selected'
+  // The one liveness model every other surface reads. This chip used to draw
+  // the same green dot for ANY selected agent, so the only always-visible
+  // read-out of the active beacon could not show it had stopped polling.
+  const live = agent ? agentLiveness(agent) : null
+  const agentState = live ? live.state : 'none'
 
   return (
     <header className="pov-header" data-testid="console-header">
@@ -94,6 +158,20 @@ export default function ConsoleHeader({
         </div>
         <span className="pov-brand__version brand__version mono">{version}</span>
       </div>
+
+      {history && (
+        <HistoryNav
+          canBack={history.canBack}
+          canForward={history.canForward}
+          onBack={history.onBack}
+          onForward={history.onForward}
+        />
+      )}
+      {crumbs && crumbs.length > 0 && <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />}
+
+      {instance && (
+        <InstanceStatus instance={instance} onOpen={onOpenInstance} targetLabel={instanceTargetLabel} />
+      )}
 
       <div className="pov-header__spacer" />
 
@@ -112,23 +190,24 @@ export default function ConsoleHeader({
         type="button"
         className="pov-chip"
         data-testid="header-agent"
+        data-liveness={agentState}
         onClick={() => onNavigate('agents')}
-        title="Active agent"
+        title={live ? `Active agent — ${live.label}` : 'Active agent'}
+        aria-label={live
+          ? `Active agent ${agentLabel} — ${live.label}. Open Agents`
+          : 'No agent selected. Open Agents'}
       >
-        <span className={'pov-chip__dot' + (agent ? '' : ' pov-chip__dot--off')} />
+        <span className={'pov-chip__dot' + AGENT_DOT[agentState]} aria-hidden="true" />
         <span>{agentLabel}</span>
+        {live && live.state !== LIVENESS.ONLINE && (
+          <span className={`pov-chip__state pov-chip__state--${AGENT_TONE[agentState]}`}>{agentState}</span>
+        )}
       </button>
 
-      {/* The run view is unconditional. A DC is in the "a run is in flight"
-          state for about three minutes of a two-hour session, so a pill that
-          rendered only then left the header with no answer at all to "what is
-          this doing / what did it last do" — the most common question between
-          runs. All three states are the same control and all three land on
-          Runs, so the way back to the evidence never moves. */}
-      <RunPill activeRun={activeRun} lastRun={lastRun} onNavigate={onNavigate} />
+      {activeRun && <RunningPill run={activeRun} onNavigate={onNavigate} />}
 
       <button type="button" className="pov-chip" onClick={onOpenPalette} data-testid="header-palette"
-        aria-label="Open command palette (search, launch, export)">
+        aria-label="Search — open the command palette (⌘K)">
         <span className="pov-chip__kbd">⌘K</span>
         <span className="pov-chip__label">Search</span>
       </button>
@@ -176,56 +255,54 @@ function fmtElapsed(s) {
   return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 
-function RunPill({ activeRun, lastRun, onNavigate }) {
-  if (activeRun) {
-    const elapsed = fmtElapsed(activeRun.elapsed)
-    return (
-      <button
-        type="button"
-        className="pov-chip pov-live live-pill"
-        data-testid="header-run-view"
-        data-run-state="live"
-        onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
-        aria-label={`Live run ${activeRun.scenarioId || ''} — open in Runs`}
-      >
-        <span className="pov-chip__dot" />
-        <span className="pov-live__tag">LIVE</span>
-        <span>
-          {activeRun.scenarioId} · {activeRun.step}/{activeRun.totalSteps}
-          {elapsed ? ` · ${elapsed}` : ''}
-        </span>
-      </button>
-    )
-  }
-  if (lastRun) {
-    return (
-      <button
-        type="button"
-        className="pov-chip run-pill run-pill--last"
-        data-testid="header-run-view"
-        data-run-state="last"
-        onClick={() => onNavigate('runs', { run: lastRun.runId, tab: 'evidence' })}
-        aria-label={`Last run ${lastRun.scenarioId || ''} — open its evidence`}
-      >
-        <span className={'pov-chip__dot' + (lastRun.status === 'completed' ? '' : ' pov-chip__dot--warn')} />
-        <span>{lastRun.scenarioId || lastRun.runId} · {lastRun.status || 'done'}</span>
-      </button>
-    )
-  }
-  // Not a placeholder for a value we failed to fetch — genuinely no run has
-  // ever completed on this SimCore. Says so, and still routes to the surface
-  // that would show one.
+function RunningPill({ run, onNavigate }) {
+  const elapsed = fmtElapsed(run.elapsed)
+  const where = run.totalSteps ? `step ${run.step} of ${run.totalSteps}` : null
+  const detail = [run.scenarioId, where, elapsed].filter(Boolean).join(' · ')
   return (
     <button
       type="button"
-      className="pov-chip run-pill run-pill--none"
+      className="pov-chip pov-live live-pill"
       data-testid="header-run-view"
-      data-run-state="none"
-      onClick={() => onNavigate('runs')}
-      aria-label="No runs yet — open Runs"
+      data-run-state="live"
+      onClick={() => onNavigate('runs', { run: run.runId, tab: 'live' })}
+      aria-label={`Running ${[run.scenarioId, where].filter(Boolean).join(', ')} — open the run`}
     >
-      <span className="pov-chip__dot pov-chip__dot--off" />
-      <span>no runs yet</span>
+      <span className="pov-chip__dot" aria-hidden="true" />
+      <span className="pov-live__tag">RUNNING</span>
+      <span className="pov-live__detail">{detail}</span>
+    </button>
+  )
+}
+
+function InstanceStatus({ instance, onOpen, targetLabel }) {
+  const meta = STATUS[instance.status] || STATUS.unknown
+  const kpis = Array.isArray(instance.kpis) ? instance.kpis.slice(0, 4) : []
+  const spoken = [
+    `POVengine ${meta.word}`,
+    instance.uptime ? `up ${instance.uptime}` : null,
+  ].filter(Boolean).join(', ')
+  const kpiText = kpis.map((k) => `${k.value} ${k.label}`).join(', ')
+  return (
+    <button
+      type="button"
+      className="pov-instance"
+      data-testid="header-instance"
+      data-status={instance.status}
+      onClick={onOpen}
+      title={`This POVengine instance — open the ${targetLabel}`}
+      aria-label={`${spoken}${kpiText ? ` — ${kpiText}` : ''}. Open the ${targetLabel}`}
+    >
+      <span className="pov-instance__state">
+        <StatusIcon status={instance.status} />
+        {instance.uptime && <span className="pov-instance__uptime">· {instance.uptime}</span>}
+      </span>
+      {kpis.map((k) => (
+        <span className={`pov-instance__kpi pov-instance__kpi--${k.key}`} key={k.key}>
+          <span className={'pov-instance__kpi-v mono' + (k.tone ? ` pov-instance__kpi-v--${k.tone}` : '')}>{k.value}</span>
+          <span className="pov-instance__kpi-k">{k.label}</span>
+        </span>
+      ))}
     </button>
   )
 }

@@ -16,6 +16,8 @@ from datetime import datetime
 from typing import Any, Optional
 
 import yaml
+
+from engine.signal_path import COLLECTOR_PLUGINS, eal_run_problem
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,13 +203,10 @@ _URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", 
 # ... whose every plugin is a collector-POST log streamer (records POSTed to an
 # operator-supplied collector, so an indicator is a field value, not a peer).
 # Mirrored in the hook; parity asserted in tests/engine/test_lint_scenario_hook.py.
-COLLECTOR_POST_PLUGINS = frozenset({
-    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
-    "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
-    "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
-    "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
-    "third_party_firewall_emitter", "third_party_vpn_emitter",
-})
+# One definition, in engine.signal_path, which a test pins to the live EAL
+# registry. The lint hook (.claude/hooks/lint-scenario.py) keeps a stdlib copy
+# that tests/engine/test_lint_scenario_hook.py holds equal to this.
+COLLECTOR_POST_PLUGINS = COLLECTOR_PLUGINS
 
 
 def _ipv4_is_routable(value: str) -> bool:
@@ -442,6 +441,21 @@ class StepSchema(BaseModel):
     # agent/beacon/client.go::resolveRuntimeDeps and
     # docs/design/agent-runtime-dependencies.md.
     requires_interpreters: list[str] = Field(default_factory=list)
+    # How long the .ps1 push bundle lets this step run before it kills the
+    # step's process tree (push_generator._step_timeout; default 300 s).
+    # Optional; omitted from the persisted step when unset, so a scenario that
+    # does not declare it persists byte-identically. It used to be dropped
+    # here, so no corpus value could ever reach the generator.
+    timeout_seconds: Optional[int] = None
+
+    @field_validator("timeout_seconds", mode="before")
+    @classmethod
+    def _vt(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 86400:
+            raise ValueError(f"timeout_seconds must be an integer from 1 to 86400, got {v!r}")
+        return v
 
     @field_validator("platforms")
     @classmethod
@@ -481,6 +495,12 @@ class StepSchema(BaseModel):
                 raise ValueError(
                     "target is only permitted on an agent-channel step"
                 )
+        # (e) S-28: a command that runs the EAL simulator must name plugins the
+        # registry knows, all of one class, or its signal path cannot be read
+        # (engine.signal_path). Structural: not gated by CORTEXSIM_STRICT_REFS.
+        problem = eal_run_problem(self.command)
+        if problem:
+            raise ValueError(f"step {self.id}: {problem}")
         return self
 
     @model_validator(mode="after")
@@ -516,7 +536,7 @@ def omit_unset_channel_fields(step: dict[str, Any]) -> dict[str, Any]:
     byte-identically to the pre-3a corpus, so all 177 scenarios and every
     Phase-1/2 draft persist unchanged.
     """
-    for key in ("channel", "target", "eal"):
+    for key in ("channel", "target", "eal", "timeout_seconds"):
         if step.get(key) is None:
             step.pop(key, None)
     return step
@@ -756,6 +776,37 @@ def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -
     return out
 
 
+def _scan_eal_params(step: StepSchema, indicators: list[IndicatorSchema]) -> list[str]:
+    """S-25 over ``eal.params``: a non-collector plugin (c2_http_beacon, ...) turns a
+    param value into real traffic SimCore sends, so an indicator may not appear in
+    any string under it. Collector plugins only POST data, so they are exempt."""
+    eal = getattr(step, "eal", None)
+    if eal is None or eal.plugin in COLLECTOR_POST_PLUGINS:
+        return []
+    probes = [p for p in _indicator_probes(indicators) if p[0] in ("domain", "url", "ipv4", "ipv6")]
+    out: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(node, (list, tuple)):
+            for i, v in enumerate(node):
+                walk(v, f"{path}.{i}")
+        elif isinstance(node, str):
+            seen: set[str] = set()
+            for typ, val, iid, _note in probes:
+                if repr(iid) in seen:
+                    continue
+                if re.search(_probe_pattern(typ, val), node, re.IGNORECASE):
+                    seen.add(repr(iid))
+                    out.append(f"S-25: step {step.id} {path}: {typ} {iid} in the params of "
+                               f"non-collector plugin {eal.plugin}")
+
+    walk(eal.params or {}, "eal.params")
+    return out
+
+
 def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema],
                            cleanup: Optional["CleanupSchema"] = None) -> list[str]:
     """S-25 / S-26: where an indicator may and may not appear in an executed command.
@@ -775,6 +826,7 @@ def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSc
     out: list[str] = []
     for step in steps:
         out += _scan_command(f"step {step.id}", step.command, indicators)
+        out += _scan_eal_params(step, indicators)
         for os_name, cmd in (step.platform_variants or {}).items():
             out += _scan_command(f"step {step.id} platform_variants[{os_name}]", cmd, indicators)
     if cleanup is not None:
@@ -1140,6 +1192,9 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         # Wave-2 schema hygiene (warn, never reject): detection_types drift
         # (S-09), too-thin step lists (S-01), and detection-less steps (S-02).
         _warn_scenario_hygiene(schema, filepath)
+        # S-28/S-29/S-30 — declared platforms that no command can honour, and
+        # doubled backslashes in windows variants. Warn, never reject.
+        _warn_platform_labels(schema, filepath)
 
         # UC/TC foreign-key validation against the master index snapshot
         # (S-10..S-14). Warns by default; rejects only under
@@ -1489,6 +1544,110 @@ def _warn_scenario_hygiene(schema: "ScenarioSchema", filepath: str) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Platform labels (S-28 / S-29 / S-30) — WARNINGS, never errors
+# ---------------------------------------------------------------------------
+
+#: Platforms a POSIX bundle / POSIX beacon serves.
+_POSIX_PLATFORMS = frozenset({"linux", "macos", "container", "k8s"})
+#: A line that is a regex operand legitimately escapes a backslash as ``\\``.
+_REGEX_OPERAND_RE = re.compile(r"-(?:Pattern|c?i?match|notmatch|replace|split)\b|\[regex\]", re.IGNORECASE)
+_BACKSLASH_RUN_RE = re.compile(r"\\{2,}")
+_UNC_PREV = frozenset(" \t\"'(=,")
+
+
+def _has_non_unc_double_backslash(text: str) -> bool:
+    """True when ``text`` carries ``\\\\`` anywhere but a UNC prefix.
+
+    A UNC prefix is exactly two backslashes at the start of a path token
+    (start of line, after whitespace, a quote, ``(``, ``=`` or ``,``) followed by
+    a host or a variable (``\\\\$h\\C$``, ``\\\\srv\\share``). Lines that are regex
+    operands are skipped: there ``\\\\`` is an escaped backslash, not a path.
+    """
+    for line in text.splitlines():
+        if _REGEX_OPERAND_RE.search(line):
+            continue
+        for m in _BACKSLASH_RUN_RE.finditer(line):
+            prev = line[m.start() - 1] if m.start() else ""
+            nxt = line[m.end()] if m.end() < len(line) else ""
+            unc = (
+                len(m.group()) == 2
+                and (prev == "" or prev in _UNC_PREV)
+                and (nxt.isalnum() or nxt in "$_.{-")
+            )
+            if not unc:
+                return True
+    return False
+
+
+def platform_label_findings(schema: "ScenarioSchema") -> list[str]:
+    """Steps whose declared ``platforms`` no command can honour. Pure; never raises.
+
+    ``S-28`` — the step declares ``windows`` but neither its ``command`` nor
+               its ``platform_variants.windows`` resolves through
+               ``push_generator.resolve_target(..., "windows")``.
+    ``S-29`` — the mirror: the step declares a POSIX platform (linux, macos,
+               container, k8s) but resolves for no POSIX target.
+    ``S-30`` — a windows variant carries a doubled backslash outside a UNC
+               prefix. Single-quoted YAML keeps ``\\\\`` verbatim, so
+               ``'C:\\\\Windows\\\\Temp'`` reaches reg.exe / schtasks.exe with
+               doubled separators (SIM-EDR-003, PUSH-15).
+
+    The label is what the console, the per-OS coverage counts and the DC read.
+    A label that nothing on that OS can execute is a coverage claim with no
+    command behind it. These are WARNINGS by design: boot must never fail on
+    them, and they are not gated by ``CORTEXSIM_STRICT_REFS``.
+
+    The resolver is the one the push generator uses, applied to the step alone,
+    so the lint and the bundle can never disagree about what "resolves" means.
+    ``eal``-channel steps are skipped: SimCore, not the endpoint, executes them.
+    """
+    from engine.push_generator import resolve_target  # noqa: PLC0415  (lazy: keep schema-only imports cheap)
+
+    out: list[str] = []
+    sid = schema.scenario_id
+    for step in schema.steps:
+        if effective_channel(step) != "agent":
+            continue
+        plats = {str(p).strip().lower() for p in (step.platforms or [])}
+        if not plats:
+            continue
+        one = {"steps": [step.model_dump()]}
+        if "windows" in plats and not resolve_target(one, "windows").emittable:
+            out.append(
+                f"S-28 scenario={sid} step={step.id} declares 'windows' but neither its "
+                f"command nor platform_variants.windows resolves for a Windows target — "
+                f"relabel it to the OS its command runs on, or author a windows variant"
+            )
+        if plats & _POSIX_PLATFORMS and not resolve_target(one, "posix").emittable:
+            out.append(
+                f"S-29 scenario={sid} step={step.id} declares "
+                f"{sorted(plats & _POSIX_PLATFORMS)} but neither its command nor a "
+                f"linux/macos variant resolves for a POSIX target — relabel it, or "
+                f"author a linux variant"
+            )
+        win = (step.platform_variants or {}).get("windows")
+        if isinstance(win, str) and _has_non_unc_double_backslash(win):
+            out.append(
+                f"S-30 scenario={sid} step={step.id} platform_variants.windows carries a "
+                f"doubled backslash outside a UNC prefix — single-quoted YAML keeps '\\\\' "
+                f"verbatim; write single backslashes"
+            )
+    return out
+
+
+def _warn_platform_labels(schema: "ScenarioSchema", filepath: str) -> None:
+    """Log every :func:`platform_label_findings` entry. Never raises."""
+    try:
+        findings = platform_label_findings(schema)
+    except Exception as exc:  # noqa: BLE001 — a lint must never brick boot
+        logger.warning("S-28 lint could not run for scenario=%s: %s (from %s)",
+                       schema.scenario_id, exc, filepath)
+        return
+    for finding in findings:
+        logger.warning("%s (from %s)", finding, filepath)
+
+
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
     """Convert a validated ScenarioSchema into keyword args for the Scenario ORM model."""
     kwargs = {
@@ -1513,6 +1672,10 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "threat_report_url": schema.threat_report_url,
         "execution_identity": schema.execution_identity.model_dump(),
         "push_supported": schema.push_supported,
+        # A corpus scenario's push_supported IS its declaration. Copied so the
+        # console reads ONE field (`push_supported_declared`) for a corpus
+        # origin and for a draft, where the two columns legitimately differ.
+        "push_supported_declared": schema.push_supported,
         "pull_supported": schema.pull_supported,
         "external_tools": [t.model_dump() for t in schema.external_tools],
         "steps": [omit_unset_channel_fields(s.model_dump()) for s in schema.steps],

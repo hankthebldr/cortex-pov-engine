@@ -73,8 +73,9 @@ def test_no_alert_in_lookback_is_unknown_not_ok():
     r = pf.preflight_reconcile(_CFG, "k", fetcher=fetcher)
     s = _stage(r, "alert_shape")
     assert s.status == pf.DEGRADED and s.code == pf.PF_ALERT_SHAPE_UNKNOWN
-    # one scope probe + one 7-day lookback, both 1-row
-    assert len(calls) == 2 and r.queries_issued == 2
+    # scope probe + 7-day lookback + one 7-day probe of the other alerts
+    # version (test_preflight_alerts_path.py says why), all 1-row
+    assert len(calls) == 3 and r.queries_issued == 3
     assert all(c["search_to"] == 1 for c in calls)
 
 

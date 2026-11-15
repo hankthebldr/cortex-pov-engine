@@ -1,5 +1,11 @@
 package main
 
+import "github.com/hankthebldr/cortexsim/agent/identity"
+
+// beaconElevated reports whether this beacon's token is elevated. A package var
+// so the Windows registration roster is testable from any host.
+var beaconElevated = identity.ProcessElevated
+
 // agentCapabilities reports what this beacon can actually do, keyed off the host
 // family it was compiled for.
 //
@@ -21,11 +27,27 @@ package main
 // mechanism itself. SimCore refuses to hand an artifact-carrying task to an
 // agent that does not advertise this, so the claim must be true whenever the
 // beacon can honour it.
-func agentCapabilities(goos string) []string {
+//
+// inContainer appends "container": the beacon is running in a pod/container, so
+// SimCore applies container-agent launch rules to it.
+func agentCapabilities(goos string, inContainer bool) []string {
+	var caps []string
 	if goos == "windows" {
 		// "powershell" names the interpreter the executor drives; the absence of
 		// "identity-harness" is the load-bearing part.
-		return []string{"shell", "powershell", "artifact-fetch"}
+		caps = []string{"shell", "powershell", "artifact-fetch"}
+		// CONT-14: steps that assert root / container-runtime / administrator
+		// need an elevated token, and a non-elevated beacon records each one as
+		// IDENTITY NOT HONOURED. Advertising it lets the roster say so BEFORE a
+		// run. Claimed only when TOKEN_ELEVATION says so — never assumed.
+		if beaconElevated() {
+			caps = append(caps, "elevated")
+		}
+	} else {
+		caps = []string{"shell", "identity-harness", "artifact-fetch"}
 	}
-	return []string{"shell", "identity-harness", "artifact-fetch"}
+	if inContainer {
+		caps = append(caps, "container")
+	}
+	return caps
 }

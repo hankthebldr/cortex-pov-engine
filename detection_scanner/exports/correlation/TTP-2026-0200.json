@@ -1,0 +1,24 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1486",
+    "T1562.001",
+    "T1070.002",
+    "T1003.008",
+    "T1552.004",
+    "T1083",
+    "T1560.001",
+    "T1490"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "Hunting / operator-installable correlation (NOT a declared SIM-EDR-025 expectation; CortexSim never writes it). If installed: alert name EXACTLY as this rule's name; severity High; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| alter leg = if(event_type = ENUM.FILE and action_file_path ~= \"[.]akira(new|ranges)?$\", \"encrypt\", if(event_type = ENUM.FILE and action_file_name in (\"akira_readme.txt\", \"akiranew.txt\", \"powerranges.txt\"), \"note\", if(event_type = ENUM.PROCESS and action_process_image_name in (\"rm\", \"shred\", \"unlink\") and action_process_image_command_line ~= \"(backup|snapshot|[.]img|[.]bak)\", \"recovery\", \"other\")))\n| filter leg in (\"encrypt\", \"note\", \"recovery\")\n| comp count_distinct(leg) as legs, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 2",
+      "name": "EDR-025 Akira Linux Host Encryption With Recovery Inhibition",
+      "rule_id": "CR-EDR-0025"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0200"
+}

@@ -13,7 +13,7 @@
  * overwrite. Four destination title rules style an h1/h2/h3 at bare
  * single-class (0,1,0) and lost every overlapping property to the
  * shared (0,1,1) rule:
- *   - destinations/eal.css:74     .eal-console__title  on <h2> (EalConsole.jsx)
+ *   - destinations/eal.css:74     .eal-console__title  on <h1> (EalConsole.jsx)
  *   - destinations/uctc.css:66    .uctc__pagehead-title on <h1> (UcTcIndexView.jsx)
  *   - destinations/ttps.css:291   .ttpb-detail__title  on <h3> (TtpBrowserView.jsx)
  *   - destinations/ttps.css:499   .ttpb-modal__title   on <h3> (TtpBrowserView.jsx)
@@ -49,17 +49,17 @@ afterEach(() => {
 
 const FIXTURES = [
   {
-    name: 'EAL Traffic Simulator — h2.eal-console__title (destinations/eal.css)',
+    name: 'Traffic / EAL — h1.eal-console__title (destinations/eal.css)',
     html: `<section class="eal-console">
-      <h2 class="eal-console__title"><span class="eal-console__title-accent">EAL</span> Traffic Simulator</h2>
+      <h1 class="eal-console__title">Traffic / EAL</h1>
     </section>`,
     selector: '.eal-console__title',
     expect: { fontSize: '22px', fontWeight: '800' },
   },
   {
-    name: 'UC / TC Index — h1.uctc__pagehead-title (destinations/uctc.css)',
+    name: 'UC / TC index — h1.uctc__pagehead-title (destinations/uctc.css)',
     html: `<div class="adapter-registry uctc">
-      <h1 class="uctc__pagehead-title">UC / TC Index</h1>
+      <h1 class="uctc__pagehead-title">UC / TC index</h1>
     </div>`,
     selector: '.uctc__pagehead-title',
     expect: { fontSize: '25px', fontWeight: '800' },

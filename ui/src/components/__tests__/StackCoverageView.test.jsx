@@ -96,7 +96,7 @@ describe('<StackCoverageView />', () => {
       '[aria-label*="Cortex XDR Cred Access"]'
     )
     fireEvent.click(xdrTa0006Cell)
-    expect(screen.getByRole('button', { name: /filter operations/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /filter scenarios/i })).toBeInTheDocument()
     expect(screen.getByText('SIM-EDR-001')).toBeInTheDocument()
   })
 
@@ -113,10 +113,10 @@ describe('<StackCoverageView />', () => {
     expect(itdrCells.length).toBeGreaterThan(0)
     fireEvent.click(itdrCells[0])
     // Panel should not have opened.
-    expect(screen.queryByRole('button', { name: /filter operations/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /filter scenarios/i })).not.toBeInTheDocument()
   })
 
-  it('Filter Operations button fires onFilterByCell with scenario ids', async () => {
+  it('Filter Scenarios button fires onFilterByCell with scenario ids', async () => {
     installRoutes({ 'GET /api/scenarios': fixtureScenarios })
     const onFilterByCell = vi.fn()
     const { container } = render(<StackCoverageView onFilterByCell={onFilterByCell} />)
@@ -125,7 +125,7 @@ describe('<StackCoverageView />', () => {
     })
     const cell = container.querySelector('[aria-label*="Cortex XDR Cred Access"]')
     fireEvent.click(cell)
-    fireEvent.click(screen.getByRole('button', { name: /filter operations/i }))
+    fireEvent.click(screen.getByRole('button', { name: /filter scenarios/i }))
     expect(onFilterByCell).toHaveBeenCalled()
     const args = onFilterByCell.mock.calls[0]
     expect(args[0]).toBe('cortex-xdr')

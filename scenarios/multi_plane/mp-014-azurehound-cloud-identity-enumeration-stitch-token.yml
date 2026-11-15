@@ -143,7 +143,7 @@ steps:
     mitre_technique: "T1078.004"
     # The stolen session token (from step-01) is replayed to Entra — the sign-in
     # binds to the SAME session identity (user_principal), a stolen-token reuse.
-    platforms: ["windows", "linux", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -169,7 +169,7 @@ steps:
     # AzureHound (cross-platform Go binary) drives the Graph burst on the SAME
     # replayed session as the sign-in — identity reuse, correlated via
     # signin_activity_id / user_principal.
-    platforms: ["windows", "linux", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-02
       pivot: shared_entity

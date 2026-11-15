@@ -176,6 +176,10 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_composer_channel_columns)
         await conn.run_sync(_migrate_run_delivery_columns)
         await conn.run_sync(_migrate_prevention_columns)
+        await conn.run_sync(_migrate_eal_run_columns)
+        await conn.run_sync(_migrate_integration_response_layer_columns)
+        await conn.run_sync(_migrate_case_ledger_columns)
+        await conn.run_sync(_migrate_collector_target_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -231,6 +235,7 @@ def _migrate_scenarios_columns(connection) -> None:
         ("stitch_context", "JSON"),      # Phase 2 — composer stitch context (authored intent)
         ("composer_layout", "JSON"),     # Composer canvas node positions
         ("indicators", "JSON"),          # published Unit 42 indicators (S-22..S-27)
+        ("push_supported_declared", "BOOLEAN"),  # authored push declaration; the floor a draft carries
         ("pov_scenario_id", "VARCHAR"),  # UC/TC payload join
         ("tc_refs", "JSON"),             # full TC evidence set
         # Phase 2 — measurement contract
@@ -352,6 +357,25 @@ def _migrate_runtime_dependency_columns(connection) -> None:
             connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
 
 
+def _migrate_integration_response_layer_columns(connection) -> None:
+    """Add the stored SOC Framework probe columns to ``integration_credentials``
+    if absent — same ``create_all``-never-adds-a-COLUMN rationale as above."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "integration_credentials" not in set(inspector.get_table_names()):
+        return
+    existing = {col["name"] for col in inspector.get_columns("integration_credentials")}
+    for col_name, col_type in [
+        ("response_layer", "JSON"),
+        ("response_layer_read_at", "DATETIME"),
+    ]:
+        if col_name in existing:
+            continue
+        connection.execute(text(
+            f"ALTER TABLE integration_credentials ADD COLUMN {col_name} {col_type}"))
+
+
 def _migrate_composer_channel_columns(connection) -> None:
     """Add the Phase-3a composer channel columns if absent — same
     ``create_all``-never-adds-a-COLUMN rationale as the helpers above.
@@ -372,6 +396,8 @@ def _migrate_composer_channel_columns(connection) -> None:
         existing = {col["name"] for col in inspector.get_columns("agents")}
         if "last_ip" not in existing:
             connection.execute(text("ALTER TABLE agents ADD COLUMN last_ip VARCHAR"))
+        if "runtime_facts" not in existing:
+            connection.execute(text("ALTER TABLE agents ADD COLUMN runtime_facts JSON"))
 
     if "runs" in tables:
         existing = {col["name"] for col in inspector.get_columns("runs")}
@@ -399,6 +425,57 @@ def _migrate_run_delivery_columns(connection) -> None:
         connection.execute(text("ALTER TABLE runs ADD COLUMN delivered_at DATETIME"))
 
 
+def _migrate_eal_run_columns(connection) -> None:
+    """Add ``eal_campaign_runs.collector_resolution`` if absent — same
+    ``create_all``-never-adds-a-COLUMN rationale as the helpers above. Nullable:
+    a run from before collector targets existed reads as "no resolution
+    recorded", never as "resolved cleanly"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "eal_campaign_runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("eal_campaign_runs")}
+    if "collector_resolution" not in existing:
+        connection.execute(text(
+            "ALTER TABLE eal_campaign_runs ADD COLUMN collector_resolution JSON"))
+
+
+def _migrate_case_ledger_columns(connection) -> None:
+    """Add ``runs.case_ledger`` if absent (same ``create_all``-never-adds-a-COLUMN
+    rationale as the helpers above). Nullable JSON: a legacy run reads as "no
+    ledger built", never as "one case"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("runs")}
+    if "case_ledger" not in existing:
+        connection.execute(text("ALTER TABLE runs ADD COLUMN case_ledger JSON"))
+
+
+def _migrate_collector_target_columns(connection) -> None:
+    """Add ``collector_targets.declaration`` and ``.last_arrival`` if absent (same
+    ``create_all``-never-adds-a-COLUMN rationale as the helpers above). Nullable
+    JSON: a legacy target reads as "nothing declared, no arrival checked"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "collector_targets" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("collector_targets")}
+    for column in ("declaration", "last_arrival"):
+        if column not in existing:
+            connection.execute(
+                text(f"ALTER TABLE collector_targets ADD COLUMN {column} JSON"))
+    # Non-null with a SQL DEFAULT so SQLite accepts it; a legacy target reads as
+    # uncompressed, which is what every POST to it has sent until now.
+    if "compress" not in existing:
+        connection.execute(text(
+            "ALTER TABLE collector_targets ADD COLUMN compress BOOLEAN NOT NULL DEFAULT 0"))
+
+
 def _migrate_prevention_columns(connection) -> None:
     """Add the prevention-efficacy columns to ``runs`` and ``results`` if absent
     (same ``create_all``-never-adds-a-COLUMN rationale as the helpers above).
@@ -421,6 +498,7 @@ def _migrate_prevention_columns(connection) -> None:
             ("canary_run_id", "VARCHAR"),
             ("severed_at_step", "VARCHAR"),
             ("block_mode_status", "VARCHAR"),
+            ("module_modes", "JSON"),
         ],
         "results": [
             ("expected_outcome", "VARCHAR NOT NULL DEFAULT 'detect'"),

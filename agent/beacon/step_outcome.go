@@ -26,6 +26,11 @@ const (
 	ReasonUpstreamNotExecuted = "UPSTREAM_NOT_EXECUTED"
 	ReasonToolAbsent          = "TOOL_ABSENT"
 	ReasonUpstreamFailed      = "UPSTREAM_FAILED"
+	// ReasonPlatformUnsatisfiable: the step cannot run on this host's platform
+	// (BEACON-01), so it was not run. SimCore must accept it in its step-reason
+	// vocabulary and map it to not_executed — see core/api/runs.py _STEP_REASONS
+	// and core/engine/outcome.py host_outcome_for_step.
+	ReasonPlatformUnsatisfiable = "PLATFORM_UNSATISFIABLE"
 )
 
 // toolAbsentMarker prefixes the /output line written for a step whose declared
@@ -144,8 +149,13 @@ func (c *BeaconClient) afterStep(task *Task, i int, led *outcomeLedger, res iden
 
 // classifyChainedRC marks a chained step's result as signaled when its integer
 // rc is in 129..159 (session.RunStep reports no termination detail).
+//
+// POSIX only (BEACON-09). A Windows process has no signals: rc 137 there is a
+// process that exited 137 (or was TerminateProcess-ed with 137), never "killed
+// by SIGKILL". Reading it as signaled severed the chain and wrote a host
+// witness the endpoint never produced.
 func classifyChainedRC(res *identity.ExecResult) {
-	if res.ExitCode >= 129 && res.ExitCode <= 159 {
+	if beaconGOOS != "windows" && res.ExitCode >= 129 && res.ExitCode <= 159 {
 		res.Termination = TermSignaled
 		res.Signal = res.ExitCode - 128
 		return
@@ -165,10 +175,19 @@ func severedAt(steps []StepOutcome) (id, termination string, ok bool) {
 }
 
 // checkRequiredBinaries returns the step's declared required binaries that are
-// not on PATH. A step that declares none is not checked. The check is skipped on
-// Windows, exactly as resolveRuntimeDeps is.
+// not on PATH. A step that declares none is not checked.
+//
+// BEACON-13: this runs on Windows too. It used to be skipped there, so a step
+// wired to a tool the host did not have RAN and its absent detection read as a
+// miss. exec.LookPath is the right probe on both families: on Windows it
+// resolves a bare name through PATH and PATHEXT (`nmap` finds nmap.exe) and
+// accepts a full path (`C:\tools\Rubeus\Rubeus.exe`). It does NOT see a
+// PowerShell function, alias or module command — a pack whose `install.binary`
+// names one of those reads TOOL_ABSENT, which is at least visible; running
+// untooled was not. SimCore fills required_binaries from the command it
+// resolved for THIS host's OS, so the names checked are the ones the step uses.
 func checkRequiredBinaries(step *Step) (missing []string) {
-	if len(step.RequiredBinaries) == 0 || runtimeDepsGOOS == "windows" {
+	if len(step.RequiredBinaries) == 0 {
 		return nil
 	}
 	for _, name := range step.RequiredBinaries {
@@ -198,7 +217,7 @@ func (c *BeaconClient) preflightTools(task *Task, i int, led *outcomeLedger, deg
 	led.markRemaining(i+1, ReasonUpstreamNotExecuted)
 	summary := buildSummary(task, 127, degradedSteps, led.steps) +
 		fmt.Sprintf(" | TOOL_ABSENT: %s at %s — step not run", missing[0], step.ID)
-	if err := c.Complete(task.RunID, 127, summary, led.steps); err != nil {
+	if err := c.completeTask(task, 127, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
 	return true

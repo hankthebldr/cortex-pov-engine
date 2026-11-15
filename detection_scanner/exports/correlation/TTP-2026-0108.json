@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1568.002",
     "T1071.004",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(Dormancy-Break Traffic Burst on a Strategically Aged Domain) AND ABIOC(Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex) \u2014 fuses the same-day dormancy-break traffic burst and the never-before-seen DGA subdomain fan-out on the SAME apex_domain within the activation window into a single strategically-aged-sleeper-domain-activation incident, anchored to the aged apex the newly-registered-domain block never flagged.",
       "name": "Strategically Aged Sleeper-Domain Activation \u2014 Burst + DGA Fan-Out Stitch",
-      "rule_id": "CR-TIM-0003",
-      "severity": "high"
+      "rule_id": "CR-TIM-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0108"

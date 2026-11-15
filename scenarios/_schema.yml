@@ -261,6 +261,11 @@ steps:
     # possibly masking a failure inside) a command whose dependency is not
     # there. See docs/design/agent-runtime-dependencies.md.
 
+    # timeout_seconds: 900
+    # (optional, integer 1..86400) How long the .ps1 push bundle lets this step
+    # run before it kills the step's process tree. Default 300. Omitted from
+    # the persisted step when unset. Only the PowerShell push bundle reads it.
+
   - id: "step-02"
     name: "Download and execute tool"
     command: "curl -sSL https://example.com/tool.sh | bash"

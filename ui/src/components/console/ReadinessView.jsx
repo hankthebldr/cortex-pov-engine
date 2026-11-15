@@ -5,6 +5,7 @@ import useReadiness from './readiness/useReadiness.js'
 import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.js'
 import { RS, RS_CHIP, RUNG } from './readiness/connectorState.js'
 import { preflightXsiamTenant, preflightConnector } from '../../api/client.js'
+import { describeResponseLayer, RUNBOOK_PATH } from './readiness/responseLayer.js'
 import Term from '../onboarding/Term.jsx'
 import { newestRun, triStateLabel } from '../../outcomes.js'
 
@@ -23,14 +24,14 @@ import { newestRun, triStateLabel } from '../../outcomes.js'
  * and a catalog that loaded 0 entries is degraded even when the server called
  * it healthy.
  */
-export default function ReadinessView({ onNavigate = () => {} }) {
+export default function ReadinessView({ onNavigate = () => {}, embedded = false }) {
   const env = useEnvironment()
   const r = useReadiness({ scenarios: env.scenarios, runs: env.runs })
 
   if (r.loading && !r.health) {
     return (
       <div className="readiness" data-testid="readiness-view">
-        <ViewHead onRefresh={r.refresh} refreshing />
+        <ViewHead onRefresh={r.refresh} refreshing embedded={embedded} />
         <div className="readiness__loading" role="status" aria-live="polite">
           probing SimCore…
         </div>
@@ -43,6 +44,7 @@ export default function ReadinessView({ onNavigate = () => {} }) {
   return (
     <div className="readiness" data-testid="readiness-view">
       <ViewHead
+        embedded={embedded}
         onRefresh={r.refresh}
         model={r.health}
         ladder={r.ladder}
@@ -78,12 +80,14 @@ export default function ReadinessView({ onNavigate = () => {} }) {
 
 // ─── Header ──────────────────────────────────────────────────────────────────
 
-function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, lastRefreshedAt = null }) {
+function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, lastRefreshedAt = null, embedded = false }) {
   const status = model ? model.overall : HS.UNKNOWN
   return (
     <header className="view-head">
       <div>
-        <h1>Launch Gate</h1>
+        {/* Inside the Launch gate page (embedded) this POVengine's own
+            readiness is a section under the page's one h1. */}
+        {embedded ? <h2>This POVengine</h2> : <h1>Launch gate</h1>}
         <div className="view-head__meta">
           <span className={HS_CHIP[status] || 'chip'} data-testid="readiness-overall">
             {HS_LABEL[status] || 'UNKNOWN'}
@@ -226,7 +230,63 @@ function TenantRow({ tenant }) {
           {tenant.caveat}
         </div>
       )}
+      {tenant.kind === 'xsiam_tenant' && <SocFrameworkRow tenant={tenant} />}
       {result && <PreflightResult body={result} />}
+    </div>
+  )
+}
+
+/**
+ * SOC Framework — what is configured on the tenant, shown BESIDE the ladder
+ * (a row under the tenant, never a fifth rung). It proves the framework is
+ * configured, not that it handled any CortexSim case. A stale read is
+ * "unknown — run preflight"; a missing read is "not probed", never ABSENT.
+ */
+function SocFrameworkRow({ tenant }) {
+  const name = tenant.name
+  const m = describeResponseLayer(tenant.responseLayer)
+  return (
+    <div
+      className="rdy-socfw"
+      data-testid={`socfw-row-${name}`}
+      data-degraded={m.degraded ? 'true' : undefined}
+    >
+      <div className="rdy-socfw__head">
+        <span className="rdy-socfw__label">SOC Framework</span>
+        <span className={m.chip} data-testid={`socfw-state-${name}`}>{m.headline}</span>
+      </div>
+      {m.detail && (
+        <dl className="rdy-socfw__facts mono">
+          <div><dt>version</dt><dd>{m.detail.version || 'unknown'}</dd></div>
+          <div><dt>mode</dt><dd data-testid={`socfw-mode-${name}`}>{m.detail.mode || 'unknown'}</dd></div>
+          <div>
+            <dt>Auto Triage</dt>
+            <dd data-testid={`socfw-auto-triage-${name}`}>{m.detail.autoTriage}</dd>
+          </div>
+          <div><dt>AI close</dt><dd>{m.detail.aiClose}</dd></div>
+        </dl>
+      )}
+      {m.kind === 'read' && m.state === 'ABSENT' && (
+        <div className="rdy-tenant__caveat" data-testid={`socfw-absent-${name}`}>
+          {m.detail.leftoverLists
+            ? 'The SOC Framework is not installed, but its lists were left behind by an earlier uninstall. '
+            : 'The SOC Framework is not installed on this tenant. '}
+          Runbook: <span className="mono">{RUNBOOK_PATH}</span>
+        </div>
+      )}
+      {(m.degraded || m.kind === 'stale') && (m.code || m.readAt || m.stageDetail) && (
+        <div className="rdy-socfw__facts mono" data-testid={`socfw-code-${name}`}>
+          {m.code && <span>code: {m.code}</span>}
+          {m.readAt && <span>read_at: {m.readAt}</span>}
+          {m.stageDetail && <span>{m.stageDetail}</span>}
+        </div>
+      )}
+      {m.proves && (
+        <div className="rdy-rung__proves">
+          <span className="rdy-rung__proves-yes">proves: {m.proves}</span>
+          <span className="rdy-rung__proves-no">does NOT prove: {m.doesNotProve}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -396,7 +456,7 @@ function ComponentSection({ model, onNavigate }) {
             {c.remediation && <div className="rdy-comp__fix">→ {c.remediation}</div>}
             {c.key === 'payload_shelf' && (
               <button type="button" className="btn btn--xs" onClick={() => onNavigate('adapters')}>
-                Tools &amp; Payloads ▸
+                Packages ▸
               </button>
             )}
             {c.key === 'agent_binaries' && (

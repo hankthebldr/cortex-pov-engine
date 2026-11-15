@@ -113,7 +113,10 @@ steps:
     command: "printf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > /tmp/cortexsim-mp-010/dcomsrv-service.marker && echo cortexsim-mp-010-dcomsrv-service-created-marker"
     identity: www-data
     mitre_technique: "T1543.003"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       # The cross-plane hop: from the exploited appliance (step-01) the attacker
       # pivots over the network (decrypted creds via ldap.pl -> RDP) onto the
@@ -134,7 +137,10 @@ steps:
     command: "printf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > /tmp/cortexsim-mp-010/mail-task.marker && echo cortexsim-mp-010-mail-scheduled-task-marker"
     identity: www-data
     mitre_technique: "T1053.005"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       # Second SPAWN-family persistence mechanism on the SAME internal Windows
       # host as the DcomSrv service — an independent persistence tree, not a fork
@@ -153,7 +159,10 @@ steps:
     command: "printf '%s\\n' 'SAFE-MODE marker only - package.dll VM.txt dump NOT performed' > /tmp/cortexsim-mp-010/VM.txt && printf '%s  package.dll\\n' '1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98' > /tmp/cortexsim-mp-010/package.dll.sha256 && echo cortexsim-mp-010-lsass-dump-safe-mode-marker"
     identity: www-data
     mitre_technique: "T1003.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       # Credential access on the same internal Windows host after the foothold is
       # established: package.dll (built via MSBuild) hollows a suspended
@@ -177,7 +186,7 @@ steps:
     command: "echo cortexsim-mp-010-cr-mp-0014-appliance-to-endpoint-stitch"
     identity: www-data
     mitre_technique: "T1190"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       # CR-MP-0014 fuses the modeled appliance pre-auth IF-T tell (step-01) with
       # the endpoint persistence BIOCs into one incident within a 24h window —

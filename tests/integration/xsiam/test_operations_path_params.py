@@ -23,6 +23,8 @@ what is asserted is the request that would reach the tenant.
 """
 from __future__ import annotations
 
+import os
+
 import httpx
 import pytest
 
@@ -106,3 +108,66 @@ def test_ordinary_path_params_still_reach_their_operation(tmp_path, monkeypatch)
     )
     assert r.status_code == 200, r.text
     assert seen == [("GET", "/public_api/v1/assets/a%20b%3Fc%3D1%23x")], seen
+
+
+# ── OP-SOCFW-LIST-GET: {name} is restricted to the SOC Framework's two lists ──
+# An unrestricted list read lets REST and MCP read ANY XSOAR list, and lists can
+# hold integration config and secrets. The allowlist is enforced server-side in
+# _resolve_path, before a tenant client is even built.
+
+@pytest.mark.parametrize("dry_run", [None, True])
+@pytest.mark.parametrize("name", ["SomeIntegrationSecrets", "socfwtenantconfig",
+                                  "SOCFWTenantConfig2", "SOCOptimizationConfig_V3"])
+def test_socfw_list_read_refuses_a_list_outside_the_allowlist(tmp_path, monkeypatch,
+                                                              name, dry_run):
+    client, _stub, xsiam_api = _build_app(tmp_path, monkeypatch)
+    built: list = []
+
+    async def _no_tenant(session, tenant):
+        built.append(tenant)
+        raise AssertionError("a tenant client was built for a refused list read")
+
+    monkeypatch.setattr(xsiam_api, "load_xsiam_client", _no_tenant)
+    r = client.post("/api/xsiam/tenants/acme/operations/OP-SOCFW-LIST-GET",
+                    json={"path_params": {"name": name}, "dry_run": dry_run})
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "XSIAM_CONFIG_ERROR"
+    assert built == []
+
+
+@pytest.mark.parametrize("name", ["SOCFWTenantConfig", "SOCFWConfigModes"])
+def test_socfw_list_read_reaches_the_two_framework_lists(tmp_path, monkeypatch, name):
+    client, _stub, xsiam_api = _build_app(tmp_path, monkeypatch)
+    seen = _wire(monkeypatch, xsiam_api)
+    r = client.post("/api/xsiam/tenants/acme/operations/OP-SOCFW-LIST-GET",
+                    json={"path_params": {"name": name}})
+    assert r.status_code == 200, r.text
+    assert seen == [("GET", f"/xsoar/lists/download/{name}")]
+
+
+def test_socfw_list_allowlist_is_the_pinned_config_lists():
+    # One source of truth for the names: the pack must not drift from socfw.py.
+    from connectors.socfw import CONFIG_LISTS
+    from integrations.xsiam.operations.catalog import OperationCatalog
+    from integrations.xsiam.operations.loader import default_ops_dir
+
+    cat = OperationCatalog()
+    cat.load(default_ops_dir(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))))
+    op = cat.find("OP-SOCFW-LIST-GET")
+    assert op.path_param_allowlist == {"name": list(CONFIG_LISTS)}
+    assert op.summary()["path_param_allowlist"] == {"name": list(CONFIG_LISTS)}
+
+
+def test_allowlist_must_name_a_path_param():
+    from pydantic import ValidationError
+
+    from integrations.xsiam.operations.schema import XsiamOperationSchema
+
+    with pytest.raises(ValidationError):
+        XsiamOperationSchema(op_id="OP-X", category="c", name="n", method="GET",
+                             path="/xsoar/lists/download/{name}", access_class="read",
+                             path_param_allowlist={"other": ["a"]})
+    with pytest.raises(ValidationError):
+        XsiamOperationSchema(op_id="OP-X", category="c", name="n", method="GET",
+                             path="/xsoar/lists/download/{name}", access_class="read",
+                             path_param_allowlist={"name": []})

@@ -1,0 +1,589 @@
+{
+  "id": "TTP-2026-0202",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T00:00:00+00:00",
+    "updated_at": "2026-11-11T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "ai-supply-chain",
+      "campaign-openclaw",
+      "vector-skill-marketplace",
+      "technique-readme-padding",
+      "technique-curl-pipe-bash",
+      "platform-linux",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 240,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "OpenClaw ClawHub Malicious Skill — Padded README, base64 curl|bash Dropper and Developer-Credential Theft",
+    "summary": "A highly-rated OpenClaw ClawHub marketplace skill ships a padded README (megabytes of filler to evade content scanners) whose mandatory prerequisite block is a base64-encoded curl|bash dropper. Following it harvests the developer's SSH key, cloud credentials, .npmrc, .env and the agent's ~/.claude.json, archives them and beacons the loot to a hard-coded C2 / Telegram Bot API.",
+    "description": "Built from the Palo Alto Networks Unit 42 research on AI-agent skill-marketplace supply-chain risk — 'OpenClaw's Skill Marketplace and the Emerging AI Supply Chain Threat' (https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/) and the companion 'Trust No Skill' (https://unit42.paloaltonetworks.com/ai-agent-supply-chain-risks/). The public research describes a marketplace (ClawHub) for the OpenClaw AI coding agent where a highly-rated skill presenting as a productivity tool (e.g. a TradingView / financial assistant) carries a SKILL.md/README.md with a mandatory prerequisite block that induces the agent or the developer to run a command. The malicious author evades content-analysis by PADDING the README with tens of megabytes of filler so an oversized-file scanner skips it, placing the malicious block at the top. The prerequisite block is a base64-encoded 'curl | bash' one-liner; decoding and running it fetches an infostealer that harvests developer credential stores (SSH keys, cloud credentials, npm tokens, .env secrets and the agent's own credential file), archives them, and exfiltrates to attacker infrastructure and a Telegram Bot API. The research also documents paste-site redirects (rentry.co / glot.io) that front the payload and an agentic affiliate-injection angle (a 'money-radar' referrals.json the agent is steered to inject). CortexSim does NOT reproduce the real payload or contact any real C2. SIM-KOI-011 runs the SAME endpoint observables on a bare Ubuntu developer host, all under the agent lineage (CGO = the node agent runtime): it stages the re-skinned in-tree malicious skill with a genuine ~22 MB padded README, base64-decodes the embedded prerequisite, runs the decoded curl|bash dropper against a NON-RESOLVING .invalid canary (real process + failed DNS, no payload fetched, no real C2), executes a locally-staged infostealer that reads five DECOY credential files (every value is the literal CORTEXSIM-DECOY) under a fake $HOME at /var/tmp/.koi011-victim, archives the loot and emits a beacon to another .invalid canary. A guard refuses to run unless the fake $HOME resolves under /var/tmp, so the operator's real ~/.ssh, ~/.aws and ~/.npmrc are never read. The declared detections are the endpoint-resident behavioral signals Cortex raises on its own: the built-in 'Uncommon Linux shell command execution' analytics on the base64-decode and the curl|bash dropper (ABIOC), a BIOC on a dropped shell reading three or more credential files in one window under the agent lineage, two XQL validations on the oversized-README and loot-archive file creates, and a correlation that stitches the chain into one incident. Hunting content, deliberately NOT declared as an expectation: the dropper-host DNS/egress query, the C2 / Telegram beacon-egress query, the paste-site-redirect query and the agentic affiliate-injection query all carry purpose 'hunt'. They are queries the DC runs by hand when a sink and a firewall are in path; the scenario declares none of them, so a sink-less run seeds no Result row for them and therefore neither passes nor fails on them. The correlation CR-KOI-0011 closes on the endpoint at the loot-archive create, not the egress, for exactly that reason.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "OpenClaw ClawHub malicious skill marketplace"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology",
+      "financial-services"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1204",
+        "subtechnique_id": "T1204.002",
+        "name": "User Execution: Malicious File",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1140",
+        "name": "Deobfuscate/Decode Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "name": "Archive Collected Data",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: DNS"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-KOI-011 — OpenClaw ClawHub marketplace malicious-skill dropper, REAL execution against staged decoy artifacts under /var/tmp (fake $HOME, no real C2).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the Linux lab endpoint so per-process causality telemetry (process, command-line, file and DNS) reaches xdr_data.",
+        "check_command": "pgrep -il cortex || pgrep -il traps || pgrep -il cyserver"
+      },
+      {
+        "description": "The cortex-malicious-agentic-pack checkout is present (TOOL-CORTEX-AGENTIC-PACK / required_content), so step-01 can stage the in-tree malicious Claude-skill body.",
+        "check_command": "test -f sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill/skill.md"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-011-openclaw-marketplace-malicious-skill-dropper.yml is the only supported delivery path. This snippet shows the shape only; it stages nothing, plants no decoys and sets no fake $HOME, so it reaches no detection.\n# REAL — SIM-KOI-011 OpenClaw ClawHub malicious-skill dropper (decoy-only, no real C2).\n# 1) stage the marketplace skill with a 22 MB padded README carrying a base64\n#    curl|bash prerequisite, and plant decoy developer credentials under a fake\n#    $HOME at /var/tmp/.koi011-victim; 2) base64-decode the prerequisite block;\n#    3) run the decoded curl|bash against a NON-RESOLVING .invalid canary;\n#    4) run a locally-staged infostealer that reads the decoy credential files;\n#    5) stage + archive the loot; 6) beacon the archive to a .invalid canary.\nset -eu\nexport FAKEHOME=/var/tmp/.koi011-victim\necho '[CortexSim] see the scenario YAML for the full, guarded step sequence.'\n",
+      "input_variables": [],
+      "timeout_seconds": 240
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "An abnormally large (~22 MB) README.md created under the OpenClaw agent skills directory — the README-padding scanner-evasion artifact.",
+        "expected_value": "action_file_path contains \"/.openclaw/skills/\" and action_file_name = \"README.md\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "base64 -d decoding the skill's prerequisite block in the agent lineage.",
+        "expected_value": "action_process_image_name = \"base64\" and action_process_image_command_line contains_any (\"-d\", \"--decode\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "curl fetching an http(s) URL piped into a shell (curl|bash dropper), against a non-resolving canary host.",
+        "expected_value": "action_process_image_name = \"curl\" and action_process_image_command_line contains \"https://\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "A dropped shell reading several decoy credential-named files under the fake $HOME.",
+        "expected_value": "action_file_path contains_any (\".ssh/id_rsa\", \".aws/credentials\", \".npmrc\", \".env\", \".claude.json\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "The stolen decoy credentials staged and archived into loot.tgz under the agent lineage.",
+        "expected_value": "action_file_path contains \"/.cache/openclaw-setup/loot.tgz\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /var/tmp/.koi011-victim\necho '[CortexSim] SIM-KOI-011 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "818aea61",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "881ce5cb",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b30eaed1",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b6c7e0bf",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "ebb73dbb",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "f4e41aa2",
+        "context": "SHA-256 prefix (leading 8 hex as published in the Unit 42 OpenClaw IOC table) of a malicious ClawHub skill / dropper artifact; see the report for the full digest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "91.92.242.30",
+        "context": "C2 server receiving the stolen developer-credential archive (defanged in prose: 91.92.242[.]30). SIM-KOI-011 beacons a .invalid canary instead and contacts this host never.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "2.26.75.16",
+        "context": "Staging / redirect infrastructure in the OpenClaw campaign (defanged in prose: 2.26.75[.]16).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "laosji.net",
+        "context": "Attacker-operated distribution domain in the OpenClaw campaign (defanged in prose: laosji[.]net).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "download.setup-service.com",
+        "context": "Dropper host serving the base64 curl|bash setup.sh payload referenced by the skill prerequisite block (defanged in prose: download.setup-service[.]com). SIM-KOI-011 substitutes a non-resolving .invalid canary in the executed command.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "install.app-distribution.net",
+        "context": "Secondary dropper / payload-distribution host in the OpenClaw campaign (defanged in prose: install.app-distribution[.]net).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "url",
+        "value": "rentry.co/openclaw-code",
+        "context": "Paste-site redirect page hosting the prerequisite command (abused legitimate service; defanged in prose: rentry[.]co/openclaw-code). Cataloged as a card component and hunt query, not executed by the scenario.",
+        "reputation_required": "any",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "glot.io",
+        "context": "Code-paste service abused as a redirect/staging hop (abused legitimate service; defanged in prose: glot[.]io). Cataloged as a card component and hunt query, not executed by the scenario.",
+        "reputation_required": "any",
+        "source_url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+        "published": "2026-06",
+        "safe_form": "dns_lookup"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-011 Dropped Shell Reads Multiple Developer Credential Files",
+        "description": "A shell dropped by the OpenClaw skill prerequisite reads three or more distinct developer credential-named files (SSH private key, cloud credentials, npm token, .env secrets, the agent's own ~/.claude.json) in one window under the agent causality chain. A productivity skill that reads this set is stealing, not assisting. The threshold is three distinct paths to keep a single settings read quiet; the decoy run yields five (.ssh/id_rsa, .aws/credentials, .npmrc, .env, .claude.json). Keep routine agent/editor config reads out of the credential-name list so a launch that reads only config does not satisfy the threshold.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_process_image_name in (\"sh\", \"bash\", \"dash\", \"cat\", \"python3\", \"perl\")\n| filter action_file_path contains_any (\".ssh/id_rsa\", \"id_ed25519\", \".aws/credentials\", \".npmrc\", \".env\", \".claude.json\", \".config/gcloud/credentials\")\n| comp count_distinct(action_file_path) as cred_files by agent_hostname, actor_causality_id, action_process_image_name\n| filter cred_files >= 3\n| fields agent_hostname, actor_causality_id, action_process_image_name, cred_files",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "KOI-011 Oversized Marketplace Skill README Created Under Agent Skills Dir",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path contains \"/.openclaw/skills/\" and action_file_name = \"README.md\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_file_path, action_file_size",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-011 Stolen Credentials Archived Into Staging Tarball",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains \"/.cache/openclaw-setup/loot.tgz\")\n   or (event_type = ENUM.PROCESS and action_process_image_name = \"tar\" and action_process_image_command_line contains \"loot\")\n| fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_file_path, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-011 Dropper DNS And Egress To Non Marketplace Setup Host",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.NETWORK\n| filter actor_process_image_name in (\"curl\", \"wget\", \"node\", \"bash\", \"sh\")\n| filter dst_action_external_hostname in (\"download.setup-service.com\", \"install.app-distribution.net\", \"laosji.net\") or action_external_hostname in (\"download.setup-service.com\", \"install.app-distribution.net\", \"laosji.net\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, dst_action_external_hostname, action_remote_ip, action_external_port",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-011 Loot Beacon To C2 Or Telegram Bot API",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 1800\n| filter event_type = ENUM.NETWORK\n| filter actor_process_image_name in (\"curl\", \"wget\", \"node\", \"bash\", \"sh\")\n| filter action_remote_ip = \"91.92.242.30\" or dst_action_external_hostname = \"api.telegram.org\" or action_external_hostname = \"api.telegram.org\"\n| filter action_total_upload > 0\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, dst_action_external_hostname, action_remote_ip, action_external_port, action_total_upload",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-011 Skill Prerequisite References Paste Site Redirect",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname in (\"rentry.co\", \"glot.io\") or action_external_hostname in (\"rentry.co\", \"glot.io\")\n| comp count() as hits by agent_hostname, actor_causality_id, actor_process_image_name, dst_action_external_hostname\n| filter hits >= 1\n| fields agent_hostname, actor_causality_id, actor_process_image_name, dst_action_external_hostname, hits",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-011 Agentic Affiliate Injection Into Money Radar Referrals",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_name = \"referrals.json\" or action_file_path contains \"money-radar\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "KOI-011 Base64 Decode Of Agent Skill Prerequisite Block",
+        "description": "Behavioral-ML deviation (the built-in 'Uncommon Linux shell command execution' analytics): a process in the AI-agent lineage runs base64 -d on a blob lifted from a marketplace skill's prerequisite block. A productivity skill has no reason to carry a base64-encoded shell command; decoding one in the agent chain is the OpenClaw dropper's reveal step.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"base64\"\n| filter action_process_image_command_line contains_any (\"-d\", \"--decode\")\n| comp count() as decodes by agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line\n| filter decodes >= 1\n| fields agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line, decodes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1140",
+          "T1027"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The OpenClaw agent runtime (Causality Group Owner) and its actor_causality_id; the deviation is a base64-decode of an encoded shell command sourced from a marketplace skill prerequisite, against the baseline of agent lineages that decode nothing."
+      },
+      {
+        "name": "KOI-011 Curl Pipe To Bash Dropper From Agent Lineage",
+        "description": "Behavioral-ML deviation (the built-in 'Uncommon Linux shell command execution' analytics): a curl (or wget) fetch of a remote URL is piped straight into a shell under the AI-agent lineage — the curl|bash LOLBIN ingress the OpenClaw prerequisite block performs. The fetch targets a host outside any package registry or marketplace CDN; in the lab it is a non-resolving canary, so curl fails and nothing is downloaded, but the process shape and the DNS lookup are the signal.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"http://\", \"https://\")\n| join type = inner (\n    dataset = xdr_data\n    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n    | filter action_process_image_name in (\"bash\", \"sh\", \"dash\")\n    | fields actor_causality_id as shell_cid, agent_hostname as shell_host\n) as sib shell_cid = actor_causality_id and shell_host = agent_hostname\n| comp count() as fetches by agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line\n| filter fetches >= 1\n| fields agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line, fetches",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105",
+          "T1059.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The OpenClaw agent runtime (Causality Group Owner) and its actor_causality_id; the deviation is a curl/wget fetch of a non-registry URL piped into a shell in the same causality chain, against the baseline of agent lineages that never pipe a download into an interpreter."
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "OpenClaw ClawHub Malicious Skill — Prerequisite Decode, curl|bash Dropper, Developer-Credential Read and Local Staging",
+        "rule_id": "CR-KOI-0011",
+        "logic": "ABIOC(KOI-011 Base64 Decode Of Agent Skill Prerequisite Block) FOLLOWED_BY ABIOC(KOI-011 Curl Pipe To Bash Dropper From Agent Lineage) FOLLOWED_BY BIOC(KOI-011 Dropped Shell Reads Multiple Developer Credential Files) FOLLOWED_BY XQL(KOI-011 Stolen Credentials Archived Into Staging Tarball) — all stitched by shared agent_hostname and actor_causality_id (CGO = the OpenClaw node agent runtime) so the prerequisite decode, the curl|bash dropper, the multi-credential read and the local loot staging collapse into ONE OpenClaw agentic-supply-chain incident. The chain closes on the endpoint: its terminal term is the loot-archive create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud Code — skill/package manifest scanner (a marketplace skill whose README embeds a base64-encoded curl|bash prerequisite and is padded to tens of MB to evade content analysis).",
+      "Described, not exercised: content-scan detection of the README-padding evasion and the paste-site redirect (rentry.co / glot.io); CortexSim stages a benign padded README and runs the dropper against a non-resolving canary."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-ABIOC-KOI-0202-BASE64-DECODE",
+          "XDR-ABIOC-KOI-0202-CURL-PIPE-BASH",
+          "XDR-BIOC-KOI-0202-CREDREAD"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "dataset = xdr_data | filter action_process_image_name in (\"base64\", \"curl\", \"wget\", \"cat\", \"tar\") and actor_causality_id != null | fields _time, agent_hostname, actor_causality_id, action_process_image_name, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-KOI-0011"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-KOI-0011 fuses the prerequisite decode, the curl|bash dropper, the multi-credential read and the loot-staging signals into one OpenClaw incident on shared actor_causality_id."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "code-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "CCS-AGENT-SKILL-PREREQUISITE-CURL-BASH-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Cortex Cloud Code finding: an AI-agent marketplace skill carries a base64-encoded curl|bash prerequisite in a README padded to evade content analysis."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-KOI-011",
+        "name": "OpenClaw ClawHub Malicious Skill — Marketplace Delivery to Developer-Credential Theft",
+        "description": "Detect a trojanized AI-agent marketplace skill end to end on a Linux developer endpoint: padded-README delivery, base64 prerequisite decode, curl|bash dropper, developer-credential read, local staging and beacon — stitched into one causality-aware incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-KOI-011A",
+            "objective": "The padded-README skill is staged and the prerequisite block is decoded and run under the agent lineage.",
+            "preconditions": [
+              "Linux endpoint with the Cortex agent and the cortex-malicious-agentic-pack checkout."
+            ],
+            "steps": [
+              "Stage the ClawHub skill with a 22 MB padded README and decoy developer credentials.",
+              "Decode the base64 prerequisite block and run the curl|bash dropper against a non-resolving canary.",
+              "Observe the oversized-README XQL and the base64-decode and curl|bash ABIOCs."
+            ],
+            "success_criteria": [
+              "XQL `KOI-011 Oversized Marketplace Skill README Created Under Agent Skills Dir` returns the skill README create.",
+              "ABIOC `KOI-011 Base64 Decode Of Agent Skill Prerequisite Block` fires.",
+              "ABIOC `KOI-011 Curl Pipe To Bash Dropper From Agent Lineage` fires."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-KOI-011B",
+            "objective": "The dropped infostealer reads developer credentials, stages and archives the loot, and the chain correlates into one incident.",
+            "preconditions": [
+              "TS-KOI-011A executed within the correlation window."
+            ],
+            "steps": [
+              "Run the locally-staged infostealer that reads the decoy credential files.",
+              "Stage and archive the loot; emit the beacon to a non-resolving canary.",
+              "Confirm correlation CR-KOI-0011 stitches every stage into one incident."
+            ],
+            "success_criteria": [
+              "BIOC `KOI-011 Dropped Shell Reads Multiple Developer Credential Files` fires.",
+              "XQL `KOI-011 Stolen Credentials Archived Into Staging Tarball` returns the loot-archive create.",
+              "Correlation `CR-KOI-0011` raises exactly one OpenClaw incident. Its terminal term is the loot-archive create, so it fires on the endpoint alone: no sink and no firewall in path are required.",
+              "Not a criterion: the dropper-host DNS/egress, the C2 / Telegram beacon-egress, the paste-site-redirect and the agentic affiliate-injection queries carry `purpose: hunt`. The scenario declares none of them, so a sink-less run seeds nothing for them and scores neither a pass nor a fail against them."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Allow only vetted AI-agent skills: restrict installs to an internal registry gateway or an approved publisher list, and apply a delayed-access / version cooldown so a freshly published skill is not usable the day it ships.",
+      "Treat any skill or README that asks the agent or the developer to run a shell command — especially a base64-encoded or curl|bash one — as malicious by default; strip or quarantine prerequisite blocks at the registry gateway.",
+      "Flag and quarantine abnormally large skill README/manifest files (padding is an evasion, not documentation), and scan the head of oversized files rather than skipping them.",
+      "Keep long-lived credentials out of developer home directories: short-lived tokens, a credential helper and hardware-backed SSH keys so a file read yields nothing reusable, and store the agent's own API token outside the readable home config.",
+      "Egress-filter developer endpoints to package registries and approved marketplace CDNs only; alert on curl/wget to paste sites (rentry.co, glot.io) or unknown setup hosts."
+    ],
+    "detection_engineering": [
+      "Anchor on actor_causality_id and the agent runtime image, never on a username: the AI agent is the Causality Group Owner and the decode, dropper, credential read and staging are all its descendants.",
+      "Treat an agent lineage that runs base64 -d, then curl|bash, as the signal — neither is part of normal agent-skill behavior; the two together are the OpenClaw dropper.",
+      "Require three or more distinct credential-named files read in one window by the agent chain before alerting on credential theft, and keep the agent's own routine config reads out of that list so a plain launch does not satisfy the threshold.",
+      "Pair the endpoint chain with NGFW egress to a non-marketplace setup host and with the C2 / Telegram beacon when a firewall is in path (both are hunt queries on this card), and with a Cortex Cloud Code finding on the padded-README skill manifest."
+    ]
+  },
+  "references": [
+    {
+      "title": "OpenClaw's Skill Marketplace and the Emerging AI Supply Chain Threat",
+      "url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Trust No Skill: AI Agent Supply Chain Risks",
+      "url": "https://unit42.paloaltonetworks.com/ai-agent-supply-chain-risks/",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK — T1195 Supply Chain Compromise",
+      "url": "https://attack.mitre.org/techniques/T1195/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1552.001 Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics / detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

@@ -14,9 +14,10 @@ describe('TOUR_STOPS', () => {
     ])
   })
 
-  it('ends on the agents destination holding the enroll anchor', () => {
+  it('ends on Agents › Fleet, which holds the enroll anchor', () => {
     const enroll = TOUR_STOPS.find((s) => s.id === 'enroll')
-    expect(enroll.destination).toBe('agents')
+    expect(enroll.destination).toBe('component-agents')
+    expect(enroll.params).toEqual({ tab: 'fleet' })
     expect(enroll.anchor).toBe('agent-enroll')
   })
 

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1078.004",
     "T1213.002",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Analytics(MP-034 A Possible Risky Login to Azure) OR Analytics(MP-034 Impossible Traveler SSO for the Shared Principal) on msft_azure_ad_signin AND at least two of Analytics(MP-034 SharePoint Enumeration by the Compromised Principal), Analytics(MP-034 OneDrive Enumeration by the Compromised Principal), Analytics(MP-034 Massive File Downloads from SaaS Service) AND Analytics(MP-034 Exchange Inbox Forwarding Rule Configured) on msft_o365_audit within 3600s on the same user principal (userPrincipalName on msft_azure_ad_signin; UserId / MailboxOwnerUPN on msft_o365_audit) -> one incident naming the principal, the sign-in sources and the forwarding rule.",
       "name": "Jingle Thief \u2014 Identity and Cloud-Application Stitch on One User Principal",
-      "rule_id": "CR-MP-0034",
-      "severity": "high"
+      "rule_id": "CR-MP-0034"
     }
   ],
   "ttp_ref": "TTP-2026-0193"

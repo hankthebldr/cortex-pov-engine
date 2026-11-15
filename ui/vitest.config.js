@@ -26,6 +26,9 @@ export default defineConfig({
         /\/styles\/cortex-theme\.css$/,
         /\/styles\/cortex-console\.css$/,
         /\/styles\/destinations\/(uctc|ttps|readiness|eal|adapters)\.css$/,
+        // The run detail's Storyline and Causality views still style
+        // themselves through the legacy --cortex-* aliases.
+        /\/components\/(DetectionStoryline|CausalityGraph)\.css$/,
       ],
     },
     include: ['src/**/__tests__/**/*.test.{js,jsx}'],

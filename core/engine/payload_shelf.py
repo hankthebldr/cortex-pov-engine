@@ -387,13 +387,74 @@ class ComposedArtifact:
         }
 
 
+#: ``UnstagedAdapter.reason_code`` values this module assigns itself. A tier-4
+#: pack's code is its OWN ``install.artifact_exempt.reason_code`` (the closed
+#: vocabulary in ``tools.adapter_loader``); these cover everything else.
+UNSTAGED_NOT_IN_CATALOG = "ADAPTER_NOT_IN_CATALOG"
+UNSTAGED_SOURCE_TREE = "SOURCE_TREE_ON_DISK"      # tier 1 / 2
+UNSTAGED_IAC_PROVISIONED = "IAC_PROVISIONED"      # tier 3
+UNSTAGED_EXTERNAL_ONLY = "EXTERNAL_ONLY"          # tier 5
+UNSTAGED_NO_ARTIFACT = "NO_ARTIFACT_DECLARED"     # tier 4 with neither (unloadable: TA-13)
+
+
 @dataclass(frozen=True)
 class UnstagedAdapter:
+    """An adapter the shelf stages nothing for, and WHY.
+
+    ``reason`` is rendered verbatim to an operator. For a tier-4 pack it is the
+    pack author's own sentence and ``reason_code`` / ``revisit`` are the pack's
+    own (``install.artifact_exempt``): one generic string for every pack could
+    not tell a settled decision (a distro package) from real backlog (blocked
+    on an extractor), nor either from an omission.
+    """
+
     adapter_id: str
     reason: str
+    reason_code: Optional[str] = None
+    revisit: Optional[str] = None
+    tier: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"adapter_id": self.adapter_id, "reason": self.reason}
+        return {"adapter_id": self.adapter_id, "reason_code": self.reason_code,
+                "reason": self.reason, "revisit": self.revisit, "tier": self.tier}
+
+
+def _unstaged_for(ref: str, adapter: ToolAdapterSchema) -> UnstagedAdapter:
+    """Why the shelf stages nothing for a loaded pack with no ``install.artifact``."""
+    tier = adapter.tier
+    exempt = adapter.install.artifact_exempt
+    if exempt is not None:
+        return UnstagedAdapter(adapter_id=ref, reason=exempt.reason,
+                               reason_code=exempt.reason_code,
+                               revisit=exempt.revisit, tier=tier)
+    # Only tier 4 fetches its tool at dispatch (adapter_loader TA-01 / TA-15).
+    # Saying so of the other tiers was simply false.
+    if tier in (1, 2):
+        return UnstagedAdapter(
+            adapter_id=ref, tier=tier, reason_code=UNSTAGED_SOURCE_TREE,
+            reason=(f"tier-{tier} pack: this tool is an on-disk source tree, not a "
+                    f"payload-shelf artifact, so the shelf stages nothing for it."))
+    if tier == 3:
+        module = adapter.install.iac_module or "its IaC module"
+        return UnstagedAdapter(
+            adapter_id=ref, tier=tier, reason_code=UNSTAGED_IAC_PROVISIONED,
+            reason=(f"tier-3 pack: this tool is provisioned on the target by the "
+                    f"IaC module ({module}), not by the payload shelf, so the shelf "
+                    f"stages nothing for it. A target that was not built from that "
+                    f"module does not have it."))
+    if tier == 5:
+        return UnstagedAdapter(
+            adapter_id=ref, tier=tier, reason_code=UNSTAGED_EXTERNAL_ONLY,
+            reason=("tier-5 pack: external reference material the engine never "
+                    "executes, so the shelf stages nothing for it."))
+    return UnstagedAdapter(
+        adapter_id=ref, tier=tier, reason_code=UNSTAGED_NO_ARTIFACT,
+        reason=(
+            "pack declares no install.artifact, so it falls back to "
+            "install.runtime_install_command — the TARGET host fetches "
+            "this tool from the public internet at dispatch, which a "
+            "default-deny egress policy blocks."
+        ))
 
 
 @dataclass(frozen=True)
@@ -592,6 +653,7 @@ def required_artifacts(
             )
             unstaged[ref] = UnstagedAdapter(
                 adapter_id=ref,
+                reason_code=UNSTAGED_NOT_IN_CATALOG,
                 reason=(
                     "ADAPTER_NOT_IN_CATALOG — no pack with this id is loaded, so "
                     "the shelf cannot know what artifact it needs. Either the "
@@ -604,15 +666,9 @@ def required_artifacts(
             continue
         art = adapter.install.artifact
         if art is None:
-            unstaged[ref] = UnstagedAdapter(
-                adapter_id=ref,
-                reason=(
-                    "pack declares no install.artifact, so it falls back to "
-                    "install.runtime_install_command — the TARGET host fetches "
-                    "this tool from the public internet at dispatch, which a "
-                    "default-deny egress policy blocks."
-                ),
-            )
+            # The pack's OWN reason (install.artifact_exempt), not one generic
+            # sentence for all of them.
+            unstaged[ref] = _unstaged_for(ref, adapter)
             continue
 
         dest = overrides.get(ref) or stage_as.get(ref) or art.stage_path or ""

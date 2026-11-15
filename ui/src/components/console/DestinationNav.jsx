@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { StatusIcon } from './kit/index.js'
 
 /**
  * DestinationNav — the persistent, grouped destination sidebar.
@@ -28,11 +29,22 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * the cue rather than hiding it, because a false "there is more" costs a
  * glance and a false "that is everything" costs a destination.
  *
- * THE RAIL IS A TASK LIST
- * -----------------------
- * Five tasks and a small Manage group (see the registry note in
- * app/destinations.jsx). `active` is the rail item that OWNS the open page, so
- * a tab inside a task — Coverage inside Results — still lights up its task.
+ * THE RAIL IS THE THREE JOURNEYS
+ * ------------------------------
+ * 1 Onboard & connect · 2 Compose & simulate · 3 Run & observe, then
+ * Reference (design v26 §1; the registry note in app/destinations.jsx).
+ * `active` is the rail item that OWNS the open page, so a tab inside a task —
+ * Coverage inside Results — still lights up its task.
+ *
+ * COMPONENTS EXPANDS
+ * ------------------
+ * An item with `children` (Components) is two buttons: the label opens its
+ * page, the chevron shows or hides the eight components under it (v26 §5).
+ * The submenu opens by itself while one of its pages is open, so the current
+ * component is never hidden; a DC's own toggle wins until they leave. Each
+ * child carries its status as a StatusIcon — a glyph with the word as its
+ * accessible name — because a coloured dot alone is the colour-only status
+ * v26 §8 rules out.
  *
  * ICONS ARE REAL ASSETS, NOT GLYPHS
  * ---------------------------------
@@ -46,9 +58,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * and fired a 404 per render.
  *
  * Props:
- *   groups        — [{ label, items: [{ id, label, iconUrl, badge, badgeVariant }] }]
- *   active        — current destination id
- *   onNavigate    — (destinationId) => void
+ *   groups        — [{ num, label, items: [{ id, label, iconUrl, badge, badgeVariant,
+ *                     children?: [{ key, label, destination, params, status }] }] }]
+ *   active        — the rail item that owns the open page
+ *   activeChild   — the child key (a component) the open page belongs to
+ *   onNavigate    — (destinationId, params?) => void
  *   collapsed     — boolean (rail collapse persisted by the shell)
  *   onToggleCollapse — () => void
  */
@@ -70,6 +84,7 @@ export function overflowEdges({ scrollTop, scrollHeight, clientHeight }, slack =
 export default function DestinationNav({
   groups = [],
   active = null,
+  activeChild = null,
   onNavigate = () => {},
   collapsed = false,
   onToggleCollapse = null,
@@ -125,49 +140,121 @@ export default function DestinationNav({
       )}
 
       {groups.map((group) => (
-        <div className="pov-rail__group rail__group" key={group.label}>
-          {/* Only the secondary group is labelled — the task list is the
-              rail's body and a heading over it would just be one more line. */}
+        <div className="pov-rail__group rail__group" key={group.label || group.num || 'rail'}>
+          {/* The journeys are numbered (1 · 2 · 3); Reference is not a step in
+              the journey, so it carries a label and no number. */}
           {group.label ? (
             <div className="pov-rail__head rail__section-title">
+              {!collapsed && group.num ? <span className="pov-rail__num">{group.num}</span> : null}
               {!collapsed && <span className="pov-rail__label">{group.label}</span>}
               {!collapsed && <span className="pov-rail__hr" />}
             </div>
           ) : null}
-          {group.items.map((item) => {
-            const isActive = item.id === active
+          {group.items.map((item) => (
+            item.children ? (
+              <ParentItem
+                key={item.id}
+                item={item}
+                isActive={item.id === active}
+                activeChild={activeChild}
+                collapsed={collapsed}
+                onNavigate={onNavigate}
+              />
+            ) : (
+              <RailButton key={item.id} item={item} isActive={item.id === active} onNavigate={onNavigate} />
+            )
+          ))}
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+function RailButton({ item, isActive, onNavigate }) {
+  return (
+    <button
+      type="button"
+      data-testid={`dest-button-${item.id}`}
+      data-tour-id={`nav-${item.id}`}
+      className={'pov-rail__item plane-item' + (isActive ? ' pov-rail__item--on plane-item--active' : '')}
+      aria-current={isActive ? 'page' : undefined}
+      onClick={() => onNavigate(item.id)}
+      title={item.label}
+    >
+      <span
+        className="pov-rail__icon"
+        aria-hidden="true"
+        style={{ backgroundImage: item.iconUrl ? `url("${item.iconUrl}")` : 'none' }}
+      />
+      <span className="pov-rail__text plane-item__name">{item.label}</span>
+      {item.badge != null && item.badge !== '' && (
+        <span
+          className={
+            'pov-rail__badge plane-item__count'
+            + (item.badgeVariant === 'live' ? ' pov-rail__badge--live plane-item__count--live' : '')
+          }
+        >
+          {item.badge}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/**
+ * A rail item with a submenu (Components). Open while one of its pages is the
+ * open page; the chevron overrides that until the DC enters or leaves it.
+ */
+function ParentItem({ item, isActive, activeChild, collapsed, onNavigate }) {
+  const listId = useId()
+  const [override, setOverride] = useState(null)
+  // Entering (or leaving) the item's pages hands control back to the route, so
+  // navigating to a component from ⌘K or a link always shows where you are.
+  useEffect(() => { setOverride(null) }, [isActive])
+  const open = !collapsed && (override ?? isActive)
+  const noun = item.label.toLowerCase()
+
+  return (
+    <div className={'pov-rail__parent' + (isActive ? ' pov-rail__parent--on' : '')}>
+      <div className="pov-rail__parent-row">
+        <RailButton item={item} isActive={isActive} onNavigate={onNavigate} />
+        {!collapsed && (
+          <button
+            type="button"
+            className="pov-rail__caret"
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-label={open ? `Hide ${noun}` : `Show ${noun}`}
+            title={open ? `Hide ${noun}` : `Show ${noun}`}
+            onClick={() => setOverride(!open)}
+          >
+            <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          </button>
+        )}
+      </div>
+      {open && (
+        <div id={listId} role="group" aria-label={item.label} className="pov-rail__kids">
+          {item.children.map((child) => {
+            const here = isActive && child.key === activeChild
+            const st = child.status || { status: 'unknown' }
             return (
               <button
-                key={item.id}
+                key={child.key}
                 type="button"
-                data-testid={`dest-button-${item.id}`}
-                data-tour-id={`nav-${item.id}`}
-                className={'pov-rail__item plane-item' + (isActive ? ' pov-rail__item--on plane-item--active' : '')}
-                aria-current={isActive ? 'page' : undefined}
-                onClick={() => onNavigate(item.id)}
-                title={item.label}
+                data-testid={`dest-child-${child.key}`}
+                data-tour-id={`nav-component-${child.key}`}
+                className={'pov-rail__kid' + (here ? ' pov-rail__kid--on' : '')}
+                aria-current={here ? 'page' : undefined}
+                title={st.detail ? `${child.label} — ${st.detail}` : child.label}
+                onClick={() => onNavigate(child.destination, child.params)}
               >
-                <span
-                  className="pov-rail__icon"
-                  aria-hidden="true"
-                  style={{ backgroundImage: item.iconUrl ? `url("${item.iconUrl}")` : 'none' }}
-                />
-                <span className="pov-rail__text plane-item__name">{item.label}</span>
-                {item.badge != null && item.badge !== '' && (
-                  <span
-                    className={
-                      'pov-rail__badge plane-item__count'
-                      + (item.badgeVariant === 'live' ? ' pov-rail__badge--live plane-item__count--live' : '')
-                    }
-                  >
-                    {item.badge}
-                  </span>
-                )}
+                <StatusIcon status={st.status} word={st.word} showWord={false} className="pov-rail__kid-status" />
+                <span className="pov-rail__kid-text">{child.label}</span>
               </button>
             )
           })}
         </div>
-      ))}
-    </nav>
+      )}
+    </div>
   )
 }

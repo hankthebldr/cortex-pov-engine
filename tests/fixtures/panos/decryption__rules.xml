@@ -1,0 +1,1 @@
+<response status="success"><result total-count="1" count="1"><rules><entry name="decrypt-outbound"><from><member>inside</member></from><to><member>outside</member></to><action>decrypt</action></entry><entry name="decrypt-off"><disabled>yes</disabled><action>no-decrypt</action></entry></rules></result></response>

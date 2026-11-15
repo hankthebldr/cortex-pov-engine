@@ -61,14 +61,16 @@ describe('immersive registry flag', () => {
     expect(isImmersive(undefined)).toBe(false)
   })
 
-  it('every immersive destination is off-rail and has a navParent to exit to', () => {
+  it('every immersive destination names an ordinary page to exit to', () => {
+    // Build a chain is a rail item (design v26 §1), so a cold deep link's
+    // Exit cannot lean on a navParent; `exitTo` names the page instead.
     const immersive = DESTINATIONS.filter((d) => d.immersive)
     expect(immersive.map((d) => d.id)).toContain('composer')
     for (const d of immersive) {
-      expect(d.hidden, `${d.id} must not be a rail item`).toBe(true)
+      const out = d.exitTo || d.navParent
       expect(d.redirect).toBeFalsy()
-      expect(getDestination(d.navParent), `${d.id}.navParent must resolve`).toBeTruthy()
-      expect(getDestination(d.navParent).immersive, `${d.id}.navParent must not be immersive`).toBeFalsy()
+      expect(getDestination(out), `${d.id} must name a page to exit to`).toBeTruthy()
+      expect(getDestination(out).immersive, `${d.id} must not exit into another immersive page`).toBeFalsy()
     }
   })
 })
@@ -98,7 +100,7 @@ describe('exitTarget', () => {
       .toEqual({ destination: 'runs', params: { run: 'r-1', tab: 'live' } })
   })
 
-  it('a cold deep link (nothing recorded) exits to the navParent', () => {
+  it('a cold deep link (nothing recorded) exits to its exit page', () => {
     expect(exitTarget(null, composer, DEFAULT_DESTINATION)).toEqual({ destination: 'library', params: null })
   })
 
@@ -133,9 +135,8 @@ describe('AppConsole — immersive Composer mount and exit routing', () => {
 
     expect(await screen.findByTestId('ops-stub')).toHaveTextContent('SIM-EDR-001')
     expect(screen.getByRole('navigation', { name: /console destinations/i })).toBeInTheDocument()
-    expect(screen.getByTestId('section-tabs')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByTestId('section-tab-composer'))
+    fireEvent.click(screen.getByTestId('dest-button-composer'))
     const composer = await screen.findByTestId('composer-stub')
 
     // Immersive: the rail and the tab strip are gone, the shell says so, and
@@ -153,10 +154,9 @@ describe('AppConsole — immersive Composer mount and exit routing', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/library?open=SIM-EDR-001'))
     expect(container.querySelector('.pov-shell')).not.toHaveAttribute('data-mode')
     expect(screen.getByRole('navigation', { name: /console destinations/i })).toBeInTheDocument()
-    expect(screen.getByTestId('section-tabs')).toBeInTheDocument()
   })
 
-  it('a cold #/composer deep link exits to its navParent, library', async () => {
+  it('a cold #/composer deep link exits to Scenarios (library)', async () => {
     window.location.hash = '#/composer'
     render(<AppConsole />)
 

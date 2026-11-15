@@ -26,6 +26,17 @@ import asyncio
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_ignored_forwarders(monkeypatch):
+    """api.agents keeps the peers whose X-Forwarded-For it ignored in process
+    memory, and other test files POST such headers. probe_agents reports a
+    non-empty record (RG-INSTALL-05), so start every test here with none; a
+    test that wants one patches it again."""
+    import api.agents as agents_mod
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+
+
 # ---------------------------------------------------------------------------
 # Build identity
 # ---------------------------------------------------------------------------
@@ -141,6 +152,24 @@ def test_health_declares_what_it_did_not_check():
         assert item["why"] and item["checked_by"]
 
 
+def test_health_reports_how_long_this_instance_has_been_up(monkeypatch):
+    """The console header states this POVengine's uptime. It has to come from
+    SimCore's own clock: a browser cannot know when the process started, and a
+    difference of two clocks would drift by the DC laptop's skew."""
+    from datetime import datetime, timezone
+    import time
+
+    from api import health
+
+    monkeypatch.setattr(health, "_PROCESS_STARTED_MONO", time.monotonic() - 3725)
+    body = asyncio.run(health.health_payload())
+
+    assert 3725 <= body["uptime_seconds"] <= 3730
+    started = datetime.fromisoformat(body["started_at"].replace("Z", "+00:00"))
+    assert started.tzinfo is not None and started.utcoffset() == timezone.utc.utcoffset(None)
+    assert started <= datetime.now(timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # A zero is degraded, not ok — the "green on a broken deployment" class
 # ---------------------------------------------------------------------------
@@ -251,8 +280,11 @@ def test_scenario_catalog_zero_is_degraded():
         async def __aexit__(self, *a):
             return False
 
-        async def scalar(self, _stmt):
-            return 0
+        async def execute(self, _stmt):
+            class _Empty:
+                def all(self):
+                    return []
+            return _Empty()
 
     comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
     assert comp["status"] == "degraded"
@@ -345,7 +377,7 @@ def test_agent_binaries_incomplete_matrix_is_degraded(monkeypatch):
 
     monkeypatch.setattr(
         agents_mod, "_available_binaries",
-        lambda: [{"os": "linux", "arch": "amd64"}, {"os": "darwin", "arch": "amd64"}],
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX if o != "windows"],
     )
     comp = health.probe_agent_binaries()
     assert comp["status"] == "degraded"
@@ -364,7 +396,28 @@ def test_agent_binaries_empty_dist_is_degraded(monkeypatch):
     assert comp["code"] == "AGENT_DIST_EMPTY"
 
 
+SHIPPED_MATRIX = [("linux", "amd64"), ("linux", "arm64"), ("darwin", "amd64"),
+                  ("darwin", "arm64"), ("windows", "amd64")]
+
+
 def test_agent_binaries_full_matrix_is_ok(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(
+        agents_mod, "_available_binaries",
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX],
+    )
+    comp = health.probe_agent_binaries()
+    assert comp["status"] == "ok"
+    assert comp["missing"] == []
+
+
+def test_agent_binaries_amd64_only_shelf_is_degraded(monkeypatch):
+    """CRITIC-SHIPSTATE-AMD64. `want` was <goos>/amd64 only, so a shelf without
+    the arm64 beacons read ok while an Apple-silicon Mac or a Graviton host got
+    a 404 from /api/agents/binary and an installer that fell back to a source
+    build. The shipped matrix is five targets."""
     import api.agents as agents_mod
     from api import health
 
@@ -373,8 +426,10 @@ def test_agent_binaries_full_matrix_is_ok(monkeypatch):
         lambda: [{"os": o, "arch": "amd64"} for o in ("linux", "darwin", "windows")],
     )
     comp = health.probe_agent_binaries()
-    assert comp["status"] == "ok"
-    assert comp["missing"] == []
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_DIST_INCOMPLETE"
+    assert comp["missing"] == ["darwin/arm64", "linux/arm64"]
+    assert "WINDOWS_AGENT_UNAVAILABLE" not in comp["detail"], comp["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -684,3 +739,233 @@ def test_a_well_formed_identity_spec_is_ok(identity_spec_at):
     comp = health.probe_identity_spec()
     assert comp["status"] == "ok"
     assert comp["source"] == "file"
+
+
+def test_scenario_catalog_counts_the_corpus_apart_from_drafts():
+    """The Library lists active rows only (``/api/scenarios`` defaults to
+    ``status=active``), so a health count that folds composer drafts in
+    disagrees with the Library by exactly the draft count — 194 against 193 on
+    a SimCore with one saved draft. ``count`` must be what the Library shows;
+    drafts are reported on their own, never added to the corpus."""
+    from api import health
+
+    class _Result:
+        def all(self):
+            return [("active", 193), ("draft", 1)]
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def scalar(self, _stmt):  # the pre-fix total, every row
+            return 194
+
+        async def execute(self, _stmt):
+            return _Result()
+
+    comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
+    assert comp["status"] == "ok"
+    assert comp["count"] == 193
+    assert comp["drafts"] == 1
+    assert comp["by_status"] == {"active": 193, "draft": 1}
+
+
+def test_scenario_catalog_drafts_alone_is_still_degraded():
+    """Drafts are not corpus: a deployment whose only Scenario rows are
+    composer drafts has nothing in the Library and nothing launchable from
+    it, so drafts must not rescue the probe from SCENARIO_CATALOG_EMPTY."""
+    from api import health
+
+    class _Result:
+        def all(self):
+            return [("draft", 2)]
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def scalar(self, _stmt):
+            return 2
+
+        async def execute(self, _stmt):
+            return _Result()
+
+    comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "SCENARIO_CATALOG_EMPTY"
+    assert comp["count"] == 0
+    assert comp["drafts"] == 2
+
+
+# ---------------------------------------------------------------------------
+# RG-INSTALL-05: agents recording a proxy's address as their own
+# ---------------------------------------------------------------------------
+
+
+class _AddrAgent:
+    def __init__(self, agent_id, hostname, last_ip, age_s=1):
+        from datetime import datetime, timedelta
+        self.agent_id, self.hostname, self.last_ip = agent_id, hostname, last_ip
+        self.last_seen = datetime.utcnow() - timedelta(seconds=age_s)
+
+
+def test_an_ignored_x_forwarded_for_is_a_named_degradation(monkeypatch):
+    """37dc374 logs the first X-Forwarded-For from each unlisted peer once and
+    keeps the peers in api.agents.ignored_forwarders(). A log line is not seen
+    by a DC; /api/health is the diagnostic surface."""
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([_AddrAgent("a1", "h1", "10.9.9.9")])))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER"
+    assert comp["ignored_forwarders"] == ["10.9.9.9"]
+    assert "CORTEXSIM_TRUSTED_PROXIES" in comp["detail"]
+
+
+def test_distinct_hosts_sharing_one_address_is_a_named_degradation(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "db-01", "10.0.0.1"),
+            _AddrAgent("a3", "app-01", "10.0.0.3")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_ADDRESS_SHARED"
+    assert comp["shared_addresses"] == {"10.0.0.1": ["db-01", "web-01"]}
+
+
+def test_one_host_with_two_agent_rows_is_not_shared(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "web-01", "10.0.0.1")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "ok", comp
+
+
+def test_an_ignored_forwarder_with_no_agent_enrolled_is_still_named(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([])))
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER", comp
+
+
+# ---------------------------------------------------------------------------
+# mcp component — opt-in /mcp mount, zero outbound calls
+# ---------------------------------------------------------------------------
+
+
+from pydantic import SecretStr  # noqa: E402
+
+def test_mcp_off_is_ok_with_disabled_code(monkeypatch):
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", False)
+    comp = health.probe_mcp()
+    assert comp["status"] == "ok"
+    assert comp["code"] == "MCP_DISABLED"
+    assert comp["mounted"] is False
+    assert comp["path"] == "/mcp"
+    assert comp["detail"] == "opt-in; set CORTEXSIM_MCP_HTTP=1 to mount"
+
+
+def test_mcp_on_without_token_is_degraded_token_missing(monkeypatch):
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr(""))
+    comp = health.probe_mcp()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_TOKEN_MISSING"
+    assert comp["mounted"] is False
+    assert "Fix:" in comp["detail"]
+
+
+def test_mcp_on_but_sdk_missing_is_degraded(monkeypatch):
+    import builtins
+
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
+    real_import = builtins.__import__
+
+    def _no_mcp_server(name, *args, **kwargs):
+        if name.startswith("mcp_server"):
+            raise ImportError("simulated: mcp SDK package absent")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_mcp_server)
+    comp = health.probe_mcp()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_SDK_IMPORT_FAILED"
+    assert "Fix:" in comp["detail"]
+
+
+def _app_with_mcp(mcp):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(state=SimpleNamespace(mcp=mcp))
+
+
+def test_mcp_on_reports_tool_count(monkeypatch):
+    import config
+    from api import health
+    from mcp_server.client import SimCoreClient
+    from mcp_server.naming import CANONICAL_IDS
+    from mcp_server.ratelimit import TokenBucket
+    from mcp_server.registry import ToolContext
+    from mcp_server.server import build
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
+    mcp = build(ToolContext(client=SimCoreClient("http://simcore.test"), bucket=TokenBucket(30)))
+    comp = health.probe_mcp(_app_with_mcp(mcp))
+    assert comp["status"] == "ok"
+    assert comp["mounted"] is True
+    assert comp["tools"] == len(CANONICAL_IDS)
+
+
+def test_mcp_on_but_not_mounted_is_degraded(monkeypatch):
+    """Flag on, nothing mounted (main.py swallowed an SDK ImportError): the
+    probe must not infer a mount from the flag."""
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
+    for app in (None, _app_with_mcp(None)):
+        comp = health.probe_mcp(app)
+        assert comp["status"] == "degraded"
+        assert comp["code"] == "MCP_NOT_MOUNTED"
+        assert comp["mounted"] is False
+        assert comp["tools"] == 0
+        assert "Fix:" in comp["detail"]
+
+
+def test_mcp_on_with_zero_registered_tools_is_degraded(monkeypatch):
+    import config
+    from api import health
+    from mcp.server.fastmcp import FastMCP
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_TOKEN", SecretStr("t" * 32))
+    comp = health.probe_mcp(_app_with_mcp(FastMCP("empty")))
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_NO_TOOLS"
+    assert comp["mounted"] is True

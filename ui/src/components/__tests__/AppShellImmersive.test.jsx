@@ -122,16 +122,17 @@ describe('AppShell — Escape is consumed only when it closed an overlay', () =>
     window.removeEventListener('keydown', onWindow)
     return { ev, seenAtWindow }
   }
-  const palette = () => screen.getByRole('dialog', { name: 'Command palette', hidden: true })
+  // ⌘K search is a dialog named Search, rendered only while it is open.
+  const palette = () => screen.queryByRole('dialog', { name: 'Search' })
 
   it('with the palette open (⌘K), Escape closes it and is defaultPrevented — a window listener sees that', () => {
     renderShell({ destination: 'composer', immersive: true })
     fireEvent.keyDown(document.body, { key: 'k', metaKey: true })
-    expect(palette()).toHaveClass('is-open')
+    expect(palette()).toBeInTheDocument()
 
     const { ev, seenAtWindow } = pressEscape()
 
-    expect(palette()).not.toHaveClass('is-open')
+    expect(palette()).not.toBeInTheDocument()
     expect(ev.defaultPrevented).toBe(true)
     expect(seenAtWindow).toEqual([true])
   })
@@ -149,7 +150,7 @@ describe('AppShell — Escape is consumed only when it closed an overlay', () =>
 
   it('with nothing open, Escape is NOT defaultPrevented — it belongs to the surface', () => {
     renderShell({ destination: 'composer', immersive: true })
-    expect(palette()).not.toHaveClass('is-open')
+    expect(palette()).not.toBeInTheDocument()
 
     const { ev, seenAtWindow } = pressEscape()
 

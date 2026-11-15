@@ -27,11 +27,15 @@ const result = (id, over = {}) => ({
 })
 
 describe('Proof & Export — status belongs to the run on screen', () => {
-  it('an in-flight run is not declared "run failed" because the PREVIOUS run failed', async () => {
+  it('a run is not declared "run failed" because the PREVIOUS run failed', async () => {
+    // Results shows the newest READ-BACK run (design v26 §4.6); its status must
+    // be its own, not the status of the failed run before it.
     installRoutes({
       'GET /api/runs': { runs: [
-        { run_id: 'run-A', scenario_id: 'SIM-EDR-001', status: 'running', started_at: '2026-10-04T12:00:00' },
-        { run_id: 'run-B', scenario_id: 'SIM-EDR-002', status: 'failed', started_at: '2026-10-04T11:00:00' },
+        { run_id: 'run-A', scenario_id: 'SIM-EDR-001', status: 'complete', started_at: '2026-10-04T12:00:00',
+          delivered_at: '2026-10-04T12:00:02', tc_verdict_detail: { source: 'reconcile:xsiam:lab' } },
+        { run_id: 'run-B', scenario_id: 'SIM-EDR-002', status: 'failed', started_at: '2026-10-04T11:00:00',
+          delivered_at: '2026-10-04T11:00:02', tc_verdict_detail: { source: 'reconcile:xsiam:lab' } },
       ] },
       'GET /api/results/run-A': {
         results: [result(1), result(2, { observed: true, mttd_seconds: 40 })],

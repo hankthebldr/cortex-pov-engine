@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1189",
     "T1566.002",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(Prisma Browser \u2014 auto-download initiated by JS without user gesture)",
       "name": "Browser Drive-by Download \u2014 Gesture-less Executable",
-      "rule_id": "CR-BROWSER-0002",
-      "severity": "high"
+      "rule_id": "CR-BROWSER-0002"
     }
   ],
   "ttp_ref": "TTP-2026-0018"

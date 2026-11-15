@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1552.005",
     "T1078.004"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when abioc `Cloud Unusual Instance Metadata Service (IMDS) access` and xql `Suspicious usage of EC2 token` both observe the SAME EC2 instance role session (assumed-role ARN + instance_id) within the run window \u2014 stitching the off-instance instance-profile credential use and the off-instance EC2-token write into one incident. The shared entity is the instance-profile role session (role_session_name == instance_id); the pivot is the divergence of the session's source IP from the instance's own egress.",
       "name": "SIM-CDR-023 IMDS token theft to remote use stitch",
-      "rule_id": "CR-CDR-0023",
-      "severity": "high"
+      "rule_id": "CR-CDR-0023"
     }
   ],
   "ttp_ref": "TTP-2026-0158"

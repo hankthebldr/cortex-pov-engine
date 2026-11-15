@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1656",
     "T1059",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(KOI-002 MCP Tool Response Embeds Instruction Injection And Credential Exfil String) OR XQL(KOI-002 MCP Runtime Monitor Instruction Shaped String In Tool Result) OR XQL(KOI-002 AIRS Indirect Injection Scorer On MCP Result In Prompt) \u2014 stitched by shared agent_hostname + causality_id so the code-scan finding, the runtime tool-result consumption, and the AIRS indirect-injection detection (shared_entity: the same tainted result) collapse into ONE agentic-supply-chain incident",
       "name": "Agentic Supply Chain \u2014 MCP Tool-Response Indirect Injection",
-      "rule_id": "CR-KOI-0002",
-      "severity": "high"
+      "rule_id": "CR-KOI-0002"
     }
   ],
   "ttp_ref": "TTP-2026-0043"

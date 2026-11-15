@@ -1,0 +1,148 @@
+{
+  "id": "TTP-0000-0020",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "LSASS Memory Dump Extraction via Process Copy",
+    "summary": "An attacker copies the LSASS process memory dump file to a writable location for offline credential extraction. Cortex should detect this behavior as a process memory file copy operation. This activit",
+    "description": "An attacker copies the LSASS process memory dump file to a writable location for offline credential extraction. Cortex should detect this behavior as a process memory file copy operation. This activity is a direct indicator of credential harvesting techniques."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.001",
+        "name": "OS Credential Dumping: LSASS Memory",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -Command \"Copy-Item -Path C:\\\\Windows\\\\System32\\\\lsass.exe -Destination C:\\\\temp\\\\lsass.dmp\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A copy of the LSASS process memory dump file",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\lsass.dmp'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Copy a process memory file",
+        "description": "Detection of a process memory dump file being copied to a non-system directory",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_COPY\n| filter action_file_path contains 'lsass.dmp'\n| filter actor_process_image_name = 'lsass.exe'\n| filter action_file_path matches 'C:\\\\temp\\\\.*'\n",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Copy a process memory file",
+        "description": "Detection of a process memory file being copied to a non-system directory using process copy behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_COPY\n| filter action_file_path contains 'lsass.dmp'\n| filter actor_process_image_name = 'lsass.exe'\n| filter action_file_path matches 'C:\\\\temp\\\\.*'\n",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_memory_file_copy",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process memory file copy detection",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_COPY\n| filter action_file_path contains 'lsass.dmp'\n| filter actor_process_image_name = 'lsass.exe'\n| filter action_file_path matches 'C:\\\\temp\\\\.*'\n",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Copy a process memory file; Required Data: XDR Agent; ATT&CK T1003.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Copy a process memory file",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/copy-a-process-memory-file",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1003.001",
+      "url": "https://attack.mitre.org/techniques/T1003/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

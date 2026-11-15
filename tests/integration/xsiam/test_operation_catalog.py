@@ -18,7 +18,7 @@ def test_shipped_packs_load_clean():
     # every op has a resolvable, well-formed record
     for op in cat.all():
         assert op.op_id.startswith("OP-")
-        assert op.path.startswith("/public_api/")
+        assert op.path.startswith(("/public_api/", "/xsoar/"))
         assert op.access_class in ("read", "write", "destructive")
 
 

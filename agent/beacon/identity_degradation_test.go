@@ -9,6 +9,10 @@ package beacon
 
 import (
 	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,9 +20,14 @@ import (
 )
 
 // windowsResolver mimics identity.Resolve as it behaves on a Windows host where
-// the beacon runs as CONTOSO\svc_cortexsim.
+// the beacon runs as CONTOSO\svc_cortexsim with an ELEVATED token.
 func windowsResolver(username string) identity.Resolution {
-	return identity.ResolveFor("windows", username, `CONTOSO\svc_cortexsim`)
+	return identity.ResolveForElevation("windows", username, `CONTOSO\svc_cortexsim`, true)
+}
+
+// unelevatedWindowsResolver is the same host with a NON-elevated token.
+func unelevatedWindowsResolver(username string) identity.Resolution {
+	return identity.ResolveForElevation("windows", username, `CONTOSO\svc_cortexsim`, false)
 }
 
 func windowsTask() *Task {
@@ -145,11 +154,112 @@ func TestExecuteTaskChained_AlsoRecordsUnhonouredIdentity(t *testing.T) {
 	}
 }
 
+// CONT-14: on a NON-elevated Windows beacon a `root` step runs without
+// administrative rights, so even the "direct" identity is not honoured — and the
+// run record must say so, in the step output AND the run-card summary.
+func TestExecuteTask_UnelevatedWindowsBeaconFlagsPrivilegedSteps(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+
+	c := New(rs.URL, "a-win", 0)
+	c.resolveIdentity = unelevatedWindowsResolver
+	c.executeTask(context.Background(), windowsTask())
+
+	outputs := rs.find("POST", "/output")
+	if len(outputs) != 2 {
+		t.Fatalf("expected one /output POST per step, got %d", len(outputs))
+	}
+	if !strings.Contains(outputs[1].Body, "IDENTITY NOT HONOURED: root requires an elevated token; this beacon is not elevated") {
+		t.Fatalf("step-02 (root) on a non-elevated beacon is not flagged:\n%s", outputs[1].Body)
+	}
+	if body := rs.find("POST", "/complete")[0].Body; !strings.Contains(body, "IDENTITY DEGRADED: 2 step(s)") {
+		t.Fatalf("summary does not count both degraded steps: %s", body)
+	}
+}
+
 // A BeaconClient built with a struct literal (as several existing tests do)
 // must still resolve identities rather than panic on a nil resolver.
 func TestResolve_ZeroValueClientFallsBackToHostResolver(t *testing.T) {
 	c := &BeaconClient{}
 	if got := c.resolve("root"); got.Mode != "direct" {
 		t.Fatalf("zero-value client resolve(root) = %+v, want direct", got)
+	}
+}
+
+// shOnlyPathForBeacon is an alpine-shaped PATH: sh -> busybox, no bash. The
+// "busybox" is a script that execs the host sh, so the chain still runs; the
+// anchor rule reads only the resolved name.
+func shOnlyPathForBeacon(t *testing.T) {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh on PATH")
+	}
+	if sh, err = filepath.EvalSymlinks(sh); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	script := "#!" + sh + "\nexec " + sh + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "busybox"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "busybox"), filepath.Join(dir, "sh")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// A requested cgo_anchor that a multi-call-sh image cannot carry is recorded in
+// the run record exactly once, not silently dropped.
+func TestExecuteTaskChained_AnchorNotHonouredIsRecordedOnce(t *testing.T) {
+	shOnlyPathForBeacon(t)
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+
+	task := &Task{
+		TaskID: "t-a", RunID: "r-a", ScenarioID: "SIM-X-001",
+		CgoAnchor: &CgoAnchor{ImageName: "nginx"},
+		Steps: []Step{
+			{ID: "step-01", Name: "one", Command: "echo one", Identity: "root", MitreTechnique: "T1059"},
+			{ID: "step-02", Name: "two", Command: "echo two", Identity: "root", MitreTechnique: "T1059"},
+		},
+	}
+	c := New(rs.URL, "a-anchor", 0)
+	c.executeTask(context.Background(), task)
+
+	n := 0
+	for _, o := range rs.find("POST", "/output") {
+		if strings.Contains(o.Body, "ANCHOR NOT HONOURED") {
+			n++
+			if !strings.Contains(o.Body, "requested nginx") || !strings.Contains(o.Body, "multi-call") || !strings.Contains(o.Body, "no bash on PATH") || !strings.Contains(o.Body, "'sh'") {
+				t.Errorf("notice text wrong:\n%s", o.Body)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("ANCHOR NOT HONOURED bodies = %d, want exactly 1", n)
+	}
+	completes := rs.find("POST", "/complete")
+	if len(completes) != 1 || !strings.Contains(completes[0].Body, "ANCHOR NOT HONOURED") {
+		t.Fatalf("run summary hides the anchor degradation: %+v", completes)
+	}
+}
+
+// The absent-account and NSS-only-account tests run `#!/bin/sh` runuser/sudo/su
+// stubs and a runuser-mode resolver, so they live in
+// identity_degradation_unix_test.go (CI-04).
+
+func TestResolveWith_AbsentAccountReasonIsInjectable(t *testing.T) {
+	missing := func(string) error { return errors.New("unknown user") }
+	present := func(string) error { return nil }
+	if r := identity.ResolveWith("linux", "www-data", "root", missing); r.Mode != "direct" || !r.Degraded() ||
+		!strings.Contains(r.Degradation, "www-data") {
+		t.Fatalf("absent account not degraded: %+v", r)
+	}
+	if r := identity.ResolveWith("linux", "www-data", "root", present); r.Mode != "runuser" || r.Degraded() {
+		t.Fatalf("present account wrongly degraded: %+v", r)
+	}
+	if r := identity.ResolveWith("linux", "root", "root", missing); r.Degraded() {
+		t.Fatalf("direct identity must never be looked up: %+v", r)
 	}
 }

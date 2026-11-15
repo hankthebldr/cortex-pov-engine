@@ -227,3 +227,109 @@ class TestPushSupportedFalse:
         client, seed = env
         seed("SIM-TEST-PUSH", [BOTH_STEP], push_supported=True)
         assert client.get("/api/scenarios/SIM-TEST-PUSH/download").status_code == 200
+
+
+class TestBundleTargets:
+    """UI-08: the console can only label a scenario Windows-only (or offer the
+    .ps1) if the API says which bundles exist. ``bundle_targets`` is computed by
+    the SAME resolver the download route gates on, so the two cannot disagree."""
+
+    @pytest.mark.parametrize("sid,steps,push,expected", [
+        ("SIM-TEST-POSIX", [POSIX_STEP], True, ["posix"]),
+        ("SIM-TEST-WIN", [WINDOWS_STEP], True, ["windows"]),
+        ("SIM-TEST-BOTH", [BOTH_STEP], True, ["posix", "windows"]),
+        # Refused by the download route whatever the content could emit.
+        ("SIM-TEST-NOPUSH", [BOTH_STEP], False, []),
+        # Neither target resolves: an honest empty list, and the route agrees.
+        ("SIM-TEST-NONE", [
+            {"id": "step-01", "command": "curl -s http://h/ -o /tmp/x"},
+            {"id": "step-02", "platforms": ["windows"], "command": "Get-Process lsass"},
+        ], True, []),
+    ])
+    def test_detail_and_list_carry_bundle_targets(self, env, sid, steps, push, expected):
+        client, seed = env
+        seed(sid, steps, push_supported=push)
+        detail = client.get(f"/api/scenarios/{sid}")
+        assert detail.status_code == 200
+        assert detail.json()["bundle_targets"] == expected
+        rows = {r["scenario_id"]: r for r in client.get("/api/scenarios").json()["scenarios"]}
+        assert rows[sid]["bundle_targets"] == expected
+
+    @pytest.mark.parametrize("fmt,target", [("bash", "posix"), ("powershell", "windows")])
+    def test_bundle_targets_agree_with_the_download_route(self, env, fmt, target):
+        client, seed = env
+        for sid, steps in (("SIM-TEST-POSIX", [POSIX_STEP]), ("SIM-TEST-WIN", [WINDOWS_STEP]),
+                           ("SIM-TEST-BOTH", [BOTH_STEP])):
+            seed(sid, steps)
+            advertised = target in client.get(f"/api/scenarios/{sid}").json()["bundle_targets"]
+            served = client.get(f"/api/scenarios/{sid}/download?format={fmt}").status_code == 200
+            assert advertised == served, f"{sid}/{fmt}: advertised={advertised} served={served}"
+
+
+class TestPushableTargets:
+    """PUSH-17. ``emittable_targets`` answers "what can this CONTENT run on":
+    the question pull dispatch asks, and the one the composer asks when it
+    DERIVES ``push_supported`` (so it must not read that flag). It therefore
+    reported SIM-MP-031 and SIM-MP-034 as posix-emittable while the download
+    route refuses them with PUSH_NOT_SUPPORTED, and any surface reading it
+    alone over-stated what can be downloaded. ``pushable_targets`` is the one
+    call that answers "what will a push download serve"."""
+
+    STEP = {"id": "step-01", "command": "id",
+            "platform_variants": {"windows": "Get-Process -Name lsass"}}
+
+    def _scn(self, **kw) -> dict:
+        return {"scenario_id": "SIM-TEST-PUSHABLE", "steps": [dict(self.STEP)], **kw}
+
+    def test_a_withdrawn_scenario_is_pushable_nowhere(self):
+        from engine import push_generator as pg  # noqa: PLC0415
+
+        doc = self._scn(push_supported=False)
+        assert pg.emittable_targets(doc) == ("posix", "windows"), "the content still resolves"
+        assert pg.pushable_targets(doc) == ()
+
+    def test_true_or_absent_follows_the_content(self):
+        from engine import push_generator as pg  # noqa: PLC0415
+
+        assert pg.pushable_targets(self._scn(push_supported=True)) == ("posix", "windows")
+        # Absent means unknown, not withdrawn: a draft has no flag until the
+        # composer derives one from this same content.
+        assert pg.pushable_targets(self._scn()) == ("posix", "windows")
+        assert pg.pushable_targets({"steps": [{"id": "s", "platforms": ["windows"],
+                                               "command": "Get-Process lsass"}]}) == ("windows",)
+
+    def test_the_corpus_agrees_with_the_download_route(self):
+        """Every scenario, three ways: the flag, the generator's answer and the
+        API's ``bundle_targets``. A zero is degraded: the corpus must contain a
+        withdrawn scenario whose content still resolves, or nothing here is
+        exercising the difference."""
+        from pathlib import Path  # noqa: PLC0415
+
+        import yaml  # noqa: PLC0415
+
+        from api.scenarios import _bundle_targets  # noqa: PLC0415
+        from engine import push_generator as pg  # noqa: PLC0415
+
+        root = Path(__file__).resolve().parents[2] / "scenarios"
+        seen = withdrawn = withdrawn_but_resolvable = 0
+        for path in sorted(root.rglob("*.yml")):
+            if path.name.startswith("_"):
+                continue
+            try:
+                doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except yaml.YAMLError:
+                continue
+            if not isinstance(doc, dict) or "scenario_id" not in doc or "steps" not in doc:
+                continue
+            seen += 1
+            sid = doc["scenario_id"]
+            pushable = pg.pushable_targets(doc)
+            assert list(pushable) == _bundle_targets(doc), sid
+            if doc.get("push_supported") is False:
+                withdrawn += 1
+                assert pushable == (), f"{sid} declares push_supported: false but reads pushable"
+                withdrawn_but_resolvable += bool(pg.emittable_targets(doc))
+            else:
+                assert pushable == pg.emittable_targets(doc), sid
+        assert seen >= 150, seen
+        assert withdrawn >= 1 and withdrawn_but_resolvable >= 1, (withdrawn, withdrawn_but_resolvable)

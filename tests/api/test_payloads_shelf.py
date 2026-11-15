@@ -620,3 +620,17 @@ def test_stage_is_refused_without_the_token_even_in_open_read_mode(
     r = anon.post("/api/shelf/stage", json={"adapter_id": "TOOL-LINPEAS"})
     assert r.status_code == 403
     assert r.json()["detail"]["code"] == "SHELF_WRITE_DENIED"
+
+
+def test_a_bad_server_on_compose_is_worded_for_the_shelf(client):
+    """RG-INSTALL-07 (shelf half). The shelf reuses the installer's resolver, so a
+    bad `server` in a POST /api/shelf/compose body was answered with the
+    installer's sentence: "cannot be baked into an installer ... Pass
+    ?server=", naming a query parameter this route does not read."""
+    r = client.post("/api/shelf/compose", json={"server": "javascript:alert(1)"})
+    assert r.status_code == 400, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "BAD_SERVER"
+    assert "installer" not in detail["detail"], detail
+    assert "payload plan" in detail["detail"], detail
+    assert "`server`" in detail["detail"], detail

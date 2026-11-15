@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1566",
     "T1078.004",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity) AND ABIOC(ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin) \u2014 fuses the burst-scale and first-seen behavioral deviations on the same tenant and admin identity, correlated with that identity's preceding risky / impossible-travel sign-in, into a single identity-weaponized mass-device-wipe incident anchored to the phished-admin causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale RemoteWipe/FactoryReset broadcast).",
       "name": "Identity-Weaponized Mass Device Wipe \u2014 ABIOC Causality Stitch",
-      "rule_id": "CR-ITDR-0011",
-      "severity": "high"
+      "rule_id": "CR-ITDR-0011"
     }
   ],
   "ttp_ref": "TTP-2026-0107"

@@ -38,6 +38,12 @@ composite key.
    (sigma, xql, correlation, xsoar_playbook) from the *current* card bodies.
    Pure read-then-write, deterministic.
 
+**Staged draft library (outside this directory):** `drafts/detection-library/`
+holds generated card + scenario pairs that are not corpus content: provisional
+ids, `status: draft`, read by none of the four scripts above and not shipped in
+the image. `scripts/detdev/` writes them; a pair enters `ttps/` only by
+promotion. See `drafts/detection-library/README.md`.
+
 **Engine consumption (cross-domain):** the FastAPI engine loads cards via
 `core/engine/ttp_catalog.py` (it globs `ttps/*.json` directly — it does **not**
 read `manifest.json`), keyed by `(ttp_ref, detection_id)`. Surfaced through

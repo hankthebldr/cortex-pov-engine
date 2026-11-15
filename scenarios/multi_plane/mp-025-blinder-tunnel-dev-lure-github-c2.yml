@@ -625,9 +625,23 @@ steps:
 cleanup:
   commands:
     - "for h in /home/* \"$HOME\"; do rb=\"$h/.local/share/Microsoft/RuntimeBrokers\"; if grep -qs cortexsim-mp025 \"$rb/RuntimeBroker.exe.config\"; then pkill -f \"$rb/RuntimeBroker.exe\"; rm -rf \"$rb\"; fi; a=\"$h/.config/autostart/MicrosoftRuntime.desktop\"; grep -qs cortexsim-mp025 \"$a\" && rm -f \"$a\"; p=\"$h/source/repos/DubaiAirport_Carrers_IT_Test\"; if grep -qs 'CortexSim SAFE-MODE replica' \"$p/FlightManager/FlightManager.csproj\"; then rm -rf \"$p\" \"$h/Downloads/DubaiAirport_Carrers_IT_Test.zip\"; fi; done; true"
-    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command '$rb = Join-Path $env:LOCALAPPDATA \"Microsoft\\RuntimeBrokers\"; $run = \"HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\"; if (Select-String -Quiet -SimpleMatch -Pattern cortexsim-mp025 -Path (Join-Path $rb \"RuntimeBroker.exe.config\") -ErrorAction SilentlyContinue) { $v = (Get-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue).MicrosoftRuntime; if ($v -like \"*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*\") { Remove-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue }; Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object { $_.Path -like \"$rb\\*\" } | Stop-Process -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force -Path $rb -ErrorAction SilentlyContinue }' || true"
     - "rm -rf /tmp/cortexsim-mp025"
     - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
+    # Native Windows teardown (CONT-11). The previous single line wrapped pwsh
+    # in bash (`command -v pwsh && pwsh -Command ...`), which the Windows bundle
+    # skips, so it never ran on Windows. The bash bundle and the K8s bootstrap
+    # do NOT run the lines below: push_generator withholds a Windows-only
+    # cleanup line from the POSIX target and names it in a `# skipped
+    # (Windows-only)` comment. Each removal stays guarded the
+    # way the old line was: only the lab RuntimeBroker path, only a Run value
+    # pointing at it, only a directory whose config carries the cortexsim-mp025
+    # marker (findstr exits non-zero without it, so `&&` skips the rd).
+    - "Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object Path -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe' | Stop-Process -Force -ErrorAction SilentlyContinue"
+    - "Get-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name MicrosoftRuntime -ErrorAction SilentlyContinue | Where-Object MicrosoftRuntime -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*' | Remove-ItemProperty -Name MicrosoftRuntime -ErrorAction SilentlyContinue"
+    - 'cmd.exe /c findstr /m /c:cortexsim-mp025 "%LOCALAPPDATA%\Microsoft\RuntimeBrokers\RuntimeBroker.exe.config" && rd /s /q "%LOCALAPPDATA%\Microsoft\RuntimeBrokers"'
+    - 'cmd.exe /c findstr /m /c:cortexsim-mp025 "%USERPROFILE%\source\repos\DubaiAirport_Carrers_IT_Test\FlightManager\Resources\RuntimeBroker.exe.config" && rd /s /q "%USERPROFILE%\source\repos\DubaiAirport_Carrers_IT_Test"'
+    - 'cmd.exe /c if exist "%USERPROFILE%\Downloads\DubaiAirport_Carrers_IT_Test.zip" del /f /q "%USERPROFILE%\Downloads\DubaiAirport_Carrers_IT_Test.zip"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp025" rd /s /q "%TEMP%\cortexsim-mp025"'
 
 author: "Henry Reed"
 created: "2026-10-27"

@@ -299,3 +299,23 @@ describe('one fault, one description', () => {
     expect(c.remediation).toMatch(/tools\//)
   })
 })
+
+describe('api_auth and master_key are labelled, not raw keys', () => {
+  it('names the by-design api_auth state and still counts it as degraded', () => {
+    const m = buildHealthModel({
+      status: 'degraded',
+      degraded_components: ['api_auth'],
+      components: {
+        api_auth: { status: 'degraded', code: 'API_UNAUTHENTICATED' },
+        master_key: { status: 'ok' },
+      },
+    })
+    const auth = m.components.find((c) => c.key === 'api_auth')
+    expect(auth.label).toMatch(/API authentication/)
+    expect(auth.label).toMatch(/expected/)
+    expect(m.components.find((c) => c.key === 'master_key').label).toBe('Credential master key')
+    // Honest: by design is still degraded, never painted ok.
+    expect(m.degraded).toContain('api_auth')
+    expect(healthHeadline(m)).toMatch(/API authentication/)
+  })
+})

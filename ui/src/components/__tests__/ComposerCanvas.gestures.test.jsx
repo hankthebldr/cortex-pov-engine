@@ -90,9 +90,12 @@ describe('ComposerCanvas — edges handed to React Flow', () => {
     expect(ids).toContain('causality:s1->s2')
   })
 
-  it('Lanes lens: only step-to-step links (the bands stand in for the anchors)', () => {
+  it('Lanes lens: the stage draws the declared spine, not a React Flow graph', () => {
     mount({ lens: 'lanes' })
-    expect(captured.props.edges.every((e) => e.type === 'causality')).toBe(true)
+    expect(captured.props).toBeNull()
+    const stage = screen.getByTestId('chain-stage')
+    expect(stage.querySelector('[data-edge="s1->s2"]')).toHaveAttribute('data-edge-kind', 'causality')
+    expect(stage.querySelector('[data-edge="s2->s3"]')).toHaveAttribute('data-edge-kind', 'causality')
   })
 
   it('Design causality edges change the pivot and delete through their own callbacks', () => {

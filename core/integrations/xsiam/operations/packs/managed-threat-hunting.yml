@@ -1,0 +1,60 @@
+# Managed Threat Hunting (MDR reports) — Cortex XSIAM Platform API operations
+# Harvested 2026-11-02 from the field-built cortex-bot MCP server. Paths are kept
+# exactly as that tool sends them (trailing slash included): the sent form is the one
+# with live-tenant evidence. `cortex-bot-observed` marks that provenance; it is the
+# author's observation, NOT a CortexSim tenant verification (tenant-verified is 0).
+# `prefix-inferred` = cortex-bot sent a bare path and the official server's fetcher
+# prepended /public_api/v1; the full path here is composed, not a literal.
+# Review: docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md
+# mth/child replies come in THREE envelopes ({DATA,COUNT} / {status,data} / bare
+# array) with two key cases; a consumer needs a raise-on-unknown unwrapper.
+category: "Managed Threat Hunting"
+operations:
+  - op_id: OP-MTH-GET-ALL-REPORTS
+    name: "Get all MDR reports"
+    method: POST
+    path: "/public_api/v1/mth/child/get_all_reports"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-mth-multi]
+  - op_id: OP-MTH-GET-REPORTS-BY-SOURCE-ID
+    name: "Get MDR reports by source id"
+    method: POST
+    path: "/public_api/v1/mth/child/get_reports_by_source_id"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-mth-multi]
+  - op_id: OP-MTH-GET-REPORTS-BY-INCIDENT-ID
+    name: "Get MDR reports by incident id"
+    method: POST
+    path: "/public_api/v1/mth/child/get_reports_by_incident_id"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-mth-multi]
+  - op_id: OP-MTH-GET-REPORTS-BY-STATUSES
+    name: "Get MDR reports by status"
+    method: POST
+    path: "/public_api/v1/mth/child/get_reports_by_statuses"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-mth-multi]
+  - op_id: OP-MTH-GET-COMMENTS
+    name: "Get MDR report comments"
+    method: POST
+    path: "/public_api/v1/mth/child/get_comments"
+    access_class: read
+    tags: [cortex-bot-observed, envelope-mth-multi]
+  - op_id: OP-MTH-ADD-COMMENT
+    name: "Add MDR report comment"
+    method: POST
+    path: "/public_api/v1/mth/child/add_comment"
+    access_class: write
+    tags: [cortex-bot-observed]
+  - op_id: OP-MTH-REPORT-UPDATE-STATUS
+    name: "Update MDR report status"
+    method: POST
+    path: "/public_api/v1/mth/child/report/update/status"
+    access_class: write
+    tags: [cortex-bot-observed]
+  - op_id: OP-MTH-REPORT-UPDATE-ASSIGN
+    name: "Update MDR report assignee"
+    method: POST
+    path: "/public_api/v1/mth/child/report/update/assign"
+    access_class: write
+    tags: [cortex-bot-observed]

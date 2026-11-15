@@ -162,11 +162,18 @@ export function draftFromScenario(scenario) {
     // as `stitchContext` immediately above, so `draftFromApi` needs no
     // separate edit either.
     layout: scenario.composer_layout || null,
-    // Swimlane overrides — which ingestion door a step was DRAGGED into on the
-    // Lanes lens. Presentation-tier like `layout`, persisted the same way, and
-    // round-tripped through this one place. See composerLanes.js for what an
-    // override does and does not change about the step.
-    laneOverrides: scenario.composer_lanes || null,
+    // Push delivery: only an AUTHORED refusal is carried, as a floor the
+    // server never widens (`push_supported: false` on SIM-MP-030/031/034).
+    // Read from `push_supported_declared`, never from the derived
+    // `push_supported` — on a reloaded DRAFT row that flag is the server's
+    // derivation narrowed by any floor, and a merely-derived false must not
+    // harden into a declared one the next time the DC saves. `true` is not
+    // a floor, so it reads as null: nothing to carry.
+    pushSupported: scenario.push_supported_declared === false ? false : null,
+    // Threat-intel citation. Read at run time by the POV report and the
+    // bundle header; a fork that dropped it reported no Unit 42 attribution.
+    threatReport: scenario.threat_report || null,
+    threatReportUrl: scenario.threat_report_url || null,
     steps,
     // Persistence identity — null here, filled by `draftFromApi` when the row
     // came back from the drafts API. A draft seeded from a corpus scenario is
@@ -190,7 +197,7 @@ export function emptyDraft() {
     successCriteria: null, correlationWindowSeconds: null, stitchingKey: null,
     requiredPlanesInIncident: null,
     cgo: null, teardown: [], k8sTeardown: null, stitchContext: null, layout: null,
-    laneOverrides: null,
+    pushSupported: null, threatReport: null, threatReportUrl: null,
     steps: [],
     scenarioId: null, status: null, author: null, tags: [],
   }
@@ -209,41 +216,9 @@ export function setNodePosition(draft, stepId, x, y) {
   }
 }
 
-/** Drop every stored position — the Re-layout action's reducer. Lane
- *  overrides go with it: Fit / Re-layout restores BOTH positions and lanes,
- *  which is the design's own definition of the action. */
+/** Drop every stored position — the Re-layout action's reducer. */
 export function clearLayout(draft) {
-  return { ...draft, layout: null, laneOverrides: null }
-}
-
-/**
- * Record that a step was dragged into `lane` on the Lanes lens.
- *
- * Two of the lanes are backed by a real step field and WRITE THROUGH:
- *   'DC'  → channel 'eal'    (the step becomes a data-stream emitter)
- *   'AGT' → channel 'agent'  (the step runs on the beacon)
- * The other three (CC / BVM / ENG) are plane-derived. A drag does NOT rewrite
- * the plane — the plane is what the step's expected detections were authored
- * against, and moving a card is not authoring — so those are recorded as an
- * override the door badge and the inspector read, nothing more.
- *
- * Returns the SAME array-identity semantics as the other reducers: a no-op
- * lane (already there) returns `draft` unchanged.
- */
-export function setStepLane(draft, stepId, lane) {
-  const steps = draft.steps || []
-  const step = steps.find((s) => s.id === stepId)
-  if (!step) return draft
-  const cur = (draft.laneOverrides || {})[stepId] || null
-  let nextSteps = steps
-  if (lane === 'DC') nextSteps = setStepChannel(steps, stepId, 'eal')
-  else if (lane === 'AGT') nextSteps = setStepChannel(steps, stepId, 'agent')
-  if (cur === lane && nextSteps === steps) return draft
-  return {
-    ...draft,
-    steps: nextSteps,
-    laneOverrides: { ...(draft.laneOverrides || {}), [stepId]: lane },
-  }
+  return { ...draft, layout: null }
 }
 
 /**
@@ -861,10 +836,13 @@ function _cgoAnchorFromDisplay(cgo) {
 /**
  * Build the FROZEN snake_case `DraftCreateRequest` body for POST/PUT.
  *
- * OMITS every server-derived field (`detection_types`, `push_supported`,
- * `pull_supported`, `required_base_platform`, `required_addons`, `status`,
- * `version`) — the backend derives those from the steps and the index, and a
- * client that sent them would be asserting a contract it does not own.
+ * OMITS every server-derived field (`detection_types`, `pull_supported`,
+ * `required_base_platform`, `required_addons`, `status`, `version`) — the
+ * backend derives those from the steps and the index, and a client that sent
+ * them would be asserting a contract it does not own. The one deliberate
+ * exception is `push_supported`, sent ONLY as `false` and only when the fork
+ * origin declared it: that is a refusal the backend treats as a floor it never
+ * widens, not a claim of push-ability.
  */
 export function draftToApi(draft, { author = 'composer' } = {}) {
   const body = {
@@ -940,9 +918,6 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   if (draft.layout && Object.keys(draft.layout).length > 0) {
     body.composer_layout = draft.layout
   }
-  if (draft.laneOverrides && Object.keys(draft.laneOverrides).length > 0) {
-    body.composer_lanes = draft.laneOverrides
-  }
   // Everything below is carried from the source scenario (`draftFromScenario`)
   // and OMITTED when absent, so a draft that never had it POSTs the body it
   // did before. Before these were carried, a fork silently lost them on save.
@@ -983,6 +958,11 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   if (Array.isArray(draft.requiredPlanesInIncident) && draft.requiredPlanesInIncident.length) {
     body.required_planes_in_incident = draft.requiredPlanesInIncident
   }
+  // A carried push refusal — see draftFromScenario. Never `true`: an explicit
+  // true would be the client asserting push-ability it cannot know.
+  if (draft.pushSupported === false) body.push_supported = false
+  if (draft.threatReport) body.threat_report = draft.threatReport
+  if (draft.threatReportUrl) body.threat_report_url = draft.threatReportUrl
   return body
 }
 
@@ -1031,7 +1011,6 @@ export function draftSnapshot(draft) {
     // what got persisted, so dragging marks the draft dirty and the launch
     // gate offers a save — same reasoning as stitchContext above.
     layout: draft.layout || null,
-    laneOverrides: draft.laneOverrides || null,
     steps: (draft.steps || []).map((s) => ({
       id: s.id,
       // Load-bearing, NOT cosmetic: the POV run report prints each result's

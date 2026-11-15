@@ -15,10 +15,14 @@
 #
 #   curl -fsSL http://<cp>:8888/agent/enroll.sh | CORTEXSIM_TOKEN=cxs_… bash
 #
+# The enrollment token is NEVER written into enroll.sh. /agent/enroll.sh is a
+# static file SimCore serves to anyone who can reach the port, with no
+# authentication, and a token can be valid for 1000 uses and 30 days. Each
+# victim passes its token at run time, as above. --token is refused.
+#
 # Usage:
 #   scripts/lab/publish-agent.sh                        # auto-detect LAN IP
 #   scripts/lab/publish-agent.sh --server http://192.168.1.50:8888
-#   scripts/lab/publish-agent.sh --token cxs_…          # bake a default token too
 # ==============================================================================
 set -euo pipefail
 
@@ -26,26 +30,39 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"
 cd "${REPO_ROOT}"
 
+log() { printf '\033[0;36m[publish-agent]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[publish-agent]\033[0m %s\n' "$*"; }
+err() { printf '\033[0;31m[publish-agent] ERROR:\033[0m %s\n' "$*" >&2; }
+
 SERVER=""
-TOKEN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server) SERVER="$2"; shift 2 ;;
-    --token)  TOKEN="$2";  shift 2 ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --token|--token=*)
+      # Refused before anything is built or written, and the value is not echoed.
+      err "--token is no longer accepted: it wrote the enrollment token into"
+      err "dist/agent/enroll.sh, which SimCore serves without authentication at"
+      err "/agent/enroll.sh. Anyone who could fetch that file could enroll agents"
+      err "for as long as the token lived."
+      err "Pass the token on each victim at run time instead:"
+      err "    curl -fsSL <server>/agent/enroll.sh | CORTEXSIM_TOKEN=cxs_... bash"
+      err "If a token was baked by an earlier run, revoke it"
+      err "(DELETE /api/agents/enroll/tokens/<id>) and re-run this script without"
+      err "--token: that rewrites enroll.sh without it."
+      exit 2 ;;
+    -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'unknown flag: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
-
-log() { printf '\033[0;36m[publish-agent]\033[0m %s\n' "$*"; }
-err() { printf '\033[0;31m[publish-agent] ERROR:\033[0m %s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------------------
 # 1. Resolve the control-plane URL victims will dial.
 #    NEVER localhost/127.0.0.1 — on a victim that resolves to the victim itself,
 #    which is exactly the phone-home failure this script exists to prevent.
 # ---------------------------------------------------------------------------
-PORT="$(sed -n 's/^CORTEXSIM_PORT=\([0-9][0-9]*\).*/\1/p' "${REPO_ROOT}/.env" 2>/dev/null | head -n1)"
+# `|| true`: with no .env, sed fails, and under `set -euo pipefail` that used to
+# end the script on this line with exit 1 and no message at all.
+PORT="$(sed -n 's/^CORTEXSIM_PORT=\([0-9][0-9]*\).*/\1/p' "${REPO_ROOT}/.env" 2>/dev/null | head -n1 || true)"
 PORT="${PORT:-8888}"
 
 detect_ip() {
@@ -76,6 +93,38 @@ case "${SERVER}" in
     exit 1 ;;
 esac
 
+# A DNS name in SERVER must be one SimCore answers to. Under docker compose the
+# container does not know this host's name, so SimCore refuses every name that
+# is not in CORTEXSIM_ALLOWED_HOSTS with 400 HOST_NOT_ALLOWED, and
+# `curl -fsSL .../agent/enroll.sh | bash` shows a victim only "curl: (22)".
+# Read from .env, which is what compose reads; a heads-up, not a refusal,
+# because a host-run SimCore admits its own hostname without being told.
+server_host="${SERVER#*://}"
+server_host="${server_host%%/*}"
+case "${server_host}" in
+  \[*) server_host="" ;;                      # [v6]:port, an IP literal
+  *)   server_host="${server_host%%:*}" ;;
+esac
+server_host="$(printf '%s' "${server_host}" | tr '[:upper:]' '[:lower:]')"
+if [[ -n "${server_host}" && ! "${server_host}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  allowed="$(sed -n 's/^CORTEXSIM_ALLOWED_HOSTS=//p' "${REPO_ROOT}/.env" 2>/dev/null | tail -n1 | tr '[:upper:]' '[:lower:]' | tr -d ' "' || true)"
+  admitted=0
+  IFS=',' read -r -a patterns <<< "${allowed}"
+  for pattern in ${patterns[@]+"${patterns[@]}"}; do
+    case "${pattern}" in
+      "*") admitted=1 ;;
+      "*."*) if [[ "${server_host}" == *"${pattern#\*}" ]]; then admitted=1; fi ;;
+      *) if [[ "${server_host}" == "${pattern}" ]]; then admitted=1; fi ;;
+    esac
+  done
+  if (( ! admitted )); then
+    warn "NOTE: '${server_host}' is not in CORTEXSIM_ALLOWED_HOSTS in ${REPO_ROOT}/.env."
+    warn "A SimCore under docker compose refuses names it does not list (400"
+    warn "HOST_NOT_ALLOWED), which a victim sees only as 'curl: (22)'. Add it and"
+    warn "re-run scripts/dev-up.sh, or publish with --server http://<ip>:${PORT}."
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Cross-compile. Stdlib-only + CGO_ENABLED=0 → portable static ELF.
 # ---------------------------------------------------------------------------
@@ -91,7 +140,8 @@ for arch in amd64 arm64; do
 done
 
 # ---------------------------------------------------------------------------
-# 3. Generate the victim-side installer with SERVER (and optionally TOKEN) baked.
+# 3. Generate the victim-side installer with SERVER baked. Never a token: this
+#    file is served without authentication.
 # ---------------------------------------------------------------------------
 cat > "${OUT}/enroll.sh" <<ENROLL
 #!/usr/bin/env bash
@@ -103,7 +153,7 @@ cat > "${OUT}/enroll.sh" <<ENROLL
 set -euo pipefail
 
 SERVER="\${CORTEXSIM_SERVER:-${SERVER}}"
-TOKEN="\${CORTEXSIM_TOKEN:-${TOKEN}}"
+TOKEN="\${CORTEXSIM_TOKEN:-}"
 INTERVAL="\${CORTEXSIM_INTERVAL:-10}"
 
 say() { printf '[cortexsim] %s\n' "\$*"; }
@@ -114,13 +164,28 @@ die() { printf '[cortexsim] ERROR: %s\n' "\$*" >&2; exit 1; }
     -d '{\"label\":\"lab-victims\",\"ttl_seconds\":86400,\"max_uses\":25}'
 then re-run with CORTEXSIM_TOKEN=cxs_…"
 
-# --- reachability preflight: fail loudly HERE, not silently in the beacon loop
+# --- reachability preflight: fail loudly HERE, not silently in the beacon loop.
+# No -f on this curl: -f throws the response body away, and SimCore's Host
+# guard puts both the reason and the fix in the body of its 400. With -f a
+# server that had just answered was reported as unreachable.
 say "control plane : \${SERVER}"
-curl -fsS --max-time 5 "\${SERVER}/api/health" >/dev/null 2>&1 \\
-  || die "cannot reach \${SERVER}/api/health from \$(hostname).
+HEALTH="\$(curl -sS --max-time 5 "\${SERVER}/api/health" 2>/dev/null || true)"
+case "\${HEALTH}" in
+  *HOST_NOT_ALLOWED*)
+    REFUSED="\${SERVER#*://}"; REFUSED="\${REFUSED%%[:/]*}"
+    die "SimCore answered, and refused the name '\${REFUSED}' (400 HOST_NOT_ALLOWED).
+  It answers to localhost, IP addresses and the names in CORTEXSIM_ALLOWED_HOSTS.
+  - on the control plane: add '\${REFUSED}' to CORTEXSIM_ALLOWED_HOSTS in .env and
+    re-run scripts/dev-up.sh
+  - or point this installer at the control plane's IP address:
+    CORTEXSIM_SERVER=http://<ip>:<port>" ;;
+  *'"status"'*) ;;
+  *)
+    die "cannot reach \${SERVER}/api/health from \$(hostname).
   - is SimCore up on the control plane?
   - is the control-plane firewall allowing inbound \${SERVER##*:}?  (macOS blocks by default)
-  - can this host route to it?   curl -v \${SERVER}/api/health"
+  - can this host route to it?   curl -v \${SERVER}/api/health" ;;
+esac
 
 # --- architecture
 case "\$(uname -m)" in
@@ -199,11 +264,7 @@ else
 fi
 
 printf '\n  \033[0;32m✓ Beacon published.\033[0m  Enroll each victim with one line:\n\n'
-if [[ -n "${TOKEN}" ]]; then
-  printf '    curl -fsSL %s/agent/enroll.sh | bash\n\n' "${SERVER}"
-else
-  printf '    curl -fsSL %s/agent/enroll.sh | CORTEXSIM_TOKEN=cxs_… bash\n\n' "${SERVER}"
-  printf '  Mint the token first:\n'
-  printf "    curl -s -X POST %s/api/agents/enroll/tokens -H 'Content-Type: application/json' \\\\\n" "${SERVER}"
-  printf '      -d '"'"'{"label":"lab-victims","ttl_seconds":86400,"max_uses":25}'"'"'\n\n'
-fi
+printf '    curl -fsSL %s/agent/enroll.sh | CORTEXSIM_TOKEN=cxs_… bash\n\n' "${SERVER}"
+printf '  Mint the token first:\n'
+printf "    curl -s -X POST %s/api/agents/enroll/tokens -H 'Content-Type: application/json' \\\\\n" "${SERVER}"
+printf '      -d '"'"'{"label":"lab-victims","ttl_seconds":86400,"max_uses":25}'"'"'\n\n'

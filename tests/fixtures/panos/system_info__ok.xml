@@ -1,0 +1,7 @@
+<response status="success"><result><system>
+<hostname>lab-fw-01</hostname><ip-address>192.0.2.1</ip-address><netmask>255.255.255.0</netmask><default-gateway>192.0.2.254</default-gateway><mac-address>00:1b:17:00:00:01</mac-address>
+<time>Tue Nov 10 22:00:20 2026</time><uptime>12 days, 3:04:11</uptime><devicename>lab-fw-01</devicename><family>400</family><model>PA-440</model><serial>007051000000000</serial>
+<cloud-mode>non-cloud</cloud-mode><sw-version>10.2.8-h4</sw-version><app-version>8900-8000</app-version><av-version>0</av-version><threat-version>8900-8000</threat-version><wildfire-version>0</wildfire-version><url-db>paloaltonetworks</url-db><logdb-version>10.2.1</logdb-version>
+<plugin_versions><entry name="dlp" version="1.0.4"><pkginfo>dlp-1.0.4</pkginfo></entry></plugin_versions>
+<platform-family>400</platform-family><vpn-disable-mode>off</vpn-disable-mode><multi-vsys>off</multi-vsys><ZTP>Disabled</ZTP><operational-mode>normal</operational-mode><advanced-routing>off</advanced-routing><device-certificate-status>None</device-certificate-status>
+</system></result></response>

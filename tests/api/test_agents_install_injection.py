@@ -42,12 +42,17 @@ def _bash_prologue(script: str, tmp_path: Path, env: dict[str, str] | None = Non
 
 
 def _pwsh_prologue(script: str, tmp_path: Path) -> list[str]:
-    """Same, for the PowerShell installer: its block of $Server/$AgentId/$Token."""
+    """Same, for the PowerShell installer: its block of $Server/$AgentId/$Token.
+
+    The block sits inside the script's top-level ``try {``, so it is found by
+    its first and last assignment, not by column, and run on its own."""
     lines = script.splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("$ErrorActionPreference"))
-    end = next(i for i, line in enumerate(lines) if line.startswith("$Server   = $Server.TrimEnd"))
+    start = next(i for i, line in enumerate(lines)
+                 if line.lstrip().startswith("$Server   = if ($env:CORTEXSIM_SERVER)"))
+    end = next(i for i, line in enumerate(lines)
+               if i > start and line.lstrip().startswith("$Server   = $Server."))
     ps1 = tmp_path / "prologue.ps1"
-    ps1.write_text("\n".join(lines[start:end + 1])
+    ps1.write_text("$ErrorActionPreference = 'Stop'\n" + "\n".join(lines[start:end + 1])
                    + "\nWrite-Output $Server\nWrite-Output $AgentId\nWrite-Output $Token\n",
                    encoding="utf-8")
     p = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(ps1)],
@@ -109,11 +114,15 @@ def test_query_params_never_execute_in_the_powershell_installer(client, tmp_path
 
 @pytest.fixture
 def public_urls(monkeypatch):
-    """List servers as this SimCore's own (?server= must name this SimCore)."""
+    """List servers as this SimCore's own (?server= must name this SimCore),
+    and admit their DNS names in the Host guard (SERVER_HOST_NOT_ALLOWED)."""
     import config
+    from urllib.parse import urlparse
 
     def _set(value: str) -> None:
         monkeypatch.setattr(config.settings, "CORTEXSIM_PUBLIC_URLS", value)
+        hosts = ",".join(urlparse(u.strip()).hostname or "" for u in value.split(","))
+        monkeypatch.setattr(config.settings, "CORTEXSIM_ALLOWED_HOSTS", hosts)
 
     return _set
 
@@ -127,8 +136,12 @@ def test_valid_values_reach_the_bash_installer_verbatim(client, tmp_path, public
         "server": "https://simcore.corp.local:8443/cortexsim/",
     })
     assert r.status_code == 200, r.text
+    # With a token in effect SimCore assigns the id at enrollment, so the
+    # script clears the baked one until then (d97d9e24); the id itself is
+    # still baked as a single-quoted literal.
+    assert "AGENT_ID='jumpbox-01.lab'" in r.text
     assert _bash_prologue(r.text, tmp_path) == [
-        "https://simcore.corp.local:8443/cortexsim", "jumpbox-01.lab", token,
+        "https://simcore.corp.local:8443/cortexsim", "", token,
     ]
 
 
@@ -137,19 +150,27 @@ def test_env_overrides_still_win_on_the_target(client, tmp_path):
     r = client.get("/api/agents/install", params={"os": "linux", "id": "baked-id"})
     assert r.status_code == 200, r.text
     env = {**_clean_env(), "CORTEXSIM_SERVER": "http://override:8888/",
-           "CORTEXSIM_AGENT_ID": "env-id", "CORTEXSIM_TOKEN": "cxs_env"}
-    assert _bash_prologue(r.text, tmp_path, env=env) == ["http://override:8888", "env-id", "cxs_env"]
+           "CORTEXSIM_AGENT_ID": "env-id"}
+    assert _bash_prologue(r.text, tmp_path, env=env) == ["http://override:8888", "env-id", ""]
+    # A token from the environment wins too, and then the id is SimCore's to
+    # assign, so the self-asserted one is cleared before enrollment.
+    env["CORTEXSIM_TOKEN"] = "cxs_env"
+    assert _bash_prologue(r.text, tmp_path, env=env) == ["http://override:8888", "", "cxs_env"]
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="needs pwsh")
 def test_valid_values_reach_the_powershell_installer_verbatim(client, tmp_path, public_urls):
     public_urls("http://[fd00::5]:8888")
+    token = "cxs_tok-1" + "_" * 20  # mint-shaped length: cxs_ + 20-128
     r = client.get("/api/agents/install", params={
-        "os": "windows", "id": "win-box_01", "token": "cxs_tok-1",
+        "os": "windows", "id": "win-box_01", "token": token,
         "server": "http://[fd00::5]:8888",
     })
     assert r.status_code == 200, r.text
-    assert _pwsh_prologue(r.text, tmp_path) == ["http://[fd00::5]:8888", "win-box_01", "cxs_tok-1"]
+    # As in bash: the id is baked as a literal and cleared while a token is in
+    # effect, because SimCore assigns it at enrollment.
+    assert "'win-box_01'" in r.text
+    assert _pwsh_prologue(r.text, tmp_path) == ["http://[fd00::5]:8888", "", token]
 
 
 @pytest.mark.parametrize("param,value", [

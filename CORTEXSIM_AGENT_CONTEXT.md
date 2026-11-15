@@ -28,7 +28,7 @@ These are treated as **git submodules** under `sources/`. Do NOT write wrapper c
 | `sources/ackbarx` | `github.com/gocortexio/ackbarx` | Rust | SNMP trap forwarder to XSIAM HTTP — NDR signal source |
 | `sources/CDR` | `github.com/hankthebldr/CDR` | YAML/Shell | Kubernetes CDR scenario baseline — cdr.yml pattern extended here |
 | `sources/xsiam-prisma-cdr-lab` | `github.com/hankthebldr/xsiam-prisma-cdr-lab` | Shell | Attack scenario shell library (alpha/1.1 branch) |
-| `sources/MITRE-Turla-Carbon` | `github.com/Palo-Cortex/MITRE-Turla-Carbon` | C++ | MITRE-aligned endpoint TTP campaign reference |
+| ~~`sources/MITRE-Turla-Carbon`~~ | `github.com/Palo-Cortex/MITRE-Turla-Carbon` | C++ | **Retired 2026-11-10.** The engine never read it, and it shipped compiled Turla implants. See `sources/README.md` |
 | `sources/atomic-red-team` | `github.com/redcanaryco/atomic-red-team` | YAML/Shell | Atomic TTP library — per-technique shell test scripts |
 
 ---
@@ -508,7 +508,7 @@ tags:
 
 | Plane | Cortex Engine | Key Detection Types | Primary Source Repos |
 |---|---|---|---|
-| **EDR** | Cortex XDR Agent | BIOC (process/memory/persistence), IOC (hash/IP/domain), Behavioral Analytics | signalbench, atomic-red-team, MITRE-Turla-Carbon |
+| **EDR** | Cortex XDR Agent | BIOC (process/memory/persistence), IOC (hash/IP/domain), Behavioral Analytics | signalbench, atomic-red-team (MITRE-Turla-Carbon retired 2026-11-10) |
 | **CDR** | Cortex Cloud / Prisma Cloud Compute | Runtime BIOC, Container Analytics, K8s Anomaly | hankthebldr/CDR, xsiam-prisma-cdr-lab, DEEPCE, XMRig |
 | **NDR** | Network Security / Firewall Analytics | C2 traffic, lateral movement, protocol anomaly | ackbarx (SNMP), mocktaxii (STIX), Responder |
 | **ITDR** | Cortex ITDR | Kerberoast, Pass-the-Hash, DCSync, MFA bypass | Impacket, identity harness (runuser/sudo-u) |

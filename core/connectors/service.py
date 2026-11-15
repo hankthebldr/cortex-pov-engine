@@ -18,8 +18,10 @@ maps them to HTTP; the loop logs and moves on).
 from __future__ import annotations
 
 import logging
+import math
+import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import or_, select
@@ -27,8 +29,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
-from connectors.base import HttpFetcher
+from connectors.base import HttpFetcher, ObservedAlert, coerce_utc
+from connectors.case_ledger import (
+    CaseShapeError,
+    MEDIUM_PLUS,
+    bridge_diagnosis,
+    build_case_ledger,
+    cases_from_reply,
+    ledger_alert,
+    LEDGER_READ_ERRORS,
+    ledger_from_dict,
+)
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
+from connectors.verify_window import PUSH_WINDOW_REASON
 from connectors.measures import (
     CORRELATION,
     build_measurement,
@@ -47,16 +60,29 @@ from engine.outcome import (
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
     evaluate_prevent,
+    resolve_module_mode,
     silent_detect_verdict,
     is_hit,
     soak_pending_reason,
 )
 from events import event_bus
-from integrations.xsiam.codes import remediation_for
+from connectors.xsiam import IssueReadError
+from integrations.xsiam.codes import LOCAL_REFUSAL_REMEDIATION, remediation_for
+from integrations.xsiam.ledger import tenant_ledger_key
+from integrations.xsiam.tenant_url import normalize_tenant_base_url
+from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
 from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
+
+
+def _row_module_mode(run: Any, result: Any) -> Optional[str]:
+    """The Action Mode one prevent row is graded against (review F1)."""
+    return resolve_module_mode(
+        agent_profile_mode=run.agent_profile_mode,
+        module_modes=getattr(run, "module_modes", None),
+        prevention_module=getattr(result, "prevention_module", None))
 
 
 class ReconcileError(Exception):
@@ -86,6 +112,84 @@ class ReconcileOutcome:
     newly_matched: int
 
 
+# ── which credential kind may serve which connector ─────────────────────────
+#
+# ONE definition, consumed by GET /api/connectors, POST /runs/{id}/reconcile,
+# POST /api/connectors/xsiam/preflight and the auto-reconcile sweep. They forked
+# once: the listing reported the `xsiam` connector configured on an
+# `xsiam_tenant` row while the other three filtered on kind == "xsiam" alone, so
+# the tenant a DC had just been told was configured answered NO_INTEGRATION a
+# click later and the sweep was a silent no-op every cycle.
+#
+# The table is ONE-WAY by construction. Reading alerts is the baseline every
+# XSIAM credential carries (`_project` in api/connectors.py), so the Tier-2
+# tenant credential may serve alert read-back. Nothing maps the other way:
+# configuring reconcile must not silently authorise XQL, which spends a metered
+# resource the customer's own analysts share.
+_EQUIVALENT_CREDENTIAL_KINDS: dict[str, tuple[str, ...]] = {
+    "xsiam": (XSIAM_TENANT_KIND,),
+}
+
+
+def credential_kinds_for(connector_kind: str) -> tuple[str, ...]:
+    """Every credential kind that may serve ``connector_kind``, dedicated kind first."""
+    return (connector_kind, *_EQUIVALENT_CREDENTIAL_KINDS.get(connector_kind, ()))
+
+
+async def resolve_connector_integrations(store: CredentialStore, connector_kind: str) -> list:
+    """Credential rows that may serve ``connector_kind``: the dedicated kind's rows
+    first, then each equivalent kind's, each group in the store's name order."""
+    rows: list = []
+    for kind in credential_kinds_for(connector_kind):
+        rows.extend(await store.list_integrations(kind=kind))
+    return rows
+
+
+def pick_integration(rows: list, integration_name: Optional[str]):
+    """The row to use: the named one, else the first. A name that matches nothing
+    RAISES rather than falling back — a reconcile asked for tenant A that quietly
+    read tenant B would credit the wrong tenant's alerts to this run."""
+    if integration_name is None:
+        return rows[0]
+    for row in rows:
+        if row.name == integration_name:
+            return row
+    raise ReconcileError(
+        "INTEGRATION_NOT_FOUND",
+        f"no integration named '{integration_name}' may serve this connector",
+        detail={"available": [r.name for r in rows]})
+
+
+async def _resolve_connector(
+    db: AsyncSession, connector_kind: str, integration_name: Optional[str],
+    fetcher: Optional[HttpFetcher],
+) -> tuple[Any, ConnectorConfig, CredentialStore, Any]:
+    """Connector + decrypted credential config for ``connector_kind``.
+
+    The one place a credentialed read is set up, shared by :func:`reconcile_run`
+    and :func:`refresh_case_ledger` so neither can resolve a different tenant.
+    """
+    conn = get_connector(connector_kind, fetcher=fetcher)
+    if conn is None:
+        raise ReconcileError("CONNECTOR_NOT_FOUND",
+                             f"unknown connector '{connector_kind}'")
+
+    store = CredentialStore(db)
+    integrations = await resolve_connector_integrations(store, connector_kind)
+    if not integrations:
+        kinds = " or ".join(f"'{k}'" for k in credential_kinds_for(connector_kind))
+        raise ReconcileError("NO_INTEGRATION",
+                             f"configure an integration of kind {kinds} first")
+    integ = pick_integration(integrations, integration_name)
+    try:
+        secret = await store.get_integration_secret(integ.name)
+    except Exception as e:  # noqa: BLE001
+        raise ReconcileError("CREDENTIAL_ERROR", str(e))
+
+    cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
+    return conn, cfg, store, integ
+
+
 async def reconcile_run(
     db: AsyncSession,
     run: Run,
@@ -101,33 +205,34 @@ async def reconcile_run(
     window, scope them to the run's target host, correlate to ``results``,
     persist matches, emit SSE.
 
-    ``host`` overrides the scope host; when omitted it is resolved from
+    ``host`` overrides the scope host (``host_source: "operator"`` in the
+    summary — the API's ``?host=``); when omitted or blank it is resolved from
     ``Run.target`` → ``Agent.hostname``. A run with no resolvable host is
     reconciled UNSCOPED and the summary says so — on a shared tenant that means
     an alert from any endpoint could have been credited.
 
     Raises :class:`ReconcileError` (never HTTP) on any failure.
     """
-    conn = get_connector(connector_kind, fetcher=fetcher)
-    if conn is None:
-        raise ReconcileError("CONNECTOR_NOT_FOUND",
-                             f"unknown connector '{connector_kind}'")
+    host = (host or "").strip() or None
+    conn, cfg, store, integ = await _resolve_connector(
+        db, connector_kind, integration_name, fetcher)
 
-    store = CredentialStore(db)
-    integrations = await store.list_integrations(kind=connector_kind)
-    if not integrations:
-        raise ReconcileError("NO_INTEGRATION",
-                             f"configure an integration of kind '{connector_kind}' first")
-    integ = (next((i for i in integrations if i.name == integration_name), integrations[0])
-             if integration_name else integrations[0])
-    try:
-        secret = await store.get_integration_secret(integ.name)
-    except Exception as e:  # noqa: BLE001
-        raise ReconcileError("CREDENTIAL_ERROR", str(e))
+    candidates, never_delivered = reconcile_candidates(
+        run, results, reported_steps=await reported_step_ids(db, run.run_id))
+    if never_delivered and not candidates:
+        # Nothing on this run can be credited, so spending a metered tenant
+        # query on it would only buy the chance to credit the wrong alert.
+        # ``queries_issued: 0`` because no tenant page was read: every
+        # reconcile summary carries the ledger count (the MCP reconcile tool
+        # requires the key and reads its absence as an unknown shape).
+        summary = efficacy_summary(results, 0, f"{connector_kind}:{integ.name}")
+        summary.update({"pulled": 0, "queries_issued": 0,
+                        "never_delivered": True, "verdicts": [],
+                        "warnings": [NEVER_DELIVERED_WARNING],
+                        "warning": NEVER_DELIVERED_WARNING})
+        return ReconcileOutcome(summary=summary, newly_matched=0)
 
-    cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
-
-    exec_times = [r.executed_at for r in results if r.executed_at]
+    exec_times = [r.executed_at for r in candidates if r.executed_at]
     since = (min(exec_times) if exec_times
              else (run.started_at or datetime.utcnow() - timedelta(hours=1)))
     until = datetime.utcnow() + timedelta(minutes=5)
@@ -138,11 +243,14 @@ async def reconcile_run(
         # which GET /api/credentials/integrations returns. The connector already
         # keeps the tenant's response BODY out of that string (log only); this is
         # the second half of that boundary.
-        await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
-        await db.commit()
+        local = bool((pull.detail or {}).get("refused_locally"))
+        if not local:  # our own budget refusing says nothing about the credential
+            await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
+            await db.commit()
         detail = dict(pull.detail or {})
         detail["code"] = pull.code
-        detail["remediation"] = remediation_for(pull.code)
+        detail["remediation"] = (LOCAL_REFUSAL_REMEDIATION if local
+                                 else remediation_for(pull.code))
         raise ReconcileError("CONNECTOR_PULL_FAILED", pull.error or "pull failed",
                              detail=detail)
 
@@ -150,7 +258,7 @@ async def reconcile_run(
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
-    verdicts = reconcile(results, eligible, window_seconds=window_seconds,
+    verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=await match_window_ends(
                              db, run.run_id, results, window_seconds=window_seconds))
@@ -162,6 +270,9 @@ async def reconcile_run(
     ctx: dict[str, Any] = {
         "basis": "reconcile",
         "unscoped": host_scope["host"] is None,
+        # No host to scope against at all (push runs, a vanished agent row,
+        # no `host` override): a detect match is UNSCOPED_MATCH, not detected.
+        "host_unresolved": host_scope["host"] is None,
         "truncated": bool(truncation),
         "dropped": pull.dropped,
         "alert_incidents": {e: getattr(by_ext.get(e), "incident_id", None) for e in matched_ext},
@@ -170,6 +281,7 @@ async def reconcile_run(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
     family = kpi_family(getattr(scenario, "primary_kpi", None),
                         getattr(scenario, "threshold", None))
+    incidents_queries = 0
     if (family == CORRELATION and host_scope["host"] is not None
             and not any(ctx["alert_incidents"].values())
             and hasattr(conn, "pull_incidents")):
@@ -177,6 +289,7 @@ async def reconcile_run(
         # incident list for the same window, scoped to the run's host. Only
         # for correlation-shaped scenarios — accuracy never needs it.
         ipull = conn.pull_incidents(cfg, since=since, until=until)
+        incidents_queries = _pages_issued(ipull.detail)
         if ipull.ok:
             want = host_scope["host"]
             ctx["incidents"] = [i for i in ipull.incidents
@@ -184,14 +297,48 @@ async def reconcile_run(
             ctx["incidents_truncated"] = bool((ipull.detail or {}).get("truncated"))
         else:
             ctx["incidents_error"] = {"code": ipull.code, "error": ipull.error,
-                                      "remediation": remediation_for(ipull.code)}
+                                      "remediation": _remediation_for_pull(ipull)}
+
+    # The case ledger is built BEFORE scoring so ctx["merge_class"] is there for
+    # the one guard that reads it; it is disposition CONTEXT and writes nothing
+    # onto a Result. EVERY reconcile rebuilds it, a zero-match one included,
+    # from the stored ledger's alerts plus this reconcile's matches: a late
+    # match is the case the ledger exists for (spec §4.2), and it is only a
+    # split if the earlier alerts are still in the population.
+    case_queries = 0
+    ledger: Optional[dict] = None
+    population, fresh = ledger_population(run.case_ledger, by_ext, matched_ext,
+                                          integration=cfg.integration_name,
+                                          source=connector_kind,
+                                          tenant=case_ledger_tenant(cfg))
+    if population and hasattr(conn, "pull_cases"):
+        ledger, case_queries = await build_and_store_case_ledger(
+            db, run, conn=conn, cfg=cfg, alerts=population, bridge_alerts=fresh,
+            basis="alert_incident_ids", keep_stored_on_read_failure=True)
+        if ledger.get("stored_ledger_kept"):
+            # A failed read never withholds: the stored claim is not re-proven.
+            ctx["merge_class"] = "PENDING"
+        else:
+            ctx["merge_class"] = ledger["merge_class"]
+            # What the ledger classified: the withhold applies only when it
+            # covers every cased alert the KPI counts (measures.ledger_covers).
+            ctx["case_ledger_alerts"] = {a["external_id"]: a["case_id"]
+                                         for a in ledger["alerts"] if a.get("case_id")}
 
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}",
                                           pull_context=ctx, observations=eligible,
                                           window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
+    # Ledger units: every tenant page read is one query; the incidents read
+    # counts its own pages when it was attempted (ok or not).
+    summary["queries_issued"] = _pages_issued(pull.detail) + incidents_queries + case_queries
+    if ledger is not None:
+        summary["case_ledger"] = {"merge_class": ctx["merge_class"], "code": ledger["code"]}
+        if ledger.get("stored_ledger_kept"):
+            summary["case_ledger"]["stored_ledger_kept"] = True
     summary["host_scope"] = host_scope
+    summary["host_source"] = host_source(host, host_scope)
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
     if "incidents_error" in ctx:
@@ -199,11 +346,18 @@ async def reconcile_run(
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
 
     warnings: list[str] = []
+    if never_delivered:
+        # A composed run whose beacon task was never collected: only its
+        # in-process (EAL) steps were candidates.
+        summary["never_delivered"] = True
+        warnings.append(NEVER_DELIVERED_WARNING)
     if host_scope["host"] is None:
         warnings.append(
             "unscoped: this run has no resolvable target host, so an alert from "
-            "ANY endpoint in the tenant was eligible to be credited — on a shared "
-            "tenant treat every match here as unconfirmed.")
+            "ANY endpoint in the tenant could match. A matched detect expectation "
+            "is therefore recorded pending (UNSCOPED_MATCH) with no MTTD, not "
+            "detected; reconcile again with ?host=<the endpoint it ran on> to "
+            "credit it.")
     if truncation:
         summary["truncated"] = True
         summary["truncation"] = truncation
@@ -225,6 +379,648 @@ async def reconcile_run(
         summary["warnings"] = warnings
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+#: ``Result.outcome_reason`` for a ``detect`` expectation that matched an alert
+#: during an UNSCOPED reconcile (no resolvable host — push runs). The alert
+#: could have been raised by any endpoint in the tenant, so the row stays
+#: ``pending`` and gets no ``observed_at`` (no MTTD) — DOCS-03, option (c).
+UNSCOPED_MATCH = "UNSCOPED_MATCH"
+
+NEVER_DELIVERED_WARNING = (
+    "never delivered: this pull run's task was never collected by a beacon, so "
+    "nothing ran on the target. Its rows are not reconcile candidates and no "
+    "alert was credited to them — an alert in this window came from something "
+    "else on the host."
+)
+
+
+#: Text only a beacon puts into ``Run.output``: its per-step frame
+#: (``=== STEP n/N · <step-id> · ...``, posted on ``/output``; the same shape
+#: ``api.runs._STEP_HEADER_RE`` reads, unchanged since v1.0.0) and the summary
+#: line ``/complete`` appends. SimCore's own markers (``--- RUN ABORTED BY
+#: OPERATOR ---``, ``RUN FAILED ON RESTART``, the ``!! PLATFORM VARIANT``
+#: launch notes) match neither.
+_BEACON_TRACE_RE = re.compile(r"=== STEP \d+/\d+ · |^--- COMPLETION SUMMARY ---",
+                              re.MULTILINE)
+#: The same per-step frame, capturing its step id.
+_STEP_FRAME_RE = re.compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
+
+
+async def reported_step_ids(db: AsyncSession, run_id: str) -> set[str]:
+    """Steps the host gave an account of having reached: a ``StepOutcome`` row
+    (written by the step's ``/output`` or the ``/complete`` steps[]) other than
+    ``not_run``. What :func:`reconcile_candidates` needs for an aborted run."""
+    rows = (await db.execute(
+        select(StepOutcome.step_id, StepOutcome.termination)
+        .where(StepOutcome.run_id == run_id))).all()
+    return {sid for sid, term in rows if term != "not_run"}
+
+
+def beacon_reported(run: Any) -> bool:
+    """Does the run's own output show that a beacon executed it?
+
+    True when ``Run.output`` holds a beacon step frame or a ``/complete``
+    summary line. Both arrive only on the run's agent callbacks, which a
+    beacon makes only after collecting the task.
+    """
+    output = getattr(run, "output", None)
+    return bool(output) and _BEACON_TRACE_RE.search(output) is not None
+
+
+def reconcile_candidates(run: Any, results: list, *,
+                         reported_steps: Any = ()) -> tuple[list, bool]:
+    """``(candidates, never_delivered)`` — the rows an alert may be credited to.
+
+    A pull run whose task no beacon ever collected (``delivered_at`` NULL) did
+    not execute on the target, so none of its beacon-step rows is evidence of
+    anything (OPS-01). Its terminating path SHOULD already have stamped them
+    ``not_executed``; this is the defence in depth for any path that did not,
+    and for a run that is simply still queued.
+
+    A composed run's EAL steps executed inside SimCore at launch, so their rows
+    stay candidates. Push runs and delivered pull runs are unaffected.
+
+    A pull run that reads ``complete`` is a candidate even with ``delivered_at``
+    NULL: ``complete`` is written only by a beacon's ``/complete``, the
+    classified beacon-lost path or an in-process dispatch — each proof that it
+    executed — so such a row predates the ``delivered_at`` migration. Excluding
+    it would make every historical run unreconcilable for no honesty gain.
+
+    So is one whose own record carries a beacon's trace
+    (:func:`beacon_reported`), whatever its status (RG-RUNS-05). ``delivered_at``
+    first shipped in v1.1.0 and is added by ALTER TABLE on boot, so an in-place
+    upgrade leaves every older run with it NULL; one that executed and ended
+    ``failed`` or ``aborted`` was told "nothing ran on the target", which is
+    false. Status alone cannot decide that — a legacy ``failed`` row may as
+    well be a pre-delivery orphan — but a step frame or a completion summary in
+    the run's output can only have been posted by a beacon that had the task.
+
+    An ``aborted`` pull run that WAS delivered is narrowed to the steps the host
+    reported (RG-RUNS-01, residual): ``reported_steps`` (the caller's
+    :func:`reported_step_ids`), a step frame in the run's own output, or an
+    in-process step. The abort wins the race with the beacon by design, so
+    which steps ran is the host's to say, on its late ``/complete`` steps[]. A
+    beacon that died after the abort, or predates steps[], never says it, and
+    an alert on that host was credited, with an MTTD, to a step that never ran.
+    Its other rows are not candidates: never credited, and the silent-row
+    judgement leaves them ``pending`` (no host record), never ``missed``. The
+    default ``()`` errs that way too: a caller that passes nothing credits only
+    what the output itself shows ran.
+    """
+    from engine.orchestrator import in_process_steps  # noqa: PLC0415
+
+    mode, status = getattr(run, "mode", None), getattr(run, "status", None)
+    delivered = getattr(run, "delivered_at", None) is not None or beacon_reported(run)
+    if mode == "pull" and status == "aborted" and delivered:
+        ran = (set(reported_steps or ())
+               | set(_STEP_FRAME_RE.findall(getattr(run, "output", None) or ""))
+               | set(in_process_steps(run)))
+        return [r for r in results if r.step_id in ran], False
+    if mode != "pull" or delivered or status == "complete":
+        return list(results), False
+
+    ran_here = in_process_steps(run)
+    return [r for r in results if r.step_id in ran_here], True
+
+
+def host_source(override: Optional[str], host_scope: dict[str, Any]) -> Optional[str]:
+    """Who named the host a reconcile was scoped to.
+
+    ``"operator"`` — the DC passed it (``?host=`` / the ``/observations`` body);
+    ``"run_target"`` — resolved from the run's launch agent; ``None`` — nothing
+    did, and the reconcile was unscoped. Reported beside ``host_scope`` so an
+    operator-asserted scope is never read as one SimCore resolved itself.
+    """
+    if host_scope.get("host") is None:
+        return None
+    return "operator" if override else "run_target"
+
+
+def case_ledger_tenant(cfg: ConnectorConfig) -> Optional[str]:
+    """The tenant a case ledger was read from: the per-tenant XQL ledger's key
+    (``tenant_ledger_key``) of the connector's normalised base URL, or None when
+    the integration's URL is unusable (the read itself then fails on config).
+    Case ids are tenant-local, so this is what a refresh and a pair compare."""
+    conf = cfg.config or {}
+    raw = conf.get("base_url") or conf.get("fqdn") or conf.get("tenant_url")
+    if not raw:
+        return None
+    try:
+        return tenant_ledger_key(normalize_tenant_base_url(str(raw)))
+    except Exception:  # noqa: BLE001 - XsiamConfigError and friends: no key, never a guess
+        return None
+
+
+def ledger_population(
+    stored: Optional[dict], by_ext: dict[str, ObservedAlert], matched_ext: list[str], *,
+    integration: str, source: str, tenant: Optional[str] = None,
+) -> tuple[list[ObservedAlert], list[ObservedAlert]]:
+    """The alerts a reconcile builds the case ledger from: ``(population, fresh)``.
+
+    ``population`` is the stored ledger's alerts followed by this reconcile's
+    newly matched ones (de-duplicated by external id, stored order first). Each
+    is taken from this pull (``by_ext``) when the pull returned it, so a case id
+    the tenant stamped since the last reconcile is seen; otherwise it is rebuilt
+    from the stored entry. ``fresh`` is the subset taken from this pull: only
+    those carry a host, so only they can answer the bridge's mixed-key question.
+
+    The stored alerts are carried only when they came from this tenant: case
+    ids are tenant-local. A ledger that records its ``tenant`` must match
+    ``tenant``; a legacy one that does not must have been read through the same
+    integration (or record none). A stored ledger that cannot be read back is
+    not carried; the rebuilt ledger replaces it, and the read error is logged.
+    """
+    picked: dict[str, ObservedAlert] = {}
+    fresh: dict[str, ObservedAlert] = {}
+    same_tenant = isinstance(stored, dict) and (
+        stored.get("tenant") == tenant if stored.get("tenant")
+        else stored.get("integration") in (None, integration))
+    if same_tenant:
+        try:
+            entries = [(str(e["external_id"]), e) for e in stored["alerts"]]
+            for eid, e in entries:
+                if eid in by_ext:
+                    picked[eid] = fresh[eid] = by_ext[eid]
+                    continue
+                picked[eid] = ObservedAlert(
+                    source=source, observed_at=datetime.fromisoformat(e["observed_at"]),
+                    external_id=eid, severity=e["severity"], incident_id=e["case_id"])
+        except (*LEDGER_READ_ERRORS, ValueError) as e:
+            logger.warning("stored case ledger of run not carried (unreadable): %s", e)
+            picked, fresh = {}, {}
+    for eid in matched_ext:
+        if eid in by_ext and eid not in picked:
+            picked[eid] = fresh[eid] = by_ext[eid]
+    return list(picked.values()), list(fresh.values())
+
+
+async def build_and_store_case_ledger(
+    db: AsyncSession, run: Run, *, conn: Any, cfg: ConnectorConfig,
+    alerts: list[ObservedAlert], basis: str, now: Optional[datetime] = None,
+    commit: bool = False, bridge_alerts: Optional[list[ObservedAlert]] = None,
+    keep_stored_on_read_failure: bool = False,
+) -> tuple[dict, int]:
+    """Build the run's case ledger for ``alerts`` and set it on ``run.case_ledger``.
+
+    Returns ``(ledger, queries)``. ``queries`` counts the pages of every tenant
+    read ATTEMPTED, success or failure: the by-id case read, the issue-status
+    read and, on a mixed-key native split, the one endpoint read of the bridge
+    diagnosis (:func:`_add_bridge`, which only reads ``bridge_alerts``, default
+    ``alerts``).
+
+    * No alert carries a case id: no tenant read at all. The ledger is built
+      from the alerts alone (``NO_CASE_YET`` for Medium+ alerts) with
+      ``issue_read = {"ok": None}``, and a later reconcile rebuilds it once the
+      tenant has grouped them. A refresh cannot: it re-reads cases only.
+    * Otherwise the cases are read by id, then the issue statuses.
+
+    Never raises on a tenant failure (``asyncio.CancelledError`` and other
+    ``BaseException`` still propagate). Degradation:
+
+    * case read fails, or any unexpected exception from a read or from
+      building (logged with traceback) -> ``code="CASE_READ_FAILED"``,
+      ``merge_class="PENDING"``. With ``keep_stored_on_read_failure`` and a
+      stored ledger on the run, the stored ledger is NOT replaced: the returned
+      ledger carries ``stored_ledger_kept: True`` and is not stored, so a
+      transient failure cannot erase a good ledger;
+    * unrecognised case/issue shape (:class:`CaseShapeError`), including a
+      reply row for a case id that was not requested
+      -> ``code="CASE_STATUS_UNRECOGNIZED"``, ``PENDING``, stored (the old
+      merge claim can no longer be trusted);
+    * issue read fails (the cases were read fine) -> the merge claim stands and
+      ``code`` stays ``CASE_LEDGER_OK``, but every issue reads ``unread`` (never
+      ``open``) and ``ledger["issue_read"] = {"ok": False, "code": <tenant
+      code>, "pages": n}``. ``issue_read`` is ``{"ok": True, "pages": n}`` on
+      success and ``{"ok": None}`` when the issue read was skipped.
+
+    The issue read is skipped once the case read has failed: the tenant is
+    already failing, and issue context cannot repair a PENDING merge.
+
+    Transaction: by default this does NOT commit. On the reconcile path the
+    ledger rides ``apply_verdicts``'s commit, so it persists atomically with the
+    verdicts (a scoring failure rolls both back). A standalone caller passes
+    ``commit=True`` or commits itself.
+    """
+    read_at = now or datetime.now(timezone.utc)
+    queries = 0
+    bare = [ledger_alert(a, None) for a in alerts]
+    skipped: dict[str, Any] = {"ok": None}
+
+    def degraded(code: str, reason: str, issue_read: dict) -> dict:
+        ledger = build_case_ledger(bare, {}, basis=basis, read_at=read_at, code=code)
+        ledger["merge_class"] = "PENDING"
+        ledger["merge_reason"] = reason
+        ledger["issue_read"] = issue_read
+        return ledger
+
+    # ``compute`` builds the ledger and nothing else. Storing and committing sit
+    # AFTER it: a ``db.commit()`` inside the try was re-caught as an
+    # "unexpected" ledger error and retried on a failed session. A DB error now
+    # reaches the caller untouched.
+    def compute() -> dict:
+        nonlocal queries
+        try:
+            case_ids = sorted({str(a.incident_id) for a in alerts
+                               if a.incident_id not in (None, "")})
+            if not case_ids:
+                ledger = build_case_ledger(bare, {}, basis=basis, read_at=read_at)
+                ledger["issue_read"] = skipped
+                return ledger
+            cpull = conn.pull_cases(cfg, case_ids)
+            queries += _pages_issued(cpull.detail)
+            if not cpull.ok:
+                ledger = degraded("CASE_READ_FAILED",
+                                  f"the case read failed ({cpull.code}); no merge claim is made",
+                                  skipped)
+                ledger["case_read"] = {"code": cpull.code,
+                                       "remediation": _remediation_for_pull(cpull)}
+                return ledger
+            try:
+                cases = cases_from_reply(cpull.incidents, case_ids)
+            except CaseShapeError as e:
+                return degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped)
+
+            status_map: dict = {}
+            issue_ids = sorted({a.external_id for a in alerts if a.external_id})
+            try:
+                smap = conn.pull_issue_status(cfg, issue_ids)
+                queries += int(smap.pages)  # before the copy: a dict() copy drops .pages
+                status_map = dict(smap)
+                issue_read: dict[str, Any] = {"ok": True, "pages": int(smap.pages)}
+            except IssueReadError as e:
+                pages = _pages_issued(e.detail)
+                queries += pages
+                issue_read = {"ok": False, "code": e.code, "pages": pages,
+                              "remediation": (LOCAL_REFUSAL_REMEDIATION
+                                              if e.detail.get("refused_locally")
+                                              else remediation_for(e.code))}
+            try:
+                ledger = build_case_ledger(
+                    [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
+                    cases, basis=basis, read_at=read_at)
+            except CaseShapeError as e:
+                return degraded("CASE_STATUS_UNRECOGNIZED", str(e), issue_read)
+            ledger["issue_read"] = issue_read
+            return ledger
+        except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
+            logger.warning("case ledger degraded on unexpected %s", type(e).__name__, exc_info=True)
+            ledger = degraded("CASE_READ_FAILED",
+                              f"the case ledger could not be built ({type(e).__name__}); "
+                              "no merge claim is made", skipped)
+            return ledger
+
+    ledger = compute()
+    # Case ids are tenant-local: record WHICH integration read them, and the
+    # tenant it pointed at, so a refresh asks the same tenant (a second tenant
+    # can return another case under the id) and a pair is not merged across two.
+    ledger["integration"] = cfg.integration_name
+    ledger["tenant"] = case_ledger_tenant(cfg)
+    if (keep_stored_on_read_failure and ledger["code"] == "CASE_READ_FAILED"
+            and isinstance(run.case_ledger, dict)):
+        ledger["stored_ledger_kept"] = True
+        return ledger, queries
+    queries += await _add_bridge(db, run, ledger,
+                                 alerts if bridge_alerts is None else bridge_alerts,
+                                 conn=conn, cfg=cfg)
+    run.case_ledger = ledger
+    if commit:
+        await db.commit()
+    return ledger, queries
+
+
+async def _add_bridge(db: AsyncSession, run: Run, ledger: dict,
+                      alerts: list[ObservedAlert], *, conn: Any, cfg: ConnectorConfig) -> int:
+    """Diagnose the IP-to-host bridge on a native split; returns queries spent.
+
+    Only when ``merge_class`` is ``SPLIT_NATIVE`` and the Medium+ alerts mix an
+    IP-only alert (``host is None``, e.g. NGFW) with a host-keyed one. Context
+    only: sets ``ledger["bridge"]`` and appends its code to ``merge_reason``;
+    never touches ``merge_class``, ``code`` or any verdict. A failed or
+    unrecognised endpoint read is ``BRIDGE_UNREAD`` and never raises (the one
+    request it makes is counted either way).
+
+    Not run by :func:`refresh_case_ledger`: the stored ledger keeps no per-alert
+    host, so a refresh cannot re-evaluate the mixed-key condition; it carries
+    the stored diagnosis forward instead.
+    """
+    if ledger.get("merge_class") != "SPLIT_NATIVE" or not hasattr(conn, "pull_endpoint_ips"):
+        return 0
+    mp = [a for a in alerts if (a.severity or "").lower() in MEDIUM_PLUS]
+    if not (any(a.host is None for a in mp) and any(a.host is not None for a in mp)):
+        return 0
+    host = await resolve_run_host(db, run)
+    agent = None
+    if getattr(run, "target", None):
+        agent = (await db.execute(
+            select(Agent).where(Agent.agent_id == run.target))).scalar_one_or_none()
+    agent_ip = getattr(agent, "last_ip", None)
+    ips = None
+    spent = 0
+    if host and agent_ip:
+        spent = 1
+        try:
+            ips = conn.pull_endpoint_ips(cfg, host)
+        except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
+            logger.warning("bridge endpoint read failed: %s", type(e).__name__, exc_info=True)
+    diag = bridge_diagnosis(host=host, agent_ip=agent_ip, endpoint_ips=ips)
+    diag["read_at"] = ledger["read_at"]   # when this was computed; a refresh may carry it
+    ledger["bridge"] = diag
+    ledger["merge_reason"] = f"{ledger['merge_reason']}; ip-to-host bridge: {diag['code']}"
+    return spent
+
+
+def _remediation_for_pull(pull: Any) -> Optional[str]:
+    """The remediation for a failed pull; a local refusal never blames the tenant."""
+    if (pull.detail or {}).get("refused_locally"):
+        return LOCAL_REFUSAL_REMEDIATION
+    return remediation_for(pull.code)
+
+
+def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
+    """Ledger units a harvest spent: ``pages`` on success, the ``page`` a failed read died on."""
+    d = detail or {}
+    # ``is not None``, not ``or``: a reported 0 is a real count, not a missing one.
+    for key in ("pages", "page"):
+        if d.get(key) is not None:
+            return int(d[key])
+    return 1
+
+
+CASE_LEDGER_CONNECTOR = "xsiam"
+
+
+async def refresh_case_ledger(
+    db: AsyncSession, run: Run, *, fetcher: Optional[HttpFetcher] = None,
+    force: bool = False, min_interval_minutes: Optional[int] = None,
+) -> dict:
+    """Re-read the cases named in ``run.case_ledger`` and rebuild it.
+
+    Disposition drifts after a run (Auto Triage seals cases after a window that
+    is the shipped default and tenant-configurable), so the stored ledger goes
+    stale. This re-reads CASES only: the stored alerts are
+    kept, and each alert's stored ``issue_closed_by`` is carried forward
+    unchanged (``issue_override``), never recomputed from the restored alerts,
+    which carry no issue status and would all read ``unread``. ``merge_class``
+    and per-case disposition are recomputed from the fresh cases.
+
+    Read-only toward Cortex. Raises :class:`ReconcileError`:
+
+    * ``NO_CASE_LEDGER`` - nothing to refresh (409 at the API);
+    * ``CASE_LEDGER_UNREADABLE`` - the stored ledger is corrupt;
+    * ``CASE_LEDGER_TENANT_MISMATCH`` - the ledger records a ``tenant`` and the
+      integration it names now points at another one (no read; stored kept). A
+      legacy ledger without ``tenant`` is refreshed as before and gains one;
+    * ``CONNECTOR_PULL_FAILED`` - the case read failed. The stored ledger is
+      KEPT: a transient failure must not overwrite a good ledger with PENDING.
+      ``detail["queries_issued"]`` carries the pages spent (the sweep counts
+      them, and ``detail["status"] == 429`` trips its quota breaker).
+
+    An unrecognised case shape does not raise to the caller: the stored ledger
+    is replaced by a degraded one (``CASE_STATUS_UNRECOGNIZED``, ``PENDING``),
+    because the old merge claim can no longer be trusted.
+
+    Not refreshed, with no tenant read (``refreshed: false`` and a
+    ``reason_code``; ``reason_code`` is None on a refresh that read):
+
+    * ``CASE_LEDGER_NAMES_NO_CASE`` - the ledger names no case (``NO_CASE_YET``
+      and the like); only the next reconcile can advance it;
+    * ``CASE_LEDGER_READ_RECENTLY`` - the ledger was read less than
+      ``min_interval_minutes`` ago (default
+      ``CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES``), unless ``force``. The
+      reply carries ``retry_after_seconds``. An unreadable ``read_at`` is stale.
+
+    Transaction: this function commits (outside any ``try`` that could swallow
+    it); a commit failure rolls back and propagates, and the commit is never
+    retried on a failed session.
+    """
+    stored = run.case_ledger
+    if not stored:
+        raise ReconcileError("NO_CASE_LEDGER",
+                             f"run '{run.run_id}' has no case ledger to refresh")
+    try:
+        alerts, old_cases = ledger_from_dict(stored)
+        carried = {a["external_id"]: a["issue_closed_by"] for a in stored["alerts"]}
+        basis = stored["basis"]
+    except LEDGER_READ_ERRORS as e:
+        raise ReconcileError("CASE_LEDGER_UNREADABLE", f"stored case ledger is unreadable: {e}")
+
+    def not_refreshed(reason_code: str, reason: str, **extra: Any) -> dict:
+        return {"run_id": run.run_id, "refreshed": False, "queries_issued": 0,
+                "merge_class": stored.get("merge_class"), "code": stored.get("code"),
+                "read_at": stored.get("read_at"), "ledger": stored,
+                "reason_code": reason_code, "reason": reason, **extra}
+
+    case_ids = sorted({a.case_id for a in alerts if a.case_id} | set(old_cases))
+    if not case_ids:
+        return not_refreshed(
+            "CASE_LEDGER_NAMES_NO_CASE",
+            "the ledger names no case to re-read; the next reconcile rebuilds it once "
+            "the tenant has grouped the alerts into a case")
+
+    if not force:
+        mins = (settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
+                if min_interval_minutes is None else min_interval_minutes)
+        last = _read_at_of(stored)
+        age = datetime.utcnow() - last if last is not None else None
+        if age is not None and age < timedelta(minutes=mins):
+            return not_refreshed(
+                "CASE_LEDGER_READ_RECENTLY",
+                f"the ledger was read at {stored.get('read_at')} UTC, inside the {mins}-minute "
+                "minimum interval (CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES); "
+                "pass force=true to read now",
+                retry_after_seconds=math.ceil((timedelta(minutes=mins) - age).total_seconds()))
+
+    recorded = stored.get("integration")
+    if not recorded:
+        # Legacy ledger: the tenant was not recorded. Only unambiguous when
+        # exactly one integration may serve the connector.
+        rows = await resolve_connector_integrations(CredentialStore(db), CASE_LEDGER_CONNECTOR)
+        if len(rows) > 1:
+            raise ReconcileError(
+                "CASE_LEDGER_TENANT_UNKNOWN",
+                "this ledger does not record which integration read it and more than one "
+                "could have; case ids are tenant-local, so it is not refreshed",
+                detail={"available": [r.name for r in rows]})
+    # A recorded name that no longer exists raises INTEGRATION_NOT_FOUND (stored ledger kept).
+    conn, cfg, _store, integ = await _resolve_connector(
+        db, CASE_LEDGER_CONNECTOR, recorded, fetcher)
+    now_tenant = case_ledger_tenant(cfg)
+    if stored.get("tenant") and stored["tenant"] != now_tenant:
+        raise ReconcileError(
+            "CASE_LEDGER_TENANT_MISMATCH",
+            f"this ledger was read from tenant '{stored['tenant']}' but integration "
+            f"'{integ.name}' now points at '{now_tenant}'; case ids are tenant-local, "
+            "so it is not refreshed",
+            detail={"recorded": stored["tenant"], "integration": integ.name,
+                    "integration_tenant": now_tenant})
+    cpull = conn.pull_cases(cfg, case_ids)
+    pages = _pages_issued(cpull.detail)
+    if not cpull.ok:
+        detail = dict(cpull.detail or {})
+        detail.update({"code": cpull.code, "remediation": _remediation_for_pull(cpull),
+                       "queries_issued": pages})
+        raise ReconcileError("CONNECTOR_PULL_FAILED", cpull.error or "case read failed",
+                             detail=detail)
+
+    read_at = datetime.now(timezone.utc)
+    try:
+        cases = cases_from_reply(cpull.incidents, case_ids)
+        ledger = build_case_ledger(alerts, cases, basis=basis, read_at=read_at,
+                                   issue_override=carried)
+    except CaseShapeError as e:
+        ledger = build_case_ledger(alerts, {}, basis=basis, read_at=read_at,
+                                   code="CASE_STATUS_UNRECOGNIZED", issue_override=carried)
+        ledger["merge_class"] = "PENDING"
+        ledger["merge_reason"] = str(e)
+    ledger["issue_read"] = stored.get("issue_read", {"ok": None})
+    ledger["integration"] = integ.name
+    ledger["tenant"] = now_tenant
+    if stored.get("bridge") and ledger["merge_class"] == "SPLIT_NATIVE":
+        # Carried, not re-read: the stored ledger keeps no per-alert host, so the
+        # mixed-key condition cannot be re-evaluated here (see _add_bridge).
+        # Marked ``carried`` with its ORIGINAL ``read_at``: a snapshot, not a fresh read.
+        ledger["bridge"] = {**stored["bridge"], "carried": True}
+        ledger["merge_reason"] += f"; ip-to-host bridge: {stored['bridge'].get('code')}"
+
+    run.case_ledger = ledger
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {"run_id": run.run_id, "refreshed": True, "queries_issued": pages,
+            "merge_class": ledger["merge_class"], "code": ledger["code"],
+            "read_at": ledger["read_at"], "ledger": ledger, "reason_code": None,
+            "previous_merge_class": stored.get("merge_class")}
+
+
+def _ledger_terminal(ledger: dict) -> bool:
+    """Nothing a re-read could change: every case sealed (resolved and not
+    ``auto_resolved``), the merge settled (not ``PENDING``) and every case an
+    alert names present in the ledger. An ``auto_resolved`` case can still
+    reopen, a ``PENDING`` merge may resolve, and a missing case may be
+    returned next time, so none of those is terminal. Any shape this cannot
+    read is not terminal either (the refresh then reports it)."""
+    cases = ledger.get("cases")
+    alerts = ledger.get("alerts")
+    if not isinstance(cases, list) or not cases or not isinstance(alerts, list):
+        return False
+    if ledger.get("merge_class") == "PENDING":
+        return False
+    if not all(isinstance(c, dict) and c.get("sealed") is True for c in cases):
+        return False
+    have = {c.get("case_id") for c in cases}
+    return all(isinstance(a, dict) and (not a.get("case_id") or a["case_id"] in have)
+               for a in alerts)
+
+
+def _ledger_names_no_case(ledger: dict) -> bool:
+    """The ledger names no case at all: ``cases`` is an empty list and no alert
+    carries a ``case_id`` -- the test :func:`refresh_case_ledger` applies before
+    answering ``CASE_LEDGER_NAMES_NO_CASE`` with no read. Only a readable shape
+    qualifies; anything else stays eligible so the refresh reports it."""
+    cases = ledger.get("cases")
+    alerts = ledger.get("alerts")
+    if not isinstance(alerts, list) or not isinstance(cases, list) or cases:
+        return False
+    return all(isinstance(a, dict) and not a.get("case_id") for a in alerts)
+
+
+def _read_at_of(ledger: dict) -> Optional[datetime]:
+    try:
+        return coerce_utc(ledger.get("read_at"))
+    except Exception:  # noqa: BLE001 - unreadable read_at: treat as stale
+        return None
+
+
+def _read_age_ok(ledger: dict, now: datetime, min_interval: timedelta) -> bool:
+    read_at = _read_at_of(ledger)
+    return read_at is None or now - read_at >= min_interval
+
+
+async def refresh_case_ledgers_once(
+    db: AsyncSession, *, window_hours: int, max_runs: int,
+    min_interval_minutes: Optional[int] = None,
+    fetcher: Optional[HttpFetcher] = None,
+) -> dict[str, int]:
+    """One bounded sweep over stored case ledgers (opt-in: called only from
+    ``auto_reconcile_loop``, i.e. only with ``CORTEXSIM_AUTO_RECONCILE`` on).
+
+    Candidates are runs with a stored ``case_ledger`` whose ``Run.started_at``
+    (the run's own timestamp, naive UTC) is within ``window_hours``. A run is
+    skipped (no tenant call) when its ledger's ``read_at`` is younger than
+    ``min_interval_minutes``, when every case in it is sealed (terminal), or
+    when it names no case at all (``NO_CASE_YET`` and the like): the refresh
+    would answer ``CASE_LEDGER_NAMES_NO_CASE`` without a read, so its
+    ``read_at`` never advances and it would sort first on every sweep, taking
+    a slot from a ledger that can be read; only a reconcile advances it. A
+    malformed ledger stays eligible so the refresh reports it. Eligible runs are ordered least-recently-read first, so a window larger than
+    ``max_runs`` rotates instead of starving older runs. At most ``max_runs``
+    are attempted per sweep; every tenant page is counted in ``queries_issued``;
+    a quota error (HTTP 429) stops the whole sweep, and so does a refusal by
+    CortexSim's own request budget, reported apart. Returns
+    ``{"refreshed", "skipped", "queries_issued", "quota_tripped", "refused_locally"}``.
+    """
+    if min_interval_minutes is None:
+        min_interval_minutes = settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
+    min_interval = timedelta(minutes=min_interval_minutes)
+    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    now = datetime.utcnow()  # coerce_utc yields naive UTC
+    rows = (await db.execute(select(Run.run_id, Run.case_ledger).where(Run.started_at >= cutoff)
+                             )).all()
+    # Plain-data snapshot: a rollback in one refresh expires every ORM instance
+    # in this session, so the loop must not touch instances loaded before it.
+    eligible = []
+    for run_id, ledger in rows:
+        if not ledger or not isinstance(ledger, dict):
+            continue
+        if (_ledger_terminal(ledger) or _ledger_names_no_case(ledger)
+                or not _read_age_ok(ledger, now, min_interval)):
+            continue
+        eligible.append((_read_at_of(ledger) or datetime.min,
+                         run_id))
+    eligible.sort()
+    refreshed = skipped = queries = 0
+    tripped = False
+    refused_locally = False
+    for _read_at, run_id in eligible[:max_runs]:
+        try:
+            run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            out = await refresh_case_ledger(db, run, fetcher=fetcher,
+                                            min_interval_minutes=min_interval_minutes)
+        except ReconcileError as e:
+            skipped += 1
+            detail = e.detail if isinstance(e.detail, dict) else {}
+            queries += int(detail.get("queries_issued") or 0)
+            if _is_quota_error(e):
+                if detail.get("refused_locally"):
+                    refused_locally = True
+                    logger.warning("case-ledger refresh: CortexSim's own request budget "
+                                   "refused the read (%s) - sweep stopped", e.code)
+                else:
+                    tripped = True
+                    logger.warning("case-ledger refresh: tenant reported quota exhaustion "
+                                   "(%s) - sweep circuit-broken", e.code)
+                break
+            logger.debug("case-ledger refresh skip run=%s: %s", run_id, e.code)
+            continue
+        except Exception:  # noqa: BLE001 - e.g. a failed commit; the session was rolled back
+            skipped += 1
+            logger.warning("case-ledger refresh failed run=%s", run_id, exc_info=True)
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            continue
+        queries += int(out["queries_issued"])
+        if out["refreshed"]:
+            refreshed += 1
+        else:
+            skipped += 1
+    return {"refreshed": refreshed, "skipped": skipped, "queries_issued": queries,
+            "quota_tripped": int(tripped),
+            "refused_locally": int(refused_locally)}
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -325,9 +1121,11 @@ async def apply_verdicts(
     alerts = list(observations or [])
     by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
     unscoped = bool(pull_context and pull_context.get("unscoped"))
+    host_unresolved = bool(pull_context and pull_context.get("host_unresolved"))
     seen_obs = await _existing_observation_keys(db, run_id)
 
     matched = 0
+    unscoped_matches = 0
     applied: list[tuple[Any, Result]] = []
     for v in verdicts:
         if not v.matched:
@@ -354,6 +1152,32 @@ async def apply_verdicts(
             # The host says this step never ran: an alert inside its window came
             # from something else. Never observed, never MTTD, never re-judged.
             continue
+        if host_unresolved and result.expected_outcome != "prevent":
+            if result.observed or result.outcome in (OUTCOME_DETECTED, OUTCOME_PREVENTED):
+                # RG-RUNS-02: the row is ALREADY credited — by an earlier
+                # host-scoped match or an operator attestation. An alert that
+                # cannot be attributed to a host is not evidence against that
+                # credit. Rewriting the outcome here left `observed`,
+                # `observed_at` and the MTTD on a row that read pending: 0 %
+                # coverage beside an average MTTD. The alert stays on record
+                # (the Observation above); the row is not touched.
+                continue
+            # DOCS-03 (option c): with no host to scope against, the alert
+            # could be ANY endpoint's. A detect expectation is not met by it:
+            # the row stays pending, unobserved, with no observed_at and so no
+            # MTTD. The alert is on record (the Observation above) and named
+            # in the notes; a host-scoped reconcile can still credit it.
+            # (Prevent rows keep their own two-witness rule:
+            # PASS_WITHHELD_UNSCOPED.)
+            result.outcome = OUTCOME_PENDING
+            result.outcome_reason = UNSCOPED_MATCH
+            note = (f"unscoped candidate via {source} — not credited: no target host "
+                    f"to scope against (alert={v.alert_external_id or v.alert_name or 'n/a'}, "
+                    f"matched on {', '.join(v.matched_on)})")
+            if note not in (result.notes or ""):
+                result.notes = ((result.notes + " | ") if result.notes else "") + note
+            unscoped_matches += 1
+            continue
         result.observed = True
         result.observed_at = v.observed_at
         note = (f"auto-validated via {source} "
@@ -369,7 +1193,8 @@ async def apply_verdicts(
                     alert_outcome=v.alert_outcome,
                     termination=terminations.get(result.step_id),
                     window_closed=False,
-                    block_mode_status=run.block_mode_status)
+                    block_mode_status=run.block_mode_status,
+                    module_mode=_row_module_mode(run, result))
                 if pv.outcome == OUTCOME_PREVENTED and unscoped:
                     # Any endpoint's alert could have been credited.
                     pv = PreventVerdict(OUTCOME_PENDING, "pending", PASS_WITHHELD_UNSCOPED)
@@ -408,6 +1233,8 @@ async def apply_verdicts(
     # hook here scores every one of them, with no new scheduling and no
     # outbound call: Tier 1 reads only rows CortexSim already owns.
     summary = efficacy_summary(results, matched, source)
+    if unscoped_matches:
+        summary["unscoped_matches"] = unscoped_matches
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
             db, run, source=f"reconcile:{source}", results=results,
@@ -499,6 +1326,11 @@ async def _judge_silent_results(
             continue
         if r.outcome not in (None, OUTCOME_PENDING):
             continue
+        if r.outcome_reason == UNSCOPED_MATCH:
+            # An alert DID match; it just could not be attributed to this
+            # run's host. That is better evidence than silence, and a later
+            # empty or soak pass must not overwrite it with "no host record".
+            continue
         if r.signal_type in by_type:
             if first_run_seen is None:
                 first_run_seen = await _first_run_observed_keys(db, run)
@@ -525,7 +1357,8 @@ async def _judge_silent_results(
             pv = evaluate_prevent(
                 agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
                 termination=terminations.get(r.step_id), window_closed=True,
-                block_mode_status=run.block_mode_status)
+                block_mode_status=run.block_mode_status,
+                module_mode=_row_module_mode(run, r))
             if pv.outcome == OUTCOME_MISSED and not evidence_complete:
                 # Only a would-be fail softens to pending; a report-mode None
                 # stays None (and so is not written).
@@ -832,6 +1665,8 @@ class TenantRunner:
     tenant: Optional[str] = None
     reason: Optional[str] = None
     remediation: Optional[str] = None
+    #: The tenant client, so a caller can build a per-run runner (own window).
+    client: Optional[Any] = None
 
     @property
     def ok(self) -> bool:
@@ -896,7 +1731,13 @@ async def resolve_tenant_runner(
     db: AsyncSession, *, integration: Optional[str] = None,
     timeframe_seconds: int = 3600,
 ) -> TenantRunner:
-    """Build a read-only XQL row-count runner from a registered tenant credential.
+    """Build an XQL row-count runner from a registered tenant credential.
+
+    It issues each query verbatim. It is not read-only by construction: what
+    keeps it from writing is the one guard inside
+    ``XsiamClient.start_xql_query``, which refuses a ``target`` stage with
+    ``XQL_WRITE_STAGE_REFUSED`` on every path (SEC-05; wording corrected for
+    SEC-18).
 
     Never raises for a missing/unusable tenant — the caller resolves ``pending``
     and "no tenant wired" is an honest verdict, not a server error. Only an
@@ -905,6 +1746,7 @@ async def resolve_tenant_runner(
     """
     from engine.verifier import xsiam_query_runner  # noqa: PLC0415
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+    from integrations.xsiam.guards import xql_capability_granted  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
     from security.crypto import CryptoError  # noqa: PLC0415
 
@@ -923,8 +1765,7 @@ async def resolve_tenant_runner(
     # SEPARATE authorisation because it spends a metered resource the customer's
     # own analysts share. An absent list means the legacy default — read only —
     # so migrating an existing record can never silently grant XQL.
-    caps = (integ.config or {}).get("capabilities")
-    if isinstance(caps, list) and "xql" not in {str(c).lower() for c in caps}:
+    if not xql_capability_granted(integ.config or {}):
         return TenantRunner(tenant=integ.name, reason="xql_not_authorised",
                             remediation=TENANT_REMEDIATION["xql_not_authorised"])
 
@@ -944,11 +1785,33 @@ async def resolve_tenant_runner(
     return TenantRunner(
         runner=xsiam_query_runner(client, {"relativeTime": timeframe_seconds * 1000}),
         tenant=integ.name,
+        client=client,
     )
 
 
+async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str, int]:
+    """The absolute window for ``run``: its span plus its scenario's correlation
+    window (``CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS`` when unset or missing),
+    opened earlier by the most back-dated eal record body its steps declare."""
+    from connectors.verify_window import back_dating_seconds, run_timeframe  # noqa: PLC0415
+
+    scenario = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id)
+    )).scalar_one_or_none()
+    window = getattr(scenario, "correlation_window_seconds", None)
+    if window is None:
+        window = settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS
+    return run_timeframe(run.started_at, run.completed_at, int(window), now=now,
+                         lead_extra_seconds=back_dating_seconds(
+                             getattr(scenario, "steps", None)))
+
+
 def _new_budget(max_queries: int) -> dict[str, Any]:
-    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False}
+    # `tripped`: the tenant reported its quota. `refused_locally`: CortexSim's own
+    # request budget / breaker / daily ceiling refused; the tenant said nothing.
+    # `refusal`: what to tell the DC about that refusal (remediation, retry).
+    return {"remaining": max(0, int(max_queries)), "issued": 0, "tripped": False,
+            "refused_locally": False, "refusal": None}
 
 
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
@@ -967,25 +1830,59 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
     as ``pending``. A budget CortexSim spent is not evidence about the customer.
     """
     from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
-    from integrations.xsiam.ledger import QuotaBreakerOpen  # noqa: PLC0415
+    from integrations.xsiam.ledger import (  # noqa: PLC0415
+        DailyBudgetExhausted, QuotaBreakerOpen,
+    )
 
     async def _run(query: str) -> int:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             raise _BudgetExhausted("verification query budget exhausted")
         budget["remaining"] -= 1
         budget["issued"] += 1
         try:
             return await runner(query)
-        except (XsiamQuotaError, QuotaBreakerOpen):
+        except (XsiamQuotaError, QuotaBreakerOpen, DailyBudgetExhausted) as exc:
             # The customer's analysts share this quota. Stop issuing queries for
             # the rest of THIS sweep. The cross-cycle half — the per-tenant
             # ledger and its breaker — is charged inside the runner itself
             # (`verifier._tenant_budget`) so that assertion runs, which build a
             # runner directly and never reach this wrapper, are bounded too.
-            budget["tripped"] = True
+            if not (isinstance(exc, (QuotaBreakerOpen, DailyBudgetExhausted))
+                    or getattr(exc, "local", False)):
+                budget["tripped"] = True
+                raise
+            # Our own budget refused: stop the sweep, but record no tenant quota
+            # event that never happened. The verdict stays pending.
+            budget["refused_locally"] = True
+            budget["refusal"] = _local_refusal_note(exc)
+            if not getattr(exc, "query_started", None):
+                # Refused before the start left: no query was issued. (A refused
+                # results poll keeps its count: the start reached the tenant.)
+                budget["remaining"] += 1
+                budget["issued"] -= 1
             raise
 
     return _run
+
+
+def _local_refusal_note(exc: BaseException) -> dict[str, Any]:
+    """What a caller tells the DC about a local refusal: remediation + retry."""
+    from integrations.xsiam.codes import (  # noqa: PLC0415
+        LOCAL_DAILY_BUDGET_REMEDIATION, LOCAL_POLL_REFUSAL_REMEDIATION,
+        LOCAL_REFUSAL_REMEDIATION,
+    )
+    from integrations.xsiam.ledger import DailyBudgetExhausted  # noqa: PLC0415
+
+    if isinstance(exc, DailyBudgetExhausted):
+        # A rolling day names no single interval: no retry_after_seconds.
+        return {"remediation": LOCAL_DAILY_BUDGET_REMEDIATION, "retry_after_seconds": None}
+    retry = getattr(exc, "retry_after_seconds", None)
+    return {
+        "remediation": (LOCAL_POLL_REFUSAL_REMEDIATION
+                        if getattr(exc, "query_started", None)
+                        else LOCAL_REFUSAL_REMEDIATION),
+        "retry_after_seconds": max(1, int(retry)) if retry is not None else None,
+    }
 
 
 def _bookkeeping(run: Run) -> dict[str, Any]:
@@ -1070,6 +1967,8 @@ async def verify_run_now(
     tenant: Optional[str] = None,
     budget: Optional[dict[str, Any]] = None,
     source: str = "verify",
+    window: Optional[dict[str, int]] = None,
+    window_reason: Optional[str] = None,
 ) -> VerifyOutcome:
     """Verify one run's ``verification_xql`` results, then score it.
 
@@ -1131,12 +2030,22 @@ async def verify_run_now(
                 ),
             )
 
+    window_used: Optional[dict[str, int]] = window
     if runner is None:
         resolved = _as_tenant_runner(await resolve_tenant_runner(
             db, integration=integration,
             timeframe_seconds=timeframe_seconds or settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS,
         ))
         runner, tenant = resolved.runner, resolved.tenant
+        if runner is not None and timeframe_seconds is None and resolved.client is not None:
+            if run.mode == "push":
+                # No execution time to anchor on: keep the relative lookback.
+                window_reason = PUSH_WINDOW_REASON
+            else:
+                from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+                window = await _run_window(db, run, now=datetime.utcnow())
+                runner = xsiam_query_runner(resolved.client, window)
+                window_used = window
         if runner is None:
             # No usable credential -> pending, never pass. The seeded results
             # keep the `pending` kpi_verdict the orchestrator gave them,
@@ -1160,23 +2069,45 @@ async def verify_run_now(
     before = budget["issued"]
     counts = await verifier.verify_results(
         results, _budgeted(runner, budget),
-        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
+        module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
+    # An attempt is a verify in which the tenant was asked and nothing was
+    # refused locally. A verify with ANY local refusal (before the start left,
+    # or a started query whose results fetch was refused) is not an attempt,
+    # even if other queries in it were answered: the attempt cap claims
+    # "verified N times without the detection appearing", and a refused query
+    # was never tested. A sweep stops at its first local refusal, so a budget
+    # already refused before this verify left `issued` at 0 here anyway.
+    answered = bool(issued) and not budget.get("refused_locally")
 
     book = _bookkeeping(run)
     book.update({
-        "attempts": int(book.get("attempts") or 0) + (1 if issued else 0),
-        "last_attempt_at": datetime.utcnow().isoformat() if issued else book.get("last_attempt_at"),
+        "attempts": int(book.get("attempts") or 0) + (1 if answered else 0),
+        "last_attempt_at": (datetime.utcnow().isoformat() if answered
+                            else book.get("last_attempt_at")),
         "tenant": tenant,
         "queries_issued": issued,
         "counts": counts,
         "quota_tripped": bool(budget.get("tripped")),
+        "refused_locally": bool(budget.get("refused_locally")),
     })
+    if window_used is not None:
+        book["window"] = window_used
+        book.pop("window_reason", None)
+    elif window_reason is not None:
+        book["window"] = None
+        book["window_reason"] = window_reason
     score = await score_run_for_run(db, run, source=source, results=results,
                                     extra_detail={"verification": book})
+    refusal = (budget.get("refusal") or {}) if budget.get("refused_locally") else {}
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
                          tenant=tenant, queries_issued=issued,
-                         reason="quota_exhausted" if budget.get("tripped") else None)
+                         reason=("quota_exhausted" if budget.get("tripped")
+                                 else "refused_locally" if budget.get("refused_locally")
+                                 else None),
+                         remediation=refusal.get("remediation"),
+                         retry_after_seconds=refusal.get("retry_after_seconds"))
 
 
 async def auto_verify_once(
@@ -1201,8 +2132,10 @@ async def auto_verify_once(
                        else settings.CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS)
     max_queries = (max_queries if max_queries is not None
                    else settings.CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP)
+    override = timeframe_seconds is not None
     timeframe_seconds = (timeframe_seconds if timeframe_seconds is not None
                          else settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS)
+    client: Optional[Any] = None
 
     stats: dict[str, Any] = {"runs_considered": 0, "runs_verified": 0,
                              "queries_issued": 0, "quota_tripped": False,
@@ -1215,6 +2148,7 @@ async def auto_verify_once(
             logger.debug("auto-verify skipped: %s", e.code)
             return stats
         runner, tenant = resolved.runner, resolved.tenant
+        client = resolved.client if not override else None
         stats["tenant"] = tenant
         stats["reason"] = resolved.reason
     if runner is None:
@@ -1241,7 +2175,7 @@ async def auto_verify_once(
     budget = _new_budget(max_queries)
     budget["tenant"] = tenant
     for run in candidates:
-        if budget["tripped"] or budget["remaining"] <= 0:
+        if budget["tripped"] or budget["refused_locally"] or budget["remaining"] <= 0:
             break
         skip = _verify_eligible(run, max_attempts=max_attempts,
                                 backoff_seconds=backoff_seconds, now=now)
@@ -1249,17 +2183,29 @@ async def auto_verify_once(
             logger.debug("auto-verify skip run=%s: %s", run.run_id, skip)
             continue
         stats["runs_considered"] += 1
+        attempts_before = int(_bookkeeping(run).get("attempts") or 0)
         try:
-            outcome = await verify_run_now(db, run, runner=runner, tenant=tenant,
-                                           budget=budget, source="sweep")
+            run_runner, run_window, run_reason = runner, None, None
+            if client is not None and run.mode == "push":
+                run_reason = PUSH_WINDOW_REASON
+            elif client is not None:
+                from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+                run_window = await _run_window(db, run, now=now)
+                run_runner = xsiam_query_runner(client, run_window)
+            await verify_run_now(db, run, runner=run_runner, tenant=tenant,
+                                 budget=budget, source="sweep",
+                                 window=run_window, window_reason=run_reason)
         except Exception:  # noqa: BLE001 — one bad run must not kill the sweep
             logger.exception("auto-verify failed run=%s", run.run_id)
             continue
-        if outcome.queries_issued:
+        if int(_bookkeeping(run).get("attempts") or 0) > attempts_before:
+            # Counted only when the tenant answered: a locally refused query is
+            # not a verification, whatever it cost.
             stats["runs_verified"] += 1
 
     stats["queries_issued"] = budget["issued"]
     stats["quota_tripped"] = bool(budget["tripped"])
+    stats["refused_locally"] = bool(budget["refused_locally"])
     return stats
 
 
@@ -1356,7 +2302,8 @@ async def auto_reconcile_once(
 
     store = CredentialStore(db)
     configured_kinds = {i.kind for i in await store.list_integrations()}
-    active_kinds = [c["kind"] for c in available_connectors() if c["kind"] in configured_kinds]
+    active_kinds = [c["kind"] for c in available_connectors()
+                    if configured_kinds.intersection(credential_kinds_for(c["kind"]))]
     if not active_kinds:
         # No reconcile connector does NOT imply no verification: the two use
         # different credential kinds, and a tenant wired only for XQL is a
@@ -1382,18 +2329,27 @@ async def auto_reconcile_once(
     # production that is a completely silent zero-coverage reconcile.
     skipped: dict[str, int] = {}
     breaker_tripped = False
+    local_refused = False  # CortexSim's own request budget, not a tenant event
 
     def _note(code: str) -> None:
         skipped[code] = skipped.get(code, 0) + 1
 
     for run in runs:
-        if pulls_issued >= max_pulls or breaker_tripped:
+        if pulls_issued >= max_pulls or breaker_tripped or local_refused:
             _note("sweep_budget_spent")
             continue
         results = list((await db.execute(
             select(Result).where(Result.run_id == run.run_id)
         )).scalars().all())
         if not any((not r.observed) and r.executed_at for r in results):
+            continue
+        candidates, never_delivered = reconcile_candidates(
+            run, results, reported_steps=await reported_step_ids(db, run.run_id))
+        if never_delivered and not any(
+                (not r.observed) and r.executed_at for r in candidates):
+            # Counted, not silent: a sweep that skips a queued or orphaned run
+            # must say so rather than read as "nothing matched".
+            _note("never_delivered")
             continue
         skip = _reconcile_eligible(run, max_attempts=max_attempts,
                                    backoff_seconds=backoff_seconds, now=now)
@@ -1414,8 +2370,9 @@ async def auto_reconcile_once(
         runs_considered += 1
         matched_here = 0
         pulled_here = 0
+        refused_here = False  # a pull for this run was refused by our own budget
         for kind in active_kinds:
-            if pulls_issued >= max_pulls or breaker_tripped:
+            if pulls_issued >= max_pulls or breaker_tripped or local_refused:
                 _note("sweep_budget_spent")
                 break
             pulls_issued += 1
@@ -1429,11 +2386,18 @@ async def auto_reconcile_once(
                 # A 429 is the customer's shared quota talking. Stop the whole
                 # sweep rather than walking the remaining runs into the same wall.
                 if _is_quota_error(e):
-                    breaker_tripped = True
+                    local = bool((e.detail or {}).get("refused_locally")) \
+                        if isinstance(e.detail, dict) else False
+                    if local:
+                        local_refused = refused_here = True
+                    else:
+                        breaker_tripped = True
                     logger.warning(
-                        "auto-reconcile: tenant reported quota exhaustion (%s) — "
-                        "sweep circuit-broken. %s", e.code,
-                        codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
+                        "auto-reconcile: %s (%s) — sweep circuit-broken. %s",
+                        "CortexSim's own request budget refused the pull"
+                        if local else "tenant reported quota exhaustion", e.code,
+                        LOCAL_REFUSAL_REMEDIATION if local
+                        else codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
                 else:
                     logger.debug("auto-reconcile skip run=%s kind=%s: %s",
                                  run.run_id, kind, e.code)
@@ -1444,7 +2408,11 @@ async def auto_reconcile_once(
         if matched_here:
             runs_reconciled += 1
             newly_total += matched_here
-        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here)
+        # A pull CortexSim's own budget refused never asked the tenant, so it is
+        # not an attempt: otherwise the cap would read "no matching alert
+        # appeared in the tenant" about a tenant that was never queried.
+        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here,
+                                        increment=not refused_here)
 
     stats: dict[str, Any] = {
         "runs_considered": runs_considered,
@@ -1454,6 +2422,8 @@ async def auto_reconcile_once(
         "skipped": skipped,
         "pulls_issued": pulls_issued,
         "quota_tripped": breaker_tripped,
+        # CortexSim's own request budget stopped the sweep; the tenant said nothing.
+        "refused_locally": local_refused,
     }
     if runs_considered and not newly_total:
         # A sweep that looked at runs and matched nothing is a SIGNAL, not a
@@ -1496,6 +2466,21 @@ async def _with_verify_phase(db: AsyncSession, stats: dict[str, Any], *,
     return stats
 
 
+async def _refresh_ledgers_phase() -> None:
+    """The case-ledger refresh sweep; a failure never stops the reconcile loop."""
+    from database import AsyncSessionLocal  # noqa: PLC0415
+    try:
+        async with AsyncSessionLocal() as db:
+            out = await refresh_case_ledgers_once(
+                db, window_hours=settings.CORTEXSIM_CASE_LEDGER_WINDOW_HOURS,
+                max_runs=settings.CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP,
+                min_interval_minutes=settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES)
+        if out["refreshed"] or out["skipped"]:
+            logger.info("case-ledger refresh: %s", out)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("case-ledger refresh phase failed - continuing")
+
+
 async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                               window_seconds: int) -> None:
     """Run :func:`auto_reconcile_once` forever on a fixed cadence. Opt-in;
@@ -1517,6 +2502,10 @@ async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                 if stats["newly_matched"]:
                     logger.info("auto-reconcile: %d detection(s) validated across %d run(s) via %s",
                                 stats["newly_matched"], stats["runs_reconciled"], stats["kinds"])
+                if not (stats.get("quota_tripped") or stats.get("refused_locally")):
+                    # Same flag (this loop only runs with it on), same breaker:
+                    # a quota error in the reconcile sweep skips the refresh.
+                    await _refresh_ledgers_phase()
             except Exception:  # pragma: no cover - defensive
                 logger.exception("auto-reconcile sweep failed — continuing")
     except asyncio.CancelledError:  # pragma: no cover - shutdown path

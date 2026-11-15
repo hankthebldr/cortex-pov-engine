@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1556",
     "T1114.003"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when analytics `Azure conditional access policy creation or modification` (or abioc `Conditional-access policy weakened off the learned admin-change baseline`) on msft_azure_audit and analytics `Azure mailbox rule creation` (or abioc `External mailbox forwarding rule off the learned inbox-rule baseline`) on msft_o365_audit both fire within a 30-minute persistence window. The two legs land in different datasets with different identity fields (the CA record carries identity.claims.appid; the inbox-rule record carries UserId), so the rule stitches on temporal co-occurrence within the campaign window rather than a single shared identity-field value, raising one two-stage Azure identity-persistence incident: the actor first relaxes conditional-access enforcement, then plants a covert external mail-forwarding rule for collection.",
       "name": "Azure Identity Persistence \u2014 CA policy weakening then covert mail rule",
-      "rule_id": "CR-ITDR-0019",
-      "severity": "high"
+      "rule_id": "CR-ITDR-0019"
     }
   ],
   "ttp_ref": "TTP-2026-0161"

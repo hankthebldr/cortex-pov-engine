@@ -124,10 +124,16 @@ MEASURED = "MEASURED"
 # -> pending. The claim is unproven and still owed.
 PENDING_CODES = frozenset({
     "NO_TENANT_INTEGRATION",
+    # A tenant IS registered, for alert read-back only: XQL is a separate,
+    # explicit authorisation (spec §5.6, D-18). Still owed, never red.
+    "XQL_NOT_AUTHORISED",
     "TENANT_UNREACHABLE",
     "PROBE_AUTH_FAILED",
     "PROBE_QUOTA_EXHAUSTED",
     "PROBE_QUERY_FAILED",
+    # A full page the reply does not confirm is the whole answer. A count read
+    # off a slice is not the tenant's count, in either direction.
+    "PROBE_RESULT_TRUNCATED",
     "PRECURSOR_MISSING",
     "POPULATION_EMPTY",
     "DRY_RUN",
@@ -152,14 +158,18 @@ FAIL_CODES = frozenset({
 REMEDIATION: dict[str, str] = {
     "NO_TENANT_INTEGRATION":
         "Register a read-only XSIAM tenant credential (POST /api/credentials/integrations, kind=xsiam_tenant) and re-run.",
+    "XQL_NOT_AUTHORISED":
+        "This tenant is registered for alert read-back only. XQL verification is a separate, explicit authorisation because it spends the customer's query quota — add 'xql' to the tenant's capabilities to enable it.",
     "TENANT_UNREACHABLE":
         "The tenant did not answer. Check network egress and the tenant base URL, then re-run — this says nothing about the platform.",
     "PROBE_AUTH_FAILED":
         "The API key was rejected (401). Re-issue a read-only key with XQL query permission and update the integration.",
     "PROBE_QUOTA_EXHAUSTED":
-        "XQL quota or concurrency exhausted. Wait for the tenant's query slots to free and re-run; this is not a capability failure.",
+        "XQL quota or concurrency exhausted — the tenant's, or the per-tenant budget CortexSim keeps (its breaker after a quota error, or CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY). Wait for the slots or the breaker to clear and re-run; this is not a capability failure.",
     "PROBE_QUERY_FAILED":
         "The query did not execute — usually an unknown dataset or a field name this tenant does not carry. Confirm the schema and correct the assertion's query.",
+    "PROBE_RESULT_TRUNCATED":
+        "The query returned a full page and the tenant did not confirm the total, so the count is unknown. Push the count into XQL (`| comp count()`, `| dedup <field>`) or narrow the query so the answer fits one page — this is not a capability failure.",
     "PRECURSOR_MISSING":
         "The trigger condition was never raised in the tenant, so the automation had nothing to act on. Fix the DETECTION first; this is not an automation failure.",
     "POPULATION_EMPTY":
@@ -1581,14 +1591,32 @@ async def _execute_check(
 
 
 def _classify_exception(exc: BaseException) -> str:
-    name = type(exc).__name__
-    if name == "XsiamAuthError":
+    """Taxonomy code for a probe failure, by class so subclasses inherit it.
+
+    Most specific first: ``XqlResultTruncated`` is an ``XsiamQueryError``, and a
+    write stage the runner refused is an ``XsiamConfigError``, which is the
+    assertion's query at fault, never the tenant's reachability. The ledger's
+    own budget errors are quota too: the query was never sent.
+    """
+    from integrations.xsiam.exceptions import (  # noqa: PLC0415
+        XqlResultTruncated,
+        XsiamAuthError,
+        XsiamConfigError,
+        XsiamQueryError,
+        XsiamQuotaError,
+    )
+    from integrations.xsiam.ledger import (  # noqa: PLC0415
+        DailyBudgetExhausted,
+        QuotaBreakerOpen,
+    )
+
+    if isinstance(exc, XsiamAuthError):
         return "PROBE_AUTH_FAILED"
-    if name == "XsiamQuotaError":
+    if isinstance(exc, (XsiamQuotaError, QuotaBreakerOpen, DailyBudgetExhausted)):
         return "PROBE_QUOTA_EXHAUSTED"
-    if name in ("XsiamQueryError", "XsiamConfigError"):
-        return "PROBE_QUERY_FAILED"
-    if isinstance(exc, AssertionRenderError):
+    if isinstance(exc, XqlResultTruncated):
+        return "PROBE_RESULT_TRUNCATED"
+    if isinstance(exc, (XsiamQueryError, XsiamConfigError, AssertionRenderError)):
         return "PROBE_QUERY_FAILED"
     return "TENANT_UNREACHABLE"
 
@@ -1601,6 +1629,7 @@ async def run_assertion(
     entitled_addons: Optional[list[str]] = None,
     dry_run: bool = False,
     scoreable: Optional[bool] = None,
+    refusal: Optional[str] = None,
 ) -> AssertionOutcome:
     """Evaluate one assertion and score it through the existing verifier.
 
@@ -1615,7 +1644,13 @@ async def run_assertion(
 
     ``scoreable`` overrides the index's own is_scoreable verdict for the bound
     test case; leave it None to resolve it from the registry.
+
+    ``refusal`` is a pending taxonomy code that says WHY there is no runner
+    when "no tenant" would be the wrong explanation (``XQL_NOT_AUTHORISED``:
+    the tenant is registered, but not for XQL). It must be a pending code.
     """
+    if refusal is not None and refusal not in PENDING_CODES:
+        raise ValueError(f"refusal {refusal!r} is not a pending taxonomy code")
     ctx = dict(context or {})
     ctx.setdefault("lookback_seconds", "3600")
 
@@ -1623,7 +1658,7 @@ async def run_assertion(
     if dry_run:
         forced = "DRY_RUN"
     elif runner is None:
-        forced = "NO_TENANT_INTEGRATION"
+        forced = refusal or "NO_TENANT_INTEGRATION"
     elif entitled_addons is not None:
         _base, required = entitlements(spec)
         missing = [a for a in required if a not in entitled_addons]

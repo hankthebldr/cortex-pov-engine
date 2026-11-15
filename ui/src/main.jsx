@@ -9,7 +9,9 @@ import './styles/cortex-console.css'
 // colocated with a component because every destination renders inside them.
 import './styles/povengine-shell.css'
 import './styles/povengine-surfaces.css'
-// The minimal pass's colour rule and chrome overrides. LAST, on purpose.
+// Design v26 shared constructs (StatusIcon, ErrorBadge, Button, Toast, PageIcon).
+import './styles/povengine-kit.css'
+// The console's colour rule and chrome overrides. LAST, on purpose.
 import './styles/povengine-minimal.css'
 
 // main.jsx renders exactly ONE root per session. It used to STATICALLY import

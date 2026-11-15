@@ -1,0 +1,127 @@
+title: "npm Supply-Chain Compromise on a Linux Developer Endpoint \u2014 Preinstall-Hook Credential Theft via a Phantom-Squatted Package \u2014 KOI-010 Multi Credential File Read Under npm Node CGO"
+id: ttp-2026-0201-bioc-01
+status: experimental
+description: |
+  Three or more distinct developer credential-named files (SSH private keys, .npmrc token, AWS credentials, .env, agent MCP config, .git/config) are read in one window by a process in the npm/node install causality chain. An install-hook descendant that reads this set is stealing, not building. Card-only deployable content: not declared as a scenario expectation, so a tenant without it deployed is never scored a MISS; the equivalent behavioural ABIOC is the declared, agent-raised twin.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter causality_actor_process_image_name in ("npm", "node")
+    | filter action_file_path contains_any (".ssh/id_rsa", ".ssh/id_ed25519", ".npmrc", ".aws/credentials", ".env", ".claude/mcp.json", ".claude.json", ".kiro/settings/mcp.json", ".git/config", ".git-credentials")
+    | comp count_distinct(action_file_path) as secret_files_read, values(action_file_path) as paths by agent_hostname, actor_causality_id, causality_actor_process_instance_id, actor_process_image_name
+    | filter secret_files_read >= 3
+    | fields agent_hostname, actor_causality_id, causality_actor_process_instance_id, actor_process_image_name, paths, secret_files_read
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "npm Supply-Chain Compromise on a Linux Developer Endpoint \u2014 Preinstall-Hook Credential Theft via a Phantom-Squatted Package \u2014 KOI-010 Credential Archive Egress From npm Install Lineage"
+id: ttp-2026-0201-bioc-02
+status: experimental
+description: |
+  A process in the npm/node install causality chain uploads bytes to the campaign's dead-drop / C2 hosts (or the lab's non-resolving placeholder). Card-only HUNT content: it needs a firewall/sink in path, so it is not declared as a scenario expectation and a sink-less run is never scored against it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter causality_actor_process_image_name in ("npm", "node", "curl")
+    | filter action_external_hostname in ("cortexsim-koi010.invalid", "audit.checkmarx.cx") or dst_action_external_hostname in ("cortexsim-koi010.invalid", "audit.checkmarx.cx")
+    | filter action_total_upload > 0
+    | comp sum(action_total_upload) as bytes_out by agent_hostname, actor_causality_id, action_external_hostname
+    | filter bytes_out > 0
+    | fields agent_hostname, actor_causality_id, action_external_hostname, bytes_out
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "npm Supply-Chain Compromise on a Linux Developer Endpoint \u2014 Preinstall-Hook Credential Theft via a Phantom-Squatted Package \u2014 KOI-010 Uncommon Shell Command Execution Under npm Install Hook Lineage"
+id: ttp-2026-0201-abioc-03
+status: experimental
+description: |
+  Behavioral-ML deviation (the built-in 'uncommon Linux shell command execution' analytic, scoped to causality): the npm/node install process spawns a child exec that is anomalous for the npm/node install causality on this host — node running an install-time script (setup.mjs) out of the preinstall hook. Package installs rarely spawn arbitrary interpreters; a first-seen package doing it at install time is the lifecycle-hook detonation shape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("npm", "node", "npm-cli.js") or actor_process_image_name in ("npm", "node")
+    | filter action_process_image_command_line contains_any ("setup.mjs", "preinstall", "postinstall", "bun run index.js")
+    | comp count() as uncommon_execs, values(action_process_image_command_line) as child_cmdlines by agent_hostname, actor_causality_id, causality_actor_process_image_name, causality_actor_process_instance_id
+    | filter uncommon_execs >= 1
+    | fields agent_hostname, actor_causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, child_cmdlines, uncommon_execs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.007
+    - attack.t1195.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "npm Supply-Chain Compromise on a Linux Developer Endpoint \u2014 Preinstall-Hook Credential Theft via a Phantom-Squatted Package \u2014 KOI-010 npm Install Hook Descendant Reads Multiple Developer Credential Files"
+id: ttp-2026-0201-abioc-04
+status: experimental
+description: |
+  Behavioral credential-access verdict: a descendant of the npm/node install lineage reads three or more distinct developer credential-named files (SSH keys, .npmrc token, AWS credentials, .env, agent MCP config, .git/config) in one window. An install hook that reads this set is harvesting, not resolving dependencies.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter causality_actor_process_image_name in ("npm", "node")
+    | filter action_file_path contains_any (".ssh/id_", ".npmrc", ".aws/credentials", ".env", ".claude/mcp.json", ".claude.json", ".kiro/settings/mcp.json", ".git/config", ".git-credentials")
+    | comp count_distinct(action_file_path) as secret_files_read, values(action_file_path) as paths by agent_hostname, actor_causality_id, causality_actor_process_instance_id
+    | filter secret_files_read >= 3
+    | fields agent_hostname, actor_causality_id, causality_actor_process_instance_id, paths, secret_files_read
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

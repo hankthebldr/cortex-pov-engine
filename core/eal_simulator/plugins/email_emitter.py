@@ -50,8 +50,10 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
+from ..analytics_emitter import CANARY_TOKEN_RE, plant_canary
 from ..audit import ecs_event
 from ..base import BaseSimulation, SimulationContext, SimulationResult
+from ..collector_auth import AuthHeader, AuthScheme, AuthToken, apply_collector_auth
 from ..delivery import REMEDIATION, DeliveryLedger, response_evidence
 from ..safety import url_host_port
 
@@ -297,6 +299,30 @@ class EmailEmitterParams(BaseModel):
         default=None,
         description="Override the outbound User-Agent header on POSTs to the collector.",
     )
+    # Collector ingestion auth, shared with the analytics log-streamers. An
+    # XSIAM HTTP log collector answers 401 without it.
+    auth_token: AuthToken
+    auth_header: AuthHeader
+    auth_scheme: AuthScheme
+    canary_token: Optional[str] = Field(
+        default=None,
+        description="When set, every record carries it in the cortexsim_canary "
+                    "field so a read-only query can count exactly these records.",
+    )
+
+    @field_validator("canary_token")
+    @classmethod
+    def _canary_token_safe(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not CANARY_TOKEN_RE.match(v):
+            raise ValueError(
+                "canary_token must match ^[a-z0-9][a-z0-9-]{5,63}$ — it is "
+                "substituted into log-record field values and into XQL string "
+                "literals, so it may not carry characters that could reshape "
+                "either (e.g. 'csim-9f2a41c0d3e7')"
+            )
+        return v
 
     @field_validator("collector_url")
     @classmethod
@@ -473,6 +499,8 @@ class EmailEmitter(BaseSimulation):
         headers: dict[str, str] = {"content-type": "application/json"}
         if params.user_agent:
             headers["user-agent"] = params.user_agent
+        # Client-level only: per-request header dicts land in audit events.
+        apply_collector_auth(headers, params)
         return httpx.AsyncClient(
             timeout=params.request_timeout,
             # default False (NGFW MitM friendly); opt back in per campaign via
@@ -485,7 +513,19 @@ class EmailEmitter(BaseSimulation):
     def _build_events_for_pattern(
         self, params: EmailEmitterParams, *, sim_run_id: str,
     ) -> list[dict[str, Any]]:
-        """Return the list of email audit-event bodies the pattern should POST."""
+        """Return the email audit-event bodies the pattern should POST.
+
+        The one seam the wire path and ``plan_offline_records`` share, so a
+        canary token is planted here and both carry the same field.
+        """
+        events = self._pattern_events(params, sim_run_id=sim_run_id)
+        if params.canary_token:
+            events = [plant_canary(e, params.canary_token, {}) for e in events]
+        return events
+
+    def _pattern_events(
+        self, params: EmailEmitterParams, *, sim_run_id: str,
+    ) -> list[dict[str, Any]]:
         builder = _PROVIDER_BUILDERS[params.provider]
         indicators = _PATTERN_INDICATORS[params.event_pattern]
         classification = _PATTERN_CLASSIFICATION[params.event_pattern]

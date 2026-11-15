@@ -1,0 +1,189 @@
+{
+  "id": "TTP-0000-0276",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Uncommon SQL-like Command Line Execution via PowerShell",
+    "summary": "An attacker uses PowerShell to execute SQL-like commands with unusual syntax patterns, which triggers the 'Uncommon SQL like command line' alert. Cortex should detect this behavior through process exe",
+    "description": "An attacker uses PowerShell to execute SQL-like commands with unusual syntax patterns, which triggers the 'Uncommon SQL like command line' alert. Cortex should detect this behavior through process execution telemetry and command-line analysis."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.001",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -Command \"Invoke-Sqlcmd -Query 'SELECT * FROM users WHERE username LIKE \"%admin%\"' -ServerInstance '192.0.2.100' \n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process execution with SQL-like command line",
+        "expected_value": "actor_process_image_name = 'powershell.exe' and action_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to SQL server",
+        "expected_value": "dst_ip = '192.0.2.100' and dst_port = 1433"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Uncommon SQL-like Command Line Pattern",
+        "description": "Detection of PowerShell processes with command lines containing SQL-like syntax patterns",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1071.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "SQL-like Command Line in PowerShell",
+        "description": "Behavioral deviation showing PowerShell command lines with SQL-like syntax patterns",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "actor_process_image_name = 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1059.001",
+          "T1071.004"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect SQL-like PowerShell Commands",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| fields agent_hostname, actor_process_image_name, action_command_line\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Uncommon SQL like command line; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-sql-like-command-line"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Uncommon SQL like command line",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-sql-like-command-line",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

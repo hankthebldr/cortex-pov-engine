@@ -15,7 +15,11 @@
 
 .theme-console .gs__steps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--bd); }
 
-.theme-console .gs-step { border-bottom: 1px solid var(--bd); }
+.theme-console .gs-step { border-bottom: 1px solid var(--bd); position: relative; }
+/* Configure opens the component's full Setup (v26 slice 4). It sits on the
+   step's row, left of the open/close sign, outside the row's own button. */
+.theme-console .gs-step__row--with-action { padding-right: 130px; }
+.theme-console .gs-step__configure { position: absolute; right: 36px; top: 14px; }
 .theme-console .gs-step__row {
   display: flex; align-items: center; gap: 14px; width: 100%;
   padding: 16px 4px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer;

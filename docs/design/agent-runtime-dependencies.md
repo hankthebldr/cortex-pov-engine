@@ -171,12 +171,22 @@ surface area to get exactly right.
   beacon's live, execution-time check is the actual enforcement (§4.C item 3), and nothing
   about staleness in the advisory layer can produce a false success, only a slower-to-warn
   one.
-- **Windows.** `resolveRuntimeDeps` is a deliberate no-op on `GOOS=="windows"`. No scenario
-  in the corpus currently declares a Windows step with `requires_interpreters`, and
-  PowerShell's own interpreter story (and package-manager landscape) is different enough
-  that folding it into this pass would have diluted the POSIX fix. Flagged, not silently
-  dropped: a Windows step that *did* declare a requirement today passes through unchanged,
-  i.e. it gets the pre-existing (unmasked) behavior, not a new guarantee.
+- **Windows (superseded 2026-11-10, BEACON-13).** This design left `resolveRuntimeDeps` a
+  deliberate no-op on `GOOS=="windows"`, so a Windows step that declared a requirement ran
+  unchanged. That is no longer true. `required_binaries` is now checked on Windows exactly as
+  on POSIX (`TOOL_ABSENT`; LookPath honours PATHEXT and full paths). `requires_interpreters`
+  keeps the guarantee without the POSIX repairs: an exact name runs unmodified; an absent
+  interpreter, or one present only under an alias (`python3` with only `python`), blocks the
+  step with `RUNTIME_DEPENDENCY_MISSING` (127), because Windows gets no PATH shim and an
+  authorised runtime install is never composed there. A match directly inside a
+  `…\Microsoft\WindowsApps` directory is not counted (it is the Store stub), is recorded as
+  `InterpreterCheck.AppExecAlias`, and is named in the block note and a startup log line;
+  alias-only interpreters are not advertised to SimCore on Windows. Stated limit: a Python
+  genuinely installed from the Microsoft Store sits at the same path and is not counted
+  either. Still true: no corpus scenario declares either field on a Windows-runnable step.
+  The rules are proven from macOS through the `runtimeDepsGOOS` / `interpreterGOOS` seams;
+  on a real Windows host the native tests passed in CI run 43037077022 (`e434efa`), and no
+  step declaring either field has run there end to end.
 - **The package→interpreter mapping is small and hand-maintained**
   (`agent/executor/interpreter.go`'s `interpreterPackage`, currently `python`, `perl`,
   `ruby`, `node`). A wrong guess there would silently install the wrong thing under real

@@ -1,0 +1,164 @@
+{
+  "id": "TTP-0000-0334",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "source-not-recorded"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: pspy (payload-shelf staged)",
+    "summary": "pspy snoops processes and cron jobs without root to capture credentials passed on command lines. The tool is delivered through the Cortex POV payload shelf (sha256-pinned c93f29a5cc1347bd…, staged to ",
+    "description": "pspy snoops processes and cron jobs without root to capture credentials passed on command lines. The tool is delivered through the Cortex POV payload shelf (sha256-pinned c93f29a5cc1347bd…, staged to /tmp/pspy64) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of pspy and its artifacts."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1057",
+        "name": "Process Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.007",
+        "name": "Unsecured Credentials: Container API",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# MATURE: pspy deployed via adapter_ref TOOL-PSPY + payload shelf.\n[ -s /tmp/pspy64 ] || { echo '[FATAL] PAYLOAD_NOT_STAGED_ON_TARGET:/tmp/pspy64 — TTP did NOT run; absent detections are NOT a Cortex miss' >&2; exit 1; }\nsha256sum /tmp/pspy64\n/tmp/pspy64 -pf -i 1000\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "pspy executed by a service account.",
+        "expected_value": "action_process_image_name contains \"pspy64\""
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Pspy Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs pspy — an offensive TOOL-PSPY-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_path contains \"/tmp/pspy64\" or action_process_command_line contains \"pspy\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1057"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of pspy on This Host",
+        "description": "A host that has never run pspy executes it shortly after it is staged/installed — the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"pspy\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of pspy -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1057"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pspy Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"pspy\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "/tmp/pspy64",
+        "context": "pspy artifact path/name on the target."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — uncommon offensive tool (pspy) executed by a service account; Required Data: XDR Agent; ATT&CK T1057."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1057",
+      "url": "https://attack.mitre.org/techniques/T1057/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.007",
+      "url": "https://attack.mitre.org/techniques/T1552/007/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

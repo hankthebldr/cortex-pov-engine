@@ -26,6 +26,27 @@ export function isRunTerminal(status) {
   return isRunComplete(s) || s === 'failed' || s === 'aborted'
 }
 
+/** True when NO further progress will happen on this SimCore: a terminal run,
+ * or a push bundle that reached `staged` (it executes off-box; nothing here
+ * ever advances it). This is the predicate for "keep polling?". It is NOT
+ * `isRunTerminal`: a staged bundle never ran here, so it must never be picked
+ * as "the last completed run" — that would show a bundle nobody executed. */
+export function isRunSettled(status) {
+  const s = (status || '').toLowerCase()
+  return isRunTerminal(s) || s === 'staged'
+}
+
+// Run states in which NO claim about the customer's detection posture is
+// defensible: the simulation itself did not finish, so an un-fired detection
+// means "we never generated the signal", not "Cortex missed it". Lives here,
+// beside the other status predicates, so the Runs row, the storyline and the
+// evidence table all read the one set.
+const UNPROVEN_RUN_STATUSES = new Set(['failed', 'aborted'])
+
+export function isRunUnproven(status) {
+  return UNPROVEN_RUN_STATUSES.has(String(status || '').toLowerCase())
+}
+
 /**
  * Canonical CSS-state token for a run status. Collapses the backend 'complete'
  * and legacy 'completed' onto the single 'completed' state class (matching the

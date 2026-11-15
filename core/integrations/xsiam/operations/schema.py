@@ -37,6 +37,11 @@ class XsiamOperationSchema(BaseModel):
     access_class: str
     consent: Optional[str] = None
     path_params: list[str] = Field(default_factory=list)
+    # Optional closed set of values per path param, enforced by the executor
+    # (core/api/xsiam.py::_resolve_path) before any tenant call. For a read whose
+    # free-form param would otherwise reach any object of that kind on the tenant
+    # (e.g. any XSOAR list, which can hold integration config and secrets).
+    path_param_allowlist: dict[str, list[str]] = Field(default_factory=dict)
     doc_link: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
 
@@ -66,8 +71,10 @@ class XsiamOperationSchema(BaseModel):
     @field_validator("path")
     @classmethod
     def _v_path(cls, v: str) -> str:
-        if not v.startswith("/public_api/"):
-            raise ValueError(f"path {v!r} must start with /public_api/")
+        # /xsoar/ is the gateway prefix for the XSOAR-side reads (SOC Framework
+        # detection: installed packs, lists). Every other call is /public_api/.
+        if not v.startswith(("/public_api/", "/xsoar/")):
+            raise ValueError(f"path {v!r} must start with /public_api/ or /xsoar/")
         return v
 
     # ── cross-field: derive path_params + default consent ────────────────
@@ -80,6 +87,15 @@ class XsiamOperationSchema(BaseModel):
                 f"the tokens in path ({derived})"
             )
         self.path_params = derived
+        for param, allowed in self.path_param_allowlist.items():
+            if param not in derived:
+                raise ValueError(
+                    f"{self.op_id}: path_param_allowlist names {param!r}, which is not "
+                    f"a path param ({derived})")
+            if not allowed or not all(isinstance(v, str) and v for v in allowed):
+                raise ValueError(
+                    f"{self.op_id}: path_param_allowlist[{param!r}] must be a non-empty "
+                    f"list of non-empty strings")
         if self.consent is None:
             self.consent = _DEFAULT_CONSENT[self.access_class]
         elif self.consent not in _VALID_CONSENT:
@@ -98,5 +114,6 @@ class XsiamOperationSchema(BaseModel):
             "access_class": self.access_class,
             "consent": self.consent,
             "path_params": self.path_params,
+            "path_param_allowlist": self.path_param_allowlist,
             "tags": self.tags,
         }

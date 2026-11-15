@@ -146,7 +146,7 @@ steps:
     mitre_technique: "T1078"
     # ROOT — links from the AgentiX orchestrator CGO. Identity-plane sign-in is
     # OS-agnostic in origin.
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -190,7 +190,7 @@ steps:
       echo cortexsim-apb001-cloud-arm-emitted
     identity: svc-backup
     mitre_technique: "T1550.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -212,7 +212,7 @@ steps:
       echo cortexsim-apb001-action-coverage-checked
     identity: root
     mitre_technique: "T1078"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -238,7 +238,7 @@ steps:
       echo cortexsim-apb001-terminal-audit-complete
     identity: root
     mitre_technique: "T1078"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-04
       pivot: shared_entity

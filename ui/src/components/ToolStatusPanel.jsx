@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { getTools, installTool, startTool, stopTool } from '../api/client.js'
+import { getTools, installTool, startTool, stopTool, INSTALL_TIMEOUT_MS } from '../api/client.js'
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -112,6 +112,35 @@ function ToolRow({ tool, onAction, actionInProgress }) {
   )
 }
 
+// ─── Install All helpers ──────────────────────────────────────────────────────
+
+/** How long to wait before asking again after 409 INSTALL_IN_PROGRESS. */
+export const INSTALL_RETRY_MS = 5000
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Install one tool, waiting out another install that is still running.
+ * Gives up after one install budget of waiting and throws the last refusal, so
+ * a tool that never got its turn is reported, not skipped.
+ */
+async function installWaitingOutBusy(name) {
+  const deadline = Date.now() + INSTALL_TIMEOUT_MS
+  for (;;) {
+    try {
+      return await installTool(name)
+    } catch (err) {
+      if (err?.code !== 'INSTALL_IN_PROGRESS' || Date.now() + INSTALL_RETRY_MS > deadline) throw err
+      await sleep(INSTALL_RETRY_MS)
+    }
+  }
+}
+
+function describeInstallError(err) {
+  const text = err?.message || 'install failed'
+  return err?.code && !text.includes(err.code) ? `${text} [${err.code}]` : text
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 5000
@@ -165,22 +194,36 @@ export default function ToolStatusPanel({ onMessage }) {
   }, [fetchTools, onMessage])
 
   // ── Install All ───────────────────────────────────────────────────────────
+  // SimCore runs ONE install at a time and answers 409 INSTALL_IN_PROGRESS to a
+  // second request. So each tool is awaited for a build's time, a 409 is waited
+  // out and retried rather than skipped, and the closing message counts what
+  // actually installed. The old loop swallowed every error and always said
+  // "All tools installed".
   const handleInstallAll = useCallback(async () => {
     const notInstalled = tools.filter(t => t.status === 'not_installed')
     if (notInstalled.length === 0) return
-    if (onMessage) onMessage(`Installing ${notInstalled.length} tool(s)…`, 'info')
+    if (onMessage) onMessage(`Installing ${notInstalled.length} tool(s), one at a time…`, 'info')
+    const failed = []
     for (const tool of notInstalled) {
       const name = tool.tool_name || tool.name
       setActionInProgress(name)
       try {
-        await installTool(name)
-      } catch {
-        /* continue with others */
+        await installWaitingOutBusy(name)
+      } catch (err) {
+        failed.push(`${name} (${describeInstallError(err)})`)
       }
     }
     setActionInProgress(null)
     fetchTools()
-    if (onMessage) onMessage('All tools installed', 'success')
+    if (!onMessage) return
+    if (failed.length === 0) {
+      onMessage(`All ${notInstalled.length} tools installed`, 'success')
+    } else {
+      onMessage(
+        `Installed ${notInstalled.length - failed.length} of ${notInstalled.length}. Not installed: ${failed.join('; ')}`,
+        'error',
+      )
+    }
   }, [tools, fetchTools, onMessage])
 
   // ── Summary counts ────────────────────────────────────────────────────────

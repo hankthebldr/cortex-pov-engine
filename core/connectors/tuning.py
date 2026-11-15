@@ -41,6 +41,9 @@ AUTO_RECONCILE_MAX_PULLS_PER_SWEEP = ("CORTEXSIM_AUTO_RECONCILE_MAX_PULLS_PER_SW
 XSIAM_MAX_QUERIES_PER_DAY = ("CORTEXSIM_XSIAM_MAX_QUERIES_PER_DAY", 500)
 #: How long a tripped quota breaker stays open before any path may query again.
 XSIAM_BREAKER_COOLDOWN = ("CORTEXSIM_XSIAM_BREAKER_COOLDOWN", 900)
+#: Per-tenant HTTP request rate (token bucket), charged at every tenant egress
+#: point. The daily query ledger counts queries; this bounds the request burst.
+XSIAM_MAX_REQUESTS_PER_MINUTE = ("CORTEXSIM_XSIAM_MAX_REQUESTS_PER_MINUTE", 60)
 
 #: One budget unit is one ``runner(query)`` call, which is one
 #: ``start_xql_query`` PLUS up to 21 ``get_query_results`` polls
@@ -89,3 +92,7 @@ def xsiam_max_queries_per_day(override: Optional[int] = None) -> int:
 
 def xsiam_breaker_cooldown(override: Optional[int] = None) -> int:
     return max(0, _int(XSIAM_BREAKER_COOLDOWN, override))
+
+
+def xsiam_max_requests_per_minute(override: Optional[int] = None) -> int:
+    return max(1, _int(XSIAM_MAX_REQUESTS_PER_MINUTE, override))

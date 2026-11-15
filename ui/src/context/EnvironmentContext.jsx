@@ -93,7 +93,7 @@ const DEFAULT_ENV = {
   health: { hostname: '', version: 'v1.0', sensors: {}, tenantHealth: null },
   apiError: null,
   healthModel: null,
-  errors: { scenarios: null, agents: null, tenants: null },
+  errors: { scenarios: null, runs: null, agents: null, tenants: null },
   scenarios: [],
   planes: [],
   runs: [],
@@ -150,7 +150,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Per-list fetch failures. A failed fetch is NOT an empty list: the
   // stale-pointer guards below only trust a list that actually arrived, and
   // surfaces can say "could not load" instead of "none registered".
-  const [errors, setErrors] = useState({ scenarios: null, agents: null, tenants: null })
+  const [errors, setErrors] = useState({ scenarios: null, runs: null, agents: null, tenants: null })
   const setListError = useCallback((key, err) => {
     setErrors((e) => (e[key] === err ? e : { ...e, [key]: err }))
   }, [])
@@ -173,12 +173,24 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       .finally(() => setLoading((l) => ({ ...l, scenarios: false })))
   }, [setListError])
 
+  // The summary projection (OPS-06). This list is polled every 10 s by every
+  // open console, and the full shape carried every run's whole transcript on
+  // every tick. Rows here therefore carry NO `output` on a current SimCore
+  // (`output_bytes` + `output_tail` instead): a surface that needs a run's
+  // transcript reads GET /api/runs/{id} for that run — RunDetailView,
+  // useRunStepTail and RunTopologyView all do. An older SimCore ignores the
+  // parameter and returns the full shape, which every consumer still handles.
+  // A failed read keeps the last list that arrived and records why, so a
+  // surface can say "runs did not load" instead of "never ran".
   const refreshRuns = useCallback(() => {
-    return getRuns()
-      .then((data) => setRuns(Array.isArray(data) ? data : []))
-      .catch(() => {})
+    return getRuns({ fields: 'summary' })
+      .then((data) => {
+        setRuns(Array.isArray(data) ? data : [])
+        setListError('runs', null)
+      })
+      .catch((err) => setListError('runs', err?.message || 'run list failed'))
       .finally(() => setLoading((l) => ({ ...l, runs: false })))
-  }, [])
+  }, [setListError])
 
   // On failure the last list that DID arrive is kept (it is the best-known
   // roster) and the error is recorded — folding the failure into [] used to
@@ -263,10 +275,13 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Global run poll — not tab-gated (drives the global LIVE pill everywhere).
   // The health probe rides the same tick so the unreachable banner clears
   // itself the moment SimCore comes back, without an operator reload.
+  // So does the agent list: the header's agent chip states whether the active
+  // beacon is polling, on every surface, and a list read once at page load
+  // would keep saying "online" about a beacon that stopped mid-POV.
   useEffect(() => {
-    const t = setInterval(() => { refreshRuns(); refreshHealth() }, runPollMs)
+    const t = setInterval(() => { refreshRuns(); refreshHealth(); refreshAgents() }, runPollMs)
     return () => clearInterval(t)
-  }, [refreshRuns, refreshHealth, runPollMs])
+  }, [refreshRuns, refreshHealth, refreshAgents, runPollMs])
 
   // Re-scope health when the active tenant changes.
   useEffect(() => {
@@ -284,6 +299,19 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       const next = first ? (first.name || first.id) : null
       setTenantId(next)
       writeLS(LS_TENANT, next)
+      return
+    }
+    // NOTHING SELECTED YET — the gap the agent branch below closed for agents.
+    // This effect only ever repaired a STALE id, so a fresh browser on a
+    // SimCore with one registered tenant sat on "no tenant bound" in the
+    // header while Get started, which reads the LIST, said "Connected to
+    // <name>". Only the one-tenant case binds itself: with several, picking
+    // silently would name a tenant the DC did not choose, and an honest
+    // "none" is the better of the two.
+    if (!tenantId && tenants.length === 1) {
+      const only = tenants[0].name || tenants[0].id
+      setTenantId(only)
+      writeLS(LS_TENANT, only)
     }
   }, [loading.tenants, errors.tenants, tenants, tenantId])
 

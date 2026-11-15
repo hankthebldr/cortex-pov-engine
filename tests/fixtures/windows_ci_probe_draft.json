@@ -1,0 +1,70 @@
+{
+  "name": "CortexSim CI Windows probe",
+  "plane": "EDR",
+  "author": "ci-windows-native-e2e",
+  "tags": ["ci", "windows-native-e2e"],
+  "uc_ref": "UCS-EDR-02",
+  "tc_ref": "TC-EDR-03",
+  "mitre_tactic": "TA0002",
+  "mitre_tactic_name": "Execution",
+  "mitre_technique": "T1059.001",
+  "mitre_technique_name": "PowerShell",
+  "steps": [
+    {
+      "id": "step-01",
+      "name": "CI marker write, PowerShell, expect rc 0",
+      "command": "Set-Content -LiteralPath \"$env:ProgramData\\CortexSim\\ci-marker.txt\" -Value ok; Write-Output cortexsim-ci-marker",
+      "mitre_technique": "T1059.001",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    },
+    {
+      "id": "step-04",
+      "name": "Native writes stderr and exits 0, expect rc 0 (BEACON-05)",
+      "command": "cmd.exe /c \"echo progress 1>&2 & exit 0\"",
+      "mitre_technique": "T1059.003",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    },
+    {
+      "id": "step-02",
+      "name": "Native exits 3, expect rc 3",
+      "command": "cmd.exe /c exit 3",
+      "mitre_technique": "T1059.003",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    },
+    {
+      "id": "step-03",
+      "name": "Cmdlet non-terminating error, expect not_run in pull (fail-fast after step-02)",
+      "command": "Get-Process -Name cortexsim-no-such-process",
+      "mitre_technique": "T1059.001",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    }
+  ]
+}

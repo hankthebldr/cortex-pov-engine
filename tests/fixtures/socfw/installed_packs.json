@@ -1,0 +1,17 @@
+[
+  {
+    "id": "soc-optimization-unified",
+    "name": "SOC Optimization Unified",
+    "currentVersion": "3.31.4"
+  },
+  {
+    "id": "soc-framework-nist-ir",
+    "name": "SOC Framework NIST IR",
+    "currentVersion": "1.0.0"
+  },
+  {
+    "id": "soc-crowdstrike-falcon",
+    "name": "SOC CrowdStrike Falcon",
+    "currentVersion": "2.2.7"
+  }
+]

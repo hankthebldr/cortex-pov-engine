@@ -191,7 +191,14 @@ steps:
       pivot: "process_lineage"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: 'ssh -N -L 8443:127.0.0.1:443 localhost'
+      # CONT-15: `ssh -N -L ...` never returns — -N holds the tunnel open — so
+      # the step hung until the run was aborted. The forward is now attempted
+      # non-interactively in the background, given 5 s, and stopped.
+      windows: |
+        $p = Start-Process -FilePath ssh.exe -ArgumentList '-o','BatchMode=yes','-o','ConnectTimeout=3','-o','StrictHostKeyChecking=no','-N','-L','8443:127.0.0.1:443','localhost' -PassThru -NoNewWindow
+        Wait-Process -Id $p.Id -Timeout 5 -ErrorAction SilentlyContinue
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        Write-Output 'cortexsim-edr-005-ssh-local-forward-attempted'
       macos: 'ssh -N -D 1080 localhost'
     expected_detections:
       - plane: EDR

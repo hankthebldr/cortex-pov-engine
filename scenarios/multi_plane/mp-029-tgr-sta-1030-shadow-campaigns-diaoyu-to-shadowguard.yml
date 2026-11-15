@@ -194,7 +194,7 @@ indicators:
 steps:
   - id: step-01
     name: "Lure ZIP extracted and its same-named executable run beside a zero-byte pic1.png"
-    command: |
+    command: &mp029-step-01-windows |
       $d = Join-Path $env:TEMP 'cortexsim-mp-029'
       $lure = 'Politsei- ja Piirivalveameti organisatsiooni struktuuri muudatused'
       New-Item -ItemType Directory -Force -Path "$d\stage" | Out-Null
@@ -206,6 +206,10 @@ steps:
       $global:LASTEXITCODE = 0
       Write-Output cortexsim-mp-029-lure-executed
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp029-step-01-windows
       linux: |
         D=/tmp/cortexsim-mp-029
         LURE='Politsei- ja Piirivalveameti organisatsiooni struktuuri muudatused'
@@ -235,7 +239,7 @@ steps:
 
   - id: step-02
     name: "Diaoyu environment checks — five EDR process names, screen width, decoy presence"
-    command: |
+    command: &mp029-step-02-windows |
       $d = Join-Path $env:TEMP 'cortexsim-mp-029\run'
       foreach ($p in 'Avp','SentryEye','EPSecurityService','SentinelUI','NortonSecurity') { Get-Process -Name $p -ErrorAction SilentlyContinue | Out-Null }
       tasklist.exe /FI "IMAGENAME eq SentinelUI.exe" /NH | Out-File -FilePath "$d\edr-check.txt"
@@ -244,6 +248,10 @@ steps:
       $global:LASTEXITCODE = 0
       Write-Output cortexsim-mp-029-environment-checks-done
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp029-step-02-windows
       linux: |
         D=/tmp/cortexsim-mp-029/run
         ps -eo comm > "$D/proc.txt"
@@ -267,7 +275,7 @@ steps:
 
   - id: step-03
     name: "Pull image-named stages (padeqav/WordPress URI shape) from the lab stage host into the lure directory"
-    command: |
+    command: &mp029-step-03-windows |
       if (-not $env:STAGE_HOST) { $env:STAGE_HOST = '127.0.0.1' }
       $d = Join-Path $env:TEMP 'cortexsim-mp-029\run'
       $base = "http://$($env:STAGE_HOST)/padeqav/WordPress/refs/heads/master/wp-includes/images"
@@ -277,6 +285,10 @@ steps:
       $global:LASTEXITCODE = 0
       Write-Output cortexsim-mp-029-stages-written
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp029-step-03-windows
       linux: |
         D=/tmp/cortexsim-mp-029/run
         BASE="http://${STAGE_HOST:-127.0.0.1}/padeqav/WordPress/refs/heads/master/wp-includes/images"
@@ -299,7 +311,7 @@ steps:
 
   - id: step-04
     name: "Resolve TGR-STA-1030 domains through the operator-named lab resolver (no session opened)"
-    command: |
+    command: &mp029-step-04-windows |
       if (-not $env:LAB_RESOLVER) { $env:LAB_RESOLVER = '127.0.0.1' }
       nslookup abwxjp5.me $env:LAB_RESOLVER
       nslookup msonline.help $env:LAB_RESOLVER
@@ -307,7 +319,14 @@ steps:
       nslookup zamstats.me $env:LAB_RESOLVER
       $global:LASTEXITCODE = 0
       Write-Output cortexsim-mp-029-c2-domains-looked-up
+      # Last Windows step: a pull run never executes scenario cleanup, so the
+      # lure/stage directory steps 01-03 wrote is removed here.
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path (Join-Path $env:TEMP 'cortexsim-mp-029')
     platform_variants:
+      # The Windows text is the primary above (an alias, so it cannot drift).
+      # Declared explicitly because the Windows resolver only takes a
+      # primary on a windows-ONLY step, and this one also runs on linux.
+      windows: *mp029-step-04-windows
       linux: |
         dig +short abwxjp5.me @${LAB_RESOLVER:-127.0.0.53}
         dig +short msonline.help @${LAB_RESOLVER:-127.0.0.53}
@@ -572,8 +591,12 @@ steps:
 
 cleanup:
   commands:
-    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Remove-Item -Recurse -Force -Path (Join-Path $env:TEMP '\\''cortexsim-mp-029'\\'') -ErrorAction SilentlyContinue' || true"
     - "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
+    # Native Windows teardown (CONT-11): the bash-wrapped pwsh form was skipped
+    # by the Windows bundle. The bash bundle and the K8s bootstrap do NOT run
+    # this line: push_generator withholds a Windows-only cleanup line from the
+    # POSIX target and names it in a `# skipped (Windows-only)` comment.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp-029" rd /s /q "%TEMP%\cortexsim-mp-029"'
 
 author: "Henry Reed"
 created: "2026-10-27"

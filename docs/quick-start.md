@@ -133,7 +133,8 @@ Sanity-check the console on first install:
 |---|---|
 | Default theme | Page loads with dark "Mission Ops Console" UI. (`?theme=legacy` reveals the old light UI as fallback.) |
 | Help overlay | `⌘/` opens the keyboard reference. |
-| Command palette | `⌘K` opens the search/jump palette. |
+| Search | `⌘K` opens search: pages, components, scenarios and TTP cards. |
+| Instance status | The header's first control reads this POVengine's status (icon + word), its uptime and live counts — running, agents online, runs, issues. A RUNNING pill appears only while a run is live and opens it. |
 | Filter palette | `⌘F` opens the multi-criteria filter palette. |
 | Pinned scenarios | Pin a scenario from any card or the drawer → reload → it's still pinned (localStorage). |
 | Coverage views | ATT&CK Coverage tab → "PANW Stack" toggle switches to the product × kill chain matrix. |

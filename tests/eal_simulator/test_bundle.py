@@ -352,7 +352,8 @@ class TestBundleEndToEnd:
             assert "secret-not-in-bundle" not in (bundle / "manifest.json").read_text()
             _run_send(bundle, env={"CORTEXSIM_COLLECTOR_TOKEN": "runtime-token"})
 
-        assert sink.received[0]["headers"]["authorization"] == "Bearer runtime-token"
+        # The XSIAM HTTP log collector takes the bare API key, no scheme.
+        assert sink.received[0]["headers"]["authorization"] == "runtime-token"
 
     def test_batch_mode_posts_one_ndjson_body(self, tmp_path):
         with _Sink() as sink:

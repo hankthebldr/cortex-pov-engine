@@ -245,8 +245,18 @@ customer's XQL quota.
 | `get_query_results_stream` | read | ✅ | Pull > 1000-row result sets (gzipped NDJSON) |
 | `get_quota` | read | ✅ | Preflight guard before large sweeps |
 
-Legend: ✅ read (in harness). **All four XQL calls are read-only and IN SCOPE.** There is no
-push/ingest call in this family — XQL never writes to the tenant.
+Legend: ✅ read (in harness). The four calls are IN SCOPE, but **XQL is not read-only**.
+The query language's `target` stage writes the query's result into a dataset or a lookup:
+`| target type=lookup append=false <name>` *replaces* an existing lookup, which may be one the
+customer's own correlation rules read. (An earlier version of this page said "XQL never writes
+to the tenant". That was wrong.) SimCore therefore **refuses any query carrying a `target`
+stage with `400 XQL_WRITE_STAGE_REFUSED`** on every path that sends a query string to a
+tenant: `POST /api/xsiam/tenants/{name}/xql`, the generic executor for `OP-XQL-START-XQL-QUERY`
+(now tagged body-inspected), the verifier's row/rows runners (scenario `verification_xql` and
+assertion probes), and Composer draft save. The guard is
+`integrations.xsiam.client.refuse_xql_write_stages`, enforced inside `start_xql_query`. Its lexer
+is fail-closed: it splits on `|` under 16 readings of quotes (`"`, `'`, backtick), comments and
+escapes, and refuses if any one reading finds a `target` stage.
 
 ---
 

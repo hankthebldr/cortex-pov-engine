@@ -102,18 +102,6 @@
   border-color: var(--crit);
 }
 
-.theme-console .uctc .adapter-registry__stats { gap: 26px; }
-.theme-console .uctc .stack-coverage__stat-value {
-  font-family: var(--font-display);
-  color: var(--tx);
-}
-.theme-console .uctc .stack-coverage__stat-label {
-  color: var(--tx3);
-}
-.uctc .uctc__tone-detected.stack-coverage__stat-value,
-.uctc .stack-coverage__stat-value.uctc__tone-detected { color: var(--ac-ink); }
-.uctc .stack-coverage__stat-value.uctc__tone-pending { color: var(--warn); }
-
 /* ── mode bar / tabs ──────────────────────────────────────── */
 
 .uctc__modebar {
@@ -122,58 +110,13 @@
   margin-bottom: 16px;
 }
 
-.theme-console .uctc .lab__segmented {
-  background: var(--s2);
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  height: 32px;
-}
-.theme-console .uctc .lab__segmented button {
-  color: var(--tx2);
-}
-.theme-console .uctc .lab__segmented button:hover:not(:disabled) {
-  color: var(--tx);
-  background: var(--s3);
-}
-.theme-console .uctc .lab__segmented button.is-active {
-  background: var(--ac-soft);
-  color: var(--ac-ink);
-  font-weight: 600;
-}
-
 .uctc__modebar-meta { color: var(--tx3); }
 .uctc .uctc__link { color: var(--ac-ink); }
 .uctc .uctc__link:hover { color: var(--tx); }
 .uctc .uctc__link:focus-visible { outline-color:var(--tx2); }
 .uctc .uctc__muted { color: var(--tx3); }
 
-/* ── class strip ──────────────────────────────────────────── */
-
-.theme-console .uctc .uctc__classstrip {
-  background: var(--s1);
-  border: 1px solid var(--bd);
-  border-radius: 10px;
-  padding: 14px 16px;
-}
-.uctc .uctc__classstrip-head { color: var(--tx2); }
-.theme-console .uctc .uctc__classcell {
-  background: var(--s2);
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-.theme-console .uctc .uctc__classcell:hover { border-color: var(--bd2); }
-.theme-console .uctc .uctc__classcell.is-active {
-  border-color:var(--ac-str);
-  background: var(--ac-soft);
-}
-.uctc .uctc__classcell:focus-visible { outline-color:var(--tx2); }
-.uctc .uctc__classcell-id { color: var(--tx); font-weight: 700; }
-.uctc .uctc__classcell-num { color: var(--tx2); }
-.uctc .uctc__classcell-mech { color: var(--tx3); }
-.uctc .uctc__classstrip-legend { color: var(--tx3); }
-
-.theme-console .uctc .uctc__bar-seg--detected { background:var(--pos); }
+.theme-console .uctc .uctc__bar-seg--bound { background: var(--tx3); }
 .theme-console .uctc .uctc__bar-seg--pending { background: var(--warn); }
 .theme-console .uctc .uctc__bar-seg--hairline { background: var(--bd2); }
 .theme-console .uctc .coverage__summary-bar {
@@ -181,9 +124,6 @@
   border: 1px solid var(--bd);
 }
 
-.uctc__legendswatch--detected { background:var(--pos); }
-.uctc__legendswatch--pending { background: var(--warn); }
-.uctc__legendswatch--hairline { background: var(--bd2); }
 
 /* ── filters + search ─────────────────────────────────────── */
 
@@ -453,9 +393,7 @@
 .uctc .uctc__assertcard-id { color: var(--ac-ink); }
 .uctc .uctc__assertcard-name { color: var(--tx); }
 
-/* ── mechanisms mode ──────────────────────────────────────── */
-
-.uctc .uctc__mech-prose { color: var(--tx2); }
+/* ── assertion panel (Mechanisms tab footnote) ──────────── */
 
 .theme-console .uctc .uctc__mechcard {
   background: var(--s1);
@@ -463,34 +401,216 @@
   border-radius: 8px;
   padding: 14px 16px;
 }
-.uctc .uctc__mechcard-eyebrow { color: var(--tx3); }
 .uctc .uctc__mechcard-title { color: var(--tx); font-family: var(--font-display); }
 .uctc .uctc__mechcard-proves { color: var(--tx2); }
-.uctc .uctc__mechcard-score-num { color: var(--ac-ink); font-family: var(--font-display); }
-.uctc .uctc__mechcard-score-den { color: var(--tx3); }
-.uctc .uctc__mechcard-score-label { color: var(--tx3); }
 .uctc .uctc__mechcard-oosprose { color: var(--tx2); }
 .theme-console .uctc .uctc__mechcard-oos { border-top: 1px solid var(--bd); }
 .uctc .uctc__oos-list { color: var(--tx2); }
 .uctc .uctc__oos-count { color: var(--tx3); }
 
-/* ── coverage mode ────────────────────────────────────────── */
+/* ── proof path: tabs, tiles, mechanisms, coverage, gaps (design C5 / C6) ──
+   Tokens only. Every status is the kit StatusIcon (icon + word); this file
+   only lays the surfaces out. The selected tab is the green wash and line
+   (--ac-soft / --ac-line), never a filled button. */
 
-.uctc .uctc__coverage-hint { color: var(--tx3); }
-.uctc .uctc__covrow { color: var(--tx); border-radius: 5px; }
-.uctc .uctc__covrow:hover {
-  background: var(--s2);
-  border-color: var(--bd);
+.uctc .uctc__lede {
+  margin: 0 0 14px;
+  max-width: 900px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tx2);
 }
-.uctc .uctc__covrow:focus-visible { outline-color:var(--tx2); }
-.uctc .uctc__covrow-name { color: var(--tx2); }
-.uctc .uctc__covrow-num { color: var(--tx3); }
 
-/* ── gaps mode ────────────────────────────────────────────── */
+.uctc .uctc__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.theme-console .uctc .uctc__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  font: 600 12px/1 var(--font-ui);
+  color: var(--tx2);
+  cursor: pointer;
+}
+.theme-console .uctc .uctc__tab:hover { border-color: var(--bd2); color: var(--tx); }
+.theme-console .uctc .uctc__tab.is-active {
+  background: var(--ac-soft);
+  border-color: var(--ac-line);
+  color: var(--tx);
+}
+.uctc .uctc__tab:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.uctc .uctc__tab-count { font-size: 10px; font-weight: 500; color: var(--tx3); }
 
-.uctc .uctc__gaps-headline { color: var(--tx); }
-.uctc .uctc__gaps-headline .mono { color: var(--warn); font-family: var(--font-display); }
-.uctc .uctc__toggle { color: var(--tx2); }
+.uctc .uctc__notice {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: var(--s2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+
+/* Index: four tiles over the table */
+.uctc .uctc__tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 16px;
+  background: var(--bd);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.uctc .uctc__tile { padding: 13px 15px; background: var(--s1); min-width: 0; }
+.uctc .uctc__tile-value { font-size: 22px; font-weight: 700; line-height: 1; color: var(--tx); }
+.uctc .uctc__tile-value--partial { color: var(--warn); }
+.uctc .uctc__tile-value--blocked { color: var(--crit); }
+.uctc .uctc__tile-label { margin-top: 7px; font: 600 12px/1.2 var(--font-ui); color: var(--tx); }
+.uctc .uctc__tile-sub { margin-top: 3px; font-size: 11px; line-height: 1.35; color: var(--tx3); }
+
+.uctc .uctc__rail-verdict { margin: 2px 0 4px; }
+.uctc .uctc__rail-verdict .kit-status__word { font-size: 11px; }
+.uctc .uctc__tone-bound { color: var(--tx2); }
+.uctc .uctc__cell-verdict { white-space: nowrap; }
+.uctc .uctc__cell-runs { min-width: 150px; }
+.uctc .uctc__runs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--tx2);
+}
+
+/* Tab panels share one lede and one table frame */
+.uctc .uctc__tab-lede {
+  margin: 0 0 14px;
+  max-width: 900px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.uctc .uctc__tab-foot { margin: 0; padding: 10px 14px; font-size: 11.5px; color: var(--tx3); }
+.theme-console .uctc .uctc__tablewrap--panel { margin-bottom: 16px; background: var(--s1); }
+
+/* Mechanisms */
+.uctc .uctc__mechgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.uctc .uctc__mech-card {
+  padding: 13px 14px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+}
+.uctc .uctc__mech-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.uctc .uctc__mech-card-num { font-size: 18px; font-weight: 700; color: var(--tx); }
+.uctc .uctc__mech-card-sub { margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--tx3); }
+.uctc .uctc__mech-card-state { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--bd); }
+.uctc .uctc__mech-card-note { margin-top: 4px; font-size: 10.5px; line-height: 1.45; color: var(--tx3); }
+.uctc .uctc__mech-chips { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+
+.uctc .uctc__complink,
+.uctc .uctc__gaplink {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font: 500 11.5px/1.3 var(--font-ui);
+  color: var(--tx2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.uctc .uctc__complink:hover,
+.uctc .uctc__gaplink:hover { color: var(--tx); text-decoration: underline; }
+.uctc .uctc__complink:focus-visible,
+.uctc .uctc__gaplink:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+
+/* Coverage: the proof path, then a row per test case */
+.uctc .uctc__funnel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  background: var(--bd);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.uctc .uctc__funnel-step { padding: 13px 15px; background: var(--s1); min-width: 0; }
+.uctc .uctc__funnel-figure { display: flex; align-items: baseline; gap: 6px; }
+.uctc .uctc__funnel-num { font-size: 22px; font-weight: 700; line-height: 1; color: var(--tx); }
+.uctc .uctc__funnel-num--detected { color: var(--pos-ink); }
+.uctc .uctc__funnel-of { font-size: 11px; color: var(--tx3); }
+.uctc .uctc__funnel-label { margin-top: 7px; font: 600 12px/1.2 var(--font-ui); color: var(--tx); }
+.uctc .uctc__funnel-bar { height: 4px; margin-top: 9px; background: var(--s3); border-radius: 2px; overflow: hidden; }
+.uctc .uctc__funnel-fill { height: 4px; background: var(--tx3); }
+.uctc .uctc__funnel-fill--detected { background: var(--pos); }
+.uctc .uctc__funnel-cant { margin-top: 6px; font-size: 10.5px; color: var(--tx3); }
+
+.uctc .uctc__cov-uc { display: block; font-size: 10px; color: var(--tx3); }
+.uctc .uctc__cov-title { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uctc .uctc__stall { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* Gaps */
+.uctc .uctc__gapfilters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.theme-console .uctc .uctc__gapfilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  font: 600 11px/1 var(--font-ui);
+  color: var(--tx);
+  cursor: pointer;
+}
+.theme-console .uctc .uctc__gapfilter:hover { border-color: var(--bd2); }
+.theme-console .uctc .uctc__gapfilter.is-active { background: var(--ac-soft); border-color: var(--ac-line); }
+.uctc .uctc__gapfilter:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.uctc .uctc__gapfilter-count { font-size: 10px; font-weight: 500; color: var(--tx3); }
+
+.uctc .uctc__gaplist {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+}
+.uctc .uctc__gaprow {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--bd);
+}
+.uctc .uctc__gaprow:first-child { border-top: 0; }
+.uctc .uctc__gaprow-body { min-width: 0; }
+.uctc .uctc__gaprow-head { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.uctc .uctc__gaprow-title { font-size: 12px; line-height: 1.35; color: var(--tx); }
+.uctc .uctc__gaprow-why { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.5; color: var(--tx2); }
+.uctc .uctc__gaprow--empty { display: block; padding: 18px 16px; font-size: 12.5px; color: var(--tx2); }
+
+@media (max-width: 760px) {
+  .uctc .uctc__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uctc .uctc__funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uctc .uctc__gaprow { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
 
 /* ── empty / degraded states ──────────────────────────────── */
 

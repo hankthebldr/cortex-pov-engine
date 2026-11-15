@@ -11,6 +11,7 @@ import { preflightScenario, PF, PF_CHIP, PF_LABEL } from './readiness/scenarioPr
  *   • can this target run the platforms the steps declare?
  *   • will the declared execution identity actually resolve on that host?
  *   • if the scenario carries a scoreable threshold, can anything measure it?
+ *   • are the ingestion doors its detections read from open? (advisory, never blocks)
  *
  * It does NOT disable Launch. LaunchView's `blockers` list owns that, and it
  * only ever lists conditions SimCore itself will refuse. A preflight that
@@ -28,11 +29,17 @@ export default function ScenarioPreflightCard({
   integrations = null,
   identity = '',
   pushFormat = 'bash',
+  doorReadiness = null,
+  doorRows = null,
+  doorAgentId = null,
+  doorError = null,
   onNavigate = null,
 }) {
   const pf = useMemo(() => preflightScenario({
     scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat,
-  }), [scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat])
+    doorReadiness, doorRows, doorAgentId, doorError,
+  }), [scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat,
+       doorReadiness, doorRows, doorAgentId, doorError])
 
   if (!scenario) return null
 

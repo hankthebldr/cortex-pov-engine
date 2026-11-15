@@ -1,0 +1,27 @@
+title: "sshpass Credential-Stuffing Burst Against an Unreachable Host \u2014 Suspicious sshpass command execution"
+id: ttp-2026-0555-abioc-01
+status: experimental
+description: |
+  PANW built-in XDR Analytics BIOC. The name is the built-in alert name verbatim so the matcher keys on it. From its reference page (https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/suspicious-sshpass-command-execution, fetched 2026-11-13): activation period 14 Days, training period 30 Days, test period N/A (single event), deduplication period 1 Day, required data XDR Agent, severity Low, ATT&CK Credential Access (TA0006) and Brute Force: Credential Stuffing (T1110.004). The page's description, verbatim: 'The sshpass command was executed, This could be an attempt to check for credential stuffing.' The page publishes no trigger predicate, threshold or field name. SIM-EDR-029 declares it on step-02 on that basis: a single-event detector whose described trigger the step performs for real, six times. It has not been observed in a lab run. Low issues never create or join a case. suppression_window_seconds carries the page's one-day deduplication period; the page does not say what the deduplication is keyed on. The logic below approximates the trigger for hunting; it is not the built-in's code.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "sshpass"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: low

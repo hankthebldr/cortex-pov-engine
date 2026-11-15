@@ -28,8 +28,8 @@ type Helpers = {
  * redesign did not change. What changed is where each one lives:
  *
  *   - most are now first-class destinations in the rail;
- *   - "Launch" moved inside the guided flow (a hidden destination reachable
- *     from Library and ⌘K), so it is addressed by route rather than by rail;
+ *   - "Launch gate" is a rail item, but a spec arms a scenario with
+ *     `?arm=`, so it is reached by route;
  *   - "Live" / "Evidence" became TABS of a run, not top-level views.
  *
  * Destination-level views navigate by CLICKING the rail, so the nav itself stays
@@ -38,11 +38,16 @@ type Helpers = {
  */
 const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string>; hidden?: boolean }> = {
   'Get started': { dest: 'start' },
-  'Targets': { dest: 'agents' },
-  // 'library' is the Simulate rail item — the id is the route, the label moved.
+  // Agents is a component page now (design v26 §4.2); its agent list is the
+  // Fleet tab. It sits in the Components submenu, collapsed on a fresh load,
+  // so it is addressed by route.
+  'Targets': { dest: 'component-agents', params: { tab: 'fleet' }, hidden: true },
+  // 'library' is the Scenarios rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
-  // Coverage is a tab inside Results since the task-rail pass, not a rail item.
-  'ATT&CK Coverage': { dest: 'coverage', hidden: true },
+  // The coverage route is the Dashboards rail item (design C8); its MITRE
+  // ATT&CK matrix is a tab, fetched when that tab opens, so it is addressed by
+  // route with `?tab=mitre`.
+  'ATT&CK Coverage': { dest: 'coverage', params: { tab: 'mitre' } },
   // `hidden` means "routable but not in the rail", so gotoView addresses it by
   // URL instead of clicking a button that does not exist. Three of these are
   // hidden as of the POVengine IA:
@@ -55,7 +60,9 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   // surfaces still exist and still have behaviour worth guarding. What changed
   // is how you reach them, and that is exactly what this table is for.
   'Environments': { dest: 'environments', hidden: true },
-  'Launch': { dest: 'guided', hidden: true },
+  // The Launch gate (design v33): the one place a run starts. The old
+  // 'Launch' entry pointed at the guided flow, which now redirects here.
+  'Launch gate': { dest: 'preflight' },
   'Live': { dest: 'runs', params: { tab: 'live' } },
   'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
   'EAL Plugins': { dest: 'eal', hidden: true },
