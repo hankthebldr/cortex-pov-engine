@@ -12,7 +12,8 @@
  * Each verb carries its icon (design v33 C10). Pass `verb` and the button
  * draws that verb's icon before its label; the label is the verb unless
  * children say otherwise (a busy state such as "Launching…"). Anything that
- * only navigates is a link, not a Button.
+ * only navigates is a link, not a Button. `href` renders the same control as
+ * an <a>, for a file the browser downloads.
  */
 import React from 'react'
 import Icon from './Icon.jsx'
@@ -21,6 +22,8 @@ void React
 
 export const VERBS = Object.freeze([
   'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+  // Agents › Fleet (#339): managing agent rows.
+  'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
 ])
 
 /** The kit Icon each verb carries. */
@@ -33,14 +36,26 @@ export const VERB_ICONS = Object.freeze({
   'Read back': 'rotate',
   'Open results': 'external',
   'Abort run': 'stop',
+  Deploy: 'upload',
+  'Set active': 'target',
+  Download: 'download',
+  Copy: 'copy',
+  Delete: 'trash',
+  Select: 'select',
+  Refresh: 'refresh',
 })
 
-export default function Button({ variant = 'secondary', type = 'button', verb, className = '', children, ...rest }) {
+export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {
   const kind = ['primary', 'secondary', 'destructive'].includes(variant) ? variant : 'secondary'
-  return (
-    <button type={type} className={`kit-btn kit-btn--${kind} ${className}`.trim()} data-verb={verb} {...rest}>
+  const cls = `kit-btn kit-btn--${kind} ${className}`.trim()
+  const body = (
+    <>
       {verb && <Icon name={VERB_ICONS[verb]} size={12} />}
       {children ?? verb}
-    </button>
+    </>
   )
+  // A file the browser saves (Download) is a link by HTML semantics; it keeps
+  // the button's look and its verb icon.
+  if (href) return <a href={href} className={cls} data-verb={verb} {...rest}>{body}</a>
+  return <button type={type} className={cls} data-verb={verb} {...rest}>{body}</button>
 }
