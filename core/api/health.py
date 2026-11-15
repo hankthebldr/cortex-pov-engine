@@ -44,7 +44,7 @@ logger = logging.getLogger("cortexsim.api.health")
 
 router = APIRouter(tags=["health"])
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 # When THIS process started. The console header states the instance's uptime,
 # and only SimCore's own clock can say it: the wall time is for display, the
