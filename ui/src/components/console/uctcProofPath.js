@@ -2,7 +2,7 @@
  * uctcProofPath — how far each detection test case has got along the proof
  * path (design C6). Pure, no React.
  *
- *   Has a scenario › Components ready › Ran › Read back › Detected
+ *   Has a scenario › Components ready › Ran › Reviewed › Detected
  *
  * Every stage is read from a SimCore API, never assumed:
  *
@@ -17,8 +17,8 @@
  *   Ran               GET /api/runs — a run of an evidencing scenario that
  *                     executed a step carrying a detection (runLifecycle). A
  *                     run whose verdict reason is `not_executed` tested nothing.
- *   Read back         readBackOf(run): SimCore recorded a tenant read for it.
- *   Detected          a read-back run with `detected_count > 0`.
+ *   Reviewed          readBackOf(run): SimCore recorded a tenant read for it.
+ *   Detected          a reviewed run with `detected_count > 0`.
  *
  * AUTHORED IS NOT PROVEN. Only "Detected" counts as covered. A source that did
  * not load makes the stages that need it `unknown` ("Can't check"), never
@@ -43,7 +43,7 @@ export const STAGE_LABELS = Object.freeze({
   scenario: 'Has a scenario',
   components: 'Components ready',
   ran: 'Ran',
-  readBack: 'Read back',
+  readBack: 'Reviewed',
   detected: 'Detected',
 })
 
@@ -52,7 +52,7 @@ export const STAGE_DONE_WORDS = Object.freeze({
   scenario: 'Authored',
   components: 'Ready',
   ran: 'Ran',
-  readBack: 'Read back',
+  readBack: 'Reviewed',
   detected: 'Detected',
 })
 
@@ -63,7 +63,7 @@ export const GAP_LABELS = Object.freeze({
   no_scenario: 'No scenario',
   component: 'Component not ready',
   never_ran: 'Never ran',
-  not_read_back: 'Not read back',
+  not_read_back: 'Not reviewed',
   not_seen: 'Not seen yet',
   unknown: "Can't check",
 })
@@ -92,7 +92,7 @@ export const GAP_CELL_WORDS = Object.freeze({
   no_scenario: 'None',
   component: 'Not ready',
   never_ran: 'Never ran',
-  not_read_back: 'Not read back',
+  not_read_back: 'Not reviewed',
   not_seen: 'Not seen yet',
 })
 
@@ -205,8 +205,8 @@ function reasonOf(run) {
  * What the runs of a test case's scenarios say, bucketed by lifecycle.
  *
  *   executed   ended having run a step that carries a detection
- *   readBack   executed and read back from the tenant
- *   detected   read back with a reported detection (`detected_count > 0`)
+ *   readBack   executed and reviewed against the tenant
+ *   detected   reviewed with a reported detection (`detected_count > 0`)
  *   inFlight   `running` (still executing, or queued) plus `waiting` (a
  *              staged push bundle that has not reported running)
  *   nothing    ended with no step that carries a detection run
@@ -235,7 +235,7 @@ export function runFacts(runs = []) {
     }
     if (lc.phase === PHASE.RUNNING) { facts.inFlight.push(run); facts.running.push(run); continue }
     if (lc.phase === PHASE.NOTHING || reason === 'not_executed') { facts.nothing.push(run); continue }
-    // A staged push bundle executes off-box: until it is read back, nothing
+    // A staged push bundle executes off-box: until it is reviewed, nothing
     // here says it ran. It is waiting (design C2b), not running.
     if (status === 'staged' && !readBackOf(run)) { facts.inFlight.push(run); facts.waiting.push(run); continue }
     facts.executed.push(run)
@@ -486,7 +486,7 @@ function orderMechanisms(list) {
 
 /**
  * A use case's verdict from its detection test cases:
- *   proven   every one detected in a read-back run
+ *   proven   every one detected in a reviewed run
  *   partial  at least one detected
  *   blocked  none detected, and a component one needs is checked and not ready
  *   unknown  none detected that we know of, and at least one could not be

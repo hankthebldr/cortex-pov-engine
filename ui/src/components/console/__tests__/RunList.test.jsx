@@ -93,9 +93,9 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     render(<RunList runs={[run({ run_id: 'f', status: 'failed', ...UNREAD })]} />)
     const words = stageWords(screen.getByTestId('run-row'))
     expect(words).toHaveLength(5)
-    expect(words.map((w) => w.split(':')[0])).toEqual(['Launched', 'Running', 'Failed', 'Read back', 'Results'])
+    expect(words.map((w) => w.split(':')[0])).toEqual(['Launched', 'Running', 'Failed', 'Reviewed', 'Results'])
     expect(words[2]).toMatch(/Failed: failed/)
-    expect(words[3]).toMatch(/Read back: not yet/)
+    expect(words[3]).toMatch(/Reviewed: not yet/)
   })
 
   it('a running run offers Open, and makes no detection claim yet', () => {
@@ -108,25 +108,25 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     expect(within(row).getByTestId('run-detections')).not.toHaveTextContent(/\d+ of \d+|\d+ \/ \d+/)
   })
 
-  it('a finished run nobody read back offers Read back as the primary action and claims nothing', () => {
+  it('a finished run nobody read back offers Review as the primary action and claims nothing', () => {
     const onReadBack = vi.fn()
     render(<RunList runs={[run({ run_id: 'u', ...UNREAD })]} onReadBack={onReadBack} />)
     const row = screen.getByTestId('run-row')
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('not read back')
+    expect(within(row).getByTestId('run-detections')).toHaveTextContent('not reviewed')
     expect(row).not.toHaveTextContent('3 of 10')
-    const act = within(row).getByRole('button', { name: 'Read back' })
+    const act = within(row).getByRole('button', { name: 'Review' })
     expect(act.className).toMatch(/kit-btn--primary/)
     fireEvent.click(act)
     expect(onReadBack).toHaveBeenCalledWith('u')
   })
 
-  it('while reading, the action reads Reading… and is disabled, and the row keeps its place', () => {
+  it('while reading, the action reads Reviewing… and is disabled, and the row keeps its place', () => {
     render(<RunList runs={[run({ run_id: 'x', scenario_id: 'SIM-EDR-008', ...UNREAD }), run({ run_id: 'u', ...UNREAD })]} reading={new Set(['u'])} />)
     const rows = screen.getAllByTestId('run-row')
     expect(rows.map((r) => r.getAttribute('data-run-id'))).toEqual(['x', 'u'])
-    const btn = within(rows[1]).getByRole('button', { name: 'Reading…' })
+    const btn = within(rows[1]).getByRole('button', { name: 'Reviewing…' })
     expect(btn).toBeDisabled()
-    expect(within(rows[1]).getByTestId('run-detections')).toHaveTextContent('reading back')
+    expect(within(rows[1]).getByTestId('run-detections')).toHaveTextContent('reviewing')
   })
 
   it('a read-back run offers Open results', () => {
@@ -140,11 +140,11 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     render(<RunList runs={[run({ run_id: 'n', status: 'aborted', delivered_at: null, output_bytes: 0, ...UNREAD })]} />)
     const row = screen.getByTestId('run-row')
     expect(within(row).getByTestId('run-detections')).toHaveTextContent('nothing ran')
-    expect(within(row).queryByRole('button', { name: /read back|open results|^open$/i })).toBeNull()
+    expect(within(row).queryByRole('button', { name: /^review$|open results|^open$/i })).toBeNull()
     expect(within(row).getByTestId('run-action')).toHaveTextContent('—')
   })
 
-  it('a run where no step that carries a detection ran says so and offers no Read back', () => {
+  it('a run where no step that carries a detection ran says so and offers no Review', () => {
     const NOT_EXECUTED = { tc_verdict: 'pending', tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }
     render(<RunList runs={[run({ run_id: 'dry', ...NOT_EXECUTED })]} />)
     const row = screen.getByTestId('run-row')
@@ -152,15 +152,15 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     const det = within(row).getByTestId('run-detections')
     expect(det).toHaveTextContent('nothing executed')
     expect(det).toHaveAttribute('title', expect.stringMatching(/no step that carries a detection ran/i))
-    expect(within(row).queryByRole('button', { name: /read back|open results/i })).toBeNull()
+    expect(within(row).queryByRole('button', { name: /^review$|open results/i })).toBeNull()
   })
 
-  it('states why a read back did not happen, and keeps Read back on offer', () => {
+  it('states why a read back did not happen, and keeps Review on offer', () => {
     const outcomes = new Map([['u', { ok: false, message: 'No tenant credential is configured, so nothing was read.' }]])
     render(<RunList runs={[run({ run_id: 'u', ...UNREAD })]} outcomes={outcomes} />)
     const row = screen.getByTestId('run-row')
     expect(row).toHaveTextContent('No tenant credential is configured')
-    expect(within(row).getByRole('button', { name: 'Read back' })).toBeEnabled()
+    expect(within(row).getByRole('button', { name: 'Review' })).toBeEnabled()
   })
 })
 

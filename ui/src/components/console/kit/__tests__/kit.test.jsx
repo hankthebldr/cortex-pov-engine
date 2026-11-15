@@ -59,8 +59,10 @@ describe('Button', () => {
 
   it('names the closed verb set from the design', () => {
     expect(VERBS).toEqual([
-      'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+      'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
       'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
+      'Switch',
+      'Pause', 'Clear', 'Screenshot',
     ])
   })
 
@@ -88,9 +90,9 @@ describe('Button', () => {
   })
 
   it('a verb button draws its icon before the verb, hidden from assistive tech', () => {
-    render(<Button variant="primary" verb="Read back" />)
-    const b = screen.getByRole('button', { name: 'Read back' })
-    expect(b).toHaveAttribute('data-verb', 'Read back')
+    render(<Button variant="primary" verb="Review" />)
+    const b = screen.getByRole('button', { name: 'Review' })
+    expect(b).toHaveAttribute('data-verb', 'Review')
     const svg = b.querySelector('svg')
     expect(svg).toHaveAttribute('data-icon', 'rotate')
     expect(svg).toHaveAttribute('aria-hidden', 'true')
@@ -156,7 +158,8 @@ describe('Icon', () => {
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
       'back', 'forward',
-      'trash', 'download', 'refresh', 'upload', 'copy', 'select',
+      'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
+      'pause', 'clear', 'camera', 'down',
     ])
   })
 

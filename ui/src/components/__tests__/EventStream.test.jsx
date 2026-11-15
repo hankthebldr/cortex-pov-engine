@@ -98,12 +98,22 @@ describe('<EventStream />', () => {
     expect(screen.queryByText(/run started/i)).not.toBeInTheDocument()
   })
 
-  it('pause button toggles to "resume"', async () => {
+  it('Pause is a pressed toggle, and the status says Paused', async () => {
     installRoutes({ 'GET /api/runs/r-test': runFixture })
     render(<EventStream runId="r-test" />)
-    const pause = screen.getByRole('button', { name: /pause/i })
+    const pause = screen.getByRole('button', { name: 'Pause' })
+    expect(pause).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(pause)
-    expect(screen.getByRole('button', { name: /resume/i })).toBeInTheDocument()
+    expect(pause).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('img', { name: 'Paused' })).toBeInTheDocument()
+  })
+
+  it('every control is a kit Button, and Pause and Clear carry their verb icons', () => {
+    installRoutes({ 'GET /api/runs/r-test': runFixture })
+    const { container } = render(<EventStream runId="r-test" />)
+    for (const b of container.querySelectorAll('button')) expect(b).toHaveClass('kit-btn')
+    expect(screen.getByRole('button', { name: 'Pause' }).querySelector('svg')).toHaveAttribute('data-icon', 'pause')
+    expect(screen.getByRole('button', { name: 'Clear' }).querySelector('svg')).toHaveAttribute('data-icon', 'clear')
   })
 
   it('clear button empties the visible buffer', async () => {

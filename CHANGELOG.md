@@ -237,6 +237,49 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   Copy, Delete, Select and Refresh) and shows liveness as a status icon and
   one word. The backend is unchanged.
 
+### Changed
+
+- **The console's "Read back" action is now "Review".** The button on Runs, on
+  a run's page, on Results, in Runs › Compare and on the UC / TC Gaps list says
+  Review, and says Reviewing… while it runs. The fourth stage of the run
+  lifecycle strip says Reviewed, and every line that said a run was or was not
+  "read back" now says reviewed or not reviewed ("Ran — not reviewed", "Not
+  reviewed yet — Review the run."). The Tenant page's tab is now Review &
+  integrations. Only the words changed: the action still asks SimCore to read
+  the tenant for the run (`POST /api/runs/{id}/reconcile`), and no route, API
+  or backend behaviour moved.
+- **A run's page speaks in one short line per state, with kit controls.** The
+  run's status line, the Results notice and the case panel now say one short
+  thing ("Finished · not reviewed", "Not reviewed — no results yet", "Not
+  reviewed"), with any detail in a tooltip. The Live tab's stream uses kit
+  buttons and status icons: its level filters are toggle buttons, Pause and
+  Clear carry their icons, the connection state reads Live, Polling,
+  Connecting, Error or Paused, and the footer's Screenshot and Download (the
+  POV report) are kit verbs. Review and Open results buttons carry their icons
+  everywhere. The kit gains the Pause, Clear and Screenshot verbs.
+
+### Fixed
+
+- **A finished run's stdout panel shows what the run printed** (#340). The
+  panel on a run's Live tab showed only the live stream, so a run that had
+  already ended said "waiting for agent…" even though SimCore had stored its
+  whole output. A complete, failed, aborted or staged run now shows that stored
+  output, one block per step, each marked Ran, Failed (exit N), Timed out or
+  Did not run with its exit code. A run with no stored output says "No output
+  recorded". A run still in progress keeps the live stream.
+- **The header offers to switch off an offline agent** (#341). The active
+  agent is remembered by the browser, and it was replaced only when the agent
+  was deleted, so an agent that had gone offline stayed active and the next
+  launch targeted a beacon that could not take it. When the active agent is
+  offline and another agent is online, the header now shows the agent as
+  offline with a **Switch to** button naming the online agent (the most
+  recently seen, if there are several). It does not switch on its own.
+- **Scenario cards keep Run and Customize whole** (#344). In a two-column
+  grid the card footer ran out of room: Run was cut off at the card's edge and
+  the run-history chip ("10× run · 1d ago") wrapped onto three lines. The step
+  and detection counts and the history chip now shrink together, the chip stays
+  on one line and truncates, and the buttons keep their full width.
+
 ## [1.2.1] - 2026-11-15
 
 **Hotfix for v1.2.0: a step that failed on the host no longer reads as

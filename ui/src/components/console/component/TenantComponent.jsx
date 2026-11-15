@@ -18,7 +18,7 @@ import { configState, headerResult, reportResult } from './checks.js'
  * connection test. Setup: the four v26 steps; "Test the connection" and
  * "Check datasets and clock" run the staged, read-only connector preflight
  * (config → dns/tls → auth → scope → datasets → clock), and a report nothing
- * answered reads Can't check. Read-back & integrations: today's tenant form
+ * answered reads Can't check. Review & integrations: today's tenant form
  * and the collector targets, unchanged.
  *
  * Deviation from the design: v26 asks for an "Advanced" key. The tenant form
@@ -152,7 +152,7 @@ export default function TenantComponent({ params = {}, setParams = () => {}, onN
       config={config}
       manageTab={{
         id: 'readback',
-        label: 'Read-back & integrations',
+        label: 'Review & integrations',
         render: () => (
           <div className="cmp-manage__stack">
             <TenantManager embedded />

@@ -58,6 +58,18 @@ describe('ScenarioCard anatomy', () => {
     expect(within(foot).getByRole('button', { name: 'Run' }).className).toMatch(/kit-btn--primary/)
   })
 
+  it('keeps the counts and history chip apart from the actions, and each action carries its verb icon (#344)', () => {
+    const history = new Map([['SIM-EDR-001', { count: 10, lastRunAt: Date.now() - 86_400_000, lastStatus: 'complete' }]])
+    render(<ScenarioGrid scenarios={[EDR]} historyByScenario={history} onRunScenario={() => {}} onCustomizeScenario={() => {}} />)
+    const facts = screen.getByTestId('scenario-card-facts')
+    expect(facts).toHaveTextContent(/steps\s*2/)
+    expect(facts.querySelector('.sc-history')).toHaveTextContent('10× run')
+    const actions = screen.getByTestId('scenario-card-actions')
+    expect(within(actions).getAllByRole('button').map((b) => b.dataset.verb)).toEqual(['Customize', 'Run'])
+    for (const b of within(actions).getAllByRole('button')) expect(b.querySelector('svg')).not.toBeNull()
+    expect(within(facts).queryAllByRole('button')).toHaveLength(0)
+  })
+
   it('the body opens the sheet; Run and Customize act on their own and do not open it', () => {
     const onSelect = vi.fn()
     const onRun = vi.fn()

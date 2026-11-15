@@ -781,7 +781,7 @@ function measurementCheck(scenario, integrations) {
     return mk('measurement', 'Measurement', PF.WARN,
       `${kpi || 'threshold'} declared · no tenant has answered a probe`,
       `${cortex.length} credential${cortex.length === 1 ? ' is' : 's are'} registered but none has `
-      + 'answered a probe, so read-back may fail at reconcile time. A failure there resolves '
+      + 'answered a probe, so Review may fail at reconcile time. A failure there resolves '
       + '`pending`, never `fail`.',
       'Test the tenant from the Tenants surface before the customer is watching.')
   }

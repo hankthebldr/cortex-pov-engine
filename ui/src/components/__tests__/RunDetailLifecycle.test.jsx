@@ -49,15 +49,15 @@ describe('Run detail lifecycle', () => {
     const strip = screen.getByRole('list', { name: /run lifecycle/i })
     const items = within(strip).getAllByRole('listitem')
     expect(items.map((li) => li.querySelector('.lc-stage__label').textContent))
-      .toEqual(['Launched', 'Running', 'Finished', 'Read back', 'Results'])
+      .toEqual(['Launched', 'Running', 'Finished', 'Reviewed', 'Results'])
     expect(items[2]).toHaveAttribute('aria-current', 'step')
     expect(items[3]).toHaveTextContent('not yet')
   })
 
-  it('a finished, unread run says it has no results and offers Read back as the primary action', () => {
+  it('a finished, unread run says it has no results and offers Review as the primary action', () => {
     mount(base)
-    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/nothing has been read back/i)
-    const btn = screen.getByRole('button', { name: 'Read back' })
+    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/· not reviewed$/)
+    const btn = screen.getByRole('button', { name: 'Review' })
     expect(btn.className).toMatch(/kit-btn--primary/)
     expect(screen.queryByRole('button', { name: 'Open results' })).toBeNull()
   })
@@ -67,13 +67,13 @@ describe('Run detail lifecycle', () => {
     mount({ ...base, detected_count: 3, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }, { onNavigate })
     fireEvent.click(screen.getByRole('button', { name: 'Open results' }))
     expect(onNavigate).toHaveBeenCalledWith('proof', { run: 'run-1' })
-    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/3 of 10 expected detections were seen/i)
+    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent('3 of 10 detected · xsiam:lab')
   })
 
-  it('the Evidence tab of an unread run shows no scorecard — it offers Read back instead', () => {
+  it('the Evidence tab of an unread run shows no scorecard — it offers Review instead', () => {
     mount(base, { subTab: 'evidence' })
     expect(screen.queryByRole('button', { name: /validate all/i })).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Read back' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Review' }).length).toBeGreaterThan(0)
   })
 })
 
@@ -161,7 +161,7 @@ describe('Run detail — the chain, live (ChainStage)', () => {
     expect(stage).toHaveAttribute('data-mode', 'live')
     const card = await screen.findByTestId('stage-card-step-01')
     await waitFor(() => expect(card).toHaveAttribute('data-state', 'ran'))
-    expect(card).toHaveTextContent('Ran — not read back')
+    expect(card).toHaveTextContent('Ran — not reviewed')
     expect(stage).not.toHaveTextContent(/Detected|Not seen/)
   })
 

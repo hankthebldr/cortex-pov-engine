@@ -2,7 +2,7 @@
  * RunLifecycleStrip — the five stages of a run, the same for every run
  * (design v26 §4.6):
  *
- *   Launched → Running → Finished / Failed / Aborted → Read back → Results
+ *   Launched → Running → Finished / Failed / Aborted → Reviewed → Results
  *
  * An ordered list; the stage the run is on carries aria-current="step". Each
  * stage shows a glyph AND its word — ✓ done, ● now, ✕ failed, – not yet —

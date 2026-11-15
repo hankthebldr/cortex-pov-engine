@@ -61,7 +61,7 @@ describe('Results › Result of', () => {
     const bar = await screen.findByRole('region', { name: /result of/i })
     expect(bar).toHaveTextContent('SIM-EDR-003')
     expect(bar).toHaveTextContent('run-read')
-    expect(bar).toHaveTextContent(/read back from xsiam:lab/i)
+    expect(bar).toHaveTextContent(/reviewed via xsiam:lab/i)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Report')
   })
 
@@ -75,30 +75,30 @@ describe('Results › Result of', () => {
     expect(setParams).toHaveBeenCalledWith({ run: 'run-read-1' })
   })
 
-  it('a run that has not been read back gets its bar and Read back — no results', async () => {
+  it('a run that has not been read back gets its bar and Review — no results', async () => {
     mount({ runs: [UNREAD, READ_NEWER], params: { run: 'run-unread-3' } })
     const bar = await screen.findByRole('region', { name: /result of/i })
     expect(bar).toHaveTextContent('SIM-CDR-001')
-    expect(screen.getByText(/has not been read back/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Read back' })).toBeInTheDocument()
+    expect(screen.getByText('Not reviewed — no results yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /validate all/i })).toBeNull()
     expect(screen.queryByText(/coverage/i)).toBeNull()
   })
 
-  it('a run where nothing executed says why and offers no Read back', async () => {
+  it('a run where nothing executed says why and offers no Review', async () => {
     const NOT_EXECUTED = {
       ...UNREAD, run_id: 'run-dry-4', tc_verdict: 'pending',
       tc_verdict_detail: { source: 'complete', reason: 'not_executed' },
     }
     mount({ runs: [NOT_EXECUTED, READ_NEWER], params: { run: 'run-dry-4' } })
     await screen.findByRole('region', { name: /result of/i })
-    expect(screen.getByTestId('readback-notice')).toHaveTextContent(/no step that carries a detection ran/i)
-    expect(screen.queryByRole('button', { name: 'Read back' })).toBeNull()
+    expect(screen.getByTestId('readback-notice')).toHaveTextContent('No detection step ran — nothing was tested')
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull()
   })
 
   it('with runs but none read back, explains that and links to Runs', async () => {
     mount({ runs: [UNREAD] })
-    expect(await screen.findByText(/must be read back/i)).toBeInTheDocument()
+    expect(await screen.findByText(/No reviewed runs/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '#/runs')
     expect(screen.queryByRole('region', { name: /result of/i })).toBeNull()
   })

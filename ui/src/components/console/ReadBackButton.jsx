@@ -1,12 +1,12 @@
 /**
- * ReadBackButton — Read back on a run that already has a verdict, behind a
+ * ReadBackButton — Review on a run that already has a verdict, behind a
  * confirm (decision D5).
  *
- * Read back is the one tenant read that can change a run's verdict, so where a
+ * Review is the one tenant read that can change a run's verdict, so where a
  * verdict is already on screen it asks first, and the copy says what the
  * neighbouring refresh of tenant evidence does not do. It goes through the
- * console's one Read back path (useReadBack: in-flight guard, toast, runs
- * refresh) and never posts on its own. The unread phase's Read back is the
+ * console's one Review path (useReadBack: in-flight guard, toast, runs
+ * refresh) and never posts on its own. The unread phase's Review is the
  * run's primary action and stays one click (design v26 §4.6); this is for the
  * places beside an existing verdict.
  */
@@ -17,9 +17,9 @@ import { Button } from './kit/index.js'
 
 void React
 
-export const READ_BACK_CONFIRM_TITLE = 'Read back this run?'
+export const READ_BACK_CONFIRM_TITLE = 'Review this run?'
 export const READ_BACK_CONFIRM_BODY =
-  "Read back reads the tenant and may change this run's verdict, marking detections "
+  "Review reads the tenant and may change this run's verdict, marking detections "
   + 'detected or missed. Refreshing tenant evidence never does.'
 
 /**
@@ -43,11 +43,12 @@ export default function ReadBackButton({ runId, onDone = () => {}, variant = 'se
     <>
       <Button
         variant={variant}
+        verb="Review"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={() => setOpen(true)}
       >
-        {busy ? 'Reading…' : 'Read back'}
+        {busy ? 'Reviewing…' : undefined}
       </Button>
       <ConfirmDialog
         open={open}
@@ -55,7 +56,7 @@ export default function ReadBackButton({ runId, onDone = () => {}, variant = 'se
         onConfirm={confirm}
         title={READ_BACK_CONFIRM_TITLE}
         body={READ_BACK_CONFIRM_BODY}
-        confirmLabel="Read back"
+        confirmLabel="Review"
         confirmVariant="primary"
         cancelLabel="Cancel"
         initialFocus="cancel"

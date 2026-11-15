@@ -79,7 +79,7 @@ const TABS_CHEATSHEET = [
   },
   {
     name: 'Dashboards (Run & observe)',
-    body: 'Every scenario in the library counted three ways: detection source × use case, MITRE ATT&CK, and planes × doors. Open a cell or technique to list the scenarios behind it; each opens its sheet on Scenarios. Detected means a run of the scenario was read back from the tenant and detected something; a scenario that is only authored is never counted as covered.',
+    body: 'Every scenario in the library counted three ways: detection source × use case, MITRE ATT&CK, and planes × doors. Open a cell or technique to list the scenarios behind it; each opens its sheet on Scenarios. Detected means a run of the scenario was reviewed against the tenant and detected something; a scenario that is only authored is never counted as covered.',
   },
 ]
 

@@ -672,3 +672,94 @@ for (const { w, h } of [{ w: 375, h: 812 }, { w: 845, h: 620 }]) {
     ).toEqual([])
   })
 }
+
+/**
+ * Scenario card footer (#344). At the desktop app's pane width the grid is two
+ * columns, and the footer row held "steps N · detections N", the run-history
+ * chip, Customize and Run: Run was clipped at the card's right edge and the
+ * chip wrapped onto three lines. The counts and the chip are now one unit that
+ * shrinks (the chip truncates on one line), and the actions never shrink.
+ *
+ * CI's SimCore starts empty and the chip appears only for a scenario with
+ * runs, so the run list is stubbed with ten runs of SIM-EDR-001. Only the
+ * layout is under test.
+ */
+const DAY_AGO = new Date(Date.now() - 86_400_000).toISOString()
+const HISTORY_RUNS = Array.from({ length: 10 }, (_, i) => ({
+  run_id: `run-card-${i}`,
+  scenario_id: 'SIM-EDR-001',
+  status: 'complete',
+  mode: 'pull',
+  started_at: DAY_AGO,
+  completed_at: DAY_AGO,
+}))
+
+for (const { w, h } of [{ w: 1024, h: 768 }, { w: 1280, h: 800 }, { w: 1440, h: 900 }]) {
+  test(`scenario card footers keep Customize and Run whole at ${w}x${h}`, async ({ page }) => {
+    await page.route(/\/api\/runs(\?.*)?$/, (route) =>
+      route.fulfill({ json: { runs: HISTORY_RUNS, total: HISTORY_RUNS.length, limit: 500, offset: 0 } }))
+    await page.setViewportSize({ width: w, height: h })
+    await page.goto('/#/library')
+    await page.waitForSelector('[data-testid="scenario-card-foot"] button', { timeout: 15_000 })
+    await page.waitForSelector('[data-testid="scenario-card-SIM-EDR-001"] .sc-history', { timeout: 15_000 })
+
+    const faults = await page.evaluate(() => {
+      const out: string[] = []
+      for (const card of document.querySelectorAll<HTMLElement>('.scenario-card')) {
+        const c = card.getBoundingClientRect()
+        const name = card.dataset.testid || 'card'
+        for (const b of card.querySelectorAll<HTMLElement>('[data-testid="scenario-card-foot"] button')) {
+          const r = b.getBoundingClientRect()
+          if (r.right > c.right + 0.5) out.push(`${name}: ${b.textContent} ends ${Math.round(r.right - c.right)}px past the card`)
+          if (b.scrollWidth > b.clientWidth + 1) out.push(`${name}: ${b.textContent} is squeezed (${b.scrollWidth} > ${b.clientWidth})`)
+        }
+        const chip = card.querySelector<HTMLElement>('.sc-history')
+        if (chip) {
+          const cr = chip.getBoundingClientRect()
+          if (cr.right > c.right + 0.5) out.push(`${name}: the history chip ends past the card`)
+          const count = chip.querySelector('.sc-history__count')?.getBoundingClientRect()
+          const ago = chip.querySelector('.sc-history__ago')?.getBoundingClientRect()
+          if (count && ago && Math.abs(count.top - ago.top) > 1) out.push(`${name}: the history chip wraps`)
+        }
+      }
+      return out
+    })
+    expect(faults, 'card footers must keep their actions whole and the history chip on one line').toEqual([])
+  })
+}
+
+/**
+ * The header's offer to leave an offline active agent (#341) adds a button to
+ * a bar that already gives way in steps to fit from 1100 px up. Below 1280 the
+ * button keeps its icon and the agent's name, so the bar still fits. The
+ * agent list is stubbed: one offline agent (the active one) and one online.
+ */
+const OFFLINE_AGENT = {
+  agent_id: 'docker-desktop', hostname: 'docker-desktop', os: 'linux', status: 'offline',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T10:00:00Z',
+  last_seen_age_seconds: 5400,
+}
+const ONLINE_AGENT = {
+  agent_id: 'pov-target-01-4dcdce', hostname: 'pov-target-01', os: 'linux', status: 'online',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T11:29:58Z',
+  last_seen_age_seconds: 3,
+}
+
+for (const w of [1100, 1204, 1280, 1440]) {
+  test(`the header fits with an offline agent's Switch offer at ${w}px`, async ({ page }) => {
+    await page.route(/\/api\/agents(\?.*)?$/, (route) =>
+      route.fulfill({ json: { agents: [OFFLINE_AGENT, ONLINE_AGENT] } }))
+    await page.addInitScript(() => window.localStorage.setItem('cortexsim.activeAgent', 'docker-desktop'))
+    await page.setViewportSize({ width: w, height: 800 })
+    await page.goto('/#/library')
+    const offer = page.getByRole('button', { name: 'Switch to pov-target-01' })
+    await expect(offer).toBeVisible({ timeout: 15_000 })
+    const g = await page.evaluate(() => {
+      const h = document.querySelector('.pov-header') as HTMLElement
+      const b = document.querySelector('.pov-header__switch')!.getBoundingClientRect()
+      return { scroll: h.scrollWidth, client: h.clientWidth, right: b.right, vw: window.innerWidth }
+    })
+    expect(g.scroll, `the header overflows by ${g.scroll - g.client}px`).toBeLessThanOrEqual(g.client)
+    expect(g.right, 'the Switch offer ends past the viewport').toBeLessThanOrEqual(g.vw)
+  })
+}

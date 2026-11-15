@@ -6,9 +6,9 @@
  * one column per run, then four paired rows (Detected · Steps that ran ·
  * Fastest detection · Workflow).
  *
- * THE HONESTY RULE. Only a run that has been read back (`readBackOf`) may say
+ * THE HONESTY RULE. Only a run that has been reviewed (`readBackOf`) may say
  * "Detected" or "Not seen" for a detection. Any other run says what the run
- * itself knows: "Ran — not read back" when the step ran, "Did not run" when it
+ * itself knows: "Ran — not reviewed" when the step ran, "Did not run" when it
  * did not. A Result row on an unread run can carry `observed: true` (a hand
  * mark) or an outcome; neither is a tenant read, so neither is shown. The
  * words are chainStage's LIVE_STATES, the same vocabulary the chain draws.
@@ -47,9 +47,9 @@ export function togglePick(picked, id) {
 
 /** A run's lifecycle phase in one word, for its chip and column header. */
 export const PHASE_STATUS = Object.freeze({
-  [PHASE.READY]:   { status: 'up',      word: 'Read back' },
-  [PHASE.UNREAD]:  { status: 'off',     word: 'Not read back' },
-  [PHASE.READING]: { status: 'unknown', word: 'Reading…' },
+  [PHASE.READY]:   { status: 'up',      word: 'Reviewed' },
+  [PHASE.UNREAD]:  { status: 'off',     word: 'Not reviewed' },
+  [PHASE.READING]: { status: 'unknown', word: 'Reviewing…' },
   [PHASE.NOTHING]: { status: 'off',     word: 'Nothing ran' },
   [PHASE.RUNNING]: { status: 'unknown', word: 'Running' },
 })
@@ -70,7 +70,7 @@ export function compareCell(run, row, { nothingRan = false } = {}) {
   if (!row) return 'absent'
   const status = resultStatus(row)
   const ran = !nothingRan && !NEVER_RAN.has(status)
-  // Only a read-back run may claim Detected / Not seen.
+  // Only a reviewed run may claim Detected / Not seen.
   if (!readBackOf(run)) return ran ? 'ran' : 'did_not_run'
   if (!ran) return 'did_not_run'
   return isHitStatus(status) ? 'detected' : 'not_seen'
@@ -187,7 +187,7 @@ export function buildCompare({ runs = [], lifecycles = {}, results = {} } = {}) 
   return { columns, rows, summary, mixed: scenarios.size > 1 }
 }
 
-const NOT_READ = { text: '—', title: 'not read back — no detection claim' }
+const NOT_READ = { text: '—', title: 'not reviewed — no detection claim' }
 
 function unloaded(col) {
   if (col.loading) return { text: '…', title: 'loading this run’s results' }

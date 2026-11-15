@@ -83,6 +83,70 @@ export function parseStepTranscript(output) {
   return { order, steps }
 }
 
+// The same grammar, read wider for display: a step the host refused to run
+// (client.go::refuseStep) writes its header without `identity=` and its footer
+// as `exit_code=none`. parseStepTranscript keeps its narrower patterns on
+// purpose — it feeds identity and exit code into status rows.
+const ANY_HEADER = /^=== STEP (\d+)\/(\d+) · (\S+) · (\S*)(?: · identity=(\S*))? ===\s*$/
+const ANY_FOOTER = /^--- exit_code=(-?\d+|none) duration=(\S+) ---\s*$/
+const TIMEOUT_MARKER = '!! STEP TIMEOUT:'
+const NOT_RUN_MARKER = '!! STEP NOT RUN:'
+
+/**
+ * Run.output cut into display segments, in order: a `step` per === STEP ===
+ * block (its own lines, exit code, duration) and a `text` segment for any lines
+ * outside a block (launch markers, a stop notice). Pure.
+ *
+ * @returns {Array<{kind:'text', lines:string[]} | {kind:'step', id:string,
+ *   index:number, total:number, technique:string, identity:string|null,
+ *   lines:string[], exitCode:number|null, duration:string|null,
+ *   finished:boolean, timedOut:boolean, notRun:boolean}>}
+ */
+export function splitStepTranscript(output) {
+  const segments = []
+  if (!output || typeof output !== 'string') return segments
+  let text = null
+  let step = null
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.replace(/\r$/, '')
+    const h = ANY_HEADER.exec(line)
+    if (h) {
+      text = null
+      step = {
+        kind: 'step', id: h[3], index: Number(h[1]), total: Number(h[2]),
+        technique: h[4] || '', identity: h[5] ?? null, lines: [],
+        exitCode: null, duration: null, finished: false, timedOut: false, notRun: false,
+      }
+      segments.push(step)
+      continue
+    }
+    if (step) {
+      const f = ANY_FOOTER.exec(line)
+      if (f) {
+        step.finished = true
+        step.duration = f[2]
+        if (f[1] === 'none') step.notRun = true
+        else step.exitCode = Number(f[1])
+        step = null
+        continue
+      }
+      if (line.startsWith(TIMEOUT_MARKER)) step.timedOut = true
+      if (line.startsWith(NOT_RUN_MARKER)) step.notRun = true
+      step.lines.push(line)
+      continue
+    }
+    if (!text) {
+      text = { kind: 'text', lines: [] }
+      segments.push(text)
+    }
+    text.lines.push(line)
+  }
+  for (const s of segments) {
+    while (s.lines.length && !s.lines[s.lines.length - 1].trim()) s.lines.pop()
+  }
+  return segments.filter((s) => s.kind === 'step' || s.lines.length > 0)
+}
+
 /**
  * Join scenario steps, the host's step outcomes and the transcript into rows.
  * Pure; the hook below only feeds it.

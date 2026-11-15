@@ -21,9 +21,13 @@ import Icon from './Icon.jsx'
 void React
 
 export const VERBS = Object.freeze([
-  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
   // Agents › Fleet (#339): managing agent rows.
   'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
+  // The header's offer to leave an offline active agent (#341).
+  'Switch',
+  // A run's Live tab: hold or empty the stream, capture the timeline.
+  'Pause', 'Clear', 'Screenshot',
 ])
 
 /** The kit Icon each verb carries. */
@@ -33,7 +37,7 @@ export const VERB_ICONS = Object.freeze({
   Run: 'play',
   Customize: 'pencil',
   'Add to chain': 'plus',
-  'Read back': 'rotate',
+  Review: 'rotate',
   'Open results': 'external',
   'Abort run': 'stop',
   Deploy: 'upload',
@@ -43,6 +47,10 @@ export const VERB_ICONS = Object.freeze({
   Delete: 'trash',
   Select: 'select',
   Refresh: 'refresh',
+  Switch: 'swap',
+  Pause: 'pause',
+  Clear: 'clear',
+  Screenshot: 'camera',
 })
 
 export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {

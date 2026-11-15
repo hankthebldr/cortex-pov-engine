@@ -948,7 +948,8 @@ curl -s -X POST "http://localhost:8888/api/runs/<run_id>/observations" \
      "external_id": "<alert id>"}
   ]}'
 
-# Credential-backed: pull the run's window from a registered tenant.
+# Credential-backed: pull the run's window from a registered tenant (the
+# console's Review action on Runs and on the run's page).
 curl -s -X POST "http://localhost:8888/api/runs/<run_id>/reconcile?connector=xsiam&host=<endpoint hostname>"
 
 # Then the report.
