@@ -1624,6 +1624,9 @@ run's (<why>)`; the `Observation` stays on the run with no row; the alert
 leaves the run's case ledger; and the summary lists it under
 `withdrawn_credits[]` (`result_id`, `step_id`, `alert_external_id`,
 `alert_name`, `observed_at`, `mttd_seconds`, `reason`, `run_id`) with a warning.
+`POST /reconcile` commits the withdrawal before its incident and case reads, so
+that no write is held across a tenant call (#326): a reconcile that fails after
+that point leaves the row withdrawn, with its note, for the next one to judge.
 The auto-reconcile sweep reaches a stored run only while it is inside the
 lookback, under the attempt cap and still has an unobserved row; any other
 stored run changes when `POST /api/runs/{id}/reconcile` (or `/observations`) is

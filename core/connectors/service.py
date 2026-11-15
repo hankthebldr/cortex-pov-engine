@@ -292,6 +292,13 @@ async def reconcile_run(
         db, run, candidates, host=host_scope["host"],
         window_seconds=window_seconds, window_ends=window_ends)
     withdrawn = await withdraw_foreign_credits(db, run, candidates, attribution)
+    if withdrawn:
+        # A withdrawal is a write, and the incident and case reads below are
+        # tenant calls: committed here so it does not hold SQLite's one write
+        # lock across them (#326). The rows are still judged again in this
+        # pass. If this reconcile fails after this point the withdrawal stays,
+        # with its note on the row, and the next review judges the row.
+        await db.commit()
     refused: list[dict[str, Any]] = []
     verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),

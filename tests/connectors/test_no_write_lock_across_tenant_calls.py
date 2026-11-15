@@ -239,6 +239,54 @@ def test_reconcile_holds_no_write_lock_while_it_reads_the_tenant(file_db):
     assert run.case_ledger["merge_class"] == "ONE_CASE"
 
 
+def test_a_review_that_withdraws_a_credit_holds_no_write_lock_while_it_reads_cases(file_db):
+    """A stored credit that belongs to another run is withdrawn at the start
+    of the review (#347), before the alerts are matched and so before the case
+    and issue reads. That write used to stay open across both reads."""
+    from models import Observation, Result, Run
+
+    path, SessionLocal = file_db
+    _seed(SessionLocal, results=2, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(SessionLocal, techniques=("T1003.001", "T1059")))
+
+    async def _store_a_foreign_credit():
+        now = datetime.utcnow()
+        async with SessionLocal() as db:
+            # A later run on the same endpoint ...
+            db.add(Run(run_id="run-2", scenario_id="SIM-EDR-001", mode="pull",
+                       status="complete", target="agent-1",
+                       started_at=now - timedelta(minutes=6),
+                       delivered_at=now - timedelta(minutes=6),
+                       completed_at=now - timedelta(minutes=5)))
+            db.add(Result(run_id="run-2", step_id="step-01", plane="EDR", signal_type="BIOC",
+                          expected_detection="d", observed=False,
+                          executed_at=now - timedelta(minutes=6),
+                          mitre_technique="T1003.001", detection_id="bioc-x"))
+            # ... whose alert an earlier version credited to run-1's first row.
+            row = (await db.execute(select(Result).where(Result.run_id == "run-1")
+                                    .order_by(Result.id))).scalars().first()
+            when = now - timedelta(minutes=4)
+            row.observed, row.observed_at = True, when
+            await db.flush()
+            db.add(Observation(run_id="run-1", result_id=row.id, source="xsiam:acme",
+                               external_id="old-1", observed_at=when, name="alert old"))
+            await db.commit()
+
+    asyncio.run(_store_a_foreign_credit())
+    inner, calls = _tenant(_alerts(), [_case()])
+    seen: list = []
+
+    summary, _run = asyncio.run(_reconcile(SessionLocal, _probing(inner, path, seen)))
+
+    assert calls == {"alerts": 1, "cases": 1, "issues": 1}
+    assert seen == [None, None, None], seen
+    # The withdrawal is reported as before, and the row was judged again in
+    # the same pass: credited this time from the run's own alert.
+    assert [(w["alert_external_id"], w["reason"], w["run_id"])
+            for w in summary["withdrawn_credits"]] == [("old-1", "LATER_RUN_STARTED", "run-2")]
+    assert summary["observed"] == 2
+
+
 def test_a_case_ledger_refresh_holds_no_write_lock_while_it_reads_the_cases(file_db):
     from connectors.service import refresh_case_ledger
     from models import Run
