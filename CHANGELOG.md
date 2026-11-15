@@ -18,12 +18,13 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   Stratum, bulk HTTPS upload, SMB sweep, FTP, SSH) are sent by the beacon, so a
   firewall sees the endpoint as their source.
 - **Sending needs consent on the launch**: `consent.simulation_authorized` and
-  `authorized_by`, plus `consent.c2_authorized` when the campaign has a
-  C2-shaped plugin (the C2 beacon, the DNS tunnel, FTP, SSH and the two NGFW
-  emitters). Without it
-  the step is a dry run and its results read not executed, never missed. The
-  console's Launch does not send `authorized_by` yet, so from the console
-  these steps are a dry run; launch through the API to send.
+  `authorized_by`. Without it the step is a dry run and its results read not
+  executed, never missed.
+- **Relayed NGFW log-emitter steps (`ngfw_eal_emitter`, `ngfw_threat_emitter`)
+  and the C2, DNS, FTP and SSH steps also need `consent.c2_authorized` on the
+  launch.** The console does not send `authorized_by` yet, so a console launch
+  runs these steps dry until the console change lands. Launch through the API
+  to send.
 - **Not in pull mode yet:** `llm_provider_egress`, `oauth_grant_emulator`,
   `agentic_egress`, `browser_attack_runner` and `airs_prompt_attack`. Such a
   step stops with `EAL_WIRE_NOT_RELAYABLE` and its results read not executed.
