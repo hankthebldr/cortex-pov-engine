@@ -125,7 +125,10 @@ describe('Detections — the MTTD panel', () => {
 describe('Detections — row actions are kit icon buttons with their label in a tooltip', () => {
   it('names each action by its tooltip and draws only its icon', async () => {
     await mount()
-    const actions = within(rowOf('det-3')).getAllByRole('button')
+    const actions = [
+      ...within(rowOf('det-3')).getAllByRole('button'),
+      ...within(rowOf('det-1')).getAllByRole('button'),
+    ]
     expect(actions.map((b) => b.getAttribute('title'))).toEqual(['Mark detected', 'Reset'])
     for (const b of actions) {
       expect(b).toHaveClass('kit-btn')
@@ -145,6 +148,37 @@ describe('Detections — row actions are kit icon buttons with their label in a 
     fireEvent.click(within(rowOf('det-7')).getByRole('button', { name: 'Mark detected' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
       String(url).includes('/api/results/7/validate') && init?.method === 'PUT')).toBe(true))
+  })
+
+  it('offers only the marks the API takes: no hand miss, Reset only on a hand mark', async () => {
+    await mount({
+      results: [
+        row(11),                                                          // unjudged
+        row(12, { outcome: 'detected', observed: true }),                 // a hand mark
+        row(13, { outcome: 'detected', observed: true, alert_id: 'A-9' }), // matched to an alert
+      ],
+      coverage: { denominator: 3, observed_in_denominator: 2, pct: 66.7, excluded: {} },
+    })
+    const titles = (text) => within(rowOf(text)).queryAllByRole('button').map((b) => b.getAttribute('title'))
+    expect(titles('det-11')).toEqual(['Mark detected'])
+    expect(titles('det-12')).toEqual(['Reset'])
+    expect(titles('det-13')).toEqual([])
+  })
+
+  it('Reset withdraws the hand mark with observed=false, never null', async () => {
+    const fetchMock = installRoutes({
+      'GET /api/results/run-1': RESULTS,
+      'PUT /api/results/:id/validate': { ok: true },
+    })
+    render(<EvidenceView pinnedRun={RUN} />)
+    await waitFor(() => expect(document.querySelector('.scorecard__row')).not.toBeNull())
+    fireEvent.click(within(rowOf('det-1')).getByRole('button', { name: 'Reset' }))
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/api/results/1/validate') && init?.method === 'PUT')
+      expect(put).toBeTruthy()
+      expect(JSON.parse(put[1].body).observed).toBe(false)
+    })
   })
 
   it('says how many rows Validate all skips in two words', async () => {

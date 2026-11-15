@@ -181,8 +181,9 @@ you'll find:
 - The raw alert ID with **Copy** (paste into the Cortex console search
   to jump to the causality graph)
 - Notes (they ride with the validation into the POV report)
-- **Mark detected**, **Mark missed** and **Reset**. The same three are
-  icon buttons on each scorecard row.
+- **Mark detected**, and **Reset** on a row you marked, which puts it
+  back to unjudged. There is no hand miss: a miss comes from the review.
+  The same two are icon buttons on each scorecard row.
 
 Use **Validate all** when you've eyeballed every alert in the
 Cortex console and confirmed everything fired. Or validate

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import { updateResultNotes } from '../../api/client.js'
 import { isAttestationRefused } from '../../outcomes.js'
-import { detectionState } from './detectionState.js'
+import { detectionState, rowActions, MARK } from './detectionState.js'
 import { tidySeconds } from './MttdHistogram.jsx'
 import { Button, Icon, StatusIcon } from './kit/index.js'
 
@@ -15,14 +15,15 @@ import { Button, Icon, StatusIcon } from './kit/index.js'
  *   - read the state (a StatusIcon and one word), the timing and the MTTD
  *   - copy the alert id
  *   - keep a note for the POV report
- *   - mark the detection by hand (Mark detected · Mark missed · Reset)
+ *   - mark the detection by hand: Mark detected, or Reset a hand mark back to
+ *     unjudged (detectionState.js::rowActions; a miss is the engine's word)
  *
  * Props:
  *   row        — the scorecard row object (see useResultsData)
  *   open       — boolean
  *   reviewed   — the run has been reviewed (default true)
  *   onClose    — () => void
- *   onValidate — (resultId, observed: boolean|null, notes: string) => void
+ *   onValidate — (resultId, observed: boolean, notes: string) => void
  */
 export default function DetectionDrawer({
   row,
@@ -46,6 +47,7 @@ export default function DetectionDrawer({
 
   // Outcome first (outcomes.js::resultStatus): a not_reached row is never Missed.
   const state = detectionState(row, { reviewed })
+  const actions = rowActions(row)
 
   const handleCopyAlertId = () => {
     if (!row.alertId) return
@@ -190,15 +192,18 @@ export default function DetectionDrawer({
         >
           Cannot be marked by hand
         </div>
-      ) : (
+      ) : actions.length > 0 ? (
       <div className="detection-drawer__actions">
-        <Button verb="Mark detected" onClick={() => handleSave(true)} disabled={row.id == null} />
-        <Button verb="Mark missed" onClick={() => handleSave(false)} disabled={row.id == null} />
-        {row.observed != null && (
-          <Button verb="Reset" onClick={() => handleSave(null)} disabled={row.id == null} title="Back to unjudged" />
-        )}
+        {actions.map((verb) => (
+          <Button
+            key={verb}
+            verb={verb}
+            onClick={() => handleSave(MARK[verb])}
+            title={verb === 'Reset' ? 'Back to unjudged' : undefined}
+          />
+        ))}
       </div>
-      )}
+      ) : null}
     </aside>
   )
 }

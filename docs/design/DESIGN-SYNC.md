@@ -64,10 +64,16 @@ Same owner rules (one short line per state; kit controls only). As built:
 | **Launch gate: EAL consent** | Shown only when the armed scenario has an EAL step (`channel: eal`, or a command that calls the EAL CLI): one row, "Send live EAL traffic" · "Authorized by" (remembered per browser) · "Includes C2-shaped traffic" (`EalConsentRow.jsx`, `ealConsent.js`). Ticked, the launch sends `consent.simulation_authorized`, `authorized_by` and, with the third box, `consent.c2_authorized`; unticked it sends nothing new. The third box shows with the first: the console has no way yet to ask SimCore which plugins it counts as C2-shaped. |
 
 Kit additions in this pass: the verbs **Mark detected** (icon `check-circle`),
-**Mark missed** (icon `x`), **Reset** (icon `repeat`) and **Save** (icon
-`save`); the icons `check-circle` and `save`; and `Button iconOnly`, which
-draws a verb as its icon alone with the verb as its accessible name and
-tooltip (a row of small actions).
+**Reset** (icon `repeat`) and **Save** (icon `save`); the icons `check-circle`
+and `save`; and `Button iconOnly`, which draws a verb as its icon alone with
+the verb as its accessible name and tooltip (a row of small actions).
+
+A row offers only the marks `PUT /api/results/{id}/validate` takes
+(`detectionState.rowActions`): Mark detected until it reads Detected, and
+Reset (`observed: false`, a withdrawn hand mark) on a row a hand mark made
+detected. There is no "Mark missed": the API never writes a miss by hand
+(the old ✗ withdrew the mark and left the row Pending), and the old Reset
+sent `observed: null`, which the API rejects.
 
 Removed: `InflightView`, `EventStream`, `NarrativeTimeline`, `useTimelineData`
 (unmounted since the split) and their styles. The verbs Pause and Screenshot

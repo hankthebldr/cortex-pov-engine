@@ -65,7 +65,7 @@ describe('Button', () => {
       'Switch',
       'Pause', 'Clear', 'Screenshot',
       'Validate all',
-      'Mark detected', 'Mark missed', 'Reset', 'Save',
+      'Mark detected', 'Reset', 'Save',
     ])
   })
 

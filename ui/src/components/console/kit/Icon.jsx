@@ -30,12 +30,12 @@
  *   clear    Clear (the verb): empty a buffer this browser holds
  *   camera   Screenshot (the verb)
  *   down     jump to the newest line of a log
- *   x        close a sheet; mark a detection missed
+ *   x        close a sheet
  *   check-all  Validate all (the verb)
  *   check-circle  Mark detected (the verb)
  *   save     Save (the verb)
  *
- * `x` also draws Mark missed (the verb), and `repeat` Reset (the verb).
+ * `repeat` also draws Reset (the verb).
  *
  * `target` also draws Set active (the verb).
  */

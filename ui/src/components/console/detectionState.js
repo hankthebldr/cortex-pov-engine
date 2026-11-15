@@ -15,7 +15,7 @@
  * state, Not prevented: Cortex saw it and the block did not happen, which is
  * a failure of the control and must never read as a pass.
  */
-import { resultStatus, outcomeKey, isAwaitingReconcile } from '../../outcomes.js'
+import { resultStatus, outcomeKey, isAwaitingReconcile, isAttestationRefused } from '../../outcomes.js'
 
 export const DETECTION_STATES = Object.freeze({
   detected:     { status: 'up',      word: 'Detected' },
@@ -42,4 +42,28 @@ export function detectionState(row, { reviewed = true } = {}) {
   if (state) return { key, ...state }
   // A status this console does not name is shown as it was sent, never as a pass.
   return { key, status: 'unknown', word: String(row?.status || 'Unknown') }
+}
+
+/**
+ * The hand marks a row offers, as kit verbs, and the `observed` value each
+ * sends to `PUT /api/results/{id}/validate`. The API takes two: attest a
+ * detection (`true`), and withdraw that attestation (`false`), which puts the
+ * row back to unjudged and never writes a miss (a miss is the engine's word).
+ * It refuses `null`.
+ */
+export const MARK = Object.freeze({ 'Mark detected': true, Reset: false })
+
+/**
+ * Which of those a row offers: Mark detected until it reads detected; Reset
+ * on a row a hand mark made detected. A row matched to an alert is the
+ * engine's, and a row the server will not attest (a step that never ran, a
+ * prevention) offers neither.
+ *
+ * @param {Object} row  a scorecard row (`id`, `observed`, `alertId`, `outcome`, …)
+ * @returns {string[]}
+ */
+export function rowActions(row) {
+  if (!row || row.id == null || isAttestationRefused(row)) return []
+  if (row.observed !== true) return ['Mark detected']
+  return row.alertId ? [] : ['Reset']
 }

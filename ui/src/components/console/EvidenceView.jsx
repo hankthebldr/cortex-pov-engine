@@ -7,8 +7,8 @@ import MttdHistogram, { tidySeconds } from './MttdHistogram.jsx'
 import { Button, StatusIcon } from './kit/index.js'
 import AlsoRaised from './AlsoRaised.jsx'
 import { isRunUnproven } from './runStatus.js'
-import { detectionState } from './detectionState.js'
-import { outcomeClass, isBulkAttestable, isAttestationRefused } from '../../outcomes.js'
+import { detectionState, rowActions, MARK } from './detectionState.js'
+import { outcomeClass, isBulkAttestable } from '../../outcomes.js'
 
 /**
  * EvidenceView — Results › Detections: each expected detection of one run and
@@ -311,6 +311,8 @@ function ScorecardRow({ row, reviewed, isSelected, onSelect, onValidate }) {
   // What became of the detection, from the server's outcome axis
   // (outcomes.js::resultStatus), as a StatusIcon and one word.
   const state = detectionState(row, { reviewed })
+  // The hand marks the API takes for this row (detectionState.js::rowActions).
+  const actions = rowActions(row)
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).
@@ -346,17 +348,11 @@ function ScorecardRow({ row, reviewed, isSelected, onSelect, onValidate }) {
         <span className="scorecard__state" title={state.title}>
           <StatusIcon status={state.status} word={state.word} />
         </span>
-        {row.id != null && !isAttestationRefused(row) && (
+        {actions.length > 0 && (
           <div className="scorecard__row-actions">
-            {row.observed !== true && (
-              <Button verb="Mark detected" iconOnly onClick={stop(() => onValidate(row.id, true, null))} />
-            )}
-            {row.observed !== false && (
-              <Button verb="Mark missed" iconOnly onClick={stop(() => onValidate(row.id, false, null))} />
-            )}
-            {row.observed != null && (
-              <Button verb="Reset" iconOnly onClick={stop(() => onValidate(row.id, null, null))} />
-            )}
+            {actions.map((verb) => (
+              <Button key={verb} verb={verb} iconOnly onClick={stop(() => onValidate(row.id, MARK[verb], null))} />
+            ))}
           </div>
         )}
       </div>

@@ -33,8 +33,9 @@ export const VERBS = Object.freeze([
   'Pause', 'Clear', 'Screenshot',
   // Results › Detections: mark every detection that can be attested as seen.
   'Validate all',
-  // Results › Detections: one detection, by hand. Reset puts it back to unjudged.
-  'Mark detected', 'Mark missed', 'Reset',
+  // Results › Detections: one detection, by hand. Reset puts a hand mark back
+  // to unjudged. There is no hand miss: the API never writes one.
+  'Mark detected', 'Reset',
   // Keep what was typed (a note on a detection).
   'Save',
 ])
@@ -62,7 +63,6 @@ export const VERB_ICONS = Object.freeze({
   Screenshot: 'camera',
   'Validate all': 'check-all',
   'Mark detected': 'check-circle',
-  'Mark missed': 'x',
   Reset: 'repeat',
   Save: 'save',
 })

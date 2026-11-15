@@ -35,6 +35,12 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   reviewed run. The tiles are a label, one number and at most one short line
   ("3 of 6 detected · 2 not counted"); with no MTTD the MTTD panel is one line.
   Row actions and the detail drawer use the kit buttons.
+- **A detection's hand marks do what they say.** Reset sent `observed: null`,
+  which the API rejects, so it never worked; the ✗ "missed" button withdrew a
+  hand mark and left the row Pending, because the API never writes a miss by
+  hand. A row now offers Mark detected until it reads Detected, and Reset on a
+  row a hand mark made detected (it sends `observed: false`). A row matched to
+  an alert offers neither.
 - **Techniques and Topology no longer repeat the run verdict.** The verdict
   line at the top of Results says it once. Their totals and explanations are
   one line each, with the detail in a tooltip.
