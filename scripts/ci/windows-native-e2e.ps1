@@ -1655,7 +1655,8 @@ function Invoke-PhaseSandbox {
 
             # --- the race: their folder and a junction swap places at the path ---
             Remove-CsPlant $path
-            if (-not $spec.Race) { continue }
+            # Set-StrictMode 2.0 throws on $spec.Race where the spec has no Race key.
+            if (-not ($spec.ContainsKey('Race') -and $spec['Race'])) { continue }
             $alt = $path + '.alt'
             Remove-CsPlant $alt
             New-Item -ItemType Directory -Force -Path $path | Out-Null
