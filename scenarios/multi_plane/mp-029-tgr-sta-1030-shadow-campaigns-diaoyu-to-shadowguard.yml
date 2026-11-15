@@ -209,7 +209,29 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp029-step-01-windows
+      windows: |
+        $sandbox = Join-Path $env:TEMP 'cortexsim-mp-029'
+        # Windows form of the R2a rule: whatever is at the path goes (rmdir removes a junction,
+        # not its target), mkdir fails if anything reappears, and the folder then admits only
+        # SYSTEM and Administrators plus a marker ACE no other folder carries. A later step
+        # tells it from anything planted with one Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        cmd.exe /c mkdir "$sandbox"
+        if ($LASTEXITCODE -ne 0) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm('D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1;;;S-1-9-4243-29)', [System.Security.AccessControl.AccessControlSections]::Access)
+        Set-Acl -LiteralPath $sandbox -AclObject $sd
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox was written to before it was locked"; exit 1 }
+        $d = Join-Path $env:TEMP 'cortexsim-mp-029'
+        $lure = 'Politsei- ja Piirivalveameti organisatsiooni struktuuri muudatused'
+        New-Item -ItemType Directory -Force -Path "$d\stage" | Out-Null
+        Copy-Item -Path "$env:WINDIR\System32\whoami.exe" -Destination "$d\stage\$lure.exe" -Force
+        New-Item -ItemType File -Force -Path "$d\stage\pic1.png" | Out-Null
+        Compress-Archive -Path "$d\stage\*" -DestinationPath "$d\$lure.zip" -Force
+        Expand-Archive -Path "$d\$lure.zip" -DestinationPath "$d\run" -Force
+        Start-Process -FilePath "$d\run\$lure.exe" -ArgumentList '/all' -WorkingDirectory "$d\run" -Wait -NoNewWindow
+        $global:LASTEXITCODE = 0
+        Write-Output cortexsim-mp-029-lure-executed
       linux: |
         rm -rf /tmp/cortexsim-mp-029 && mkdir -m 700 /tmp/cortexsim-mp-029 || { echo "sandbox /tmp/cortexsim-mp-029 could not be created fresh: something else is at that path" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029
@@ -252,7 +274,22 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp029-step-02-windows
+      windows: |
+        $sandbox = Join-Path $env:TEMP 'cortexsim-mp-029'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of exactly
+        # SYSTEM, Administrators and this sandbox's marker. A planted folder fails on its owner, a
+        # junction on its owner or its missing marker, so swapping the two cannot pass.
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        $owners = @('S-1-5-18', 'S-1-5-32-544', [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and ($owners -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-29') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', 'S-1-9-4243-29' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $d = Join-Path $env:TEMP 'cortexsim-mp-029\run'
+        foreach ($p in 'Avp','SentryEye','EPSecurityService','SentinelUI','NortonSecurity') { Get-Process -Name $p -ErrorAction SilentlyContinue | Out-Null }
+        tasklist.exe /FI "IMAGENAME eq SentinelUI.exe" /NH | Out-File -FilePath "$d\edr-check.txt"
+        Get-CimInstance -ClassName Win32_VideoController | Select-Object CurrentHorizontalResolution | Out-File -FilePath "$d\res.txt"
+        Test-Path -Path "$d\pic1.png" | Out-File -FilePath "$d\decoy.txt"
+        $global:LASTEXITCODE = 0
+        Write-Output cortexsim-mp-029-environment-checks-done
       linux: |
         [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-029 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-029 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029/run
@@ -290,7 +327,23 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp029-step-03-windows
+      windows: |
+        $sandbox = Join-Path $env:TEMP 'cortexsim-mp-029'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of exactly
+        # SYSTEM, Administrators and this sandbox's marker. A planted folder fails on its owner, a
+        # junction on its owner or its missing marker, so swapping the two cannot pass.
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        $owners = @('S-1-5-18', 'S-1-5-32-544', [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and ($owners -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-29') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', 'S-1-9-4243-29' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        if (-not $env:STAGE_HOST) { $env:STAGE_HOST = '127.0.0.1' }
+        $d = Join-Path $env:TEMP 'cortexsim-mp-029\run'
+        $base = "http://$($env:STAGE_HOST)/padeqav/WordPress/refs/heads/master/wp-includes/images"
+        foreach ($f in 'admin-bar-sprite.png','Windows.jpg') { try { Invoke-WebRequest -Uri "$base/$f" -OutFile (Join-Path $d $f) -UseBasicParsing -TimeoutSec 5 } catch { Set-Content -Path (Join-Path $d $f) -Value 'cortexsim-mp-029-stage-placeholder' } }
+        Copy-Item -Path (Join-Path $d 'Windows.jpg') -Destination (Join-Path $d 'Windows.bin') -Force
+        Get-FileHash -Algorithm SHA256 -Path (Join-Path $d 'Windows.bin') | Out-File -FilePath (Join-Path $d 'stage.sha256')
+        $global:LASTEXITCODE = 0
+        Write-Output cortexsim-mp-029-stages-written
       linux: |
         [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-029 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-029 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         D=/tmp/cortexsim-mp-029/run
@@ -329,7 +382,20 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp029-step-04-windows
+      windows: |
+        if (-not $env:LAB_RESOLVER) { $env:LAB_RESOLVER = '127.0.0.1' }
+        nslookup abwxjp5.me $env:LAB_RESOLVER
+        nslookup msonline.help $env:LAB_RESOLVER
+        nslookup servgate.me $env:LAB_RESOLVER
+        nslookup zamstats.me $env:LAB_RESOLVER
+        $global:LASTEXITCODE = 0
+        Write-Output cortexsim-mp-029-c2-domains-looked-up
+        # Last Windows step: a pull run never executes scenario cleanup, so the
+        # lure/stage directory steps 01-03 wrote is removed here.
+        # rmdir removes a junction planted at that path, not what it points to.
+        $sandbox = Join-Path $env:TEMP 'cortexsim-mp-029'
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        $global:LASTEXITCODE = 0
       linux: |
         dig +short abwxjp5.me @${LAB_RESOLVER:-127.0.0.53}
         dig +short msonline.help @${LAB_RESOLVER:-127.0.0.53}

@@ -209,6 +209,18 @@ steps:
     platforms: ["linux", "windows"]
     platform_variants:
       windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp023'
+        # Windows form of the R2a rule: whatever is at the path goes (rmdir removes a junction,
+        # not its target), mkdir fails if anything reappears, and the folder then admits only
+        # SYSTEM and Administrators plus a marker ACE no other folder carries. A later step
+        # tells it from anything planted with one Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        cmd.exe /c mkdir "$sandbox"
+        if ($LASTEXITCODE -ne 0) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm('D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1;;;S-1-9-4243-23)', [System.Security.AccessControl.AccessControlSections]::Access)
+        Set-Acl -LiteralPath $sandbox -AclObject $sd
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox was written to before it was locked"; exit 1 }
         $s = 'C:\ProgramData\cortexsim-mp023'
         $w = "$s\wwwroot"
         New-Item -ItemType Directory -Force -Path $w | Out-Null
@@ -271,6 +283,14 @@ steps:
     platforms: ["linux", "windows"]
     platform_variants:
       windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp023'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of exactly
+        # SYSTEM, Administrators and this sandbox's marker. A planted folder fails on its owner, a
+        # junction on its owner or its missing marker, so swapping the two cannot pass.
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        $owners = @('S-1-5-18', 'S-1-5-32-544', [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and ($owners -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-23') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', 'S-1-9-4243-23' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
         $p = 'C:\ProgramData\cortexsim-mp023'
         New-Item -ItemType Directory -Force -Path $p | Out-Null
         $cdb = @("${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe", "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\cdb.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -306,6 +326,14 @@ steps:
     platforms: ["linux", "windows"]
     platform_variants:
       windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp023'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of exactly
+        # SYSTEM, Administrators and this sandbox's marker. A planted folder fails on its owner, a
+        # junction on its owner or its missing marker, so swapping the two cannot pass.
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        $owners = @('S-1-5-18', 'S-1-5-32-544', [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and ($owners -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-23') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', 'S-1-9-4243-23' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
         # Creating a task under \Microsoft\Windows\AppID needs an elevated beacon; /ru is omitted so the task runs as the beacon's own account.
         schtasks.exe /create /f /tn "Microsoft\Windows\AppID\EPolicyManager" /sc onstart /tr "C:\ProgramData\cortexsim-mp023\fontdrvhost.exe -cf C:\ProgramData\cortexsim-mp023\config.ini C:\Windows\System32\whoami.exe"
         schtasks.exe /query /tn "Microsoft\Windows\AppID\EPolicyManager" /v /fo list
@@ -573,7 +601,8 @@ cleanup:
     - "crontab -u www-data -l 2>/dev/null | grep -v cortexsim-mp023 | crontab -u www-data - || true"
     - "rm -rf /tmp/cortexsim-mp023"
     - "schtasks.exe /delete /f /tn \"Microsoft\\Windows\\AppID\\EPolicyManager\""
-    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\\ProgramData\\cortexsim-mp023, HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
+    - "cmd.exe /c if exist \"C:\\ProgramData\\cortexsim-mp023\" rd /s /q \"C:\\ProgramData\\cortexsim-mp023\""
+    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
     - "echo cortexsim-mp023-cleanup-complete"
 
 author: "Henry Reed"
