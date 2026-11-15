@@ -434,7 +434,24 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   it is still queued; and every endpoint in its routing ledger has polled
   `/tasks` since it could have collected its task. The marker says the
   `/complete` never arrived and lists the possible causes: a SimCore restart, a
-  beacon restart, or a drop on the wire.
+  beacon restart, or a drop on the wire. The run ends **`failed`**, not
+  `complete` (#326): its output opens the marker with
+  `--- RUN FAILED: BEACON_ABANDONED_TASK ---`, and its `run.status` frame
+  carries `status: failed` and `termination: BEACON_ABANDONED_TASK`. Its host
+  evidence and Results are unchanged: the first step with no host record is
+  stamped `beacon_lost` (its rows stay unjudged; a `prevent` row caps at
+  `pending`), and later steps are `not_run` / `UPSTREAM_SEVERED` (rows
+  `not_reached`). A run whose agent went offline (beacon-lost, §1.3.1) still
+  ends `complete`, severed at the step.
+- **A busy database does not fail a poll (#326).** SQLite allows one writer.
+  When another one holds the lock past the 5 s busy timeout,
+  `GET /api/agents/{id}/tasks` and `GET /api/runs/{id}/control` skip their
+  `last_seen` stamp for that poll and answer 200 as usual (they used to answer
+  500, which the beacon reads on `/control` as a lost channel and stops its
+  step). A task whose delivery cannot be recorded is not handed out: the poll
+  answers `{"task": null}` and the task stays queued for the next poll. The
+  heartbeat sweep skips its pass. `/output` and `/complete` are evidence, not
+  bookkeeping, and still fail so the beacon retries them.
 - **Pull dispatch by target OS (2026-11).** Each task step now carries `shell`
   (`powershell` | `cmd` | absent for POSIX), `resolved_from` (`primary` |
   `neutral` | `variant:<os>`) and `platform_variants`. The command dispatched is the
@@ -2053,6 +2070,9 @@ run's (<why>)`; the `Observation` stays on the run with no row; the alert
 leaves the run's case ledger; and the summary lists it under
 `withdrawn_credits[]` (`result_id`, `step_id`, `alert_external_id`,
 `alert_name`, `observed_at`, `mttd_seconds`, `reason`, `run_id`) with a warning.
+`POST /reconcile` commits the withdrawal before its incident and case reads, so
+that no write is held across a tenant call (#326): a reconcile that fails after
+that point leaves the row withdrawn, with its note, for the next one to judge.
 The auto-reconcile sweep reaches a stored run only while it is inside the
 lookback, under the attempt cap and still has an unobserved row; any other
 stored run changes when `POST /api/runs/{id}/reconcile` (or `/observations`) is
@@ -3808,7 +3828,7 @@ pwsh 7 / injected transports only. Round 2's additions are in §11.
 | `CLUSTER_CONSENT_REQUIRED` · `PRIVILEGED_K8S_DISABLED` · `CLUSTER_POSTURE_REFUSED` (409) | `POST /api/runs` (push), `/preflight` | Cluster-posture clause: a consent key to set, the deployment switch, or a posture no key unlocks. Not reachable at launch until `cluster_posture` is an ORM column. |
 | `LAUNCH_REFUSED` | Result `outcome_reason` | Historical: a launch refused after seeding on a build before 2026-11-13. Results `not_executed`, never matched. Current code writes no row for a refused launch. |
 | `TASK_LOST_ON_RESTART` | Result `outcome_reason` | Orphan failed by `rehydrate()`; Results `not_executed`, never matched. |
-| `BEACON_ABANDONED_TASK` | run marker | Delivered run whose `/complete` never arrived; reaped under the four conditions in §1.3. |
+| `BEACON_ABANDONED_TASK` | run marker (`RUN FAILED: BEACON_ABANDONED_TASK`); `termination` on the `run.status` frame | Delivered run whose `/complete` never arrived; reaped under the four conditions in §1.3. The run ends `failed`. |
 | `UNSCOPED_MATCH` | Result `outcome_reason` | A reconcile match with no host to scope against stays `pending`, no MTTD (§1.15). |
 | `PLATFORM_UNSATISFIABLE` | step `reason` on `/complete`; `!! STEP NOT RUN:` marker | Windows beacon refused a step whose `platforms` exclude windows → `not_executed`. |
 | `CONTROL_CHANNEL_LOST` | run output | The `/control` poll failed; the step was terminated. NOT an operator abort. |

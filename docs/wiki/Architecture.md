@@ -108,6 +108,14 @@ DB schema is created at startup (`init_db`); no migrations system —
 SimCore is a single-binary POV tool, not a long-running multi-version
 service.
 
+The file runs in WAL mode with a 5 s busy timeout (`core/database.py`,
+`configure_sqlite`), so a reader and the one writer do not wait on each other.
+WAL keeps two side files next to the database, `cortexsim.db-wal` and
+`cortexsim.db-shm`; a backup is all three files or a SQLite online backup
+(`docs/release/mvp-launch-runbook.md` §8.5). SQLite still allows one writer at
+a time, so no code path may keep a write transaction open across a network
+call: a path that decrypts a credential commits before it calls out.
+
 ## Deeper reading
 
 - [`docs/eal-simulator/architecture.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/eal-simulator/architecture.md)

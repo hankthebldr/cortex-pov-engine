@@ -59,6 +59,12 @@ async def load_tokens(db: AsyncSession, names: Iterable[str]) -> dict[str, str]:
     for row in await list_rows(db):
         if row.name in wanted and row.secret_name:
             out[row.name] = await store.get_plaintext(row.secret_name)
+    if out:
+        # Each decrypt stamped `last_accessed_at`, which opened a write
+        # transaction, and the caller sends next. Commit it here: held across
+        # the send it locks every other writer out until the collector
+        # answers (#326).
+        await db.commit()
     return out
 
 
