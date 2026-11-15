@@ -88,8 +88,8 @@ workflow's own probe records 401), so the clone-and-build path is the only path.
   `agentic_egress` plugin and starts `mocktaxii` / `gocortexbrokenbank` from
   `sources/`), and the payload shelf (`release.yml` never runs
   `scripts/build-payloads.sh`, so a released image reads
-  `payload_shelf: SHELF_ARTIFACTS_MISSING`). Section 8.5 closes the first; the
-  second is decision D2. The released image contains no private submodule
+  `payload_shelf: SHELF_ARTIFACTS_MISSING`). Section 8.5 closes the first and
+  section 11 the second (D2). The released image contains no private submodule
   content: only `ackbarx`, `xdrtop` and `signalbench` (public) are compiled into
   it.
 - Database: SQLite in WAL mode at `/app/data/cortexsim.db` plus `-wal`/`-shm`
@@ -237,7 +237,7 @@ POVengine 1.3.0 — install on this jumpbox
   ✓ Host           Ubuntu 24.04 · x86_64 · 4 CPU · 8 GB · 38 GB free
   ✓ Engine         Bundled engine · installs privately (customer Docker untouched)
   ✓ Address        Beacons will reach this host at 192.0.2.10  ▾
-  ✓ Firewall       Allow TCP 8888 inbound                       ▾
+  ✓ Firewall       Allow TCP 8888 inbound from any address      ▾
   ✓ Proxy          None found                                   ▾
   ✓ Secret         Generated and stored, never shown
   ! Endpoint prot. Cortex XDR found · exclusions needed          ▾
@@ -246,7 +246,8 @@ POVengine 1.3.0 — install on this jumpbox
 ```
 
 Each row is one line; `▾` opens the detail (choose another address, change the
-port, set or clear the proxy, the exact exclusion paths).
+port, set or clear the proxy, the exact exclusion paths). The Firewall row's
+detail says the API has no sign-in yet, so anyone who reaches the port can use it.
 A row that refuses (unsupported OS, no virtualization, not enough disk) is
 coral with its code and the Install button is replaced by the remedy.
 
@@ -332,7 +333,8 @@ the customer already has.
   address (constraint on `last_ip`), and the container's hostname is the
   jumpbox's, so the Host guard admits the jumpbox's own name with no extra entry.
 - Firewall: `ufw` when active, else `firewalld` when running, else nothing to do
-  (reported, not a failure). One rule: TCP `<port>` inbound.
+  (reported, not a failure). One rule: TCP `<port>` inbound from any source
+  (D4).
 - Supported: Ubuntu 22.04 and 24.04 (proven in CI). RHEL 9 family: best effort
   until a run proves it, because SELinux with a static engine is unproven here
   (section 12, R4). Requires systemd and cgroup v2; refused otherwise.
@@ -350,6 +352,9 @@ the customer already has.
   WSL GitHub releases, MIT since WSL was open-sourced) when the inbox WSL is too
   old, and imports the **host distribution** with
   `wsl --import povengine-host C:\ProgramData\POVengine\wsl <rootfs.tar> --version 2`.
+- **Docker stays the runtime on Windows, through WSL** (owner, D1): Docker
+  Engine (the static `dockerd`) inside WSL2, never Docker Desktop and never a
+  second runtime such as a Hyper-V VM.
 - The **host distribution** is built in CI from `installer/host-distro/`: a
   minimal Debian slim root filesystem plus the same static engine as Linux and a
   tiny init that starts `dockerd` and then SimCore with the same `docker run`
@@ -366,7 +371,7 @@ the customer already has.
   every beacon reads as one source address, so the wizard's Address row says
   "Beacon addresses will read as this host" and the Firewall check in the
   console must be given agent addresses by hand. The Windows Firewall gets one
-  inbound rule for TCP `<port>`.
+  inbound rule for TCP `<port>` from any source (D4).
 - Reboot and resume: when a reboot is needed, the engine records its state in
   `C:\ProgramData\POVengine\setup-state.json` and registers a one-shot
   `RunOnce` entry that reopens the wizard at the step it stopped on after the
@@ -491,6 +496,14 @@ unregisters it.
 
 ## 11. Release integration
 
+**The payload shelf ships in the release (D2).** `build-image` runs
+`scripts/build-payloads.sh` with `PAYLOAD_ALLOW_UNPINNED=0` before the image
+build, so the released image, and therefore every package, carries the staged
+shelf tools (8 today: the Linux privilege-escalation enumerator family) and
+`/api/health` reads `payload_shelf` ok on an installed SimCore. A pin mismatch
+fails the release. `manifest.json` and the release notes list each shelf
+artifact with its pin and licence, taken from its pack's `install.artifact`.
+
 A new `build-installer` job in `.github/workflows/release.yml`, after
 `build-image` and `build-agent`, then feeding `manifest`:
 
@@ -538,10 +551,11 @@ about 400–700 MB. GitHub's per-asset limit is 2 GiB.
 - **Wizard UI:** Playwright against the setup program's local server driving
   Install to Done on the Linux runner (the GUI and the CLI share the engine, so
   this covers the page, not a second implementation).
-- **Windows end to end:** the same sequence on a Windows host that can run WSL2:
-  a hosted `windows-2022`/`windows-2025` runner if spike R2 shows it can,
-  otherwise a Windows VM with virtualization (owner's lab or an Azure VM),
-  recorded with its build, edition and the run's log.
+- **Windows end to end (D3):** the same sequence run by hand on the owner's
+  homelab Windows machine, recorded in the PR with its Windows build, edition,
+  WSL version and the setup log, with host names and addresses removed (the repo
+  is public). A hosted `windows-2022`/`windows-2025` runner runs it too if spike
+  R2 shows WSL2 works there. No self-hosted runner.
 
 ### 12.2 Risks and spikes
 
@@ -550,8 +564,11 @@ about 400–700 MB. GitHub's per-asset limit is 2 GiB.
   are per account. Spike first: (a) distribution imported and run as SYSTEM by
   the `POVengine` service; (b) fallback, a dedicated local account
   `povengine-svc` created by the installer with "Log on as a service", random
-  password held by the service manager, never shown. The spike also measures
-  reboot survival and the WSL idle shutdown.
+  password held by the service manager, never shown; (c) if both fail, a task
+  that starts at sign-in of the installing account, so SimCore runs while that
+  account is signed in (the wizard says so). Docker in WSL is the runtime in all
+  three. The spike also measures reboot survival and the WSL idle shutdown, and
+  runs on the owner's homelab Windows machine.
 - **R2 — CI proof on Windows (medium).** The `setup-wsl` action documents WSL2
   on hosted Windows runners, while older GitHub statements say those VMs lack
   nested virtualization. Spike in week one; the fallback is the VM in 12.1.
@@ -562,7 +579,8 @@ about 400–700 MB. GitHub's per-asset limit is 2 GiB.
 - **R4 — SELinux with a static engine on RHEL 9 (medium).** Unproven; RHEL stays
   best effort until a run proves it.
 - **R5 — Endpoint protection on the jumpbox (medium).** The payload carries
-  scenario content and simulation tools; Cortex XDR or Defender in prevent mode
+  scenario content, simulation tools and, since D2, the payload shelf's
+  offensive tools; Cortex XDR or Defender in prevent mode
   may quarantine the package or block the engine. The wizard detects an XDR
   agent and Defender and shows the exact exclusion paths before Install; it
   never changes the protection settings itself.
@@ -623,23 +641,18 @@ These were not asked; they are my calls, open to correction:
 13. No restore onto another jumpbox and no secret export; backups are for
     same-box rollback.
 14. An existing compose deployment is refused by name, not imported.
+15. Linux and Windows ship together in 1.3.0; there is no Linux-only release
+    (1.3.0 has no date).
 
-## 16. Open decisions (owner)
+## 16. Decisions (owner, 2026-11-15)
 
-Raised by the builder check on 2026-11-15; each changes what gets built.
+Raised by the builder check; answered by the owner the same day.
 
-- **D1 — Windows if spike R1 fails both ways, and Linux-first.** Fallback is a
-  logon-triggered task under the installing account (SimCore runs only while
-  that account is signed in), or Windows moves out of 1.3.0. And: may 1.3.0 ship
-  the Linux packages if Windows is not proven by then?
-- **D2 — The payload shelf in a public package.** Bundle the 8 shelf tools
-  (GPL scripts such as linpeas and pspy, and an exploit tool, traitor) in the
-  release package; ship them as a separate optional asset; or ship without them,
-  treat `SHELF_ARTIFACTS_MISSING` as expected on Screen 3 and name the scenarios
-  that refuse with `PAYLOAD_NOT_STAGED`.
-- **D3 — Where the Windows end-to-end proof runs** if hosted runners cannot run
-  WSL2: a manual run on the owner's lab Windows VM recorded in the PR, a
-  self-hosted runner (PR code would run on that machine), or an Azure VM.
-- **D4 — Firewall scope for an unauthenticated API (SEC-01/SEC-04).** Open TCP
-  `<port>` to any source (today's compose behaviour), or default to the
-  jumpbox's local subnets with "add networks" in the row's detail.
+- **D1 — Runtime on Windows.** Docker stays the engine and runs through WSL
+  (section 7.2). If the service spike fails both ways, the fallback is the
+  sign-in task in R1 (c), still Docker in WSL.
+- **D2 — Payload shelf.** Public, in the release: "we already leverage public
+  repos for adapters and malware samples". Staged and pinned by the release
+  (section 11).
+- **D3 — Windows proof.** The owner's homelab Windows machine (section 12.1).
+- **D4 — Firewall.** Open TCP `<port>` to all traffic after install.
