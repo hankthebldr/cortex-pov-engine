@@ -272,7 +272,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set: Configure · Test · Run · Customize · Add to chain · Read back · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
