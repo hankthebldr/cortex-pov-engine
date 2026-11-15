@@ -8,6 +8,27 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed — the Scenarios planes sidebar fills its column, and the header fits
+
+- **The Detection planes sidebar floated as a short card.** It started 26 px
+  right of the nav rail and 22 px below the top, and ended where its list
+  ended, partway down the panel. It is now a full-height column flush against
+  the nav rail. Its plane list stays in place while the cards scroll, parked
+  against the top edge. Below 860 px, where the nav rail retracts to icons and
+  the planes stack above the results, they are a grid instead of a
+  one-per-row list: the list filled 572 px of a 620 px window and pushed every
+  scenario card below the fold.
+- **The header ran past the edge below about 1650 px.** Back / Forward and the
+  breadcrumb (1.2.0) widened a bar that already filled 1280, so Search, the
+  tour, the theme toggle and the avatar sat off screen, reachable only by
+  scrolling the header sideways. The bar now gives way in steps: tenant and
+  agent names end in an ellipsis, and the RUNNING pill's scenario and clock,
+  Search's word, the uptime, the breadcrumb's journey crumb and the version
+  drop out as the width narrows. An agent's state word always stays. It fits
+  from 1100 px up, the desktop app's 1204 px browser pane included.
+- **The POVengine wordmark drew at 20 px instead of 15 px.** A legacy rule
+  out-ranked the header's own.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is
