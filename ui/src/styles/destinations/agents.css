@@ -127,8 +127,7 @@
    card reads its state before you read its StatusIcon. TargetsView
    sets one `target-card--<liveness>` modifier per agent card. ────── */
 .theme-console .targets .target-card { border-radius: 8px; }
-.theme-console .targets .target-card--push,
-.theme-console .targets .target-card--iac {
+.theme-console .targets .target-card--push {
   border-top:3px solid var(--ac-line);
   border-radius: 4px 4px 8px 8px;
 }

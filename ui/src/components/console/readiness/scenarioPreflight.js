@@ -67,7 +67,7 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  *
  * @param {object} input
  * @param {object|null} input.scenario      full scenario detail
- * @param {object|null} input.target        {kind:'agent'|'push'|'iac', id, label}
+ * @param {object|null} input.target        {kind:'agent'|'push', id, label}
  * @param {Array}       input.agents        /api/agents rows
  * @param {object|null} input.shelf         normalizeShelf() output
  * @param {object}      input.adapterIndex  adapter_id → adapter row

@@ -6,7 +6,6 @@ import LaunchPanel from './components/LaunchPanel.jsx'
 import ToolStatusPanel from './components/ToolStatusPanel.jsx'
 import ResultsViewer from './components/ResultsViewer.jsx'
 import MitreHeatmap from './components/MitreHeatmap.jsx'
-import InfraGenerator from './components/InfraGenerator.jsx'
 import ResultsValidationWizard from './components/ResultsValidationWizard.jsx'
 import { getHealth, getRuns, getEalRuns } from './api/client.js'
 
@@ -65,7 +64,7 @@ function CortexLogo() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function AppHeader({ hostname, version, onToggleResults, showResults,
-                   onToggleMitre, showMitre, onToggleDeploy, showDeploy,
+                   onToggleMitre, showMitre,
                    onToggleEal, showEal, onToggleValidate, showValidate }) {
   return (
     <header className="app-header">
@@ -97,12 +96,6 @@ function AppHeader({ hostname, version, onToggleResults, showResults,
         onClick={onToggleMitre}
       >
         &#9635; MITRE
-      </button>
-      <button
-        className={`btn btn-sm app-header__toggle-btn ${showDeploy ? 'btn-navy' : 'btn-secondary'} ${showDeploy ? 'app-header__toggle-btn--active' : ''}`}
-        onClick={onToggleDeploy}
-      >
-        &#x2630; Deploy
       </button>
       <button
         className={`btn btn-sm app-header__toggle-btn ${showEal ? 'btn-navy' : 'btn-secondary'} ${showEal ? 'app-header__toggle-btn--active' : ''}`}
@@ -141,7 +134,6 @@ export default function App() {
   const [ealRuns, setEalRuns]                     = useState([])
   const [showResults, setShowResults]             = useState(false)
   const [showMitre, setShowMitre]                 = useState(false)
-  const [showDeploy, setShowDeploy]               = useState(false)
   const [showEal, setShowEal]                     = useState(false)
   const [showValidate, setShowValidate]           = useState(false)
   const [validateRunId, setValidateRunId]         = useState(null)
@@ -192,7 +184,6 @@ export default function App() {
       setShowValidate(true)
       setShowResults(false)
       setShowMitre(false)
-      setShowDeploy(false)
       setShowEal(false)
     }
     window.addEventListener('cortex:navigate-run', handler)
@@ -230,19 +221,15 @@ export default function App() {
         hostname={hostname}
         version={version}
         onToggleResults={() => {
-          setShowResults(v => !v); setShowMitre(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+          setShowResults(v => !v); setShowMitre(false); setShowEal(false); setShowValidate(false)
         }}
         showResults={showResults}
         onToggleMitre={() => {
-          setShowMitre(v => !v); setShowResults(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+          setShowMitre(v => !v); setShowResults(false); setShowEal(false); setShowValidate(false)
         }}
         showMitre={showMitre}
-        onToggleDeploy={() => {
-          setShowDeploy(v => !v); setShowResults(false); setShowMitre(false); setShowEal(false); setShowValidate(false)
-        }}
-        showDeploy={showDeploy}
         onToggleEal={() => {
-          setShowEal(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowValidate(false)
+          setShowEal(v => !v); setShowResults(false); setShowMitre(false); setShowValidate(false)
         }}
         showEal={showEal}
         onToggleValidate={() => {
@@ -253,7 +240,7 @@ export default function App() {
             const freshest = pickFreshestRunId(runs, ealRuns)
             if (freshest) setValidateRunId(freshest)
           }
-          setShowValidate(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowEal(false)
+          setShowValidate(v => !v); setShowResults(false); setShowMitre(false); setShowEal(false)
         }}
         showValidate={showValidate}
       />
@@ -291,8 +278,6 @@ export default function App() {
               </p>
             </div>
           )
-        ) : showDeploy ? (
-          <InfraGenerator />
         ) : showMitre ? (
           <MitreHeatmap />
         ) : showResults ? (
