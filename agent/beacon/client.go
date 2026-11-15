@@ -138,6 +138,9 @@ type Step struct {
 	// TimeoutSeconds defines the maximum execution duration for this step in
 	// seconds. If zero or unset, the client's StepTimeout or defaultStepTimeout is used.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// EalRelay marks a step whose command calls the SimCore-only EAL CLI. The
+	// beacon runs that call through SimCore instead (see eal_relay.go).
+	EalRelay bool `json:"eal_relay,omitempty"`
 	// RequiredBinaries names executables the step's command needs on PATH. Each
 	// is checked with exec.LookPath before the step runs; a miss records the
 	// step not_run / TOOL_ABSENT instead of running it (see preflightTools).
@@ -1062,6 +1065,10 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		return
 	}
 
+	// EAL relay: steps SimCore marked run the EAL CLI through this beacon.
+	// Here, above the dispatch, so all three execution paths get it.
+	defer c.prepareEalRelay(task)()
+
 	// ---- Artifact staging: all-or-nothing, BEFORE step 1 ----
 	//
 	// Placed above the hasCausalityContract() dispatch so ALL THREE execution
@@ -1345,7 +1352,10 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			res = depOutcome.synthetic
 		} else {
 			wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
-				Mode: idRes.Mode, Username: idRes.Username, Command: step.Command,
+				Mode: idRes.Mode, Username: idRes.Username,
+				// A marked step's EAL call is swapped in what is executed,
+				// never in step.Command (eal_relay.go).
+				Command: ealRelayCommand(task.RunID, step.ID, step.Command, plan.shell),
 			})
 			if wrapErr != nil {
 				depOutcome.cleanup()
@@ -1453,6 +1463,7 @@ func (c *BeaconClient) runChainedStep(
 	sessCtx context.Context, sessCancel context.CancelFunc,
 	session *executor.ChainSession, runID, stepID, shell, wrapped string, timeout time.Duration,
 ) (identity.ExecResult, *ControlState, bool, error) {
+	defer ealRelayStep(runID, stepID)() // a marked step's EAL ticket lives exactly this long
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}
@@ -1610,6 +1621,10 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 // on timeout, abort (or parent cancel) the child context is cancelled, which signals
 // the step's process group via the executor's RunCommandCtx.
 func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, *ControlState, bool, error) {
+	// A marked step's EAL call is swapped here, in what is executed, never in
+	// the step itself (eal_relay.go).
+	execID.Command = ealRelayCommand(runID, stepID, execID.Command, execID.Shell)
+	defer ealRelayStep(runID, stepID)() // a marked step's EAL ticket lives exactly this long
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}

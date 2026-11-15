@@ -24,6 +24,9 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Intege
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from database import Base
+# The EAL relay's table lives in its own module; importing it here registers it
+# wherever the models are loaded, so create_all creates it.
+from eal_relay_models import EalRelayStep  # noqa: F401
 
 
 class Scenario(Base):
