@@ -26,6 +26,9 @@ const RESULT_OUTCOMES = new Set([
   'prevented', 'detected', 'missed', 'pending', 'not_reached', 'not_executed',
 ])
 export const DETECTED_NOT_PREVENTED = 'DETECTED_NOT_PREVENTED'
+/** A step the host reports `exited` non-zero: it failed, so its silent rows are
+ *  `not_executed`, never `missed` (core/engine/outcome.py::STEP_FAILED, #323). */
+export const STEP_FAILED = 'STEP_FAILED'
 
 /**
  * The ONE mapping from a Result row (or a storyline entry) to the status key

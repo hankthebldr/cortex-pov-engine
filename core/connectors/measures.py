@@ -15,7 +15,10 @@ audit set out:
   than were fetched) is a floor — a floor that clears the bar is a PASS, a
   floor below it proves nothing, so a FAIL is withheld;
 * **zero matched** after a reconcile is "not landed yet", never "missed".
-  Giving up is the sweep's attempt cap, and it records ``pending``.
+  Giving up is the sweep's attempt cap, and it records ``pending``;
+* a **verify-only XQL row** (:func:`is_verify_only`) raises no alert, so while
+  it is unmatched it is not a Detection Accuracy miss; with no alert-backed
+  row left there is no accuracy at all, never a PASS.
 """
 from __future__ import annotations
 
@@ -78,19 +81,70 @@ def empty_exclusions() -> dict[str, int]:
     return {"not_reached": 0, "not_executed": 0, "soak_pending": 0}
 
 
+#: Card kinds that are queries, not alert-raising objects. A saved XQL query
+#: (``xql_queries[]``) and an XDM modeling rule (``modeling_rules[]``) raise no
+#: alert in XSIAM by themselves; a BIOC, correlation rule, IOC, ABIOC,
+#: analytics module or prevention module does.
+QUERY_CARD_KINDS = frozenset({"xql", "modeling"})
+
+ALL_VERIFY_ONLY_REASON = (
+    "no alert-backed row to measure: every Detection Accuracy row that ran is a "
+    "verify-only XQL row (a query raises no alert), so the ratio would be matched "
+    "over matched. These rows are read through the Tier-2 verify verdict")
+
+
+def is_verify_only(result: Any) -> bool:
+    """True for a Tier-2-verify-only row: evidence that a step ran, not a detection.
+
+    The rule (issue #272): the row's declared detection type (``signal_type``)
+    is ``XQL``, and no alert-raising card object backs it. Its card object is
+    ``Result.detection_kind`` when the row carries one, else the catalog entry
+    for ``ttp_ref`` + ``detection_id`` (EAL-seeded rows carry no kind). It is
+    verify-only when that kind is in :data:`QUERY_CARD_KINDS` or there is no
+    card at all; an XQL-typed row whose card is a correlation rule or a BIOC is
+    alert-backed.
+
+    Such a row is credited only when a correlation alert sharing its technique
+    lands in its window (the matcher reads XQL as the correlation family), so on
+    a healthy tenant it is written ``missed``. Its own verdict is Tier 2's
+    (``POST /api/runs/{id}/verify`` runs its ``verification_xql``).
+    ``verification_xql`` is not part of the rule: most XQL rows in the corpus do
+    not carry one, and those rows raise no alert either.
+    """
+    if str(getattr(result, "signal_type", None) or "").strip().upper() != "XQL":
+        return False
+    kind = getattr(result, "detection_kind", None)
+    if kind is None:
+        from engine.ttp_catalog import catalog  # noqa: PLC0415
+        card = catalog.find(getattr(result, "ttp_ref", None),
+                            getattr(result, "detection_id", None))
+        kind = card.kind if card is not None else None
+    return kind is None or kind in QUERY_CARD_KINDS
+
+
+def empty_verify_only() -> dict[str, int]:
+    return {"excluded": 0, "credited": 0, "no_verification_xql": 0}
+
+
 class AccuracyMeasure(tuple):
     """``(percent, observed, seeded)`` that also carries ``.excluded``.
 
     A 3-tuple so every caller that unpacks it keeps working; ``excluded`` is
     the count of rows taken out of BOTH numerator and denominator, by reason.
+    ``verify_only`` counts the verify-only rows (:func:`is_verify_only`):
+    ``excluded`` left both sides unmatched, ``credited`` were matched and
+    counted on both sides, ``no_verification_xql`` is how many of the excluded
+    carry no query Tier 2 could run.
     """
 
     excluded: dict[str, int]
+    verify_only: dict[str, int]
 
     def __new__(cls, value: Optional[float], observed: int, seeded: int,
-                excluded: dict[str, int]) -> "AccuracyMeasure":
+                excluded: dict[str, int], verify_only: dict[str, int]) -> "AccuracyMeasure":
         t = super().__new__(cls, (value, observed, seeded))
         t.excluded = excluded
+        t.verify_only = verify_only
         return t
 
 
@@ -99,10 +153,20 @@ def detection_accuracy(results: Iterable[Any]) -> AccuracyMeasure:
 
     Rows whose outcome is ``not_reached``/``not_executed``, or which are
     soak-pending, leave numerator and denominator; ``.excluded`` counts them.
-    None (not 0.0) when nothing remains: an empty run has no accuracy.
+
+    A verify-only XQL row (:func:`is_verify_only`) leaves both sides while it
+    is unmatched. Once an alert matched it, it is detected and counts once, in
+    the numerator and the denominator, as it did before issue #272: it is never
+    in one without the other, so the value cannot exceed 100 %.
+
+    None (not 0.0) when no alert-backed row remains: an empty run has no
+    accuracy, and with only verify-only rows a matched row would be its own
+    denominator, 100 % by construction.
     """
     excluded = empty_exclusions()
+    verify_only = empty_verify_only()
     seeded = []
+    alert_backed = 0
     for r in results:
         if getattr(r, "executed_at", None) is None:
             continue
@@ -110,15 +174,24 @@ def detection_accuracy(results: Iterable[Any]) -> AccuracyMeasure:
         if why is not None:
             excluded[why] += 1
             continue
-        seeded.append(r)
-    if not seeded:
-        return AccuracyMeasure(None, 0, 0, excluded)
-    # The one predicate (R1): a ``pending`` row is not a hit even when the
-    # reconcile set ``observed`` (an alert with no host witness).
-    observed = sum(1 for r in seeded
-                   if is_hit(getattr(r, "outcome", None), getattr(r, "observed", False)))
+        # The one predicate (R1): a ``pending`` row is not a hit even when the
+        # reconcile set ``observed`` (an alert with no host witness).
+        hit = is_hit(getattr(r, "outcome", None), getattr(r, "observed", False))
+        if not is_verify_only(r):
+            alert_backed += 1
+        elif hit:
+            verify_only["credited"] += 1
+        else:
+            verify_only["excluded"] += 1
+            if not getattr(r, "verification_xql", None):
+                verify_only["no_verification_xql"] += 1
+            continue
+        seeded.append(hit)
+    if not alert_backed:
+        return AccuracyMeasure(None, 0, 0, excluded, verify_only)
+    observed = sum(seeded)
     return AccuracyMeasure(round(observed / len(seeded) * 100.0, 1), observed,
-                           len(seeded), excluded)
+                           len(seeded), excluded, verify_only)
 
 
 def correlation_rate(alert_incidents: dict[str, Optional[str]]) -> "tuple[Optional[float], int, int]":
@@ -242,9 +315,12 @@ def build_measurement(
         value, observed, seeded = acc
         record.update({"kpi": "Detection Accuracy", "value": value,
                        "observed": observed, "seeded": seeded, "unit": "%",
-                       "excluded": dict(acc.excluded)})
+                       "excluded": dict(acc.excluded),
+                       "verify_only": dict(acc.verify_only)})
         scored, reason = guard_measurement(threshold, value, unscoped=unscoped,
                                            truncated=truncated, matched=observed)
+        if value is None and (acc.verify_only["excluded"] or acc.verify_only["credited"]):
+            reason = ALL_VERIFY_ONLY_REASON
         record["scored"] = scored
         if reason:
             record["withheld"] = reason

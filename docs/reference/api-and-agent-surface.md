@@ -516,7 +516,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -538,6 +538,17 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
   `prevent` rows follow the same rule. `kpi_verdict` is left to the Tier-2 verifier. A later matched
   alert replaces `missed` with `detected`.
+- **A failed step is not a miss (1.2.1, #323).** `exited` means "ended on its own, any
+  exit status". When the host record carries a non-zero `exit_code`, the step failed on
+  the host (`ModuleNotFoundError`, a missing runtime dependency, a permission error), so
+  once its window closes with no alert its silent `detect` rows — and `prevent` rows
+  scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
+  `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
+  notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  `anchor_terminated` are unchanged; an alert matched inside the window still credits
+  the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
+  `missed`, and the block-mode two-witness branch does not read `exit_code`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
@@ -1810,13 +1821,28 @@ recorded under `tc_verdict_detail.measurement` with `family`, `basis`, `value`,
 
 | scenario `primary_kpi` (unit `%`) | value | basis |
 |---|---|---|
-| Detection Accuracy | `observed / seeded` over results that executed | `reconcile` or `manual` |
+| Detection Accuracy | `observed / seeded` over results that executed, less unmatched verify-only XQL rows | `reconcile` or `manual` |
 | Cross-Source Correlation Rate · Stitch Completeness · Correlation Coverage | `(alerts − incidents) / (alerts − 1)` | `alert_incident_ids` when the tenant stamps `incident_id`/`case_id` on alerts, else `host_incidents` from one `get_incidents` read scoped to the run's host |
 
 The guard: an **unscoped** pull withholds a PASS, a **truncated** pull
 withholds a FAIL, **zero matched** stays `pending`, and fewer than two alerts
 cannot yield a correlation rate. A re-score with no new evidence keeps the last
 measured value.
+
+**Verify-only XQL rows (2026-11-15, issue #272).** A row is verify-only when its
+declared type is `XQL` and no alert-raising card object backs it: its card
+object (`Result.detection_kind`, else the catalog entry for `ttp_ref` +
+`detection_id`) is an `xql_queries[]` query or a modeling rule, or there is no
+card (`connectors/measures.py::is_verify_only`). A query raises no alert, so
+while such a row is unmatched it leaves the Detection Accuracy numerator and
+denominator, as `not_reached` / `not_executed` rows do. A matched one counts on
+both sides. Its outcome is not changed: it still reads `missed`, and its own
+verdict is the Tier-2 verify verdict when it carries a `verification_xql`. With
+no alert-backed row left the measure is withheld and the run reads `pending`,
+never PASS. `measurement.verify_only` reports `{excluded, credited,
+no_verification_xql}`; the last counts excluded rows that Tier 2 cannot score
+either. Coverage (`coverage_pct`, the report's coverage table and the efficacy
+scorecard) is a different number and still counts these rows.
 
 **Credential config keys the `xsiam` connector reads:** `base_url` |
 `fqdn` | `tenant_url`, `api_key_id` | `auth_id`, `auth_mode`
