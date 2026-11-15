@@ -148,6 +148,27 @@ def classify_c2_plugins(plugins: Iterable[tuple[str, Iterable[str] | None]]) -> 
     return out
 
 
+def campaign_c2_plugins(steps: Iterable[object], registry: object) -> list[str]:
+    """The C2-shaped plugins a campaign's steps name, judged with the registry.
+
+    Each step's plugin is joined to its registry metadata, so the plugin's
+    declared MITRE techniques count as well as the name list; a plugin the
+    registry does not hold is judged on its name alone. This is the one
+    classification every path that can send C2-shaped traffic asks: the
+    campaign launch (``api/eal.py``) and the beacon relay
+    (``engine/eal_relay.py``). ``steps`` are objects with a ``plugin``.
+    """
+    pairs: list[tuple[str, Iterable[str] | None]] = []
+    for step in steps:
+        plugin = getattr(step, "plugin")
+        techniques = None
+        if registry.has(plugin):  # type: ignore[attr-defined]
+            meta = registry.get(plugin).metadata()  # type: ignore[attr-defined]
+            techniques = list(meta.get("mitre_techniques") or [])
+        pairs.append((plugin, techniques))
+    return classify_c2_plugins(pairs)
+
+
 def _looks_like_cidr(token: str) -> bool:
     if "/" not in token:
         return False

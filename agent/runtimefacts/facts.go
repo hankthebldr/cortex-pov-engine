@@ -62,6 +62,10 @@ type Facts struct {
 	Tools          []string `json:"tools"`
 	Accounts       []string `json:"accounts"`
 	AnchorRename   bool     `json:"anchor_rename"`
+	// Probed is every tool name this beacon looked for, found or not. Without
+	// it SimCore cannot tell "not on this host" from "never looked": a name in
+	// Probed and not in Tools is absent; a name in neither is unknown.
+	Probed []string `json:"probed"`
 }
 
 // Options carries the probe inputs. Nil functions default to the real os, exec
@@ -87,6 +91,16 @@ var DefaultProbeTools = []string{
 	"nmap", "crontab", "systemctl", "sudo", "docker", "crictl", "base64",
 	"xxd", "ss", "ip", "sha256sum", "make", "gcc", "perl", "ruby", "node",
 	"npm", "pip3", "aws", "az", "gcloud", "rclone", "ffuf", "hydra",
+}
+
+// ExtraProbeTools are tools scenarios name in requires_interpreters that are
+// not in SimCore's command-scanning list above, and so stay out of it: the
+// remote-access and privilege tools SIM-EDR-027..029 depend on.
+var ExtraProbeTools = []string{"ssh", "scp", "sshpass", "sudoedit"}
+
+// ProbeTools is everything the beacon looks for at startup.
+func ProbeTools() []string {
+	return append(append([]string{}, DefaultProbeTools...), ExtraProbeTools...)
 }
 
 // InContainer reports whether this process looks containerised: in a Kubernetes
@@ -142,6 +156,7 @@ func Collect(opts Options) Facts {
 		PostureProfile: opts.PostureProfile,
 		Tools:          []string{},
 		Accounts:       []string{},
+		Probed:         []string{},
 	}
 
 	if opts.PrepareStatusFile != "" {
@@ -155,11 +170,13 @@ func Collect(opts Options) Facts {
 	}
 
 	for _, t := range opts.ProbeTools {
+		f.Probed = append(f.Probed, t)
 		if _, err := lookPath(t); err == nil {
 			f.Tools = append(f.Tools, t)
 		}
 	}
 	sort.Strings(f.Tools)
+	sort.Strings(f.Probed)
 
 	for _, a := range opts.ProbeAccounts {
 		if lookupUser(a) == nil {
@@ -175,6 +192,7 @@ func Collect(opts Options) Facts {
 	f.PrepareStatus = clampString(f.PrepareStatus, maxStringLen)
 	f.Tools = clampList(f.Tools)
 	f.Accounts = clampList(f.Accounts)
+	f.Probed = clampList(f.Probed)
 
 	// The executor's own rule, over this probe's injected seams.
 	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath, evalSymlinks, sameFile)

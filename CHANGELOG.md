@@ -8,6 +8,36 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — scenario steps that call the EAL CLI run in pull mode (#325)
+
+- **71 scenarios failed on a beacon** at the step that runs
+  `python3 -m scripts.eal_simulator.cli`, because that CLI exists only inside
+  SimCore. A beacon from this version runs that call through SimCore instead.
+  Steps that post records to a collector are sent by SimCore, to the collector
+  target set up on this instance. The NDR network steps (C2 beacon, DNS tunnel,
+  Stratum, bulk HTTPS upload, SMB sweep, FTP, SSH) are sent by the beacon, so a
+  firewall sees the endpoint as their source.
+- **Sending needs consent on the launch**: `consent.simulation_authorized` and
+  `authorized_by`. Without it the step is a dry run and its results read not
+  executed, never missed.
+- **Relayed NGFW log-emitter steps (`ngfw_eal_emitter`, `ngfw_threat_emitter`)
+  and the C2, DNS, FTP and SSH steps also need `consent.c2_authorized` on the
+  launch.** The console does not send `authorized_by` yet, so a console launch
+  runs these steps dry until the console change lands. Launch through the API
+  to send.
+- **Not in pull mode yet:** `llm_provider_egress`, `oauth_grant_emulator`,
+  `agentic_egress`, `browser_attack_runner` and `airs_prompt_attack`. Such a
+  step stops with `EAL_WIRE_NOT_RELAYABLE` and its results read not executed.
+  The FTP step sends its login but not the file, and the SMB sweep does not
+  attempt an NTLM session.
+- **An older beacon** still fails these steps. The launch now says so
+  (`EAL_RELAY_UNAVAILABLE`); update the beacon.
+- SIM-NDR-001 and SIM-TIM-001 give their 12-beacon step 600 s. The beacon's
+  180 s default stopped it part way.
+- The beacon reports every tool it looked for (`runtime_facts.probed`), and now
+  looks for `ssh`, `scp`, `sshpass` and `sudoedit`, so a dependency on one of
+  those reads found or missing instead of `unverified`.
+
 ### Added — pull runs clean up after themselves
 
 - **A pull run left its files, units, cron lines and accounts on the target.**
@@ -86,7 +116,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   Both are on the launch response, on `POST /api/runs/preflight` and in the
   run's output. Neither refuses the launch.
 - A beacon's registration may now include `runtime_facts.probed`, the tools it
-  looked for. No beacon sends it yet.
+  looked for. The beacon sends it as of the entry above.
 
 ### Changed — the Launch gate is about one scenario; Get started tracks the app
 

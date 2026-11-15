@@ -859,6 +859,17 @@ class Orchestrator:
             eal_authorized_by: Optional[str] = None
             if (consent or {}).get("simulation_authorized") and (authorized_by or "").strip():
                 eal_authorized_by = authorized_by.strip()
+            # EAL relay (#325): mark the agent steps that call the SimCore-only
+            # EAL CLI and record this launch's consent for them. All of it is
+            # engine/eal_relay.py; a scenario with no such step is untouched.
+            from engine.eal_relay import mark_relay_steps  # noqa: PLC0415
+            prepared_pull = evaluation.prepared_pull
+            prepared_pull.steps, relay_warnings = await mark_relay_steps(
+                db, run_id, prepared_pull.steps, target_agent_id,
+                authorized_by=eal_authorized_by,
+                c2_authorized=bool((consent or {}).get("c2_authorized")),
+            )
+            prepared_pull.gate_warnings.extend(relay_warnings)
             launched = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,

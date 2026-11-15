@@ -178,11 +178,35 @@ URL runs with `COLLECTOR_TARGET_INLINE`. The resolution is stored on the run
 (`collector_resolution`, never the key). Dry runs are never refused. The delivery
 ledger still decides green.
 
-**Not covered yet:** the 89 scenario steps that run the EAL CLI on a beacon still
-read `$COLLECTOR_URL` from the beacon's shell. Delivering a target, key included,
-into an identity-wrapped step (`runuser -l` resets the environment) without
-putting the key on a command line is a separate beacon change (spec §10).
+**Scenario steps that run the EAL CLI on a beacon** go through the same
+resolver. In a pull run a beacon that advertises `eal-relay` hands the step's
+campaign to SimCore (`POST /api/eal/relay`, `api-and-agent-surface.md` §1.3.5),
+and SimCore sends the collector steps itself: to the instance target, with the
+stored key, behind the same live gate as the in-process dispatch above. The key
+never reaches the target, and a `collector_url` the step's shell wrote (from
+`$COLLECTOR_URL` or anything else) is replaced by the target or, when no target
+serves the plugin, left unsent. A beacon without `eal-relay` runs the step as
+before: it needs a CortexSim checkout and Python on the target and reads
+`$COLLECTOR_URL` from its own shell.
 Spec: `docs/superpowers/specs/2026-11-10-collector-targets-design.md`.
+
+### Which plugins run from a beacon in pull mode
+
+A scenario step that calls the EAL CLI is relayed per campaign step
+(`core/engine/eal_relay.py`):
+
+| Plugins | In pull mode |
+|---|---|
+| Every collector plugin (a `collector_url` param: the analytics emitters and `email_emitter`) | Run by SimCore, delivered to the instance collector target |
+| `c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `bulk_https_exfil`, `smb_rpc_sweep`, `ftp_egress`, `ssh_egress` | Rendered by SimCore to network operations (`wire_plan.py`) that the beacon performs, so the traffic leaves the target. Not rendered: `ftp_egress`'s PASV data channel and STOR, `smb_rpc_sweep`'s `probe_ntlm` |
+| `llm_provider_egress`, `oauth_grant_emulator`, `agentic_egress`, `browser_attack_runner`, `airs_prompt_attack` | Not relayable yet. The step exits 3 with `EAL_WIRE_NOT_RELAYABLE: <plugin>` and its Results read `not_executed` |
+
+Live sending needs `consent.simulation_authorized` and `authorized_by` on the
+launch, and `consent.c2_authorized` when the campaign has a C2-shaped plugin
+(`c2_http_beacon`, `dns_tunnel_exfil`, `ftp_egress`, `ssh_egress`,
+`ngfw_eal_emitter`, `ngfw_threat_emitter`: the launch gate's own
+classification, by name or by MITRE technique); without them the
+relayed campaign is a dry run and the step's Results read `not_executed`.
 
 ### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
 

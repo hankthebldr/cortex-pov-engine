@@ -96,6 +96,8 @@ func TestCollect(t *testing.T) {
 				Tools:         []string{"curl", "jq", "wget"},
 				Accounts:      []string{"postgres", "www-data"},
 				AnchorRename:  true,
+				// nmap was looked for and is not there: probed, not a tool.
+				Probed: []string{"curl", "jq", "nmap", "wget"},
 			},
 		},
 		{
@@ -109,7 +111,8 @@ func TestCollect(t *testing.T) {
 				ReadFile:          readFileFrom(nil),
 				LookupUser:        lookupUserIn(),
 			},
-			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false)},
+			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false),
+				Probed: []string{"curl"}},
 		},
 		{
 			name: "no status file configured",
@@ -117,7 +120,8 @@ func TestCollect(t *testing.T) {
 				Getenv: envFrom(nil), LookPath: lookPathIn(), ReadFile: readFileFrom(nil),
 				LookupUser: lookupUserIn(),
 			},
-			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false)},
+			want: Facts{Tools: []string{}, Accounts: []string{}, AnchorRename: wantAnchor(false),
+				Probed: []string{}},
 		},
 	}
 	for _, tc := range cases {
@@ -135,6 +139,32 @@ func TestCollect(t *testing.T) {
 	}
 }
 
+// A tool SimCore never hears about is not a tool the host lacks. The beacon
+// says what it looked for, so "absent" and "never checked" stay different
+// answers, and it looks for the remote-access tools scenarios depend on.
+func TestCollectReportsEveryToolItLookedFor(t *testing.T) {
+	f := Collect(Options{
+		ProbeTools: ProbeTools(), Getenv: envFrom(nil), LookPath: lookPathIn("ssh", "curl"),
+		ReadFile: readFileFrom(nil), LookupUser: lookupUserIn(),
+	})
+	if !reflect.DeepEqual(f.Tools, []string{"curl", "ssh"}) {
+		t.Errorf("Tools = %v, want [curl ssh]", f.Tools)
+	}
+	probed := map[string]bool{}
+	for _, name := range f.Probed {
+		probed[name] = true
+	}
+	for _, name := range []string{"ssh", "scp", "sshpass", "sudoedit", "curl", "python3"} {
+		if !probed[name] {
+			t.Errorf("%s was not probed: %v", name, f.Probed)
+		}
+	}
+	if len(f.Probed) != len(DefaultProbeTools)+len(ExtraProbeTools) {
+		t.Errorf("Probed has %d names, want every one of the %d looked for",
+			len(f.Probed), len(DefaultProbeTools)+len(ExtraProbeTools))
+	}
+}
+
 func TestCollectJSONNeverNullLists(t *testing.T) {
 	f := Collect(Options{Getenv: envFrom(nil), LookPath: lookPathIn(), ReadFile: readFileFrom(nil), LookupUser: lookupUserIn()})
 	b, err := json.Marshal(f)
@@ -142,7 +172,7 @@ func TestCollectJSONNeverNullLists(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if !strings.Contains(s, `"tools":[]`) || !strings.Contains(s, `"accounts":[]`) {
+	if !strings.Contains(s, `"tools":[]`) || !strings.Contains(s, `"accounts":[]`) || !strings.Contains(s, `"probed":[]`) {
 		t.Errorf("lists must serialise as [], got %s", s)
 	}
 	for _, k := range []string{"container", "pod_name", "pod_namespace", "node_name", "posture_profile", "prepare_status", "anchor_rename"} {
