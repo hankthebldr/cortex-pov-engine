@@ -76,6 +76,18 @@ NEW_WINDOWS = ["shell", "powershell", "artifact-fetch", "cleanup"]
 OLD_POSIX = ["shell", "identity-harness", "artifact-fetch"]
 
 
+def _run_cleanup(session_factory, run_id):
+    """`runs.cleanup` as the launch left it."""
+    from models import Run
+
+    async def _go():
+        async with session_factory() as db:
+            return (await db.execute(
+                select(Run.cleanup).where(Run.run_id == run_id))).scalar_one()
+
+    return asyncio.run(_go())
+
+
 def _launch(session_factory, *, cleanup, os_name="linux", capabilities=None,
             scenario_id="SIM-EDR-001", agent_id="agent-1"):
     """Launch one pull run; returns (LaunchResult, queued task dict, Run.output)."""
@@ -102,11 +114,18 @@ def _launch(session_factory, *, cleanup, os_name="linux", capabilities=None,
 def test_pull_task_carries_cleanup_for_target_os(session_factory):
     cleanup = {"commands": [POSIX_LINE, POWERSHELL_LINE, CMD_LINE]}
 
-    _res, task, _out = _launch(session_factory, cleanup=cleanup, os_name="linux")
+    res, task, _out = _launch(session_factory, cleanup=cleanup, os_name="linux")
     assert task["cleanup"] == {
         "commands": [{"command": POSIX_LINE, "shell": ""}],
         "timeout_seconds": 120,
     }
+    # The run records which agent the task went to and how many commands it
+    # carried. What the beacon reports later fills this entry; the report is
+    # never taken at its word for either.
+    assert _run_cleanup(session_factory, res.run_id) == [{
+        "agent_id": "agent-1", "task_id": task["task_id"], "commands": 1,
+        "status": "pending", "ran": 0, "failed": 0, "reason": None,
+    }]
 
 
 def test_pull_task_for_a_windows_agent_carries_the_windows_lines(session_factory):
@@ -158,6 +177,7 @@ def test_old_beacon_launch_warns_cleanup_not_run(session_factory):
     assert "cleanup" not in task
     assert res.warnings == []
     assert "CLEANUP_NOT_RUN" not in out
+    assert _run_cleanup(session_factory, res.run_id) is None
 
     # And a beacon that advertises `cleanup` is not warned about.
     res, _task, out = _launch(session_factory, cleanup={"commands": [POSIX_LINE]},
@@ -241,12 +261,15 @@ def test_each_endpoint_of_a_composed_run_gets_cleanup_for_its_own_os(session_fac
             res = await orch.launch(scenario_id="SIM-MP-900", mode="pull", db=db,
                                     target_agent_id="lin-1")
             assert res.success, res.error
-            return (orch.peek_queue("lin-1")[0].to_dict(),
+            return (res.run_id, orch.peek_queue("lin-1")[0].to_dict(),
                     orch.peek_queue("win-1")[0].to_dict())
 
-    lin, win = asyncio.run(_go())
+    run_id, lin, win = asyncio.run(_go())
     assert lin["cleanup"]["commands"] == [{"command": POSIX_LINE, "shell": ""}]
     assert win["cleanup"]["commands"] == [{"command": POWERSHELL_LINE, "shell": "powershell"}]
+    assert [(e["agent_id"], e["task_id"], e["commands"], e["status"])
+            for e in _run_cleanup(session_factory, run_id)] == [
+        ("lin-1", lin["task_id"], 1, "pending"), ("win-1", win["task_id"], 1, "pending")]
 
 
 def test_an_existing_database_gains_the_cleanup_column(tmp_path):

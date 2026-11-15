@@ -316,7 +316,7 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. `warnings[]` is what the launch would carry for the same body, the runtime-dependency warnings included (it reads `allow_runtime_install`). No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
-| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1). `cleanup` is what each beacon task reported about the scenario's cleanup, or null (§1.3.3); 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1). `cleanup` is one entry per task that was sent the scenario's cleanup, or null (§1.3.3); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | POST | `/api/runs/{run_id}/tenant-evidence` | Read the run's tenant evidence: its issues, their cases and the run host's endpoint record (`core/api/tenant_evidence.py`, `connectors/tenant_evidence.py::read_run_evidence`). Explicit operator action, OUTBOUND, read-only, metered; nothing polls it. Stores a snapshot in `tenant_evidence_reads` | query: `force=true\|false` (default false), `integration?` (default: the first credential of kind `xsiam` or `xsiam_tenant`) | 200 `{run_id, read, status, code, detail, retry_after_seconds, snapshot, issues}` (`status` `ok`/`degraded`/`pending`; `snapshot` is the stored row, `issues` its payload's issues section). No read (`read: false`): `NO_TENANT_CONFIGURED` (`pending`, `issues: null`, no credential), `NO_RUN_WINDOW` (`degraded`, no request, nothing stored: a push run, whose execution time is unknown (`push_execution_time_unknown`), or a run where no Result has `executed_at`), `TENANT_EVIDENCE_READ_RECENTLY` (this run and tenant were read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`, through either of that tenant's credentials; the latest snapshot and `retry_after_seconds`; `force=true` reads anyway). Two requests for one run and tenant at once spend one read: the second waits for the first and returns its snapshot (`TENANT_EVIDENCE_READ_RECENTLY`), even when the first read outlasted the interval and even with `force=true`. A read's `code`: `OK`, `NO_ATTRIBUTED_ISSUES` (degraded: the detail names ingestion latency, the hostname, the window and the Security domain filter), `UNSCOPED` (no run host), `QUOTA_REFUSED` (with `retry_after_seconds`) or the issue read's failure code (`XSIAM_*`). 404 `RUN_NOT_FOUND`; 404 `INTEGRATION_NOT_FOUND`; 500 `CREDENTIAL_ERROR` |
@@ -893,18 +893,40 @@ A task without the `cleanup` key (an older SimCore, or nothing to run) sends
 no `cleanup` object and writes no section: the beacon behaves as before.
 
 **`runs.cleanup`.** A nullable JSON column (added at startup by
-`_migrate_run_cleanup_columns`), exposed as `cleanup` on the run:
+`_migrate_run_cleanup_columns`), exposed as `cleanup` on the run. The launch
+writes one entry per task that carries cleanup, as `pending`; that task's
+`/complete` fills it:
 
 ```json
-[{"agent_id": "jumpbox-01", "task_id": "<uuid>",
+[{"agent_id": "jumpbox-01", "task_id": "<uuid>", "commands": 2,
   "status": "failed", "ran": 2, "failed": 1, "reason": "COMMAND_FAILED"}]
 ```
 
-One entry per task. A retried `/complete` adds nothing. A `/complete` that
-reaches an already-terminal run (an abort always wins that race) still answers
-`409 RUN_ALREADY_TERMINAL` and its cleanup outcome is still stored. `null`
-means no beacon reported one, which is not `clean`. Nothing that scores a run
-reads this column.
+`status` is `pending`, `clean`, `failed` or `not_run`. `pending` on a finished
+run means no beacon reported (an older beacon, or a task never collected),
+which is not `clean`. `null` means no task was sent cleanup. A retried
+`/complete` changes nothing. A `/complete` that reaches an already-terminal
+run (an abort always wins that race) still answers `409 RUN_ALREADY_TERMINAL`
+and its cleanup outcome is still stored. Nothing that scores a run reads this
+column.
+
+**The outcome is untrusted.** It is reported by the target, so
+`pull_cleanup.record_outcome` takes only what it has to:
+
+- It fills the entry of the task the body names (`task_id`) and nothing else.
+  `agent_id` and `commands` stay what the launch wrote; the body's `agent_id`
+  is not read. A body naming a task that was sent no cleanup stores nothing.
+- `status` outside `clean` / `failed` / `not_run` is stored as `failed` with
+  reason `unrecognised status`.
+- `ran` and `failed` are non-negative ints, capped at the task's `commands`,
+  and `failed` is never larger than `ran`.
+- `reason` is one line: control characters and line breaks become spaces, and
+  it is cut at 200 characters.
+- The report renders `agent_id` and `reason` inside inline code spans with
+  backticks removed, and the counts as ints, so a reported value cannot start
+  a line, a heading, a list item or a table row. A console that shows these
+  must render them as text.
+- A `cleanup` that is not an object is ignored; it never costs the completion.
 
 **An agent that does not advertise `cleanup`.** The task still carries the
 commands (the roster is the beacon's last registration and can be older than
@@ -919,9 +941,10 @@ without holding the launch; the launch also writes it onto `Run.output` as
 ```
 
 **Report.** The markdown report's "Cleanup Not Run" caveat (with the commands
-to run by hand) now appears only when the run stored no cleanup outcome. A
-run whose cleanup failed, or ran on only some endpoints, gets "Cleanup
-Incomplete" naming the agents; a clean one gets no caveat.
+to run by hand) now appears only when no beacon reported a cleanup (no entry,
+or every entry still `pending`). A run whose cleanup failed, or was reported
+by only some endpoints, gets "Cleanup Incomplete" naming the agents; a clean
+one gets no caveat.
 
 Not covered: `cleanup.k8s_teardown` is not sent to a beacon. No Windows host
 has run this path; the Windows half is covered by cross-compilation and a

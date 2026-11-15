@@ -1884,6 +1884,10 @@ class Orchestrator:
             # NULL for a single-channel run (byte-identical); the routing ledger
             # for a multichannel one.
             run.channel_dispatch = channel_dispatch
+            # Which agent each task went to and how many cleanup commands it
+            # carried, so what a beacon later reports is filed under that agent.
+            from engine.pull_cleanup import seed_run  # noqa: PLC0415
+            seed_run(run, to_enqueue)
             await db.commit()
 
         # Surface the egress warning on the run itself, before any beacon can

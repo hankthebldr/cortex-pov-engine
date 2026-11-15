@@ -309,12 +309,13 @@ class Run(Base):
     module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # ── Pull cleanup outcome (#324) ──────────────────────────────────────────
-    # What each beacon task reported about the scenario's cleanup.commands on
-    # /complete: [{agent_id, task_id, status: clean|failed|not_run, ran, failed,
-    # reason}], one entry per task. NULL = no beacon reported one (a push run,
-    # or a beacon that predates pull cleanup), which is not "clean". Written by
-    # engine.pull_cleanup.record_outcome; added by _migrate_run_cleanup_columns
-    # in database.py.
+    # One entry per beacon task that was sent the scenario's cleanup.commands:
+    # [{agent_id, task_id, commands, status: pending|clean|failed|not_run, ran,
+    # failed, reason}]. The launch writes it as `pending` (engine.pull_cleanup
+    # .seed_run) and the task's /complete fills it (record_outcome); `pending`
+    # on a finished run means no beacon reported, which is not "clean". NULL =
+    # no task was sent cleanup (a push run, or nothing to run on the target).
+    # Added by _migrate_run_cleanup_columns in database.py.
     cleanup: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
     # Relationships

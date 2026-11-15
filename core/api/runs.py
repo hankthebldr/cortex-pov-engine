@@ -810,8 +810,10 @@ class CompleteRequest(BaseModel):
     agent_id: Optional[str] = Field(None, max_length=200)
     # How the scenario's cleanup went on this endpoint (#324):
     # {status: clean|failed|not_run, ran, failed, reason}. Absent from a beacon
-    # that predates pull cleanup. Stored by engine.pull_cleanup.record_outcome.
-    cleanup: Optional[dict[str, Any]] = None
+    # that predates pull cleanup. Reported by the target, so it is deliberately
+    # loose here (a malformed one must not cost the completion) and normalised
+    # by engine.pull_cleanup.record_outcome, which files it under the task.
+    cleanup: Optional[Any] = None
 
     def completion_key(self) -> Optional[str]:
         """The idempotency key for this completion, or None when the beacon
@@ -2059,8 +2061,7 @@ async def _refuse_terminal_complete(db: AsyncSession, run: Run,
     kept = await _record_late_abort_evidence(db, run, body.steps)
     # The other: what the beacon cleaned up afterwards. An abort always makes
     # the run terminal before this /complete arrives.
-    if await pull_cleanup.record_outcome(db, run_id, body.cleanup,
-                                         agent_id=body.agent_id, task_id=body.task_id):
+    if await pull_cleanup.record_outcome(db, run_id, body.cleanup, task_id=body.task_id):
         await db.commit()
     return HTTPException(
         status_code=409,
@@ -2168,8 +2169,7 @@ async def complete_run(
 
     # Host evidence for each step, in the same write transaction.
     await _record_step_outcomes(db, run_id, body.steps)
-    await pull_cleanup.record_outcome(db, run_id, body.cleanup,
-                                      agent_id=body.agent_id, task_id=body.task_id)
+    await pull_cleanup.record_outcome(db, run_id, body.cleanup, task_id=body.task_id)
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
