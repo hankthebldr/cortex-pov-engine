@@ -176,6 +176,11 @@ tailscale:
 # Persistent campaign DB — by default the SQLite file ships inside the API
 # pod. For multi-replica deployments, point this at a PVC backed by ReadWrite
 # Many storage (NFS, Longhorn).
+#
+# The database runs in WAL mode (#326), which keeps a shared-memory file
+# (cortexsim.db-shm) beside it. SQLite's WAL is only safe when every process
+# that opens the file runs on ONE node: do not let pods on different nodes
+# share this volume, and prefer node-local storage over NFS.
 # ─────────────────────────────────────────────────────────────────────────────
 persistence:
   enabled: false

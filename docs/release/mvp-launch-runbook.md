@@ -741,10 +741,22 @@ carries 1.1.0's schema code unchanged.
 
 1. **No run in flight.** `GET /api/runs?fields=summary` must show nothing
    `running` or `queued`. An upgrade mid-run loses the run (§3, OPS-03/04).
-2. **Back up the volume** (the volume name is the compose project plus
-   `_simcore_db`; `docker volume ls | grep simcore_db` shows it):
+2. **Stop SimCore, then back up the volume** (the volume name is the compose
+   project plus `_simcore_db`; `docker volume ls | grep simcore_db` shows it).
+   The database runs in WAL mode (#326), so recent commits can sit in two side
+   files next to it, `cortexsim.db-wal` and `cortexsim.db-shm`. Copy every
+   `cortexsim.db*` file. The main file alone can miss recent runs:
    ```bash
-   docker run --rm -v cortex-pov-engine_simcore_db:/d -v "$PWD":/b alpine cp /d/cortexsim.db /b/cortexsim.db.bak
+   docker compose stop simcore
+   mkdir -p db-backup
+   docker run --rm -v cortex-pov-engine_simcore_db:/d -v "$PWD/db-backup":/b alpine sh -c 'cp /d/cortexsim.db* /b/'
+   ```
+   A database an older release last wrote has no side files; the same command
+   copies the one file. To back up while SimCore runs, use SQLite's online
+   backup instead, which writes one complete file:
+   ```bash
+   docker compose exec simcore python -c "import sqlite3; s=sqlite3.connect('/app/data/cortexsim.db'); d=sqlite3.connect('/app/data/cortexsim.backup.db'); s.backup(d); d.close(); s.close()"
+   docker compose cp simcore:/app/data/cortexsim.backup.db ./db-backup/cortexsim.db
    ```
 3. **Keep the same `.env`**, above all `CORTEXSIM_SECRET`; a new secret over a
    surviving volume makes every stored credential undecryptable
@@ -754,13 +766,18 @@ carries 1.1.0's schema code unchanged.
    admits this host's names for one bring-up.
 4. **Upgrade:** `scripts/dev-up.sh`. Then check `/api/health`. Only
    `api_auth` should read degraded.
-5. **Roll back** by stopping SimCore, restoring `cortexsim.db.bak` into the
-   volume, and starting the older release. Do not point older code at the
-   upgraded database.
+5. **Roll back** by stopping SimCore, removing every `cortexsim.db*` file from
+   the volume, copying the backed-up files in, and starting the older release.
+   Remove the side files too: a `cortexsim.db-wal` left beside a restored
+   `cortexsim.db` belongs to the database it replaced. Do not point older code
+   at the upgraded database.
 
 *Authored from the code and from round 1's migration test (DBs built by
 v0.1.0, v1.0.0, v1.0.2 and v1.1.0 code, then the current `init_db`); the
-backup and restore commands were not run in this pass.*
+backup and restore commands were not run in this pass. What the WAL steps rest
+on was probed with Python's `sqlite3` on 2026-11-15, not in Docker: a copy of
+the main file alone lost a commit still in `-wal`, a copy of all three files
+kept it, and the online backup wrote one file that had it.*
 
 ### 8.6 Round 2: what closed, what stays open
 

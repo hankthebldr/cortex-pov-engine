@@ -26,5 +26,10 @@ async def load_xsiam_client(session: AsyncSession, name: str) -> XsiamClient:
     except Exception as exc:  # noqa: BLE001 — pydantic ValidationError et al.
         raise XsiamConfigError(f"tenant '{name}' has invalid config: {exc}") from exc
     api_key = await store.get_integration_secret(name)
-    return XsiamClient(config, api_key,
-                       capabilities=(row.config or {}).get("capabilities"))
+    capabilities = (row.config or {}).get("capabilities")
+    # The decrypt stamped `last_accessed_at`, which opened a write transaction
+    # on this session, and a client is loaded to call the tenant next. Commit
+    # it here: SQLite allows one writer, and a transaction left open across a
+    # tenant call locked every other writer out until the tenant answered (#326).
+    await session.commit()
+    return XsiamClient(config, api_key, capabilities=capabilities)

@@ -198,6 +198,11 @@ async def _resolve_connector(
     integ = pick_integration(integrations, integration_name)
     try:
         secret = await store.get_integration_secret(integ.name)
+        # The decrypt stamped `last_accessed_at`, which opened a write
+        # transaction, and every caller reads the tenant next. Commit it here:
+        # SQLite allows one writer, and a transaction left open across a tenant
+        # read locks every other writer out until the tenant answers (#326).
+        await db.commit()
     except Exception as e:  # noqa: BLE001
         raise ReconcileError("CREDENTIAL_ERROR", str(e))
 
@@ -270,6 +275,10 @@ async def reconcile_run(
                              detail=detail)
 
     await store.mark_integration_verified(integ.name, ok=True, error=None)
+    # Committed now, not with the verdicts: the incident and case reads below
+    # are tenant calls too, and this stamp would hold the write lock across
+    # them (#326). The pull did succeed, whatever scoring does next.
+    await db.commit()
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
@@ -283,6 +292,13 @@ async def reconcile_run(
         db, run, candidates, host=host_scope["host"],
         window_seconds=window_seconds, window_ends=window_ends)
     withdrawn = await withdraw_foreign_credits(db, run, candidates, attribution)
+    if withdrawn:
+        # A withdrawal is a write, and the incident and case reads below are
+        # tenant calls: committed here so it does not hold SQLite's one write
+        # lock across them (#326). The rows are still judged again in this
+        # pass. If this reconcile fails after this point the withdrawal stays,
+        # with its note on the row, and the next review judges the row.
+        await db.commit()
     refused: list[dict[str, Any]] = []
     verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),

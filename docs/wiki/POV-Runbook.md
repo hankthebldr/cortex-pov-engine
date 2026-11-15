@@ -24,7 +24,8 @@ proof-of-value engagement with CortexSim.
    `CORTEXSIM_ALLOWED_HOSTS`, `dev-up.sh` admits this host's names for that
    bring-up only and says so; `./scripts/dev-up.sh --apply` writes the line.
    Back up the database volume before you upgrade an existing install
-   (`docs/release/mvp-launch-runbook.md` §8.5).
+   (`docs/release/mvp-launch-runbook.md` §8.5): every `cortexsim.db*` file,
+   not `cortexsim.db` alone, because the database runs in WAL mode.
 2. Confirm the image built. CortexSim is **build-from-source**: there is no
    published container image to pull, so `scripts/dev-up.sh` builds it locally,
    and that local build is what you carry into the engagement:

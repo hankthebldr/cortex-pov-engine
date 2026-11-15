@@ -9,7 +9,9 @@ leaves a delivered run alone). The heartbeat sweep calls
 A second path, :func:`terminalise_abandoned_runs`, covers the beacon that is
 alive but no longer working on the run (its ``/complete`` lost across a SimCore
 restart): its agent keeps polling ``/tasks``, so the offline sweep never fires,
-but the run's own control channel has gone silent (OPS-03).
+but the run's own control channel has gone silent (OPS-03). Such a run ends
+``failed`` (``BEACON_ABANDONED_TASK``), never ``complete``: nothing says its
+steps finished (#326).
 
 Honesty: a lost beacon is a host witness of *nothing* -- the step was cut short
 by something we cannot see. The severed step is stamped ``beacon_lost`` so the
@@ -134,7 +136,8 @@ async def _candidates(db: AsyncSession, agent_id: str) -> list[Run]:
 async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOutcome],
                            now: datetime, *, marker: str, unclassified_marker: str,
                            source: str, frame_extra: Optional[dict[str, Any]] = None,
-                           log_what: str = "beacon_lost") -> Optional[str]:
+                           log_what: str = "beacon_lost",
+                           classified_status: str = "complete") -> Optional[str]:
     """Terminalise ONE delivered run whose beacon stopped reporting on it.
 
     Shared by the offline-agent path (:func:`terminalise_lost_runs`) and the
@@ -143,6 +146,13 @@ async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOu
     (a witness of nothing — prevention caps at ``pending``), later steps
     ``not_run`` / ``UPSTREAM_SEVERED``, and a run that cannot be classified is
     failed with its rows stamped ``not_executed``.
+
+    ``classified_status`` is the status of a run whose severed step can be
+    named. The offline-agent path keeps ``complete`` (the prevention design: an
+    agent that kills the beacon severs the chain there). The abandoned path
+    passes ``failed``: its beacon is alive and simply stopped reporting, so
+    nothing says the run finished. The host evidence and the scoring are the
+    same either way.
 
     Returns the final status, or ``None`` when a racing ``/complete`` / abort
     got there first (the guarded flip matched nothing and nothing is touched).
@@ -164,7 +174,7 @@ async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOu
             marker if severed is not None else unclassified_marker),
     }
     if severed is not None:
-        values.update(status="complete", severed_at_step=severed)
+        values.update(status=classified_status, severed_at_step=severed)
     else:
         values.update(status="failed")
     res = await db.execute(
@@ -206,9 +216,9 @@ async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOu
             agent_profile_mode=run.agent_profile_mode,
             module_modes=getattr(run, "module_modes", None))
         await db.commit()
-        logger.warning("%s run_id=%s agent=%s severed_at=%s",
-                       log_what, run_id, run.target, severed)
-        final = "complete"
+        logger.warning("%s run_id=%s agent=%s severed_at=%s status=%s",
+                       log_what, run_id, run.target, severed, classified_status)
+        final = classified_status
 
     await db.refresh(run)
     data: dict[str, Any] = {"status": final, "step_id": None}
@@ -221,7 +231,8 @@ async def _terminalise_run(db: AsyncSession, run: Run, outcomes: Sequence[StepOu
         orchestrator.forget_control_poll(run_id)
     except Exception:  # pragma: no cover - defensive
         logger.exception("control-poll cleanup failed run_id=%s", run_id)
-    if final == "complete":
+    if severed is not None:
+        # Scored whatever the status: every finished run carries a verdict.
         await score_run_safely(db, run, source=source)
     return final
 
@@ -268,9 +279,14 @@ async def terminalise_lost_runs(db: AsyncSession, agent_id: str, now: datetime,
 
 TERMINATION_CODE_ABANDONED = "BEACON_ABANDONED_TASK"
 
+#: The first line of both abandoned markers: the stable reason a run that
+#: reads ``failed`` carries in its own output (the convention of
+#: ``RUN FAILED: AGENT_CANNOT_STAGE_ARTIFACTS``).
+ABANDONED_FAILED_LINE = f"\n--- RUN FAILED: {TERMINATION_CODE_ABANDONED} ---"
+
 
 def _abandoned_marker(silent_for: float) -> str:
-    return (
+    return ABANDONED_FAILED_LINE + (
         f"\n--- BEACON ABANDONED TASK — the target's beacon is alive (it keeps "
         f"polling for new work) but has not polled this run's control channel "
         f"for {int(silent_for)}s, so it is no longer executing it; its /complete "
@@ -281,7 +297,7 @@ def _abandoned_marker(silent_for: float) -> str:
 
 
 def _abandoned_unclassified_marker(silent_for: float) -> str:
-    return (
+    return ABANDONED_FAILED_LINE + (
         f"\n--- BEACON ABANDONED TASK — run could not be classified (no scenario "
         f"steps, no results); no control poll for {int(silent_for)}s while its "
         "beacon kept polling for new work ---\n"
@@ -362,9 +378,12 @@ async def terminalise_abandoned_runs(db: AsyncSession, now: datetime, *,
       keeps a second endpoint that is still queued, busy with another run, or
       staging a large artifact from having its live partition ended under it.
 
-    It is terminalised through the same machinery as a lost beacon, with a
-    ``BEACON ABANDONED TASK`` marker and ``termination: BEACON_ABANDONED_TASK``
-    on its ``run.status`` frame.
+    It is terminalised through the same machinery as a lost beacon, but ends
+    ``failed``, not ``complete``: its output opens the marker with ``RUN
+    FAILED: BEACON_ABANDONED_TASK`` and its ``run.status`` frame carries
+    ``status: failed`` and ``termination: BEACON_ABANDONED_TASK``. The host
+    evidence is unchanged: the first step with no record reads ``beacon_lost``
+    and later steps ``not_run``.
 
     ``agent_id`` narrows the sweep to the runs that agent was an endpoint of
     (the /tasks poll path); ``control_polls`` is the orchestrator singleton by
@@ -412,7 +431,7 @@ async def terminalise_abandoned_runs(db: AsyncSession, now: datetime, *,
             unclassified_marker=_abandoned_unclassified_marker(silent_for),
             source="beacon_abandoned",
             frame_extra={"termination": TERMINATION_CODE_ABANDONED},
-            log_what="beacon_abandoned")
+            log_what="beacon_abandoned", classified_status="failed")
         if final is not None:
             done.append(run.run_id)
     return done

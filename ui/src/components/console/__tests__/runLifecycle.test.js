@@ -55,6 +55,24 @@ describe('runLifecycle', () => {
     expect(states(runLifecycle(run({ status: 'aborted' })))).toEqual(['done', 'done', 'failed', 'todo', 'todo'])
   })
 
+  it('a run its beacon abandoned ends Failed, never Finished (#326)', () => {
+    // The shape SimCore now sends: `failed`, delivered, severed where the host
+    // record stops, scored at the reap, the reason at the end of the output.
+    const abandoned = run({
+      status: 'failed',
+      severed_at_step: 'step-01',
+      tc_verdict_detail: { source: 'beacon_abandoned' },
+      output_tail: '\n--- RUN FAILED: BEACON_ABANDONED_TASK ---\n--- BEACON ABANDONED TASK — … ---\n',
+    })
+    const lc = runLifecycle(abandoned)
+    expect(lc.ended).toBe('Failed')
+    expect(lc.stages[2]).toMatchObject({ label: 'Failed', state: 'failed', word: 'failed' })
+    expect(lc.stages.map((s) => s.label)).not.toContain('Finished')
+    // It was delivered, so the steps the host did report can still be read back.
+    expect(lc.phase).toBe('unread')
+    expect(lc.nothing).toBeNull()
+  })
+
   it('a pull run that ended before the agent took its task ran nothing', () => {
     const lc = runLifecycle(run({ status: 'aborted', delivered_at: null, output_bytes: 0 }))
     expect(lc.phase).toBe('nothing')

@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any, Collection, Mapping, Optional, Sequence
 
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("cortexsim.orchestrator")
@@ -656,8 +656,15 @@ class Orchestrator:
                     after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
                     agent_id=agent_id, control_polls=self,
                 )
-        except Exception:
-            logger.exception("abandoned-run reaping failed agent=%s", agent_id)
+        except Exception as exc:
+            from database import is_locked_error  # noqa: PLC0415
+
+            if is_locked_error(exc):
+                # Nothing was written; the next poll tries again (#326).
+                logger.warning("abandoned-run reaping skipped agent=%s: database busy",
+                               agent_id)
+            else:
+                logger.exception("abandoned-run reaping failed agent=%s", agent_id)
             return []
 
     # ------------------------------------------------------------------
@@ -2190,22 +2197,42 @@ class Orchestrator:
         The poll is recorded as idle evidence for this agent BEFORE the reap,
         and the delivery it causes AFTER, so the collecting poll is never
         mistaken for "has let go of the task it just collected".
+
+        A delivery that cannot be recorded because the database is busy
+        returns ``None`` and leaves the task at the head of the queue.
         """
         self.note_task_poll(agent_id)
         await self.reap_abandoned(agent_id, db)
         task = self.dequeue(agent_id)
         if task is not None:
             self.note_delivery(task.run_id, agent_id)
+            from database import is_locked_error  # noqa: PLC0415
             from models import QueuedTask, Run  # noqa: PLC0415
             from sqlalchemy import delete, update  # noqa: PLC0415
 
-            await db.execute(delete(QueuedTask).where(QueuedTask.task_id == task.task_id))
-            await db.execute(
-                update(Run)
-                .where(Run.run_id == task.run_id, Run.delivered_at.is_(None))
-                .values(delivered_at=datetime.utcnow())
-            )
-            await db.commit()
+            try:
+                await db.execute(delete(QueuedTask).where(QueuedTask.task_id == task.task_id))
+                await db.execute(
+                    update(Run)
+                    .where(Run.run_id == task.run_id, Run.delivered_at.is_(None))
+                    .values(delivered_at=datetime.utcnow())
+                )
+                await db.commit()
+            except OperationalError as exc:
+                if not is_locked_error(exc):
+                    raise
+                # Another writer held SQLite's one write lock past the busy
+                # timeout (#326), so this delivery could not be recorded. Hand
+                # nothing out: the task goes back to the head of the queue for
+                # the agent's next poll. Left popped, it would exist nowhere a
+                # beacon can reach until a restart re-read its durable row.
+                await db.rollback()
+                self._queue.setdefault(agent_id, []).insert(0, task)
+                self._deliveries.get(task.run_id, {}).pop(agent_id, None)
+                logger.warning(
+                    "dequeue agent=%s task_id=%s run_id=%s: database busy, task "
+                    "kept queued for the next poll", agent_id, task.task_id, task.run_id)
+                return None
         return task
 
     def peek_queue(self, agent_id: str) -> list[Task]:
