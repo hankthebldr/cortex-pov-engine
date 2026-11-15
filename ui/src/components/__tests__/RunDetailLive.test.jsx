@@ -165,6 +165,7 @@ describe('a run page — what SimCore said about the launch is one line', () => 
   it('several notices stay one line, and open to one line each', async () => {
     rememberLaunchWarnings('run-live-1', [{ code: 'EAL_RELAY_UNAVAILABLE', agent_id: 'ag-1', steps: ['step-02'], text: 'this beacon cannot relay EAL steps' }])
     mount({ ...RUN, output: `${GAP}\n${CLEANUP}\n` })
+    await within(await screen.findByTestId('run-notice')).findByRole('img', { name: '3 notices' })
     const notice = await screen.findByTestId('run-notice')
     expect(within(notice).getByRole('img', { name: '3 notices' })).toBeInTheDocument()
     const more = notice.querySelector('details')
