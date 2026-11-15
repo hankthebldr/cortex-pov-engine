@@ -73,7 +73,11 @@
    forbids drawing or reconstructing a brand mark, and an earlier revision of
    this header carried a hand-drawn "P" square. */
 .pov-brand__mark { height: 20px; width: auto; display: block; }
-.pov-brand__word {
+.pov-brand__word,
+/* Three classes: the legacy `.theme-console .brand__wordmark` (20px, 500) in
+   cortex-console.css out-ranked the one-class rule above, so the wordmark drew
+   at 20px and took ~30px more of the bar than designed. */
+.pov-header .pov-brand .pov-brand__word {
   font: 700 15px/1 var(--font-display);
   letter-spacing: -0.01em;
 }
@@ -310,6 +314,44 @@ button.pov-chip:hover { border-color: var(--bd2); }
    running / agents online / issues are the ones a DC acts on. */
 @media (max-width: 1365px) {
   .pov-instance__kpi--runs { display: none; }
+}
+
+/* ── Fitting the bar to its width ─────────────────────────────────────────
+   Back / Forward and the breadcrumb (design C9) added ~250px to a bar that
+   already filled 1280, so below ~1650 it overflowed: the RUNNING pill,
+   Search, the tour, the theme toggle and the avatar sat past the edge,
+   reachable only by scrolling the header sideways. The bar now gives way in
+   steps. Each drops text whose meaning stays in an aria-label, a title or
+   the page itself:
+     - the tenant and agent names are capped and end in an ellipsis (the
+       full name stays in the DOM, so the chip's accessible name is whole);
+       an agent's state word always stays, because a status carries its glyph
+       AND its word (design v26 §9.1);
+     - ≤1799: the RUNNING pill drops its scenario and clock, Search its word;
+     - ≤1599: the instance drops its uptime, the breadcrumb its journey crumb
+       (the rail already shows the journey) and with it the 176px floor that
+       crumb needed, and the names cap shorter;
+     - ≤1279: the version, the names cap shorter again, gaps go 10 → 8.
+   Below what those buy, the bar still scrolls itself (overflow-x above).
+   A cap, not flex-shrink: a flex item cannot shrink below its min-content
+   width, and a no-wrap name's min-content is the whole name. */
+.pov-chip__text { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1799px) {
+  .pov-header .pov-live__detail,
+  .pov-header .pov-chip__label { display: none; }
+  .pov-chip__text { max-width: 16ch; }
+}
+@media (max-width: 1599px) {
+  .pov-header .pov-instance__uptime,
+  .pov-header .pov-crumbs__item:first-child:not(:last-child),
+  .pov-header .pov-crumbs__item:nth-child(2) > .pov-crumbs__sep { display: none; }
+  .pov-header > .pov-crumbs { min-width: 0; }
+  .pov-chip__text { max-width: 12ch; }
+}
+@media (max-width: 1279px) {
+  .pov-header { gap: 8px; }
+  .pov-header .pov-brand__version { display: none; }
+  .pov-chip__text { max-width: 9ch; }
 }
 
 /* The RUNNING pill is the one place green appears in the chrome, and it is
