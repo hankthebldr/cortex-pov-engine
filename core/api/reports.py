@@ -555,9 +555,28 @@ async def executions_report(
     return report
 
 
+#: A cell that starts with one of these is read as a formula by Excel and Sheets.
+_CSV_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value: Any) -> Any:
+    """One CSV cell, safe to open in a spreadsheet.
+
+    Scenario and draft names are operator-written text. A text cell that starts
+    like a formula gets a leading ``'`` so the spreadsheet shows it instead of
+    running it. Numbers pass through; ``None`` is an empty cell.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_LEAD):
+        return "'" + value
+    return value
+
+
 def _csv_response(rows: list[dict[str, Any]]) -> Response:
     """One row per scenario; lists joined with ``;``. A scenario with no
-    reviewed run leaves its outcome cells blank, never 0."""
+    reviewed run leaves its outcome cells blank, never 0. Every cell goes
+    through :func:`_csv_cell`, the joined ones included."""
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
@@ -571,7 +590,7 @@ def _csv_response(rows: list[dict[str, Any]]) -> Response:
             "detection_sources": "" if sources is None else ";".join(s["label"] for s in sources),
             **{k: ("" if outcomes is None else outcomes[k]) for k in ("expected", *OUTCOME_KEYS)},
         }
-        writer.writerow(["" if flat.get(col) is None else flat[col] for col in CSV_COLUMNS])
+        writer.writerow([_csv_cell(flat.get(col)) for col in CSV_COLUMNS])
     stamp = datetime.utcnow().strftime("%Y%m%d")
     return Response(
         content=buf.getvalue(), media_type="text/csv",

@@ -426,6 +426,42 @@ def test_csv_is_one_row_per_scenario_as_an_attachment(engine_client):
     assert (staged["expected"], staged["detected"], staged["missed"]) == ("", "", "")
 
 
+def test_csv_text_that_starts_like_a_formula_is_quoted(client, session_factory):
+    """A DC opens this file in a spreadsheet, and a scenario or draft name is
+    operator-written text: a cell starting = + - @ would run as a formula."""
+    link = '=HYPERLINK("http://203.0.113.9/x","open")'
+    _seed(
+        session_factory,
+        scenarios=[
+            _scenario("SIM-DRAFT-link", status="draft", name=link),
+            _scenario("SIM-EDR-001", name="-1+1", tc_ref="=1+1", tc_refs=["=1+1", "TC-EDR-05"]),
+            _scenario("SIM-EDR-002", name="Reverse shell", uc_ref="@SUM(1)"),
+        ],
+        runs=[
+            _run("r-1", "SIM-DRAFT-link", started=datetime(2026, 11, 3)),
+            _run("r-2", "SIM-EDR-001", started=datetime(2026, 11, 2)),
+            _run("r-3", "SIM-EDR-002", started=datetime(2026, 11, 1), detail=READ_BACK),
+        ],
+        results=[_result("r-3", "step-01", outcome="detected", observed=True)],
+    )
+    params = {"format": "csv", "include_drafts": "true"}
+    rows = {row["scenario_id"]: row for row in csv.DictReader(io.StringIO(
+        client.get("/api/reports/executions", params=params).text))}
+    assert rows["SIM-DRAFT-link"]["name"] == "'" + link
+    assert rows["SIM-EDR-001"]["name"] == "'-1+1"
+    # A cell built by joining a list is checked as a whole.
+    assert rows["SIM-EDR-001"]["tc_refs"] == "'=1+1;TC-EDR-05"
+    assert rows["SIM-EDR-002"]["uc_ref"] == "'@SUM(1)"
+    # Plain text and numbers are left as they are.
+    assert rows["SIM-EDR-002"]["name"] == "Reverse shell"
+    assert (rows["SIM-EDR-002"]["runs"], rows["SIM-EDR-002"]["detected"]) == ("1", "1")
+    assert rows["SIM-EDR-001"]["expected"] == ""
+    # The JSON body carries the text as written.
+    body = _get(client, include_drafts="true")
+    assert _row(body["by_scenario"], "scenario_id", "SIM-DRAFT-link")["name"] == link
+    assert _row(body["by_scenario"], "scenario_id", "SIM-EDR-001")["tc_refs"] == ["=1+1", "TC-EDR-05"]
+
+
 # ─── The query ──────────────────────────────────────────────────────────────
 
 def test_the_query_never_loads_run_output_or_whole_result_rows(engine_client, session_factory):

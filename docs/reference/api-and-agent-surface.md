@@ -2051,7 +2051,10 @@ detection_sources, runs, first_run_at, last_run_at, last_status, last_run_id,
 reviewed_runs, last_reviewed_run_id, last_reviewed_at, expected, prevented,
 detected, detected_not_prevented, missed, pending, not_reached, not_executed`.
 Lists are joined with `;` (detection sources by label). A scenario with no
-reviewed run leaves its outcome cells blank.
+reviewed run leaves its outcome cells blank. A text cell that starts with `=`,
+`+`, `-`, `@`, a tab or a carriage return is written with a leading `'`, so a
+spreadsheet shows a scenario or draft name instead of running it as a formula;
+numbers are written as they are, and the JSON body is not changed.
 
 ---
 
