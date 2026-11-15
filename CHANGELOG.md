@@ -8,7 +8,13 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-### Fixed — Detection Accuracy no longer counts verify-only XQL rows as misses (#272)
+## [1.2.2] - 2026-11-15
+
+**Hotfix for v1.2.1: Detection Accuracy no longer counts verify-only XQL rows
+as misses (#272).** One scoring change and one scenario bar; no card, emitter,
+beacon or schema change.
+
+### Fixed
 
 - **43 scenarios with a Detection Accuracy bar could never reach it.**
   Detection Accuracy divided the rows an alert matched by every row that ran.
@@ -35,8 +41,10 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   row they bind has no measurable threshold. The four with no alert-backed row
   stay `pending`. None of their XQL rows carries a `verification_xql`, so no
   path scores them until their content changes.
+- **SIM-EDR-023's bar moves from 62.5% to 83.3%.** It still asks for 5 of its 6
+  alert-backed rows; its two verify-only rows no longer count.
 
-### Upgrading to the Detection Accuracy fix
+### Upgrading from 1.2.1
 
 - **Re-scoring a stored run can change its Detection Accuracy verdict.** A run
   is re-scored when it is next read back: `POST /api/runs/{id}/reconcile`,
@@ -46,10 +54,6 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   verify-only, and which read PASS because an alert matched one of them, now
   reads `pending`. A re-score without a new read back (run completion, a Tier-2
   verify) keeps the stored measurement until then.
-- **One bar now asks for less.** SIM-EDR-023's 62.5% bar was written as 5 of
-  its 8 rows; with its two verify-only rows out of the denominator, 4 of its 6
-  alert-backed rows meet it. Every other bar that could be reached before needs
-  the same number of alert-backed hits as it did.
 
 ## [1.2.1] - 2026-11-15
 
