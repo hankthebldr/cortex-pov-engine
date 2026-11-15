@@ -34,7 +34,27 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 - SIM-NDR-001 and SIM-TIM-001 give their 12-beacon step 600 s. The beacon's
   180 s default stopped it part way.
 - The beacon reports every tool it looked for (`runtime_facts.probed`), and now
-  looks for `ssh`, `scp`, `sshpass` and `sudoedit`.
+  looks for `ssh`, `scp`, `sshpass` and `sudoedit`, so a dependency on one of
+  those reads found or missing instead of `unverified`.
+
+### Fixed — dependency warnings read the beacon's tool facts and show at launch
+
+- **A launch reported `sudo`, `ssh`, `scp` and `sshpass` missing on hosts that
+  had them (#327).** The check compared every name in a step's
+  `requires_interpreters` with the agent's interpreter list, which only holds
+  python, perl, ruby and node. A name that is not an interpreter is now read
+  from the tools the beacon reported: found is fine, looked for and not found
+  is missing, and a tool the beacon never looked for is listed as `unverified`
+  and is not a gap. `GET /api/agents/{id}/preflight` answers the same way.
+- **A real gap, and an install request that was ignored, were silent at launch
+  (#328).** A pull launch whose target lacks something a step needs now carries
+  the warning `RUNTIME_DEPENDENCY_GAP`. One that asks for
+  `allow_runtime_install` on a SimCore without
+  `CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL` carries `RUNTIME_INSTALL_NOT_ENABLED`.
+  Both are on the launch response, on `POST /api/runs/preflight` and in the
+  run's output. Neither refuses the launch.
+- A beacon's registration may now include `runtime_facts.probed`, the tools it
+  looked for. The beacon sends it as of the entry above.
 
 ### Changed — the Launch gate is about one scenario; Get started tracks the app
 

@@ -78,14 +78,56 @@ def test_unknown_keys_are_dropped_not_an_error(client):
     assert _agent(client, "a-1")["runtime_facts"] == FACTS
 
 
-def test_the_tools_a_beacon_looked_for_are_kept(client):
-    """``probed`` is how a reader tells a tool the host lacks (probed, not in
-    ``tools``) from one the beacon never looked for (in neither)."""
-    facts = {**FACTS, "probed": ["curl", "python3", "ssh", "sshpass"]}
+def test_probed_list_is_kept(client):
+    """A beacon that says which tools it looked for is stored with that list:
+    the dependency preflight reads it to tell "not found" from "never looked"."""
+    facts = {**FACTS, "probed": ["curl", "python3", "ssh"]}
     _register(client, runtime_facts=facts).raise_for_status()
-    stored = _agent(client, "a-1")["runtime_facts"]
-    assert stored["probed"] == ["curl", "python3", "ssh", "sshpass"]
-    assert set(stored["probed"]) - set(stored["tools"]) == {"ssh", "sshpass"}
+    assert _agent(client, "a-1")["runtime_facts"] == facts
+
+
+def test_agent_preflight_reads_the_tool_facts(client, session_factory):
+    """GET /api/agents/{id}/preflight judges a tool on the facts the beacon
+    registered: sudo was found, jq was looked for and not found, and no beacon
+    looks for ssh."""
+    import asyncio
+
+    from models import Scenario
+
+    async def _scenario():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-EDR-993", name="tool facts", version="1.0",
+                status="active", plane="EDR",
+                uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01", tc_name="y",
+                mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+                mitre_technique="T1003", mitre_technique_name="OS Credential Dumping",
+                execution_identity={"default": "root"},
+                push_supported=True, pull_supported=True,
+                steps=[
+                    {"id": "step-01", "command": "sudo -V", "requires_interpreters": ["sudo"]},
+                    {"id": "step-02", "command": "jq .", "requires_interpreters": ["jq"]},
+                    {"id": "step-03", "command": "ssh -V", "requires_interpreters": ["ssh"]},
+                ],
+            ))
+            await db.commit()
+
+    asyncio.run(_scenario())
+    _register(client, interpreters=["python"], runtime_facts={
+        "container": False, "tools": ["curl", "sudo"], "accounts": []}).raise_for_status()
+
+    r = client.get("/api/agents/a-1/preflight", params={"scenario_id": "SIM-EDR-993"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "agent_id": "a-1",
+        "scenario_id": "SIM-EDR-993",
+        "ready": False,
+        "gaps": [
+            {"step_id": "step-02", "missing": ["jq"]},
+            {"step_id": "step-03", "missing": [], "unverified": ["ssh"]},
+        ],
+        "agent_interpreters": ["python"],
+    }
 
 
 @pytest.mark.parametrize("bad", [

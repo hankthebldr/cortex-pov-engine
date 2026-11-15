@@ -181,6 +181,8 @@ class LaunchResult:
     #   * ``dict`` -- an advisory, non-refusing notice from the container-agent
     #     launch gate (engine/agent_launch_gate.py), e.g.
     #     ``{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": [...], "agent_id": ...}``,
+    #     or from the runtime-dependency preflight (engine/runtime_preflight.py:
+    #     ``RUNTIME_DEPENDENCY_GAP``, ``RUNTIME_INSTALL_NOT_ENABLED``),
     #     which SimCore also writes onto Run.output as one ``!! CODE: ...`` line
     #     (``_gate_advisory_line``).
     # The API surfaces both under ``warnings``.
@@ -250,8 +252,9 @@ class LaunchEvaluation:
     scenario: Any = None
     block_mode_status: Optional[str] = None
     runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
-    #: launch()'s own reservations (an offline target).
-    launch_warnings: list[str] = field(default_factory=list)
+    #: launch()'s own reservations: an offline target (str), then the
+    #: runtime-dependency warnings (dict, engine/runtime_preflight.py).
+    launch_warnings: list[Any] = field(default_factory=list)
     prepared_pull: Optional[_PreparedPull] = None
     #: SOC Framework Auto Triage advisories (dry run only; a launch appends its
     #: own through Orchestrator._with_socfw_advisories).
@@ -485,7 +488,8 @@ def _offline_warning(agent: Any, now: datetime) -> Optional[str]:
 
 
 def _gate_advisory_line(warning: dict[str, Any]) -> str:
-    """A container-agent gate advisory (engine/agent_launch_gate.py) as the
+    """A ``{code, ...}`` launch advisory (the container-agent gate's,
+    engine/agent_launch_gate.py, or the runtime-dependency preflight's) as the
     reservation text Run.output carries for it (RG-RUNS-06), e.g.
     ``AGENT_NO_RBAC_FOR_KUBECTL: agent 'pod-1'; steps step-01``. The launch
     response keeps the dict itself."""
@@ -721,8 +725,8 @@ class Orchestrator:
         nothing — it also requires ``CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL`` on
         this deployment. The EFFECTIVE (both-gates) value is what is recorded
         on the Run and threaded onto the Task; a request that asked for it on a
-        deployment that has not enabled it is recorded honestly as False, not
-        silently upgraded or silently dropped without a trace.
+        deployment that has not enabled it is recorded honestly as False, and a
+        pull launch says so (warning ``RUNTIME_INSTALL_NOT_ENABLED``).
 
         Prevention-efficacy launch context (``agent_profile_mode`` and the
         attestation fields) is operator-declared and persisted verbatim on the
@@ -757,6 +761,7 @@ class Orchestrator:
             agent_profile_mode=agent_profile_mode,
             run_id=run_id,
             collect_all=False,
+            allow_runtime_install=allow_runtime_install,
         )
         if evaluation.refusal is not None:
             refusal = evaluation.refusal
@@ -878,6 +883,7 @@ class Orchestrator:
         canary_run_id: Optional[str] = None,
         allow_missing_tools: bool = False,
         agent_profile_mode: str = "unknown",
+        allow_runtime_install: bool = False,
     ) -> LaunchEvaluation:
         """Run every launch check for this request without launching.
 
@@ -901,6 +907,7 @@ class Orchestrator:
             agent_profile_mode=agent_profile_mode,
             run_id=str(uuid.uuid4()),
             collect_all=True,
+            allow_runtime_install=allow_runtime_install,
         )
         if evaluation.refusal is None and evaluation.scenario is not None:
             probe = await self._with_socfw_advisories(
@@ -924,6 +931,7 @@ class Orchestrator:
         agent_profile_mode: str,
         run_id: str,
         collect_all: bool,
+        allow_runtime_install: bool = False,
     ) -> LaunchEvaluation:
         """Judge every reason this launch could be refused, before any write.
 
@@ -937,9 +945,10 @@ class Orchestrator:
         whose input an earlier refusal took away is recorded ``skipped`` with
         that reason, never as a pass.
         """
+        from config import settings as _settings  # noqa: PLC0415
         from models import Agent, Result, Run, Scenario  # noqa: PLC0415
         from engine.payload_shelf import PayloadResolutionError  # noqa: PLC0415
-        from engine.runtime_preflight import evaluate_runtime_readiness  # noqa: PLC0415
+        from engine import runtime_preflight  # noqa: PLC0415
         from engine.scenario_loader import effective_channel  # noqa: PLC0415
 
         ev = LaunchEvaluation()
@@ -1124,10 +1133,20 @@ class Orchestrator:
                     if offline:
                         ev.launch_warnings.append(offline)
                     # ADVISORY (docs/design/agent-runtime-dependencies.md):
-                    # visible before dispatch, never the enforcement.
-                    readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
+                    # visible before dispatch, never the enforcement. A gap, and
+                    # an install request this deployment has not enabled, are
+                    # warnings on the launch, its dry run and Run.output.
+                    readiness = runtime_preflight.evaluate_runtime_readiness(
+                        scenario, agent_row.interpreters,
+                        getattr(agent_row, "runtime_facts", None),
+                    )
                     ev.runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
-                    if readiness.gaps and not collect_all:
+                    ev.launch_warnings += runtime_preflight.launch_warnings(
+                        readiness, target_agent_id,
+                        install_requested=allow_runtime_install,
+                        install_enabled=_settings.CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL,
+                    )
+                    if not readiness.ready and not collect_all:
                         logger.warning(
                             "Runtime-dependency preflight gap scenario=%s agent=%s gaps=%s "
                             "(advisory — the beacon still checks live at execution time)",
@@ -1695,7 +1714,7 @@ class Orchestrator:
         db: AsyncSession,
         runtime_install_authorized: bool = False,
         prepared: Optional[_PreparedPull] = None,
-        launch_warnings: Optional[list[str]] = None,
+        launch_warnings: Optional[list[Any]] = None,
         eal_authorized_by: Optional[str] = None,
     ) -> LaunchResult:
         """Build and queue the pull task(s) for a launch every check has cleared.
@@ -1706,7 +1725,8 @@ class Orchestrator:
         could be refused never reaches this method.
 
         ``launch_warnings`` are launch()'s own reservations (an offline
-        target). They are written onto Run.output with the dispatch markers; the
+        target, a runtime-dependency gap, a runtime install this deployment has
+        not enabled). They are written onto Run.output with the dispatch markers; the
         caller still returns them in ``warnings``, so they are not added here."""
         from models import Run  # noqa: PLC0415
 
@@ -1868,9 +1888,12 @@ class Orchestrator:
         # An offline target (launch()'s own, and a composed run's other
         # endpoints) goes on the record too (RG-RUNS-06): the launch response
         # reaches only the tab that launched, not another browser or the report.
-        # So do the container-agent gate's advisories, rendered as one line each.
+        # So do the container-agent gate's advisories and the runtime-dependency
+        # warnings (dicts), rendered as one line each.
         reservations = (
-            list(launch_warnings or []) + dispatch_warnings
+            [w if isinstance(w, str) else _gate_advisory_line(w)
+             for w in (launch_warnings or [])]
+            + dispatch_warnings
             + [_gate_advisory_line(w) for w in gate_warnings]
         )
         if egress_warnings or output_markers or reservations:

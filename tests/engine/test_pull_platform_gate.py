@@ -541,6 +541,13 @@ def test_a_missing_variant_still_says_declare_one():
 _MISMATCH = "!! PLATFORM MISMATCH:"
 
 
+def _mismatches(res) -> list[str]:
+    """The mismatch markers among a launch's warnings. The list also carries
+    dicts: SIM-EDR-001 step-05 needs python, which these agents do not report,
+    so its launch has a RUNTIME_DEPENDENCY_GAP warning too."""
+    return [w for w in res.warnings if isinstance(w, str) and w.startswith(_MISMATCH)]
+
+
 def _run_output(session_factory) -> str:
     async def _go():
         from models import Run
@@ -562,7 +569,7 @@ def test_a_linux_only_scenario_to_a_macos_beacon_is_marked_on_the_run(session_fa
     assert all(s["command"] == authored[s["id"]]["command"] for s in task.steps)
 
     # Every linux-labelled step is marked; step-01 declares no platform and is not.
-    marked = [w for w in res.warnings if w.startswith(_MISMATCH)]
+    marked = _mismatches(res)
     assert [m.split()[3] for m in marked] == [
         f"step=step-0{i}" for i in range(2, 6)], res.warnings
     for m in marked:
@@ -586,7 +593,7 @@ def test_a_macos_only_scenario_to_a_linux_beacon_is_marked_on_the_run(session_fa
 def test_a_beacon_on_an_os_every_step_declares_gets_no_mismatch(session_factory):
     res, _, _ = _launch(session_factory, "SIM-EDR-001", "lin-1", "linux")
     assert res.success, res.error
-    assert not [w for w in res.warnings if w.startswith(_MISMATCH)], res.warnings
+    assert not _mismatches(res), res.warnings
     assert _MISMATCH not in _run_output(session_factory)
 
 
