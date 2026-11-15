@@ -174,7 +174,7 @@ describe('Tenant component', () => {
 })
 
 describe('Firewall component', () => {
-  const FW = { name: 'pa-lab', host: 'pa-lab.local', last_verified_ok: null, forwarding_path: 'syslog' }
+  const FW = { name: 'pa-lab', host: 'pa-lab.local', last_verified_ok: null, forwarding_path: 'auto' }
   const report = (stages) => ({ firewall: 'pa-lab', overall: 'blocked', queries_issued: 9, stages, sources: [] })
 
   function withFirewall(extra = {}) {
@@ -191,15 +191,30 @@ describe('Firewall component', () => {
     expect(await screen.findByTestId('fw-sources-live')).toHaveTextContent(/run the check/i)
   })
 
-  it('"Forward the rule\'s logs" reads the log-forwarding stage of the read-only check', async () => {
+  it('Setup walks the Strata Logging Service path and the firewall\'s policy, with no Broker VM', async () => {
+    withFirewall()
+    mount(FirewallComponent, { params: { tab: 'setup' } })
+    await waitFor(() => expect(stepList()).toBeInTheDocument())
+    const titles = within(stepList()).getAllByRole('button').map((b) => b.textContent)
+    for (const t of ['Register read-only', 'Add the firewall in Cortex', 'Turn on cloud logging', 'Install the certificate',
+      'Forward logs to Strata Logging Service', 'Log and alert on the POV traffic', 'Decrypt the POV traffic',
+      'Commit, then confirm logs arrive']) {
+      expect(titles.some((x) => x.includes(t)), t).toBe(true)
+    }
+    // The Broker VM syslog path is the docs' fallback, not this page's setup.
+    expect(screen.queryByText(/syslog server profile/i)).toBeNull()
+    expect(screen.queryByText(/Through the Broker VM/i)).toBeNull()
+  })
+
+  it('"Forward logs to Strata Logging Service" reads the log-forwarding stage of the read-only check', async () => {
     withFirewall({
       'POST /api/connectors/panos_ngfw/preflight': report([
         { id: 'auth', status: 'ok' },
         { id: 'log_forwarding_profiles', status: 'blocked', code: 'PN_NO_LFP', detail: 'no log forwarding profile' },
       ]),
     })
-    mount(FirewallComponent, { params: { tab: 'setup', path: 'syslog', step: 'syslog.forward' } })
-    await waitFor(() => expect(within(panel()).getByRole('heading', { name: "Forward the rule's logs" })).toBeInTheDocument())
+    mount(FirewallComponent, { params: { tab: 'setup', step: 'forward' } })
+    await waitFor(() => expect(within(panel()).getByRole('heading', { name: 'Forward logs to Strata Logging Service' })).toBeInTheDocument())
     fireEvent.click(within(panel()).getByRole('button', { name: 'Test' }))
     expect(await within(panel()).findByRole('button', { name: /PN_NO_LFP/ })).toBeInTheDocument()
     expect(panel()).toHaveTextContent('no log forwarding profile')
@@ -207,11 +222,29 @@ describe('Firewall component', () => {
 
   it('a step only Cortex can show, with no read, is ticked by the DC', async () => {
     withFirewall()
-    mount(FirewallComponent, { params: { tab: 'setup', path: 'syslog', step: 'syslog.format' } })
-    await waitFor(() => expect(within(panel()).getByRole('heading', { name: "Match the broker's format" })).toBeInTheDocument())
+    mount(FirewallComponent, { params: { tab: 'setup', step: 'cortex' } })
+    await waitFor(() => expect(within(panel()).getByRole('heading', { name: 'Add the firewall in Cortex' })).toBeInTheDocument())
     fireEvent.click(within(panel()).getByRole('checkbox'))
-    const item = within(stepList()).getByRole('button', { name: /match the broker/i })
+    const item = within(stepList()).getByRole('button', { name: /add the firewall in cortex/i })
     expect(within(item).getByRole('img', { name: 'You confirmed' })).toBeInTheDocument()
+  })
+
+  it('the policy row reads the rule each enrolled agent\'s traffic meets', async () => {
+    withFirewall({
+      'POST /api/connectors/panos_ngfw/preflight': {
+        ...report([{ id: 'auth', status: 'ok' }]),
+        sources: [{ agent_id: 'lab-01', stages: [
+          { id: 'policy_match', status: 'blocked', code: 'PN_RULE_DENIES', detail: 'pov traffic meets a deny rule' },
+          { id: 'rule_profiles', status: 'ok' },
+        ] }],
+      },
+    })
+    mount(FirewallComponent)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    const config = screen.getByRole('region', { name: 'Configuration' })
+    await waitFor(() => expect(within(config).getByText('POV traffic logs and alerts, not blocks').closest('li'))
+      .toHaveTextContent('pov traffic meets a deny rule'))
   })
 
   it('never writes: every request it makes is a read or the read-only check', async () => {
