@@ -322,7 +322,7 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | POST | `/api/runs/{run_id}/tenant-evidence` | Read the run's tenant evidence: its issues, their cases and the run host's endpoint record (`core/api/tenant_evidence.py`, `connectors/tenant_evidence.py::read_run_evidence`). Explicit operator action, OUTBOUND, read-only, metered; nothing polls it. Stores a snapshot in `tenant_evidence_reads` | query: `force=true\|false` (default false), `integration?` (default: the first credential of kind `xsiam` or `xsiam_tenant`) | 200 `{run_id, read, status, code, detail, retry_after_seconds, snapshot, issues}` (`status` `ok`/`degraded`/`pending`; `snapshot` is the stored row, `issues` its payload's issues section). No read (`read: false`): `NO_TENANT_CONFIGURED` (`pending`, `issues: null`, no credential), `NO_RUN_WINDOW` (`degraded`, no request, nothing stored: a push run, whose execution time is unknown (`push_execution_time_unknown`), or a run where no Result has `executed_at`), `TENANT_EVIDENCE_READ_RECENTLY` (this run and tenant were read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`, through either of that tenant's credentials; the latest snapshot and `retry_after_seconds`; `force=true` reads anyway). Two requests for one run and tenant at once spend one read: the second waits for the first and returns its snapshot (`TENANT_EVIDENCE_READ_RECENTLY`), even when the first read outlasted the interval and even with `force=true`. A read's `code`: `OK`, `NO_ATTRIBUTED_ISSUES` (degraded: the detail names ingestion latency, the hostname, the window and the Security domain filter), `UNSCOPED` (no run host), `QUOTA_REFUSED` (with `retry_after_seconds`) or the issue read's failure code (`XSIAM_*`). 404 `RUN_NOT_FOUND`; 404 `INTEGRATION_NOT_FOUND`; 500 `CREDENTIAL_ERROR` |
 | GET | `/api/runs/{run_id}/tenant-evidence` | The stored tenant evidence. **No outbound call** | — | `{run_id, status, code, snapshot, history[], case_ledger}`: the latest snapshot (any integration), the last 10 reads newest first (`id`, `read_at`, `code`) and the run's `case_ledger`, projected: each case's `resolve_comment` sits under its `tenant_text` (neutralised, capped at 200 characters, `text_truncated`), and an `xdr_url` that is not https on `paloaltonetworks.com` is `null` with `xdr_url_withheld: true`; every other field keeps its name and value, and the stored ledger is unchanged. Never read: `snapshot: null`, `code: TENANT_EVIDENCE_NOT_READ`, `status: pending`. 404 `RUN_NOT_FOUND` |
-| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger}` (markdown gains a `## Case` section); 404 |
+| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger, additional_detections, unattributed_alerts}` (markdown gains a `## Case` section, and `## Other alerts Cortex raised for this run` when the run has any); 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
@@ -1220,7 +1220,7 @@ call is sent without `python` in `requires_interpreters`.
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
 | GET | `/api/results` | All results across all runs (newest first) | — | `{"results":[...],"total":N}` |
-| GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd}`; each `results[]` row also carries `alert_id`, `alert_source`, `observation_count`; 404 if run missing |
+| GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats, and the run's alerts that match no expected row | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd, additional_detections[], unattributed_alerts[], alerts_reviewed_at}`; each `results[]` row also carries `alert_id`, `alert_source`, `matched_via`, `observation_count`; 404 if run missing |
 | PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND`; 409 `RESULT_STEP_NOT_RUN` / `RESULT_PREVENTED` / `ATTESTATION_NOT_A_WITNESS` / `NOT_AN_ATTESTATION` |
 | PUT | `/api/results/{result_id}/notes` | Update notes only | `NotesRequest`: `{notes}` | `<result.to_dict()>`; 404 |
 
@@ -1231,6 +1231,22 @@ call is sent without `python` in `requires_interpreters`.
   uses), and `observation_count` is how many observations are recorded for it. A row
   with no observation has `alert_id: null`, `alert_source: null`, `observation_count: 0`.
   Observations carrying no `result_id` belong to no row and are not counted.
+  `matched_via` is the alert's family (`abioc` or `bioc`) on an observed row that an
+  alert of the OTHER behavioural label credited, else `null` (see "BIOC and Analytics
+  BIOC" in §1.15).
+- **`additional_detections[]` (2026-11-15, #346)** lists the alerts Cortex raised for the
+  run that match none of its expected rows: `alert_external_id`, `alert_name`,
+  `alert_source`, `techniques[]`, `severity`, `action`, `alert_outcome`, `observed_at`,
+  `step_id` (the step that was running when the alert fired; the last step, for an alert
+  after the run; `null` with no host record) and `step_name`. `unattributed_alerts[]`
+  lists the ones that match this run and another with nothing to single one out (§1.15,
+  "One run per alert"). Both come from `Run.alert_attribution`, which a host-scoped
+  reconcile writes. **Neither is in `coverage`**, which measures the expected rows.
+  `alerts_reviewed_at` is `null` until such a reconcile has run: an empty list with a
+  `null` there means "not reviewed", not "none". The console's Results page renders the
+  first list as "Also raised by Cortex (N)", one line per alert; alerts with the same
+  name, severity, source and step share a line with a count ("… ×4"), and N still
+  counts every alert.
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
   `observed_at - executed_at`); `observed=false` clears `observed_at`.
 - `validate` is an operator **attestation** and writes `outcome`: `observed=true` on a
@@ -1952,6 +1968,95 @@ DC), `"run_target"` (resolved from the launch agent) or `null` (unscoped).
 passes a host.** Keeping this override rather than a docs-only "push detect reads
 pending" is an open decision for Henry. A run that never executed
 (`not_executed`) is never matched at all.
+
+**One run per alert (2026-11-15, #347).** Host scoping narrows the pull to the
+endpoint, not to the run, and a row's match window (1 h, or
+`CORTEXSIM_RECONCILE_WINDOW_ANALYTICS` for Analytics / ABIOC) outlasts its run.
+On an endpoint that runs scenarios back to back, a row's window therefore
+holds the alerts of the runs that followed, and a technique match credited
+SIM-EDR-018's ABIOC row with the alert SIM-MP-003 raised 32 minutes later
+(MTTD 1,920 s). Both reconcile paths now place the run among the other pull
+runs a beacon collected (`connectors/attribution.py`, built by
+`service.run_attribution`) and ask one rule, a pure function of those runs, so
+every run's reconcile reaches the same answer in any order:
+
+- A row's window is unchanged: `executed_at` to `result_window_end` (the later
+  of `executed_at` and the step's host record, plus the type's window). That
+  window is the settle time an alert may lag by.
+- A run **holds its endpoint** from its launch (`Run.started_at`), or from
+  `delivered_at` when it was queued behind a run still executing there, until
+  the next run takes the endpoint over.
+- An alert a row matches only on a **technique or name** (a weak key) credits
+  the row only while its run holds the endpoint. After a later run took over
+  it is refused `LATER_RUN_STARTED`; before a queued run began, `RUN_NOT_BEGUN`.
+- An alert that carries the row's **rule name, detection id, or the run's own
+  id** in its record (a strong key) is the run's for the whole window, lag
+  included. When two runs hold a strong key, the run holding the endpoint at
+  the alert's time takes it and the other is refused `TIED_TO_ANOTHER_RUN`.
+- An alert goes to **at most one run**. One that matches rows of more than one
+  run with nothing to single one out (an alert that names no host while two
+  endpoints were running; two runs that took the endpoint at the same instant)
+  is **unattributed**: `AMBIGUOUS_RUNS`, credited to neither.
+
+The summary gains `not_credited[]` (one entry per refused alert:
+`alert_external_id`, `alert_name`, `alert_source`, `observed_at`, `matched_on`,
+`reason`, `run_id` and `scenario_id` of the run it belongs to, `runs[]` when
+ambiguous, `result_ids[]`), `unattributed` (how many were `AMBIGUOUS_RUNS`) and
+a warning for each. Unattributed alerts are stored on `Run.alert_attribution`
+(`unattributed[]`, with `reviewed_at`, `source`, `host`), a nullable JSON
+column added at startup; `GET /api/runs/{run_id}` returns the column (the run
+list does not). An unscoped reconcile has no endpoint to place the run
+on and is unchanged (`UNSCOPED_MATCH`).
+
+**BIOC and Analytics BIOC (2026-11-15, #346).** The matcher's family gate
+refuses a pair whose families are both known and different. One pair is now
+compatible: `bioc` and `abioc`. The tenant labels one behavioural detection
+"XDR BIOC" or "XDR Analytics BIOC", and a card author cannot know which, so four
+of the sweep's alerts were dropped at the gate before a key was looked at. A
+row of one label is credited by an alert of the other only when an **identity
+key** also agrees: the **exact** technique, the rule name, or the detection id
+(`matcher.CROSS_FAMILY_KEYS`). A shared base technique or shared name words do
+not cross the label. One firing is never counted twice: the alert must match no
+row of the run under its own label (observed rows included), it is consumed by
+the one row it credits, and an alert already on record against a row of the run
+is not used this way again. The verdict carries `matched_on: [..., "cross-family"]`
+and `matched_via: "abioc" | "bioc"`; the row's note reads `credited by an
+Analytics BIOC` (or `a BIOC`), which the report prints; `GET /api/results/{run_id}`
+carries `matched_via` on the row. Every other pair stays a disagreement: an
+`XDR Agent` alert never credits a BIOC, ABIOC, XQL, Correlation or IOC row.
+
+**Additional detections (2026-11-15, #346).** An alert that names the run's
+endpoint, fell inside the run's window while the run held the endpoint (its
+launch to its end plus the default match window, `window_seconds`, 1 h unless
+the caller widens it), has no identity key with ANY expected row of the run,
+and is not tied to another run, is the run's **additional detection**. The
+longer Analytics window is not used here: an expected Analytics row may wait a
+day because an identity key must still agree, and an alert tied to the run by
+the clock alone may not. It is stored on `Run.alert_attribution`
+(`additional[]`), returned in the reconcile summary (`additional_detections[]`),
+served by `GET /api/results/{run_id}` and printed in the report under "Other
+alerts Cortex raised for this run". It credits no expected row and is outside
+Detection Accuracy and every coverage figure: marking an expected BIOC
+`detected` because an agent module alerted would be a false claim. An alert
+that names no host is never listed (nothing ties it to the endpoint), and an
+unscoped reconcile lists none. Entries survive a later pull that no longer
+returns the alert; one that has since credited a row is dropped.
+
+**A stored cross-run credit is withdrawn on re-review, never silently.** Nothing
+rewrites a stored run at upgrade. When a run is reconciled again, each row an
+alert on record credited (an `Observation` whose time is the row's
+`observed_at`; an operator's attestation has none and is never touched) is put
+to the same rule. A refused one goes back to unobserved and unjudged, so the
+same reconcile can credit it from the run's own alert or judge it silent; its
+note reads `credit withdrawn on re-review: alert <id> at <time> UTC is not this
+run's (<why>)`; the `Observation` stays on the run with no row; the alert
+leaves the run's case ledger; and the summary lists it under
+`withdrawn_credits[]` (`result_id`, `step_id`, `alert_external_id`,
+`alert_name`, `observed_at`, `mttd_seconds`, `reason`, `run_id`) with a warning.
+The auto-reconcile sweep reaches a stored run only while it is inside the
+lookback, under the attempt cap and still has an unobserved row; any other
+stored run changes when `POST /api/runs/{id}/reconcile` (or `/observations`) is
+called for it.
 
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
 naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →

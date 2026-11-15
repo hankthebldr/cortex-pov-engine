@@ -3,7 +3,8 @@ CortexSim API — /api/results router.
 
 Endpoints:
   GET  /api/results              — all detection results
-  GET  /api/results/{run_id}     — results for a specific run (with coverage stats)
+  GET  /api/results/{run_id}     — results for a specific run (with coverage stats and
+                                   the run's alerts that match no expected row)
   PUT  /api/results/{id}/validate — DC marks a detection as observed (sets observed_at for MTTD)
   PUT  /api/results/{id}/notes   — DC adds/updates notes on a result
 """
@@ -19,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connectors.matcher import BEHAVIOURAL_FAMILIES, signal_family
 from connectors.measures import denominator_exclusion, empty_exclusions
 from api.storyline import load_observations, observation_counts
 from database import get_db
@@ -30,7 +32,7 @@ from engine.outcome import (
     is_hit,
 )
 from events import event_bus
-from models import Result
+from models import Result, Run
 
 logger = logging.getLogger("cortexsim.api.results")
 
@@ -66,22 +68,44 @@ async def list_results(db: AsyncSession = Depends(get_db)):
     return {"results": [r.to_dict() for r in results], "total": len(results)}
 
 
+def matched_via(signal_type: Optional[str], alert_source: Optional[str]) -> Optional[str]:
+    """The alert's family when it credited a row of the OTHER behavioural
+    label (a BIOC row by an Analytics BIOC alert, or the reverse), else None.
+
+    Read off what is stored (the row's type, the observation's source), so it
+    needs no column: the matcher only ever crosses that one pair of labels.
+    """
+    row, alert = signal_family(signal_type), signal_family(alert_source)
+    if row and alert and row != alert and {row, alert} == BEHAVIOURAL_FAMILIES:
+        return alert
+    return None
+
+
 @router.get("/{run_id}")
 async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
-    """Return all detection results for a specific run_id with coverage statistics."""
+    """Return all detection results for a specific run_id with coverage statistics.
+
+    ``additional_detections`` lists the alerts Cortex raised for the run that
+    match none of its expected rows, and ``unattributed_alerts`` the ones that
+    match this run and another with nothing to single one out
+    (``Run.alert_attribution``, written by a host-scoped reconcile). Neither
+    is counted in ``coverage``: that measures the expected rows.
+    ``alerts_reviewed_at`` is null until such a reconcile has run, which is
+    the difference between "none" and "not looked at yet".
+    """
     stmt = select(Result).where(Result.run_id == run_id).order_by(Result.step_id, Result.id)
     result = await db.execute(stmt)
     results = result.scalars().all()
 
-    if not results:
-        # Verify the run exists to distinguish "no results yet" from "wrong run_id"
-        from models import Run  # noqa: PLC0415
-        run_result = await db.execute(select(Run).where(Run.run_id == run_id))
-        if run_result.scalar_one_or_none() is None:
-            raise HTTPException(
-                status_code=404,
-                detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
-            )
+    run_row = (await db.execute(
+        select(Run.alert_attribution).where(Run.run_id == run_id))).first()
+    if not results and run_row is None:
+        # Distinguish "no results yet" from "wrong run_id".
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+        )
+    attribution = run_row[0] if run_row is not None and isinstance(run_row[0], dict) else {}
 
     # Coverage over the rows that could have produced evidence. Rows whose step
     # never ran (``not_reached`` / ``not_executed``) and soak-pending
@@ -142,6 +166,8 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
             **r.to_dict(),
             "alert_id": obs["alert_id"] if obs else None,
             "alert_source": obs["alert_source"] if obs else None,
+            "matched_via": (matched_via(r.signal_type, obs["alert_source"])
+                            if obs and r.observed else None),
             "observation_count": obs_counts.get(r.id, 0),
         })
 
@@ -161,6 +187,9 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
             "by_type": coverage_by_type,
         },
         "mttd": mttd_stats,
+        "additional_detections": list(attribution.get("additional") or ()),
+        "unattributed_alerts": list(attribution.get("unattributed") or ()),
+        "alerts_reviewed_at": attribution.get("reviewed_at"),
     }
 
 

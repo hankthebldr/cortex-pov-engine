@@ -5,6 +5,7 @@ import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import { Button, Icon } from './kit/index.js'
+import AlsoRaised from './AlsoRaised.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
 import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
@@ -16,6 +17,8 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  *   ▸ one action: Validate all (with the count it will skip)
  *   ▸ KPI row: Coverage % · Median MTTD · Analytics plane · Pending count
  *   ▸ Scorecard table with per-row validate (Detected / Missed / Reset)
+ *   ▸ "Also raised by Cortex (N)": the run's alerts that match no expected
+ *     detection (AlsoRaised.jsx); absent when there are none
  *
  * The page head, the "Result of" bar, the downloads and the tenant evidence
  * panel belong to Results (ResultsView), which mounts this as one of its tabs.
@@ -50,7 +53,8 @@ export default function EvidenceView({
       : lastRun?.status || null
   const unproven = isRunUnproven(runStatus)
 
-  const { rows, kpis, loading, loaded, error, validate, refresh } = useResultsData(targetRunId)
+  const { rows, kpis, additionalDetections, loading, loaded, error, validate, refresh } =
+    useResultsData(targetRunId)
   // A fetch that failed before any answer arrived is NOT an empty scorecard:
   // rendering it as one printed "Coverage 0 % · 0 / 0" and "no results yet —
   // ingestion typically takes 30–120s" for a SimCore that never answered.
@@ -139,6 +143,8 @@ export default function EvidenceView({
         onSelectRow={setSelectedRowId}
         onValidate={validate}
       />
+
+      <AlsoRaised alerts={additionalDetections} />
 
       <DetectionDrawer
         row={selectedRow}

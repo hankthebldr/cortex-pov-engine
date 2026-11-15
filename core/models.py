@@ -279,6 +279,25 @@ class Run(Base):
     # _migrate_case_ledger_columns in database.py.
     case_ledger: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Alert attribution (which of the host's alerts are this run's) ────────
+    # Written by connectors.service.apply_verdicts on every host-scoped
+    # reconcile: ``{"reviewed_at", "source", "host", "additional": [...],
+    # "unattributed": [...]}``. ``additional`` lists the alerts Cortex raised
+    # on the run's host, while the run held it, that match NO expected row
+    # (#346): an agent module's verdict, an analytics rule the scenario does
+    # not declare. Shown as "Also raised by Cortex"; never a credit and never
+    # in Detection Accuracy. ``unattributed`` lists the alerts that match an
+    # expected row of this run AND of another run with nothing to single one
+    # out (#347): they credit neither. Each entry: ``alert_external_id``,
+    # ``alert_name``, ``alert_source``, ``observed_at``; an additional one also
+    # ``techniques``, ``severity``, ``action``, ``alert_outcome``, ``step_id``,
+    # ``step_name``. NULL until a host-scoped reconcile has run. Nothing here feeds
+    # observed_at, outcome, MTTD or a verdict. Deliberately NOT in to_dict():
+    # the run list is polled every 10 s; GET /api/runs/{id}, GET
+    # /api/results/{run_id} and the report read it. Added by
+    # _migrate_alert_attribution_columns in database.py.
+    alert_attribution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was

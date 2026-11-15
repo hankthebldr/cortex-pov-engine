@@ -18,6 +18,21 @@ Result when ALL of:
 Each Result takes its **earliest** qualifying observation (lowest MTTD). The
 matcher is pure (no DB/IO) so it is exhaustively unit-tested; the API layer
 applies the verdicts to the ORM and emits SSE.
+
+**One run (#347).** Reconcile reads a HOST's alerts, so a row's window also
+holds the alerts of every later run on that host. The caller passes an
+``attribution`` (``connectors.attribution``) that says whether this run may
+take an alert at all; one it may not take is skipped and reported in
+``refused``, never credited.
+
+**BIOC and Analytics BIOC (#346).** The tenant labels one behavioural
+detection either way, and a card author cannot know which. A row of one label
+is credited by an alert of the other only on the exact technique, the rule
+name or the detection id (:data:`CROSS_FAMILY_KEYS`), only when the alert
+matches nothing the run expects under the alert's own label, and one alert
+credits one such row. The verdict says so in ``matched_via``. Every other pair
+of different families stays a disagreement: an agent module's alert never
+credits a rule.
 """
 from __future__ import annotations
 
@@ -39,6 +54,20 @@ DEFAULT_WINDOW_SECONDS = 3600
 #: used to mark a step's BIOC, XQL and Correlation expectations all observed,
 #: because every Result in a step shares the step's technique.
 _FAMILIES = ("bioc", "abioc", "analytics", "correlation", "ioc", "prevention")
+
+#: The two tenant labels of one behavioural detector: "XDR BIOC" and "XDR
+#: Analytics BIOC". Every other pair of known, different families is a
+#: disagreement (a BIOC firing is not a correlation rule; an agent module is
+#: not a rule at all).
+BEHAVIOURAL_FAMILIES = frozenset({"bioc", "abioc"})
+
+#: The identity keys that may carry a credit across the BIOC / Analytics BIOC
+#: label. ``technique`` is the EXACT id: a shared base technique or two shared
+#: name words are too weak to cross a label on.
+CROSS_FAMILY_KEYS = ("rule_name", "technique", "detection_id")
+
+#: Appended to ``matched_on`` when the alert carries the other label.
+CROSS_FAMILY = "cross-family"
 
 #: The Issues API's ``detection.method`` response codes, matched EXACTLY
 #: (case-folded) before the human-readable substring rules below. Source:
@@ -192,6 +221,9 @@ class MatchVerdict:
     alert_source: Optional[str] = None      # what the tenant said raised it
     alert_action: Optional[str] = None      # action_pretty, else raw action
     alert_outcome: Optional[str] = None     # prevented | detected | unknown
+    #: The alert's family (``abioc`` | ``bioc``) when it credited a row of the
+    #: OTHER behavioural label; None for a same-label or unconstrained match.
+    matched_via: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -205,6 +237,7 @@ class MatchVerdict:
             "alert_source": self.alert_source,
             "alert_action": self.alert_action,
             "alert_outcome": self.alert_outcome,
+            "matched_via": self.matched_via,
         }
 
 
@@ -308,9 +341,14 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
     keys: list[str] = []
 
     # Engine family. Both known and different ⇒ not a match, whatever else
-    # agrees: a BIOC alert is not evidence that a correlation rule fired.
+    # agrees: a BIOC alert is not evidence that a correlation rule fired. The
+    # one exception is BIOC / Analytics BIOC, two labels of one behavioural
+    # detector: that pair may still match, on the strict keys only.
+    cross = False
     if rs.family and als.family and rs.family != als.family:
-        return keys
+        if {rs.family, als.family} != BEHAVIOURAL_FAMILIES:
+            return keys
+        cross = True
 
     # Exact rule name — the card's detection name equals the alert name. The
     # one key strong enough to CONSUME an alert (see `reconcile`): with it, a
@@ -335,6 +373,12 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
     if als.has_name and len(rs.tokens & als.tokens) >= 2:
         keys.append("name")
 
+    if cross:
+        keys = [k for k in keys if k in CROSS_FAMILY_KEYS]
+        if keys:
+            keys.append(CROSS_FAMILY)
+        return keys
+
     # Family agreement is corroboration, never sufficient alone: an identity
     # key must already have lined up.
     if keys and rs.family and als.family and rs.family == als.family:
@@ -357,6 +401,9 @@ def reconcile(
     only_unobserved: bool = True,
     window_seconds_by_type: Optional[dict[str, int]] = None,
     window_end_by_result: Optional[dict[Any, Any]] = None,
+    attribution: Any = None,
+    refused: Optional[list[dict[str, Any]]] = None,
+    already_credited: Optional[Any] = None,
 ) -> list[MatchVerdict]:
     """Match observations to results and return a verdict per *candidate* result.
 
@@ -374,6 +421,22 @@ def reconcile(
     silent-row judgement uses (round 5). The matcher does not re-derive it; a
     result it omits falls back to ``executed_at + window``. The lower bound and
     the MTTD start are always ``executed_at``.
+
+    ``attribution`` (``connectors.attribution.Attribution``) decides whether
+    THIS run may take an alert one of its rows matched (#347): the window of a
+    row reaches past its own run, into the alerts of later runs on the host.
+    An alert it refuses is skipped, so the row can still take a later one, and
+    is appended to ``refused`` as ``{result_id, alert, matched_on, reason,
+    run_id, runs}``. Without it every match in the window is taken, which is
+    only right when the alerts were already narrowed to one run.
+
+    A BIOC row and an Analytics BIOC alert (or the reverse) match across the
+    label on :data:`CROSS_FAMILY_KEYS` (#346), under three limits that keep
+    one firing from being counted twice: the alert must match no row of the
+    run under its OWN label (observed rows included: the tenant's label wins
+    where the run expects it), it is consumed by the row it credits, and an
+    alert in ``already_credited`` (the external ids an earlier reconcile
+    credited to a row of this run) is never used again this way.
     """
     window = timedelta(seconds=window_seconds)
     by_type = window_seconds_by_type or {}
@@ -382,12 +445,13 @@ def reconcile(
     # work at all (and cannot trip over a malformed observation list).
     ends = window_end_by_result or {}
     candidates: list[tuple[int, Any, _ResultSide, Any]] = []
+    # Every dated row of the run, observed ones included: what an alert's own
+    # label could satisfy here, which a cross-label credit must yield to.
+    run_rows: list[tuple[Any, _ResultSide, Any]] = []
     for result in results:
         executed_at = getattr(result, "executed_at", None)
         rid = getattr(result, "id", None)
         if executed_at is None or rid is None:
-            continue
-        if only_unobserved and getattr(result, "observed", False):
             continue
         sig = getattr(result, "signal_type", None)
         result_window = (timedelta(seconds=by_type[sig])
@@ -395,7 +459,11 @@ def reconcile(
         upper = ends.get(rid)
         if upper is None:
             upper = executed_at + result_window
-        candidates.append((rid, executed_at, _prepare_result(result), upper))
+        side = _prepare_result(result)
+        run_rows.append((executed_at, side, upper))
+        if only_unobserved and getattr(result, "observed", False):
+            continue
+        candidates.append((rid, executed_at, side, upper))
 
     if not candidates:
         return []
@@ -418,6 +486,19 @@ def reconcile(
     # scenario that declares no card name.
     consumed: set[int] = set()
 
+    spent = set(already_credited or ())
+    own_label: dict[int, bool] = {}
+
+    def matches_its_own_label(i: int) -> bool:
+        """Does alert ``i`` match a row of the run that expects its label?"""
+        if i not in own_label:
+            side, when = prepared[i], alert_times[i]
+            own_label[i] = any(
+                row.family == side.family and lower <= when <= end
+                and _keys_for(row, side)
+                for lower, row, end in run_rows)
+        return own_label[i]
+
     verdicts: list[MatchVerdict] = []
     for rid, executed_at, rs, upper in candidates:
         # Window is [executed_at, upper]; anything earlier can't be evidence
@@ -433,8 +514,24 @@ def reconcile(
                 idx += 1
                 continue
             keys = _keys_for(rs, prepared[idx])
+            if CROSS_FAMILY in keys and (
+                    timed[idx].external_id in spent or matches_its_own_label(idx)):
+                keys = []
+            if keys and attribution is not None:
+                decision = attribution.decide(timed[idx], keys)
+                if not decision.allowed:
+                    if refused is not None:
+                        refused.append({
+                            "result_id": rid, "alert": timed[idx],
+                            "matched_on": list(decision.keys),
+                            "reason": decision.reason, "run_id": decision.run_id,
+                            "runs": list(decision.runs)})
+                    idx += 1
+                    continue
+                keys = decision.keys
             if keys:
-                if "rule_name" in keys:
+                crossed = CROSS_FAMILY in keys
+                if "rule_name" in keys or crossed:
                     consumed.add(idx)
                 alert = timed[idx]
                 verdict = MatchVerdict(
@@ -449,6 +546,7 @@ def reconcile(
                     alert_action=(getattr(alert, "action_pretty", None)
                                   or getattr(alert, "action", None)),
                     alert_outcome=getattr(alert, "outcome", None),
+                    matched_via=prepared[idx].family if crossed else None,
                 )
                 break  # ascending order ⇒ first hit is the earliest (lowest MTTD)
             idx += 1
