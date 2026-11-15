@@ -20,7 +20,7 @@ import { test, expect } from './_fixtures'
  * repeat grouping leaves them as 27 rows and the pager has a second page), and
  * one pull launch from the Composer canvas onto an agent nothing polls, so the
  * step rows stay `queued` — the honest state for a beacon that has not called
- * in. tenant-verified stays 0 throughout; every surface says so.
+ * in.
  */
 
 const CYCLE = ['SIM-EDR-001', 'SIM-EDR-002', 'SIM-EDR-003']
@@ -129,8 +129,10 @@ test('Results: Techniques draws 14 stages on one row, Topology pins the Engine b
   expect(await empties.count()).toBeLessThan(14)
   const opacity = await empties.first().evaluate((e) => Number(getComputedStyle(e).opacity))
   expect(opacity).toBeLessThan(0.6)
-  await expect(page.getByTestId('technique-totals')).toContainText('tenant-verified: 0')
-  await expect(tech).toContainText('Authored is not proven.')
+  // The totals count; the run's verdict is Results' own line, not repeated here.
+  await expect(page.getByTestId('technique-totals')).toContainText(/\d+ of \d+ detected/)
+  await expect(page.getByTestId('technique-verdict')).toHaveCount(0)
+  await expect(tech).toContainText('Counts are this SimCore’s result rows')
   // A staged push run is not proven: nothing may read missed.
   expect(await page.locator('[data-testid=technique-row][data-tone=miss]').count()).toBe(0)
 
@@ -163,7 +165,8 @@ test('Results: Techniques draws 14 stages on one row, Topology pins the Engine b
   const engineBox = (await engine.boundingBox())!
   expect(engineBox.x, 'Engine terminal is left of the lane block').toBeGreaterThanOrEqual(lanesBox.x + lanesBox.width - 1)
   expect(engineBox.y, 'Engine terminal does not sit below the lanes').toBeLessThan(lanesBox.y + lanesBox.height)
-  await expect(page.getByTestId('topo-totals')).toContainText('tenant-verified: 0')
+  await expect(page.getByTestId('topo-totals')).toContainText(/\d+ of \d+ detected/)
+  await expect(page.getByTestId('topo-verdict')).toHaveCount(0)
   expect(await page.locator('[data-testid=topo-cell][data-tone=miss]').count()).toBe(0)
 })
 
