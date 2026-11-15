@@ -18,7 +18,9 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   Stratum, bulk HTTPS upload, SMB sweep, FTP, SSH) are sent by the beacon, so a
   firewall sees the endpoint as their source.
 - **Sending needs consent on the launch**: `consent.simulation_authorized` and
-  `authorized_by`, plus `consent.c2_authorized` for the C2 beacon. Without it
+  `authorized_by`, plus `consent.c2_authorized` when the campaign has a
+  C2-shaped plugin (the C2 beacon, the DNS tunnel, FTP, SSH and the two NGFW
+  emitters). Without it
   the step is a dry run and its results read not executed, never missed. The
   console's Launch does not send `authorized_by` yet, so from the console
   these steps are a dry run; launch through the API to send.

@@ -797,9 +797,10 @@ with its shell intact, and the one call is relayed (`core/engine/eal_relay.py`,
 launch        a step whose command (or a platform variant) matches
               python3? -m scripts.eal_simulator.cli  is sent with "eal_relay": true,
               and one eal_relay_steps row records run, step, agent and the launch's consent
-beacon        swaps that call for   '<agent binary>' eal --relay 127.0.0.1:<port> --ticket <t>
+beacon        swaps that call for   '<agent binary>' eal --relay 127.0.0.1:<port> --ticket-file '<path>'
               (every other byte of the command is unchanged) and runs the step as usual
-eal           reads the campaign file the step wrote, hands it to the beacon over loopback
+eal           reads its ticket from that file and the campaign file the step wrote,
+              and hands both to the beacon over loopback
 beacon        POST /api/eal/relay  {agent_id, run_id, step_id, verb, campaign_yaml, plugin, live}
 SimCore       -> {exit_code, stdout, stderr, ops[], allowlist[]}
 eal           prints stdout/stderr, performs ops[] from the target, exits with exit_code
@@ -830,29 +831,45 @@ connection, `dns:<zone>` for query names.
 
 A frame's `read` is how long to wait for a reply, which is never required.
 `probe` marks a connect-and-close sweep probe, where a closed port is the
-expected answer. One step may be handed at most 4096 operations, 600 s per sleep
-and 3600 s of sleep in all, 1 GiB per random body and 4 GiB in all; SimCore
-refuses a larger plan (`EAL_WIRE_PLAN_REFUSED`, `exit_code` 1) and the beacon
-checks the same ceilings. The beacon checks the whole plan before it sends
-anything and refuses it whole (`EAL_WIRE_OP_REFUSED`) if any destination is
-outside `allowlist`. `spec/eal_wire_ops_cases.json` pins the operations each
-renderer produces; a Python test and a Go test read it.
+expected answer. The beacon accepts an inline `body_b64` (up to 1 MiB); no
+renderer emits one today, the two that send a body ask for random bytes.
+`spec/eal_wire_ops_cases.json` pins the operations each renderer produces; a
+Python test and a Go test read it.
+
+**Bounds.** The campaign text comes from the target, so no parameter in it may
+multiply work without limit. One relayed campaign may be handed at most 4096
+operations, 600 s per sleep and 3600 s of sleep in all, 1 GiB per request body
+and 4 GiB in all. SimCore applies those while it renders, not afterwards: each
+renderer first does the arithmetic on its own parameters (`iterations`,
+`chunks`, `request_count`, `total_bytes`, `sleep_seconds` with jitter,
+`inter_host_delay`, and `max_hosts × ports` for a sweep) and refuses before
+building anything, and every operation is then added through one plan that
+refuses the operation past a ceiling. A refused plan stops the campaign whole
+(`EAL_WIRE_PLAN_REFUSED`, `exit_code` 1): it is rendered before any collector
+step is sent. A sweep takes at most 256 ports. A campaign file that uses a
+YAML alias is refused (`exit_code` 2). The beacon holds the same ceilings,
+checks the whole plan before it sends anything, and refuses it whole
+(`EAL_WIRE_OP_REFUSED`) if any destination is outside `allowlist`.
 
 **Live or dry.** The campaign file's own `simulation_authorized`,
 `authorized_by`, `c2_authorized` and `dry_run: true` are not what makes a relay
 live. It is live only when the step asked for it (`--live`, or `dry_run: false`
 in the file) and the **launch** carried `consent.simulation_authorized` and a
-named `authorized_by`; a campaign with `c2_http_beacon` also needs the launch's
-`consent.c2_authorized`. Collector steps then pass the same gate as §1.3.2
-(a keyed, non-failing instance target for every step, at most 30 s of sleep).
-Otherwise the campaign is a dry run: nothing is sent, `ops` is empty, and
-`stdout.relay.code` says why.
+named `authorized_by`. A campaign with a C2-shaped plugin also needs the
+launch's `consent.c2_authorized`. C2-shaped is judged by the one classification
+the campaign launch uses (`safety.campaign_c2_plugins`, then
+`SafetyPolicy.assert_c2_authorized`): by name or by the MITRE techniques the
+plugin declares. Today that is `c2_http_beacon`, `dns_tunnel_exfil`,
+`ftp_egress`, `ssh_egress`, `ngfw_eal_emitter` and `ngfw_threat_emitter`.
+Collector steps then pass the same gate as §1.3.2 (a keyed, non-failing
+instance target for every step, at most 30 s of sleep). Otherwise the campaign
+is a dry run: nothing is sent, `ops` is empty, and `stdout.relay.code` says why.
 
 | `relay.code` | Meaning |
 |---|---|
 | `EAL_DRY_RUN_REQUESTED` | The step itself asked for a dry run |
 | `EAL_DRY_RUN_NO_CONSENT` | The launch carried no `simulation_authorized` + `authorized_by` |
-| `EAL_DRY_RUN_NO_C2_CONSENT` | The campaign has `c2_http_beacon` and the launch carried no `c2_authorized` |
+| `EAL_DRY_RUN_NO_C2_CONSENT` | The campaign has a C2-shaped plugin and the launch carried no `c2_authorized` |
 | `EAL_DRY_RUN_TARGET_*`, `EAL_DRY_RUN_SLEEP_CAP`, `EAL_DRY_RUN_HELD` | As §1.3.2, for the collector steps |
 
 **Results.** A marked step that has sent nothing (no record accepted and no
@@ -887,12 +904,31 @@ requests and 256 MiB. Neither the campaign text nor a key is logged, and a key
 is removed from `stdout` before it is returned.
 
 **The subcommand's route.** `eal` does not talk to SimCore. It talks to the
-beacon that started the step, on a loopback listener that exists only while a
-task with marked steps runs, with a ticket good for that one step. The beacon
-fills in the run and step and forwards the call on its own route to SimCore
-(`--proxy` included). So no long-lived value is in the step's argv or
-environment, and the call works under a service account whose environment
-`runuser -l` has reset.
+beacon that started the step, on a listener bound to loopback only that exists
+while a task with marked steps runs. The beacon fills in the run and step and
+forwards the call on its own route to SimCore (`--proxy` included).
+
+What lets a step ask is a ticket, and the ticket is never in an argv or an
+environment (endpoint telemetry records command lines, and any local account
+can read the process list). The command carries the path of a file instead:
+
+- the file is in a directory the beacon creates for the task with a random
+  name (`os.MkdirTemp`, so nothing can be planted at the path first), which no
+  other account can list or write: mode 0700, or 0711 when a step runs as
+  another account and has to pass through it;
+- the file has a random name of its own, is created new with mode 0600, and
+  belongs to the account the step runs as (the beacon's own for a `direct`
+  step). On Windows, where a step always runs as the beacon, the directory and
+  the file are created with an access list for that account only;
+- the ticket is made and written when the step starts, and revoked and the
+  file removed when the step ends. A request with it afterwards is refused
+  (`EAL_RELAY_TICKET_REFUSED`);
+- it is good for as many calls as the step's command contains EAL CLI calls,
+  and no more. A command that calls the CLI once inside a loop gets one call.
+
+So the call works under a service account whose environment `runuser -l` has
+reset, and what a process list or a telemetry record shows is a path that only
+the step's own account can open.
 
 **An older beacon** does not advertise the `eal-relay` capability. Its steps are
 not marked, they fail as before, and the launch carries

@@ -202,7 +202,10 @@ A scenario step that calls the EAL CLI is relayed per campaign step
 | `llm_provider_egress`, `oauth_grant_emulator`, `agentic_egress`, `browser_attack_runner`, `airs_prompt_attack` | Not relayable yet. The step exits 3 with `EAL_WIRE_NOT_RELAYABLE: <plugin>` and its Results read `not_executed` |
 
 Live sending needs `consent.simulation_authorized` and `authorized_by` on the
-launch (and `consent.c2_authorized` for `c2_http_beacon`); without them the
+launch, and `consent.c2_authorized` when the campaign has a C2-shaped plugin
+(`c2_http_beacon`, `dns_tunnel_exfil`, `ftp_egress`, `ssh_egress`,
+`ngfw_eal_emitter`, `ngfw_threat_emitter`: the launch gate's own
+classification, by name or by MITRE technique); without them the
 relayed campaign is a dry run and the step's Results read `not_executed`.
 
 ### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
