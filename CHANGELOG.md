@@ -8,6 +8,53 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-15
+
+**Hotfix for v1.2.1: Detection Accuracy no longer counts verify-only XQL rows
+as misses (#272).** One scoring change and one scenario bar; no card, emitter,
+beacon or schema change.
+
+### Fixed
+
+- **43 scenarios with a Detection Accuracy bar could never reach it.**
+  Detection Accuracy divided the rows an alert matched by every row that ran.
+  An XQL row whose card object is a query raises no alert, so reconcile wrote it
+  `missed` and the measure counted it as a miss. Even with every alert-backed
+  detection firing, 39 of those scenarios read FAIL on a healthy tenant. The
+  other four (SIM-AIACC-003, SIM-AIACC-005, SIM-AIRS-005, SIM-CLOUD-004) have
+  no alert-backed row at all.
+- **A verify-only row now leaves the measure while no alert has matched it**,
+  the way rows whose step never ran already do. A row is verify-only when its
+  declared type is XQL and no alert-raising card object backs it: its card
+  object is an XQL query or a modeling rule, or it has no card. An XQL row whose
+  card is a BIOC or a correlation rule still counts. If an alert does match a
+  verify-only row, the row counts as detected, once, on both sides of the
+  ratio. A run with no alert-backed row left reads `pending`, never PASS, and
+  says why in `tc_verdict_detail.measurement.withheld`. The rows themselves are
+  unchanged: their outcome still reads `missed`, the coverage figures still
+  count them, and their own verdict is the Tier-2 verify verdict when they carry
+  a `verification_xql`. `measurement.verify_only` reports how many rows left the
+  measure, how many were credited, and how many of those that left have no
+  `verification_xql`, so Tier 2 cannot score them either.
+- **Counted on this tree**, with every alert-backed row firing: the 39 now
+  reach their bar. 18 read PASS and 21 read `not_applicable` because the index
+  row they bind has no measurable threshold. The four with no alert-backed row
+  stay `pending`. None of their XQL rows carries a `verification_xql`, so no
+  path scores them until their content changes.
+- **SIM-EDR-023's bar moves from 62.5% to 83.3%.** It still asks for 5 of its 6
+  alert-backed rows; its two verify-only rows no longer count.
+
+### Upgrading from 1.2.1
+
+- **Re-scoring a stored run can change its Detection Accuracy verdict.** A run
+  is re-scored when it is next read back: `POST /api/runs/{id}/reconcile`,
+  `POST /api/runs/{id}/observations` or the auto-reconcile sweep. A run that read
+  FAIL because its verify-only rows counted as misses can now read PASS, or
+  `not_applicable` when its index row is qualitative. A run whose every row is
+  verify-only, and which read PASS because an alert matched one of them, now
+  reads `pending`. A re-score without a new read back (run completion, a Tier-2
+  verify) keeps the stored measurement until then.
+
 ## [1.2.1] - 2026-11-15
 
 **Hotfix for v1.2.0: a step that failed on the host no longer reads as
