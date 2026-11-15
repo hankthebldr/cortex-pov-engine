@@ -3,6 +3,7 @@ import { getDoorReadiness, getDoors, getRuns, getScenarios } from '../../api/cli
 import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import useMitreCoverage from './useMitreCoverage.js'
+import ReportsExecutions from './ReportsExecutions.jsx'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
@@ -16,9 +17,12 @@ import {
 import '../../styles/destinations/coverage.css'
 
 /**
- * CoverageView — the Dashboards destination (route id `coverage`, design v33
- * C8). Every scenario in the library, counted from GET /api/scenarios, in
- * three views:
+ * CoverageView — the Reports destination (route id `coverage`).
+ *
+ * Its first tab, Executions, rolls up everything fired on this engine
+ * (ReportsExecutions.jsx, GET /api/reports/executions). The tabs after it are
+ * the dashboards of design v33 C8: every scenario in the library, counted from
+ * GET /api/scenarios, in three views:
  *
  *   Detection source × Use case   use cases down, the planes the scenarios
  *                                 raise detections on across
@@ -36,9 +40,11 @@ import '../../styles/destinations/coverage.css'
  * authored, or that ran and was not reviewed, is never coloured as covered.
  *
  * Every cell and tile opens the scenarios it counts; each scenario opens its
- * sheet on Scenarios (`#/library?open=<id>`). The tab rides `?tab=`.
+ * sheet on Scenarios (`#/library?open=<id>`). The tab rides `?tab=`. The
+ * library is read only once a library tab is opened.
  */
 export const DASH_TABS = Object.freeze([
+  ['executions', 'Executions'],
   ['sources', 'Detection source × Use case'],
   ['mitre', 'MITRE ATT&CK'],
   ['doors', 'Planes × doors'],
@@ -50,7 +56,7 @@ const TAB_IDS = DASH_TABS.map(([id]) => id)
 const errText = (err, fallback) => (err && (err.message || String(err))) || fallback
 
 export default function CoverageView({ onNavigate, params = {}, setParams } = {}) {
-  const fromParams = TAB_IDS.includes(params.tab) ? params.tab : 'sources'
+  const fromParams = TAB_IDS.includes(params.tab) ? params.tab : 'executions'
   const [tab, setTab] = useState(fromParams)
   useEffect(() => { setTab(fromParams) }, [fromParams])
   const choose = (id) => {
@@ -71,7 +77,8 @@ export default function CoverageView({ onNavigate, params = {}, setParams } = {}
     return () => window.removeEventListener('cortex:navigate-ttp', handler)
   }, [onNavigate])
 
-  const data = useCorpus()
+  const executions = tab === 'executions'
+  const data = useCorpus(!executions)
   const corpusTab = tab === 'sources' || tab === 'mitre' || tab === 'doors'
 
   return (
@@ -79,18 +86,11 @@ export default function CoverageView({ onNavigate, params = {}, setParams } = {}
       <header className="dash__head">
         <div className="dash__title">
           <PageIcon icon="line-chart" size="tile" />
-          <h1 className="pov-page__title">Dashboards</h1>
+          <h1 className="pov-page__title">Reports</h1>
         </div>
-        <p className="pov-page__lede">
-          Every scenario in the library, counted three ways. Open any cell or technique to see the
-          scenarios behind it and what they have proven so far. Detected means a run of the
-          scenario was reviewed against the tenant and detected something.
-        </p>
       </header>
 
-      <CorpusSummary data={data} />
-
-      <div className="dash__tabs" role="tablist" aria-label="Dashboards">
+      <div className="dash__tabs" role="tablist" aria-label="Reports">
         {DASH_TABS.map(([id, label]) => (
           <button
             key={id}
@@ -109,7 +109,10 @@ export default function CoverageView({ onNavigate, params = {}, setParams } = {}
       </div>
 
       <div role="tabpanel" id="dash-panel" aria-labelledby={`dash-tab-${tab}`} className="dash__panel">
-        {corpusTab && !data.ready ? (
+        {!executions && <CorpusSummary data={data} />}
+        {executions ? (
+          <ReportsExecutions onNavigate={onNavigate} />
+        ) : corpusTab && !data.ready ? (
           <CorpusPending data={data} />
         ) : tab === 'sources' ? (
           <SourcesPanel scenarios={data.scenarios} states={data.states} />
@@ -136,17 +139,21 @@ export default function CoverageView({ onNavigate, params = {}, setParams } = {}
 /* ─── Data ─────────────────────────────────────────────────────────────── */
 
 /**
- * The scenario list and the run list, read once per visit. A failed run list
- * is NOT an empty one: it leaves `states` null, and every scenario reads
- * Can't check instead of Never run.
+ * The scenario list and the run list, read once per visit, the first time a
+ * library tab is open (`enabled`). A failed run list is NOT an empty one: it
+ * leaves `states` null, and every scenario reads Can't check instead of Never
+ * run.
  */
-function useCorpus() {
+function useCorpus(enabled) {
   const [scenarios, setScenarios] = useState(null)
   const [scenarioError, setScenarioError] = useState(null)
   const [runs, setRuns] = useState(null)
   const [runError, setRunError] = useState(null)
+  const [wanted, setWanted] = useState(enabled)
+  if (enabled && !wanted) setWanted(true)
 
   useEffect(() => {
+    if (!wanted) return undefined
     let live = true
     getScenarios({})
       .then((list) => { if (live) setScenarios(Array.isArray(list) ? list : []) })
@@ -155,7 +162,7 @@ function useCorpus() {
       .then((list) => { if (live) setRuns(list) })
       .catch((err) => { if (live) setRunError(errText(err, 'the run list did not load')) })
     return () => { live = false }
-  }, [])
+  }, [wanted])
 
   const derived = useMemo(() => {
     if (runError || !runs) return { states: null, error: runError }

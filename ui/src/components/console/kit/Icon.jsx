@@ -30,6 +30,7 @@
  *   clear    Clear (the verb): empty a buffer this browser holds
  *   camera   Screenshot (the verb)
  *   down     jump to the newest line of a log
+ *   terminal Open run (the verb): the run's own page
  *   x        close a sheet; mark a detection missed
  *   check-all  Validate all (the verb)
  *
@@ -158,6 +159,7 @@ const SHAPES = {
     </g>
   ),
   down: <path d="M8 3v10M4 9l4 4 4-4" {...STROKE} />,
+  terminal: <path d="M2 3h12v10H2zM4.8 6.6l2 1.8-2 1.8M8.6 10.4h2.6" {...STROKE} />,
   x: <path d="M4 4l8 8M12 4l-8 8" {...STROKE} />,
   'check-all': <path d="M1.8 8.6l2.6 2.6 5-5.6M7.4 10.4l.8.8 6-6.8" {...STROKE} />,
 }

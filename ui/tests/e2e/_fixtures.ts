@@ -46,7 +46,7 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   'Targets': { dest: 'component-agents', params: { tab: 'fleet' }, hidden: true },
   // 'library' is the Scenarios rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
-  // The coverage route is the Dashboards rail item (design C8); its MITRE
+  // The coverage route is the Reports rail item; its MITRE
   // ATT&CK matrix is a tab, fetched when that tab opens, so it is addressed by
   // route with `?tab=mitre`.
   'ATT&CK Coverage': { dest: 'coverage', params: { tab: 'mitre' } },

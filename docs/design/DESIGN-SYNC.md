@@ -260,6 +260,19 @@ Dark is the console default. Light is retained as a complete, independent,
 AA-clean token set — see the measured contrast table at the top of
 `cortex-tokens.css`.
 
+## Runs, Results, Reports: slice 1, the Reports rollup (2026-11-15)
+
+Spec: `docs/superpowers/specs/2026-11-15-runs-results-reports-design.md`. This
+slice is the Reports page only; Runs and Results change in slices 2 and 3.
+
+| Change | What the code does |
+|---|---|
+| Dashboards is now Reports | The rail item, the heading, the breadcrumb and ⌘K read **Reports**. The route id stays `coverage`, so `#/coverage` and `?tab=` links keep working. The intro paragraph under the heading is gone. |
+| Executions tab | The first, default tab. One read of `GET /api/reports/executions`: a filter row (24 h · 7 d · 30 d · All, Plane, Status, Agent, Include drafts), a totals strip, and one table switched between By scenario, By technique and By test case. Each scenario row opens its last reviewed run in Results, or the run when none was reviewed. Downloads as CSV and JSON. No Compare runs on this page. The table always fits its card and pins nothing: text longer than its column ends in an ellipsis with the whole text as its tooltip, and on a window too narrow for twelve columns First run gives way (below about 1500 px), then Sources (below about 1400 px); both stay in the downloads. |
+| What it never draws | A detection nobody reviewed as Missed (it reads **Not reviewed**); a scenario that never ran as a row; an empty engine as a table ("No runs yet" and **Run**); a failed read as an empty one. |
+| The library tabs | Detection source × Use case, MITRE ATT&CK, Planes × doors, PANW stack and Competitive follow unchanged. Their scenario strip moved inside the tab, and the library is read only once one of them is opened. |
+| Verbs | The closed set gained one: **Open run** (icon `terminal`), for a scenario with no reviewed run. The downloads use **Download**, which Agents › Fleet added (#339). The whole set is in the Shared constructs row below. |
+
 ## Screen map
 
 Where each surface lives in the code after design v26 (2026-11-13). The rail
@@ -287,7 +300,7 @@ or a link.
 | Failed step troubleshooting sheet | Runs › a run › a Failed or Timed out card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
 | Results (what Cortex saw, one run) | Run & observe › Results (`#/proof?run=&tab=`: Detections · Storyline · Techniques · Topology · Causality · Tenant evidence) | `app/destinations.jsx::ProofSurface` · `ResultsView.jsx` · `app/resultTabs.js` · `ResultOfBar.jsx` · `ResultVerdictLine.jsx` · `RunCaveats.jsx` · `EvidenceView.jsx` (Detections) · `ExportMenu.jsx` (Download) |
-| Dashboards (v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from reviewed runs only) | Run & observe › Dashboards (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `dashboardModel.js` (review state, grids, ATT&CK matrix) |
+| Reports (Executions: the rollup of every run, by scenario · technique · test case; then v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from reviewed runs only) | Run & observe › Reports (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `ReportsExecutions.jsx` · `reportsModel.js` · `api/reports.js` (`GET /api/reports/executions`) · `dashboardModel.js` (the library tabs) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
@@ -298,7 +311,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |

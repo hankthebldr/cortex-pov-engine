@@ -8,6 +8,30 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — Reports rolls up every execution on this engine
+
+- **Reports › Executions.** The first tab of the Reports page lists everything
+  this engine has run: runs by status, how many scenarios, techniques and test
+  cases they touched, what the host recorded about each step, and the expected
+  detections by outcome. One table shows it by scenario, by technique or by
+  test case, with filters for time range, plane, status and agent. Each
+  scenario row opens its last reviewed run in Results. It downloads as CSV or
+  JSON.
+- **`GET /api/reports/executions`** is the route behind it. It is read-only,
+  makes no outbound call and never loads a run's output. A detection nobody
+  reviewed is counted as not reviewed, never as missed. A scenario that never
+  ran is counted, not listed at 0 %. Composer drafts are left out unless asked
+  for. The CSV quotes text that a spreadsheet would run as a formula.
+
+### Changed — Dashboards is now Reports
+
+- **The Dashboards page is named Reports** in the rail, the heading, the
+  breadcrumb and ⌘K. Its address is the same (`#/coverage`), so saved links
+  still work. It opens on Executions; Detection source × Use case, MITRE
+  ATT&CK and Planes × doors follow as before. The paragraph under the heading
+  is gone.
+- **One button verb was added** to the console kit: Open run.
+
 ### Added — scenario steps that call the EAL CLI run in pull mode (#325)
 
 - **71 scenarios failed on a beacon** at the step that runs

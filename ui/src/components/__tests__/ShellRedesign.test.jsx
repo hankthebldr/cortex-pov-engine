@@ -119,7 +119,7 @@ describe('SectionTabs — the pages inside a task', () => {
     expect(onNavigate).toHaveBeenCalledWith('uctc')
   })
 
-  it('Results is one page now that Dashboards is a rail item, so it carries no strip', () => {
+  it('Results is one page now that Reports is a rail item, so it carries no strip', () => {
     const { container } = render(<SectionTabs destination="proof" />)
     expect(container).toBeEmptyDOMElement()
   })
