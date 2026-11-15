@@ -172,8 +172,15 @@ def test_commit_failure_still_returns_the_report(client, cred_client, session_fa
         "response_layer", pf.OK, pf.PF_OK, "present",
         extra={"response_layer": {"state": "PRESENT"}})])
 
+    real_commit = AsyncSession.commit
+
     async def _boom(self):
-        raise RuntimeError("database is locked")
+        # Only the STORE fails: the commit that carries the response layer.
+        # The preflight also commits the credential's access stamp before it
+        # calls the tenant (#326), and that one is not what this test breaks.
+        if any(getattr(obj, "response_layer", None) is not None for obj in self.dirty):
+            raise RuntimeError("database is locked")
+        await real_commit(self)
 
     monkeypatch.setattr(AsyncSession, "commit", _boom)
     r = client.post("/api/connectors/xsiam_tenant/preflight")

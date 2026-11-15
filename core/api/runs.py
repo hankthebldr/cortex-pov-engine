@@ -27,10 +27,11 @@ from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import LargeBinary, and_, case, cast, func, not_, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
-from database import get_db
+from database import get_db, is_locked_error
 from engine import efficacy_scorecard
 from engine import host_evidence
 from engine import live_output
@@ -2495,12 +2496,24 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
     # A beacon polling here is alive: refresh its liveness so the heartbeat
     # sweep never mistakes a long-running silent step for a lost beacon. One
     # atomic UPDATE; the response is unchanged.
+    status = run.status
     if run.target:
         now = datetime.utcnow()
-        await db.execute(
-            update(Agent).where(Agent.agent_id == run.target)
-            .values(last_seen=now, status="online")
-            .execution_options(synchronize_session=False))
-        await db.commit()
+        try:
+            await db.execute(
+                update(Agent).where(Agent.agent_id == run.target)
+                .values(last_seen=now, status="online")
+                .execution_options(synchronize_session=False))
+            await db.commit()
+        except OperationalError as exc:
+            if not is_locked_error(exc):
+                raise
+            # Another writer held SQLite's one write lock past the busy timeout
+            # (#326). The beacon reads anything but a 200 here as a lost
+            # control channel and stops its step, so the stamp is skipped for
+            # this poll rather than failed. The answer above stands.
+            await db.rollback()
+            logger.warning("run_control run_id=%s: database busy, liveness stamp skipped",
+                           run_id)
 
-    return {"abort": abort, "run_id": run_id, "status": run.status}
+    return {"abort": abort, "run_id": run_id, "status": status}

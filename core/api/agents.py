@@ -31,9 +31,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
+from database import get_db, is_locked_error
 from engine.orchestrator import orchestrator
 from models import Agent, EnrollmentToken
 
@@ -3138,7 +3139,18 @@ async def poll_tasks(
     src_ip = _client_ip(request)
     if src_ip is not None:
         agent.last_ip = src_ip
-    await db.commit()
+    try:
+        await db.commit()
+    except OperationalError as exc:
+        if not is_locked_error(exc):
+            raise
+        # Another writer held SQLite's one write lock past the busy timeout
+        # (#326). This stamp is bookkeeping: skip it for this poll instead of
+        # answering 500. The next poll writes it.
+        await db.rollback()
+        await db.refresh(agent)  # the rollback expired the row read above
+        logger.warning("poll_tasks agent=%s: database busy, liveness stamp skipped",
+                       agent_id)
 
     # DB-aware dequeue so the durable queued_tasks row is removed on delivery
     # (GAP-API-005). A restart will not re-deliver an already-dispatched task.
@@ -3165,6 +3177,9 @@ async def poll_tasks(
     # never handed to an agent that cannot stage them: the run is failed LOUDLY
     # here rather than executing and looking green.
     if task.requires_artifact_fetch():
+        # A delivery that had to be retried rolled this session back, which
+        # expires the agent row the gate reads.
+        await db.refresh(agent)
         gate = await _refuse_unstageable_task(
             agent, task, db, server=str(request.base_url).rstrip("/"))
         if gate is not None:
@@ -3318,7 +3333,18 @@ async def sweep_agents_once() -> int:
                 except Exception:  # pragma: no cover - defensive
                     logger.exception("event_bus publish failed agent=%s", a.agent_id)
         if changed:
-            await db.commit()
+            try:
+                await db.commit()
+            except OperationalError as exc:
+                if not is_locked_error(exc):
+                    raise
+                # Another writer held the lock past the busy timeout (#326).
+                # Nothing was written, so this pass is skipped whole; the next
+                # one derives the same transitions again.
+                await db.rollback()
+                logger.warning("heartbeat sweep: database busy, pass skipped "
+                               "(%d status transition(s) left for the next pass)", changed)
+                return 0
         # Snapshot BEFORE any terminalisation: a rollback for one agent expires
         # every loaded ORM object, so iterating them afterwards would raise
         # MissingGreenlet on the next agent.
@@ -3339,9 +3365,14 @@ async def sweep_agents_once() -> int:
                 await terminalise_lost_runs(
                     db, agent_id, now,
                     after_seconds=settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS)
-            except Exception:
+            except Exception as exc:
                 await db.rollback()
-                logger.exception("beacon_lost terminalisation failed agent=%s", agent_id)
+                if is_locked_error(exc):
+                    # Nothing was written; the next pass tries again (#326).
+                    logger.warning("beacon_lost terminalisation skipped agent=%s: "
+                                   "database busy", agent_id)
+                else:
+                    logger.exception("beacon_lost terminalisation failed agent=%s", agent_id)
     return changed
 
 

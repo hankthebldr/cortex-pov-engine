@@ -1,13 +1,22 @@
 """
 CortexSim database setup — async SQLAlchemy with SQLite.
 Database file lives at {CORTEXSIM_BASE_DIR}/data/cortexsim.db.
+
+The file runs in WAL (write-ahead log) mode, so two side files can sit next to
+it: ``cortexsim.db-wal`` and ``cortexsim.db-shm``. A backup is all three, or a
+copy made with SQLite's online backup; see :func:`configure_sqlite`.
 """
 
+import logging
 import os
+
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from config import settings
+
+logger = logging.getLogger("cortexsim.database")
 
 # Resolve absolute path to the DB file
 _db_path = os.path.join(settings.CORTEXSIM_BASE_DIR, "data", "cortexsim.db")
@@ -29,6 +38,99 @@ engine = create_async_engine(
     echo=settings.CORTEXSIM_SQL_ECHO,
     connect_args={"check_same_thread": False},
 )
+
+# ---------------------------------------------------------------------------
+# SQLite connection settings (#326)
+#
+# SQLite allows one writer at a time. With its defaults (a rollback journal) a
+# reader also blocks a writer's commit, and a committing writer blocks every
+# reader. On 2026-11-14 the beacon's GET /tasks and the heartbeat sweep failed
+# "database is locked" 44 times in one minute while a Tier-2 verify held a
+# write transaction across its tenant calls.
+#
+# WAL removes the reader/writer half of that: readers and the one writer no
+# longer wait on each other. The busy timeout is how long a second WRITER waits
+# for the first before it gives up. Neither helps a writer that keeps its
+# transaction open across a network call; those paths commit first.
+# ---------------------------------------------------------------------------
+
+#: How long a connection waits for SQLite's write lock before it fails with
+#: "database is locked". The driver's own default is the same 5 s; it is set
+#: here so it does not depend on that default. Kept under the beacon's 30 s
+#: HTTP timeout with room for a poll that makes more than one write.
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+_wal_refusal_logged = False
+
+
+def configure_sqlite(async_engine) -> None:
+    """Give every connection of ``async_engine`` WAL, a busy timeout and
+    ``synchronous=NORMAL``.
+
+    Runs on each new connection. ``journal_mode`` is stored in the database
+    file, so the first connection to an existing file switches it and later
+    ones find it already switched; the other two are per-connection and SQLite
+    does not store them.
+
+    Safe on any SQLite engine:
+
+    * an in-memory database has no WAL and answers ``memory``; nothing changes;
+    * a file that cannot be switched (read-only, not a database, another
+      process holding it open) keeps its journal mode and its default
+      ``synchronous=FULL``, and the fault is logged once. Whatever is wrong with
+      the file then surfaces where it did before, at the first statement.
+
+    ``synchronous=NORMAL`` is set only in WAL, where it cannot corrupt the
+    file: a power cut can lose the last commits, never the database.
+
+    WAL keeps two side files next to the database, ``<file>-wal`` and
+    ``<file>-shm``. Commits live in ``-wal`` until SQLite folds them back, so a
+    copy of the main file alone can miss recent runs.
+    """
+
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        global _wal_refusal_logged
+        cursor = dbapi_connection.cursor()
+        try:
+            # First, so the switch below waits for a lock instead of failing.
+            cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+            refusal = None
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                row = cursor.fetchone()
+                mode = str(row[0]).lower() if row else ""
+                if mode not in ("wal", "memory"):
+                    # SQLite answers with the mode it kept when it cannot switch.
+                    refusal = f"journal mode stayed '{mode}'"
+            except Exception as exc:  # noqa: BLE001 — never fail a connect on this
+                mode, refusal = "", str(exc)
+            if mode == "wal":
+                cursor.execute("PRAGMA synchronous=NORMAL")
+            elif refusal and not _wal_refusal_logged:
+                _wal_refusal_logged = True
+                logger.warning(
+                    "SQLite did not switch to WAL (%s); continuing with the "
+                    "file's current journal mode", refusal)
+        finally:
+            cursor.close()
+
+
+configure_sqlite(engine)
+
+
+def is_locked_error(exc: BaseException) -> bool:
+    """Is ``exc`` SQLite's transient "another connection holds the lock"?
+
+    Matched on the message, like :func:`classify_db_error`: SQLAlchemy wraps
+    every SQLite failure in the one ``OperationalError`` class. A caller whose
+    write is bookkeeping (a liveness stamp) uses this to skip the write for
+    one tick instead of failing its request.
+    """
+    text = str(exc).lower()
+    return any(marker in text for marker in (
+        "database is locked", "database table is locked", "database schema is locked"))
+
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

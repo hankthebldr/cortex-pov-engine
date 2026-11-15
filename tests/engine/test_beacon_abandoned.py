@@ -24,6 +24,11 @@ terminalised through the beacon-lost machinery (prevention caps at
 ``run.status`` frame. And because the beacon now RETRIES ``/complete``, a
 ``/complete`` on a run that is already terminal is a 409 that re-applies
 nothing.
+
+It ends ``failed``, never ``complete`` (#326). Run ``5cc8c6b4`` (SIM-NDR-007)
+carried "BEACON ABANDONED TASK ... Steps without host evidence are not a
+coverage measurement" in its output and ``complete`` in its status, so every
+surface that reads status showed a run nobody saw finish as a finished run.
 """
 from __future__ import annotations
 
@@ -225,15 +230,23 @@ def test_restart_then_silent_control_channel_terminalises_the_run(session_factor
     assert _sweep(session_factory) == [run_id]
 
     run = _run(session_factory, run_id)
-    assert run.status == "complete" and run.completed_at is not None
+    # Not `complete`: nothing says its steps finished (#326).
+    assert run.status == "failed" and run.completed_at is not None
     assert run.severed_at_step == "step-01"
     assert "BEACON ABANDONED TASK" in run.output
+    # The reason, as a stable code in the run's own record and on the frame.
+    assert "--- RUN FAILED: BEACON_ABANDONED_TASK ---" in run.output
     status_frames = [f for f in frames if f["type"] == "run.status"]
-    assert status_frames and status_frames[-1]["data"]["status"] == "complete"
+    assert status_frames and status_frames[-1]["data"]["status"] == "failed"
     assert status_frames[-1]["data"]["termination"] == "BEACON_ABANDONED_TASK"
-    # Host evidence: the severed step witnessed nothing; later steps never ran.
+    # Host evidence, unchanged: the severed step witnessed nothing; later
+    # steps never ran. No row is `missed`, and none is a hit.
     rows = {r.step_id: (r.outcome, r.outcome_reason) for r in _results(session_factory, run_id)}
     assert rows["step-02"] == ("not_reached", "UPSTREAM_SEVERED")
+    assert rows["step-01"][0] in (None, "pending")
+    # Still scored, so the run carries a verdict rather than "never scored".
+    assert run.tc_verdict is not None
+    assert run.tc_verdict_detail["source"] == "beacon_abandoned"
 
 
 def test_the_idle_poll_itself_reaps_an_abandoned_run(client, session_factory, frames):
@@ -248,8 +261,65 @@ def test_the_idle_poll_itself_reaps_an_abandoned_run(client, session_factory, fr
     assert r.status_code == 200 and r.json() == {"task": None}
 
     run = _run(session_factory, run_id)
-    assert run.status == "complete", run.status
+    assert run.status == "failed", run.status
     assert "BEACON ABANDONED TASK" in run.output
+
+
+def test_an_abandoned_run_reads_failed_on_every_api_surface(client, session_factory, frames):
+    """What a DC and the console read: the run list, the run, the control
+    channel and the report all say `failed` with the reason; none says
+    `complete`."""
+    run_id = _seed(session_factory)
+    _restart(session_factory)
+    _age(session_factory, run_id, AFTER + 60)
+    assert client.get("/api/agents/agent-1/tasks").json() == {"task": None}
+
+    one = client.get(f"/api/runs/{run_id}").json()
+    assert one["status"] == "failed"
+    assert "RUN FAILED: BEACON_ABANDONED_TASK" in one["output"]
+
+    failed = client.get("/api/runs", params={"status": "failed"}).json()["runs"]
+    assert [r["run_id"] for r in failed] == [run_id]
+    assert client.get("/api/runs", params={"status": "complete"}).json()["runs"] == []
+    summary = client.get("/api/runs", params={"fields": "summary"}).json()["runs"][0]
+    assert summary["status"] == "failed"
+    assert "BEACON ABANDONED TASK" in summary["output_tail"]
+
+    control = client.get(f"/api/runs/{run_id}/control").json()
+    assert control == {"abort": True, "run_id": run_id, "status": "failed"}
+
+    report = client.get(f"/api/runs/{run_id}/report", params={"format": "json"}).json()
+    assert report["run"]["status"] == "failed"
+    assert report["execution_integrity"]["ok"] is False
+    assert any("BEACON ABANDONED TASK" in p
+               for p in report["execution_integrity"]["problems"])
+    markdown = client.get(f"/api/runs/{run_id}/report").text
+    assert "**Status:** failed" in markdown
+    assert "**Status:** complete" not in markdown
+
+
+def test_an_offline_beacon_keeps_its_severed_complete_reading(session_factory, frames):
+    """The other path through the same machinery is untouched: a run whose
+    agent goes offline mid-run (the Cortex agent killed the beacon) still ends
+    `complete`, severed at the step, as the prevention design specifies."""
+    from engine.beacon_lost import terminalise_lost_runs
+    from models import Agent
+
+    run_id = _seed(session_factory)
+    _age(session_factory, run_id, AFTER + 60)
+
+    async def _offline():
+        async with session_factory() as db:
+            agent = (await db.execute(select(Agent))).scalar_one()
+            agent.last_seen = datetime.utcnow() - timedelta(seconds=AFTER + 60)
+            await db.commit()
+            return await terminalise_lost_runs(
+                db, "agent-1", datetime.utcnow(), after_seconds=AFTER)
+
+    assert asyncio.run(_offline()) == [run_id]
+    run = _run(session_factory, run_id)
+    assert run.status == "complete" and run.severed_at_step == "step-01"
+    assert "RUN FAILED" not in run.output
 
 
 def test_a_block_mode_prevent_row_caps_at_pending(session_factory, frames):
@@ -401,7 +471,7 @@ def test_complete_after_abandonment_is_409_and_reapplies_nothing(client, session
     assert r.status_code == 409, r.text
     detail = r.json()["detail"]
     assert detail["code"] == "RUN_ALREADY_TERMINAL"
-    assert detail["detail"]["status"] == "complete"
+    assert detail["detail"]["status"] == "failed"
 
     after = _run(session_factory, run_id)
     assert (after.status, after.completed_at, after.output) == (
@@ -564,9 +634,10 @@ def test_a_fanout_both_endpoints_let_go_is_reaped_once_both_are_seen_idle(
     # agent-2 polls for new work too: nothing holds the run any more.
     assert client.get("/api/agents/agent-2/tasks").json() == {"task": None}
     run = _run(session_factory, run_id)
-    assert run.status == "complete", run.output
+    assert run.status == "failed", run.output
     assert "BEACON ABANDONED TASK" in run.output
     status_frames = [f for f in frames if f["type"] == "run.status"]
+    assert status_frames[-1]["data"]["status"] == "failed"
     assert status_frames[-1]["data"]["termination"] == "BEACON_ABANDONED_TASK"
 
 
@@ -578,3 +649,4 @@ def test_the_abandoned_marker_does_not_name_a_cause_it_cannot_know():
     text = _abandoned_marker(240)
     assert "most likely" not in text
     assert "SimCore or beacon restart" in text and "not known" in text
+    assert text.startswith("\n--- RUN FAILED: BEACON_ABANDONED_TASK ---\n")
