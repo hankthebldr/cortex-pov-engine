@@ -21,6 +21,7 @@ void React
 
 export const VERBS = Object.freeze([
   'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
+  'Switch',
 ])
 
 /** The kit Icon each verb carries. */
@@ -33,6 +34,7 @@ export const VERB_ICONS = Object.freeze({
   Review: 'rotate',
   'Open results': 'external',
   'Abort run': 'stop',
+  Switch: 'swap',
 })
 
 export default function Button({ variant = 'secondary', type = 'button', verb, className = '', children, ...rest }) {

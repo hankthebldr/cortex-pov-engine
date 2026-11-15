@@ -334,6 +334,8 @@ function ConsoleShell() {
         health={env.health}
         tenant={env.tenant}
         agent={env.agent}
+        agents={env.agents}
+        onSwitchAgent={env.setAgent}
         activeNav={navOwner(dest.id)}
         activeChild={componentKeyForRoute(dest.id, router.params)}
         immersive={immersive}

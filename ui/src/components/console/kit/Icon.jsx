@@ -19,6 +19,7 @@
  *   target   a deep dive's thesis ("Why this matters")
  *   back     the header's Back: the previous place in the console's history
  *   forward  the header's Forward: the next place, after a Back
+ *   swap     Switch (the verb): make another agent the active one
  */
 import React from 'react'
 
@@ -80,6 +81,12 @@ const SHAPES = {
   ),
   back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
   forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
+  swap: (
+    <g {...STROKE}>
+      <path d="M2.5 5.5h10M10 3l2.5 2.5L10 8" />
+      <path d="M13.5 10.5h-10M6 8l-2.5 2.5L6 13" />
+    </g>
+  ),
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

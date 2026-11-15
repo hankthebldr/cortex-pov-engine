@@ -50,6 +50,10 @@ export default function AppShell({
   health = {},
   tenant = null,
   agent = null,
+  // The agent list and the setter, for the header's offer to switch off an
+  // offline active agent (#341).
+  agents = [],
+  onSwitchAgent = null,
   tenantId = null,
   povName = undefined,
   // The rail item that owns the open page (a tab's parent task).
@@ -282,6 +286,8 @@ export default function AppShell({
         instanceTargetLabel={instanceTargetLabel}
         tenant={tenant}
         agent={agent}
+        agents={agents}
+        onSwitchAgent={onSwitchAgent}
         activeRun={activeRun}
         povName={povName}
         onOpenPalette={() => setPaletteOpen(true)}

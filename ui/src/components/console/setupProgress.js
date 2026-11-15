@@ -135,6 +135,27 @@ export function agentIsOnline(a) {
   return agentLiveness(a).state === LIVENESS.ONLINE
 }
 
+/**
+ * The agent to offer when the active one is offline (#341): an online agent,
+ * the most recently seen if several are. Null when the active agent is not
+ * offline or no other agent is online. It is an offer for the DC to take,
+ * never a switch made for them.
+ */
+export function onlineAlternative(active, agents = [], nowMs = Date.now()) {
+  if (!active || agentLiveness(active, nowMs).state !== LIVENESS.OFFLINE) return null
+  const activeId = active.agent_id || active.id
+  let best = null
+  let bestAge = Infinity
+  for (const a of agents || []) {
+    if (!a || (a.agent_id || a.id) === activeId) continue
+    const live = agentLiveness(a, nowMs)
+    if (live.state !== LIVENESS.ONLINE) continue
+    const age = live.ageSeconds == null ? Infinity : live.ageSeconds
+    if (!best || age < bestAge) { best = a; bestAge = age }
+  }
+  return best
+}
+
 /** A run that executed its chain. Detections may or may not have fired —
  *  that is the result, not a setup problem. */
 export function runSucceeded(r) {

@@ -58,7 +58,7 @@ describe('Button', () => {
   })
 
   it('names the closed verb set from the design', () => {
-    expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run'])
+    expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run', 'Switch'])
   })
 
   it('gives every verb, and only a verb, an icon from the closed Icon set (design v33 C10)', () => {
@@ -135,7 +135,7 @@ describe('Icon', () => {
     expect(ICONS).toEqual([
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
-      'back', 'forward',
+      'back', 'forward', 'swap',
     ])
   })
 

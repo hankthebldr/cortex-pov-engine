@@ -29,6 +29,13 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   output, one block per step, each marked Ran, Failed (exit N), Timed out or
   Did not run with its exit code. A run with no stored output says "No output
   recorded". A run still in progress keeps the live stream.
+- **The header offers to switch off an offline agent** (#341). The active
+  agent is remembered by the browser, and it was replaced only when the agent
+  was deleted, so an agent that had gone offline stayed active and the next
+  launch targeted a beacon that could not take it. When the active agent is
+  offline and another agent is online, the header now shows the agent as
+  offline with a **Switch to** button naming the online agent (the most
+  recently seen, if there are several). It does not switch on its own.
 
 ## [1.2.0] - 2026-11-14
 

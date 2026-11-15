@@ -272,6 +272,10 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-chip__state--warn { color: var(--warn); }
 .pov-chip__state--bad { color: var(--crit); }
 .pov-chip__state--muted { color: var(--tx3); }
+/* Switch to <agent>, beside an offline active agent (#341): chip height, and a
+   long hostname ellipsizes rather than widening the bar past its floor. */
+.pov-header__switch { padding: 5px 9px; font-size: 11px; }
+.pov-header__switch-text { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .pov-chip__kbd {
   font: 600 10px/1 var(--font-mono);
   padding: 2px 4px; background: var(--s3); border-radius: 3px;
