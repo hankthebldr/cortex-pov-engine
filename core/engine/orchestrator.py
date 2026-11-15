@@ -134,6 +134,11 @@ class Task:
         # task for any run that never touched this feature is byte-identical.
         if self.runtime_install_authorized:
             payload["runtime_install_authorized"] = True
+        # Asks the beacon to report each step's command before it runs and to
+        # stream its output while it runs. An older beacon drops the key.
+        from engine import live_output  # noqa: PLC0415
+
+        payload["live_output"] = live_output.task_field()
         return payload
 
     def requires_artifact_fetch(self) -> bool:
@@ -591,6 +596,9 @@ class Orchestrator:
         deliveries). Idempotent."""
         self._control_polls.pop(run_id, None)
         self._deliveries.pop(run_id, None)
+        from engine import live_output  # noqa: PLC0415
+
+        live_output.tail.drop_run(run_id)
 
     def note_task_poll(self, agent_id: str) -> None:
         """Record that ``agent_id`` just polled ``/tasks`` — it holds no task."""
