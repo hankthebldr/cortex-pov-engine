@@ -14,6 +14,7 @@ import NewRunPanel from './NewRunPanel.jsx'
 import EalConsentRow from './EalConsentRow.jsx'
 import { ealSteps } from './ealConsent.js'
 import { runTargets, runPlan, runBlockers } from './newRun.js'
+import { agentIdOf } from '../../api/ids.js'
 
 /**
  * The launch result as LaunchGateNotice reads it. Its warning list renders a
@@ -263,9 +264,13 @@ export default function LaunchView({
   // consents below it are still asked for exactly the tools that need them.
   const [authorised, setAuthorised] = useState(false)
   const targets = useMemo(() => runTargets(launch.agents), [launch.agents])
+  // The chosen agent's own record: its capabilities say who runs the cleanup.
+  const targetAgent = useMemo(() => (selectedTarget?.kind === 'agent'
+    ? (launch.agents || []).find((a) => agentIdOf(a) === selectedTarget.id) || null
+    : null), [selectedTarget, launch.agents])
   const plan = useMemo(
-    () => runPlan(scenario, { mode: targetMode, identity: launch.identity }),
-    [scenario, targetMode, launch.identity],
+    () => runPlan(scenario, { mode: targetMode, identity: launch.identity, agent: targetAgent }),
+    [scenario, targetMode, launch.identity, targetAgent],
   )
   const runBlocked = useMemo(
     () => runBlockers({ base: blockers, target: selectedTarget, authorised }),

@@ -83,6 +83,27 @@ describe('LaunchView preflight', () => {
     expect(screen.getByTestId('preflight-identity')).toHaveAttribute('data-status', 'unknown')
   })
 
+  // Who runs the scenario's cleanup depends on the beacon chosen: one that
+  // advertises `cleanup` runs it after the run; an older one does not (#361).
+  it('says who runs the teardown for the agent that is chosen', async () => {
+    const CURRENT = {
+      ...AGENT, agent_id: 'lab-new-01', hostname: 'lab-new-01',
+      capabilities: ['shell', 'identity-harness', 'artifact-fetch', 'cleanup'],
+    }
+    installRoutes(ROUTES({ 'GET /api/agents': { agents: [AGENT, CURRENT], total: 2 } }))
+    const withCleanup = { ...SCENARIO, cleanup: { commands: ['rm -f /tmp/x', 'userdel t'] } }
+    const teardown = () => screen.getByText('Teardown').closest('.new-run__plan-row')
+    const { rerender } = render(
+      <LaunchView scenario={withCleanup} selectedTarget={{ kind: 'agent', id: 'lab-new-01', label: 'lab-new-01' }} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run by the agent after the run'))
+
+    rerender(<LaunchView scenario={withCleanup} selectedTarget={TARGET} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run them yourself'))
+
+    rerender(<LaunchView scenario={withCleanup} selectedTarget={{ kind: 'push', id: 'bundle', label: 'Offline bundle' }} />)
+    await waitFor(() => expect(teardown()).toHaveTextContent('2 commands, run by the bundle'))
+  })
+
   it('folds a BLOCKING preflight row into the launch blockers list', async () => {
     installRoutes(ROUTES({
       'GET /api/agents': { agents: [{ ...AGENT, status: 'offline', last_seen_age_seconds: 90000 }] },
