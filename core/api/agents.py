@@ -64,6 +64,9 @@ class RuntimeFacts(BaseModel):
     tools: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
     accounts: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
     anchor_rename: Optional[StrictBool] = None
+    # Every tool name the beacon looked for, found or not: a name here and not
+    # in ``tools`` is absent from the host; a name in neither was never checked.
+    probed: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
 
     def stored(self) -> dict:
         return self.model_dump(exclude_unset=True)

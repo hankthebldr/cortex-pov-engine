@@ -436,7 +436,7 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	facts := runtimefacts.Collect(runtimefacts.Options{
 		PostureProfile:    cfg.postureProfile,
 		PrepareStatusFile: cfg.prepareStatusFile,
-		ProbeTools:        runtimefacts.DefaultProbeTools,
+		ProbeTools:        runtimefacts.ProbeTools(),
 		ProbeAccounts:     identity.ServiceAccountNames(),
 	})
 

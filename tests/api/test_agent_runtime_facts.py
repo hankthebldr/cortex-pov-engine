@@ -78,6 +78,16 @@ def test_unknown_keys_are_dropped_not_an_error(client):
     assert _agent(client, "a-1")["runtime_facts"] == FACTS
 
 
+def test_the_tools_a_beacon_looked_for_are_kept(client):
+    """``probed`` is how a reader tells a tool the host lacks (probed, not in
+    ``tools``) from one the beacon never looked for (in neither)."""
+    facts = {**FACTS, "probed": ["curl", "python3", "ssh", "sshpass"]}
+    _register(client, runtime_facts=facts).raise_for_status()
+    stored = _agent(client, "a-1")["runtime_facts"]
+    assert stored["probed"] == ["curl", "python3", "ssh", "sshpass"]
+    assert set(stored["probed"]) - set(stored["tools"]) == {"ssh", "sshpass"}
+
+
 @pytest.mark.parametrize("bad", [
     {"container": "yes"},
     {"tools": "curl"},
