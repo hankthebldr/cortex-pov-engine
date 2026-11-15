@@ -7,17 +7,16 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 205 |
+| Loadable scenarios | 187 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 203 |
-| Detection planes | 16 |
-| Step-detections | 1452 |
-| Catalog detection objects | 2336 |
-| ABIOC+Analytics share (step-detections) | 15.3% |
+| TTP cards | 185 |
+| Detection planes | 13 |
+| Step-detections | 1328 |
+| Catalog detection objects | 2149 |
+| ABIOC+Analytics share (step-detections) | 16.4% |
 | Correlation share (step-detections) | 10.3% |
-| Distinct MITRE techniques (base) | 241 (128) |
+| Distinct MITRE techniques (base) | 236 (125) |
 | EAL plugins | 27 |
-| AWS IaC modules | 11 |
 
 ### Scenarios per plane
 
@@ -25,13 +24,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 |---|---:|
 | AIRS | 5 |
 | AI_ACCESS | 6 |
-| AI_SPM | 7 |
 | ANALYTICS | 39 |
-| ASM | 6 |
 | BROWSER | 6 |
 | CDR | 29 |
 | CLOUD_APP | 10 |
-| CSPM | 5 |
 | DLP | 5 |
 | EDR | 29 |
 | EMAIL | 5 |
@@ -45,8 +41,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1452 (16.2%) |
-| Marker-only steps | 98/850 (11.5%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1328 (17.8%) |
+| Marker-only steps | 84/779 (10.8%) |
 | Scenarios with indicators | 16 |
 | Indicators (in-band) | 95 |
 | Indicators (not in-band) | 11 |
@@ -55,24 +51,24 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 166 |
+| ABIOC | 161 |
 | Analytics | 56 |
-| BIOC | 374 |
-| Correlation | 149 |
-| IOC | 119 |
+| BIOC | 361 |
+| Correlation | 137 |
+| IOC | 107 |
 | Prevention | 2 |
-| XQL | 586 |
+| XQL | 504 |
 
 ### Grouping keys (`make check-grouping`)
 
-1452 step-detections in 205 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
+1328 step-detections in 187 scenarios, analysed by key class (never by value). Only G-03 fails the gate. G-04 is the number of step-detections whose grouping key or severity the corpus does not yet declare.
 
 | Code | Outcome | Count |
 |---|---|---:|
 | G-01 | WARN: Medium+ detections share no native key | 0 |
 | G-02 | WARN: stitched step carries only below-Medium detections | 2 |
 | G-03 | ERROR: stitching_key mapped to a custom destination | 0 |
-| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 1083 |
+| G-04 | INFO: `GROUPING_KEY_UNKNOWN` | 972 |
 | G-05 | INFO: `BRIDGEABLE_IP_HOST` | 0 |
 
 ## Tool adapters
@@ -84,15 +80,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Tier-4 shelf-staged | 8 |
 | Tier-4 exempt | 48 |
 | Tier-4 undeclared (should be 0 — `TA-13` rejects it) | 0 |
-| Distinct adapters wired via `adapter_ref` | 49 |
-| Scenarios wiring at least one adapter | 48 |
+| Distinct adapters wired via `adapter_ref` | 42 |
+| Scenarios wiring at least one adapter | 40 |
 
 ## Assertions (POS/PLT/AUT)
 
 | Metric | Value |
 |---|---:|
-| Assertion artifacts | 28 |
-| By validation class | `{"AUT": 3, "PLT": 7, "POS": 18}` |
+| Assertion artifacts | 14 |
+| By validation class | `{"AUT": 3, "PLT": 6, "POS": 5}` |
 | Rejected at load (strict) | 0 |
 | Boot-verified (real `AssertionCatalog`) | True |
 
@@ -100,12 +96,12 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Index TCs evidenced by a scenario | 90/266 |
-| DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 127 |
-| S-14 posture-class-primary bindings | 14 |
-| PLT assertions authored | 7/43 rows (7 artifact(s), 7 row(s) no scenario reaches, 0 tenant-proven) |
-| POS assertions authored | 16/110 rows (18 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
+| Index TCs evidenced by a scenario | 71/266 |
+| DET/HNT TCs evidenced | 69/107 |
+| S-13 tier disagreements | 120 |
+| S-14 posture-class-primary bindings | 1 |
+| PLT assertions authored | 6/43 rows (6 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
+| POS assertions authored | 5/110 rows (5 artifact(s), 5 row(s) no scenario reaches, 0 tenant-proven) |
 | AUT assertions authored | 3/6 rows (3 artifact(s), 3 row(s) no scenario reaches, 0 tenant-proven) |
 
 ## HTTP routes
@@ -114,10 +110,10 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 167 |
-| By HTTP method | `{"api_route": 1, "delete": 6, "get": 104, "post": 48, "put": 8}` |
-| `APIRouter()` instances | 32 |
-| Router files (`core/api/*.py`) | 30 |
+| Route decorators | 162 |
+| By HTTP method | `{"api_route": 1, "delete": 6, "get": 100, "post": 47, "put": 8}` |
+| `APIRouter()` instances | 31 |
+| Router files (`core/api/*.py`) | 29 |
 
 ## Strict UC/TC ref validation
 

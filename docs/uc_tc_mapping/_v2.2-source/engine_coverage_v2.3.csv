@@ -36,12 +36,12 @@ TC-AIRS-07,UC-AIRS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,sc
 TC-AIRS-08,UC-AIRS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
 TC-AIRS-09,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-AIRS-10,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-AISP-01,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-AISP-02,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-AISP-03,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-AISP-04,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-AISP-05,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-AISP-06,UC-AISP,PLT,M4,,unknown,scenario,True,unknown,False,authored
+TC-AISP-01,UC-AISP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-02,UC-AISP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-03,UC-AISP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-04,UC-AISP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-05,UC-AISP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-06,UC-AISP,PLT,M4,,unknown,,False,unknown,False,open
 TC-APB-01,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
 TC-APB-02,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
 TC-APB-03,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
@@ -58,14 +58,14 @@ TC-ASER-03,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASER-04,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASER-05,UC-ASER,PLT,M4,,unknown,,False,unknown,False,open
 TC-ASER-06,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-ASM-01,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASM-01,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASM-02,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-ASM-03,UC-ASM,HNT,M2-longterm,asm_assets · asm_issues,external-surface,scenario,True,unknown,False,authored
+TC-ASM-03,UC-ASM,HNT,M2-longterm,asm_assets · asm_issues,external-surface,,False,unknown,False,open
 TC-ASM-04,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASM-05,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-ASM-06,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-ASM-07,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-ASPM-01,UC-ASPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASM-06,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASM-07,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASPM-01,UC-ASPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASPM-03,UC-ASPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASPM-04,UC-ASPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ASPMC-01,UC-ASPMC,PLT,M4,,unknown,,False,unknown,False,open
@@ -86,7 +86,7 @@ TC-CDR-02,UC-CDR,DET,M2-longterm,cloud_inventory · posture_findings,cloud,scena
 TC-CDR-03,UC-CDR,DET,M2-longterm,cloud_inventory · posture_findings,cloud,scenario,True,unknown,False,authored
 TC-CDR-04,UC-CDR,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CDR-05,UC-CDR,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-CIEM-01,UC-CIEM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CIEM-01,UC-CIEM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CIEM-02,UC-CIEM,PLT,M4,,unknown,,False,unknown,False,open
 TC-CIEM-03,UC-CIEM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
 TC-CIEM-04,UC-CIEM,PLT,M4,,unknown,,False,unknown,False,open
@@ -119,14 +119,14 @@ TC-CRWA-02,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CRWA-03,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CRWA-04,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CRWA-05,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-CSPM-01,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-CSPM-02,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-CSPM-03,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
-TC-CSPM-04,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CSPM-01,UC-CSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CSPM-02,UC-CSPM,POS,M3,,unknown,assertion,True,unknown,False,authored
+TC-CSPM-03,UC-CSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CSPM-04,UC-CSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-CSPM-05,UC-CSPM,PLT,M4,,unknown,,False,unknown,False,open
 TC-CVM-01,UC-CVM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
 TC-CVM-02,UC-CVM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-CVM-03,UC-CVM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CVM-03,UC-CVM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-DEVX-01,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-DEVX-02,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-DEVX-03,UC-DEVX,PLT,M4,,unknown,,False,unknown,False,open
@@ -145,7 +145,7 @@ TC-DLP-10,UC-DLP,DET,M2-quick,incidents,none,,False,unknown,False,open
 TC-DLP-11,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
 TC-DSPM-01,UC-DSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-DSPM-02,UC-DSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-DSPM-03,UC-DSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-DSPM-03,UC-DSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-DSPM-04,UC-DSPM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
 TC-EDR-01,UC-EDR,DET,M1,xdr_data,none,,False,unknown,False,open
 TC-EDR-02,UC-EDR,DET,M1,xdr_data,none,,False,unknown,False,open
@@ -157,7 +157,7 @@ TC-ERV-01,UC-ERV,PLT,M4,,unknown,assertion,True,unknown,False,authored
 TC-ERV-02,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ERV-03,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ERV-04,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
-TC-ERV-05,UC-ERV,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ERV-05,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ERV-06,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ERV-07,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
 TC-ERV-08,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
