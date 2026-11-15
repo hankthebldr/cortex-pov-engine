@@ -102,6 +102,11 @@ def default_config() -> dict[str, Any]:
     return {
         "plane_floor": 3,
         "tactic_floor": 5,
+        # Per-tactic floors that differ from tactic_floor. TA0043 Reconnaissance
+        # was carried by the ASM plane, which moved to the
+        # feature/scenarios-cloud-posture branch on 2026-11-15; restore the
+        # default when that work returns.
+        "tactic_floor_overrides": {"TA0043": 1},
         "abioc_analytics_target": 0.15,
         "correlation_target": 0.10,
         "family_floor": 1,
@@ -516,6 +521,10 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
     c = {**default_config(), **(cfg or {})}
     plane_floor = int(c["plane_floor"])
     tactic_floor = int(c["tactic_floor"])
+    tactic_floor_overrides = {k: int(v) for k, v in dict(c["tactic_floor_overrides"]).items()}
+
+    def floor_for(tid: str) -> int:
+        return tactic_floor_overrides.get(tid, tactic_floor)
     abioc_analytics_target = float(c["abioc_analytics_target"])
     correlation_target = float(c["correlation_target"])
     family_floor = int(c["family_floor"])
@@ -562,7 +571,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
     for tid in all_tactics:
         s_count = scn_count_by_tactic.get(tid, 0)
         c_count = len(card_tech_by_tactic.get(tid, set()))
-        shallow = s_count < tactic_floor
+        shallow = s_count < floor_for(tid)
         tactic_rows.append({
             "tactic_id": tid,
             "tactic_name": tactic_name.get(tid, ""),
@@ -692,14 +701,15 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             })
     for row in tactic_rows:
         if row["shallow"]:
-            deficit = tactic_floor - row["scenario_count"]
+            floor = floor_for(row["tactic_id"])
+            deficit = floor - row["scenario_count"]
             label = row["tactic_name"] or row["tactic_id"]
             recs.append({
                 "kind": "tactic", "target": row["tactic_id"],
-                "current": row["scenario_count"], "target_value": tactic_floor,
+                "current": row["scenario_count"], "target_value": floor,
                 "deficit": deficit, "priority": _r4(3.0 * deficit),
                 "message": (f"{label} ({row['tactic_id']}) has {row['scenario_count']}/"
-                            f"{tactic_floor} scenarios — backfill {deficit} more"),
+                            f"{floor} scenarios — backfill {deficit} more"),
             })
     if abioc_analytics_below:
         deficit = round((abioc_analytics_target - abioc_analytics_share) * rule_step_total)
@@ -747,7 +757,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
     for row in tactic_rows:
         if row["shallow"]:
             strict_breaches.append({"kind": "shallow_tactic", "target": row["tactic_id"],
-                                    "detail": f"{row['scenario_count']}/{tactic_floor} scenarios"})
+                                    "detail": f"{row['scenario_count']}/{floor_for(row['tactic_id'])} scenarios"})
     for fam in empty_families:
         strict_breaches.append({"kind": "empty_family", "target": fam,
                                 "detail": f"{fam_counts[fam]}/{family_floor} scenarios"})
@@ -801,6 +811,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             "config": {
                 "plane_floor": plane_floor,
                 "tactic_floor": tactic_floor,
+                "tactic_floor_overrides": dict(sorted(tactic_floor_overrides.items())),
                 "abioc_analytics_target": _r4(abioc_analytics_target),
                 "correlation_target": _r4(correlation_target),
                 "family_floor": family_floor,

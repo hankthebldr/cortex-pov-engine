@@ -2,16 +2,16 @@
 # the k8s_manifest builder planted and labelled?
 #
 # ┌─ HONESTY GATE (travels with the artifact, per the coverage-inflation risk) ─┐
-# │ TC-CSPM-02 is ALREADY authored by POS-CSPM-001 against the AWS `cspm`       │
-# │ module's nine tagged resources. This artifact adds BREADTH of evidence (a  │
-# │ Kubernetes resource class in addition to AWS) and moves the coverage       │
-# │ number by ZERO. It must never be presented as taking POS from 19 toward    │
-# │ 20 — the only net-new binding out of this K8s pass is POS-KSPM-003.        │
+# │ This is the only artifact on this branch that binds TC-CSPM-02. The AWS    │
+# │ arm, POS-CSPM-001 (the cspm module's nine tagged resources), moved to      │
+# │ feature/scenarios-cloud-posture with infra/ on 2026-11-15. When that work  │
+# │ returns, this artifact goes back to adding BREADTH (a Kubernetes resource  │
+# │ class) and moves the coverage number by ZERO.                              │
 # └────────────────────────────────────────────────────────────────────────────┘
 #
 # The ground truth is the generated K8s manifest set: every object the builder
 # emits carries `cortexsim.io/posture-finding=<slug>` in the same spirit as
-# `CortexSimCSPMFinding` in infra/modules/aws/cspm. This assertion joins on OUR
+# `CortexSimCSPMFinding` in the AWS cspm module. This assertion joins on OUR
 # label key, never on the product's own finding vocabulary — a guessed
 # classification name returns zero rows and reports a correct platform as FAILED.
 assertion_id: POS-CSPM-004
@@ -39,9 +39,9 @@ success_criteria: |
 
 # ─── MANDATORY: what this does NOT prove (A-19) ──────────────────────────────
 scope_limitations: >
-  BREADTH, NOT COVERAGE: TC-CSPM-02 is already authored by POS-CSPM-001 against
-  the AWS cspm module — this artifact proves the SAME test case against a
-  Kubernetes resource class and moves the coverage number by zero. Recall only:
+  KUBERNETES ONLY: this artifact proves TC-CSPM-02 against a Kubernetes
+  resource class. It does NOT prove the AWS arm of the test case; that artifact
+  (POS-CSPM-001) moved to feature/scenarios-cloud-posture. Recall only:
   it proves the posture engine produced a finding against the three gated
   workloads the fixture plants (SIM-CDR-003 privileged pod, SIM-CDR-004 wildcard
   ClusterRole, SIM-CDR-012 privileged pod), each labelled
@@ -57,7 +57,7 @@ scope_limitations: >
   three GATED misconfigurations, which is why it is 3 and not the full labelled-
   object count. The dataset name `cortex_cloud_posture` and the `labels` /
   `resource_id` fields are convention-named and NOT yet confirmed against a live
-  tenant (POS-CSPM-001 carries the same caveat); a wrong dataset name errors the
+  tenant; a wrong dataset name errors the
   query to pending, but a tenant whose posture records omit resource labels reads
   `fail` for a schema reason rather than a discovery reason — confirm on first
   run. Requires Cortex Cloud to have a KUBERNETES connector, not only the AWS
@@ -110,5 +110,5 @@ checks:
         label query returns nothing.
       measured_value: 0
 
-tags: [posture, cspm, kspm, kubernetes, recall, planted-fixture, breadth-not-coverage]
+tags: [posture, cspm, kspm, kubernetes, recall, planted-fixture]
 author: "Henry Reed"
