@@ -85,8 +85,9 @@ steps:
   - id: step-02
     name: "Dry-run beacon campaign — confirm safety policy holds before generating IOC traffic"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-ioc-beacon-dry.yml <<YML
+      cat > "$C/tim-ioc-beacon-dry.yml" <<YML
       campaign_id: CMP-TIM-001
       name: "TIM validation — IOC feed match dry run"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -103,7 +104,7 @@ steps:
             sleep_seconds: 2
             jitter_pct: 20
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-dry.yml
+      python3 -m scripts.eal_simulator.cli run "$C/tim-ioc-beacon-dry.yml"
     identity: container-runtime
     mitre_technique: "T1071.001"
     # Same lab host / operator session as the TAXII reachability check (no fork) →
@@ -122,8 +123,9 @@ steps:
   - id: step-03
     name: "Live beacon to TAXII-fed IOC subdomain — fire IOC match + NDR session + stitch"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-ioc-beacon-live.yml <<YML
+      cat > "$C/tim-ioc-beacon-live.yml" <<YML
       campaign_id: CMP-TIM-001
       name: "TIM validation — IOC feed match live beacon"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -143,7 +145,7 @@ steps:
             method: GET
             dga_query_param: true
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/tim-ioc-beacon-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1071.001"
     # Same lab host / operator session as the dry-run (no fork) → shared_entity.
@@ -193,7 +195,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/tim-ioc-beacon-dry.yml /tmp/tim-ioc-beacon-live.yml"
     - "echo '[CortexSim] SIM-TIM-001 cleanup complete'"
 
 author: "Henry Reed"

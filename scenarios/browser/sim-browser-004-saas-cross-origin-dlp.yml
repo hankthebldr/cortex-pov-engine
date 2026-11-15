@@ -99,7 +99,8 @@ steps:
   - id: step-02
     name: "Drive Prisma Browser: copy from CRM, paste into webmail"
     command: |
-      cat > /tmp/sim-browser-004-eal.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-browser-004-eal.yml" <<'YML'
       campaign_id: CMP-BROWSER-004
       name: "Browser — cross-origin DLP"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -119,7 +120,7 @@ steps:
             headless: true
             timeout_seconds: 120.0
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-browser-004-eal.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     causality:
@@ -130,7 +131,29 @@ steps:
     # S-28), and it read a campaign file no Windows step ever writes.
     platforms: ["linux", "container", "macos"]
     platform_variants:
-      macos: "python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live  # browser_channel: prisma -> clipboard DLP on macOS"
+      macos: |
+        C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+        cat > "$C/sim-browser-004-eal.yml" <<'YML'
+        campaign_id: CMP-BROWSER-004
+        name: "Browser — cross-origin DLP"
+        authorized_by: "domain-consultant@paloaltonetworks.com"
+        simulation_authorized: true
+        target_allowlist:
+          - crm.cortexsim-test.invalid
+          - mail.cortexsim-test.invalid
+        dry_run: false
+        tags: [browser, dlp, cross-origin]
+        steps:
+          - step_id: step-01
+            plugin: browser_attack_runner
+            params:
+              campaign_path: scenarios/browser/campaigns/saas-cross-origin-dlp.yml
+              allowlist_host: crm.cortexsim-test.invalid
+              browser_channel: prisma
+              headless: true
+              timeout_seconds: 120.0
+        YML
+        python3 -m scripts.eal_simulator.cli run "$C/sim-browser-004-eal.yml" --live  # browser_channel: prisma -> clipboard DLP on macOS
     expected_detections:
       - plane: BROWSER
         type: BIOC
@@ -166,8 +189,7 @@ steps:
         detection_id: xql-xsiam-stitched-cross-origin-dlp-incident-with-both-origins-on-the-timeline
 
 cleanup:
-  commands:
-    - "rm -f /tmp/sim-browser-004-eal.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

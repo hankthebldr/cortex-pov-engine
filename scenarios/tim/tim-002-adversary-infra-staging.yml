@@ -87,8 +87,9 @@ steps:
   - id: step-02
     name: "Dry-run staging fetch — confirm safety policy holds before generating IOC traffic"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-resdev-stage-dry.yml <<YML
+      cat > "$C/tim-resdev-stage-dry.yml" <<YML
       campaign_id: CMP-TIM-002
       name: "TIM validation — adversary infrastructure staging dry run"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -105,7 +106,7 @@ steps:
             sleep_seconds: 5
             jitter_pct: 10
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-resdev-stage-dry.yml
+      python3 -m scripts.eal_simulator.cli run "$C/tim-resdev-stage-dry.yml"
     identity: container-runtime
     mitre_technique: "T1583.001"
     expected_detections:
@@ -122,8 +123,9 @@ steps:
   - id: step-03
     name: "Live resolve + fetch from TAXII-fed staged-capability host — fire IOC match + DNS leg + session + stitch"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
-      cat > /tmp/tim-resdev-stage-live.yml <<YML
+      cat > "$C/tim-resdev-stage-live.yml" <<YML
       campaign_id: CMP-TIM-002
       name: "TIM validation — adversary infrastructure staging live fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -144,7 +146,7 @@ steps:
             method: GET
             dga_query_param: false
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/tim-resdev-stage-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/tim-resdev-stage-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1583.001"
     expected_detections:
@@ -194,6 +196,21 @@ steps:
     platforms: ["linux", "container", "windows"]
     platform_variants:
       windows: |
+        $sandbox = Join-Path $env:TEMP 'cortexsim-tim-002'
+        # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+        # not its target), then the folder is made WITH its ACL in one call, so no other account
+        # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+        # folder carries. The Get-Acl below refuses anything that was there first; a later step
+        # tells this folder from a planted one with the same Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-3002)", [System.Security.AccessControl.AccessControlSections]::Access)
+        $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-3002') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-3002' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
         $env:TIM_ZONE = 'cortexsim-tim.internal'
         @'
         campaign_id: CMP-TIM-002
@@ -214,12 +231,12 @@ steps:
               jitter_pct: 10
               method: GET
               dga_query_param: false
-        '@ | Set-Content -Encoding utf8 $env:TEMP\tim-resdev-stage-live.yml
-        python -m scripts.eal_simulator.cli run $env:TEMP\tim-resdev-stage-live.yml --live
+        '@ | Set-Content -Encoding utf8 $sandbox\tim-resdev-stage-live.yml
+        python -m scripts.eal_simulator.cli run $sandbox\tim-resdev-stage-live.yml --live
 
 cleanup:
   commands:
-    - "rm -f /tmp/tim-resdev-stage-dry.yml /tmp/tim-resdev-stage-live.yml /tmp/stage2.bin"
+    - "rm -f /tmp/stage2.bin"
     - "echo '[CortexSim] SIM-TIM-002 cleanup complete'"
 
 author: "Henry Reed"

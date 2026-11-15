@@ -100,9 +100,10 @@ steps:
   - id: step-01
     name: "Stream the CloudTrail S3 GetObject mass-download burst (suspicious identity, one bucket)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/cdr-019-s3-exfil.yml <<YML
+      cat > "$C/cdr-019-s3-exfil.yml" <<YML
       campaign_id: CMP-CDR-019
       name: "CDR — AWS S3 mass-object exfiltration by a suspicious identity"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -121,7 +122,7 @@ steps:
             burst_count: 60
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cdr-019-s3-exfil.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cdr-019-s3-exfil.yml" --live
     identity: container-runtime
     mitre_technique: "T1530"
     platforms: ["linux", "container"]
@@ -140,9 +141,10 @@ steps:
   - id: step-02
     name: "Confirm the generic cloud-storage mass-read alert fires on the same identity + bucket"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/cdr-019-s3-exfil-confirm.yml <<YML
+      cat > "$C/cdr-019-s3-exfil-confirm.yml" <<YML
       campaign_id: CMP-CDR-019
       name: "CDR — AWS S3 mass-object exfiltration (confirm cloud-storage mass-read)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -160,7 +162,7 @@ steps:
             burst_count: 60
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cdr-019-s3-exfil-confirm.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cdr-019-s3-exfil-confirm.yml" --live
     identity: container-runtime
     mitre_technique: "T1530"
     platforms: ["linux", "container"]
@@ -207,7 +209,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/cdr-019-s3-exfil.yml /tmp/cdr-019-s3-exfil-confirm.yml"
     - "echo '[CortexSim] SIM-CDR-019 cleanup complete — synthetic CloudTrail records only; no real AWS object was read or moved.'"
 
 author: "Henry Reed"

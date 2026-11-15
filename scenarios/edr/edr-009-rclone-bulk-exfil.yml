@@ -91,7 +91,7 @@ steps:
   - id: step-01
     name: "Stage synthetic 'sensitive' data + masquerade the rclone binary (T1074.001)"
     command: |
-      VDIR=/tmp/cortexsim_edr009_stage; mkdir -p "$VDIR"
+      VDIR=/tmp/cortexsim_edr009_stage; rm -rf /tmp/cortexsim_edr009_stage && mkdir -m 700 /tmp/cortexsim_edr009_stage || { echo "sandbox /tmp/cortexsim_edr009_stage could not be created fresh: something else is at that path" >&2; exit 1; }
       for i in $(seq 1 40); do echo "synthetic-finance-record-$i" > "$VDIR/finance_$i.dat"; done
       # Masquerade pattern: attackers commonly rename rclone (e.g. svchost.exe).
       RCLONE_MASQ="$VDIR/svchost"
@@ -110,7 +110,7 @@ steps:
   - id: step-02
     name: "Execute the rclone copy with the signature flag pattern, regardless of binary name (T1567.002)"
     command: |
-      VDIR=/tmp/cortexsim_edr009_stage; DEST=/tmp/cortexsim_edr009_dest; mkdir -p "$DEST"
+      VDIR=/tmp/cortexsim_edr009_stage; DEST=/tmp/cortexsim_edr009_dest; [ "$(stat -c %F:%u:%a /tmp/cortexsim_edr009_stage 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_edr009_stage is missing or not ours: step-01 did not complete" >&2; exit 1; }; rm -rf /tmp/cortexsim_edr009_dest && mkdir -m 700 /tmp/cortexsim_edr009_dest || { echo "sandbox /tmp/cortexsim_edr009_dest could not be created fresh: something else is at that path" >&2; exit 1; }
       RCLONE_MASQ="$VDIR/svchost"
       # SAFE-MODE: copy to a LOCAL destination so no bytes leave the host, but
       # emit the exact rclone flag pattern XDR fingerprints (--transfers,

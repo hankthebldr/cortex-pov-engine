@@ -80,8 +80,10 @@ steps:
   - id: step-01
     name: "Anchor MTTD + verify PII canary fixtures are present in training-data bucket"
     command: |
+      rm -rf /tmp/cortexsim-aispm-005 && mkdir -m 700 /tmp/cortexsim-aispm-005 || { echo "sandbox /tmp/cortexsim-aispm-005 could not be created fresh: something else is at that path" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-005] Anchoring MTTD t0';
-      date -u +%s > /tmp/aispm-005-t0.txt
+      date -u +%s > /tmp/cortexsim-aispm-005/aispm-005-t0.txt
 
       BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `aispm-training-data`)].Name' --output text | head -1)
       echo "[*] Training data bucket: $BUCKET"
@@ -89,8 +91,8 @@ steps:
       # Sanity check the canaries exist in the seeded CSV
       aws s3 cp "s3://$BUCKET/training/customer_profiles.csv" - 2>/dev/null \
         | head -5 \
-        | tee /tmp/aispm-005-canary-preview.txt
-      echo "[*] Canary patterns present: $(grep -c 'CORTEXSIM' /tmp/aispm-005-canary-preview.txt) lines"
+        | tee "$C/aispm-005-canary-preview.txt"
+      echo "[*] Canary patterns present: $(grep -c 'CORTEXSIM' "$C/aispm-005-canary-preview.txt") lines"
     identity: root
     mitre_technique: "T1530"
     platforms: ["linux"]
@@ -104,9 +106,10 @@ steps:
   - id: step-02
     name: "Wait for Cortex Cloud DSPM + AI-SPM cross-scan cycle"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-005 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-005 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[AISPM-005] Sleeping for DSPM + AI-SPM cross-scan';
       sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
-      date -u +%s > /tmp/aispm-005-t1.txt
+      date -u +%s > /tmp/cortexsim-aispm-005/aispm-005-t1.txt
     identity: root
     mitre_technique: "T1530"
     platforms: ["linux"]
@@ -123,6 +126,8 @@ steps:
   - id: step-03
     name: "Probe sensitive-data findings + lineage traversal + AI-GOV-001 violation"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-005 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-005 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-005] Querying DSPM + AI-SPM findings';
 
       # 1. DSPM tags on the training-data bucket
@@ -130,27 +135,27 @@ steps:
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dspm/data_stores?name=${BUCKET}" \
-        > /tmp/aispm-005-dspm.json
+        > "$C/aispm-005-dspm.json"
 
-      DATA_CLASSES=$(jq -r '[.data_stores[0].sensitive_data_classes[]?] | length' /tmp/aispm-005-dspm.json 2>/dev/null || echo 0)
+      DATA_CLASSES=$(jq -r '[.data_stores[0].sensitive_data_classes[]?] | length' "$C/aispm-005-dspm.json" 2>/dev/null || echo 0)
 
       # 2. AI lineage from bucket → SageMaker training
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/ai_spm/data_lineage?data_store=${BUCKET}" \
-        > /tmp/aispm-005-lineage.json
+        > "$C/aispm-005-lineage.json"
 
-      LINEAGE_HOPS=$(jq -r '.lineage_edges | length' /tmp/aispm-005-lineage.json 2>/dev/null || echo 0)
+      LINEAGE_HOPS=$(jq -r '.lineage_edges | length' "$C/aispm-005-lineage.json" 2>/dev/null || echo 0)
 
       # 3. AI-GOV-001 governance violation
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?finding_id=AI-GOV-001" \
-        > /tmp/aispm-005-gov.json
+        > "$C/aispm-005-gov.json"
 
-      GOV_VIOLATIONS=$(jq -r '.findings | length' /tmp/aispm-005-gov.json 2>/dev/null || echo 0)
+      GOV_VIOLATIONS=$(jq -r '.findings | length' "$C/aispm-005-gov.json" 2>/dev/null || echo 0)
 
-      MTTD=$(( $(cat /tmp/aispm-005-t1.txt) - $(cat /tmp/aispm-005-t0.txt) ))
+      MTTD=$(( $(cat /tmp/cortexsim-aispm-005/aispm-005-t1.txt) - $(cat /tmp/cortexsim-aispm-005/aispm-005-t0.txt) ))
 
       echo "[*] Sensitive data classes detected:    $DATA_CLASSES (expected >= 3: PII + PHI + PCI)"
       echo "[*] Data lineage hops:                  $LINEAGE_HOPS (expected >= 1: bucket → SageMaker)"
@@ -208,7 +213,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-005-*"
+    - "rm -rf /tmp/cortexsim-aispm-005"
     - "echo '[CortexSim] SIM-AISPM-005 cleanup complete.'"
 
 author: "Henry Reed"

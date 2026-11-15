@@ -97,7 +97,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Emit the Ivanti appliance IF-T pre-auth exploitation tell (SAFE-MODE marker)"
-    command: "mkdir -p /tmp/cortexsim-mp-010 && printf '%s\\n' 'Invalid IFT packet received from unauthenticated client src=185.219.141.95' > /tmp/cortexsim-mp-010/ivanti-debug.log && echo cortexsim-mp-010-ivanti-ift-preauth-tell-emitted"
+    command: "rm -rf /tmp/cortexsim-mp-010 && mkdir -m 700 /tmp/cortexsim-mp-010 || { echo \"sandbox /tmp/cortexsim-mp-010 could not be created fresh: something else is at that path\" >&2; exit 1; }; printf '%s\\n' 'Invalid IFT packet received from unauthenticated client src=185.219.141.95' > /tmp/cortexsim-mp-010/ivanti-debug.log && echo cortexsim-mp-010-ivanti-ift-preauth-tell-emitted"
     identity: www-data
     mitre_technique: "T1190"
     platforms: ["linux"]
@@ -110,7 +110,7 @@ steps:
 
   - id: step-02
     name: "Internal Windows pivot: DcomSrv service created via vixDiskLib DLL side-load (SAFE-MODE marker)"
-    command: "printf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > /tmp/cortexsim-mp-010/dcomsrv-service.marker && echo cortexsim-mp-010-dcomsrv-service-created-marker"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-mp-010 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-mp-010 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > /tmp/cortexsim-mp-010/dcomsrv-service.marker && echo cortexsim-mp-010-dcomsrv-service-created-marker"
     identity: www-data
     mitre_technique: "T1543.003"
     # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
@@ -134,7 +134,7 @@ steps:
 
   - id: step-03
     name: "Internal Windows pivot: /mail scheduled task launching DeElevate64 (SAFE-MODE marker)"
-    command: "printf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > /tmp/cortexsim-mp-010/mail-task.marker && echo cortexsim-mp-010-mail-scheduled-task-marker"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-mp-010 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-mp-010 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > /tmp/cortexsim-mp-010/mail-task.marker && echo cortexsim-mp-010-mail-scheduled-task-marker"
     identity: www-data
     mitre_technique: "T1053.005"
     # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
@@ -156,7 +156,7 @@ steps:
 
   - id: step-04
     name: "Internal Windows pivot: LSASS dump + package.dll IOC (SAFE-MODE marker, no memory read)"
-    command: "printf '%s\\n' 'SAFE-MODE marker only - package.dll VM.txt dump NOT performed' > /tmp/cortexsim-mp-010/VM.txt && printf '%s  package.dll\\n' '1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98' > /tmp/cortexsim-mp-010/package.dll.sha256 && echo cortexsim-mp-010-lsass-dump-safe-mode-marker"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-mp-010 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-mp-010 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '%s\\n' 'SAFE-MODE marker only - package.dll VM.txt dump NOT performed' > /tmp/cortexsim-mp-010/VM.txt && printf '%s  package.dll\\n' '1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98' > /tmp/cortexsim-mp-010/package.dll.sha256 && echo cortexsim-mp-010-lsass-dump-safe-mode-marker"
     identity: www-data
     mitre_technique: "T1003.001"
     # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this

@@ -8,6 +8,221 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — the Launch gate is about one scenario; Get started tracks the app
+
+- **The Launch gate read as both "this run" and "the whole app".** Under the
+  armed scenario's New POV run it carried "This POVengine": the Cortex
+  connector ladder, tenants, attested facts and the SimCore components. It now
+  holds only the scenario's launch, says so ("It checks and starts one
+  scenario's run"), and links to Get started for the app's own status.
+- **Get started tracks this POVengine's status** under its setup steps: the
+  same "This POVengine" view, with Re-check. The old Readiness route, Review
+  scope on the safety banner, and the "see this POVengine" buttons in the
+  Composer and the preflight card now land there.
+
+### Changed — the Firewall page walks Strata Logging Service and the firewall's policy
+
+- **The Firewall setup defaulted to syslog through a Broker VM.** Its two
+  paths read as if that were how NGFW data reaches Cortex. The data a POV is
+  after streams from the firewall through Strata Logging Service and lands in
+  the `panw_ngfw_*` datasets, stitched into `network_story`; the Cortex docs
+  keep the syslog path as a fallback for when that collector cannot be used.
+  The page now walks that one path, in the documented order: add the NGFW in
+  Cortex › Data Sources & Integrations, turn on cloud logging and Enhanced
+  Application Logging, install the certificate, forward every log type to
+  Strata Logging Service, then commit and confirm logs arrive. The old step
+  that said only tenants with Strata Logging Service could use it was wrong:
+  new tenants get the direct NGFW integration.
+- **The rest of the setup is the firewall's own policy.** "Log and alert on
+  the POV traffic" asks for rules that log at session end through the
+  forwarding profile, with security profiles set to alert, and "Decrypt the
+  POV traffic" for the decryption rule. Each Test runs the existing read-only
+  check. The overview gains rows for the log forwarding profile, decryption,
+  and the rule each enrolled agent's traffic meets.
+- POVengine still never writes to the firewall, and the registration's
+  forwarding path setting (auto · sls · syslog · both) is unchanged.
+
+### Fixed — the Scenarios planes sidebar fills its column, and the header fits
+
+- **The Detection planes sidebar floated as a short card.** It started 26 px
+  right of the nav rail and 22 px below the top, and ended where its list
+  ended, partway down the panel. It is now a full-height column flush against
+  the nav rail. Its plane list stays in place while the cards scroll, parked
+  against the top edge. Below 860 px, where the nav rail retracts to icons and
+  the planes stack above the results, they are a grid instead of a
+  one-per-row list: the list filled 572 px of a 620 px window and pushed every
+  scenario card below the fold.
+- **The header ran past the edge below about 1650 px.** Back / Forward and the
+  breadcrumb (1.2.0) widened a bar that already filled 1280, so Search, the
+  tour, the theme toggle and the avatar sat off screen, reachable only by
+  scrolling the header sideways. The bar now gives way in steps: tenant and
+  agent names end in an ellipsis, and the RUNNING pill's scenario and clock,
+  Search's word, the uptime, the breadcrumb's journey crumb and the version
+  drop out as the width narrows. An agent's state word always stays. It fits
+  from 1100 px up, the desktop app's 1204 px browser pane included.
+- **The POVengine wordmark drew at 20 px instead of 15 px.** A legacy rule
+  out-ranked the header's own.
+
+### Security — the remaining scratch paths: directories in 47 more scenarios and 151 fixed-name files
+
+- **What was wrong.** The two classes the entry above left open. Recounted on
+  that tree: 49 more scenarios create a fixed directory under `/tmp`,
+  `/var/tmp` or `/dev/shm` (counting directories named through a variable or
+  made as the parent of `mkdir -p P/sub`), and 186 root, `container-runtime`
+  or `direct` steps in 91 scenarios write a fixed-name file straight into
+  `/tmp`, 157 of them in 83 scenarios then running or reading it. Reproduced as
+  root in the CI image with `fs.protected_symlinks` on: with another user's
+  `/tmp/aiacc-001.yml` in place, SIM-AIACC-001 handed the EAL CLI a file that
+  user owned in 40 of 40 runs, and their content in 10. SIM-AIRS-001's cleanup
+  sourced `/tmp/airs-001.env` as root, so a planted file there ran as uid 0.
+  SIM-EDR-008 read its list of files to rewrite and delete from
+  `/tmp/cortexsim_targetlist.txt`.
+- **Directories (47 scenarios, 50 directories).** The same rule as above: the
+  creating step makes the directory with `mkdir -m` and no `-p`, and every other
+  step checks it in one `stat` lookup first. A check accepts only a directory
+  the running user or root owns: in five scenarios (SIM-AIACC-006, SIM-APB-001,
+  SIM-CLOUD-010, SIM-MP-015, SIM-MP-021) steps running as another account,
+  root among them, wrote their own files into a directory a service account
+  made, which that account could have filled with links. Those steps now keep
+  their files in their own private directory. A step that also runs on macOS
+  adds `|| stat -f %HT:%u:%Lp` inside the same substitution, which on Linux can
+  never print a passing value. SIM-CDR-008's per-run exfil directory
+  is now made with `mktemp -d`. SIM-CDR-030 is unchanged: every step already
+  makes its directory with `set -eu`, `umask 077` and `mkdir` without `-p`.
+- **Files (143 root, `container-runtime` or `direct` steps in 76 scenarios,
+  151 names).** A file only the writing step uses now lives in
+  `C=$(mktemp -d /tmp/cortexsim.XXXXXX)`, which the step removes on exit; the
+  old cleanup lines for those names are gone. In those steps a tool's output
+  that used to go to a fixed `/tmp` name goes there too (SIM-EDR-001's
+  `mimi_output.txt`, SIM-ITDR-006's AS-REP hashes, both readable by every user
+  before). A file a later step reads moved into a new sandbox under the
+  directory rule (12 scenarios: SIM-AIRS-001, -003, -004, SIM-AISPM-001, -002,
+  -004, -005, -006, SIM-CDR-004, -010, SIM-EDR-008, SIM-MP-034). Cleanup that
+  sources or rewrites through such a path now checks ownership first
+  (SIM-AIRS-001, SIM-EDR-008).
+  No detection, card query or test keyed on the old file paths; the cards'
+  illustrative payload text still shows them.
+- **What an operator will notice.** EAL campaign files, staged crontabs and the
+  like no longer appear in `/tmp` after a step: they live in
+  `/tmp/cortexsim.XXXXXX` for the step's lifetime only. A step whose creating
+  step did not run exits 1 with `sandbox … is missing or not ours` (or `not
+  owned by <account>`). On macOS, SIM-BROWSER-001 to -004 step-02 now write
+  their own campaign file instead of running a `/tmp` file no macOS step wrote.
+  The Windows bundles of SIM-NDR-005 and SIM-NDR-007 no longer list a POSIX
+  cleanup residue, so they run without `CORTEXSIM_ACCEPT_RESIDUE=1`.
+- **Counts are unchanged.** The lab-readiness and coverage classifiers now also
+  treat a stored lookup (`s=$(stat ...)`) and the macOS fallback as no signal;
+  `ground-truth` and `lab-readiness` regenerate with no diff.
+- **Not fixed here.** SIM-CDR-006's root unit and watchdog were fixed in 1.2.0.
+  SIM-EDR-003's macOS variant appends a `/tmp/.cortexsim_beacon` launcher to
+  the beacon account's `~/.zshrc`, and cleanup does not remove it. Root steps
+  still write about 35 output-only files to fixed `/tmp` names, and SIM-CDR-001
+  keeps `/tmp/linpeas.sh` and `/tmp/deepce.sh`, the payload shelf's
+  `stage_path`. Service-account steps (SIM-MP-028's EAL files, SIM-EDR-011's
+  target list) were not in scope. The next entry covers SIM-EDR-007 and three
+  Windows scenarios.
+
+### Security — nothing a scenario installs or runs as root or SYSTEM points at a plantable path
+
+- **What was wrong.** SIM-EDR-007 ran `ansible-playbook` as root on
+  `/tmp/pov-esxi-hosts` and `/tmp/pov-encrypt.yml`, which no step writes, so a
+  file planted there first became a root playbook against the ESXi lab. Three
+  scenarios' Windows variants had the same shape, written for a beacon running
+  as SYSTEM: SIM-MP-023 made `C:\ProgramData\cortexsim-mp023` with
+  `New-Item -Force`, ran a copied debugger from it with a script from the same
+  folder, and registered an `onstart` task that runs it at every boot;
+  SIM-MP-026's LocalSystem service side-loads a DLL from
+  `C:\ProgramData\cortexsim-mp026`; SIM-MP-029 extracted and ran its lure in
+  `%TEMP%\cortexsim-mp-029`, which is `C:\Windows\Temp` for SYSTEM. Any account
+  can create a folder or a junction at those paths first, and even a
+  SYSTEM-made subfolder of `C:\ProgramData` lets users add files. None of the
+  three resolves for Windows as a whole yet (some of their steps have no
+  Windows variant), so a Windows launch is refused and no `.ps1` is served:
+  these variants have not reached a Windows host. They are fixed now so they
+  are safe on the day the rest of the scenario resolves.
+- **The fix.** SIM-EDR-007 reads from `/var/lib/cortexsim/edr-007`, a root-only
+  directory each step checks first; TTP-2026-0006's staging script writes
+  there. The three Windows scenarios keep their folder names, which their
+  detections key on, and make the folder like the Linux rule: `rmdir` (which
+  removes a junction, not its target), then one
+  `[System.IO.Directory]::CreateDirectory(path, DirectorySecurity)` call that
+  gives the folder its protected ACL as it is made: SYSTEM, Administrators,
+  the running account and a marker ACE unique to that folder. A `mkdir`
+  followed by `Set-Acl` would leave the new folder open, between the two, to
+  every account that may add files to `C:\ProgramData` or `C:\Windows\Temp`,
+  and a handle opened then keeps its access after the ACL lands. A `Get-Acl`
+  then refuses anything that was already at the path, and every later step
+  runs the same check: a planted folder fails on its owner, and a junction
+  fails on its owner or its missing marker. Removals that used
+  `Remove-Item -Recurse`, which Windows PowerShell 5.1 can follow into a
+  junction's target, use `rd /s /q`.
+- **How it is proven.** Linux: the sandbox test runs SIM-EDR-007's guards as
+  root in the CI image against planted directories, links and the exchange
+  race. Windows: a new `sandbox` phase in the `windows` CI job runs each step's
+  guard on Windows PowerShell 5.1 against a folder and a junction a standard
+  account planted, and races one against the other. Those guards are read from
+  the scenario's Windows variant, because the render phase writes only
+  scenarios that resolve for Windows. Nothing here has run on Windows until
+  that job runs on this change.
+- **What an operator will notice.** Stage SIM-EDR-007's inventory and
+  playbooks with TTP-2026-0006's payload, which now writes them to
+  `/var/lib/cortexsim/edr-007`; a step finding anything else exits 1 and says
+  so. A Windows step of SIM-MP-023, -026 or -029 whose first step did not run
+  exits 1 with `sandbox … is missing or not ours`.
+
+### Security — a Windows step no longer runs, loads or feeds a file another account can plant
+
+- **What was wrong.** Six scenarios that a Windows host does run kept their
+  scratch files in a folder with a fixed name under `%TEMP%`, which is
+  `C:\Windows\Temp` (writable by every account) for the SYSTEM beacon. Each made
+  the folder with `New-Item -Force`, which accepts a folder or junction someone
+  else made first. SIM-EDR-013 compiled a DLL there and loaded it; SIM-EDR-017
+  ran `cmd.exe` with that folder as its working directory, so a planted
+  `makecab.bat` ran as SYSTEM, and unpacked a CAB into a subfolder a junction
+  could point anywhere; SIM-EDR-006 wrote LSASS dumps straight into `%TEMP%`
+  under fixed names, so an account that created the name first owned the file
+  ProcDump wrote LSASS memory into; SIM-ITDR-006 wrote AS-REP and Kerberoast
+  hashes into its folder; SIM-EDR-004 copied an executable into its folder and
+  set its timestamps; SIM-EDR-003's interrupted-run cleanup copied a saved
+  `authorized_keys` back from its folder without asking who made it. Each also
+  removed the folder with `Remove-Item -Recurse`, which Windows PowerShell 5.1
+  follows into a junction's target. Nine more scenarios have the same shape in
+  Windows variants that no Windows host is sent yet, because other steps of
+  theirs have none: SIM-ITDR-002..005 and SIM-TIM-002 write the EAL campaign
+  file they hand to the EAL CLI with `--live`, SIM-MP-025 builds its lure in
+  one, SIM-MP-035 runs a `.vbs` and SIM-MP-036 an `.exe` from one, and
+  SIM-MP-014 copies Chrome's cookie store to a fixed name.
+- **The fix.** All fifteen use the Windows sandbox from the entry above: a
+  folder per scenario, same name as before where detections key on it
+  (`\Temp\` in a module path for SIM-EDR-013, `Boat.pst` for SIM-EDR-017),
+  made by its first step with `rmdir` and one `CreateDirectory` call that sets
+  its ACL, and checked by every later step with one `Get-Acl`. SIM-EDR-006's
+  dumps move into its folder, which sits in the system Temp directory when
+  `%TEMP%` has a space, as before. In-step removals use
+  `[System.IO.Directory]::Delete`, which neither follows a junction nor
+  touches `$LASTEXITCODE`, so a native command that failed earlier in the step
+  still fails it; SIM-EDR-017's last step, which runs no native command before
+  it, uses `rmdir` and sets the exit code back. Cleanup lines use `rd /s /q`,
+  and SIM-EDR-003's restore runs only when its folder passes the same check,
+  and starts with `Set-Variable` so the bash bundle withholds it as Windows.
+- **How it is proven.** The text test pins the create and check forms for all
+  eighteen Windows folders and fails 16 cases on the old text. The `windows`
+  CI job's `sandbox` phase runs every creating step's guard against a planted
+  folder, a junction and an empty path, every checking step's guard against
+  five plants, and races a folder against a junction on one folder under
+  `C:\ProgramData` and one under `%TEMP%`. It has not run on Windows until that
+  job runs on this change. `make check-powershell` parses all 13 Windows
+  bundles and 35 rendered steps, the six changed scenarios' included.
+- **Not fixed here.** Steps that only write output to a fixed name and never
+  run or read it back: SIM-MP-001's downloaded stage page, SIM-MP-020's zip,
+  SIM-EDR-004's `svchost.exe` copy, SIM-BROWSER-006, SIM-EDR-012, -016, -018,
+  SIM-KOI-007 and SIM-MP-016. SIM-MP-030 stages in `C:\Users\Public\Music`
+  because that is the technique, and resolves for no target.
+- **What an operator will notice.** SIM-EDR-006 steps 02 and 03 and
+  SIM-EDR-017 step 02 need step 01, and SIM-ITDR-006 step 03 needs step 02,
+  to have made the folder: run alone, they exit 1 with
+  `sandbox … is missing or not ours`.
+
 ### Added
 
 - **Agents › Fleet: delete agent rows in one click, or in bulk (#339).** A

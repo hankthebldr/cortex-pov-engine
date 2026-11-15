@@ -183,7 +183,7 @@ export default function ConsoleHeader({
         title="Tenant — one per instance"
       >
         <span className={'pov-chip__dot' + (tenant ? '' : ' pov-chip__dot--off')} />
-        <span>{tenantLabel}</span>
+        <span className="pov-chip__text">{tenantLabel}</span>
       </button>
 
       <button
@@ -198,7 +198,7 @@ export default function ConsoleHeader({
           : 'No agent selected. Open Agents'}
       >
         <span className={'pov-chip__dot' + AGENT_DOT[agentState]} aria-hidden="true" />
-        <span>{agentLabel}</span>
+        <span className="pov-chip__text">{agentLabel}</span>
         {live && live.state !== LIVENESS.ONLINE && (
           <span className={`pov-chip__state pov-chip__state--${AGENT_TONE[agentState]}`}>{agentState}</span>
         )}

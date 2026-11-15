@@ -90,7 +90,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Seed isolated victim set and enumerate targets"
-    command: "mkdir -p /tmp/cortexsim_preenc; for i in $(seq 1 60); do echo baseline-content-$i > /tmp/cortexsim_preenc/doc_$i.dat; done; find /tmp/cortexsim_preenc -type f > /tmp/cortexsim_preenc_targets.txt; wc -l /tmp/cortexsim_preenc_targets.txt"
+    command: "rm -rf /tmp/cortexsim_preenc && mkdir -m 700 /tmp/cortexsim_preenc || { echo \"sandbox /tmp/cortexsim_preenc could not be created fresh: something else is at that path\" >&2; exit 1; }; for i in $(seq 1 60); do echo baseline-content-$i > /tmp/cortexsim_preenc/doc_$i.dat; done; find /tmp/cortexsim_preenc -type f > /tmp/cortexsim_preenc_targets.txt; wc -l /tmp/cortexsim_preenc_targets.txt"
     identity: svc-backup
     mitre_technique: "T1083"
     platforms: ["linux"]
@@ -103,7 +103,7 @@ steps:
 
   - id: step-02
     name: "High-entropy pre-encryption mass rewrite burst (SAFE-MODE)"
-    command: "while read -r f; do head -c 4096 /dev/urandom > $f.locked && rm -f $f; done < /tmp/cortexsim_preenc_targets.txt; echo cortexsim-preenc-file-burst-complete"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim_preenc 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim_preenc is missing or not ours: step-01 did not complete\" >&2; exit 1; }; while read -r f; do head -c 4096 /dev/urandom > $f.locked && rm -f $f; done < /tmp/cortexsim_preenc_targets.txt; echo cortexsim-preenc-file-burst-complete"
     identity: svc-backup
     mitre_technique: "T1486"
     platforms: ["linux", "windows"]

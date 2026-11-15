@@ -238,7 +238,7 @@ steps:
     command: |
       echo '[MP-018][wipe] SAFE-MODE recursive wipe against an ISOLATED scratch tree only — no real host mount is touched';
       WIPE=/tmp/cortexsim_mp018_wipe_scratch;
-      mkdir -p "${WIPE}/a/b"; echo scratch > "${WIPE}/a/b/file"; rm -rf "${WIPE}";
+      rm -rf /tmp/cortexsim_mp018_wipe_scratch && mkdir -m 700 /tmp/cortexsim_mp018_wipe_scratch || { echo "sandbox /tmp/cortexsim_mp018_wipe_scratch could not be created fresh: something else is at that path" >&2; exit 1; }; mkdir -p "${WIPE}/a/b"; echo scratch > "${WIPE}/a/b/file"; rm -rf "${WIPE}";
       echo '[*] XDR should record a high-volume recursive deletion sweep spawned inside a privileged container (exploit_impact)'
     identity: root
     mitre_technique: "T1485"

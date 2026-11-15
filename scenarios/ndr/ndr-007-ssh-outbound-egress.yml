@@ -101,7 +101,8 @@ steps:
   - id: step-02
     name: "Drive outbound SSH-2.0 banner + KEXINIT against sinkhole"
     command: |
-      cat > /tmp/ssh-egress-live.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/ssh-egress-live.yml" <<'YML'
       campaign_id: CMP-NDR-007
       name: "NDR validation — SSH outbound App-ID + banner anomaly"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -121,7 +122,7 @@ steps:
             sleep_seconds: 12
             send_kexinit: true
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/ssh-egress-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/ssh-egress-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1572"
     # Same containerized egress host / operator session as the reachability probe
@@ -153,8 +154,7 @@ steps:
         detection_id: bioc-ngfw-eal-repeated-short-lived-outbound-ssh-handshakes-from-single-source
 
 cleanup:
-  commands:
-    - "rm -f /tmp/ssh-egress-live.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-29"

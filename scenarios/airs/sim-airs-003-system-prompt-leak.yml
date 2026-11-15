@@ -119,12 +119,13 @@ steps:
   - id: step-02
     name: "Run promptmap-style prompt-stealer rule pack"
     command: |
+      rm -rf /tmp/cortexsim-airs-003 && mkdir -m 700 /tmp/cortexsim-airs-003 || { echo "sandbox /tmp/cortexsim-airs-003 could not be created fresh: something else is at that path" >&2; exit 1; }
       cortex-prompt-attacker run \
         --probes scenarios/airs/probes/llm07/prompt_stealer/*.yml \
         --target-url http://127.0.0.1:8089/owasp/llm07/chat \
         --scorers system_prompt_leak \
-        --out /tmp/airs-003-events.jsonl
-      jq -r '.[] | "\(.probe_classname): \(.outcome)"' /tmp/airs-003-events.jsonl
+        --out /tmp/cortexsim-airs-003/airs-003-events.jsonl
+      jq -r '.[] | "\(.probe_classname): \(.outcome)"' /tmp/cortexsim-airs-003/airs-003-events.jsonl
     identity: container-runtime
     mitre_technique: "T1082"
     platforms: ["linux", "container", "windows"]
@@ -154,8 +155,9 @@ steps:
   - id: step-03
     name: "Validate scoring summary and OWASP code aggregation"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-airs-003 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-airs-003 is missing or not ours: step-02 did not complete" >&2; exit 1; }
       jq -e '[.[] | select(.owasp_id=="LLM07" and .outcome=="vuln")] | length >= 1' \
-        /tmp/airs-003-events.jsonl
+        /tmp/cortexsim-airs-003/airs-003-events.jsonl
     identity: container-runtime
     mitre_technique: "T1082"
     platforms: ["linux", "container"]
@@ -172,7 +174,7 @@ steps:
 cleanup:
   commands:
     - "pkill -f 'cortex-vulnerable-llm serve' || true"
-    - "rm -f /tmp/airs-003-events.jsonl"
+    - "rm -rf /tmp/cortexsim-airs-003"
 
 author: "Henry Reed"
 created: "2026-05-05"

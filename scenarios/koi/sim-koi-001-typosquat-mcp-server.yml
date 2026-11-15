@@ -111,7 +111,8 @@ steps:
   - id: step-02
     name: "Emulate Claude Desktop fetching the manifest via agentic_egress"
     command: |
-      cat > /tmp/koi-001.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/koi-001.yml" <<'YML'
       campaign_id: CMP-KOI-001
       name: "KOI — typosquat MCP fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -129,7 +130,7 @@ steps:
             artifact_name: anthroopic-calculator
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/koi-001.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/koi-001.yml" --live
     identity: container-runtime
     mitre_technique: "T1059"
     platforms: ["linux", "macos", "container"]
@@ -177,7 +178,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/koi-001-scan.env /tmp/koi-001.yml"
+    - "rm -f /tmp/koi-001-scan.env"
 
 author: "Henry Reed"
 created: "2026-05-05"

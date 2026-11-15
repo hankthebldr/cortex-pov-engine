@@ -108,7 +108,8 @@ steps:
   - id: step-02
     name: "Launch live DNS tunneling campaign — A queries with high-entropy labels"
     command: |
-      cat > /tmp/dns-tunnel-live.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/dns-tunnel-live.yml" <<'YML'
       campaign_id: CMP-NDR-002
       name: "NDR validation — DNS tunnel live"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -128,7 +129,7 @@ steps:
             encoding: base32
             query_type: A
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/dns-tunnel-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1048.003"
     platforms: ["linux", "container"]
@@ -155,7 +156,8 @@ steps:
   - id: step-03
     name: "Repeat with TXT query type to exercise TXT-burst analytics"
     command: |
-      cat > /tmp/dns-tunnel-txt.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/dns-tunnel-txt.yml" <<'YML'
       campaign_id: CMP-NDR-002
       name: "NDR validation — DNS tunnel TXT"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -175,7 +177,7 @@ steps:
             encoding: base64
             query_type: TXT
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-txt.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/dns-tunnel-txt.yml" --live
     identity: container-runtime
     mitre_technique: "T1572"
     platforms: ["linux", "container"]
@@ -195,8 +197,7 @@ steps:
         detection_id: xql-xsiam-stitching-dns-exfil-endpoint-process-lineage-correlated
 
 cleanup:
-  commands:
-    - "rm -f /tmp/dns-tunnel-live.yml /tmp/dns-tunnel-txt.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

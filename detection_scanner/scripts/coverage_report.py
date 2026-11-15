@@ -246,6 +246,17 @@ _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
 # inside a test still counts, because that runs a real command.
 _BOOKKEEPING_RE = re.compile(r"^(\[\s.*\]|exit(\s+\d+)?)$")
 _PROBE_SUBST_RE = re.compile(r"\$\((?:stat|id)\b[^()]*\)")
+# A guard's lookup can also be held in a variable (`s=$(stat ...)`, then
+# `[ "$s" = ... ]`) and can carry the macOS fallback `|| stat -f ...` inside
+# the substitution. Both are collapsed to one token before the command is split,
+# so the fallback's `||` does not cut the guard in two and the assignment of a
+# lookup is bookkeeping. Only this exact lookup is collapsed: any other
+# assignment still counts.
+_GUARD_LOOKUP_RE = re.compile(
+    r"\$\(stat -c %F:%u:%a [^()|;&]*?2>/dev/null"
+    r"(?:\s*\|\|\s*stat -f %HT:%u:%Lp [^()|;&]*?2>/dev/null)?\)")
+_GUARD_TOKEN = "__CORTEXSIM_GUARD_LOOKUP__"
+_GUARD_ASSIGN_RE = re.compile(rf"^[A-Za-z_][A-Za-z0-9_]*={_GUARD_TOKEN}$")
 _UNIT42_HOST = "unit42.paloaltonetworks.com"
 
 
@@ -277,12 +288,13 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
         return True
     if "scripts.eal_simulator.cli" in cmd or "cortexsim-eal" in cmd:
         return False
+    cmd = _GUARD_LOOKUP_RE.sub(_GUARD_TOKEN, cmd)
     for line in re.split(r"\n|;|&&|\|\||\|", cmd):
         if _MARKER_LINE_RE.match(line) or _PS_MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
             continue
         piece = line.strip().lstrip("{( ").rstrip("}) ")
-        if not piece or _MARKER_LINE_RE.match(piece):
-            continue  # a `{ echo ...` or a closing brace of a guard
+        if not piece or _MARKER_LINE_RE.match(piece) or _GUARD_ASSIGN_RE.match(piece):
+            continue  # a `{ echo ...`, a closing brace of a guard, or its stored lookup
         bare = _PROBE_SUBST_RE.sub("", piece)
         if _BOOKKEEPING_RE.match(bare) and "$(" not in bare and "`" not in bare:
             continue

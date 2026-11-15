@@ -79,7 +79,8 @@ steps:
   - id: step-01
     name: "Benign OIDC grant to Okta — must NOT alert"
     command: |
-      cat > /tmp/cloud-005-okta.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-005-okta.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-005
       name: "Cloud App — benign baseline Okta"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -96,7 +97,7 @@ steps:
             scope_preset: benign
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-okta.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-005-okta.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     platforms: ["linux"]
@@ -110,7 +111,8 @@ steps:
   - id: step-02
     name: "Benign OIDC grant to Microsoft — must NOT alert"
     command: |
-      cat > /tmp/cloud-005-ms.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-005-ms.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-005
       name: "Cloud App — benign baseline Microsoft"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -126,7 +128,7 @@ steps:
             scope_preset: benign
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-ms.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-005-ms.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     platforms: ["linux"]
@@ -143,7 +145,8 @@ steps:
   - id: step-03
     name: "Benign OIDC grant to Google — must NOT alert"
     command: |
-      cat > /tmp/cloud-005-google.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-005-google.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-005
       name: "Cloud App — benign baseline Google"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -159,7 +162,7 @@ steps:
             scope_preset: benign
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-google.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-005-google.yml" --live
     identity: container-runtime
     mitre_technique: "T1078.004"
     platforms: ["linux"]

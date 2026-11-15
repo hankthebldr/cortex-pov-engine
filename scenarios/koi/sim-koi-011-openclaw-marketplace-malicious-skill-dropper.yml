@@ -170,7 +170,7 @@ steps:
       esac
       SRC="sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill"
       SKILLDIR="$FAKEHOME/.openclaw/skills/tradingview-assistant.skill"
-      rm -rf "$FAKEHOME"
+      rm -rf /var/tmp/.koi011-victim && mkdir -m 700 /var/tmp/.koi011-victim || { echo "sandbox /var/tmp/.koi011-victim could not be created fresh: something else is at that path" >&2; exit 1; }
       mkdir -p "$SKILLDIR" "$FAKEHOME/.ssh" "$FAKEHOME/.aws"
       # Re-skin the in-tree malicious skill as the marketplace productivity tool.
       cp "$SRC/manifest.json" "$SKILLDIR/manifest.json"
@@ -216,6 +216,7 @@ steps:
     # revealed command is only printed. This is the behavioral "uncommon Linux
     # shell command execution" signal on an agent prerequisite decode.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.koi011-victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.koi011-victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # REAL — extract and decode the prerequisite blob (no execution yet).
       set -eu
       FAKEHOME="/var/tmp/.koi011-victim"
@@ -248,6 +249,7 @@ steps:
     # process tree (bash -> base64 -> bash -> curl) and the failed DNS lookup
     # are real; nothing is downloaded and no real C2 is contacted.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.koi011-victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.koi011-victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # REAL — run the revealed prerequisite one-liner. The pipeline rc is 0
       # (bash of empty stdin) so `set -e` does not abort the step.
       set -eu
@@ -278,6 +280,7 @@ steps:
     # file holds only the literal CORTEXSIM-DECOY; the operator's real
     # ~/.ssh / ~/.aws / ~/.npmrc are never opened (the guard enforces it).
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.koi011-victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.koi011-victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # REAL — stage the infostealer payload locally (the curl above could not
       # fetch it) and execute it so the credential reads are genuine telemetry.
       set -eu
@@ -322,6 +325,7 @@ steps:
     # Data Staging + Archive Collected Data. This local file-create is the
     # terminal anchor of CR-KOI-0011: the chain closes on the endpoint here.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.koi011-victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.koi011-victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # REAL — archive the loot locally. No network call is made in this step.
       set -eu
       FAKEHOME="/var/tmp/.koi011-victim"
@@ -357,6 +361,7 @@ steps:
     # detection is CR-KOI-0011, whose terminal term is the loot-archive create,
     # so it fires with no authorised sink and no firewall in path.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.koi011-victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.koi011-victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # REAL — emit the beacon against the non-resolving canary. CORTEXSIM_C2_URL
       # is deliberately NOT honoured as a real sink here.
       set -eu

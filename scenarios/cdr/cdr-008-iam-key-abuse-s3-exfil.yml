@@ -145,9 +145,9 @@ steps:
       AWS_PROFILE_ARG="${AWS_PROFILE:+--profile $AWS_PROFILE}";
       if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1; then
         aws s3 ls "s3://$LAB_BUCKET" --recursive $AWS_PROFILE_ARG 2>&1 | head -50 | tee /tmp/cortexsim_cdr008_ls.txt;
-        mkdir -p "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID";
-        aws s3 cp "s3://$LAB_BUCKET" "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID/" --recursive --quiet $AWS_PROFILE_ARG 2>&1 | tail -5;
-        echo "[*] pulled $(find "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID" -type f 2>/dev/null | wc -l) objects";
+        X=$(mktemp -d "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID.XXXXXX") || exit 1;
+        aws s3 cp "s3://$LAB_BUCKET" "$X/" --recursive --quiet $AWS_PROFILE_ARG 2>&1 | tail -5;
+        echo "[*] pulled $(find "$X" -type f 2>/dev/null | wc -l) objects";
       else
         echo '[*] demo-mode: aws cli not configured for the lab account — CDR should still flag a ≥50-GetObject bulk read by an IAM user with no prior read pattern';
       fi

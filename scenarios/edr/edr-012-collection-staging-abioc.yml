@@ -79,7 +79,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Bulk file-read sweep under the service process"
-    command: "mkdir -p /tmp/cortexsim-collect; for i in 1 2 3 4 5 6; do dd if=/dev/urandom of=/tmp/cortexsim-collect/doc-$i.dat bs=1k count=8 2>/dev/null; done; cat /tmp/cortexsim-collect/doc-1.dat /tmp/cortexsim-collect/doc-2.dat /tmp/cortexsim-collect/doc-3.dat > /dev/null; echo cortexsim-bulk-file-read-sweep-complete"
+    command: "rm -rf /tmp/cortexsim-collect && mkdir -m 700 /tmp/cortexsim-collect || { echo \"sandbox /tmp/cortexsim-collect could not be created fresh: something else is at that path\" >&2; exit 1; }; for i in 1 2 3 4 5 6; do dd if=/dev/urandom of=/tmp/cortexsim-collect/doc-$i.dat bs=1k count=8 2>/dev/null; done; cat /tmp/cortexsim-collect/doc-1.dat /tmp/cortexsim-collect/doc-2.dat /tmp/cortexsim-collect/doc-3.dat > /dev/null; echo cortexsim-bulk-file-read-sweep-complete"
     identity: www-data
     mitre_technique: "T1005"
     # Root of the causality spine — links from the CGO (apache2/www-data).
@@ -103,7 +103,7 @@ steps:
 
   - id: step-02
     name: "Archive and compression staging burst under the service process"
-    command: "tar -czf /tmp/cortexsim-stage.tar.gz /tmp/cortexsim-collect 2>/dev/null || true; gzip -k /tmp/cortexsim-collect/doc-1.dat 2>/dev/null || true; echo cortexsim-archive-staging-burst-complete"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-collect 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-collect is missing or not ours: step-01 did not complete\" >&2; exit 1; }; tar -czf /tmp/cortexsim-stage.tar.gz /tmp/cortexsim-collect 2>/dev/null || true; gzip -k /tmp/cortexsim-collect/doc-1.dat 2>/dev/null || true; echo cortexsim-archive-staging-burst-complete"
     identity: www-data
     mitre_technique: "T1560.001"
     # tar/gzip and the step-01 read sweep are sibling execs under the same
@@ -116,7 +116,7 @@ steps:
     platform_variants:
       # Same archive-of-swept-files staging burst the process never normally does.
       windows: "Compress-Archive -Path $env:TEMP\\cortexsim-collect -DestinationPath $env:TEMP\\cortexsim-stage.zip -Force"
-      macos: "ditto -c -k --sequesterRsrc /tmp/cortexsim-collect /tmp/cortexsim-stage.zip"
+      macos: "s=$(stat -c %F:%u:%a /tmp/cortexsim-collect 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-collect 2>/dev/null); [ \"$s\" = \"directory:$(id -u):700\" ] || [ \"$s\" = \"Directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-collect is missing or not ours: step-01 did not complete\" >&2; exit 1; }; ditto -c -k --sequesterRsrc /tmp/cortexsim-collect /tmp/cortexsim-stage.zip"
     expected_detections:
       - plane: EDR
         type: ABIOC
