@@ -1,6 +1,8 @@
 /**
- * Dashboards (design v33 C8) — the `coverage` route as a rail item with three
+ * The library tabs of Reports (design v33 C8) — the `coverage` route's three
  * views over the real corpus, and per-scenario state from run READ-BACK only.
+ * The page is named Reports and opens on Executions (ReportsExecutions.test.jsx);
+ * these tabs follow it.
  *
  * What these pin:
  *   - every tab draws from its SimCore endpoint, not from sample data;
@@ -91,24 +93,25 @@ function routes(extra = {}) {
 
 async function mountOn(tab, extra) {
   routes(extra)
-  render(<CoverageView params={tab ? { tab } : {}} />)
+  render(<CoverageView params={{ tab: tab || 'sources' }} />)
   await screen.findByTestId('dash-stats')
 }
 
 // ─── The rail ────────────────────────────────────────────────────────────────
 
-describe('Dashboards on the rail', () => {
-  it('is a visible rail item named Dashboards, after Results, on the coverage route', () => {
+describe('Reports on the rail', () => {
+  it('is a visible rail item named Reports, after Results, on the coverage route', () => {
     const observe = navGroups().find((g) => g.label === 'Run & observe')
-    expect(observe.items.map((i) => [i.id, i.label])).toEqual([['runs', 'Runs'], ['proof', 'Results'], ['coverage', 'Dashboards']])
-    expect(getDestination('coverage').label).toBe('Dashboards')
+    expect(observe.items.map((i) => [i.id, i.label])).toEqual([['runs', 'Runs'], ['proof', 'Results'], ['coverage', 'Reports']])
+    expect(getDestination('coverage').label).toBe('Reports')
   })
 
-  it('names the page Dashboards and offers the three views first', async () => {
+  it('names the page Reports and offers Executions, then the three library views', async () => {
     await mountOn()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Dashboards')
-    const tabs = within(screen.getByRole('tablist', { name: 'Dashboards' })).getAllByRole('tab')
-    expect(tabs.slice(0, 3).map((t) => t.textContent)).toEqual(['Detection source × Use case', 'MITRE ATT&CK', 'Planes × doors'])
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Reports')
+    const tabs = within(screen.getByRole('tablist', { name: 'Reports' })).getAllByRole('tab')
+    expect(tabs.slice(0, 4).map((t) => t.textContent))
+      .toEqual(['Executions', 'Detection source × Use case', 'MITRE ATT&CK', 'Planes × doors'])
     expect(tabs.map((t) => t.textContent)).toEqual(DASH_TABS.map(([, label]) => label))
   })
 })
@@ -200,7 +203,7 @@ describe('Detection source × Use case', () => {
 
   it('an empty library is said, not drawn as a grid of zeros', async () => {
     installRoutes({ 'GET /api/scenarios': { scenarios: [] }, 'GET /api/runs': { runs: [], total: 0 } })
-    render(<CoverageView />)
+    render(<CoverageView params={{ tab: 'sources' }} />)
     expect(await screen.findByTestId('dash-no-scenarios')).toHaveTextContent(/no scenarios/i)
     expect(screen.queryByTestId('dash-sources-grid')).toBeNull()
   })
@@ -343,7 +346,7 @@ describe('tabs', () => {
   it('the selected tab is the green wash with the matte line, and rides ?tab=', async () => {
     routes()
     const setParams = vi.fn()
-    render(<CoverageView params={{}} setParams={setParams} />)
+    render(<CoverageView params={{ tab: 'sources' }} setParams={setParams} />)
     await screen.findByTestId('dash-stats')
     expect(screen.getByTestId('dash-tab-sources')).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByTestId('dash-tab-sources')).toHaveClass('dash__tab--on')

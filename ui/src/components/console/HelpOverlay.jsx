@@ -78,8 +78,8 @@ const TABS_CHEATSHEET = [
     body: 'Generate IaC bundles for the target environment. Pick provider + modules, fill required params, Generate Bundle → download tar.gz with Terraform. Modules auto-select their dependencies (e.g. picking cdr also picks base + tim).',
   },
   {
-    name: 'Dashboards (Run & observe)',
-    body: 'Every scenario in the library counted three ways: detection source × use case, MITRE ATT&CK, and planes × doors. Open a cell or technique to list the scenarios behind it; each opens its sheet on Scenarios. Detected means a run of the scenario was read back from the tenant and detected something; a scenario that is only authored is never counted as covered.',
+    name: 'Reports (Run & observe)',
+    body: 'Executions rolls up every run on this engine by scenario, technique and test case, as a table, CSV or JSON. Not reviewed is never Missed. The other tabs count the library by detection source × use case, MITRE ATT&CK and planes × doors.',
   },
 ]
 

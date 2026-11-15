@@ -1,5 +1,6 @@
 /**
- * dashboardModel.js — the pure model behind Dashboards (design v33 C8).
+ * dashboardModel.js — the pure model behind the library tabs of Reports
+ * (design v33 C8: Detection source × Use case, MITRE ATT&CK, Planes × doors).
  *
  * Every view counts the same records: the scenario list (GET /api/scenarios),
  * one row per scenario, so a scenario added to the library shows up in every

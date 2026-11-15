@@ -509,7 +509,7 @@ export default function UcTcIndexView({
         <div className="uctc__modebar-meta mono">
           methodology coverage — for MITRE ATT&amp;CK technique coverage see{' '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage', { tab: 'mitre' })}>
-            Dashboards →
+            Reports →
           </button>
           {' · '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-ttps" onClick={() => onNavigate('ttps')}>

@@ -145,7 +145,7 @@ const ComposerView = makeLazySurface(() => import('../components/console/Compose
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
-const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Dashboards')
+const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Reports')
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
@@ -819,7 +819,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
 //
 //   1  Onboard & connect    Get started · Components ▸ (the eight components)
 //   2  Compose & simulate   Scenarios · Build a chain · Launch gate
-//   3  Run & observe        Runs · Results · Dashboards
+//   3  Run & observe        Runs · Results · Reports
 //      Reference            Catalog
 //
 // Every page belongs to exactly one rail item. Simulate's three tabs became
@@ -861,9 +861,10 @@ export const DESTINATIONS = [
   // ── 3 · Run & observe ──
   { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
   { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
-  // Design v33 C8: the global dashboards are a rail item again. The id stays
-  // 'coverage' — it is the route, and `#/coverage` links keep working.
-  { id: 'coverage',   label: 'Dashboards',    group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
+  // Reports: the rollup of every execution on this engine, then the design
+  // v33 C8 dashboards as further tabs. The id stays 'coverage' — it is the
+  // route, and `#/coverage` links keep working.
+  { id: 'coverage',   label: 'Reports',       group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
 
   // ── Reference ──
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },

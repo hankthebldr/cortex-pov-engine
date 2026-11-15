@@ -234,6 +234,19 @@ Dark is the console default. Light is retained as a complete, independent,
 AA-clean token set — see the measured contrast table at the top of
 `cortex-tokens.css`.
 
+## Runs, Results, Reports: slice 1, the Reports rollup (2026-11-15)
+
+Spec: `docs/superpowers/specs/2026-11-15-runs-results-reports-design.md`. This
+slice is the Reports page only; Runs and Results change in slices 2 and 3.
+
+| Change | What the code does |
+|---|---|
+| Dashboards is now Reports | The rail item, the heading, the breadcrumb and ⌘K read **Reports**. The route id stays `coverage`, so `#/coverage` and `?tab=` links keep working. The intro paragraph under the heading is gone. |
+| Executions tab | The first, default tab. One read of `GET /api/reports/executions`: a filter row (24 h · 7 d · 30 d · All, Plane, Status, Agent, Include drafts), a totals strip, and one table switched between By scenario, By technique and By test case. Each scenario row opens its last reviewed run in Results, or the run when none was reviewed. Downloads as CSV and JSON. No Compare runs on this page. |
+| What it never draws | A detection nobody reviewed as Missed (it reads **Not reviewed**); a scenario that never ran as a row; an empty engine as a table ("No runs yet" and **Run**); a failed read as an empty one. |
+| The library tabs | Detection source × Use case, MITRE ATT&CK, Planes × doors, PANW stack and Competitive follow unchanged. Their scenario strip moved inside the tab, and the library is read only once one of them is opened. |
+| Verbs | The closed set gained two: **Download** (icon `download`) and **Open run** (icon `terminal`). The set is now Configure · Test · Run · Customize · Add to chain · Read back · Open results · Abort run · Download · Open run. |
+
 ## Screen map
 
 Where each surface lives in the code after design v26 (2026-11-13). The rail
@@ -261,7 +274,7 @@ or a link.
 | Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
 | Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
-| Dashboards (v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from run read-back only) | Run & observe › Dashboards (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `dashboardModel.js` (read-back state, grids, ATT&CK matrix) |
+| Reports (Executions: the rollup of every run, by scenario · technique · test case; then v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from reviewed runs only) | Run & observe › Reports (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `ReportsExecutions.jsx` · `reportsModel.js` · `api/reports.js` (`GET /api/reports/executions`) · `dashboardModel.js` (the library tabs) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
@@ -272,7 +285,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verbs, the closed set: Configure · Test · Run · Customize · Add to chain · Read back · Open results · Abort run · Download · Open run |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
