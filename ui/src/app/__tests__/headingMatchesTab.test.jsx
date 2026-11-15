@@ -19,7 +19,7 @@ import { installRoutes } from '../../test/mockFetch.js'
 import { sectionFor, getDestination } from '../destinations.jsx'
 import OperationsView from '../../components/console/OperationsView.jsx'
 import TtpBrowserView from '../../components/console/TtpBrowserView.jsx'
-import EvidenceView from '../../components/console/EvidenceView.jsx'
+import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
 import CoverageView from '../../components/console/CoverageView.jsx'
 import DataStreamsView from '../../components/console/DataStreamsView.jsx'
 import UcTcIndexView from '../../components/console/UcTcIndexView.jsx'
@@ -69,10 +69,20 @@ describe('page h1 is the rail or tab label', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'This POVengine' })).toBeInTheDocument()
   })
 
-  it('Results › Report', async () => {
+  it('Results, and its Detections tab adds no h1 of its own', async () => {
     installRoutes({ 'GET /api/results/run-A': { results: [] } })
-    render(<EvidenceView pinnedRun={{ runId: 'run-A', scenarioId: 'SIM-EDR-001', status: 'completed' }} />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('proof')))
+    const run = {
+      run_id: 'run-A', scenario_id: 'SIM-EDR-001', status: 'complete', mode: 'pull',
+      delivered_at: '2026-11-13T17:00:03', tc_verdict_detail: { source: 'reconcile:xsiam:lab' },
+    }
+    const Results = getDestination('proof').Component
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
+        <Results params={{ run: 'run-A' }} />
+      </EnvironmentContext.Provider>,
+    )
+    await screen.findByRole('tab', { name: 'Detections' })
+    expect(h1Texts()).toEqual([railLabel('proof')])
   })
 
   it('Reports, on every tab', async () => {

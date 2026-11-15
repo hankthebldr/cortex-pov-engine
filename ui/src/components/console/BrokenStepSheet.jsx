@@ -1,7 +1,8 @@
 /**
- * BrokenStepSheet — what a Broken step on Run detail opens (design v26 §4.6):
- * the likely causes in the order to check, each line opening the place that
- * fixes it. The causes come from the host's record of the step
+ * BrokenStepSheet — what a step that failed on the host opens on Run detail
+ * (design v26 §4.6): the likely causes in the order to check, each line
+ * opening the place that fixes it. `word` is the step's state (Failed ·
+ * Timed out). The causes come from the host's record of the step
  * (brokenStep.brokenStepCauses); the record itself is shown above them, so the
  * DC sees what the list was read from.
  *
@@ -11,6 +12,7 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import '../../styles/broken-step-sheet.css'
 import StatusIcon from './kit/StatusIcon.jsx'
+import Icon from './kit/Icon.jsx'
 import { brokenStepCauses } from './brokenStep.js'
 
 void React
@@ -30,6 +32,7 @@ export default function BrokenStepSheet({
   open,
   step = null,
   row = null,
+  word = 'Failed',
   runId,
   scenarioId = null,
   onClose = () => {},
@@ -97,7 +100,7 @@ export default function BrokenStepSheet({
         aria-describedby="broken-sheet-lede"
       >
         <header className="broken-sheet__head">
-          <StatusIcon status="down" word="Broken" />
+          <StatusIcon status="down" word={word} />
           <div className="broken-sheet__id">
             <h2 id="broken-sheet-title" className="broken-sheet__title">
               <span className="mono">{stepId}</span>
@@ -107,7 +110,9 @@ export default function BrokenStepSheet({
               Likely causes, in the order to check. Each opens the place that fixes it.
             </p>
           </div>
-          <button type="button" className="broken-sheet__close" aria-label="Close" onClick={onClose}>✕</button>
+          <button type="button" className="broken-sheet__close" aria-label="Close" onClick={onClose}>
+            <Icon name="x" size={12} />
+          </button>
         </header>
 
         {record.length > 0 && (

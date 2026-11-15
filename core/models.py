@@ -24,6 +24,9 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Intege
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from database import Base
+# The EAL relay's table lives in its own module; importing it here registers it
+# wherever the models are loaded, so create_all creates it.
+from eal_relay_models import EalRelayStep  # noqa: F401
 
 
 class Scenario(Base):
@@ -276,6 +279,25 @@ class Run(Base):
     # _migrate_case_ledger_columns in database.py.
     case_ledger: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Alert attribution (which of the host's alerts are this run's) ────────
+    # Written by connectors.service.apply_verdicts on every host-scoped
+    # reconcile: ``{"reviewed_at", "source", "host", "additional": [...],
+    # "unattributed": [...]}``. ``additional`` lists the alerts Cortex raised
+    # on the run's host, while the run held it, that match NO expected row
+    # (#346): an agent module's verdict, an analytics rule the scenario does
+    # not declare. Shown as "Also raised by Cortex"; never a credit and never
+    # in Detection Accuracy. ``unattributed`` lists the alerts that match an
+    # expected row of this run AND of another run with nothing to single one
+    # out (#347): they credit neither. Each entry: ``alert_external_id``,
+    # ``alert_name``, ``alert_source``, ``observed_at``; an additional one also
+    # ``techniques``, ``severity``, ``action``, ``alert_outcome``, ``step_id``,
+    # ``step_name``. NULL until a host-scoped reconcile has run. Nothing here feeds
+    # observed_at, outcome, MTTD or a verdict. Deliberately NOT in to_dict():
+    # the run list is polled every 10 s; GET /api/runs/{id}, GET
+    # /api/results/{run_id} and the report read it. Added by
+    # _migrate_alert_attribution_columns in database.py.
+    alert_attribution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was
@@ -307,6 +329,16 @@ class Run(Base):
     # Block / Report / Disabled per module, so a block-mode run says nothing
     # about any one module (review F1). NULL = nothing attested per module.
     module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
+
+    # ── Pull cleanup outcome (#324) ──────────────────────────────────────────
+    # One entry per beacon task that was sent the scenario's cleanup.commands:
+    # [{agent_id, task_id, commands, status: pending|clean|failed|not_run, ran,
+    # failed, reason}]. The launch writes it as `pending` (engine.pull_cleanup
+    # .seed_run) and the task's /complete fills it (record_outcome); `pending`
+    # on a finished run means no beacon reported, which is not "clean". NULL =
+    # no task was sent cleanup (a push run, or nothing to run on the target).
+    # Added by _migrate_run_cleanup_columns in database.py.
+    cleanup: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
@@ -342,6 +374,7 @@ class Run(Base):
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
             "module_modes": self.module_modes,
+            "cleanup": self.cleanup,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
@@ -548,6 +581,31 @@ class RunOutputFrame(Base):
     frame_id: Mapped[str] = mapped_column(String, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
                                                   default=datetime.utcnow)
+
+
+class StepStart(Base):
+    """The beacon's report that it is about to run a step, and with what command.
+
+    Written by a ``kind: "start"`` ``/output`` frame (``engine.live_output``),
+    before the step's process exists. ``started_at`` here IS when the step
+    started. It is kept apart from :class:`StepOutcome` on purpose: that row's
+    ``started_at`` means "the step had finished by then", and beacon-lost
+    severing and the silent-row window read it that way.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "step_starts"
+    __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_step_starts_run_step"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String, nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    identity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                 default=datetime.utcnow)
 
 
 class Observation(Base):

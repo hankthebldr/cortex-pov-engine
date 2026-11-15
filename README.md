@@ -213,9 +213,9 @@ language deps — nothing after that). No submodules touched, no toolchain
 installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
-CortexSim ships as tagged GitHub Releases — **v1.2.0** is the release this
-tree describes, cut 2026-11-14 and tagged by `tag-on-main.yml` when it merges
-to `main` (until that tag exists, **v1.1.1** is the latest published) — and
+CortexSim ships as tagged GitHub Releases — **v1.2.3** is the release this
+tree describes, a hotfix cut 2026-11-15 and tagged by `tag-on-main.yml` when it
+merges to `main` (until that tag exists, **v1.2.2** is the latest tag) — and
 the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
 image is **not publicly pullable today** (an anonymous pull-token request is
@@ -466,7 +466,7 @@ erDiagram
 
 ### API surface
 
-**165 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **175 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (165, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
+**166 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **176 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (166, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -1071,7 +1071,7 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    29 router files · 165 route decorators · 175 served routes
+│   ├── api/                    29 router files · 166 route decorators · 176 served routes
 │   ├── engine/                 43 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
@@ -1180,21 +1180,25 @@ make test-agent-cross   # beacon cross-compile gate
 ## Releases & Packaging
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
-  — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0** and **v1.1.1** are published.
-  **v1.2.0** is the release this tree describes, cut 2026-11-14; `tag-on-main.yml`
-  tags it from the first `## [x.y.z]` heading in `CHANGELOG.md` when the release
-  PR merges to `main`, and until then **v1.1.1** (a security hotfix) is the
-  latest. Releases up to v1.1.1 attached `install.sh`, `stage2-linux.tar.gz`,
+  — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0**, **v1.1.1** and **v1.2.0** are
+  published; **v1.2.1** (a hotfix: a failed step no longer reads as a Cortex miss)
+  and **v1.2.2** (a hotfix: verify-only XQL rows no longer count as Detection
+  Accuracy misses) were tagged 2026-11-15. **v1.2.3** (a hotfix: an alert credits
+  at most one run, and alerts a run did not expect are listed) is the release
+  this tree describes, cut 2026-11-15; `tag-on-main.yml` tags it from the first
+  `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges to `main`,
+  and until then **v1.2.2** is the latest tag. Releases up to v1.1.1
+  attached `install.sh`, `stage2-linux.tar.gz`,
   `stage2-windows.zip` (which held one bash file, so it was never a Windows
-  installer), `SHA256SUMS` and `manifest.json`. **v1.2.0 is the first release
-  built by the rewritten `release.yml`, and it first runs on that tag.** A stage2
+  installer), `SHA256SUMS` and `manifest.json`. **v1.2.0 was the first release
+  built by the rewritten `release.yml`.** A stage2
   asset ships only when `installer/stage2/<os>/` exists, and today none does, so
-  v1.2.0 attaches `install.sh`, the five **unsigned** beacons
+  v1.2.0 attached `install.sh`, the five **unsigned** beacons
   (`cortexsim-agent-{linux,darwin}-{amd64,arm64}`,
   `cortexsim-agent-windows-amd64.exe`), `cortexsim-agent-SHA256SUMS`,
   `cortexsim-agent-buildinfo.txt`, `SHA256SUMS` and `manifest.json`, whose new
-  `agent` block says `signed: false`. That list comes from a local dry run of
-  the workflow's assembly steps on 2026-11-12, not from a release run. Windows
+  `agent` block says `signed: false`. The v1.2.0 release published exactly that
+  list (checked 2026-11-15). Windows
   onboarding is `/api/agents/install?os=windows` (pull) or `format=powershell`
   (push), never a release archive. Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.
 - **Container image:** the tag-triggered pipeline
@@ -1204,7 +1208,7 @@ make test-agent-cross   # beacon cross-compile gate
   That image is **not publicly pullable** — the v1.1.1 release run's own
   anonymous pull-token probe returned HTTP 401 (2026-11-12) — so don't
   `docker pull` it today. Build it locally instead (`./scripts/dev-up.sh`, or
-  `docker build -f core/Dockerfile -t cortexsim:v1.2.0 .` directly). Neither the
+  `docker build -f core/Dockerfile -t cortexsim:v1.2.3 .` directly). Neither the
   release image nor a local build stages the payload shelf: `/api/health` reads
   `payload_shelf` degraded (`SHELF_ARTIFACTS_MISSING`) until
   `./scripts/build-payloads.sh` runs before the build.

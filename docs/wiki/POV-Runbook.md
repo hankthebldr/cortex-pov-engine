@@ -121,9 +121,10 @@ The four AI/Browser/Agentic planes (`AI_ACCESS`, `AIRS`, `BROWSER`,
      -o pov-run-<run_id>.tar.gz
    ```
    Read the markdown report's integrity caveats before you hand it over:
-   `IDENTITY NOT HONOURED`, `PLATFORM VARIANT`, `STEP NOT RUN` and
-   "Cleanup Not Run". Pull mode never runs scenario cleanup; remove the residue
-   it names.
+   `IDENTITY NOT HONOURED`, `PLATFORM VARIANT`, `STEP NOT RUN`,
+   "Cleanup Not Run" and "Cleanup Incomplete". A pull run now runs the
+   scenario's cleanup when it ends; these two say when it did not, or did not
+   finish. Remove the residue they name.
 3. Hand the customer:
    - One report per scenario
    - The MTTD heatmap

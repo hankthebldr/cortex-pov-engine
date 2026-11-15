@@ -144,9 +144,10 @@ describe('<DetectionStoryline /> on a completed run', () => {
   })
 })
 
-describe('<RunDetailView /> failure banner', () => {
+describe('<RunDetailView /> a failed run', () => {
   beforeEach(() => {
-    // The sub-tabs self-fetch; keep them inert so the banner is what we assert on.
+    // Every fetch answers `{}`: no record, no scenario. The page then reads
+    // the output the row itself carries.
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}), {
       status: 200, headers: { 'content-type': 'application/json' },
     }))
@@ -162,28 +163,52 @@ describe('<RunDetailView /> failure banner', () => {
     output: 'step-01 start\nrunuser: may not be used by non-root users\n--- exit_code=1',
   }
 
-  it('surfaces the actual failure reason — which appeared on no surface before', async () => {
-    render(<RunDetailView runId={FAILED_RUN.run_id} run={FAILED_RUN} subTab="live" />)
-    const banner = await screen.findByTestId('run-failure-banner')
-    expect(banner.textContent).toContain('runuser: may not be used by non-root users')
-    expect(banner.textContent).toContain('exit_code=1')
-    expect(banner.textContent).toMatch(/RUN FAILED/)
+  it('surfaces the actual failure reason in the runtime log', async () => {
+    render(<RunDetailView runId={FAILED_RUN.run_id} run={FAILED_RUN} />)
+    const log = await screen.findByRole('region', { name: 'Runtime log' })
+    expect(log.textContent).toContain('runuser: may not be used by non-root users')
+    expect(log.textContent).toContain('exit_code=1')
   })
 
-  it('says plainly that coverage on this run is not a measurement', async () => {
-    render(<RunDetailView runId={FAILED_RUN.run_id} run={FAILED_RUN} subTab="live" />)
-    const banner = await screen.findByTestId('run-failure-banner')
-    expect(banner.textContent).toMatch(/not a measurement/i)
+  it('says Failed, and makes no claim about coverage or detections', () => {
+    render(<RunDetailView runId={FAILED_RUN.run_id} run={FAILED_RUN} />)
+    expect(screen.getByTestId('run-state')).toHaveTextContent('Failed')
+    expect(document.body.textContent).not.toMatch(/coverage|detected|missed|measurement/i)
   })
 
-  it('shows no failure banner for a healthy run', () => {
-    render(<RunDetailView runId="r1" run={{ ...FAILED_RUN, status: 'complete' }} subTab="live" />)
-    expect(screen.queryByTestId('run-failure-banner')).toBeNull()
+  it('a healthy run reads Ran', () => {
+    render(<RunDetailView runId="r1" run={{ ...FAILED_RUN, status: 'complete' }} />)
+    expect(screen.getByTestId('run-state')).toHaveTextContent('Ran')
   })
 
-  it('handles a failed run that captured no output', async () => {
-    render(<RunDetailView runId="r1" run={{ ...FAILED_RUN, output: null }} subTab="live" />)
-    const banner = await screen.findByTestId('run-failure-banner')
-    expect(banner.textContent).toMatch(/no output captured/i)
+  it('a failed run that captured no output says so in one line', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const path = new URL(typeof input === 'string' ? input : input.url, 'http://localhost').pathname
+      const body = path.startsWith('/api/runs/') ? { ...FAILED_RUN, run_id: 'r1', output: '' } : {}
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    render(<RunDetailView runId="r1" run={{ ...FAILED_RUN, run_id: 'r1', output: null }} />)
+    await waitFor(() => expect(screen.getByTestId('runtime-log-empty')).toHaveTextContent('No steps recorded'))
+  })
+})
+
+describe('<DetectionStoryline /> on a step that failed on the host (#323)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('says the step failed — never a detection gap, never Missed', async () => {
+    const body = storylineFor('complete', 'not_executed')
+    for (const d of body.detection_storyline.steps[0].detections) d.outcome_reason = 'STEP_FAILED'
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }))
+    render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
+    await screen.findByText(/Credential extraction tool/)
+
+    expect(screen.getAllByText(/the step failed on the host, so a miss can't be claimed/))
+      .toHaveLength(2)
+    expect(screen.getAllByText('Not executed')).toHaveLength(2)
+    expect(screen.queryByText(/detection gap/i)).toBeNull()
+    expect(screen.queryByText('Missed')).toBeNull()
+    expect(screen.queryByText(/STEP_FAILED/)).toBeNull()
   })
 })

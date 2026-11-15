@@ -77,6 +77,10 @@ def test_task_without_artifacts_emits_no_artifacts_key():
     assert set(payload) == {
         "task_id", "run_id", "scenario_id", "steps",
         "identity_context", "identity_default", "created_at",
+        # Deliberately added with the live runtime log: every pull task asks
+        # the beacon for step starts and live output (engine/live_output.py).
+        # A beacon that predates it drops the key.
+        "live_output",
     }
 
 

@@ -97,8 +97,9 @@ describe('task rail', () => {
     expect(getDestination('coverage').hidden).toBeFalsy()
     expect(navOwner('coverage')).toBe('coverage')
     expect(sectionFor('coverage')).toBeNull()
-    // Results kept only its report: the Coverage tab moved out with the page.
-    expect(SECTIONS.proof.map(([id]) => id)).toEqual(['proof'])
+    // Results is one page: its views are tabs inside it, not a section strip.
+    expect(SECTIONS.proof).toBeUndefined()
+    expect(sectionFor('proof')).toBeNull()
   })
 
   it('the legacy readiness id lights up Get started, where this POVengine\'s status lives', () => {

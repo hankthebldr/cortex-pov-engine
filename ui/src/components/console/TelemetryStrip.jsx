@@ -1,12 +1,17 @@
 import React, { useState } from 'react'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
+import { Button } from './kit/index.js'
 
 /**
- * TelemetryStrip — 40px strip showing active run state.
+ * TelemetryStrip — 40px strip showing the run in flight, on the Runs list.
+ *
+ * Runs shows what was attempted, so the strip says which scenario, how far
+ * along (when SimCore reports a step count), how long, and offers Abort. It
+ * carries no detection count: what Cortex saw is on Results.
  *
  * Props:
- *   run      — { scenarioId, step, totalSteps, elapsed, detected, total, nextStep }
+ *   run      — { scenarioId, step, totalSteps, elapsed, nextStep }
  *              elapsed is seconds; rendered as mm:ss
  *   onAbort  — () => void
  */
@@ -28,15 +33,11 @@ export default function TelemetryStrip({ run, onAbort }) {
 
   if (!run) return null
 
-  const progress = run.totalSteps
+  // The run list's rows carry no step counter; say nothing rather than "0 / 0".
+  const counted = Number(run.totalSteps) > 0
+  const progress = counted
     ? Math.min(100, Math.max(0, (run.step / run.totalSteps) * 100))
     : 0
-
-  const detClass = run.detected >= run.total
-    ? 'tel-value--detected'
-    : run.detected > 0
-    ? 'tel-value--signal'
-    : 'tel-value--pending'
 
   return (
     <div
@@ -47,28 +48,29 @@ export default function TelemetryStrip({ run, onAbort }) {
     >
       <span className="tel-label">Active</span>
       <span className="tel-value mono tel-value--signal">{run.scenarioId}</span>
-      <span className="tel-sep">/</span>
-      <span className="tel-label">Step</span>
-      <span className="tel-value mono">{run.step} / {run.totalSteps}</span>
+      {counted && (
+        <>
+          <span className="tel-sep">/</span>
+          <span className="tel-label">Step</span>
+          <span className="tel-value mono">{run.step} / {run.totalSteps}</span>
+        </>
+      )}
       <span className="tel-sep">/</span>
       <span className="tel-label">Elapsed</span>
       <span className="tel-value mono">{fmtElapsed(run.elapsed)}</span>
-      <span className="tel-sep">/</span>
-      <span className="tel-label">Detected</span>
-      <span className={`tel-value mono ${detClass}`}>
-        {run.detected} / {run.total}
-      </span>
 
-      <div
-        className="tel-progress"
-        role="progressbar"
-        aria-valuenow={Math.round(progress)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Run progress: step ${run.step} of ${run.totalSteps}`}
-      >
-        <div className="tel-progress__fill" style={{ width: `${progress}%` }} />
-      </div>
+      {counted ? (
+        <div
+          className="tel-progress"
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Run progress: step ${run.step} of ${run.totalSteps}`}
+        >
+          <div className="tel-progress__fill" style={{ width: `${progress}%` }} />
+        </div>
+      ) : <span className="tel-spacer" />}
 
       {run.nextStep && (
         <>
@@ -77,7 +79,7 @@ export default function TelemetryStrip({ run, onAbort }) {
         </>
       )}
 
-      <button className="btn-abort" onClick={handleAbort}>Abort</button>
+      <Button verb="Abort run" className="telemetry__abort" onClick={handleAbort} />
       {abortHint.show && !abortHintDismissed && (
         <FirstUseHint
           show

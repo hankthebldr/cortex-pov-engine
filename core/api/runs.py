@@ -33,6 +33,8 @@ from sqlalchemy.orm import defer
 from database import get_db
 from engine import efficacy_scorecard
 from engine import host_evidence
+from engine import live_output
+from engine import pull_cleanup
 from engine import report_generator
 from engine.outcome import (
     HOST_WITNESS,
@@ -121,7 +123,9 @@ def _execution_integrity(run: Any) -> dict[str, Any]:
     write, and both are stable strings. Returns ``ok: True`` for the ordinary
     case so an unremarkable run's report is byte-identical to before.
     """
-    output = (getattr(run, "output", "") or "")
+    # The cleanup section is not a step: its `command not found` says nothing
+    # about whether the TTP ran.
+    output = pull_cleanup.without_cleanup_sections(getattr(run, "output", "") or "")
     problems = [
         f"**{marker}** — {explanation}"
         for marker, explanation in _INTEGRITY_MARKERS
@@ -220,21 +224,11 @@ def _report_caveats(run: Any, scenario: Optional[Any]) -> list[str]:
               for sid, labels, os_name in mismatches],
         ])
 
-    cleanup = (getattr(scenario, "cleanup", None) or {}) if scenario is not None else {}
-    commands = [c for c in (cleanup.get("commands") or [])
-                if isinstance(c, str) and c.strip()]
-    if getattr(run, "mode", None) == "pull" and commands:
-        blocks.append([
-            "### Cleanup Not Run",
-            "",
-            f"pull mode does not execute cleanup.commands: {len(commands)} "
-            f"command{'s' if len(commands) != 1 else ''} not run. Run them on the "
-            "target by hand, or the scenario's artefacts stay on the endpoint:",
-            "",
-            "```",
-            *commands,
-            "```",
-        ])
+    # What the beacon reported about cleanup.commands (#324): nothing when it
+    # ran clean, the commands to run by hand when it did not.
+    cleanup_block = pull_cleanup.report_caveat(run, scenario)
+    if cleanup_block:
+        blocks.append(cleanup_block)
 
     if not blocks:
         return []
@@ -389,6 +383,59 @@ def _case_section(run: Run) -> list[str]:
         out += [f"Shared with other runs: {other} issues from other runs sit in these cases.", ""]
     out += [f"*{CASE_DISCLAIMER}*", ""]
     return out
+
+
+OTHER_ALERTS_HEADING = "## Other alerts Cortex raised for this run"
+
+
+def _other_alerts(run: Run) -> tuple[list[dict], list[dict]]:
+    """``(additional, unattributed)`` from ``Run.alert_attribution``."""
+    stored = run.alert_attribution if isinstance(run.alert_attribution, dict) else {}
+
+    def rows(name: str) -> list[dict]:
+        return [e for e in stored.get(name) or () if isinstance(e, dict)]
+
+    return rows("additional"), rows("unattributed")
+
+
+def _other_alerts_section(run: Run) -> list[str]:
+    """The run's alerts that match no expected detection (#346), and the ones
+    that could not be given to one run (#347). Absent when there are none: a
+    run nobody reconciled must not grow an empty table that reads as "Cortex
+    raised nothing else"."""
+    additional, unattributed = _other_alerts(run)
+    if not additional and not unattributed:
+        return []
+    lines = [OTHER_ALERTS_HEADING, ""]
+    if additional:
+        lines += [
+            "Alerts on this run's endpoint, raised while the run held it, that match "
+            "none of its expected detections. They are not counted in the coverage "
+            "above, which measures the expected detections.",
+            "",
+            "| Time (UTC) | Alert | Source | Technique | Action | Step |",
+            "|------------|-------|--------|-----------|--------|------|",
+        ]
+        for e in additional:
+            when = str(e.get("observed_at") or "")[:19].replace("T", " ")
+            lines.append(
+                f"| {_md_cell(when)} | {_md_cell(e.get('alert_name'))} | "
+                f"{_md_cell(e.get('alert_source'))} | "
+                f"{_md_cell(', '.join(e.get('techniques') or []))} | "
+                f"{_md_cell(e.get('action'))} | {_md_cell(e.get('step_id'))} |")
+        lines.append("")
+    if unattributed:
+        lines += [
+            "Not attributed: these alerts match this run and another, and nothing ties "
+            "them to one. They are credited to neither.",
+            "",
+        ]
+        for e in unattributed:
+            when = str(e.get("observed_at") or "")[:19].replace("T", " ")
+            lines.append(f"- {_md_cell(when)} UTC · {_md_cell(e.get('alert_name'))} · "
+                         f"{_md_cell(e.get('alert_source'))}")
+        lines.append("")
+    return lines
 
 
 def _verdict_section(run: Run) -> list[str]:
@@ -688,7 +735,10 @@ _INTEGRITY_LINE_PREFIXES = ("!! ", "__CORTEXSIM", "cortexsim-")
 #: The beacon's step frame: the header that ATTRIBUTES every marker after it to
 #: a step (`_identity_degraded_steps`), and the exit footer. A marker whose
 #: header was dropped reads as `(unattributed)`.
-_STEP_FRAME_PREFIXES = ("=== STEP ", "=== ARTIFACT STAGING", "--- exit_code=")
+_STEP_FRAME_PREFIXES = ("=== STEP ", "=== ARTIFACT STAGING", "--- exit_code=",
+                        # The cleanup section's header and per-command footer
+                        # (agent/beacon/cleanup.go).
+                        "=== CLEANUP", "--- cleanup ")
 _TRUNCATION_MARKER = "[OUTPUT TRUNCATED at "
 _CHUNK_TRUNCATION_MARKER = "[OUTPUT CHUNK TRUNCATED: "
 #: Room left in a cut chunk for its own truncation marker line.
@@ -763,9 +813,19 @@ class OutputRequest(BaseModel):
     step_id: Optional[str] = None
     # The beacon's key for a retried frame (RG-AGENT-06): "<task_id>:<n>",
     # the same on every attempt. A frame already stored for this run is not
-    # appended again. Absent from an older beacon and from live streaming
-    # chunks, which append every time exactly as before.
+    # appended again. Absent from an older beacon, whose frames append every
+    # time exactly as before.
     frame_id: Optional[str] = Field(default=None, max_length=128)
+    # Live frames (engine/live_output.py). `kind` is absent on the final
+    # per-step frame, which is the only kind that is stored. "start" announces
+    # a step with its `command`, `identity`, `index` and `total`; "chunk" is
+    # output while the step runs, numbered by a rising `seq`.
+    kind: Optional[str] = None
+    seq: Optional[int] = None
+    command: Optional[str] = None
+    index: Optional[int] = None
+    total: Optional[int] = None
+    identity: Optional[str] = None
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
@@ -812,6 +872,12 @@ class CompleteRequest(BaseModel):
     # once. Absent from an old beacon, which is counted per POST as before.
     task_id: Optional[str] = Field(None, max_length=200)
     agent_id: Optional[str] = Field(None, max_length=200)
+    # How the scenario's cleanup went on this endpoint (#324):
+    # {status: clean|failed|not_run, ran, failed, reason}. Absent from a beacon
+    # that predates pull cleanup. Reported by the target, so it is deliberately
+    # loose here (a malformed one must not cost the completion) and normalised
+    # by engine.pull_cleanup.record_outcome, which files it under the task.
+    cleanup: Optional[Any] = None
 
     def completion_key(self) -> Optional[str]:
         """The idempotency key for this completion, or None when the beacon
@@ -1079,8 +1145,10 @@ async def _launch_run_impl(
     # (see LaunchResult.warnings): a string reservation SimCore also wrote onto
     # the run (an offline target, an unknown agent OS, a step running a
     # platform variant), and a {code, ...} dict from the container-agent
-    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN), which
-    # SimCore also wrote onto the run as one line.
+    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN) or the
+    # runtime-dependency preflight (RUNTIME_DEPENDENCY_GAP,
+    # RUNTIME_INSTALL_NOT_ENABLED), which SimCore also wrote onto the run as
+    # one line.
     if result.warnings:
         response["warnings"] = list(result.warnings)
 
@@ -1137,6 +1205,7 @@ async def launch_preflight(
         canary_run_id=body.canary_run_id,
         allow_missing_tools=body.allow_missing_tools,
         agent_profile_mode=body.agent_profile_mode,
+        allow_runtime_install=body.allow_runtime_install,
     )
     for check in evaluation.checks:
         row = check.to_dict()
@@ -1357,7 +1426,9 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
     logger.info("get_run run_id=%s status=%s", run_id, run.status)
-    return {**run.to_dict(), "step_outcomes": await _step_outcomes_view(db, run)}
+    return {**run.to_dict(), "alert_attribution": run.alert_attribution,
+            "step_outcomes": await _step_outcomes_view(db, run),
+            **await live_output.run_view(db, run_id, in_flight=not _is_terminal(run))}
 
 
 @router.get("/{run_id}/pair")
@@ -1475,6 +1546,10 @@ async def get_report(
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
             "tools_used": tools_used,
             "case_ledger": run.case_ledger,
+            # The run's alerts that match no expected row / that no single run
+            # could be given (#346, #347). Outside `coverage` on purpose.
+            "additional_detections": _other_alerts(run)[0],
+            "unattributed_alerts": _other_alerts(run)[1],
         }
 
     # --- Generate Markdown report ---
@@ -1654,6 +1729,7 @@ async def get_report(
             lines.append("    ```")
 
     lines.append("")
+    lines.extend(_other_alerts_section(run))
     lines.append("---")
     lines.append("")
     lines.append("*Generated by CortexSim v1.0 — Palo Alto Networks Cortex Detection Simulation Engine*")
@@ -1805,7 +1881,13 @@ async def append_output(
     ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once (the guard is
     in SQL too). The step-start record below is host evidence, not output,
     and is written either way.
+
+    A body with ``kind`` is a live frame (a step start or an output chunk):
+    it is published and never stored, and writes no ``step_outcomes`` row.
     """
+    if body.kind:
+        return await live_output.handle_frame(
+            db, run_id, body, is_terminal=_is_terminal, not_found=_run_not_found)
     frame_id = (body.frame_id or "").strip()
     if frame_id:
         # Claimed FIRST, in the same transaction as the append: a conflict
@@ -1858,6 +1940,8 @@ async def append_output(
             .on_conflict_do_nothing(index_elements=["run_id", "step_id"])
         )
     await db.commit()
+    # A step's final frame ends its live stream for the rest of the run.
+    await live_output.frame_stored(db, run_id, body, is_terminal=_is_terminal)
 
     if appended:
         await _safe_publish(
@@ -2037,9 +2121,10 @@ async def _refuse_terminal_complete(db: AsyncSession, run: Run,
     what tells it to stop: the run was already finished (by an earlier
     ``/complete``, an operator abort, a staging refusal, or the beacon-lost /
     abandoned-task sweep). Its summary and exit code are never applied, and
-    neither is ``steps[]`` beyond what ``host_evidence_recorded`` counts. A 200
-    here read as "accepted", which a retrying client cannot tell apart from
-    success.
+    neither is ``steps[]`` beyond what ``host_evidence_recorded`` counts; its
+    cleanup outcome is kept (``runs.cleanup``), because it says what is left on
+    the host, not how the run went. A 200 here read as "accepted", which a
+    retrying client cannot tell apart from success.
     """
     run_id = run.run_id
     logger.info(
@@ -2053,6 +2138,10 @@ async def _refuse_terminal_complete(db: AsyncSession, run: Run,
     # The one thing a late /complete may still add: after an operator abort of
     # a delivered run, which steps the host says ran (RG-RUNS-01).
     kept = await _record_late_abort_evidence(db, run, body.steps)
+    # The other: what the beacon cleaned up afterwards. An abort always makes
+    # the run terminal before this /complete arrives.
+    if await pull_cleanup.record_outcome(db, run_id, body.cleanup, task_id=body.task_id):
+        await db.commit()
     return HTTPException(
         status_code=409,
         detail={
@@ -2159,6 +2248,7 @@ async def complete_run(
 
     # Host evidence for each step, in the same write transaction.
     await _record_step_outcomes(db, run_id, body.steps)
+    await pull_cleanup.record_outcome(db, run_id, body.cleanup, task_id=body.task_id)
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes

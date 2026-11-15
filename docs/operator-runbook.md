@@ -21,8 +21,8 @@ Five tabs across the top:
 | Tab | When you use it |
 |---|---|
 | **Operations** | Browse scenarios. Pick one. Click → drawer slides in with Launch. |
-| **In-Flight** | Watch a running scenario. The narrative timeline is the POV money shot — screenshot it for the customer deck. |
-| **Evidence** | Validate detections one by one. Export the POV report. |
+| **Runs** | What was attempted. Watch a run: its chain and its runtime log, step by step. |
+| **Results** | What Cortex saw, for one reviewed run. Validate detections one by one. Download the POV report. |
 | **Lab** | Generate IaC bundles to stand up the target environment. |
 | **ATT&CK Coverage** | Two views: ATT&CK matrix (what techniques the library covers) and PANW Stack (which products carry the load). |
 
@@ -87,54 +87,59 @@ From **Operations**:
    bundle for offline execution), identity, and (for Pull) the
    target agent.
 4. **Launch** (or ⌘L). Drawer closes; the telemetry strip lights
-   up; the In-Flight tab is now live.
+   up; the run's page opens on **Runs**.
 
-### 4. Watch (In-Flight tab)
+### 4. Watch (Runs › the run)
 
-The narrative timeline is the artifact. Each scenario step appears as
-a node on a horizontal track:
+Runs shows what was attempted. The run's page has its five-stage
+lifecycle, its chain, and one panel, the **runtime log**: one block per
+step, in order, with
 
-- **Idle** node = step hasn't fired yet.
-- **Pending** (amber pulse) = step is currently executing; SimCore is
-  waiting for the agent's heartbeat.
-- **Done** = step completed; detection cards underneath turn teal as
-  each plane's signal lands.
-- **Stitch arcs** physically draw between adjacent step nodes when
-  XSIAM correlates them into a single incident. This is the POV
-  money shot — a visual representation of "five alerts → one
-  incident" that customers immediately understand.
+- the step's number, name, technique and the account it ran as;
+- the command that was attempted (a long one shows one line; **Show
+  all** opens it);
+- how it went: **Queued · Running · Ran · Failed · Timed out · Did not
+  run · Aborted**, with the exit code and duration;
+- what it printed.
 
-Hit **Screenshot** in the footer to download a PNG at 2× pixel
-ratio for the deck.
-
-### 5. Read back, then validate (Results)
-
-Every run shows the same five stages, on its Runs row and on its own
-page: **Launched → Running → Finished / Failed / Aborted → Read back →
-Results**. A run that has ended has executed steps, not detections, so
-until it is read back the console makes no detection claim: the Runs
-row says *not read back* and offers **Read back**.
-
-**Read back** asks POVengine to read the tenant for that run
-(`POST /api/runs/{id}/reconcile?connector=xsiam`): it pulls the alerts
-in the run's window, matches them to what the run expected and scores
-it. It is read-only toward Cortex. While it is in flight the row reads
-*Reading…*. With no tenant credential configured nothing is read: the
-run stays *not read back* and the row says why. Once a run is read back
-its row offers **Open results**.
-
-Results always opens with a **Result of** bar naming the run, with a
-switcher across the runs that have been read back. A run that has not
-been read back shows its bar and Read back, not a scorecard. Without a
-tenant credential, importing the tenant's alerts by hand
-(`POST /api/runs/{id}/observations`) also counts as a read back.
+While the run is live the page follows it: the step on the agent reads
+Running, and each step's output appears when the agent reports it. The
+chain above the log says the same thing card by card; a **Failed** card
+opens the likely causes, in the order to check. Nothing on Runs says
+what was detected. That is Results.
 
 To stop a live run, use **Abort run** on its page and confirm with
 **Abort now**; the run reads Aborted everywhere and the header's
 RUNNING pill goes away.
 
-Once a run is read back, the scorecard fills in. For each expected
-detection:
+### 5. Review, then validate (Results)
+
+Every run shows the same five stages, on its Runs row and on its own
+page: **Launched → Running → Finished / Failed / Aborted → Reviewed →
+Results**. A run that has ended has executed steps, not detections, so
+its row says how it went (*Ran*, *Failed*, …) and *Not reviewed*, and
+offers **Review**.
+
+**Review** asks POVengine to read the tenant for that run
+(`POST /api/runs/{id}/reconcile?connector=xsiam`): it pulls the alerts
+in the run's window, matches them to what the run expected and scores
+it. It is read-only toward Cortex. While it is in flight the row reads
+*Reviewing…*. With no tenant credential configured nothing is read: the
+run stays *Not reviewed* and the row says why. Once a run is reviewed
+its row offers **Open results**.
+
+Results shows what Cortex saw, always for one run. It opens with a
+**Result of** bar naming the run (with a switcher across the reviewed
+runs) and one line with the run's verdict and its reason, then six
+tabs: **Detections** (the scorecard), **Storyline**, **Techniques**,
+**Topology**, **Causality** and **Tenant evidence** (the case panel and
+what the tenant itself holds). A run that has not been reviewed shows
+its bar and Review, and every tab says *Not reviewed*. Without a tenant
+credential, importing the tenant's alerts by hand
+(`POST /api/runs/{id}/observations`) also counts as a review.
+
+Once a run is reviewed, the Detections scorecard fills in. For each
+expected detection:
 
 - ✓ Detected (green) — found the alert in Cortex console, copy the
   alert ID into the operator notes.
@@ -157,9 +162,12 @@ Use **Validate all** when you've eyeballed every alert in the
 Cortex console and confirmed everything fired. Or validate
 row-by-row if you want notes attached.
 
-### 6. Export (⌘E or Evidence → Export POV report)
+### 6. Download the report (⌘E or Results → Download)
 
-Generates a Cortex-branded markdown report containing:
+**Download** on Results lists the report artifacts: the POV briefing
+bundle, the narrative report (Markdown), the detection scoring matrix
+(CSV), the ATT&CK Navigator layer and the executive scorecard. The
+narrative report is Cortex-branded markdown containing:
 
 - Run metadata (scenario, identity, mode, agent)
 - Detection scorecard with per-row notes
@@ -199,7 +207,7 @@ The run is in SimCore but the agent isn't polling. Check:
 The Cortex Data Lake ingestion window is 30–120s typical. After 5
 minutes with no signal:
 
-1. Check the **In-Flight** view's step status — did the step
+1. Check the run's **runtime log** on Runs — did the step
    actually execute, or did the agent error out?
 2. Check Cortex console directly — did the BIOC or correlation rule
    fire under a different alert title than expected? Update the

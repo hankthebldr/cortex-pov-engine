@@ -6,6 +6,8 @@ import { resultStatus, isHitStatus, isInDenominator, isBulkAttestable } from '..
  * useResultsData — fetches and folds /api/results/:runId into:
  *   - rows: render-ready rows for the scorecard
  *   - kpis: summary metrics (coverage %, MTTD median, stitch count, pending count)
+ *   - additionalDetections: the run's alerts that match no expected row
+ *     (`additional_detections`); [] from a server that predates the field
  *
  * Coverage is the SERVER's (`/api/results` → `coverage`, computed with
  * `engine.outcome.is_in_denominator`): the console never re-derives the
@@ -16,7 +18,7 @@ import { resultStatus, isHitStatus, isInDenominator, isBulkAttestable } from '..
  * local state and refetches on completion.
  *
  * @param {string|null} runId
- * @returns {{ rows, kpis, loading, loaded, error, validate, refresh }}
+ * @returns {{ rows, kpis, additionalDetections, loading, loaded, error, validate, refresh }}
  */
 export default function useResultsData(runId) {
   const [payload, setPayload] = useState(null)
@@ -138,6 +140,11 @@ export default function useResultsData(runId) {
     }
   }, [rows, payload])
 
+  const additionalDetections = useMemo(() => {
+    const list = payload && !Array.isArray(payload) ? payload.additional_detections : null
+    return Array.isArray(list) ? list : []
+  }, [payload])
+
   const validate = useCallback(async (resultId, observed, notes) => {
     if (resultId == null) return
     // Optimistic update
@@ -162,5 +169,5 @@ export default function useResultsData(runId) {
     }
   }, [refresh])
 
-  return { rows, kpis, loading, loaded, error, validate, refresh }
+  return { rows, kpis, additionalDetections, loading, loaded, error, validate, refresh }
 }

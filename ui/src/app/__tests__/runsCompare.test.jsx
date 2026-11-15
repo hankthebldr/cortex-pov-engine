@@ -64,7 +64,7 @@ describe('Runs · Compare page', () => {
     })
     const { onNavigate, setParams } = mount({ compare: '1' })
     expect(screen.getByRole('heading', { level: 1, name: 'Compare runs' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '← All runs' }))
+    fireEvent.click(screen.getByRole('button', { name: 'All runs' }))
     expect(setParams).toHaveBeenCalledWith({ compare: null }, { replace: true })
 
     await waitFor(() => expect(screen.getAllByTestId('run-compare-chip')).toHaveLength(2))

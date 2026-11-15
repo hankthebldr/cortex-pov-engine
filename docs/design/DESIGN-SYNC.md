@@ -25,6 +25,32 @@ from drifting apart silently.
 > the owner's live review overrode the canvas, the override is listed below
 > and the canvas is the side that has to catch up.
 
+## Runs, Results, Reports: one job per page (2026-11-15)
+
+Decided by the owner after testing v1.2.0 ("the runs shows the most detail
+that should be in the results … we're not getting attempted runtime logs").
+The canvas should follow this. Slice 2 of three, as built:
+
+| Page | Its one job | What the code does |
+|---|---|---|
+| **Runs › a run** | What was attempted | Lifecycle strip, the chain, Abort, and one panel: the **runtime log** (`RuntimeLog.jsx`, model in `runtimeLog.js`). One block per step: number, name, technique, the account it ran as; the command attempted (the scenario's, or the agent's own record when the run carries `step_starts`); a state as StatusIcon + one word (Queued · Running · Ran · Failed · Timed out · Did not run · Aborted · Staged for a push bundle) with `exit N · duration`; then its output. The chain's cards read the same blocks (`runState.EXEC_VOCABULARY`), so a card and its log block agree. No detection word anywhere on the page or on a Runs row. |
+| **Results** (`#/proof?run=&tab=`) | What Cortex saw, for one run | Result-of bar and switcher, a collapsed "Read with care · N caveats" line, one verdict line, then Detections · Storyline · Techniques · Topology · Causality · Tenant evidence (`ResultsView.jsx`, tab list in `app/resultTabs.js`). The views are the ones that were a run's tabs, moved unchanged. Not reviewed: the Review notice, and every detection tab says "Not reviewed". |
+| **Reports** | Everything fired on this engine | Slice 1 (its own change). |
+
+Old run-tab links (`#/runs?run=<id>&tab=evidence|storyline|techniques|
+topology|causality`) forward to `#/proof?run=<id>&tab=<same>`; the router's
+history treats that address as a redirect, so Back never lands on it.
+
+Kit additions in this slice: the verb **Validate all** (icon `check-all`);
+the icons `x` (close a sheet; mark a detection missed) and `check-all`; and a
+sixth StatusIcon status, **running** (● in the accent wash, for a run, a step
+or a review in progress — "Unknown ?" is for what POVengine cannot see).
+
+Left for a later slice: the beacon reporting each step's start and streaming
+its output while it runs. The log already takes both (a start record feeds
+the command and the Running state; streamed output lands in the Running
+block), so that slice is the beacon and the API, not this page.
+
 ## Design v33 — changes C1–C10 and the Launch gate MVP (2026-11-13)
 
 The canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff
@@ -270,10 +296,10 @@ or a link.
 | Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
 | Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
 | Guided launch | (from Scenarios › Run / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
-| Runs (list → detail) | Run & observe › Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `RunLifecycleStrip.jsx` · `RunChain.jsx` |
-| Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
+| Runs (list → a run: what was attempted) | Run & observe › Runs | `app/destinations.jsx::RunsSurface` · `RunList.jsx` · `RunDetailView.jsx` · `RunLifecycleStrip.jsx` · `RunChain.jsx` · `RuntimeLog.jsx` · `runtimeLog.js` · `runState.js` · `useRunRecord.js` |
+| Failed step troubleshooting sheet | Runs › a run › a Failed or Timed out card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
-| Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
+| Results (what Cortex saw, one run) | Run & observe › Results (`#/proof?run=&tab=`: Detections · Storyline · Techniques · Topology · Causality · Tenant evidence) | `app/destinations.jsx::ProofSurface` · `ResultsView.jsx` · `app/resultTabs.js` · `ResultOfBar.jsx` · `ResultVerdictLine.jsx` · `RunCaveats.jsx` · `EvidenceView.jsx` (Detections) · `ExportMenu.jsx` (Download) |
 | Reports (Executions: the rollup of every run, by scenario · technique · test case; then v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from reviewed runs only) | Run & observe › Reports (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `ReportsExecutions.jsx` · `reportsModel.js` · `api/reports.js` (`GET /api/reports/executions`) · `dashboardModel.js` (the library tabs) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
@@ -285,7 +311,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot are the run Live tab's stream and timeline controls (Download there saves the POV report). Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
@@ -293,7 +319,8 @@ or a link.
 | Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-kit.css` · `styles/povengine-minimal.css` |
 
 Retired routes redirect: `setup`, `scope` → Get started; `validation` →
-Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
+Results; a run's former detection tabs (`#/runs?run=<id>&tab=evidence|…`) →
+the same tab of Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
 Review & integrations / Sources tab; `readiness` is an alias of the Launch gate.
 
 All eight slices of the v26 handoff are in `dev` (PRs #250, #252, #253, #254,

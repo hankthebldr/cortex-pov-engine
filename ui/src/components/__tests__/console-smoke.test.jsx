@@ -235,7 +235,7 @@ describe('console-view smoke renders', () => {
 
   it('EvidenceView shows empty-state with no run', () => {
     render(<EvidenceView activeRun={null} lastRun={null} />)
-    expect(screen.getByText(/no run to validate/i)).toBeInTheDocument()
+    expect(screen.getByText('No run selected')).toBeInTheDocument()
   })
 
   it('EvidenceView mounts KPI row + scorecard with a run', async () => {
@@ -266,7 +266,7 @@ describe('console-view smoke renders', () => {
       expect(screen.getByText(/AKIA grep/)).toBeInTheDocument()
     })
     expect(screen.getByText(/Coverage/i)).toBeInTheDocument()
-    expect(screen.getByText(/Export POV briefing/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Validate all/ })).toHaveClass('kit-btn')
   })
 
   it('NarrativeTimeline renders frames with stitches', async () => {

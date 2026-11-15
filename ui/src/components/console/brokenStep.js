@@ -1,19 +1,19 @@
 /**
- * brokenStep.js — why a Broken step may have broken, in the order to check
- * (design v26 §4.6). Pure, no React.
+ * brokenStep.js — why a step may have failed on the host, in the order to
+ * check (design v26 §4.6). Pure, no React.
  *
- * A card reads Broken once the run is reviewed, when the host recorded the
- * step failing (a non-zero exit, or the agent stopped reporting) and the
- * tenant showed nothing for it. Every cause here is read from that host
- * record (`buildStepRows`: status, rc, signal, termination, and the two notes
- * the step frame carries). None is guessed: a step whose record says nothing
+ * A card on Run detail reads Failed or Timed out when the host recorded the
+ * step failing (a non-zero exit, a timeout, or the agent stopped reporting),
+ * reviewed or not. Every cause here is read from that host record
+ * (`buildStepRows`: status, rc, signal, termination, and the two notes the
+ * step frame carries). None is guessed: a step whose record says nothing
  * more than its exit code gets that, and the line that opens its output.
  *
  * The order is the order a DC should check them in: what ended the step
  * first (the agent went quiet, the run was aborted, something killed it, it
  * ran out of time), then what the host lacked (an interpreter, the declared
  * account), then what the command itself reported (126, 127), and last the
- * step's own output, which every Broken step has.
+ * step's own output, which every failed step has.
  *
  * Each cause names the place that fixes it, as a route ({destination,
  * params}) the shell already knows. No line is a dead end.
@@ -41,7 +41,7 @@ export function brokenStepCauses(row, { runId, scenarioId } = {}) {
   const term = row.termination || null
   const signal = row.signal ? Number(row.signal) : null
   const agents = place('Agents › Fleet', 'component-agents', { tab: 'fleet' })
-  const output = place("This run's output", 'runs', { run: runId, tab: 'live' })
+  const output = place("This run's runtime log", 'runs', { run: runId })
   const causes = []
 
   if (row.status === 'severed' || term === 'beacon_lost') {
@@ -66,7 +66,7 @@ export function brokenStepCauses(row, { runId, scenarioId } = {}) {
       title: signal
         ? `Something other than POVengine killed the step (signal ${signal})`
         : 'Something other than POVengine ended the step',
-      detail: 'That is the host half of a prevention. The review found no alert for this step, so check whether the endpoint blocked it and its alert has not arrived yet (review again), or whether the host itself ended it (out of memory, a watchdog).',
+      detail: 'That is the host half of a prevention. Results shows whether the endpoint raised an alert for this step; if it did not, the host itself ended it (out of memory, a watchdog).',
       place: place('Results', 'proof', { run: runId }),
     })
   }

@@ -30,6 +30,8 @@ export const VERBS = Object.freeze([
   'Pause', 'Clear', 'Screenshot',
   // Reports › Executions: a scenario with no reviewed run opens the run itself.
   'Open run',
+  // Results › Detections: mark every detection that can be attested as seen.
+  'Validate all',
 ])
 
 /** The kit Icon each verb carries. */
@@ -54,6 +56,7 @@ export const VERB_ICONS = Object.freeze({
   Clear: 'clear',
   Screenshot: 'camera',
   'Open run': 'terminal',
+  'Validate all': 'check-all',
 })
 
 export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {

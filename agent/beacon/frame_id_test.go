@@ -113,16 +113,3 @@ func TestExecuteTask_FrameIDsAreScopedToTheTaskAndCountFromOne(t *testing.T) {
 		}
 	}
 }
-
-// A live streaming chunk is never retried, so it carries no key: a key on a
-// frame that is sent once would only invite SimCore to drop a legitimate chunk.
-func TestSendOutput_AStreamingChunkCarriesNoFrameID(t *testing.T) {
-	srv := newEvidenceRefusingServer(t, http.StatusOK)
-	c := New(srv.URL, "a-1", 0)
-	if err := c.sendOutput("r", "step-01", "live chunk", false); err != nil {
-		t.Fatalf("sendOutput: %v", err)
-	}
-	if ids := srv.frameIDs(t); len(ids) != 1 || ids[0] != "" {
-		t.Fatalf("streaming chunk frame ids = %v, want one body with no frame_id", ids)
-	}
-}

@@ -148,6 +148,9 @@ steps:
       python3 -m scripts.eal_simulator.cli run "$C/tim-ioc-beacon-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # 12 beacons, 30 s apart (jittered to 36 s at most): about 6.6 minutes, over
+    # the beacon's 180 s default.
+    timeout_seconds: 600
     # Same lab host / operator session as the dry-run (no fork) → shared_entity.
     # This host's src_host is the join key the TIM↔NDR correlation (CR-TIM-0001)
     # stitches the IOC feed match to the outbound NGFW session on.

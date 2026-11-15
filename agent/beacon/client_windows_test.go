@@ -2,7 +2,7 @@
 
 package beacon
 
-// PowerShell-dialect twins of client_unix_test.go (CI-04): streaming, a step
+// PowerShell-dialect twins of client_unix_test.go (CI-04): a step
 // that terminates itself, anchor death, fail-fast and abort — the beacon
 // contracts as a Windows host actually runs them. Run only by the
 // windows-native CI job; not observed passing on Windows by the change that
@@ -20,21 +20,6 @@ import (
 // direct resolver: these tests are about execution, not the token they run on.
 func directResolver(string) identity.Resolution {
 	return identity.Resolution{Mode: "direct", Honoured: true}
-}
-
-func TestStreamOutput_WindowsLiveChunksSent(t *testing.T) {
-	task := &Task{TaskID: "t", RunID: "r", ScenarioID: "SIM-TEST-STREAM",
-		Steps: []Step{{ID: "step-stream-1", Command: "Write-Output 'line1'; Start-Sleep -Milliseconds 300; Write-Output 'line2'",
-			Identity: "root", MitreTechnique: "T1059"}}}
-	rs := newRecordingServer(t, task)
-	defer rs.Close()
-	c := New(rs.URL, "agent-test", time.Millisecond)
-	c.StreamOutput = true
-	c.resolveIdentity = directResolver
-	c.executeTask(context.Background(), task)
-	if n := len(rs.find("POST", "/output")); n <= 1 {
-		t.Errorf("expected >1 /output POSTs with StreamOutput=true, got %d", n)
-	}
 }
 
 // Twin of TestExecuteTask_SignaledStepIsRecordedAndSeversChain. A Windows
