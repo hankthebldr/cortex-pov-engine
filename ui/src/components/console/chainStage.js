@@ -81,10 +81,24 @@ export const LIVE_STATES = Object.freeze({
 
 const LIVE_ORDER = ['detected', 'broken', 'waiting', 'not_seen', 'ran', 'did_not_run']
 
+/**
+ * What a live card can say: its states, the legend's order, the state of a
+ * step nobody reported on, and which states tint the edge into the step. This
+ * one is the detection reading; Run detail passes its own execution words
+ * (`runState.EXEC_VOCABULARY`), because a run's page says nothing about
+ * detections.
+ */
+export const LIVE_VOCABULARY = Object.freeze({
+  states: LIVE_STATES,
+  order: LIVE_ORDER,
+  fallback: 'waiting',
+  edge: { detected: 'pos', broken: 'crit' },
+})
+
 /** A step the caller did not report on is waiting for its report. */
-export function liveStateOf(states, stepId) {
+export function liveStateOf(states, stepId, vocabulary = LIVE_VOCABULARY) {
   const k = states && states[stepId]
-  return LIVE_STATES[k] ? k : 'waiting'
+  return vocabulary.states[k] ? k : vocabulary.fallback
 }
 
 /** Fit a stage of `stageWidth` into `boxWidth`: never above 1, never below MIN. */
@@ -229,12 +243,13 @@ export function buildChainStage(steps = [], opts = {}) {
 }
 
 /** Count live states for the legend, in the design's order, nonzero only. */
-export function liveLegend(steps = [], states = {}) {
+export function liveLegend(steps = [], states = {}, vocabulary = LIVE_VOCABULARY) {
   const counts = {}
   for (const s of steps) {
-    const k = liveStateOf(states, s.id)
+    const k = liveStateOf(states, s.id, vocabulary)
     counts[k] = (counts[k] || 0) + 1
   }
-  return LIVE_ORDER.filter((k) => counts[k]).map((k) => ({ key: k, count: counts[k], word: LIVE_STATES[k].word }))
+  return vocabulary.order.filter((k) => counts[k])
+    .map((k) => ({ key: k, count: counts[k], word: vocabulary.states[k].word }))
 }
 

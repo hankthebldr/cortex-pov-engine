@@ -18,6 +18,7 @@ import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
 import { buildTopologyModel, toLaneStep } from './runTopology.js'
 import { isRunUnproven } from './runStatus.js'
 import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
+import { Button, Icon } from './kit/index.js'
 
 const EVIDENCE_SENTENCE =
   'Lanes are the signal paths read from each step’s command; status is the host’s record; tones are this SimCore’s Result rows. Authored is not proven.'
@@ -245,8 +246,8 @@ export default function RunTopologyView({
       <div className="run-topo__foot">
         <span className="mono">lane = composerLanes.laneOf(step) · status = host step_outcomes · tenant-verified: 0</span>
         <span className="run-topo__foot-actions">
-          <button type="button" className="btn btn--xs" onClick={onOpenCausality}>Causality ▸</button>
-          <button type="button" className="btn btn--xs" onClick={onOpenEvidence}>Open the evidence ▸</button>
+          <Button onClick={onOpenCausality}>Causality<Icon name="forward" size={12} /></Button>
+          <Button onClick={onOpenEvidence}>Detections<Icon name="forward" size={12} /></Button>
         </span>
       </div>
     </div>

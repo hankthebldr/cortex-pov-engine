@@ -51,8 +51,18 @@ describe('Abort on the Runs surface', () => {
   it('the live strip on the run list asks the shell to confirm the abort', () => {
     const onAbortRun = vi.fn()
     mount({}, onAbortRun)
-    fireEvent.click(screen.getByRole('button', { name: /^abort$/i }))
+    const abort = screen.getByRole('button', { name: 'Abort run' })
+    expect(abort).toHaveClass('kit-btn')
+    fireEvent.click(abort)
     expect(onAbortRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('the live strip says what is in flight, never what was detected', () => {
+    mount({}, vi.fn())
+    const strip = screen.getByRole('region', { name: 'Active run telemetry' })
+    expect(strip).toHaveTextContent('SIM-EDR-001')
+    expect(strip).toHaveTextContent('2 / 7')
+    expect(strip).not.toHaveTextContent(/detected|0 \/ 11/i)
   })
 
   it('the live run’s own page confirms inline, then sends the abort to the shell', async () => {

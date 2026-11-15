@@ -12,7 +12,8 @@
  * Two places now carry it: the launch notice (for the surfaces that stay), and
  * the run itself — from its transcript when SimCore wrote the marker there, and
  * from this browser session's memory of the launch response when it did not
- * (TARGET_AGENT_OFFLINE is not written to Run.output at c852eac).
+ * (TARGET_AGENT_OFFLINE is not written to Run.output at c852eac). On the run's
+ * page it leads the runtime log; on Results it is one of the run's caveats.
  */
 import React from 'react'
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -20,7 +21,8 @@ import { render, screen, renderHook, act, waitFor } from '@testing-library/react
 import { installRoutes } from '../../test/mockFetch.js'
 import useLaunchScenario from '../console/useLaunchScenario.js'
 import { LaunchSuccessNotice } from '../console/LaunchErrorNotice.jsx'
-import RunDetailView, { runDegradations } from '../console/RunDetailView.jsx'
+import RunDetailView from '../console/RunDetailView.jsx'
+import RunCaveats, { runDegradations } from '../console/RunCaveats.jsx'
 import {
   normalizeLaunchWarnings, rememberLaunchWarnings, launchWarningsFor, forgetLaunchWarnings,
 } from '../console/launchWarnings.js'
@@ -141,41 +143,70 @@ describe('the run carries its launch warnings', () => {
     expect(runDegradations('nothing here').launch).toEqual([])
   })
 
-  it('a marker SimCore wrote into Run.output is a banner at the top of the run', async () => {
+  it('a marker SimCore wrote into Run.output leads the run’s runtime log', async () => {
     const run = { ...RUN, output: `${OS_UNKNOWN}\n=== STEP 1/1 · step-01 · T1003 · identity=root ===\nok\n--- exit_code=0 duration=1s ---` }
     installRoutes({ 'GET /api/runs/run-off-1': run })
-    render(<RunDetailView runId="run-off-1" run={run} subTab="live" />)
-    const b = await screen.findByTestId('run-launch-warnings-banner')
+    render(<RunDetailView runId="run-off-1" run={run} />)
+    const note = await screen.findByTestId('runtime-note')
+    expect(note.textContent).toContain('TARGET_AGENT_OS_UNKNOWN')
+    expect(note.textContent).toMatch(/wrong dialect/)
+    // It comes before the first step, where the launch wrote it.
+    const items = [...screen.getByRole('region', { name: 'Runtime log' }).querySelectorAll('.rtlog__steps > li')]
+    expect(items.map((li) => li.getAttribute('data-testid'))).toEqual(['runtime-note', 'runtime-step'])
+  })
+
+  it('a warning only the launch response carried leads the log too', async () => {
+    rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OFFLINE] }))
+    installRoutes({ 'GET /api/runs/run-off-1': RUN })
+    render(<RunDetailView runId="run-off-1" run={RUN} />)
+    const note = await screen.findByTestId('runtime-note')
+    expect(note.textContent).toContain('TARGET_AGENT_OFFLINE')
+    expect(note.textContent).toMatch(/runs only when its beacon polls again/)
+  })
+
+  it('the same code from the record and the session is in the log once', async () => {
+    rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OS_UNKNOWN] }))
+    const run = { ...RUN, output: OS_UNKNOWN }
+    installRoutes({ 'GET /api/runs/run-off-1': run })
+    render(<RunDetailView runId="run-off-1" run={run} />)
+    const log = await screen.findByRole('region', { name: 'Runtime log' })
+    await waitFor(() => expect(log.textContent).toContain('TARGET_AGENT_OS_UNKNOWN'))
+    expect(log.textContent.match(/TARGET_AGENT_OS_UNKNOWN/g)).toHaveLength(1)
+  })
+
+  it('on Results it is a caveat: a banner naming the code and what it means', () => {
+    const output = `${OS_UNKNOWN}\n=== STEP 1/1 · step-01 · T1003 · identity=root ===\nok\n--- exit_code=0 duration=1s ---`
+    render(<RunCaveats runId="run-off-1" run={RUN} output={output} />)
+    const b = screen.getByTestId('run-launch-warnings-banner')
     expect(b).toHaveAttribute('role', 'status')
     expect(b.textContent).toContain('TARGET_AGENT_OS_UNKNOWN')
     expect(b.textContent).toMatch(/wrong dialect/)
   })
 
-  it('a warning only the launch response carried is shown from this session, and says so', async () => {
+  it('a caveat only the launch response carried says it is from this session', () => {
     rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OFFLINE] }))
-    installRoutes({ 'GET /api/runs/run-off-1': RUN })
-    render(<RunDetailView runId="run-off-1" run={RUN} subTab="live" />)
-    const b = await screen.findByTestId('run-launch-warnings-banner')
+    render(<RunCaveats runId="run-off-1" run={RUN} output="" />)
+    const b = screen.getByTestId('run-launch-warnings-banner')
     expect(b.textContent).toContain('TARGET_AGENT_OFFLINE')
     expect(b.textContent).toMatch(/runs only when its beacon polls again/)
     expect(b.textContent).toMatch(/not in the run record/i)
   })
 
-  it('the same code from both sources is listed once; a variant marker keeps its own banner', async () => {
+  it('the same code from both sources is listed once; a variant marker keeps its own banner', () => {
     rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OS_UNKNOWN, VARIANT] }))
-    const run = { ...RUN, output: `${OS_UNKNOWN}\n${VARIANT}` }
-    installRoutes({ 'GET /api/runs/run-off-1': run })
-    render(<RunDetailView runId="run-off-1" run={run} subTab="live" />)
-    const b = await screen.findByTestId('run-launch-warnings-banner')
+    render(<RunCaveats runId="run-off-1" run={RUN} output={`${OS_UNKNOWN}\n${VARIANT}`} />)
+    const b = screen.getByTestId('run-launch-warnings-banner')
     expect(b.textContent.match(/TARGET_AGENT_OS_UNKNOWN/g)).toHaveLength(1)
     expect(b.textContent).not.toContain('PLATFORM VARIANT')
     expect(screen.getByTestId('run-platform-variant-banner')).toBeTruthy()
   })
 
-  it('a run with no launch warnings has no such banner', async () => {
+  it('a run with no launch warnings has no note and no caveat', async () => {
     installRoutes({ 'GET /api/runs/run-off-1': RUN })
-    render(<RunDetailView runId="run-off-1" run={RUN} subTab="live" />)
+    const { container } = render(<RunCaveats runId="run-off-1" run={RUN} output="" />)
+    expect(container).toBeEmptyDOMElement()
+    render(<RunDetailView runId="run-off-1" run={RUN} />)
     await waitFor(() => expect(screen.getByText(/All runs/)).toBeInTheDocument())
-    expect(screen.queryByTestId('run-launch-warnings-banner')).toBeNull()
+    expect(screen.queryByTestId('runtime-note')).toBeNull()
   })
 })

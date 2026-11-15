@@ -44,7 +44,9 @@ export function startHistory(loc) {
  * - The same place (only list filters changed): the current entry is
  *   rewritten, so Back returns to the list as it was last filtered.
  * - A place the DC came from a redirect stub: the stub is replaced, so Back
- *   never lands on a page whose only job is to forward again.
+ *   never lands on a page whose only job is to forward again. A stub can be
+ *   a whole destination (a retired id) or one address of a live one (a run's
+ *   former detection tab), so `isRedirect` is asked about both.
  * - `traversal`: the move came from outside the router (the browser's own
  *   Back / Forward, a plain `href` link). Landing on the entry just behind or
  *   ahead moves there instead of adding a step, so the two sets of buttons
@@ -54,7 +56,7 @@ export function startHistory(loc) {
  *
  * @param {{entries:Array, index:number}} history
  * @param {{destination:string, params:Object}} loc
- * @param {{isRedirect?:(id:string)=>boolean, traversal?:boolean}} [opts]
+ * @param {{isRedirect?:(id:string, params:Object)=>boolean, traversal?:boolean}} [opts]
  */
 export function recordLocation(history, loc, { isRedirect = () => false, traversal = false } = {}) {
   const { entries, index } = history
@@ -73,7 +75,7 @@ export function recordLocation(history, loc, { isRedirect = () => false, travers
   }
 
   const current = entries[index]
-  const kept = current && isRedirect(current.destination)
+  const kept = current && isRedirect(current.destination, current.params || {})
     ? entries.slice(0, index)
     : entries.slice(0, index + 1)
   if (kept.length && navKey(kept[kept.length - 1]) === key) return putAt(kept, kept.length - 1)

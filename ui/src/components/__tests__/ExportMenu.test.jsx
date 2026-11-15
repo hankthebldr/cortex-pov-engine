@@ -1,5 +1,6 @@
 /**
- * Tests for the ExportMenu split-button on the Evidence header.
+ * Tests for ExportMenu — the report downloads on Results: one secondary kit
+ * Download button that opens the list of artifacts.
  */
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -22,42 +23,49 @@ beforeEach(() => {
 const blob = (body, type = 'text/plain') =>
   new Response(new Blob([body], { type }), { status: 200, headers: { 'content-type': type } })
 
+const trigger = () => screen.getByRole('button', { name: 'Download' })
+
 describe('<ExportMenu />', () => {
-  it('renders the split primary + chevron when a runId is present', () => {
+  it('is one secondary kit button carrying the Download verb and its icon', () => {
     render(<ExportMenu runId="r-1" />)
-    expect(screen.getByText(/export pov briefing/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/show all export options/i)).toBeInTheDocument()
+    expect(trigger()).toHaveClass('kit-btn', 'kit-btn--secondary')
+    expect(trigger()).toHaveAttribute('data-verb', 'Download')
+    expect(trigger().querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('disables both buttons when no runId is supplied', () => {
+  it('is disabled when no runId is supplied', () => {
     render(<ExportMenu runId={null} />)
-    const primary = screen.getByText(/export pov briefing/i)
-    expect(primary).toBeDisabled()
+    expect(trigger()).toBeDisabled()
   })
 
-  it('opens the dropdown when the chevron is clicked', () => {
+  it('opens the list of artifacts, the bundle first', () => {
     render(<ExportMenu runId="r-1" />)
-    fireEvent.click(screen.getByLabelText(/show all export options/i))
-    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.click(trigger())
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true')
+    const items = screen.getAllByRole('menuitem').map((i) => i.textContent)
+    expect(items[0]).toMatch(/POV briefing bundle/)
     expect(screen.getByText(/narrative report/i)).toBeInTheDocument()
     expect(screen.getByText(/detection scoring matrix/i)).toBeInTheDocument()
     expect(screen.getByText(/att&ck navigator layer/i)).toBeInTheDocument()
   })
 
-  it('closes the dropdown on Escape', () => {
+  it('closes the list on Escape', () => {
     render(<ExportMenu runId="r-1" />)
-    fireEvent.click(screen.getByLabelText(/show all export options/i))
+    fireEvent.click(trigger())
     expect(screen.getByRole('menu')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('primary button calls the bundle endpoint', async () => {
+  it('the bundle item calls the bundle endpoint', async () => {
     installRoutes({
       'GET /api/runs/r-1/report/bundle': blob('tar-gz-bytes', 'application/gzip'),
     })
     render(<ExportMenu runId="r-1" />)
-    fireEvent.click(screen.getByText(/export pov briefing/i))
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByText(/POV briefing bundle/i))
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/runs/r-1/report/bundle'),
@@ -71,7 +79,7 @@ describe('<ExportMenu />', () => {
       'GET /api/runs/r-1/report': blob('# report', 'text/markdown'),
     })
     render(<ExportMenu runId="r-1" />)
-    fireEvent.click(screen.getByLabelText(/show all export options/i))
+    fireEvent.click(trigger())
     fireEvent.click(screen.getByText(/narrative report/i))
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
@@ -86,7 +94,7 @@ describe('<ExportMenu />', () => {
       'GET /api/runs/r-1/report/navigator': blob('{}', 'application/json'),
     })
     render(<ExportMenu runId="r-1" />)
-    fireEvent.click(screen.getByLabelText(/show all export options/i))
+    fireEvent.click(trigger())
     fireEvent.click(screen.getByText(/att&ck navigator layer/i))
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
@@ -96,13 +104,14 @@ describe('<ExportMenu />', () => {
     })
   })
 
-  it('surfaces export failures through onError', async () => {
+  it('surfaces a failed download through onError', async () => {
     installRoutes({
       'GET /api/runs/r-1/report/bundle': new Response('boom', { status: 500 }),
     })
     const onError = vi.fn()
     render(<ExportMenu runId="r-1" onError={onError} />)
-    fireEvent.click(screen.getByText(/export pov briefing/i))
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByText(/POV briefing bundle/i))
     await waitFor(() => {
       expect(onError).toHaveBeenCalled()
     })

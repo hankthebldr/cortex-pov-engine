@@ -98,6 +98,6 @@ describe('Review on the Runs list', () => {
     await within(row).findByText(/no tenant credential is configured/i)
     expect(within(row).getByRole('button', { name: 'Review' })).toBeEnabled()
     expect(within(row).queryByRole('button', { name: 'Open results' })).toBeNull()
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('not reviewed')
+    expect(within(row).getByTestId('run-review')).toHaveTextContent('Not reviewed')
   })
 })

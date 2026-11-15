@@ -1,16 +1,17 @@
 /**
- * Run detail › case panel and tenant evidence (Task 11).
+ * Results › Tenant evidence: the case panel and the tenant evidence panel
+ * (they were on the run's page while the detection views were its tabs).
  *
- *   - a read-back run shows ONE case panel (the evidence tab's panel is
- *     embedded in tenant evidence; the run page's own is the one that stays);
- *   - the Read back that can change a verdict sits behind a confirm there;
- *   - an unread run shows tenant evidence, read once from the stored snapshot
- *     (GET), never by a POST on mount.
+ *   - a reviewed run shows ONE case panel, embedded in tenant evidence;
+ *   - the Review that can change a verdict sits beside it, behind a confirm,
+ *     and it is the only Review on the tab;
+ *   - a run that has not been reviewed shows tenant evidence read once from
+ *     the stored snapshot (GET), never by a POST on mount.
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
-import RunDetailView from '../RunDetailView.jsx'
+import ResultsView from '../ResultsView.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
 
 void React
@@ -38,18 +39,19 @@ const seen = (h) => h.mock.calls.map(([input, init = {}]) => {
   const url = typeof input === 'string' ? input : input.url
   return `${(init.method || 'GET').toUpperCase()} ${new URL(url, 'http://localhost').pathname}`
 })
+const mount = (run) => render(<ResultsView run={run} readBackRuns={[READ]} tab="tenant" />)
 
-describe('RunDetailView', () => {
-  it('RunDetailView renders the case panel once', async () => {
+describe('Results › Tenant evidence', () => {
+  it('renders the case panel once', async () => {
     routes()
-    render(<RunDetailView runId="r1" run={READ} subTab="evidence" />)
+    mount(READ)
     await screen.findByTestId('tenant-evidence')
-    expect(screen.getAllByTestId('run-case')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByTestId('run-case')).toHaveLength(1))
   })
 
-  it('the run page offers Review beside its case panel, behind a confirm', async () => {
+  it('offers Review beside the case panel, behind a confirm', async () => {
     const h = routes()
-    render(<RunDetailView runId="r1" run={READ} subTab="live" />)
+    mount(READ)
     const panel = await screen.findByTestId('run-case')
     const button = panel.querySelector('button')
     expect(button).toHaveTextContent('Review')
@@ -58,20 +60,22 @@ describe('RunDetailView', () => {
     expect(seen(h).filter((c) => c.startsWith('POST '))).toEqual([])
   })
 
-  it('a READY run on the evidence tab has exactly one Review', async () => {
+  it('a reviewed run has exactly one Review on the tab', async () => {
     routes()
-    render(<RunDetailView runId="r1" run={READ} subTab="evidence" />)
+    mount(READ)
     await screen.findByTestId('tenant-evidence')
     await waitFor(() => expect(screen.getByTestId('tenant-evidence')).toHaveTextContent('Refresh reads it once'))
     expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
   })
 
-  it('an unread run shows tenant evidence: one GET, no POST on mount', async () => {
+  it('a run that has not been reviewed shows tenant evidence: one GET, no POST on mount', async () => {
     const h = routes()
-    render(<RunDetailView runId="r1" run={UNREAD} subTab="evidence" />)
-    await screen.findByText('Tenant evidence')
+    mount(UNREAD)
+    await screen.findByTestId('tenant-evidence')
     await waitFor(() => expect(seen(h)).toContain('GET /api/runs/r1/tenant-evidence'))
     expect(seen(h).filter((c) => c === 'GET /api/runs/r1/tenant-evidence')).toHaveLength(1)
     expect(seen(h).filter((c) => c.startsWith('POST '))).toEqual([])
+    // Its one Review is the notice above the tabs, not a second one in the panel.
+    expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
   })
 })

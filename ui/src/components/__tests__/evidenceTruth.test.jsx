@@ -50,7 +50,7 @@ describe('Proof & Export — status belongs to the run on screen', () => {
     const Proof = getDestination('proof').Component
     render(<EnvironmentProvider runPollMs={60_000}><Proof params={{}} /></EnvironmentProvider>)
 
-    await waitFor(() => expect(screen.getByText('run-A')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('result-of')).toHaveTextContent('run-A'))
     await waitFor(() => expect(screen.getByText('det-1')).toBeInTheDocument())
     expect(document.body.textContent).not.toMatch(/run failed/)
     expect(document.querySelector('.kpi__value--detected').textContent).toBe('50%')

@@ -1,0 +1,81 @@
+/* results.css — the Results page frame (ResultsView.jsx).
+   ---------------------------------------------------------------------------
+   The head and its Download, the caveats line, the verdict line, the tab
+   strip and the panel under it. The views inside the panel keep their own
+   stylesheets (they moved here from the run's page unchanged). Tokens only. */
+
+.theme-console .results .view-head { align-items: center; }
+.theme-console .results__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* ── Verdict line ───────────────────────────────────────────────────────── */
+.theme-console .result-verdict {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  padding: 11px 15px; margin: 0 0 12px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+  min-width: 0;
+}
+.theme-console .result-verdict__k { font: 400 11.5px/1 var(--font-ui); color: var(--tx3); }
+.theme-console .result-verdict .kit-status__word { font-size: 13px; }
+.theme-console .result-verdict__why {
+  flex: 1 1 200px; min-width: 0;
+  font: 400 13px/1.4 var(--font-ui); color: var(--tx2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-console .result-verdict__tc { font-size: 11px; color: var(--tx3); }
+
+/* ── Caveats: one line, opened on demand ────────────────────────────────── */
+.theme-console .run-detail.run-caveats {
+  max-width: none; margin: 0 0 12px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
+}
+.theme-console .run-caveats__summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 15px; cursor: pointer;
+  font: 400 12px/1.2 var(--font-ui); color: var(--tx2);
+}
+.theme-console .run-caveats__summary:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; border-radius: 10px; }
+.theme-console .run-caveats__body { padding: 2px 15px 1px; }
+
+/* ── Tabs and the panel under them ──────────────────────────────────────── */
+.theme-console .results__tabs { margin: 4px 0 16px; overflow-x: auto; }
+.theme-console .results__tabs .pov-tab { flex: none; white-space: nowrap; }
+.theme-console .results__tabs .pov-tab:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+.theme-console .run-detail.results__panel { max-width: none; margin: 0; min-width: 0; }
+.theme-console .results__unreviewed { margin: 0; padding: 4px 0 12px; }
+
+/* The Detections tab's one action row. */
+.theme-console .evidence .evidence-header__actions { margin: 0 0 14px; }
+.theme-console .evidence .evidence-header__sync,
+.theme-console .evidence .evidence-header__skipped { font-size: 11px; color: var(--tx3); }
+
+/* At a laptop width the scorecard's fixed columns left the alert text a
+   column 80px wide; they give way so it keeps a readable measure. */
+.theme-console .results .scorecard__head,
+.theme-console .results .scorecard__row {
+  grid-template-columns: 80px 88px minmax(190px, 1fr) 56px 104px 112px 216px;
+  gap: 12px;
+}
+
+/* The scorecard's per-row controls are kit buttons at the row's scale. */
+.theme-console .evidence .row-action.kit-btn { padding: 0; gap: 0; }
+
+/* The download list hangs off the kit Download button, in the console's
+   own surfaces and type: every artifact reads the same, none is the default. */
+.theme-console .results .export-menu { position: relative; }
+.theme-console .results .export-menu__dropdown {
+  background: var(--s1); border: 1px solid var(--bd2); box-shadow: var(--shadow);
+}
+.theme-console .results .export-menu__section-label {
+  font: 600 11px/1 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--tx3);
+}
+.theme-console .results .export-menu__item,
+.theme-console .results .export-menu__item--primary { background: transparent; border-color: transparent; color: var(--tx); }
+.theme-console .results .export-menu__item:hover:not(:disabled),
+.theme-console .results .export-menu__item:focus-visible { background: var(--s2); border-color: var(--bd2); }
+.theme-console .results .export-menu__item-label,
+.theme-console .results .export-menu__item--primary .export-menu__item-label {
+  font: 600 12.5px/1.3 var(--font-ui); letter-spacing: 0; color: var(--tx);
+}
+.theme-console .results .export-menu__item-sub {
+  font: 400 11px/1.35 var(--font-ui); letter-spacing: 0; color: var(--tx3);
+}

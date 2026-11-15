@@ -14,6 +14,7 @@ import { getResultsForRun, getRun, getTtp } from '../../api/client.js'
 import { buildTechniqueModel } from './runTechniques.js'
 import { isRunUnproven } from './runStatus.js'
 import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
+import { Button, Icon } from './kit/index.js'
 
 const EVIDENCE_SENTENCE =
   'Evidence is this SimCore’s Result rows; a detection counts only once reconciled from the tenant or validated by the DC. Authored is not proven.'
@@ -182,7 +183,7 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
 
       <div className="run-tech__foot">
         <span className="mono">{TONE_LABEL.hit} · {TONE_LABEL.miss} · {TONE_LABEL.pending} tones are this SimCore's rows, not the tenant's.</span>
-        <button type="button" className="btn btn--xs" onClick={onOpenEvidence}>Open the evidence ▸</button>
+        <Button onClick={onOpenEvidence}>Detections<Icon name="forward" size={12} /></Button>
       </div>
     </div>
   )
