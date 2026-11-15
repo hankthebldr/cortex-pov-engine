@@ -40,7 +40,7 @@ const RUN_STATUS = Object.freeze({
   failed: { status: 'down', word: 'Failed' },
   aborted: { status: 'degraded', word: 'Aborted' },
   staged: { status: 'off', word: 'Staged' },
-  running: { status: 'unknown', word: 'Running' },
+  running: { status: 'running', word: 'Running' },
   pending: { status: 'unknown', word: 'Queued' },
 })
 export const RUN_STATUS_ORDER = Object.freeze(['complete', 'failed', 'aborted', 'staged', 'running', 'pending'])
