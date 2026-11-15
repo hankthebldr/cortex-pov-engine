@@ -7,13 +7,19 @@
  * word (Queued · Running · Ran · Failed · Timed out · Did not run · Aborted ·
  * Staged) with `exit N · duration`; then what it printed. The blocks come from
  * `runtimeLog.buildRuntimeLog`, so a finished run (the stored output and the
- * host's step record) and a live one (the same record, re-read as the run's
- * stream moves) draw the same way.
+ * host's step record) and a live one (the same record, plus what a running
+ * step has streamed so far) draw the same way.
  *
- * A command shows one line, and opens in place when there is more of it.
+ * A command shows one line, the first that does something, and opens in place
+ * when there is more of it.
+ *
+ * The scenario cleanup the beacon ran when the task ended is its own block
+ * after the steps: Cleanup, a StatusIcon and one word (Clean · "1 of 3
+ * failed" · Not run · Pending), with its commands and output behind the same
+ * one line.
  *
  * Props:
- *   log      `buildRuntimeLog(…)`: `{ blocks, preface }`
+ *   log      `buildRuntimeLog(…)`: `{ blocks, preface, cleanup }`
  *   loaded   the run's record has been read (until then nothing is claimed)
  *   failed   the record could not be read
  *   stream   `{ connected, mode }` while the run is followed live, else null
@@ -21,7 +27,7 @@
  */
 import React, { useLayoutEffect, useRef, useState } from 'react'
 import { StatusIcon } from './kit/index.js'
-import { blockMeta } from './runtimeLog.js'
+import { blockMeta, cleanupMeta, commandLead } from './runtimeLog.js'
 import '../../styles/destinations/runtime-log.css'
 
 void React
@@ -39,44 +45,55 @@ function streamBadge(stream, partial) {
   return stream.mode === 'stream' ? { status: 'up', word: 'Live' } : { status: 'degraded', word: 'Polling' }
 }
 
-/**
- * The command, on one line. It opens in place when there is more of it than
- * the line shows: more lines, or a line the column cut short (measured, so a
- * command that fits never offers to open).
- */
-function Command({ block }) {
+/** Has the column cut this one line short? Measured, so a line that fits never offers to open. */
+function useCut(text, opens) {
   const lineRef = useRef(null)
   const [cut, setCut] = useState(false)
-  const command = block.command
-  const multi = !!command && command.includes('\n')
-  const opens = multi || cut
   useLayoutEffect(() => {
     const el = lineRef.current
     if (!el) return undefined
-    // A line hidden behind its opened command measures nothing: leave it be.
+    // A line hidden behind its opened disclosure measures nothing: leave it be.
     const measure = () => { if (el.clientWidth > 0) setCut(el.scrollWidth > el.clientWidth + 1) }
     measure()
     if (typeof ResizeObserver === 'undefined') return undefined
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [command, opens])
+  }, [text, opens])
+  return [lineRef, cut]
+}
+
+const Toggle = () => (
+  <>
+    <span className="rtlog__cmd-toggle rtlog__cmd-toggle--show">Show all</span>
+    <span className="rtlog__cmd-toggle rtlog__cmd-toggle--hide">Hide</span>
+  </>
+)
+
+/**
+ * The command, on one line: the first line that does something. It opens in
+ * place when there is more of it than the line shows: more lines, a set-up
+ * the line skipped, or a line the column cut short.
+ */
+function Command({ block }) {
+  const command = block.command
+  const lead = command ? commandLead(command) : ''
+  const more = !!command && lead !== command.trim()
+  const [lineRef, cut] = useCut(command, more)
+  const opens = more || cut
 
   if (!command) {
     return <div className="rtlog__cmd rtlog__cmd--none" data-testid="runtime-step-command">Command not recorded</div>
   }
   const from = COMMAND_FROM[block.commandFrom]
-  const line = (
-    <code ref={lineRef} className="rtlog__cmd-line mono">{multi ? command.split('\n')[0] : command}</code>
-  )
+  const line = <code ref={lineRef} className="rtlog__cmd-line mono">{lead}</code>
   return (
     <div className="rtlog__cmd" data-testid="runtime-step-command">
       {opens ? (
         <details className="rtlog__cmd-more">
           <summary>
             {line}
-            <span className="rtlog__cmd-toggle rtlog__cmd-toggle--show">Show all</span>
-            <span className="rtlog__cmd-toggle rtlog__cmd-toggle--hide">Hide</span>
+            <Toggle />
           </summary>
           <pre className="rtlog__cmd-full mono">{command}</pre>
         </details>
@@ -129,26 +146,84 @@ function Step({ block }) {
   )
 }
 
+/** "exit 1 · 12ms" for one cleanup command; "not run" when the agent never started it. */
+function commandMeta(c) {
+  if (c.notRun) return 'not run'
+  return [c.exit != null ? `exit ${c.exit}` : null, c.duration || null].filter(Boolean).join(' · ')
+}
+
+/**
+ * The scenario cleanup, after the steps. One line shows the first command;
+ * opening it lists every command with what it printed and how it exited.
+ */
+function Cleanup({ cleanup }) {
+  const meta = cleanupMeta(cleanup)
+  const first = cleanup.commands[0] ? commandLead(cleanup.commands[0].command) : ''
+  return (
+    <div
+      className={`rtlog__cleanup rtlog__cleanup--${cleanup.state.key}`}
+      data-testid="runtime-cleanup"
+      data-state={cleanup.state.key}
+    >
+      <div className="rtlog__head">
+        <StatusIcon status={cleanup.state.status} word={cleanup.state.word} />
+        <span className="rtlog__title"><span className="rtlog__name">Cleanup</span></span>
+        {meta && <span className="rtlog__meta mono">{meta}</span>}
+      </div>
+      {cleanup.commands.length > 0 && (
+        <div className="rtlog__cmd">
+          <details className="rtlog__cmd-more">
+            <summary>
+              <code className="rtlog__cmd-line mono">{first}</code>
+              <Toggle />
+            </summary>
+            <ol className="rtlog__cleanup-cmds">
+              {cleanup.commands.map((c, i) => (
+                <li key={i} className="rtlog__cleanup-cmd">
+                  <div className="rtlog__cleanup-line">
+                    <pre className="rtlog__cmd-full mono">{c.command}</pre>
+                    {commandMeta(c) && <span className="rtlog__meta mono">{commandMeta(c)}</span>}
+                  </div>
+                  {c.lines.length > 0 && <pre className="rtlog__out mono">{c.lines.join('\n')}</pre>}
+                </li>
+              ))}
+            </ol>
+          </details>
+          {cleanup.commandsFrom === 'scenario' && (
+            <span className="rtlog__cmd-from" title="The scenario's cleanup commands; the agent has not reported running them">
+              as authored
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function RuntimeLog({ log, loaded = true, failed = false, stream = null, partial = false }) {
   const badge = streamBadge(stream, partial)
   const blocks = log?.blocks || []
   const preface = log?.preface || []
+  const cleanup = log?.cleanup || null
   let body
   if (!loaded) {
     body = <p className="rtlog__quiet" data-testid="runtime-log-empty">{failed ? 'Run record not loaded' : 'Loading…'}</p>
-  } else if (blocks.length === 0 && preface.length === 0) {
+  } else if (blocks.length === 0 && preface.length === 0 && !cleanup) {
     body = <p className="rtlog__quiet" data-testid="runtime-log-empty">No steps recorded</p>
   } else {
     body = (
-      <ol className="rtlog__steps">
-        {preface.map((lines, i) => <Note key={`pre-${i}`} lines={lines} />)}
-        {blocks.map((b) => (
-          <React.Fragment key={b.id}>
-            <Step block={b} />
-            {b.notes.map((lines, i) => <Note key={`${b.id}-note-${i}`} lines={lines} />)}
-          </React.Fragment>
-        ))}
-      </ol>
+      <>
+        <ol className="rtlog__steps">
+          {preface.map((lines, i) => <Note key={`pre-${i}`} lines={lines} />)}
+          {blocks.map((b) => (
+            <React.Fragment key={b.id}>
+              <Step block={b} />
+              {b.notes.map((lines, i) => <Note key={`${b.id}-note-${i}`} lines={lines} />)}
+            </React.Fragment>
+          ))}
+        </ol>
+        {cleanup && <Cleanup cleanup={cleanup} />}
+      </>
     )
   }
   return (

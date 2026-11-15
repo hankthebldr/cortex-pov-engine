@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
-import { scenarioIdOf } from '../../api/ids.js'
+import { agentIdOf, idMatches, scenarioIdOf } from '../../api/ids.js'
 import { getScenario } from '../../api/client.js'
 import { isRunSettled } from './runStatus.js'
 import { launchWarningsFor } from './launchWarnings.js'
 import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
 import { runState } from './runState.js'
 import { buildRuntimeLog } from './runtimeLog.js'
+import { liveOutput } from './liveOutput.js'
+import { runNotices, isNoticeLine } from './runNotices.js'
 import useRunRecord from './useRunRecord.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
 import RunChain from './RunChain.jsx'
 import RuntimeLog from './RuntimeLog.jsx'
+import RunNotices from './RunNotices.jsx'
 import useReadBack from './useReadBack.jsx'
 import { absoluteTime, runAgent } from './runRows.js'
 import { trapTabKey } from './focusTrap.js'
@@ -32,6 +35,12 @@ import '../../styles/destinations/run-detail.css'
  * routing and passes the resolved run row down. The page reads the run's own
  * record (`useRunRecord`): the list rows carry no output, and a live run is
  * re-read as its event stream moves, so the chain and the log follow it.
+ * Output a step streams while it runs is read from the record's tail and the
+ * stream's chunks (liveOutput.js), and gives way to the step's stored frame.
+ *
+ * What SimCore said about the launch (an offline agent, a missing
+ * interpreter, a beacon that does not run cleanup) is one line above the
+ * chain (RunNotices), not raw lines in the log.
  *
  * Props:
  *   runId      — the selected run's id (string)
@@ -137,7 +146,7 @@ export default function RunDetailView({
   onAbort = () => {},
   onNavigate = () => {},
 }) {
-  const { scenarios } = useEnvironment()
+  const { scenarios, agents } = useEnvironment()
   const { reading, outcomes, readBack } = useReadBack()
   const scenarioId = run?.scenario_id || null
 
@@ -151,7 +160,7 @@ export default function RunDetailView({
 
   // The run RECORD: its output and the host's step record, neither of which the
   // polled list row carries (OPS-06). Followed live until the run settles.
-  const { record, failed: recordFailed, stream } = useRunRecord(runId, {
+  const { record, failed: recordFailed, stream, events } = useRunRecord(runId, {
     settled: isRunSettled(run?.status),
     refreshKey: `${run?.status || ''}|${run?.output_bytes ?? ''}`,
   })
@@ -170,19 +179,30 @@ export default function RunDetailView({
     return () => { cancelled = true }
   }, [scenarioId])
 
-  const { output, partial } = useMemo(() => {
+  const { stored, partial } = useMemo(() => {
     const rowOutput = typeof run?.output === 'string' ? run.output : null
     if (typeof record?.output === 'string') {
       // The transcript only ever grows. On an older SimCore the polled row
       // still carries full output and can be newer than the record that was
       // read — take whichever has more, never the stale one.
-      if (rowOutput !== null && rowOutput.length > record.output.length) return { output: rowOutput, partial: false }
-      return { output: record.output, partial: false }
+      if (rowOutput !== null && rowOutput.length > record.output.length) return { stored: rowOutput, partial: false }
+      return { stored: record.output, partial: false }
     }
-    if (rowOutput !== null) return { output: rowOutput, partial: false }
-    if (typeof run?.output_tail === 'string' && run.output_tail) return { output: run.output_tail, partial: true }
-    return { output: null, partial: false }
+    if (rowOutput !== null) return { stored: rowOutput, partial: false }
+    if (typeof run?.output_tail === 'string' && run.output_tail) return { stored: run.output_tail, partial: true }
+    return { stored: null, partial: false }
   }, [record, run])
+
+  // What running steps have streamed so far, and the stored frames the stream
+  // delivered since the record was last read.
+  const streamed = useMemo(
+    () => liveOutput({ tail: record?.live_tail, events, output: stored || '' }),
+    [record, events, stored],
+  )
+  // A frame the stream delivered is in the transcript at once; the next read
+  // of the record carries it too. Not onto a 2 KB tail: that is not the
+  // transcript, so there is nothing to tell what it already holds.
+  const output = stored !== null && !partial && streamed.stored ? stored + streamed.stored : stored
 
   // One run to read everything from: the record under the row (the row is the
   // newer word on the review), with whichever status is further along and the
@@ -204,14 +224,35 @@ export default function RunDetailView({
 
   // A warning this browser heard on the launch response and the record does
   // not carry leads the log, so nothing SimCore said about the launch is lost.
+  // The ones the page states as its notice are left to the notice.
   const log = useMemo(() => {
-    const built = buildRuntimeLog({ steps: scenario?.steps || [], run: liveRun })
+    const built = buildRuntimeLog({
+      steps: scenario?.steps || [],
+      run: liveRun,
+      starts: [...(Array.isArray(record?.step_starts) ? record.step_starts : []), ...streamed.starts],
+      live: streamed.text,
+      cleanupCommands: scenario?.cleanup?.commands,
+    })
     const said = built.preface.flat().join('\n')
     const heard = launchWarningsFor(runId)
-      .filter((w) => w && w.code && !said.includes(w.code))
+      .filter((w) => w && w.code && !isNoticeLine(`${w.code}: `) && !said.includes(w.code))
       .map((w) => `${w.code}${w.text ? `: ${w.text}` : ''}`)
     return heard.length ? { ...built, preface: [heard, ...built.preface] } : built
-  }, [scenario, liveRun, runId])
+  }, [scenario, liveRun, record, streamed, runId])
+
+  // What SimCore said about the launch, and whether this beacon can stream.
+  const notices = useMemo(() => {
+    const pull = String(liveRun?.mode || '').toLowerCase() !== 'push'
+    const agent = pull && liveRun?.target
+      ? (agents || []).find((a) => idMatches(agentIdOf(a), liveRun.target)) || null
+      : null
+    return runNotices({
+      output: typeof liveRun?.output === 'string' ? liveRun.output : '',
+      heard: launchWarningsFor(runId),
+      live: lifecycle?.phase === PHASE.RUNNING,
+      agent,
+    })
+  }, [liveRun, lifecycle, agents, runId])
 
   const isThisActive = !!(activeRun && activeRun.runId === runId)
   const canAbort = lifecycle?.phase === PHASE.RUNNING
@@ -305,6 +346,8 @@ export default function RunDetailView({
           )}
         </div>
       )}
+
+      <RunNotices notices={notices} />
 
       {/* The chain leads the page (design v26 §9.3): ChainStage, live, each
           card saying how its step went on the host. */}

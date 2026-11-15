@@ -13,7 +13,8 @@
  * the run itself — from its transcript when SimCore wrote the marker there, and
  * from this browser session's memory of the launch response when it did not
  * (TARGET_AGENT_OFFLINE is not written to Run.output at c852eac). On the run's
- * page it leads the runtime log; on Results it is one of the run's caveats.
+ * page it is the one-line notice above the chain; on Results it is one of the
+ * run's caveats.
  */
 import React from 'react'
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -103,6 +104,29 @@ describe('useLaunchScenario — the launch result keeps the warnings', () => {
     expect(result.current.lastRun.warnings).toEqual([])
     expect(launchWarningsFor('run-ok-1')).toEqual([])
   })
+
+  it('a warning object reads as its sentence: its level is not printed', async () => {
+    installRoutes({
+      'GET /api/agents': { agents: [{ agent_id: 'ag-1', hostname: 'h', status: 'online' }] },
+      'GET /api/runs': { runs: [] },
+      'POST /api/run': {
+        run_id: 'run-old-1', mode: 'pull', message: 'Task queued',
+        warnings: [{
+          code: 'CLEANUP_NOT_RUN', level: 'info', agent_id: 'ag-1',
+          detail: 'this beacon does not run scenario cleanup; update it, or clean the host by hand after the run',
+        }],
+      },
+    })
+    const { result } = renderHook(() => useLaunchScenario(SCENARIO))
+    await waitFor(() => expect(result.current.agents).toHaveLength(1))
+    await act(async () => { await result.current.launch() })
+    const [w] = result.current.lastRun.warnings
+    expect(w.code).toBe('CLEANUP_NOT_RUN')
+    expect(w.text).toBe('agent ag-1 — this beacon does not run scenario cleanup; update it, or clean the host by hand after the run')
+    expect(w.text).not.toMatch(/level/)
+    // The level still routes the warning (an info one does not hold the launch).
+    expect(w.level).toBe('info')
+  })
 })
 
 describe('LaunchSuccessNotice', () => {
@@ -143,35 +167,36 @@ describe('the run carries its launch warnings', () => {
     expect(runDegradations('nothing here').launch).toEqual([])
   })
 
-  it('a marker SimCore wrote into Run.output leads the run’s runtime log', async () => {
+  it('a marker SimCore wrote into Run.output is the run page’s one-line notice, not a log line', async () => {
     const run = { ...RUN, output: `${OS_UNKNOWN}\n=== STEP 1/1 · step-01 · T1003 · identity=root ===\nok\n--- exit_code=0 duration=1s ---` }
     installRoutes({ 'GET /api/runs/run-off-1': run })
     render(<RunDetailView runId="run-off-1" run={run} />)
-    const note = await screen.findByTestId('runtime-note')
-    expect(note.textContent).toContain('TARGET_AGENT_OS_UNKNOWN')
-    expect(note.textContent).toMatch(/wrong dialect/)
-    // It comes before the first step, where the launch wrote it.
+    const notice = await screen.findByTestId('run-notice')
+    expect(notice).toHaveTextContent('Agent OS unknown, POSIX assumed')
+    // SimCore's own sentence is one hover away.
+    expect(screen.getByText('Agent OS unknown, POSIX assumed')).toHaveAttribute('title', expect.stringMatching(/wrong dialect/))
     const items = [...screen.getByRole('region', { name: 'Runtime log' }).querySelectorAll('.rtlog__steps > li')]
-    expect(items.map((li) => li.getAttribute('data-testid'))).toEqual(['runtime-note', 'runtime-step'])
+    expect(items.map((li) => li.getAttribute('data-testid'))).toEqual(['runtime-step'])
   })
 
-  it('a warning only the launch response carried leads the log too', async () => {
+  it('a warning only the launch response carried is in the notice too', async () => {
     rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OFFLINE] }))
     installRoutes({ 'GET /api/runs/run-off-1': RUN })
     render(<RunDetailView runId="run-off-1" run={RUN} />)
-    const note = await screen.findByTestId('runtime-note')
-    expect(note.textContent).toContain('TARGET_AGENT_OFFLINE')
-    expect(note.textContent).toMatch(/runs only when its beacon polls again/)
+    const notice = await screen.findByTestId('run-notice')
+    expect(notice).toHaveTextContent('Agent was offline at launch')
+    expect(screen.getByText('Agent was offline at launch'))
+      .toHaveAttribute('title', expect.stringMatching(/runs only when its beacon polls again/))
   })
 
-  it('the same code from the record and the session is in the log once', async () => {
+  it('the same code from the record and the session is said once', async () => {
     rememberLaunchWarnings('run-off-1', normalizeLaunchWarnings({ warnings: [OS_UNKNOWN] }))
     const run = { ...RUN, output: OS_UNKNOWN }
     installRoutes({ 'GET /api/runs/run-off-1': run })
     render(<RunDetailView runId="run-off-1" run={run} />)
-    const log = await screen.findByRole('region', { name: 'Runtime log' })
-    await waitFor(() => expect(log.textContent).toContain('TARGET_AGENT_OS_UNKNOWN'))
-    expect(log.textContent.match(/TARGET_AGENT_OS_UNKNOWN/g)).toHaveLength(1)
+    const notice = await screen.findByTestId('run-notice')
+    expect(notice.textContent.match(/Agent OS unknown/g)).toHaveLength(1)
+    expect(notice.querySelector('details')).toBeNull()
   })
 
   it('on Results it is a caveat: a banner naming the code and what it means', () => {
@@ -208,5 +233,6 @@ describe('the run carries its launch warnings', () => {
     render(<RunDetailView runId="run-off-1" run={RUN} />)
     await waitFor(() => expect(screen.getByText(/All runs/)).toBeInTheDocument())
     expect(screen.queryByTestId('runtime-note')).toBeNull()
+    expect(screen.queryByTestId('run-notice')).toBeNull()
   })
 })
