@@ -121,7 +121,7 @@ ls -la "$A"
 Verify by re-running probe 1 (`1ac4cc89`'s draft). Expected: the leftovers section lists nothing, no uid 1001,
 `/etc/cron.d` holds only `e2scrub_all` and `sysstat`, and the cron query in §2.3 stops growing.
 
-The beacon does not run a scenario's `cleanup.commands` (SIM-CDR-003 declares exactly this cleanup at
+A beacon from before #324 does not run a scenario's `cleanup.commands` (SIM-CDR-003 declares exactly this cleanup at
 `scenarios/cdr/cdr-003-container-escape.yml:244`). Every scenario in the testing pass that persists something will
 leave it behind again. Re-run probe 1 between scenarios that share artefact names.
 
@@ -543,7 +543,7 @@ proves the agent door and the identity harness. **Reported separately, not as th
 matched expectations. deathstar had 0 custom BIOCs when last read, so the scenario's BIOC rows cannot match there,
 and the built-in analytics map `/etc/shadow` reads to T1003, not to the scenario's techniques (observed on this VM 2026-11-11). **Quota:** reconcile 1 alerts
 pull, tenant-evidence 3 reads (issues, cases, endpoint), step 6 1 XQL. Optional Tier-2 `POST /api/runs/$RUN/verify`
-adds about 1 XQL per XQL expectation (~10). **Clean-up:** the beacon does not run `cleanup.commands`. Run
+adds about 1 XQL per XQL expectation (~10). **Clean-up:** a beacon from before #324 does not run `cleanup.commands`. Run
 `rm -f /tmp/mimipenguin.sh /tmp/mimi_output.txt` through a root step (or §3.1's archive form), then re-run probe 1.
 
 #### 8.2 XDR Collector: nonce probe

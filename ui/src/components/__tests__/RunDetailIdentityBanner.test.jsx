@@ -1,25 +1,28 @@
 /**
- * UI-09 — a run whose steps did not run as authored says so at the top of the
- * run, before any proof surface invites a coverage reading.
+ * UI-09 — a run whose steps did not run as authored says so before any
+ * detection view invites a coverage reading.
  *
  * The beacon writes three markers into `Run.output` that change what a missed
  * detection MEANS:
  *   !! IDENTITY NOT HONOURED: …                       (agent/beacon/client.go)
  *   !! PLATFORM VARIANT: step=<id> ran its <os> variant …   (orchestrator)
  *   !! STEP NOT RUN: PLATFORM_UNSATISFIABLE step=<id> …     (beacon)
- * Before this guard none of them reached the Run Detail header: on a Windows
- * beacon (where EVERY non-direct identity collapses to `direct`) the run read
- * like any other, and a lineage-keyed miss read as the customer's gap.
+ * On a Windows beacon (where EVERY non-direct identity collapses to `direct`)
+ * the run would otherwise read like any other, and a lineage-keyed miss would
+ * read as the customer's gap. The detection views are Results' tabs, so the
+ * banners are Results' caveats (RunCaveats); the run's own page states the
+ * same facts step by step in its runtime log.
  *
- * OPS-06 — the console's 10 s run poll now asks for `fields=summary`, which
- * drops `output`. So the detail view must fetch GET /api/runs/{id} itself and
- * must not mistake a summary row's missing output for "no output captured".
+ * OPS-06 — the console's 10 s run poll asks for `fields=summary`, which drops
+ * `output`. So the run's page must fetch GET /api/runs/{id} itself and must
+ * not mistake a summary row's missing output for "nothing ran".
  */
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import RunDetailView from '../console/RunDetailView.jsx'
+import RunCaveats from '../console/RunCaveats.jsx'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 
 void React
@@ -43,13 +46,12 @@ const RUN = {
   target: 'win-01', output: OUTPUT,
 }
 
-const banner = () => screen.findByTestId('run-identity-banner')
+const caveats = (output) => render(<RunCaveats runId="run-win-1" run={RUN} output={output} />)
 
-describe('<RunDetailView /> identity banner', () => {
-  it('counts the steps that ran as the beacon account and lists them', async () => {
-    installRoutes({ 'GET /api/runs/run-win-1': RUN })
-    render(<RunDetailView runId="run-win-1" run={RUN} subTab="live" />)
-    const b = await banner()
+describe('<RunCaveats /> identity banner', () => {
+  it('counts the steps that ran as the beacon account and lists them', () => {
+    caveats(OUTPUT)
+    const b = screen.getByTestId('run-identity-banner')
     expect(b).toHaveAttribute('role', 'status')
     expect(b).toHaveTextContent(
       '2 of 3 steps ran as the beacon account, not the authored identity — lineage-keyed '
@@ -60,39 +62,42 @@ describe('<RunDetailView /> identity banner', () => {
     expect(b).not.toHaveTextContent('step-02')
   })
 
-  it('renders no identity banner when every step ran as authored', async () => {
-    const clean = { ...RUN, output: OUTPUT.replace(/^!! IDENTITY NOT HONOURED:.*$/gm, '') }
-    installRoutes({ 'GET /api/runs/run-win-1': clean })
-    render(<RunDetailView runId="run-win-1" run={clean} subTab="live" />)
-    await waitFor(() => expect(screen.getByText(/All runs/)).toBeInTheDocument())
-    expect(screen.queryByTestId('run-identity-banner')).not.toBeInTheDocument()
+  it('is one collapsed line until opened: Read with care, and how many caveats', () => {
+    caveats(OUTPUT)
+    const box = screen.getByTestId('run-caveats')
+    expect(box.tagName).toBe('DETAILS')
+    expect(box.open).toBe(false)
+    const summary = box.querySelector('summary')
+    expect(within(summary).getByRole('img', { name: 'Read with care' })).toBeInTheDocument()
+    expect(summary).toHaveTextContent('1 caveat')
+    expect(screen.getByTestId('run-identity-banner')).not.toBeVisible()
+  })
+
+  it('renders nothing when every step ran as authored', () => {
+    const { container } = caveats(OUTPUT.replace(/^!! IDENTITY NOT HONOURED:.*$/gm, ''))
+    expect(container).toBeEmptyDOMElement()
   })
 })
 
-describe('<RunDetailView /> platform banners', () => {
-  it('flags steps that ran a platform variant: expected detections unverified for this OS', async () => {
-    const out = [
+describe('<RunCaveats /> platform banners', () => {
+  it('flags steps that ran a platform variant: expected detections unverified for this OS', () => {
+    caveats([
       '!! PLATFORM VARIANT: step=step-02 ran its windows variant; its expected_detections were '
         + 'authored against the primary command and are unverified for this OS',
       OUTPUT,
-    ].join('\n')
-    const run = { ...RUN, output: out }
-    installRoutes({ 'GET /api/runs/run-win-1': run })
-    render(<RunDetailView runId="run-win-1" run={run} subTab="live" />)
-    const b = await screen.findByTestId('run-platform-variant-banner')
+    ].join('\n'))
+    const b = screen.getByTestId('run-platform-variant-banner')
     expect(b).toHaveTextContent(/expected detections unverified for this OS/)
     expect(b).toHaveTextContent('step-02')
+    expect(screen.getByTestId('run-caveats').querySelector('summary')).toHaveTextContent('2 caveats')
   })
 
-  it('flags steps the host refused to run: PLATFORM_UNSATISFIABLE', async () => {
-    const out = [
+  it('flags steps the host refused to run: PLATFORM_UNSATISFIABLE', () => {
+    caveats([
       OUTPUT,
       '!! STEP NOT RUN: PLATFORM_UNSATISFIABLE step=step-04 declared=linux host=windows',
-    ].join('\n')
-    const run = { ...RUN, output: out }
-    installRoutes({ 'GET /api/runs/run-win-1': run })
-    render(<RunDetailView runId="run-win-1" run={run} subTab="live" />)
-    const b = await screen.findByTestId('run-platform-notrun-banner')
+    ].join('\n'))
+    const b = screen.getByTestId('run-platform-notrun-banner')
     expect(b).toHaveTextContent('PLATFORM_UNSATISFIABLE')
     expect(b).toHaveTextContent('step-04')
     expect(b).toHaveTextContent(/never ran/i)
@@ -104,14 +109,18 @@ describe('<RunDetailView /> with a summary-shaped list row (OPS-06)', () => {
     run_id: 'run-win-1', scenario_id: 'SIM-EDR-013', status: 'complete', mode: 'pull',
     target: 'win-01', output_bytes: OUTPUT.length, output_tail: OUTPUT.slice(-60),
   }
+  const blocks = () => screen.queryAllByTestId('runtime-step')
 
-  it('fetches the run record for the full output the banners need', async () => {
+  it('fetches the run record for the full output the runtime log needs', async () => {
     const getRun = vi.fn(() => RUN)
     installRoutes({ 'GET /api/runs/run-win-1': getRun })
-    render(<RunDetailView runId="run-win-1" run={SUMMARY_ROW} subTab="live" />)
-    const b = await banner()
-    expect(b).toHaveTextContent('2 of 3 steps')
+    render(<RunDetailView runId="run-win-1" run={SUMMARY_ROW} />)
+    await waitFor(() => expect(blocks()).toHaveLength(3))
     expect(getRun).toHaveBeenCalled()
+    expect(blocks()[0]).toHaveTextContent('dumped')
+    // The step ran as the agent's own account, and the log says which one it asked for.
+    expect(blocks()[0]).toHaveTextContent('as the agent account · not Administrator')
+    expect(blocks()[1]).toHaveTextContent('as Administrator')
   })
 
   it('an older SimCore\'s polled row, when it has grown past the fetched record, wins', async () => {
@@ -119,25 +128,24 @@ describe('<RunDetailView /> with a summary-shaped list row (OPS-06)', () => {
     // the run had reached step 2; the 10 s poll has since delivered step 3.
     const atStep2 = OUTPUT.slice(0, OUTPUT.indexOf('=== STEP 3/3'))
     installRoutes({ 'GET /api/runs/run-win-1': { ...RUN, output: atStep2 } })
-    const { rerender } = render(
-      <RunDetailView runId="run-win-1" run={{ ...RUN, output: atStep2 }} subTab="live" />,
-    )
-    expect(await banner()).toHaveTextContent('1 of 3 steps')
-    rerender(<RunDetailView runId="run-win-1" run={RUN} subTab="live" />)
-    await waitFor(() => expect(screen.getByTestId('run-identity-banner')).toHaveTextContent('2 of 3 steps'))
+    const { rerender } = render(<RunDetailView runId="run-win-1" run={{ ...RUN, output: atStep2 }} />)
+    await waitFor(() => expect(blocks()).toHaveLength(2))
+    rerender(<RunDetailView runId="run-win-1" run={RUN} />)
+    await waitFor(() => expect(blocks()).toHaveLength(3))
+    expect(blocks()[2]).toHaveTextContent('persisted')
   })
 
-  it('a failed run shows the fetched tail, not "no output captured"', async () => {
+  it('a failed run shows the fetched output, not an empty log', async () => {
     const failedRow = { ...SUMMARY_ROW, status: 'failed', output_tail: '' }
     const failed = {
       ...RUN, status: 'failed',
       output: 'step-01 start\nrunuser: may not be used by non-root users\n--- exit_code=1',
     }
     installRoutes({ 'GET /api/runs/run-win-1': failed })
-    render(<RunDetailView runId="run-win-1" run={failedRow} subTab="live" />)
-    const fb = await screen.findByTestId('run-failure-banner')
-    await waitFor(() => expect(fb).toHaveTextContent(/may not be used by non-root users/))
-    expect(fb).not.toHaveTextContent(/no output captured/i)
+    render(<RunDetailView runId="run-win-1" run={failedRow} />)
+    const note = await screen.findByTestId('runtime-note')
+    expect(note).toHaveTextContent(/may not be used by non-root users/)
+    expect(screen.queryByTestId('runtime-log-empty')).toBeNull()
   })
 })
 

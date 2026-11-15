@@ -28,6 +28,8 @@ export const VERBS = Object.freeze([
   'Switch',
   // A run's Live tab: hold or empty the stream, capture the timeline.
   'Pause', 'Clear', 'Screenshot',
+  // Results › Detections: mark every detection that can be attested as seen.
+  'Validate all',
 ])
 
 /** The kit Icon each verb carries. */
@@ -51,6 +53,7 @@ export const VERB_ICONS = Object.freeze({
   Pause: 'pause',
   Clear: 'clear',
   Screenshot: 'camera',
+  'Validate all': 'check-all',
 })
 
 export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {

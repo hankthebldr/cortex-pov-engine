@@ -36,7 +36,8 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ───────────────────────────────────────────────────────────────────
-   RunDetailView.jsx — header, status pills, sub-tabs, failure banner
+   RunDetailView.jsx — the run's head. RunCaveats.jsx — the caveat banners
+   (severed chain, attestations), drawn on Results inside a .run-detail box.
    ─────────────────────────────────────────────────────────────────── */
 
 .theme-console .run-detail {
@@ -121,105 +122,6 @@
   font-weight: 600;
 }
 
-/* status + live pills — previously entirely unstyled */
-.theme-console .run-detail .run-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: 3px;
-  border: 1px solid currentColor;
-  background: transparent;
-}
-.theme-console .run-detail .run-status--completed { color: var(--ac-ink); }
-.theme-console .run-detail .run-status--running    { color: var(--info); }
-.theme-console .run-detail .run-status--pending     { color: var(--warn); }
-.theme-console .run-detail .run-status--failed,
-.theme-console .run-detail .run-status--aborted    { color: var(--crit); }
-.theme-console .run-detail .run-status--unknown    { color: var(--tx3); }
-
-.theme-console .run-detail .run-live-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--ac-tx);
-  background: var(--ac-ink);
-  border-radius: 3px;
-  padding: 2px 6px 2px 5px;
-}
-.theme-console .run-detail .run-live-pill::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ac-tx);
-  animation: run-detail-live-pulse 1.4s ease-in-out infinite;
-}
-@keyframes run-detail-live-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
-
-/* run-failure banner */
-.theme-console .run-detail .run-failure {
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--crit);
-  border-left-width: 4px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--crit) 12%, transparent);
-}
-.theme-console .run-detail .run-failure__head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.theme-console .run-detail .run-failure__tag {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--crit);
-  border: 1px solid var(--crit);
-  border-radius: 3px;
-  padding: 2px 6px;
-}
-.theme-console .run-detail .run-failure__lede {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--tx2);
-}
-.theme-console .run-detail .run-failure__output {
-  margin: 10px 0 0;
-  padding: 9px 11px;
-  max-height: 180px;
-  overflow: auto;
-  background: var(--ink);
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--ink-tx2);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.theme-console .run-detail .run-failure__nooutput {
-  margin: 10px 0 0;
-  font-size: 11px;
-  color: var(--tx3);
-}
-
 /* severed-chain banner + attestations panel (prevention efficacy) */
 .theme-console .run-detail .run-severed {
   margin: 0 0 14px;
@@ -255,51 +157,6 @@
   font-size: 12px;
   line-height: 1.7;
   color: var(--tx);
-}
-
-/* sub-tabs (Live / Evidence / Storyline / Causality) */
-.theme-console .run-detail .run-detail__subtabs {
-  display: flex;
-  gap: 2px;
-  height: auto;
-  border: none;
-  border-bottom: 1px solid var(--bd);
-  border-radius: 0;
-  background: transparent;
-  margin: 0 0 18px;
-  overflow-x: auto;
-}
-.theme-console .run-detail .run-detail__subtabs button {
-  flex: none;
-  min-width: 0;
-  padding: 10px 16px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  font-family: 'Montserrat', var(--font-display), sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--tx3);
-  text-transform: none;
-  letter-spacing: normal;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 120ms ease-out, border-color 120ms ease-out;
-}
-.theme-console .run-detail .run-detail__subtabs button:hover:not(.is-active) {
-  color: var(--tx);
-  background: transparent;
-}
-.theme-console .run-detail .run-detail__subtabs button.is-active {
-  color: var(--tx);
-  font-weight: 700;
-  border-bottom-color: var(--ac);
-  background: transparent;
-}
-.theme-console .run-detail .run-detail__subtabs button:focus-visible {
-  outline: 2px solid var(--ac);
-  outline-offset: -2px;
 }
 
 .theme-console .run-detail .run-detail__panel {
@@ -356,28 +213,6 @@
   min-width: 0;
 }
 
-.theme-console .evidence .evidence__mode-toggle {
-  height: 32px;
-  border: 1px solid var(--bd2);
-  border-radius: 6px;
-  background: var(--s2);
-  overflow: hidden;
-}
-.theme-console .evidence .evidence__mode-toggle button {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  color: var(--tx2);
-}
-.theme-console .evidence .evidence__mode-toggle button:hover:not(:disabled) {
-  color: var(--tx);
-  background: var(--s3);
-}
-.theme-console .evidence .evidence__mode-toggle button.is-active {
-  background: var(--ac-soft);
-  color: var(--ac-ink);
-}
 
 .theme-console .evidence .evidence-empty__title {
   font-family: 'Montserrat', var(--font-display), sans-serif;
@@ -626,11 +461,6 @@
 
 /* ── Export menu ──────────────────────────────────────────────────── */
 
-.theme-console .evidence .export-menu__primary {
-  background: var(--ac-ink);
-  color: var(--ac-tx);
-  border-color: var(--ac);
-}
 .theme-console .evidence .export-menu__dropdown {
   background: var(--s1);
   border: 1px solid var(--bd2);
@@ -1208,21 +1038,3 @@
 @media (max-width: 720px) {
   .theme-console .tenant-evidence__block { grid-template-columns: minmax(0, 1fr); }
 }
-
-/* ── Run verdict + reason (design C3) ─────────────────────────────────────
-   Under the lifecycle strip ("Test case") and under the chain (the Cortex
-   Engine terminal). Only drawn when a pending verdict carries a reason. */
-.theme-console .run-detail .run-verdict {
-  display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
-  margin-top: 12px; padding: 11px 14px;
-  background: var(--s1); border: 1px solid var(--bd); border-radius: 10px;
-}
-.theme-console .run-detail .run-verdict--engine { align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; border-radius: 8px; }
-.theme-console .run-detail .run-verdict__k { font: 600 11px/1 var(--font-ui); color: var(--tx3); padding-top: 4px; white-space: nowrap; }
-.theme-console .run-detail .run-verdict--engine .run-verdict__k { padding-top: 0; font-weight: 400; }
-.theme-console .run-detail .run-verdict__engine-key { font-size: 8.5px; font-weight: 700; letter-spacing: 0.11em; color: var(--tx2); }
-.theme-console .run-detail .run-verdict__spacer { flex: 1; }
-.theme-console .run-detail .run-verdict__body { min-width: 0; flex: 1; }
-.theme-console .run-detail .run-verdict__chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.theme-console .run-detail .run-verdict__tc { font-size: 10.5px; color: var(--tx3); }
-.theme-console .run-detail .run-verdict__sentence { margin-top: 6px; }

@@ -139,8 +139,8 @@ describe('<EventStream /> — a finished run', () => {
   })
 })
 
-describe('Run detail › Live — the panel gets the record the page already fetched', () => {
-  it('a finished run shows its stored steps on the Live tab', async () => {
+describe('Run detail — the runtime log is built from the record the page fetched', () => {
+  it('a finished run shows its stored steps', async () => {
     const run = {
       run_id: 'run-cdr', scenario_id: 'SIM-CDR-006', mode: 'pull', target: 'agent-1',
       started_at: '2026-11-14T17:00:00', completed_at: '2026-11-14T17:00:05', status: 'complete',
@@ -149,17 +149,16 @@ describe('Run detail › Live — the panel gets the record the page already fet
     installRoutes({ 'GET /api/runs/:id': { ...run, output: CDR_006_OUTPUT } })
     render(
       <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
-        <RunDetailView runId="run-cdr" run={run} subTab="live" />
+        <RunDetailView runId="run-cdr" run={run} />
       </EnvironmentContext.Provider>,
     )
-    await waitFor(() => expect(steps()).toHaveLength(3))
+    await waitFor(() => expect(screen.getAllByTestId('runtime-step')).toHaveLength(3))
+    const blocks = screen.getAllByTestId('runtime-step')
+    expect(blocks.map((b) => b.getAttribute('data-state'))).toEqual(['ran', 'ran', 'ran'])
+    expect(blocks[0]).toHaveTextContent('systemd unit written')
+    // Step 2 ran and printed nothing: it says so rather than waiting on a stream.
+    expect(blocks[1]).toHaveTextContent('No output')
     expect(screen.queryByText(/waiting for agent/i)).toBeNull()
-    // The Live footer's actions are kit verbs with their icons, not legacy .btn.
-    for (const verb of ['Screenshot', 'Download']) {
-      const b = screen.getByRole('button', { name: verb })
-      expect(b).toHaveClass('kit-btn')
-      expect(b).toHaveAttribute('data-verb', verb)
-    }
   })
 })
 

@@ -8,14 +8,14 @@ import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
-import RunList, { resultCell } from '../components/console/RunList.jsx'
+import RunList from '../components/console/RunList.jsx'
 import { absoluteTime, runAgent } from '../components/console/runRows.js'
-import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecycle.js'
+import { runLifecycle, readBackOf } from '../components/console/runLifecycle.js'
+import { runState, reviewState } from '../components/console/runState.js'
+import { runsTabRedirect } from './resultTabs.js'
 import useReadBack from '../components/console/useReadBack.jsx'
-import ResultOfBar from '../components/console/ResultOfBar.jsx'
-import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
-import { Button } from '../components/console/kit/index.js'
-import { runIdOf, idMatches } from '../api/ids.js'
+import { Button, Icon } from '../components/console/kit/index.js'
+import { runIdOf, idMatches, agentIdOf } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
 import { COMPONENTS } from '../components/console/componentModel.js'
 import { componentRoute } from './componentRoutes.js'
@@ -153,8 +153,7 @@ const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
-const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
-const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
+const ResultsView = makeLazySurface(() => import('../components/console/ResultsView.jsx'), 'Results')
 // The compose → simulate stepper. Lazy like the surfaces: the entry chunk has a
 // size budget (composerChunkBoundary.test.js), and Scenarios and the Composer
 // already pull this module into their own chunks. No fallback: the strip is
@@ -329,9 +328,9 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           onArmScenario={(sid) => { armedRef.current = sid }}
           onContinueToLaunch={(id) => onNavigate('preflight', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
-            onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
+            onNavigate('proof', { run: runIdOf(run) })}
           onRunComplete={(run) =>
-            onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
+            onNavigate('runs', { run: runIdOf(run) })}
           onError={(msg) => surface.report(msg, 'error')}
           onSurfaceMessage={(msg, tone = 'info') => surface.report(msg, tone)}
         />
@@ -414,7 +413,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
             onRunComplete={(run) => {
               surface.clear()
               refreshRuns()
-              onNavigate('runs', { run: runIdOf(run), tab: 'live' })
+              onNavigate('runs', { run: runIdOf(run) })
             }}
             // LaunchView already renders the refusal as an alert beside the
             // button that was clicked; the notice is its polite echo at the
@@ -461,9 +460,10 @@ function GetStartedSurface({ params = {}, onNavigate = () => {} }) {
 }
 
 // ─── Runs surface ────────────────────────────────────────────────────────────
-// Run history list → single Run Detail surface keyed by runId with
-// Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
-// top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
+// What was attempted: the run history list, and one run's page (lifecycle,
+// chain, runtime log, Abort, Review). What Cortex saw is Results, so a link
+// that still names one of a run's former detection tabs forwards there
+// (`runsTabRedirect`). Multi-run compare via ?compare=1.
 function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
   // One Review for the list and the run's page (design v26 §4.6).
@@ -474,8 +474,13 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   // anywhere, and it reads the same derived activeRun this does, so the two
   // cannot disagree.
   const runId = openParam(params, 'run')
-  const subTab = params.tab || 'live'
   const compare = params.compare === '1'
+  const moved = runsTabRedirect(params)
+  const movedRun = moved?.run
+  const movedTab = moved?.tab
+  useEffect(() => {
+    if (movedRun) onNavigate('proof', { run: movedRun, tab: movedTab })
+  }, [movedRun, movedTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = useMemo(() => {
     if (!runId) return null
@@ -493,11 +498,15 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
     />
   )
 
+  if (moved) return null
+
   if (compare) {
     return (
       <div className="runs-surface">
         {stepper}
-        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
+        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>
+          <Icon name="back" size={12} />All runs
+        </button>
         <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
           <MultiRunCompare onOpenResults={(id) => onNavigate('proof', { run: id })} />
@@ -531,14 +540,14 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
             is never "list every run", it is "what is happening / what just
             happened". The run list stays below, unchanged. */}
         <LastRunCard
-          onOpen={(id, tab) => setParams({ run: id, tab }, { replace: true })}
+          onOpen={(id) => setParams({ run: id }, { replace: true })}
         />
         <ScopeHealthStrip />
         <RunList
           runs={runs}
           params={params}
           setParams={setParams}
-          onOpen={(id) => setParams({ run: id, tab: 'live', scenario: null, status: null, page: null }, { replace: true })}
+          onOpen={(id) => setParams({ run: id, tab: null, scenario: null, status: null, page: null }, { replace: true })}
           onReadBack={readBack}
           onOpenResults={(id) => onNavigate('proof', { run: id })}
           reading={reading}
@@ -555,12 +564,9 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
         runId={runId}
         run={selected}
         activeRun={activeRun}
-        subTab={subTab}
-        onSubTab={(tab) => setParams({ tab })}
         onBack={() => setParams({ run: null, tab: null }, { replace: true })}
         onAbort={onAbortRun}
         onNavigate={onNavigate}
-        onError={() => {}}
       />
     </Suspense>
   )
@@ -572,10 +578,8 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
  * Reads the SAME derived `activeRun` / `runs` the header pill and the telemetry
  * strip read, so the three cannot disagree about what is in flight. Every field
  * is a real value off the run record; where SimCore did not report one (a run
- * with no `started_at`, a detection count the API omits) the card prints an
- * explicit dash rather than a zero — a fabricated "0 detections" on a run that
- * actually detected things is the kind of number that ends up in a customer
- * readout.
+ * with no `started_at`) the card prints an explicit dash. Like a Runs row it
+ * says how the run went and whether it is reviewed, never a detection count.
  */
 function LastRunCard({ onOpen = () => {} }) {
   const { runs, activeRun } = useEnvironment()
@@ -588,19 +592,17 @@ function LastRunCard({ onOpen = () => {} }) {
   if (!shown) {
     return (
       <div className="last-run last-run--empty" data-testid="last-run-card">
-        No run has completed on this SimCore yet. Build a chain, or open a scenario
-        from Scenarios and launch it.
+        No finished run yet
       </div>
     )
   }
 
   const id = runIdOf(shown)
   const isLive = !!running
+  const lifecycle = runLifecycle(shown)
   const stats = [
-    ['Status', shown.status || 'unknown'],
-    // The same result cell as the run list: no detection count until the run
-    // has been reviewed, `unproven` for a failed run with no hit.
-    ['Result', resultCell(shown, runLifecycle(shown)).text],
+    ['State', runState(shown, lifecycle).word],
+    ['Review', reviewState(lifecycle)?.word || '—'],
     ['Started', absoluteTime(shown.started_at) || '—'],
     // The agent is the run's `target` column — this card used to read two
     // field names that no response ever carried.
@@ -612,7 +614,7 @@ function LastRunCard({ onOpen = () => {} }) {
       type="button"
       className={'last-run' + (isLive ? ' last-run--live' : '')}
       data-testid="last-run-card"
-      onClick={() => onOpen(id, isLive ? 'live' : 'evidence')}
+      onClick={() => onOpen(id)}
     >
       <div className="last-run__head">
         <span className="last-run__pulse" aria-hidden="true" />
@@ -620,7 +622,7 @@ function LastRunCard({ onOpen = () => {} }) {
         <span className="mono last-run__id">{id}</span>
         <span className="last-run__spacer" />
         <span className="mono last-run__cta">
-          {isLive ? 'Follow the live run →' : 'Open the run →'}
+          Open the run<Icon name="forward" size={12} />
         </span>
       </div>
       <div className="last-run__title">
@@ -732,17 +734,16 @@ const ReadinessSurface = withSuspense(ReadinessView)
 // Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
 // Review & integrations, and the firewall steps are Firewall's Setup and
 // Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
-// Results (design v26 §4.6). Always about ONE run, named in the "Result of"
-// bar, with a switcher across the runs that have been reviewed. The run is
-// `?run=` when the URL names one, otherwise the newest reviewed run — never
-// the live run or the last run to end, because neither has results until the
-// tenant has been read for it. A run that has not been reviewed gets its bar,
-// the reason and Review instead of a scorecard, and with no run reviewed
-// at all the page says so and points at Runs. Results never appear without a
-// run.
+// Results: what Cortex saw, always for ONE run, named in the "Result of" bar,
+// with a switcher across the runs that have been reviewed. The run is `?run=`
+// when the URL names one, otherwise the newest reviewed run — never the live
+// run or the last run to end, because neither has results until the tenant has
+// been read for it. `?tab=` names the view (resultTabs.js). A run that has not
+// been reviewed gets its bar and Review, and every tab says "Not reviewed";
+// with no run reviewed at all the page says so and points at Runs. Results
+// never appear without a run.
 function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
-  const { runs, scenarios } = useEnvironment()
-  const { reading, outcomes, readBack } = useReadBack()
+  const { runs } = useEnvironment()
   const runParam = openParam(params, 'run')
   // `runs` is newest first, so this list is too.
   const readBackRuns = useMemo(() => runs.filter((r) => r && readBackOf(r)), [runs])
@@ -754,7 +755,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
   if (!selected) {
     return (
       <div className="evidence results-empty" data-testid="results-empty">
-        <div className="view-head"><div><h1>Report</h1></div></div>
+        <div className="view-head"><div><h1>Results</h1></div></div>
         {runs.length === 0 ? (
           <div className="results-empty__body">
             <p title="Results come from a finished run that has been reviewed against the tenant">No runs yet</p>
@@ -776,39 +777,15 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
     )
   }
 
-  const id = runIdOf(selected)
-  const lifecycle = runLifecycle(selected, { reading: reading.has(id) })
-  const scenarioName = scenarios.find((x) => (x.scenario_id || x.id) === selected.scenario_id)?.name || null
-  const bar = (
-    <ResultOfBar
-      run={selected}
-      lifecycle={lifecycle}
-      scenarioName={scenarioName}
-      readBackRuns={readBackRuns}
-      onSwitch={(next) => setParams({ run: next })}
-      onOpenRun={() => onNavigate('runs', { run: id, tab: 'live' })}
-    />
-  )
-
-  if (lifecycle.phase !== PHASE.READY) {
-    return (
-      <div className="evidence">
-        <div className="view-head"><div><h1>Report</h1></div></div>
-        {bar}
-        <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
-        <TenantEvidencePanel runId={id} showCaseLedger={false} />
-      </div>
-    )
-  }
-
   return (
-    <Suspense fallback={<DestinationLoading />}>
-      <EvidenceView
-        pinnedRun={{ runId: id, scenarioId: selected.scenario_id, status: selected.status }}
-        intro={bar}
-        onError={() => {}}
-      />
-    </Suspense>
+    <ResultsView
+      run={selected}
+      readBackRuns={readBackRuns}
+      tab={params.tab || null}
+      onTab={(tab) => setParams({ tab })}
+      onSwitch={(next) => setParams({ run: next })}
+      onNavigate={onNavigate}
+    />
   )
 }
 
@@ -911,7 +888,6 @@ export const DESTINATIONS = [
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  proof: [['proof', 'Report']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
 

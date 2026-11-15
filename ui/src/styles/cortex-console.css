@@ -1002,21 +1002,6 @@
   background: var(--c-signal);
   box-shadow: 0 0 8px var(--c-signal-glow);
 }
-.theme-console .btn-abort {
-  height: 24px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .btn-abort:hover { color: var(--c-missed); border-color: var(--c-missed); }
 
 /* ─── Workspace (rail + main) ─── */
 .theme-console .workspace {
@@ -4682,32 +4667,11 @@
   letter-spacing: var(--tracking-mono);
 }
 
-/* ─── Export menu (split button on Evidence header) ──────────────────── */
+/* ─── Export menu (the Download list on Results) ─────────────────────── */
 
 .theme-console .export-menu {
   position: relative;
   display: inline-block;
-}
-
-.theme-console .export-menu__split {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 0;
-}
-
-.theme-console .export-menu__primary {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  padding-right: 12px;
-}
-
-.theme-console .export-menu__chevron {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  padding-left: 10px;
-  padding-right: 10px;
-  border-left: 1px solid color-mix(in srgb, var(--c-bg-base) 30%, transparent);
-  font-size: 11px;
 }
 
 .theme-console .export-menu__dropdown {
@@ -7064,19 +7028,7 @@
 .theme-console .run-list__id { font-size: 10px; color: var(--c-text-muted); }
 .theme-console .run-list__started, .theme-console .run-list__agent,
 .theme-console .run-list__duration { font-size: 11px; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-console .run-list__det { font-size: 12px; font-weight: 600; }
-.theme-console .run-list__det--hit { color: var(--c-detected, #6ee7a8); }
-.theme-console .run-list__det--partial { color: var(--c-pending, #f5c451); }
-.theme-console .run-list__det--zero { color: var(--tx2); }
-.theme-console .run-list__det--live { color: var(--cortex-teal, #00C0E8); }
-.theme-console .run-list__det--unproven { color: var(--c-missed, #ff6b6b); font-weight: 500; font-style: italic; }
-.theme-console .run-list__det--none { color: var(--tx3); font-weight: 400; }
 .theme-console .run-list__status { display: flex; justify-content: flex-end; }
-.theme-console .run-list__status-chip { font-size: 10px; }
-.theme-console .run-list__status-chip--live { color: var(--cortex-teal, #00C0E8); }
-.theme-console .run-list__status-chip--done { color: var(--c-detected, #6ee7a8); }
-.theme-console .run-list__status-chip--pending { color: var(--c-pending, #f5c451); }
-.theme-console .run-list__status-chip--unproven { color: var(--c-missed, #ff6b6b); }
 .theme-console .run-list__group { display: flex; flex-direction: column; gap: 6px; }
 .theme-console .run-list__group-toggle {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -7087,7 +7039,6 @@
 .theme-console .run-list__group-toggle:hover { border-color: var(--ac-line); color: var(--tx); }
 .theme-console .run-list__group-what { color: var(--tx2); }
 .theme-console .run-list__group-breakdown { color: var(--tx3); font-size: 10px; }
-.theme-console .run-list__foot { margin-top: 10px; font-size: 10px; color: var(--tx3); }
 
 /* ─── "What ran last" card (leads the Runs & Proof surface) ───
    A left rule rather than a full accent fill: it must read as the most

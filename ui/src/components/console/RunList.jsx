@@ -1,7 +1,7 @@
 /**
  * RunList — the run-history table on the Runs destination.
  *
- * A row answers "what · when · where · how long · how much proved" without
+ * A row answers "what · when · where · how long · how it went" without
  * being opened. Every cell is a field `GET /api/runs` returns, shaped by the
  * pure helpers in `runRows.js`; nothing here reads the seed catalogs.
  *
@@ -11,11 +11,12 @@
  * group once they reach three — 83 attempts at SIM-EDR-001 become one line
  * with a status breakdown and a `+82 more` expander, not 83 lines of uuid.
  *
- * Honesty rules the cells carry:
- *   - no detection claim before the run is reviewed (design v26 §4.6): the
- *     result cell says "not reviewed", never "0 / 10";
- *   - a failed/aborted run with no hit shows `unproven`, never a miss;
- *   - a run with no Result rows shows no count, never `0 / 0`;
+ * What a row says, and does not:
+ *   - how the run went, as a StatusIcon and one word: Queued · Running · Ran ·
+ *     Failed · Did not run · Aborted · Staged (`runState`);
+ *   - whether it has been reviewed: Reviewed · Not reviewed · Reviewing…;
+ *   - never a detection verdict or count. Runs shows what was attempted; what
+ *     Cortex saw is on Results, one click away once the run is reviewed;
  *   - timestamps are UTC and say so in the hover title.
  *
  * Each row carries the five-stage lifecycle strip and ONE action for its
@@ -26,59 +27,21 @@
  */
 import React, { useEffect, useMemo, useState } from 'react'
 import { runIdOf } from '../../api/ids.js'
-import { isRunUnproven, runStatusGlyph } from './runStatus.js'
 import {
-  relativeTime, absoluteTime, runDuration, detectionCell, runAgent,
+  relativeTime, absoluteTime, runDuration, runAgent,
   filterRuns, groupRuns, pageOf, statusKey, PAGE_SIZE,
 } from './runRows.js'
 import { runLifecycle, PHASE, NOTHING, NOT_EXECUTED_COPY } from './runLifecycle.js'
+import { runState, reviewState } from './runState.js'
 import RunLifecycleStrip from './RunLifecycleStrip.jsx'
-import { Button } from './kit/index.js'
+import { Button, Icon, StatusIcon } from './kit/index.js'
 import '../../styles/destinations/run-lifecycle.css'
 
 const STATUS_OPTIONS = ['running', 'complete', 'failed', 'aborted', 'pending', 'staged']
 
-function chipClass(status) {
-  const s = statusKey(status)
-  if (s === 'running') return ' run-list__status-chip--live'
-  if (s === 'complete') return ' run-list__status-chip--done'
-  if (isRunUnproven(s)) return ' run-list__status-chip--unproven'
-  return ' run-list__status-chip--pending'
-}
-
 function shortId(id) {
   const s = String(id || '')
   return s.length > 12 ? s.slice(0, 8) : s
-}
-
-/**
- * The result cell: `{ text, tone, title }`. Only a reviewed run has a
- * detection count; every other phase says where the run is instead.
- */
-export function resultCell(run, lifecycle) {
-  switch (lifecycle.phase) {
-    case PHASE.RUNNING:
-      return { text: 'results after it finishes', tone: 'none', title: 'the run is still executing' }
-    case PHASE.NOTHING:
-      return lifecycle.nothing === NOTHING.NOT_EXECUTED
-        ? { text: NOT_EXECUTED_COPY.result, tone: 'none', title: NOT_EXECUTED_COPY.title }
-        : { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to review' }
-    case PHASE.READING:
-      return { text: 'reviewing…', tone: 'live', title: 'reviewing this run against the tenant' }
-    case PHASE.UNREAD:
-      return { text: 'not reviewed', tone: 'none', title: 'the tenant has not been read for this run, so it has no results yet' }
-    default: {
-      const det = detectionCell(run)
-      if (det.tone === 'unproven') return det
-      if (det.text === '—') {
-        const expected = run?.expected_detections
-        return expected === 0
-          ? { text: 'no detections expected', tone: 'none', title: 'this run seeded no expected detections' }
-          : det
-      }
-      return { ...det, text: `${run.detected_count} of ${run.expected_detections} detected` }
-    }
-  }
 }
 
 function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
@@ -102,7 +65,8 @@ function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
 function RunRow({ run, now, inGroup = false, reading, outcomes, onOpen, onReadBack, onOpenResults }) {
   const id = runIdOf(run)
   const lifecycle = runLifecycle(run, { reading: reading.has(id) })
-  const res = resultCell(run, lifecycle)
+  const state = runState(run, lifecycle)
+  const review = reviewState(lifecycle)
   const outcome = outcomes.get(id)
   // Why the last review read nothing — only while the run is still unread.
   const why = outcome && !outcome.ok && lifecycle.phase === PHASE.UNREAD ? outcome.message : null
@@ -139,20 +103,21 @@ function RunRow({ run, now, inGroup = false, reading, outcomes, onOpen, onReadBa
       <span role="cell" className="run-list__lc">
         <RunLifecycleStrip lifecycle={lifecycle} />
       </span>
-      <span role="cell" className="run-list__result">
-        <span
-          className={`run-list__det run-list__det--${res.tone}`}
-          title={res.title}
-          data-testid="run-detections"
-        >
-          {res.text}
-        </span>
-        {why && <span className="run-list__why" data-testid="run-readback-why">{why}</span>}
+      <span
+        role="cell"
+        className="run-list__status"
+        data-testid="run-status"
+        title={lifecycle.phase !== PHASE.NOTHING ? undefined
+          : lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.title
+            : 'the run ended before any step reached its agent'}
+      >
+        <StatusIcon status={state.status} word={state.word} />
       </span>
-      <span role="cell" className="run-list__status">
-        <span className={'chip run-list__status-chip' + chipClass(run.status)} data-testid="run-status">
-          <span aria-hidden="true">{runStatusGlyph(run.status)}</span> {run.status || 'unknown'}
-        </span>
+      <span role="cell" className="run-list__review" data-testid="run-review">
+        {review
+          ? <StatusIcon status={review.status} word={review.word} />
+          : <span className="run-list__noact">—</span>}
+        {why && <span className="run-list__why" data-testid="run-readback-why">{why}</span>}
       </span>
       <span role="cell" className="run-list__action" data-testid="run-action">
         <RunAction id={id} lifecycle={lifecycle} onOpen={onOpen} onReadBack={onReadBack} onOpenResults={onOpenResults} />
@@ -238,7 +203,7 @@ export default function RunList({
   if (!runs.length) {
     return (
       <div className="run-list-empty" data-testid="run-list-empty">
-        no runs yet — launch a scenario from Simulate
+        No runs yet
       </div>
     )
   }
@@ -276,35 +241,32 @@ export default function RunList({
           </select>
         </label>
         {(scenario || status) && (
-          <button
-            type="button"
-            className="btn run-list__clear"
+          <Button
+            verb="Clear"
+            className="run-list__clear"
             data-testid="run-filter-clear"
+            title="Show every run"
             onClick={() => setFilter({ scenario: null, status: null })}
-          >
-            clear
-          </button>
+          />
         )}
         <span className="run-list__spacer" />
         <span className="mono run-list__pager-label" data-testid="run-pager-label">{pagerLabel}</span>
-        <button
-          type="button"
-          className="btn run-list__pager-btn"
+        <Button
+          className="run-list__pager-btn"
           disabled={paged.page <= 1}
           data-testid="run-pager-prev"
           onClick={() => setParams({ page: paged.page - 1 > 1 ? String(paged.page - 1) : null }, { replace: true })}
         >
-          ‹ prev
-        </button>
-        <button
-          type="button"
-          className="btn run-list__pager-btn"
+          <Icon name="back" size={12} />Previous
+        </Button>
+        <Button
+          className="run-list__pager-btn"
           disabled={paged.page >= paged.pages}
           data-testid="run-pager-next"
           onClick={() => setParams({ page: String(paged.page + 1) }, { replace: true })}
         >
-          next ›
-        </button>
+          Next<Icon name="forward" size={12} />
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
@@ -319,8 +281,8 @@ export default function RunList({
             <span>Agent</span>
             <span>Duration</span>
             <span>Lifecycle</span>
-            <span title="detected of expected, once the run is reviewed against the tenant">Result</span>
-            <span>Status</span>
+            <span>State</span>
+            <span title="Whether the tenant has been read for this run">Review</span>
             <span />
           </div>
           {paged.items.map((entry) => (
@@ -339,9 +301,6 @@ export default function RunList({
           ))}
         </div>
       )}
-      <div className="run-list__foot mono">
-        detections are this SimCore's Result rows · tenant-verified: 0
-      </div>
     </div>
   )
 }

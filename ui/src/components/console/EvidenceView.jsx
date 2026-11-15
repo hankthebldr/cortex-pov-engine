@@ -3,51 +3,36 @@ import '../../styles/destinations/run-detail.css'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
-import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
-import ExportMenu from './ExportMenu.jsx'
-import TenantEvidencePanel from './TenantEvidencePanel.jsx'
-import ReadBackButton from './ReadBackButton.jsx'
+import { Button, Icon } from './kit/index.js'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
 import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
 /**
- * EvidenceView — the Evidence tab.
+ * EvidenceView — Results › Detections: each expected detection of one run and
+ * what became of it.
  *
  * Layout:
- *   ▸ view head with run id + timestamp + Validate-all + Export CTAs
- *   ▸ KPI row: Coverage % · Median MTTD · Stitch count · Pending count
+ *   ▸ one action: Validate all (with the count it will skip)
+ *   ▸ KPI row: Coverage % · Median MTTD · Analytics plane · Pending count
  *   ▸ Scorecard table with per-row validate (Detected / Missed / Reset)
  *
- * Props:
- *   activeRun  — { runId, scenarioId, ... }
- *   lastRun    — fallback run when no live run
- *   intro      — node shown under the page head (Results passes its
- *                "Result of" bar, design v26 §4.6)
- *   showCaseLedger — embed the run's case panel in the tenant evidence panel;
- *                false where the page already shows it (Run detail)
- *   onError    — (msg) => void
+ * The page head, the "Result of" bar, the downloads and the tenant evidence
+ * panel belong to Results (ResultsView), which mounts this as one of its tabs.
  *
- * Below the scorecard sits the tenant evidence panel (spec §7.5): the stored
- * snapshot, read once on open, and a refresh that reads the tenant only when
- * the DC asks. It sits outside the scorecard's load-failed branch, so it still
- * answers when /api/results does not.
+ * Props:
+ *   pinnedRun  — { runId, scenarioId, status } the run on screen
+ *   activeRun  — { runId, scenarioId, ... } used when no run is pinned
+ *   lastRun    — fallback run when neither is given
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
-  intro = null,
-  showCaseLedger = true,
-  onError = () => {},
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
   // derived active/last selection — explicit picks always win.
   const targetRunId = pinnedRun?.runId || activeRun?.runId || lastRun?.runId || null
-  const targetScenarioId = pinnedRun?.scenarioId
-    || activeRun?.scenarioId
-    || lastRun?.scenarioId
-    || null
 
   // Same run-status truth the Storyline uses: a run that never executed has no
   // coverage to report, and "Validate all" on it would manufacture evidence.
@@ -71,7 +56,6 @@ export default function EvidenceView({
   // ingestion typically takes 30–120s" for a SimCore that never answered.
   const loadFailed = !!error && !loaded
   const [selectedRowId, setSelectedRowId] = useState(null)
-  const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
   // Reset drilldown selection when the underlying run changes.
   useEffect(() => { setSelectedRowId(null) }, [targetRunId])
@@ -96,11 +80,7 @@ export default function EvidenceView({
   if (!targetRunId) {
     return (
       <div className="evidence evidence-empty">
-        <h1 className="evidence-empty__title">No run to validate</h1>
-        <p className="evidence-empty__desc">
-          Launch a scenario from Simulate. The detection scorecard
-          and POV report export will appear here once results begin to arrive.
-        </p>
+        <p className="evidence-empty__desc">No run selected</p>
       </div>
     )
   }
@@ -110,91 +90,39 @@ export default function EvidenceView({
     // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
     // resolves correctly here without pinning a local override.
     <div className="evidence">
-      <div className="view-head">
-        <div>
-          <h1>Report</h1>
-          <div className="view-head__meta">
-            {viewMode === 'this-run' ? (
-              <>
-                Run <strong className="mono">{targetRunId}</strong>
-                {targetScenarioId && (
-                  <> · <span className="mono">{targetScenarioId}</span></>
-                )}
-                {loading && <> · <span className="mono">syncing…</span></>}
-              </>
-            ) : (
-              <>cross-run comparison · pick 2–4 runs to diff</>
-            )}
-          </div>
-        </div>
-        <div className="evidence-header__actions">
-          <div className="lab__segmented evidence__mode-toggle" role="tablist" aria-label="Evidence view mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === 'this-run'}
-              className={viewMode === 'this-run' ? 'is-active' : ''}
-              onClick={() => setViewMode('this-run')}
-            >
-              This run
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === 'compare'}
-              className={viewMode === 'compare' ? 'is-active' : ''}
-              onClick={() => setViewMode('compare')}
-              title="Compare 2-4 runs side by side"
-            >
-              Compare runs
-            </button>
-          </div>
-          {viewMode === 'this-run' && (
-            <>
-              <button
-                className="btn"
-                onClick={handleValidateAll}
-                disabled={kpis.unvalidated === 0 || unproven}
-                title={unproven
-                  ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
-                  : 'Mark all pending detections as observed'}
-              >
-                Validate all
-                {kpis.unvalidated > 0 && (
-                  <span className="kbd">{kpis.unvalidated}</span>
-                )}
-              </button>
-              {kpis.skipped > 0 && (
-                <span
-                  className="mono evidence-header__skipped"
-                  data-testid="validate-all-skipped"
-                  title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
-                >
-                  {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
-                </span>
-              )}
-              <ExportMenu runId={targetRunId} onError={onError} />
-            </>
-          )}
-        </div>
-      </div>
-
-      {viewMode === 'this-run' && intro}
-
-      {viewMode === 'compare' ? (
-        <MultiRunCompare />
-      ) : loadFailed ? (
+      {loadFailed ? (
         <div className="evidence-empty" role="alert" data-testid="evidence-load-error">
-          <h2 className="evidence-empty__title">Results for {targetRunId} could not be loaded</h2>
+          <h2 className="evidence-empty__title">Detections not loaded</h2>
           <p className="evidence-empty__desc mono">{error}</p>
-          <p className="evidence-empty__desc">
-            Nothing below is a measurement until SimCore answers — coverage and MTTD are not shown
-            rather than shown as zero.
-          </p>
-          <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+          <Button verb="Refresh" onClick={refresh}>Retry</Button>
         </div>
       ) : (
         <>
+      <div className="evidence-header__actions">
+        <Button
+          verb="Validate all"
+          onClick={handleValidateAll}
+          disabled={kpis.unvalidated === 0 || unproven}
+          title={unproven
+            ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
+            : 'Mark all pending detections as observed'}
+        >
+          Validate all
+          {kpis.unvalidated > 0 && (
+            <span className="kbd">{kpis.unvalidated}</span>
+          )}
+        </Button>
+        {kpis.skipped > 0 && (
+          <span
+            className="mono evidence-header__skipped"
+            data-testid="validate-all-skipped"
+            title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
+          >
+            {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
+          </span>
+        )}
+        {loading && <span className="mono evidence-header__sync">syncing…</span>}
+      </div>
       {error && (
         <div className="evidence-stale" role="status" data-testid="evidence-refresh-error">
           Last refresh failed — showing the previous answer. <span className="mono">{error}</span>
@@ -221,15 +149,6 @@ export default function EvidenceView({
         }}
       />
         </>
-      )}
-
-      {viewMode === 'this-run' && (
-        <TenantEvidencePanel
-          runId={targetRunId}
-          showCaseLedger={showCaseLedger}
-          onScored={refresh}
-          reconcileAction={({ onDone }) => <ReadBackButton runId={targetRunId} onDone={onDone} />}
-        />
       )}
     </div>
   )
@@ -406,25 +325,28 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         {row.id != null && !isAttestationRefused(row) && (
           <div className="scorecard__row-actions">
             {row.observed !== true && (
-              <button
+              <Button
                 className="row-action row-action--detected"
                 onClick={stop(() => onValidate(row.id, true, null))}
                 title="Mark as detected"
-              >✓</button>
+                aria-label="Mark as detected"
+              ><Icon name="check" size={12} /></Button>
             )}
             {row.observed !== false && (
-              <button
+              <Button
                 className="row-action row-action--missed"
                 onClick={stop(() => onValidate(row.id, false, null))}
                 title="Mark as missed"
-              >✗</button>
+                aria-label="Mark as missed"
+              ><Icon name="x" size={12} /></Button>
             )}
             {row.observed != null && (
-              <button
+              <Button
                 className="row-action"
                 onClick={stop(() => onValidate(row.id, null, null))}
                 title="Reset to pending"
-              >○</button>
+                aria-label="Reset to pending"
+              ><Icon name="repeat" size={12} /></Button>
             )}
           </div>
         )}

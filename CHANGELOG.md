@@ -37,6 +37,22 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   looks for `ssh`, `scp`, `sshpass` and `sudoedit`, so a dependency on one of
   those reads found or missing instead of `unverified`.
 
+### Added — pull runs clean up after themselves
+
+- **A pull run left its files, units, cron lines and accounts on the target.**
+  Only a push bundle ran the scenario's `cleanup.commands`. The beacon now
+  runs them when a run ends: after the last step, a failed step, a timeout or
+  an abort. The run's output ends with a `=== CLEANUP` section showing each
+  command and its exit code. A failed cleanup does not fail the run (#324).
+- **The report says when cleanup did not happen.** "Cleanup Not Run" now
+  appears only when no beacon reported a cleanup, and "Cleanup Incomplete"
+  when a command failed. A run that cleaned up has neither.
+- **Update the beacons.** A beacon from before this change ignores the cleanup
+  it is sent, and the launch says so (`CLEANUP_NOT_RUN`, a notice that does
+  not hold the launch). Re-install the beacon from this SimCore to get it.
+- Windows cleanup lines run under PowerShell or cmd; no Windows host has run
+  this path yet. `cleanup.k8s_teardown` is not sent to a beacon.
+
 ### Added — the beacon reports each step's command and streams its output
 
 - **A pull run was silent while a step ran, and never showed the command.**
@@ -61,6 +77,26 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   beacon still accepts the flag and ignores it; the Kubernetes agent manifest
   no longer passes it.
 - Wire contract: `docs/reference/api-and-agent-surface.md` §1.3.3.
+
+### Changed — Runs shows what was attempted; Results shows what Cortex saw
+
+- **A run's page has one panel: the runtime log.** One block per step: the
+  command that was attempted, the account it ran as, how it went (Queued ·
+  Running · Ran · Failed · Timed out · Did not run · Aborted) with exit code
+  and duration, and its output. A finished run is built from the stored output
+  and the host's step record; a live run is re-read as its stream moves.
+- **Runs no longer shows a detection verdict.** A row, a run's page, its chain
+  and the live strip say how the run went and whether it is reviewed.
+- **Results holds the detection views.** One verdict line, then Detections ·
+  Storyline · Techniques · Topology · Causality · Tenant evidence
+  (`#/proof?run=<id>&tab=<tab>`). A run that has not been reviewed says "Not
+  reviewed" in every tab. What changes how the results read (another account,
+  a platform variant, a refused step, launch warnings, attestations) is one
+  collapsed line above the verdict.
+- **Old links still work:** `#/runs?run=<id>&tab=evidence|storyline|
+  techniques|topology|causality` open the same tab of Results.
+- Validate all, the report Download list, and the Runs list's state, pager and
+  Abort are console kit controls. Compare runs stays on the Runs list only.
 
 ### Fixed — dependency warnings read the beacon's tool facts and show at launch
 

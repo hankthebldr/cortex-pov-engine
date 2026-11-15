@@ -13,7 +13,7 @@ describe('brokenStepCauses', () => {
     const causes = brokenStepCauses({ status: 'error', rc: 2, termination: 'exited' }, ctx)
     expect(causes.map((c) => c.id)).toEqual(['output'])
     expect(causes[0].detail).toMatch(/exited 2/)
-    expect(causes[0].place.to).toEqual({ destination: 'runs', params: { run: 'run-1', tab: 'live' } })
+    expect(causes[0].place.to).toEqual({ destination: 'runs', params: { run: 'run-1' } })
   })
 
   it('an agent that went quiet comes first, then what the command reported', () => {

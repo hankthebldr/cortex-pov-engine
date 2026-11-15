@@ -30,7 +30,9 @@ type Helpers = {
  *   - most are now first-class destinations in the rail;
  *   - "Launch gate" is a rail item, but a spec arms a scenario with
  *     `?arm=`, so it is reached by route;
- *   - "Live" / "Evidence" became TABS of a run, not top-level views.
+ *   - "Live" is the Runs destination (a run's page, with its runtime log,
+ *     when the spec passes `run`); "Evidence" is Results, whose first tab is
+ *     the detections scorecard.
  *
  * Destination-level views navigate by CLICKING the rail, so the nav itself stays
  * under test. Tab-scoped views go through the hash router, since there is no rail
@@ -63,8 +65,8 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   // The Launch gate (design v33): the one place a run starts. The old
   // 'Launch' entry pointed at the guided flow, which now redirects here.
   'Launch gate': { dest: 'preflight' },
-  'Live': { dest: 'runs', params: { tab: 'live' } },
-  'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
+  'Live': { dest: 'runs' },
+  'Evidence': { dest: 'proof' },
   'EAL Plugins': { dest: 'eal', hidden: true },
   // The tool-adapter catalog, relabelled "Packages" in the rail. The
   // destination id is unchanged, which is the point of keeping it: routes,
