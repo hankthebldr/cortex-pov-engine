@@ -103,8 +103,11 @@ async def _agent(db, agent_id: str, os_name, *, seen_ago: float = 0.0,
     now = datetime.utcnow()
     db.add(Agent(
         agent_id=agent_id, hostname=f"host-{agent_id}", os=os_name,
-        capabilities=["shell", "powershell"] if os_name == "windows"
-        else ["shell", "identity-harness"],
+        # What a current beacon registers. Without `cleanup` every launch of a
+        # scenario with cleanup.commands also carries the CLEANUP_NOT_RUN notice.
+        capabilities=["shell", "powershell", "artifact-fetch", "cleanup"]
+        if os_name == "windows"
+        else ["shell", "identity-harness", "artifact-fetch", "cleanup"],
         interpreters=[], registered_at=now,
         last_seen=now - timedelta(seconds=seen_ago), status="online",
         runtime_facts=runtime_facts,

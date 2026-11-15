@@ -308,6 +308,15 @@ class Run(Base):
     # about any one module (review F1). NULL = nothing attested per module.
     module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
+    # ── Pull cleanup outcome (#324) ──────────────────────────────────────────
+    # What each beacon task reported about the scenario's cleanup.commands on
+    # /complete: [{agent_id, task_id, status: clean|failed|not_run, ran, failed,
+    # reason}], one entry per task. NULL = no beacon reported one (a push run,
+    # or a beacon that predates pull cleanup), which is not "clean". Written by
+    # engine.pull_cleanup.record_outcome; added by _migrate_run_cleanup_columns
+    # in database.py.
+    cleanup: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
@@ -342,6 +351,7 @@ class Run(Base):
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
             "module_modes": self.module_modes,
+            "cleanup": self.cleanup,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }

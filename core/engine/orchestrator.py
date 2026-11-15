@@ -111,6 +111,10 @@ class Task:
     # attempt a package-manager install to satisfy a step's declared
     # `requires_interpreters` instead of refusing to run it.
     runtime_install_authorized: bool = False
+    # The scenario's cleanup.commands resolved for THIS agent's OS, which the
+    # beacon runs when the task ends (engine/pull_cleanup.py, #324). None when
+    # no command runs on the target.
+    cleanup: Optional[dict[str, Any]] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -134,6 +138,9 @@ class Task:
         # task for any run that never touched this feature is byte-identical.
         if self.runtime_install_authorized:
             payload["runtime_install_authorized"] = True
+        # Omitted when there is nothing to run, like artifacts.
+        if self.cleanup:
+            payload["cleanup"] = self.cleanup
         return payload
 
     def requires_artifact_fetch(self) -> bool:
@@ -240,6 +247,8 @@ class _PreparedPull:
     dispatch_warnings: list[str]
     gate_warnings: list[Any]
     egress_warnings: list[tuple[str, str]]
+    #: agent_id -> that task's ``cleanup`` block (engine/pull_cleanup.py).
+    cleanup: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -1283,14 +1292,20 @@ class Orchestrator:
             return ev
         passed("pull.container_gate")
 
+        # The scenario's cleanup for each agent's OS, and an info notice for a
+        # beacon that will not run it (#324).
+        from engine.pull_cleanup import plan_pull_cleanup  # noqa: PLC0415
+        cleanup_plan = await plan_pull_cleanup(db, scenario, steps, target_agent_id)
+
         ev.prepared_pull = _PreparedPull(
             artifacts=artifacts,
             binding=binding,
             steps=steps,
             output_markers=output_markers,
             dispatch_warnings=dispatch_warnings,
-            gate_warnings=list(gate_warnings),
+            gate_warnings=list(gate_warnings) + cleanup_plan.warnings,
             egress_warnings=egress,
+            cleanup=cleanup_plan.by_agent,
         )
         return ev
 
@@ -1767,6 +1782,7 @@ class Orchestrator:
                 cgo_anchor=getattr(scenario, "cgo_anchor", None),
                 artifacts=artifacts,
                 runtime_install_authorized=runtime_install_authorized,
+                cleanup=prepared.cleanup.get(target_agent_id),
             )
             # Mirror the task to the durable queue so a restart can rehydrate it.
             await self._persist_task(db, target_agent_id, task)
@@ -1806,6 +1822,7 @@ class Orchestrator:
                     cgo_anchor=getattr(scenario, "cgo_anchor", None),
                     artifacts=tgt_artifacts,
                     runtime_install_authorized=runtime_install_authorized,
+                    cleanup=prepared.cleanup.get(tgt),
                 )
                 await self._persist_task(db, tgt, task)
                 to_enqueue.append((tgt, task))
@@ -2491,6 +2508,8 @@ def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
             # authorization for an in-flight run, which would make the
             # rehydrated task refuse a step the operator explicitly permitted.
             runtime_install_authorized=bool(payload.get("runtime_install_authorized", False)),
+            # A rehydrated task that forgot its cleanup leaves the host dirty.
+            cleanup=payload.get("cleanup") or None,
             created_at=datetime.fromisoformat(created) if created else datetime.utcnow(),
         )
     except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive

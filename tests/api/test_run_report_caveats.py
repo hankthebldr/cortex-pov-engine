@@ -9,9 +9,11 @@ artifact a DC puts in front of a customer:
   detections (``causality_actor_*`` / the acting user) then cannot match by
   construction — a miss on those steps is not a coverage measurement. 117
   Windows steps in this corpus declare ``svc-backup``.
-* **Cleanup not run.** Pull mode never executes ``cleanup.commands`` (only the
-  push generator emits them); the report said nothing, so a DC left the
-  scenario's persistence artefacts on the customer's endpoint.
+* **Cleanup not run.** A pull run whose beacon reported no cleanup (a beacon
+  from before pull cleanup, #324) left ``cleanup.commands`` unrun; the report
+  said nothing, so a DC left the scenario's persistence artefacts on the
+  customer's endpoint. What a beacon that DID run them reports is covered in
+  ``test_runs_pull_cleanup.py``.
 * **Platform variant.** A step that ran its ``platform_variants`` text (the
   pull platform gate) carries ``!! PLATFORM VARIANT``: its expectations were
   authored against the primary command.
@@ -87,7 +89,8 @@ def test_pull_mode_names_the_cleanup_commands_it_did_not_run(client, session_fac
     cmds = ["rm -f /tmp/cortexsim_cron_test", "crontab -r || true"]
     _seed(session_factory, run_id="cl-1", cleanup={"commands": cmds})
     body = _report(client, "cl-1")
-    assert "pull mode does not execute cleanup.commands: 2 commands not run" in body
+    assert "Cleanup Not Run" in body
+    assert "did not run this scenario's cleanup.commands: 2 commands not run" in body
     for c in cmds:
         assert c in body
 
@@ -96,7 +99,7 @@ def test_push_mode_does_not_claim_cleanup_was_skipped(client, session_factory):
     """The push bundle carries and runs its own cleanup."""
     _seed(session_factory, run_id="cl-2", mode="push",
           cleanup={"commands": ["rm -f /tmp/x"]})
-    assert "does not execute cleanup.commands" not in _report(client, "cl-2")
+    assert "Cleanup Not Run" not in _report(client, "cl-2")
 
 
 def test_platform_variant_steps_are_listed(client, session_factory):
