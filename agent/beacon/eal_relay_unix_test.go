@@ -33,6 +33,7 @@ type relaySimCore struct {
 	mu       sync.Mutex
 	relays   []map[string]interface{}
 	outputs  []string
+	frames   []map[string]interface{} // every /output body, live frames included
 	complete map[string]interface{}
 }
 
@@ -53,6 +54,7 @@ func newRelaySimCore(t *testing.T, answer func() ealrelay.Response) *relaySimCor
 			_ = json.NewEncoder(w).Encode(ControlState{Status: "running"})
 		case strings.HasSuffix(r.URL.Path, "/output"):
 			s.outputs = append(s.outputs, decoded["output"].(string))
+			s.frames = append(s.frames, decoded)
 		case strings.HasSuffix(r.URL.Path, "/complete"):
 			s.complete = decoded
 		default:
@@ -168,6 +170,80 @@ func TestMarkedStepRunsItsCampaignThroughSimCoreAndSendsFromHere(t *testing.T) {
 	}
 	if code, _ := s.complete["exit_code"].(float64); code != 0 {
 		t.Errorf("run completed with %v:\n%s", s.complete["exit_code"], out)
+	}
+}
+
+// With the live runtime log on, the `eal` child is one more process of the
+// step: what it prints streams as that step's chunks, the start frame shows
+// the command the beacon ran, and the relay posts no /output frame of its own.
+func TestMarkedStepStreamsItsEalOutputAsTheStepsLiveChunks(t *testing.T) {
+	dest := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer dest.Close()
+	s := newRelaySimCore(t, func() ealrelay.Response {
+		return ealrelay.Response{
+			Stdout: "{\"status\": \"complete\"}\n",
+			Ops: []ealrelay.Op{
+				// The child has printed SimCore's output by now. The pause
+				// keeps the step running long enough for a flush to fall in it.
+				{Op: "sleep", Seconds: 0.5},
+				{Op: "http", Method: "GET", URL: dest.URL + "/checkin", TimeoutS: 5},
+			},
+			Allowlist: []string{strings.TrimPrefix(dest.URL, "http://")},
+		}
+	})
+	task := &Task{TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-NDR-001",
+		LiveOutput: &LiveOutput{FlushMs: 10},
+		Steps: []Step{
+			{ID: "step-03", Command: ealStepCommand, Identity: "root", EalRelay: true},
+		}}
+	directClient(s.URL).executeTask(context.Background(), task)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var starts, finals []map[string]interface{}
+	var live strings.Builder
+	for _, f := range s.frames {
+		switch f["kind"] {
+		case "start":
+			starts = append(starts, f)
+		case "chunk":
+			if f["step_id"] != "step-03" {
+				t.Errorf("a chunk for another step: %v", f)
+			}
+			live.WriteString(f["output"].(string))
+		case nil:
+			finals = append(finals, f)
+		default:
+			t.Errorf("an /output frame of an unknown kind: %v", f)
+		}
+	}
+
+	// The command on record is the one the beacon ran: the eal call and the
+	// path of the ticket file (TestTicketNeverInArgvOrEnv: never the ticket).
+	if len(starts) != 1 || starts[0]["step_id"] != "step-03" {
+		t.Fatalf("start frames: %v", starts)
+	}
+	command, _ := starts[0]["command"].(string)
+	if command != task.Steps[0].Command || !rewrittenCall.MatchString(command) ||
+		strings.Contains(command, ealCall) {
+		t.Errorf("the start frame's command is not the rewritten one:\n%s", command)
+	}
+
+	// SimCore's output reached the live stream while the step was running.
+	if !strings.Contains(live.String(), "{\"status\": \"complete\"}") {
+		t.Errorf("the eal child's output was not streamed; chunks carried:\n%q", live.String())
+	}
+
+	// One stored frame, the step's own, with everything in it.
+	if len(finals) != 1 || finals[0]["step_id"] != "step-03" {
+		t.Fatalf("final frames: %v", finals)
+	}
+	out, _ := finals[0]["output"].(string)
+	if !strings.Contains(out, "{\"status\": \"complete\"}") || !strings.Contains(out, "\"reached\": 1") {
+		t.Errorf("the step's stored frame:\n%s", out)
+	}
+	if len(s.relays) != 1 {
+		t.Errorf("SimCore saw %d relay calls, want 1", len(s.relays))
 	}
 }
 
