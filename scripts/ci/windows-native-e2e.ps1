@@ -25,11 +25,11 @@
       pssa       PSScriptAnalyzer: PSUseCompatibleSyntax 5.1 plus
                  PSUseCompatibleCommands / PSUseCompatibleTypes against the
                  Server 2016 / 2019 Windows PowerShell 5.1 profiles.
-      sandbox    each fixed scratch folder a Windows step runs or loads from
-                 (SIM-MP-023, -026, -029): the step's own guard, cut from the
-                 rendered text, refuses a folder or junction a standard account
-                 planted, and a planted folder raced against a junction never
-                 gets past it.
+      sandbox    each fixed scratch folder a Windows step runs, loads, feeds or
+                 writes secrets in (18 scenarios, $script:SandboxSpecs): the
+                 step's own guard, cut from its text, refuses a folder or
+                 junction a standard account planted, and a planted folder
+                 raced against a junction never gets past it.
       boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout.
       install    the console's token one-liner (iwr | iex) in a child
                  powershell.exe; service Running, no SCM failures, beaconing.
@@ -1445,18 +1445,46 @@ function Invoke-PhaseCollect {
 # the same Get-Acl. A planted folder fails on its owner; a junction, followed or
 # not, fails on its owner or its missing marker, so swapping the two cannot pass.
 
+#
+# SIM-EDR-003, -004, -006, -013, -017 and SIM-ITDR-006 do the same in %TEMP%
+# (C:\Windows\Temp for SYSTEM), and they do reach a Windows host: the render
+# phase writes their steps. SIM-ITDR-002..005, SIM-TIM-002 (an EAL campaign
+# file fed to the EAL CLI), SIM-MP-014, -025, -035 and -036 have the same shape
+# in Windows variants that no Windows host is sent yet. A scenario whose folder
+# only one step uses has no checking step; its creating step is still planted
+# against.
+#
+# Every guard is the same template with its own path and marker, so the race
+# (400 PowerShell launches a spec) runs on one folder under C:\ProgramData and
+# one under %TEMP%, not on all of them.
+
 $script:SandboxSpecs = @(
+    @{ Sid = 'SIM-EDR-003'; Path = (Join-Path $env:TEMP 'cortexsim-edr003'); Marker = 'S-1-9-4243-1003'; Create = 'step-04'; Checks = @() },
+    @{ Sid = 'SIM-EDR-004'; Path = (Join-Path $env:TEMP 'cortexsim-edr004'); Marker = 'S-1-9-4243-1004'; Create = 'step-03'; Checks = @() },
+    @{ Sid = 'SIM-EDR-006'; Path = (Join-Path $(if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }) 'cortexsim-edr006'); Marker = 'S-1-9-4243-1006'; Create = 'step-01'; Checks = @('step-02', 'step-03'); Race = $true },
+    @{ Sid = 'SIM-EDR-013'; Path = (Join-Path $env:TEMP 'cortexsim-edr-013'); Marker = 'S-1-9-4243-1013'; Create = 'step-01'; Checks = @() },
+    @{ Sid = 'SIM-EDR-017'; Path = (Join-Path $env:TEMP 'cortexsim-edr-017'); Marker = 'S-1-9-4243-1017'; Create = 'step-01'; Checks = @('step-02') },
+    @{ Sid = 'SIM-ITDR-002'; Path = (Join-Path $env:TEMP 'cortexsim-itdr-002'); Marker = 'S-1-9-4243-2002'; Create = 'step-02'; Checks = @() },
+    @{ Sid = 'SIM-ITDR-003'; Path = (Join-Path $env:TEMP 'cortexsim-itdr-003'); Marker = 'S-1-9-4243-2003'; Create = 'step-02'; Checks = @() },
+    @{ Sid = 'SIM-ITDR-004'; Path = (Join-Path $env:TEMP 'cortexsim-itdr-004'); Marker = 'S-1-9-4243-2004'; Create = 'step-02'; Checks = @() },
+    @{ Sid = 'SIM-ITDR-005'; Path = (Join-Path $env:TEMP 'cortexsim-itdr-005'); Marker = 'S-1-9-4243-2005'; Create = 'step-02'; Checks = @() },
+    @{ Sid = 'SIM-ITDR-006'; Path = (Join-Path $env:TEMP 'cortexsim-itdr006'); Marker = 'S-1-9-4243-2006'; Create = 'step-02'; Checks = @('step-03') },
+    @{ Sid = 'SIM-MP-014'; Path = (Join-Path $env:TEMP 'cortexsim-mp014'); Marker = 'S-1-9-4243-14'; Create = 'step-01'; Checks = @() },
     @{ Sid = 'SIM-MP-023'; Path = 'C:\ProgramData\cortexsim-mp023'; Marker = 'S-1-9-4243-23'; Create = 'step-01'; Checks = @('step-03', 'step-04') },
-    @{ Sid = 'SIM-MP-026'; Path = 'C:\ProgramData\cortexsim-mp026'; Marker = 'S-1-9-4243-26'; Create = 'step-01'; Checks = @('step-02', 'step-03', 'step-06', 'step-07', 'step-08', 'step-09') },
-    @{ Sid = 'SIM-MP-029'; Path = (Join-Path $env:TEMP 'cortexsim-mp-029'); Marker = 'S-1-9-4243-29'; Create = 'step-01'; Checks = @('step-02', 'step-03') }
+    @{ Sid = 'SIM-MP-025'; Path = (Join-Path $env:TEMP 'cortexsim-mp025'); Marker = 'S-1-9-4243-25'; Create = 'step-01'; Checks = @() },
+    @{ Sid = 'SIM-MP-026'; Path = 'C:\ProgramData\cortexsim-mp026'; Marker = 'S-1-9-4243-26'; Create = 'step-01'; Checks = @('step-02', 'step-03', 'step-06', 'step-07', 'step-08', 'step-09'); Race = $true },
+    @{ Sid = 'SIM-MP-029'; Path = (Join-Path $env:TEMP 'cortexsim-mp-029'); Marker = 'S-1-9-4243-29'; Create = 'step-01'; Checks = @('step-02', 'step-03') },
+    @{ Sid = 'SIM-MP-035'; Path = (Join-Path $env:TEMP 'cortexsim-mp-035'); Marker = 'S-1-9-4243-35'; Create = 'step-07'; Checks = @() },
+    @{ Sid = 'SIM-MP-036'; Path = (Join-Path $env:TEMP 'cortexsim-mp-036'); Marker = 'S-1-9-4243-36'; Create = 'step-03'; Checks = @('step-04') },
+    @{ Sid = 'SIM-TIM-002'; Path = (Join-Path $env:TEMP 'cortexsim-tim-002'); Marker = 'S-1-9-4243-3002'; Create = 'step-03'; Checks = @() }
 )
 $script:PlantUser = 'cortexsim-ci-plant'
 
 function Get-CsStepText {
     # The step as the render phase wrote it. The render phase writes only the
-    # scenarios that resolve for Windows as a whole; SIM-MP-023, -026 and -029
-    # do not yet (some of their steps have no Windows variant), so a step of
-    # theirs is read from the scenario: its Windows variant, which is the text
+    # scenarios that resolve for Windows as a whole; SIM-MP-023, -026, -029 and
+    # others do not yet (some of their steps have no Windows variant), so a step
+    # of theirs is read from the scenario: its Windows variant, which is the text
     # a Windows host would be sent once the rest of the scenario resolves.
     param([string]$Sid, [string]$StepId)
     $file = Join-Path $script:RenderDir ('steps\' + $Sid + '\' + $StepId + '.ps1')
@@ -1598,6 +1626,10 @@ function Invoke-PhaseSandbox {
             Remove-CsPlant $path
             $r = Invoke-CsGuard $create
             Assert-Cs ($r.Reached -and $r.ExitCode -eq 0) ($spec.Sid + ' ' + $spec.Create + ': with nothing at the path the step makes its folder') (Limit-Cs ($r.Stdout + $r.Stderr))
+            if (@($spec.Checks).Count -eq 0) {
+                Remove-CsPlant $path
+                continue
+            }
 
             # --- every checking step: the folder the creating step made passes ---
             foreach ($stepId in $spec.Checks) {
@@ -1623,6 +1655,8 @@ function Invoke-PhaseSandbox {
 
             # --- the race: their folder and a junction swap places at the path ---
             Remove-CsPlant $path
+            # Set-StrictMode 2.0 throws on $spec.Race where the spec has no Race key.
+            if (-not ($spec.ContainsKey('Race') -and $spec['Race'])) { continue }
             $alt = $path + '.alt'
             Remove-CsPlant $alt
             New-Item -ItemType Directory -Force -Path $path | Out-Null
