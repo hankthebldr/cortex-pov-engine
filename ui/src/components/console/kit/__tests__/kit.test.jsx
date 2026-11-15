@@ -64,6 +64,7 @@ describe('Button', () => {
       'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
       'Switch',
       'Pause', 'Clear', 'Screenshot',
+      'Open run',
       'Validate all',
       'Mark detected', 'Reset', 'Save',
     ])
@@ -109,6 +110,12 @@ describe('Button', () => {
     expect(svg).toHaveAttribute('data-icon', 'rotate')
     expect(svg).toHaveAttribute('aria-hidden', 'true')
     expect(b.firstChild).toBe(svg)
+  })
+
+  it('Open run is a verb with its own icon, and Download keeps its icon under another label', () => {
+    render(<><Button verb="Download" aria-label="Download CSV">CSV</Button><Button verb="Open run" /></>)
+    expect(screen.getByRole('button', { name: 'Download CSV' }).querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(screen.getByRole('button', { name: 'Open run' }).querySelector('svg')).toHaveAttribute('data-icon', 'terminal')
   })
 
   it('keeps the verb icon through a busy label', () => {
@@ -171,7 +178,7 @@ describe('Icon', () => {
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
       'back', 'forward',
       'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
-      'pause', 'clear', 'camera', 'down',
+      'pause', 'clear', 'camera', 'down', 'terminal',
       'x', 'check-all', 'check-circle', 'save',
     ])
   })

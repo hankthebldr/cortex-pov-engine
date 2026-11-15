@@ -256,7 +256,7 @@ describe('console-view smoke renders', () => {
     expect(screen.getByRole('button', { name: /Validate all/ })).toHaveClass('kit-btn')
   })
 
-  it('CoverageView (Dashboards) mounts and fetches the heatmap data on its MITRE tab', async () => {
+  it('CoverageView (Reports) mounts and fetches the heatmap data on its MITRE tab', async () => {
     const fetchMock = installRoutes({
       'GET /api/scenarios': { scenarios: [{ scenario_id: 'SIM-EDR-001', plane: 'EDR', steps: [] }] },
       'GET /api/runs': { runs: [], total: 0 },
@@ -267,7 +267,7 @@ describe('console-view smoke renders', () => {
     })
     render(<CoverageView />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: /dashboards/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: /reports/i })).toBeInTheDocument()
     })
     fireEvent.click(await screen.findByRole('tab', { name: /MITRE/ }))
     await waitFor(() => {

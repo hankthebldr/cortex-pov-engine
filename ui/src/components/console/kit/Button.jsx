@@ -31,6 +31,8 @@ export const VERBS = Object.freeze([
   'Switch',
   // A run's Live tab: hold or empty the stream, capture the timeline.
   'Pause', 'Clear', 'Screenshot',
+  // Reports › Executions: a scenario with no reviewed run opens the run itself.
+  'Open run',
   // Results › Detections: mark every detection that can be attested as seen.
   'Validate all',
   // Results › Detections: one detection, by hand. Reset puts a hand mark back
@@ -61,6 +63,7 @@ export const VERB_ICONS = Object.freeze({
   Pause: 'pause',
   Clear: 'clear',
   Screenshot: 'camera',
+  'Open run': 'terminal',
   'Validate all': 'check-all',
   'Mark detected': 'check-circle',
   Reset: 'repeat',
