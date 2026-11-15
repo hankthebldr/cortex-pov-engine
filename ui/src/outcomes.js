@@ -26,9 +26,20 @@ const RESULT_OUTCOMES = new Set([
   'prevented', 'detected', 'missed', 'pending', 'not_reached', 'not_executed',
 ])
 export const DETECTED_NOT_PREVENTED = 'DETECTED_NOT_PREVENTED'
-/** A step the host reports `exited` non-zero: it failed, so its silent rows are
- *  `not_executed`, never `missed` (core/engine/outcome.py::STEP_FAILED, #323). */
-export const STEP_FAILED = 'STEP_FAILED'
+
+/** `not_executed` reasons for a row whose step ran but sent Cortex nothing
+ *  (core/engine/outcome.py): the step failed (#323) or timed out, or the steps
+ *  a correlation joins sent nothing (#378). A one-line label and its tooltip. */
+const NOT_EXECUTED_REASONS = new Map([
+  ['STEP_FAILED', { label: 'step failed', title: "The step failed on the host, so a miss can't be claimed." }],
+  ['STEP_TIMED_OUT', { label: 'step timed out', title: "The step timed out on the host, so a miss can't be claimed." }],
+  ['INPUTS_NOT_SENT', { label: 'inputs not sent', title: "The steps this correlation joins sent nothing, so a miss can't be claimed." }],
+])
+
+/** `{label, title}` for one of those reasons, else null (a run that did not complete). */
+export function notExecutedReason(reason) {
+  return NOT_EXECUTED_REASONS.get(reason) || null
+}
 
 /**
  * The ONE mapping from a Result row (or a storyline entry) to the status key
