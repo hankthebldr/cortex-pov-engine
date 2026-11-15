@@ -1114,9 +1114,12 @@ class Orchestrator:
                         ev.launch_warnings.append(offline)
                     # ADVISORY (docs/design/agent-runtime-dependencies.md):
                     # visible before dispatch, never the enforcement.
-                    readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
+                    readiness = evaluate_runtime_readiness(
+                        scenario, agent_row.interpreters,
+                        getattr(agent_row, "runtime_facts", None),
+                    )
                     ev.runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
-                    if readiness.gaps and not collect_all:
+                    if not readiness.ready and not collect_all:
                         logger.warning(
                             "Runtime-dependency preflight gap scenario=%s agent=%s gaps=%s "
                             "(advisory — the beacon still checks live at execution time)",

@@ -14,10 +14,20 @@ check the REAL target at the REAL moment of execution.
 This module is the other half: PREFLIGHT VISIBILITY. `POST /api/connectors/{kind}/preflight`
 answers "is my TENANT reachable" before a POV; nothing answered "can this HOST
 run this scenario" before this. `evaluate_runtime_readiness` compares a
-scenario's declared per-step `requires_interpreters` against an agent's
-advertised interpreter roster (`Agent.interpreters`, populated at registration
-from the beacon's own `executor.AvailableLogicalNames()`) so an operator can
-see a gap BEFORE dispatch instead of discovering it mid-run.
+scenario's declared per-step `requires_interpreters` against what the agent
+reported at registration, so an operator can see a gap BEFORE dispatch instead
+of discovering it mid-run.
+
+The beacon resolves each declared name on PATH, so the field also carries names
+that are not interpreters (sudo, ssh, scp, sshpass). Each name is judged by
+what it is:
+
+* an interpreter (python, perl, ruby, node) against the interpreter roster
+  (`Agent.interpreters`, from the beacon's own `executor.AvailableLogicalNames()`);
+* any other name against the beacon's tool facts (`Agent.runtime_facts.tools`,
+  what it found of the list it looked for). Found is fine. Looked for and not
+  found is a gap. Never looked for is `unverified`: nothing is known, so it is
+  not a gap.
 
 THIS IS ADVISORY, NOT THE ENFORCEMENT. An agent's advertised roster is a
 snapshot from its last registration — it can go stale (a package removed after
@@ -30,6 +40,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
+
+# The list every beacon looks for (agent/runtimefacts/facts.go DefaultProbeTools;
+# a Go test fails if the two drift).
+from engine.agent_manifest import PROBE_TOOLS
 
 # Kept in sync (by hand, not by codegen) with agent/executor/interpreter.go's
 # interpreterAliases. A drift here only widens or narrows the ADVISORY
@@ -72,14 +86,22 @@ def interpreter_satisfied(logical: str, available: Iterable[str]) -> bool:
 class StepGap:
     step_id: str
     missing: list[str] = field(default_factory=list)
+    #: Names the beacon never looked for. Nothing is known about them, so they
+    #: are not a gap.
+    unverified: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"step_id": self.step_id, "missing": self.missing}
+        out: dict[str, Any] = {"step_id": self.step_id, "missing": self.missing}
+        if self.unverified:
+            out["unverified"] = self.unverified
+        return out
 
 
 @dataclass
 class RuntimeReadiness:
+    #: False only when some step has a ``missing`` name.
     ready: bool
+    #: One entry per step with a ``missing`` or an ``unverified`` name.
     gaps: list[StepGap] = field(default_factory=list)
     agent_interpreters: list[str] = field(default_factory=list)
 
@@ -101,20 +123,50 @@ def _steps_of(scenario: Any) -> list[dict[str, Any]]:
     return steps or []
 
 
+def _tool_facts(agent_facts: Any) -> Optional[tuple[set[str], set[str]]]:
+    """``(found, looked_for)`` from an agent's ``runtime_facts``, or None when
+    the agent sent no tool list (an older beacon, or no facts at all).
+
+    ``looked_for`` is the beacon's own ``probed`` list when it sends one, else
+    the list every beacon looks for.
+    """
+    if not isinstance(agent_facts, dict):
+        return None
+    tools = agent_facts.get("tools")
+    if not isinstance(tools, list):
+        return None
+    probed = agent_facts.get("probed")
+    return set(tools), set(probed if isinstance(probed, list) else PROBE_TOOLS)
+
+
 def evaluate_runtime_readiness(
     scenario: Any,
     agent_interpreters: Optional[Iterable[str]],
+    agent_facts: Optional[dict[str, Any]] = None,
 ) -> RuntimeReadiness:
     """Compare a scenario's declared per-step ``requires_interpreters``
-    against ``agent_interpreters`` (an agent's advertised roster). Pure — no
-    I/O, no DB access — so it is cheap to call on every launch and trivial to
-    unit test.
+    against what the agent reported: ``agent_interpreters`` (its interpreter
+    roster) and ``agent_facts`` (its ``runtime_facts``, for names that are not
+    interpreters). Pure — no I/O, no DB access — so it is cheap to call on
+    every launch and trivial to unit test.
     """
     available = list(agent_interpreters or [])
+    tool_facts = _tool_facts(agent_facts)
     gaps: list[StepGap] = []
     for step in _steps_of(scenario):
-        required = step.get("requires_interpreters") or []
-        missing = [r for r in required if not interpreter_satisfied(r, available)]
-        if missing:
-            gaps.append(StepGap(step_id=step.get("id", ""), missing=missing))
-    return RuntimeReadiness(ready=not gaps, gaps=gaps, agent_interpreters=available)
+        missing: list[str] = []
+        unverified: list[str] = []
+        for name in step.get("requires_interpreters") or []:
+            if interpreter_satisfied(name, available):
+                continue
+            if name in INTERPRETER_ALIASES:
+                missing.append(name)
+            elif tool_facts is None:
+                unverified.append(name)
+            elif name not in tool_facts[0]:
+                (missing if name in tool_facts[1] else unverified).append(name)
+        if missing or unverified:
+            gaps.append(StepGap(
+                step_id=step.get("id", ""), missing=missing, unverified=unverified))
+    return RuntimeReadiness(
+        ready=not any(g.missing for g in gaps), gaps=gaps, agent_interpreters=available)
