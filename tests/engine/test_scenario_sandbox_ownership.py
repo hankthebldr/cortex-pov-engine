@@ -91,6 +91,7 @@ SANDBOXES = {
     "SIM-DLP-004": ["/tmp/cortex_dlp_cross"],
     "SIM-DLP-005": ["/tmp/cortex_dlp_phi"],
     "SIM-EDR-003": ["/tmp/.cortexsim_ssh_test"],
+    "SIM-EDR-007": ["/var/lib/cortexsim/edr-007"],
     "SIM-EDR-008": ["/tmp/cortexsim_victim", "/tmp/cortexsim-edr-008"],
     "SIM-EDR-009": ["/tmp/cortexsim_edr009_stage", "/tmp/cortexsim_edr009_dest"],
     "SIM-EDR-011": ["/tmp/cortexsim_preenc"],
@@ -223,6 +224,18 @@ PRIVATE_FILES = {
 }
 PRIVATE_DIR = """C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT"""
 RUNS_AS_BEACON = {"root", "direct", "container-runtime"}
+# Directories the operator stages before the run (TTP-2026-0006's payload makes
+# this one): no step creates them, every step checks them.
+OPERATOR_STAGED = {"/var/lib/cortexsim/edr-007"}
+# Windows: scenario id -> (the folder as the step spells it, its marker SID, the
+# creating step, the checking steps). See scripts/ci/windows-native-e2e.ps1
+# -Phase sandbox, which runs these guards on Windows PowerShell 5.1.
+WINDOWS_SANDBOXES = {
+    "SIM-MP-023": ("'C:\\ProgramData\\cortexsim-mp023'", "S-1-9-4243-23", "step-01", ["step-03", "step-04"]),
+    "SIM-MP-026": ("'C:\\ProgramData\\cortexsim-mp026'", "S-1-9-4243-26", "step-01",
+                   ["step-02", "step-03", "step-06", "step-07", "step-08", "step-09"]),
+    "SIM-MP-029": ("Join-Path $env:TEMP 'cortexsim-mp-029'", "S-1-9-4243-29", "step-01", ["step-02", "step-03"]),
+}
 OTHER_UID = 4242  # stands in for another local user
 
 
@@ -334,11 +347,13 @@ def test_each_scratch_directory_is_created_once_with_the_mode_its_checks_expect(
     for sid, doc in _scenarios().items():
         for sandbox in SANDBOXES[sid]:
             guards = [g for s in doc["steps"] for _, text in _texts(s) if (g := _guard(text, sandbox))]
+            assert guards, (sid, sandbox, "no step makes or checks it")
             made = [re.search(r"mkdir -m ([0-7]{3})", g[2].group(0)).group(1) for g in guards if g[0] == "create"]
-            assert len(made) == 1, (sid, sandbox, made)
+            assert len(made) == (0 if sandbox in OPERATOR_STAGED else 1), (sid, sandbox, made)
             expected = {mode for g in guards if g[0] == "check"
                         for mode in re.findall(r"irectory:[^:]+:([0-7]{3})", g[2].group(0))}
-            assert expected <= set(made), (sid, sandbox, "created " + made[0], "checked for " + str(expected))
+            allowed = set(made) or {"700"}       # an operator-staged directory must be the user's 0700 one
+            assert expected <= allowed, (sid, sandbox, "created " + str(made), "checked for " + str(expected))
 
 
 def _private_cases():
@@ -368,6 +383,35 @@ def test_a_single_step_file_lives_in_a_directory_the_step_makes(sid, name):
         assert (step.get("identity") or default) in RUNS_AS_BEACON, step["id"]
         made = text.find(PRIVATE_DIR)
         assert 0 <= made < text.find("$C/"), f"{step['id']} uses $C before it makes it"
+
+
+def _windows(doc: dict, step_id: str) -> str:
+    return (next(s for s in doc["steps"] if s["id"] == step_id).get("platform_variants") or {})["windows"]
+
+
+@pytest.mark.parametrize("sid", sorted(WINDOWS_SANDBOXES))
+def test_a_windows_step_makes_or_checks_its_fixed_folder_first(sid):
+    """The Windows half of the rule, as text. What it does on Windows PowerShell 5.1
+    is proven by the CI windows job's sandbox phase, which runs these guards."""
+    path, marker, creator, checkers = WINDOWS_SANDBOXES[sid]
+    doc = _corpus()[sid]
+    create = _windows(doc, creator)
+    assert create.startswith(f"$sandbox = {path}\n"), create[:120]
+    for line in ('if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }',
+                 'cmd.exe /c mkdir "$sandbox"', f"(A;;0x1;;;{marker})", "Set-Acl -LiteralPath $sandbox",
+                 "if (Get-ChildItem -LiteralPath $sandbox -Force)"):
+        assert line in create, line
+    for step_id in checkers:
+        check = _windows(doc, step_id)
+        assert check.startswith(f"$sandbox = {path}\n"), (step_id, check[:120])
+        head = check[:check.index("did not complete")]
+        assert "$acl = Get-Acl -LiteralPath $sandbox" in head and f"($ids -contains '{marker}')" in head, step_id
+        assert "AreAccessRulesProtected" in head and "GetOwner(" in head, step_id
+    # PowerShell 5.1's Remove-Item -Recurse walks into a junction's target; cmd's rd does not.
+    folder = path.split("'")[-2]
+    texts = [v for s in doc["steps"] for k, v in (s.get("platform_variants") or {}).items() if k == "windows"]
+    texts += doc["cleanup"]["commands"]
+    assert not [t for t in texts if "Remove-Item -Recurse" in t and folder in t], folder
 
 
 # --------------------------------------------------------------------------- behaviour
@@ -429,6 +473,7 @@ def _clear(*paths: str) -> None:
 
 
 def _plant_dir(path: str, uid: int) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)   # /var/lib/cortexsim for an operator-staged one
     os.mkdir(path, 0o755)
     Path(path, "planted").write_text("planted\n")
     os.chown(path, uid, uid)
