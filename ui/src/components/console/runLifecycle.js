@@ -54,8 +54,7 @@ export const NOT_EXECUTED_COPY = Object.freeze({
   result: VERDICT_REASONS.not_executed.label,
   title: 'no step that carries a detection ran — nothing to review',
   step: 'no detection step ran',
-  message: 'No step that carries a detection ran, so nothing was tested and there is nothing '
-    + 'to review. Run the scenario again.',
+  message: 'No detection step ran — nothing was tested',
 })
 
 /** What the run was reviewed against, or null when the tenant was never read for it. */

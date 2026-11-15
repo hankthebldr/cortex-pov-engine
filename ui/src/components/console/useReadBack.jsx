@@ -57,7 +57,7 @@ export function readBackSummary(summary) {
   if (Number.isFinite(summary.queries_issued)) {
     parts.push(`${summary.queries_issued} quer${summary.queries_issued === 1 ? 'y' : 'ies'}`)
   }
-  return `Reviewed against ${from}${parts.length ? ` — ${parts.join(' · ')}` : ''}.`
+  return `Reviewed via ${from}${parts.length ? ` — ${parts.join(' · ')}` : ''}.`
 }
 
 function useReadBackState() {

@@ -16,10 +16,17 @@ import '../../styles/destinations/run-lifecycle.css'
 void React
 
 const COPY = {
-  [PHASE.RUNNING]: 'This run is still running. It can be reviewed against the tenant once it finishes.',
-  [PHASE.NOTHING]: 'No step of this run reached its agent, so there is nothing to review. Check the agent and run it again.',
-  [PHASE.UNREAD]: 'This run has not been reviewed against the tenant, so it has no results yet. Review is read-only: it reads alerts from Cortex and changes nothing there.',
-  [PHASE.READING]: 'Reading alerts from the tenant and matching them to what this run expected…',
+  [PHASE.RUNNING]: 'Running — review it once it finishes',
+  [PHASE.NOTHING]: 'Nothing reached the agent — check it',
+  [PHASE.UNREAD]: 'Not reviewed — no results yet',
+  [PHASE.READING]: 'Reviewing against the tenant…',
+}
+
+// The one detail a DC may want, kept off the line (Henry, 2026-11-15: one
+// short line per state, detail in a tooltip).
+const DETAIL = {
+  [PHASE.UNREAD]: 'Review reads alerts from Cortex and changes nothing there.',
+  [PHASE.READING]: 'Matching the tenant\'s alerts to what this run expected.',
 }
 
 export default function ReadBackNotice({ lifecycle, outcome = null, onReadBack = () => {} }) {
@@ -29,14 +36,14 @@ export default function ReadBackNotice({ lifecycle, outcome = null, onReadBack =
   return (
     <div className="readback-notice" data-testid="readback-notice" data-phase={lifecycle.phase}>
       <div className="readback-notice__text">
-        <p>{text}</p>
+        <p title={DETAIL[lifecycle.phase]}>{text}</p>
         {why && <p className="readback-notice__why" role="status">{why}</p>}
       </div>
       {lifecycle.phase === PHASE.UNREAD && (
-        <Button variant="primary" onClick={onReadBack}>Review</Button>
+        <Button variant="primary" verb="Review" onClick={onReadBack} />
       )}
       {lifecycle.phase === PHASE.READING && (
-        <Button variant="secondary" disabled>Reviewing…</Button>
+        <Button variant="secondary" verb="Review" disabled>Reviewing…</Button>
       )}
     </div>
   )

@@ -5,6 +5,7 @@ import useTimelineData from './useTimelineData.js'
 import { isHitStatus } from '../../outcomes.js'
 import { toPng } from 'html-to-image'
 import { downloadReport } from '../../api/client.js'
+import { Button } from './kit/index.js'
 
 /**
  * InflightView — the In-Flight tab.
@@ -14,7 +15,7 @@ import { downloadReport } from '../../api/client.js'
  *   ▸ narrative title (display font)
  *   ▸ summary prose (Fraunces / narrative serif) — the "why this scenario matters"
  *   ▸ NarrativeTimeline — the hero artifact
- *   ▸ footer card with quick stats + Screenshot / Export CTAs
+ *   ▸ footer: one line of stats + Screenshot / Download (kit verbs)
  *
  * Data:
  *   activeRun  — { scenarioId, runId, step, totalSteps, ... }
@@ -223,48 +224,24 @@ export default function InflightView({
         <p>
           {stats.detected > 0 ? (
             <>
-              In <strong>
-                {fmtElapsed(activeRun?.elapsed)}
-              </strong>{' '}
-              Cortex has detected {stats.detected} of {stats.totalDetections} expected signals
-              {stats.stitchCount > 0 && (
-                <>{' '}across {stats.stitchCount} stitched event pair{stats.stitchCount === 1 ? '' : 's'}</>
-              )}
-              .
+              {stats.detected} of {stats.totalDetections} expected signals detected
+              {stats.stitchCount > 0 && <> · {stats.stitchCount} stitched</>}
             </>
           ) : isLive ? (
-            <>
-              Run started. The timeline will update as detections arrive in
-              the Cortex Data Lake (typical ingest latency: 30–120s).
-            </>
-          ) : (
-            <>
-              Showing the most recent completed run. Click <strong>Screenshot</strong>{' '}
-              to capture the timeline as a POV artifact.
-            </>
-          )}
+            <span title="Typical Cortex ingest latency is 30–120 s">Waiting for detections</span>
+          ) : null}
         </p>
         <div className="narrative__footer-actions inflight-footer-actions">
-          <button className="btn" onClick={handleScreenshot} disabled={capturing || frames.length === 0}>
-            {capturing ? 'Capturing…' : 'Screenshot'}
-          </button>
-          <button
-            className="btn btn--primary"
-            onClick={handleExport}
-            disabled={exporting || !targetRunId}
-          >
-            {exporting ? 'Exporting…' : 'Export POV'}
-          </button>
+          <Button verb="Screenshot" onClick={handleScreenshot} disabled={capturing || frames.length === 0}
+            title="Save the timeline as a PNG">
+            {capturing ? 'Capturing…' : undefined}
+          </Button>
+          <Button verb="Download" onClick={handleExport} disabled={exporting || !targetRunId}
+            title="Download this run's POV report (Markdown)">
+            {exporting ? 'Downloading…' : undefined}
+          </Button>
         </div>
       </div>
     </div>
   )
-}
-
-function fmtElapsed(seconds) {
-  if (seconds == null) return '—'
-  const s = Math.max(0, Math.floor(seconds))
-  const mm = String(Math.floor(s / 60)).padStart(2, '0')
-  const ss = String(s % 60).padStart(2, '0')
-  return `${mm}:${ss}`
 }

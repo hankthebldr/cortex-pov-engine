@@ -67,7 +67,8 @@ test('Review on a reviewed run asks first, and Cancel posts nothing', async ({ p
   })
   await page.goto(`/#/proof?run=${runId}`)
   await expect(page.getByTestId('tenant-evidence')).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('button', { name: 'Review' }).click()
+  // exact: the safety banner's "Review scope" also contains the word.
+  await page.getByRole('button', { name: 'Review', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('Review this run?')
   await expect(dialog).toContainText(BODY)

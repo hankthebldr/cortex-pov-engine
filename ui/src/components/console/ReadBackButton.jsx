@@ -43,11 +43,12 @@ export default function ReadBackButton({ runId, onDone = () => {}, variant = 'se
     <>
       <Button
         variant={variant}
+        verb="Review"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={() => setOpen(true)}
       >
-        {busy ? 'Reviewing…' : 'Review'}
+        {busy ? 'Reviewing…' : undefined}
       </Button>
       <ConfirmDialog
         open={open}

@@ -49,7 +49,7 @@ test('Runs list: rows carry live fields, the pager turns at 25, the scenario fil
   // A staged bundle has not been reviewed against the tenant, so it carries no
   // detection count yet — and its one action is Review (design v26 §4.6).
   await expect(row.getByTestId('run-detections'), 'no detection claim before a review').toHaveText('not reviewed')
-  await expect(row.getByRole('button', { name: 'Review' })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Review', exact: true })).toBeVisible()
   await expect(row.getByTestId('run-status')).toHaveText(/staged$/)
 
   // Pager: 25 per page, and the label counts the whole list.

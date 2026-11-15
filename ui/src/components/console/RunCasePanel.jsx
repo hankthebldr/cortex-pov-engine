@@ -78,7 +78,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
         <div className="run-case__action-row">
-          <p className="run-case__empty">Not reviewed yet — Review the run.</p>
+          <p className="run-case__empty">Not reviewed</p>
           {reconcileAction}
         </div>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>

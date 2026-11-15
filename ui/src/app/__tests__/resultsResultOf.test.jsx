@@ -61,7 +61,7 @@ describe('Results › Result of', () => {
     const bar = await screen.findByRole('region', { name: /result of/i })
     expect(bar).toHaveTextContent('SIM-EDR-003')
     expect(bar).toHaveTextContent('run-read')
-    expect(bar).toHaveTextContent(/reviewed against xsiam:lab/i)
+    expect(bar).toHaveTextContent(/reviewed via xsiam:lab/i)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Report')
   })
 
@@ -79,7 +79,7 @@ describe('Results › Result of', () => {
     mount({ runs: [UNREAD, READ_NEWER], params: { run: 'run-unread-3' } })
     const bar = await screen.findByRole('region', { name: /result of/i })
     expect(bar).toHaveTextContent('SIM-CDR-001')
-    expect(screen.getByText(/has not been reviewed/i)).toBeInTheDocument()
+    expect(screen.getByText('Not reviewed — no results yet')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /validate all/i })).toBeNull()
     expect(screen.queryByText(/coverage/i)).toBeNull()
@@ -92,13 +92,13 @@ describe('Results › Result of', () => {
     }
     mount({ runs: [NOT_EXECUTED, READ_NEWER], params: { run: 'run-dry-4' } })
     await screen.findByRole('region', { name: /result of/i })
-    expect(screen.getByTestId('readback-notice')).toHaveTextContent(/no step that carries a detection ran/i)
+    expect(screen.getByTestId('readback-notice')).toHaveTextContent('No detection step ran — nothing was tested')
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull()
   })
 
   it('with runs but none read back, explains that and links to Runs', async () => {
     mount({ runs: [UNREAD] })
-    expect(await screen.findByText(/must be reviewed/i)).toBeInTheDocument()
+    expect(await screen.findByText(/No reviewed runs/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '#/runs')
     expect(screen.queryByRole('region', { name: /result of/i })).toBeNull()
   })

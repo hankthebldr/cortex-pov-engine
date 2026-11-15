@@ -64,9 +64,9 @@ describe('RunCasePanel', () => {
     expect(screen.getByTestId('run-case-shared').textContent).toMatch(/3/)
   })
 
-  it('null ledger renders "not reviewed yet"', () => {
+  it('null ledger renders "Not reviewed"', () => {
     render(<RunCasePanel ledger={null} />)
-    expect(screen.getByText(/Not reviewed yet/)).toBeTruthy()
+    expect(screen.getByText('Not reviewed')).toBeTruthy()
     expect(screen.getByText(CASE_DISCLAIMER)).toBeTruthy()
   })
 
@@ -208,7 +208,7 @@ describe('RunCasePanel Review action', () => {
 describe('RunCasePanel names the console verb, not "reconcile"', () => {
   it('its empty, no-case and unreadable copy says Review', () => {
     const { container, rerender } = render(<RunCasePanel ledger={null} />)
-    expect(container.textContent).toContain('Not reviewed yet — Review the run.')
+    expect(container.textContent).toContain('Not reviewed')
     rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
     expect(container.textContent).not.toMatch(/reconcile/i)
     rerender(<RunCasePanel ledger={{ ...LEDGER, code: undefined }} />)

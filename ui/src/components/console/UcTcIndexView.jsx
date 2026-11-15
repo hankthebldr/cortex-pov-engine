@@ -2075,13 +2075,11 @@ function GapAction({ p, reading, actions }) {
   if (p.stall === 'not_read_back' && p.runId) {
     const busy = reading && reading.has && reading.has(p.runId)
     return (
-      <Button onClick={() => actions.readBack(p.runId)} disabled={busy} aria-busy={busy || undefined}>
-        Review
-      </Button>
+      <Button verb="Review" onClick={() => actions.readBack(p.runId)} disabled={busy} aria-busy={busy || undefined} />
     )
   }
   if ((p.stall === 'not_seen' || (p.stall === 'unknown' && p.unknownSource === 'counts')) && p.runId) {
-    return <Button onClick={() => actions.openResults(p.runId)}>Open results</Button>
+    return <Button verb="Open results" onClick={() => actions.openResults(p.runId)} />
   }
   return null
 }

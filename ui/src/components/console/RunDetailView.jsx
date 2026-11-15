@@ -262,7 +262,7 @@ function stageSubs(run, lifecycle, { activeRun, isThisActive, detail }) {
         ? (lifecycle.nothing === NOTHING.NOT_EXECUTED ? NOT_EXECUTED_COPY.step : 'no step ran')
         : reported ? `${reported} step${reported === 1 ? '' : 's'} reported` : 'ran',
     lifecycle.ended ? (absoluteTime(run?.completed_at) || lifecycle.ended.toLowerCase()) : 'not yet',
-    lifecycle.phase === PHASE.READY ? `against ${lifecycle.readBack.from}`
+    lifecycle.phase === PHASE.READY ? `via ${lifecycle.readBack.from}`
       : lifecycle.phase === PHASE.READING ? 'reviewing…' : 'not yet',
     lifecycle.phase === PHASE.READY ? res.text : 'none yet',
   ]
@@ -273,25 +273,25 @@ function lifecycleMessage(run, lifecycle) {
   const agent = runAgent(run)
   switch (lifecycle.phase) {
     case PHASE.RUNNING:
-      return `Running on ${agent}. It can be reviewed against the tenant once it finishes.`
+      return `Running on ${agent}`
     case PHASE.NOTHING:
       return lifecycle.nothing === NOTHING.NOT_EXECUTED
         ? NOT_EXECUTED_COPY.message
-        : 'No step reached its agent, so there is nothing to review. Check the agent and run it again.'
+        : 'Nothing reached the agent — check it'
     case PHASE.READING:
-      return 'Reading alerts from the tenant and matching them to what this run expected…'
+      return 'Reviewing against the tenant…'
     case PHASE.UNREAD:
-      return `${lifecycle.ended || 'Ended'}. It has not been reviewed against the tenant yet, so there are no results.`
+      return `${lifecycle.ended || 'Ended'} · not reviewed`
     default: {
       const res = resultCell(run, lifecycle)
       if (res.tone === 'unproven') {
-        return `The run did not complete, so its review against ${lifecycle.readBack.from} is not a measurement of the tenant.`
+        return 'Incomplete run — not a measurement'
       }
       const expected = run?.expected_detections
       if (typeof expected === 'number' && expected > 0 && typeof run.detected_count === 'number') {
-        return `${run.detected_count} of ${expected} expected detections were seen in the tenant (reviewed against ${lifecycle.readBack.from}).`
+        return `${run.detected_count} of ${expected} detected · ${lifecycle.readBack.from}`
       }
-      return `Reviewed against ${lifecycle.readBack.from}.`
+      return `Reviewed · ${lifecycle.readBack.from}`
     }
   }
 }
@@ -508,13 +508,13 @@ export default function RunDetailView({
         <div className="run-detail__actions">
           {canAbort && <AbortControl runId={runId} onAbort={onAbort} />}
           {lifecycle?.phase === PHASE.UNREAD && (
-            <Button variant="primary" onClick={() => readBack(runId)}>Review</Button>
+            <Button variant="primary" verb="Review" onClick={() => readBack(runId)} />
           )}
           {lifecycle?.phase === PHASE.READING && (
-            <Button variant="secondary" disabled>Reviewing…</Button>
+            <Button variant="secondary" verb="Review" disabled>Reviewing…</Button>
           )}
           {lifecycle?.phase === PHASE.READY && (
-            <Button variant="primary" onClick={() => onNavigate('proof', { run: runId })}>Open results</Button>
+            <Button variant="primary" verb="Open results" onClick={() => onNavigate('proof', { run: runId })} />
           )}
           {lifecycle?.phase === PHASE.NOTHING && descriptor.scenarioId && (
             <Button variant="primary" onClick={() => onNavigate('preflight', { arm: descriptor.scenarioId })}>Run</Button>

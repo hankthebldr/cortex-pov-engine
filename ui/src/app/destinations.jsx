@@ -757,7 +757,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
         <div className="view-head"><div><h1>Report</h1></div></div>
         {runs.length === 0 ? (
           <div className="results-empty__body">
-            <p>No runs yet. Results come from a run that has finished and been reviewed against the tenant.</p>
+            <p title="Results come from a finished run that has been reviewed against the tenant">No runs yet</p>
             <Button variant="primary" onClick={() => onNavigate('library')}>Run</Button>
           </div>
         ) : runParam ? (
@@ -767,9 +767,8 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
           </div>
         ) : (
           <div className="results-empty__body">
-            <p>
-              No run has been reviewed yet. A run must be reviewed against the tenant before it has
-              results: Review a finished run on <a href="#/runs">Runs</a>.
+            <p title="A run has results only once it is reviewed against the tenant">
+              No reviewed runs — review one on <a href="#/runs">Runs</a>
             </p>
           </div>
         )}

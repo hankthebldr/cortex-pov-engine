@@ -86,11 +86,11 @@ function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
     case PHASE.RUNNING:
       return <Button variant="secondary" className="run-list__act" onClick={() => onOpen(id)}>Open</Button>
     case PHASE.UNREAD:
-      return <Button variant="primary" className="run-list__act" onClick={() => onReadBack(id)}>Review</Button>
+      return <Button variant="primary" className="run-list__act" verb="Review" onClick={() => onReadBack(id)} />
     case PHASE.READING:
-      return <Button variant="secondary" className="run-list__act" disabled>Reviewing…</Button>
+      return <Button variant="secondary" className="run-list__act" verb="Review" disabled>Reviewing…</Button>
     case PHASE.READY:
-      return <Button variant="secondary" className="run-list__act" onClick={() => onOpenResults(id)}>Open results</Button>
+      return <Button variant="secondary" className="run-list__act" verb="Open results" onClick={() => onOpenResults(id)} />
     default:
       return (
         <span className="run-list__noact" title={lifecycle.nothing === NOTHING.NOT_EXECUTED

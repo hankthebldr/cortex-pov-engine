@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react'
 import useRunEventStream from './useRunEventStream.js'
 import { splitStepTranscript } from './useRunStepTail.js'
 import { isRunSettled } from './runStatus.js'
-import { StatusIcon } from './kit/index.js'
+import { StatusIcon, Button, Icon } from './kit/index.js'
 import { serverDate } from '../../api/time.js'
 
 /**
@@ -16,9 +16,9 @@ import { serverDate } from '../../api/time.js'
  * Operator behavior:
  *   - Auto-scrolls to bottom by default (terminal-like)
  *   - User scroll-up pins the viewport; "↓ jump to live" pill appears
- *   - Level filter chips: info · step · detect · warn · error
- *   - Pause / resume / clear controls
- *   - Connection status badge: live (green) · poll (amber) · error (red)
+ *   - Level filters (kit toggle Buttons): info · step · detect · warn · error
+ *   - Pause (a pressed toggle) and Clear, kit verb Buttons
+ *   - Connection status as a StatusIcon: Live · Polling · Connecting · Error · Paused
  *
  * A settled run (complete · failed · aborted · staged) has nothing left to
  * stream, so the panel shows the output SimCore stored for it instead
@@ -96,9 +96,7 @@ export default function EventStream({ runId, compact = false, status = null, out
   if (!runId) {
     return (
       <div className={'event-stream' + (compact ? ' event-stream--compact' : '')}>
-        <div className="event-stream__empty mono">
-          no active run — launch a scenario to see live agent output
-        </div>
+        <div className="event-stream__empty mono">No active run</div>
       </div>
     )
   }
@@ -108,10 +106,11 @@ export default function EventStream({ runId, compact = false, status = null, out
   // ERR is checked FIRST: the hook reports a failed fetch as mode 'error' with
   // connected=false, and nesting ERR inside the `connected` branch meant it
   // could never render — a dead SimCore read as "..." (still connecting).
-  const modeBadge = mode === 'error' ? { text: 'ERR',   cls: 'event-stream__mode--err'  }
-    : !connected                     ? { text: '...',   cls: 'event-stream__mode--poll' }
-    : mode === 'stream'              ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
-    :                                  { text: 'POLL',  cls: 'event-stream__mode--poll' }
+  const modeBadge = paused             ? { status: 'off',      word: 'Paused' }
+    : mode === 'error'                 ? { status: 'down',     word: 'Error' }
+    : !connected                       ? { status: 'unknown',  word: 'Connecting' }
+    : mode === 'stream'                ? { status: 'up',       word: 'Live' }
+    :                                    { status: 'degraded', word: 'Polling' }
 
   return (
     <section
@@ -121,43 +120,29 @@ export default function EventStream({ runId, compact = false, status = null, out
       <div className="event-stream__head">
         <div className="event-stream__title">
           <span className="event-stream__title-text mono">agent · stdout</span>
-          <span className={`event-stream__mode mono ${modeBadge.cls}`}>
-            {modeBadge.text}
-          </span>
+          <StatusIcon status={modeBadge.status} word={modeBadge.word} />
         </div>
         <div className="event-stream__filters" role="group" aria-label="Level filters">
-          {LEVELS.map((level) => (
-            <button
-              key={level}
-              type="button"
-              className={
-                'event-stream__filter event-stream__filter--' + level +
-                (enabled.has(level) ? ' is-active' : '')
-              }
-              onClick={() => toggleLevel(level)}
-              aria-pressed={enabled.has(level)}
-            >
-              {LEVEL_LABEL[level]}
-            </button>
-          ))}
+          {LEVELS.map((level) => {
+            const on = enabled.has(level)
+            return (
+              <Button
+                key={level}
+                className={'event-stream__filter event-stream__filter--' + level}
+                onClick={() => toggleLevel(level)}
+                aria-pressed={on}
+                title={on ? `Hide ${LEVEL_LABEL[level]} lines` : `Show ${LEVEL_LABEL[level]} lines`}
+              >
+                {on && <Icon name="check" size={12} />}
+                {LEVEL_LABEL[level]}
+              </Button>
+            )
+          })}
         </div>
         <div className="event-stream__controls">
-          <button
-            type="button"
-            className="event-stream__btn"
-            onClick={() => setPaused((p) => !p)}
-            title={paused ? 'Resume' : 'Pause'}
-          >
-            {paused ? '▶ resume' : '⏸ pause'}
-          </button>
-          <button
-            type="button"
-            className="event-stream__btn"
-            onClick={reset}
-            title="Clear buffer (does not affect server-side history)"
-          >
-            ⊘ clear
-          </button>
+          <Button verb="Pause" aria-pressed={paused} onClick={() => setPaused((p) => !p)}
+            title={paused ? 'Resume the stream' : 'Hold the stream'} />
+          <Button verb="Clear" onClick={reset} title="Empty this view (SimCore keeps the run's output)" />
         </div>
       </div>
 
@@ -206,14 +191,10 @@ export default function EventStream({ runId, compact = false, status = null, out
         )}
 
         {!stuckToBottom && (
-          <button
-            type="button"
-            className="event-stream__jump-live"
-            onClick={jumpToLive}
-            aria-label="Jump to live"
-          >
-            ↓ live
-          </button>
+          <Button className="event-stream__jump-live" onClick={jumpToLive} aria-label="Jump to live">
+            <Icon name="down" size={12} />
+            Live
+          </Button>
         )}
       </div>
     </section>

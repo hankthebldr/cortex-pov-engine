@@ -81,7 +81,7 @@ describe('Review on the Runs list', () => {
       </EnvironmentContext.Provider>,
     )
     const msg = await screen.findByTestId('run-lifecycle-message')
-    expect(msg).toHaveTextContent(/no step that carries a detection ran/i)
+    expect(msg).toHaveTextContent('No detection step ran — nothing was tested')
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })

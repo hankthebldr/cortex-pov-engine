@@ -154,6 +154,12 @@ describe('Run detail › Live — the panel gets the record the page already fet
     )
     await waitFor(() => expect(steps()).toHaveLength(3))
     expect(screen.queryByText(/waiting for agent/i)).toBeNull()
+    // The Live footer's actions are kit verbs with their icons, not legacy .btn.
+    for (const verb of ['Screenshot', 'Download']) {
+      const b = screen.getByRole('button', { name: verb })
+      expect(b).toHaveClass('kit-btn')
+      expect(b).toHaveAttribute('data-verb', verb)
+    }
   })
 })
 

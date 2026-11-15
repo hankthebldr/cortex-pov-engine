@@ -56,7 +56,7 @@ describe('Run detail lifecycle', () => {
 
   it('a finished, unread run says it has no results and offers Review as the primary action', () => {
     mount(base)
-    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/has not been reviewed/i)
+    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/· not reviewed$/)
     const btn = screen.getByRole('button', { name: 'Review' })
     expect(btn.className).toMatch(/kit-btn--primary/)
     expect(screen.queryByRole('button', { name: 'Open results' })).toBeNull()
@@ -67,7 +67,7 @@ describe('Run detail lifecycle', () => {
     mount({ ...base, detected_count: 3, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }, { onNavigate })
     fireEvent.click(screen.getByRole('button', { name: 'Open results' }))
     expect(onNavigate).toHaveBeenCalledWith('proof', { run: 'run-1' })
-    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent(/3 of 10 expected detections were seen/i)
+    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent('3 of 10 detected · xsiam:lab')
   })
 
   it('the Evidence tab of an unread run shows no scorecard — it offers Review instead', () => {

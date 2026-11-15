@@ -331,13 +331,13 @@ function RunHead({ col, name, outcome, onReadBack, onOpenResults }) {
       <span className="run-compare__head-row">
         <StatusIcon status={ph.status} word={ph.word} />
         {col.phase === PHASE.UNREAD && (
-          <Button variant="primary" className="run-compare__act" onClick={onReadBack}>Review</Button>
+          <Button variant="primary" className="run-compare__act" verb="Review" onClick={onReadBack} />
         )}
         {col.phase === PHASE.READING && (
-          <Button variant="secondary" className="run-compare__act" disabled>Reviewing…</Button>
+          <Button variant="secondary" className="run-compare__act" verb="Review" disabled>Reviewing…</Button>
         )}
         {col.phase === PHASE.READY && (
-          <Button variant="secondary" className="run-compare__act" onClick={onOpenResults}>Open results</Button>
+          <Button variant="secondary" className="run-compare__act" verb="Open results" onClick={onOpenResults} />
         )}
       </span>
       {why && <span className="run-compare__why" data-testid="run-compare-why">{why}</span>}

@@ -2,7 +2,7 @@
  * ResultOfBar — whose results these are (design v26 §4.6).
  *
  * Results always opens with this bar: the scenario, the exact run of it, where
- * it ran, how it ended, and what it was reviewed against. A switcher moves
+ * it ran, how it ended, and what it was reviewed through. A switcher moves
  * between runs that have been reviewed (the URL's `?run=`), so a result is
  * never shown without the run it belongs to.
  */
@@ -56,7 +56,7 @@ export default function ResultOfBar({
         <div className="result-of__facts mono" title={id}>{facts.join(' · ')}</div>
         <div className={'result-of__readback' + (rb ? ' result-of__readback--yes' : '')}>
           {rb
-            ? `Reviewed against ${rb.from}${rb.at ? ` · ${absoluteTime(rb.at)}` : ''}`
+            ? `Reviewed via ${rb.from}${rb.at ? ` · ${absoluteTime(rb.at)}` : ''}`
             : 'Not reviewed against the tenant'}
         </div>
       </div>

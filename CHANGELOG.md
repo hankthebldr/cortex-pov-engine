@@ -248,6 +248,15 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   integrations. Only the words changed: the action still asks SimCore to read
   the tenant for the run (`POST /api/runs/{id}/reconcile`), and no route, API
   or backend behaviour moved.
+- **A run's page speaks in one short line per state, with kit controls.** The
+  run's status line, the Results notice and the case panel now say one short
+  thing ("Finished · not reviewed", "Not reviewed — no results yet", "Not
+  reviewed"), with any detail in a tooltip. The Live tab's stream uses kit
+  buttons and status icons: its level filters are toggle buttons, Pause and
+  Clear carry their icons, the connection state reads Live, Polling,
+  Connecting, Error or Paused, and the footer's Screenshot and Download (the
+  POV report) are kit verbs. Review and Open results buttons carry their icons
+  everywhere. The kit gains the Pause, Clear and Screenshot verbs.
 
 ### Fixed
 

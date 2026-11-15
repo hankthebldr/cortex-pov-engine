@@ -26,6 +26,8 @@ export const VERBS = Object.freeze([
   'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
   // The header's offer to leave an offline active agent (#341).
   'Switch',
+  // A run's Live tab: hold or empty the stream, capture the timeline.
+  'Pause', 'Clear', 'Screenshot',
 ])
 
 /** The kit Icon each verb carries. */
@@ -46,6 +48,9 @@ export const VERB_ICONS = Object.freeze({
   Select: 'select',
   Refresh: 'refresh',
   Switch: 'swap',
+  Pause: 'pause',
+  Clear: 'clear',
+  Screenshot: 'camera',
 })
 
 export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {

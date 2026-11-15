@@ -62,6 +62,7 @@ describe('Button', () => {
       'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
       'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
       'Switch',
+      'Pause', 'Clear', 'Screenshot',
     ])
   })
 
@@ -158,6 +159,7 @@ describe('Icon', () => {
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
       'back', 'forward',
       'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
+      'pause', 'clear', 'camera', 'down',
     ])
   })
 
