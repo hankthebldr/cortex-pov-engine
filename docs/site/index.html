@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#F1F1F1" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <meta property="og:title" content="POVengine — Detection simulation for Cortex" />
-<meta property="og:description" content="Controlled signal into Cortex XSIAM and XDR, read back as measured detections. 205 scenarios across 16 planes." />
+<meta property="og:description" content="Controlled signal into Cortex XSIAM and XDR, read back as measured detections. 205 scenarios, 16 planes, 27 ingestion doors." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -103,7 +103,7 @@ h1{font:700 56px/1.05 var(--font-display); letter-spacing:-.02em; margin:0 0 12p
 h1 span{font-weight:400; color:var(--tx2)}
 .tag{font:500 22px/1.35 var(--font-display); margin:0 0 10px}
 .base{color:var(--tx2); font-size:15px; margin:0 0 28px}
-.stats{display:grid; grid-template-columns:repeat(5,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:6px; overflow:hidden; margin:0 0 24px}
+.stats{display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:6px; overflow:hidden; margin:0 0 24px}
 .stats div{background:var(--s1); padding:14px 14px 12px; display:flex; flex-direction:column}
 .stats dt{font:500 10px/1.3 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--tx3); margin:0 0 6px}
 .stats dd{font:700 26px/1 var(--font-mono); margin:auto 0 0}
@@ -142,6 +142,45 @@ pre{
 pre code{background:none; padding:0; font-size:inherit; overflow-wrap:normal}
 .c{color:var(--tx3)}
 
+/* ══════════ signal-path diagram (reflows to stacked cards on a phone) ══════════ */
+.flow__head{display:grid; grid-template-columns:repeat(4,1fr); gap:32px; padding:0 18px 8px}
+.flow__head span{font:500 10px/1.3 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--tx3)}
+.lane{margin:0 0 10px; padding:14px 18px 16px}
+.lane__k{font:700 10.5px/1 var(--font-mono); letter-spacing:.12em; color:var(--ac-ink); margin:0 0 10px; display:flex; align-items:center; gap:8px}
+.lane__k::before{content:""; width:7px; height:7px; border-radius:50%; background:var(--br)}
+.lane dl{display:grid; grid-template-columns:repeat(4,1fr); gap:32px; margin:0}
+.lane__c{position:relative; min-width:0}
+.lane__c dt{display:none}
+.lane__c dd{margin:0; font-size:14px; line-height:1.4}
+.lane__c small{display:block; margin-top:4px; font:400 11.5px/1.45 var(--font-mono); color:var(--tx2); overflow-wrap:anywhere}
+.lane__c:not(:last-child)::before{content:""; position:absolute; top:9px; right:-22px; width:14px; height:1px; background:var(--ac)}
+.lane__c:not(:last-child)::after{content:""; position:absolute; top:6px; right:-24px; border:4px solid transparent; border-left:6px solid var(--ac); border-right:0}
+.ds{font-family:var(--font-mono); font-size:13px; overflow-wrap:anywhere}
+
+/* ══════════ rows (connectors, execution paths) ══════════ */
+.rows{padding:2px 0}
+.row{display:grid; grid-template-columns:170px 1fr 300px; gap:18px; padding:12px 18px; border-bottom:1px solid var(--bd)}
+.row:last-child{border-bottom:0}
+.row__n{font-weight:600; font-size:14px}
+.row__w{font-size:14px; color:var(--tx2)}
+.row__r{font:400 12px/1.5 var(--font-mono); color:var(--tx); overflow-wrap:anywhere}
+.ladder{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:16px 0 0; font-size:13px; color:var(--tx2)}
+.ladder b{font:700 10.5px/1 var(--font-mono); letter-spacing:.1em; color:var(--tx); padding:6px 8px; border:1px solid var(--bd2); border-radius:4px; background:var(--s1)}
+.ladder i{font-style:normal; color:var(--tx3)}
+
+/* ══════════ door groups + plugin lists ══════════ */
+.grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+.grid--2{grid-template-columns:1fr 1fr}
+.grp{padding:14px 16px 6px}
+.grp h4{font:600 13px/1.3 var(--font-display); margin:0 0 8px; display:flex; justify-content:space-between; gap:8px}
+.grp h4 em{font:500 11px/1.6 var(--font-mono); font-style:normal; color:var(--tx3)}
+.grp ul{list-style:none; margin:0; padding:0}
+.grp li{padding:7px 0; border-top:1px solid var(--bd); font-size:13.5px; line-height:1.35}
+.grp li:first-child{border-top:0}
+.grp li small{display:block; font:400 11.5px/1.45 var(--font-mono); color:var(--tx2); overflow-wrap:anywhere; margin-top:2px}
+.grp h5{font:500 10px/1.3 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--tx3); margin:12px 0 2px}
+.pipes{margin:14px 0 0; font-size:13px; color:var(--tx2)}
+.pipes b{color:var(--tx); font-weight:600}
 
 /* ══════════ plane bars (one series, one hue, labelled rows) ══════════ */
 .bars{padding:10px 18px}
@@ -192,6 +231,10 @@ footer a{border-bottom:0}
     <span class="word">POV<span>engine</span></span>
     <span class="ver">v1.2.3</span>
     <nav class="nav" aria-label="Sections">
+      <a href="#paths">Signal paths</a>
+      <a href="#doors">Doors</a>
+      <a href="#emitters">Emitters</a>
+      <a href="#readback">Read-back</a>
       <a href="#coverage">Coverage</a>
       <a href="#run">Run it</a>
     </nav>
@@ -213,6 +256,7 @@ footer a{border-bottom:0}
       <div><dt>Scenarios</dt><dd>205</dd></div>
       <div><dt>Detection planes</dt><dd>16</dd></div>
       <div><dt>Expected detections</dt><dd>1452</dd></div>
+      <div><dt>Ingestion doors</dt><dd>27</dd></div>
       <div><dt>EAL plugins</dt><dd>27</dd></div>
       <div><dt>Tool adapters</dt><dd>91</dd></div>
     </dl>
@@ -230,10 +274,223 @@ footer a{border-bottom:0}
     </div>
   </section>
 
+  <!-- ── 01 ─────────────────────────────────────────────── -->
+  <section class="sec" id="paths">
+    <div class="sechead"><span class="sechead__i">01</span><h2>How signal reaches Cortex</h2></div>
+    <p class="lede">Four signal paths. Each ends in a dataset Cortex already reads.</p>
+
+    <div class="flow__head" aria-hidden="true">
+      <span>POVengine runs</span><span>Door</span><span>Cortex dataset</span><span>Read back</span>
+    </div>
+
+    <div class="lane card">
+      <p class="lane__k">ENDPOINT RUNTIME</p>
+      <dl>
+        <div class="lane__c"><dt>Runs</dt><dd>Beacon runs the step on the host<small>cortexsim-agent · identity harness</small></dd></div>
+        <div class="lane__c"><dt>Door</dt><dd>XDR agent<small>threat hunting for XTH rules</small></dd></div>
+        <div class="lane__c"><dt>Dataset</dt><dd class="ds">xdr_data</dd></div>
+        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back<small>matched to the run's expected detections</small></dd></div>
+      </dl>
+    </div>
+
+    <div class="lane card">
+      <p class="lane__k">LIVE TRAFFIC</p>
+      <dl>
+        <div class="lane__c"><dt>Runs</dt><dd>Wire plugin, sent from the endpoint<small>EAL relay · 7 network shapes</small></dd></div>
+        <div class="lane__c"><dt>Door</dt><dd>NGFW logs<small>Strata Logging Service or syslog · stitched to the endpoint</small></dd></div>
+        <div class="lane__c"><dt>Dataset</dt><dd class="ds">panw_ngfw_*_raw<br/>network_story</dd></div>
+        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back<small>NGFW preflight first</small></dd></div>
+      </dl>
+    </div>
+
+    <div class="lane card">
+      <p class="lane__k">LOG INJECTION</p>
+      <dl>
+        <div class="lane__c"><dt>Runs</dt><dd>Collector emitter POSTs records<small>15 emitters · or an offline bundle</small></dd></div>
+        <div class="lane__c"><dt>Door</dt><dd>HTTP log collector<small>a collector target, key in the vault</small></dd></div>
+        <div class="lane__c"><dt>Dataset</dt><dd class="ds">&lt;vendor&gt;_&lt;product&gt;_raw</dd></div>
+        <div class="lane__c"><dt>Read back</dt><dd>Arrival check<small>then alert read-back</small></dd></div>
+      </dl>
+    </div>
+
+    <div class="lane card">
+      <p class="lane__k">CLOUD CONTROL PLANE</p>
+      <dl>
+        <div class="lane__c"><dt>Runs</dt><dd>Cloud CLI from the beacon<small>aws · gcloud · gsutil · az · bq · kubectl</small></dd></div>
+        <div class="lane__c"><dt>Door</dt><dd>Provider audit logs<small>AWS · GCP · Azure</small></dd></div>
+        <div class="lane__c"><dt>Dataset</dt><dd class="ds">cloud_audit_logs</dd></div>
+        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back</dd></div>
+      </dl>
+    </div>
+    <p class="note">These are the Composer's lanes, read from each step's command. A fifth, No action, holds steps that only print.</p>
+
+    <h3>Execution paths</h3>
+    <div class="card rows">
+      <div class="row"><div class="row__n">Pull beacon</div><div class="row__w"><code>cortexsim-agent</code> on Linux, macOS or Windows. Runs as a service.</div><div class="row__r">GET /api/agents/install?os=</div></div>
+      <div class="row"><div class="row__n">Container agent</div><div class="row__w">The beacon in a Kubernetes pod.</div><div class="row__r">GET /api/agents/manifest</div></div>
+      <div class="row"><div class="row__n">Push bundle</div><div class="row__w">bash, PowerShell 5.1 or K8s YAML. Runs offline.</div><div class="row__r">GET /api/scenarios/{id}/download?format=</div></div>
+      <div class="row"><div class="row__n">EAL relay</div><div class="row__w">The beacon hands EAL steps to SimCore. Collector steps go from SimCore; network steps run from the endpoint.</div><div class="row__r">POST /api/eal/relay</div></div>
+      <div class="row"><div class="row__n">EAL offline bundle</div><div class="row__w">Pre-rendered records, POSTed from inside the network.</div><div class="row__r">POST /api/eal/campaigns/{id}/bundle</div></div>
+    </div>
+  </section>
+
+  <!-- ── 02 ─────────────────────────────────────────────── -->
+  <section class="sec" id="doors">
+    <div class="sechead"><span class="sechead__i">02</span><h2>Ingestion doors</h2></div>
+    <p class="lede">A detection fires only through an open door. 27 doors, each with the dataset that shows it is open.</p>
+
+    <div class="grid">
+      <div class="card grp">
+        <h4>Endpoint <em>2</em></h4>
+        <ul>
+          <li>XDR agent<small>xdr_data</small></li>
+          <li>XDR agent with threat hunting<small>xdr_data</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Firewall <em>5</em></h4>
+        <ul>
+          <li>NGFW traffic logs<small>panw_ngfw_traffic_raw</small></li>
+          <li>NGFW threat logs<small>panw_ngfw_threat_raw</small></li>
+          <li>NGFW URL logs<small>panw_ngfw_url_raw</small></li>
+          <li>NGFW GlobalProtect logs<small>panw_ngfw_globalprotect_raw</small></li>
+          <li>NGFW and endpoint stitching<small>network_story</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Cloud <em>3</em></h4>
+        <ul>
+          <li>AWS audit logs<small>cloud_audit_logs · AWS</small></li>
+          <li>GCP audit logs<small>cloud_audit_logs · GCP</small></li>
+          <li>Azure audit logs<small>cloud_audit_logs · AZURE</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Identity and SaaS <em>4</em></h4>
+        <ul>
+          <li>Okta<small>okta_sso_raw</small></li>
+          <li>Microsoft Entra ID<small>msft_azure_ad_raw</small></li>
+          <li>Microsoft 365<small>msft_o365_exchange_online_raw · msft_o365_sharepoint_online_raw</small></li>
+          <li>Google Workspace<small>google_workspace_login_raw · google_workspace_admin_console_raw</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Syslog and Windows events <em>5</em></h4>
+        <ul>
+          <li>Windows events<small>microsoft_windows_raw</small></li>
+          <li>Cisco ASA<small>cisco_asa_raw</small></li>
+          <li>VMware ESXi<small>vmware_esxi_raw</small></li>
+          <li>Ivanti Connect Secure<small>ivanti_connect_secure_raw</small></li>
+          <li>Kubernetes<small>kubernetes_kubernetes_raw</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Palo Alto Networks products <em>5</em></h4>
+        <ul>
+          <li>Prisma Access Browser<small>panw_prisma_access_browser_raw</small></li>
+          <li>Prisma AIRS<small>panw_prisma_airs_raw</small></li>
+          <li>Koi agentic endpoint<small>koi_koi_raw</small></li>
+          <li>Threat intel feed<small>indicators</small></li>
+          <li>Cortex Xpanse<small>no fixed dataset</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Collector <em>1</em></h4>
+        <ul>
+          <li>HTTP log collector<small>the target's own dataset</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Email <em>1</em></h4>
+        <ul>
+          <li>Proofpoint TAP<small>proofpoint_tap_raw</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Cortex engine <em>1</em></h4>
+        <ul>
+          <li>Tenant incidents<small>xsiam_incidents</small></li>
+        </ul>
+      </div>
+    </div>
+    <p class="pipes"><b>Routes into a dataset:</b> native integration · HTTP log collector · Broker VM syslog · Broker VM Windows Event Collector · Cribl (dedicated or generic UUID).</p>
+  </section>
+
+  <!-- ── 03 ─────────────────────────────────────────────── -->
+  <section class="sec" id="emitters">
+    <div class="sechead"><span class="sechead__i">03</span><h2>Emitters</h2></div>
+    <p class="lede">27 EAL plugins. Collector emitters write log records; wire plugins make traffic a sensor sees.</p>
+
+    <div class="grid grid--2">
+      <div class="card grp">
+        <h4>Collector emitters <em>15</em></h4>
+        <ul>
+          <li>Windows Security events<small>ad_windows_emitter</small></li>
+          <li>Azure Activity Log<small>azure_audit_emitter</small></li>
+          <li>AWS CloudTrail and GCP audit<small>cloud_audit_emitter</small></li>
+          <li>AWS compute and instance credentials<small>cloud_storage_compute_emitter</small></li>
+          <li>Kubernetes API audit<small>k8s_audit_emitter</small></li>
+          <li>Okta, Entra ID and Google Workspace sign-in<small>idp_signin_emulator</small></li>
+          <li>Cisco Duo authentication<small>duo_auth_emitter</small></li>
+          <li>Microsoft 365 unified audit<small>m365_activity_emitter</small></li>
+          <li>Proofpoint TAP and Microsoft 365 email<small>email_emitter</small></li>
+          <li>NGFW Enhanced Application Logs<small>ngfw_eal_emitter</small></li>
+          <li>NGFW threat (WildFire verdict)<small>ngfw_threat_emitter</small></li>
+          <li>GlobalProtect authentication<small>globalprotect_emitter</small></li>
+          <li>Third-party firewall logs<small>third_party_firewall_emitter</small></li>
+          <li>Third-party VPN sessions<small>third_party_vpn_emitter</small></li>
+          <li>Third-party security alerts<small>third_party_alert_emitter</small></li>
+        </ul>
+      </div>
+      <div class="card grp">
+        <h4>Wire plugins <em>12</em></h4>
+        <h5>Relayed from the endpoint · 7</h5>
+        <ul>
+          <li>HTTP/S command-and-control beacon<small>c2_http_beacon</small></li>
+          <li>DNS tunnel exfiltration<small>dns_tunnel_exfil</small></li>
+          <li>Bulk HTTPS exfiltration<small>bulk_https_exfil</small></li>
+          <li>SMB/RPC port sweep<small>smb_rpc_sweep</small></li>
+          <li>Stratum mining connect<small>stratum_tcp_connect</small></li>
+          <li>FTP control session<small>ftp_egress</small></li>
+          <li>SSH egress<small>ssh_egress</small></li>
+        </ul>
+        <h5>Run by SimCore · 5</h5>
+        <ul>
+          <li>AI provider traffic with DLP markers<small>llm_provider_egress</small></li>
+          <li>OAuth authorize requests<small>oauth_grant_emulator</small></li>
+          <li>Agentic client fetches<small>agentic_egress</small></li>
+          <li>Browser actions (Playwright)<small>browser_attack_runner</small></li>
+          <li>Prompt attacks on an AI target<small>airs_prompt_attack</small></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 04 ─────────────────────────────────────────────── -->
+  <section class="sec" id="readback">
+    <div class="sechead"><span class="sechead__i">04</span><h2>Read-back</h2></div>
+    <p class="lede">How POVengine measures what Cortex saw. Read-only, and off until a credential is set.</p>
+
+    <div class="card rows">
+      <div class="row"><div class="row__n">Alert read-back</div><div class="row__w">The run endpoint's alerts, matched to expected detections. Gives MTTD. The console's Review.</div><div class="row__r">POST /api/runs/{id}/reconcile?connector=xsiam</div></div>
+      <div class="row"><div class="row__n">Manual alerts</div><div class="row__w">Exported alerts, pasted in. Works offline.</div><div class="row__r">POST /api/runs/{id}/observations</div></div>
+      <div class="row"><div class="row__n">XQL verify</div><div class="row__w">Read-only XQL per test case. Needs the <code>xql</code> capability.</div><div class="row__r">POST /api/runs/{id}/verify</div></div>
+      <div class="row"><div class="row__n">Tenant evidence</div><div class="row__w">Issues, cases and the endpoint record for one run. Context only.</div><div class="row__r">POST /api/runs/{id}/tenant-evidence</div></div>
+      <div class="row"><div class="row__n">Case ledger</div><div class="row__w">Which cases the matched alerts landed in.</div><div class="row__r">POST /api/runs/{id}/case-ledger/refresh</div></div>
+      <div class="row"><div class="row__n">Tenant preflight</div><div class="row__w">Per credential: DNS/TLS · auth · scope · datasets · clock · response layer.</div><div class="row__r">POST /api/connectors/{kind}/preflight</div></div>
+      <div class="row"><div class="row__n">NGFW preflight</div><div class="row__w">PAN-OS, read-only: log forwarding (SLS, syslog), EAL, decryption, clock; NAT and shared source per agent.</div><div class="row__r">POST /api/connectors/panos_ngfw/preflight</div></div>
+      <div class="row"><div class="row__n">Collector check</div><div class="row__w">Configured → reachable → accepted; then whether tagged records arrived.</div><div class="row__r">POST /api/collector-targets/{name}/preflight · /arrival</div></div>
+    </div>
+
+    <div class="ladder" aria-label="Launch gate rungs">
+      <span>Launch gate reads each connection as</span>
+      <b>AUTHORED</b><i>→</i><b>CONFIGURED</b><i>→</i><b>REACHABLE</b><i>→</i><b>VERIFIED</b>
+    </div>
+  </section>
 
   <!-- ── 05 ─────────────────────────────────────────────── -->
   <section class="sec" id="coverage">
-    <div class="sechead"><span class="sechead__i">01</span><h2>Coverage</h2></div>
+    <div class="sechead"><span class="sechead__i">05</span><h2>Coverage</h2></div>
     <p class="lede">205 scenarios, 850 steps, 1452 expected detections. 241 ATT&amp;CK techniques across 14 tactics.</p>
 
     <h3>Scenarios per plane</h3>
@@ -290,7 +547,7 @@ footer a{border-bottom:0}
 
   <!-- ── 06 ─────────────────────────────────────────────── -->
   <section class="sec" id="run">
-    <div class="sechead"><span class="sechead__i">02</span><h2>Run it</h2></div>
+    <div class="sechead"><span class="sechead__i">06</span><h2>Run it</h2></div>
     <p class="lede">Tagged <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases">GitHub Releases</a>: installer, five beacon builds (unsigned), <code>SHA256SUMS</code>, <code>manifest.json</code>. Build the image from the tree.</p>
 
     <h3>Docker</h3>
