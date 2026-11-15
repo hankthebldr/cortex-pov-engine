@@ -223,9 +223,11 @@ export default function ConsoleHeader({
           verb="Switch"
           data-testid="header-agent-switch"
           title={`Make ${switchLabel} the active agent`}
+          aria-label={`Switch to ${switchLabel}`}
           onClick={() => onSwitchAgent(agentIdOf(switchTo))}
         >
-          <span className="pov-header__switch-text">Switch to {switchLabel}</span>
+          <span className="pov-header__switch-verb">Switch to </span>
+          <span className="pov-header__switch-name">{switchLabel}</span>
         </Button>
       )}
 

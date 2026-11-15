@@ -278,8 +278,16 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-chip__state--muted { color: var(--tx3); }
 /* Switch to <agent>, beside an offline active agent (#341): chip height, and a
    long hostname ellipsizes rather than widening the bar past its floor. */
-.pov-header__switch { padding: 5px 9px; font-size: 11px; }
-.pov-header__switch-text { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.pov-header__switch { padding: 5px 9px; font-size: 11px; gap: 5px; }
+.pov-header__switch-verb { white-space: pre; }
+.pov-header__switch-name { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
+/* Where the bar gives way (below 1280, see "Fitting the bar" below) the button
+   keeps its icon and the agent's name; its accessible name stays whole. */
+@media (max-width: 1279px) {
+  .pov-header__switch { padding: 5px 7px; gap: 4px; }
+  .pov-header__switch-verb { display: none; }
+  .pov-header__switch-name { max-width: 7ch; }
+}
 .pov-chip__kbd {
   font: 600 10px/1 var(--font-mono);
   padding: 2px 4px; background: var(--s3); border-radius: 3px;

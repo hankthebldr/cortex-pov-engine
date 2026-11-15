@@ -727,3 +727,39 @@ for (const { w, h } of [{ w: 1024, h: 768 }, { w: 1280, h: 800 }, { w: 1440, h: 
     expect(faults, 'card footers must keep their actions whole and the history chip on one line').toEqual([])
   })
 }
+
+/**
+ * The header's offer to leave an offline active agent (#341) adds a button to
+ * a bar that already gives way in steps to fit from 1100 px up. Below 1280 the
+ * button keeps its icon and the agent's name, so the bar still fits. The
+ * agent list is stubbed: one offline agent (the active one) and one online.
+ */
+const OFFLINE_AGENT = {
+  agent_id: 'docker-desktop', hostname: 'docker-desktop', os: 'linux', status: 'offline',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T10:00:00Z',
+  last_seen_age_seconds: 5400,
+}
+const ONLINE_AGENT = {
+  agent_id: 'pov-target-01-4dcdce', hostname: 'pov-target-01', os: 'linux', status: 'online',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T11:29:58Z',
+  last_seen_age_seconds: 3,
+}
+
+for (const w of [1100, 1204, 1280, 1440]) {
+  test(`the header fits with an offline agent's Switch offer at ${w}px`, async ({ page }) => {
+    await page.route(/\/api\/agents(\?.*)?$/, (route) =>
+      route.fulfill({ json: { agents: [OFFLINE_AGENT, ONLINE_AGENT] } }))
+    await page.addInitScript(() => window.localStorage.setItem('cortexsim.activeAgent', 'docker-desktop'))
+    await page.setViewportSize({ width: w, height: 800 })
+    await page.goto('/#/library')
+    const offer = page.getByRole('button', { name: 'Switch to pov-target-01' })
+    await expect(offer).toBeVisible({ timeout: 15_000 })
+    const g = await page.evaluate(() => {
+      const h = document.querySelector('.pov-header') as HTMLElement
+      const b = document.querySelector('.pov-header__switch')!.getBoundingClientRect()
+      return { scroll: h.scrollWidth, client: h.clientWidth, right: b.right, vw: window.innerWidth }
+    })
+    expect(g.scroll, `the header overflows by ${g.scroll - g.client}px`).toBeLessThanOrEqual(g.client)
+    expect(g.right, 'the Switch offer ends past the viewport').toBeLessThanOrEqual(g.vw)
+  })
+}
