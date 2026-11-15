@@ -37,6 +37,31 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   looks for `ssh`, `scp`, `sshpass` and `sudoedit`, so a dependency on one of
   those reads found or missing instead of `unverified`.
 
+### Added — the beacon reports each step's command and streams its output
+
+- **A pull run was silent while a step ran, and never showed the command.**
+  The beacon posted a step's output once, after the step ended, so a
+  three-minute step said nothing for three minutes, and a finished run could
+  not show what was attempted. The beacon now tells SimCore the command before
+  each step runs and sends the step's output about once a second while it
+  runs, chained steps included.
+- **What is stored does not change.** The live output is shown on the run's
+  event stream and kept in memory until the step ends; only the step's final
+  output is stored on the run, exactly as before. A slow or unreachable
+  SimCore loses live output, never a step. Outcomes and verdicts are untouched.
+- `GET /api/runs/{id}` gains `step_starts` (the command, the account and the
+  start time per step; kept after the run ends) and, while the run is in
+  flight, `live_tail`. The run event stream gains `stepId`, `live`, `phase`,
+  `command` and `seq`; its existing fields are unchanged.
+- **Needs the new beacon on the target.** An older beacon keeps working and
+  posts each step once, at the end. The console's runtime log view for this
+  is a separate change.
+- **`--stream-output` is retired.** It posted from inside the step's own
+  output pipe, skipped chained steps, and its output was stored twice. The
+  beacon still accepts the flag and ignores it; the Kubernetes agent manifest
+  no longer passes it.
+- Wire contract: `docs/reference/api-and-agent-surface.md` §1.3.3.
+
 ### Fixed — dependency warnings read the beacon's tool facts and show at launch
 
 - **A launch reported `sudo`, `ssh`, `scp` and `sshpass` missing on hosts that

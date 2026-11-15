@@ -148,13 +148,16 @@ func defineFlags(fs *flag.FlagSet) *rawFlags {
 	// queued_tasks.payload is plaintext JSON in SQLite.
 	f.artifactToken = fs.String("artifact-token", "",
 		"Bearer token for the payload shelf when SimCore runs it in token mode (env: CORTEXSIM_ARTIFACT_TOKEN)")
-	// Both default to OFF so an existing deployment's behaviour is byte-identical
-	// after an upgrade: 0 keeps the interval ticker, false keeps whole-step
-	// output delivered once on completion. Opt in per host.
+	// Defaults to OFF so an existing deployment's behaviour is byte-identical
+	// after an upgrade: 0 keeps the interval ticker. Opt in per host.
 	f.longPoll = fs.Int("long-poll", 0,
 		"Long-poll the task queue for N seconds per request instead of ticking every --interval (0 = off, max 60). Cuts task pickup from up to --interval down to milliseconds.")
+	// Retired. It posted once per pipe write from inside the step's own writer,
+	// skipped chained steps, and SimCore stored the output twice. Live output
+	// is now asked for by SimCore in the task (beacon/liveout.go). The flag is
+	// still accepted so a unit file or manifest that passes it keeps starting.
 	f.streamOutput = fs.Bool("stream-output", false,
-		"Stream step stdout/stderr to SimCore as it is produced rather than only on step completion.")
+		"Deprecated, has no effect: output is streamed while a step runs whenever SimCore asks for it in the task.")
 	// 0 keeps the built-in default (180s). Raise it on a slow or proxied link:
 	// tier-4 adapter packs install their tool inline at dispatch (apt-get
 	// install hydra / john / hashcat / metasploit), and a step killed mid
@@ -456,9 +459,12 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	if underSCM() {
 		mode = "service"
 	}
-	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds stream-output=%t step-timeout=%ds mode=%s",
-		serverURL, agentID, int(cfg.interval/time.Second), cfg.longPoll, cfg.streamOutput,
+	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds step-timeout=%ds mode=%s",
+		serverURL, agentID, int(cfg.interval/time.Second), cfg.longPoll,
 		int(cfg.stepTimeout/time.Second), mode)
+	if cfg.streamOutput {
+		log.Printf("--stream-output is deprecated and has no effect: output is streamed while a step runs whenever SimCore asks for it in the task")
+	}
 
 	// ----------------------------------------------------------------
 	// Build beacon client
@@ -481,7 +487,6 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	}
 	client.SetRuntimeFacts(&facts)
 	client.LongPollTimeout = cfg.longPoll
-	client.StreamOutput = cfg.streamOutput
 	client.ExpiresAt = cfg.expiresAt
 	if cfg.stepTimeout > 0 {
 		client.StepTimeout = cfg.stepTimeout

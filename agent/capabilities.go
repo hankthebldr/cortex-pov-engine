@@ -46,6 +46,10 @@ func agentCapabilities(goos string, inContainer bool) []string {
 	} else {
 		caps = []string{"shell", "identity-harness", "artifact-fetch"}
 	}
+	// "live-output": this beacon reports each step's command before it runs and
+	// streams the step's output while it runs, when the task asks for it
+	// (beacon/liveout.go). A beacon without it posts each step once, at the end.
+	caps = append(caps, "live-output")
 	// "eal-relay": this beacon runs a step that calls SimCore's EAL CLI through
 	// its own `eal` subcommand (agent/ealrelay). SimCore marks such a step only
 	// for a beacon that says so; an older one gets the step as it always did.

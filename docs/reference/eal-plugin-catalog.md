@@ -180,7 +180,7 @@ ledger still decides green.
 
 **Scenario steps that run the EAL CLI on a beacon** go through the same
 resolver. In a pull run a beacon that advertises `eal-relay` hands the step's
-campaign to SimCore (`POST /api/eal/relay`, `api-and-agent-surface.md` §1.3.3),
+campaign to SimCore (`POST /api/eal/relay`, `api-and-agent-surface.md` §1.3.4),
 and SimCore sends the collector steps itself: to the instance target, with the
 stored key, behind the same live gate as the in-process dispatch above. The key
 never reaches the target, and a `collector_url` the step's shell wrote (from
