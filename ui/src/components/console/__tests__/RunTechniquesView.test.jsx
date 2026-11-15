@@ -4,7 +4,8 @@
  * Pins: the strip is 14 stages in kill-chain order with empties dimmed;
  * placement comes from the TTP card; a failed run never shows a miss; an
  * unplaceable technique is listed with its reason; no count renders before
- * the fetch resolves and a failed fetch says so.
+ * the fetch resolves and a failed fetch says so. The run's verdict is not
+ * repeated here: Results says it once, on its verdict line.
  */
 import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
@@ -46,7 +47,7 @@ describe('RunTechniquesView', () => {
   it('draws 14 stages in order, dims the empty ones, and places techniques through the card', async () => {
     routes()
     render(<RunTechniquesView runId="r1" run={{ run_id: 'r1', status: 'complete', tc_verdict: 'fail' }} />)
-    expect(screen.getByRole('status')).toHaveTextContent('loading results')
+    expect(screen.getByRole('status')).toHaveTextContent('Loading…')
     await waitFor(() => expect(screen.getByTestId('technique-strip')).toBeInTheDocument())
     const stages = screen.getAllByTestId('technique-stage')
     expect(stages).toHaveLength(14)
@@ -60,25 +61,19 @@ describe('RunTechniquesView', () => {
     const empties = stages.filter((s) => s.dataset.tone === 'empty')
     expect(empties).toHaveLength(12)
     expect(empties.every((s) => s.className.includes('run-tech__stage--empty'))).toBe(true)
-    // the verdict + the sentence
-    expect(screen.getByTestId('technique-verdict')).toHaveTextContent('fail')
-    expect(screen.getByTestId('run-techniques')).toHaveTextContent('Authored is not proven.')
-    expect(screen.getByTestId('technique-totals')).toHaveTextContent('tenant-verified: 0')
+    // The totals count; the verdict is Results' own line, not repeated here.
+    expect(screen.getByTestId('technique-totals')).toHaveTextContent('1 of 3 detected · 2 techniques · 1 unplaced')
+    expect(screen.queryByTestId('technique-verdict')).toBeNull()
+    expect(screen.getByTestId('run-techniques')).toHaveTextContent('Counts are this SimCore’s result rows')
   })
 
-  it('a pending run where nothing executed says so beside the verdict, with what to do', async () => {
+  it('counts rows whose step never ran, and does not call them not reached', async () => {
     const neverRan = RESULTS.results.map((r) => ({ ...r, outcome: 'not_executed', outcome_reason: 'TOOL_ABSENT', observed: false }))
     routes('complete', { 'GET /api/results/r1': { results: neverRan, total: neverRan.length } })
     const run = { run_id: 'r1', status: 'complete', tc_verdict: 'pending',
       tc_verdict_detail: { reason: 'not_executed', detail: 'nothing scored' } }
     render(<RunTechniquesView runId="r1" run={run} />)
-    await waitFor(() => expect(screen.getByTestId('technique-verdict')).toHaveTextContent('pending'))
-    const reason = screen.getByTestId('technique-verdict-reason')
-    expect(reason).toHaveAttribute('data-reason', 'not_executed')
-    expect(reason).toHaveTextContent('nothing executed')
-    expect(reason.className).toContain('verdict-reason--warn')
-    expect(screen.getByTestId('technique-verdict-reason-sentence')).toHaveTextContent(/re-run/i)
-    expect(reason.parentElement).not.toHaveTextContent('not_executed')
+    await waitFor(() => expect(screen.getByTestId('technique-totals')).toBeInTheDocument())
     // `not_executed` rows are not "not reached" (that is an upstream sever):
     // the count names what both excluded outcomes share.
     expect(screen.getByTestId('technique-totals')).toHaveTextContent('3 never ran')
@@ -92,8 +87,7 @@ describe('RunTechniquesView', () => {
     expect(screen.getByTestId('run-techniques')).toHaveAttribute('data-proven', 'false')
     expect(screen.getAllByTestId('technique-stage').some((s) => s.dataset.tone === 'miss')).toBe(false)
     expect(screen.getAllByTestId('technique-row').some((r) => r.dataset.tone === 'miss')).toBe(false)
-    expect(screen.getByTestId('technique-unproven')).toHaveTextContent(/pending/)
-    expect(screen.getByTestId('technique-verdict')).toHaveTextContent('not scored')
+    expect(screen.getByTestId('technique-unproven')).toHaveTextContent('Run failed · unfired detections read pending')
   })
 
   it('lists an unplaceable technique with its reason instead of guessing a stage', async () => {
@@ -115,13 +109,14 @@ describe('RunTechniquesView', () => {
     render(<RunTechniquesView runId="r1" run={{ run_id: 'r1', status: 'complete' }} />)
     await waitFor(() => expect(screen.getByTestId('technique-error')).toBeInTheDocument())
     expect(screen.queryByTestId('technique-strip')).toBeNull()
-    expect(screen.getByTestId('technique-error')).toHaveTextContent(/could not load results/)
+    expect(screen.getByTestId('technique-error')).toHaveTextContent('Results not loaded · boom')
   })
 
   it('fetches the run itself when no run record is passed', async () => {
-    routes('complete', { 'GET /api/runs/r1': { run_id: 'r1', status: 'complete', tc_verdict: 'pass', step_outcomes: [] } })
+    routes('failed', { 'GET /api/runs/r1': { run_id: 'r1', status: 'failed', step_outcomes: [] } })
     render(<RunTechniquesView runId="r1" />)
-    await waitFor(() => expect(screen.getByTestId('technique-verdict')).toHaveTextContent('pass'))
+    // Only the fetched record says the run failed.
+    await waitFor(() => expect(screen.getByTestId('technique-unproven')).toBeInTheDocument())
     expect(within(screen.getByTestId('technique-table')).getAllByTestId('technique-row')).toHaveLength(2)
   })
 })

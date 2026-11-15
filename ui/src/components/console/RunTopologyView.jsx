@@ -4,9 +4,12 @@
  * Five lane bands — the signal paths the Composer bands by — with each of
  * the run's steps drawn in its execution-order column inside the lane
  * `composerLanes.laneOf` derives for it, and the Cortex Engine pinned as the
- * terminal on the right holding the Correlation / Analytics / ABIOC rows and
- * the run verdict. A lane no step took is drawn dimmed and says so; a step
- * whose path cannot be read is listed with the reason, never guessed.
+ * terminal on the right holding the Correlation / Analytics / ABIOC rows. A
+ * lane no step took is drawn dimmed and says so; a step whose path cannot be
+ * read is listed with the reason, never guessed.
+ *
+ * The run's verdict is not repeated here: the verdict line at the top of
+ * Results says it once. Each explanation is one line, its detail in a tooltip.
  *
  * Live records only: the scenario's steps (door + names), the run record via
  * `useRunStepTail` (host rc / termination, beacon identity + duration, polled
@@ -17,11 +20,14 @@ import { getResultsForRun, getScenario } from '../../api/client.js'
 import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
 import { buildTopologyModel, toLaneStep } from './runTopology.js'
 import { isRunUnproven } from './runStatus.js'
-import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
 import { Button, Icon } from './kit/index.js'
 
-const EVIDENCE_SENTENCE =
-  'Lanes are the signal paths read from each step’s command; status is the host’s record; tones are this SimCore’s Result rows. Authored is not proven.'
+// One line each; the detail is one hover away.
+const EVIDENCE = {
+  line: 'Lanes are signal paths; status is the host’s record',
+  detail: 'A lane is the path read from a step’s command. Tones are this SimCore’s result rows.',
+}
+const UNPROVEN_DETAIL = 'The signal may never have been generated, so nothing here is a miss.'
 
 function rowLabel(r) {
   return r.detection_name || r.detection_id || r.signal_type || `result ${r.id}`
@@ -95,13 +101,11 @@ export default function RunTopologyView({
     [scenario, scenarioPending, run, results, tail.rows],
   )
 
-  if (!runId) return <div className="run-topo__empty mono">no run selected</div>
-  if (error) return <div className="run-topo__empty mono" data-testid="topo-error">could not load results: {error}</div>
-  if (!model) return <div className="run-topo__empty mono" role="status">loading topology…</div>
+  if (!runId) return <div className="run-topo__empty mono">No run selected</div>
+  if (error) return <div className="run-topo__empty mono" data-testid="topo-error">Results not loaded · {error}</div>
+  if (!model) return <div className="run-topo__empty mono" role="status">Loading…</div>
 
   const unproven = isRunUnproven(model.runStatus)
-  const verdict = model.engine.tcVerdict || 'not scored'
-  const verdictKey = model.engine.tcVerdict || 'unscored'
   const cols = Math.max(1, model.columns.length)
   const track = { gridTemplateColumns: `repeat(${cols}, minmax(136px, 1fr))` }
 
@@ -109,20 +113,23 @@ export default function RunTopologyView({
     <div className="run-topo" data-testid="run-topology" data-proven={model.proven ? 'true' : 'false'} data-steps-from={model.stepsFrom}>
       <div className="run-topo__head">
         <div className="run-topo__totals mono" data-testid="topo-totals">
-          {model.totals.steps} step{model.totals.steps === 1 ? '' : 's'} · {model.totals.hits} of {model.totals.denominator} rows detected
+          {model.totals.steps} step{model.totals.steps === 1 ? '' : 's'} · {model.totals.hits} of {model.totals.denominator} detected
           {' · '}{model.lanes.filter((l) => !l.empty).length} of {model.lanes.length} paths used
           {model.unplaced.length ? ` · ${model.unplaced.length} unplaced` : ''}
-          {' · tenant-verified: 0'}
         </div>
-        <p className="run-topo__sentence">{EVIDENCE_SENTENCE}</p>
+        <p className="run-topo__sentence" title={EVIDENCE.detail}>{EVIDENCE.line}</p>
         {model.stepsFrom === 'run' && (
-          <p className="run-topo__note mono" data-testid="topo-scenario-note">
-            scenario {scenarioId || '(unknown)'} not loaded{scenarioError ? `: ${scenarioError}` : ''} — no step is placed, because a signal path is read from each step's command and this run's Result rows do not carry one. The results are still counted.
+          <p
+            className="run-topo__note mono"
+            data-testid="topo-scenario-note"
+            title={`Scenario ${scenarioId || '(unknown)'} not loaded${scenarioError ? `: ${scenarioError}` : ''}. A lane is read from each step's command, which the result rows do not carry. The results are still counted.`}
+          >
+            Scenario not loaded · steps not placed
           </p>
         )}
         {unproven && (
-          <p className="run-topo__unproven" data-testid="topo-unproven">
-            This run {model.runStatus}: an un-fired detection is <b>pending</b>, not missed — the signal may never have been generated.
+          <p className="run-topo__unproven" data-testid="topo-unproven" title={UNPROVEN_DETAIL}>
+            Run {model.runStatus} · unfired detections read pending
           </p>
         )}
       </div>
@@ -196,18 +203,8 @@ export default function RunTopologyView({
             <span className="run-topo__lane-label">{model.engine.label}</span>
             <span className="run-topo__lane-sub">{model.engine.sub} · pinned terminal</span>
           </div>
-          <div className="run-topo__engine-verdict">
-            <span className="run-topo__k">Run verdict</span>
-            <span className={`chip run-topo__verdict-chip run-topo__verdict-chip--${verdictKey}`} data-testid="topo-verdict">{verdict}</span>
-            <VerdictReason detail={model.engine.tcVerdictDetail} testId="topo-verdict-reason" />
-          </div>
-          <VerdictReasonSentence
-            detail={model.engine.tcVerdictDetail}
-            testId="topo-verdict-reason-sentence"
-            className="run-topo__engine-detail"
-          />
-          <div className="run-topo__engine-count mono">
-            {model.engine.empty ? 'no Correlation / Analytics / ABIOC row on this run' : `${model.engine.hits}/${model.engine.denominator} engine rows detected`}
+          <div className="run-topo__engine-count mono" title="Correlation, Analytics and ABIOC rows">
+            {model.engine.empty ? 'No engine rows on this run' : `${model.engine.hits} of ${model.engine.denominator} engine rows detected`}
           </div>
           <ul className="run-topo__engine-rows">
             {model.engine.rows.map((r) => {
@@ -220,7 +217,7 @@ export default function RunTopologyView({
               )
             })}
           </ul>
-          <div className="run-topo__engine-foot mono">rows here are counted once, in their step's cell</div>
+          <div className="run-topo__engine-foot mono">Counted once, in their step's cell</div>
         </aside>
       </div>
 
@@ -232,7 +229,7 @@ export default function RunTopologyView({
 
       {model.unplaced.length > 0 && (
         <div className="run-topo__unplaced" data-testid="topo-unplaced">
-          <div className="run-topo__k">Unplaced — not drawn in a lane, with the reason</div>
+          <div className="run-topo__k" title="Not drawn in a lane; each row says why">Unplaced</div>
           <ul>
             {model.unplaced.map((u) => (
               <li key={u.id} className="mono" data-testid="topo-unplaced-row">
@@ -244,7 +241,6 @@ export default function RunTopologyView({
       )}
 
       <div className="run-topo__foot">
-        <span className="mono">lane = composerLanes.laneOf(step) · status = host step_outcomes · tenant-verified: 0</span>
         <span className="run-topo__foot-actions">
           <Button onClick={onOpenCausality}>Causality<Icon name="forward" size={12} /></Button>
           <Button onClick={onOpenEvidence}>Detections<Icon name="forward" size={12} /></Button>

@@ -10,29 +10,19 @@
    (:root light / [data-theme="dark"]); this file only consumes var(--x),
    it never redefines a token.
 
-   UPDATE (console-redesign-repair, defect 2): RunDetailView.jsx,
-   EvidenceView.jsx and NarrativeTimeline.jsx used to each pin
-   `data-theme="dark"` on their own root element because `.theme-console`
-   (AppShell.jsx) painted a fixed-dark `--c-void` background and never set
-   [data-theme] itself. AppShell now aliases `.theme-console`'s surface/text
-   field onto the real token layer and sets [data-theme] from a real toggle
-   (default light) — the three local pins were removed; nothing here needed
-   to change since it already only consumes var(--x). Every rule below is
-   scoped under one of:
-     .theme-console .run-detail        (RunDetailView.jsx)
+   The shell (`.theme-console`, AppShell.jsx) sets [data-theme] and aliases
+   its surface/text field onto the token layer, so nothing here pins a theme.
+   Every rule below is scoped under one of:
+     .theme-console .run-detail        (RunDetailView.jsx, and the Results
+                                         views drawn inside a .run-detail box)
      .theme-console .evidence          (EvidenceView.jsx — also reachable
                                          standalone, e.g. console-smoke.test)
-     .theme-console .narrative__timeline (NarrativeTimeline.jsx only — the
-                                         surrounding .narrative/__header/
-                                         __footer belong to InflightView.jsx,
-                                         a file this pass does not own)
-   so nothing here can leak onto a destination another agent owns.
+   so nothing here can leak onto another destination.
 
    Loaded via component-level `import '.../destinations/run-detail.css'`
-   in each of the three owned files (not main.jsx, to avoid colliding with
-   concurrent agents' edits there); every selector carries at least the
-   same specificity as the legacy .theme-console rule it replaces, so
-   load order isn't load-bearing.
+   (not main.jsx); every selector carries at least the same specificity as
+   the legacy .theme-console rule it replaces, so load order isn't
+   load-bearing.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ───────────────────────────────────────────────────────────────────
@@ -213,7 +203,6 @@
   min-width: 0;
 }
 
-
 .theme-console .evidence .evidence-empty__title {
   font-family: 'Montserrat', var(--font-display), sans-serif;
   color: var(--tx);
@@ -252,12 +241,10 @@
 .theme-console .evidence .kpi--tx   { border-top-color: var(--bd2); }
 
 .theme-console .evidence .kpi__label {
-  font-family: 'Montserrat', var(--font-display), sans-serif;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tx3);
+  font: 600 12px/1.2 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tx2);
   margin-bottom: 0;
 }
 .theme-console .evidence .kpi__value {
@@ -273,12 +260,12 @@
 .theme-console .evidence .kpi__value--pending  { color: var(--warn); }
 .theme-console .evidence .kpi__value--missed   { color: var(--crit); }
 .theme-console .evidence .kpi__suffix { color: var(--tx2); }
+/* At most one short line under the number. */
 .theme-console .evidence .kpi__meta {
   margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font: 400 12px/1.4 var(--font-ui);
   color: var(--tx2);
-  line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* ── Scorecard table ──────────────────────────────────────────────── */
@@ -334,64 +321,12 @@
   font-size: 11px;
 }
 
-.theme-console .evidence .scorecard__status {
-  border-radius: 3px;
-  border: 1px solid currentColor;
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-.theme-console .evidence .scorecard__status--detected {
-  color: var(--ac-ink);
-  background: transparent;
-  border-color:var(--pos);
-}
-.theme-console .evidence .scorecard__status--missed {
-  color: var(--crit);
-  background: transparent;
-  border-color: var(--crit);
-}
-.theme-console .evidence .scorecard__status--pending {
-  color: var(--warn);
-  background: transparent;
-  border-color: var(--warn);
-}
-/* Outcome-axis statuses (outcomes.js::resultStatus). Prevented is a pass for
-   the control; not reached / not executed are OUR chain stopping — neutral,
-   never red; detected-not-prevented is a prevention FAIL. */
-.theme-console .evidence .scorecard__status--prevented {
-  color: var(--ac-ink);
-  background: transparent;
-  border-color: var(--pos);
-}
-.theme-console .evidence .scorecard__status--not-reached,
-.theme-console .evidence .scorecard__status--not-executed {
-  color: var(--tx2);
-  background: transparent;
-  border-color: var(--tx3);
-}
-.theme-console .evidence .scorecard__status--detected-not-prevented {
-  color: var(--crit);
-  background: transparent;
-  border-color: var(--crit);
-}
+/* A row's state is a kit StatusIcon and one word (detectionState.js). */
+.theme-console .evidence .scorecard__state { display: inline-flex; min-width: 0; }
 
-.theme-console .evidence .row-action {
-  border-radius: 4px;
-  border: 1px solid var(--bd2);
-  color: var(--tx2);
-  background: var(--s1);
-}
-.theme-console .evidence .row-action--detected:hover {
-  color: var(--ac-ink);
-  border-color:var(--pos);
-}
-.theme-console .evidence .row-action--missed:hover {
-  color: var(--crit);
-  border-color: var(--crit);
-}
+/* Row actions: kit icon buttons, shown with the row (hover, or focus inside it). */
+.theme-console .evidence .scorecard__row-actions { gap: 4px; }
+.theme-console .evidence .scorecard__row:focus-within .scorecard__row-actions { opacity: 1; }
 
 /* ── Detection drawer (Evidence drill-down) ──────────────────────── */
 
@@ -423,14 +358,6 @@
   border-color: var(--bd);
 }
 .theme-console .evidence .detection-drawer__alert-id .mono { color: var(--info); }
-.theme-console .evidence .detection-drawer__copy {
-  color: var(--tx2);
-  border-color: var(--bd2);
-}
-.theme-console .evidence .detection-drawer__copy:hover {
-  color: var(--ac-ink);
-  border-color:var(--ac-line);
-}
 .theme-console .evidence .detection-drawer__notes {
   color: var(--tx);
   background: var(--s2);
@@ -449,15 +376,22 @@
   border: 1px solid var(--bd);
   border-radius: 10px;
 }
-.theme-console .evidence .mttd-histogram__title { color: var(--tx); }
-.theme-console .evidence .mttd-histogram__stat-label,
-.theme-console .evidence .mttd-histogram__hint { color: var(--tx3); }
+.theme-console .evidence .mttd-histogram__title {
+  font: 600 13px/1.2 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--tx);
+}
+/* No MTTD yet: the panel is one line. */
+.theme-console .evidence .mttd-histogram--empty {
+  padding: 10px 16px; font: 400 12px/1.5 var(--font-ui); color: var(--tx3);
+}
+.theme-console .evidence .mttd-histogram__stat-label { color: var(--tx3); }
+.theme-console .evidence .mttd-histogram__hint {
+  font: 400 11px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--tx3);
+}
 .theme-console .evidence .mttd-histogram__stat-value { color: var(--tx); }
 .theme-console .evidence .mttd-histogram__stat--alert .mttd-histogram__stat-value { color: var(--ac-ink); }
 .theme-console .evidence .mttd-histogram__bar { background: var(--ac-soft); }
 .theme-console .evidence .mttd-histogram__bar--median { background: var(--ac-str); }
 .theme-console .evidence .mttd-histogram__label { color: var(--tx3); }
-.theme-console .evidence .mttd-histogram__empty-state { color: var(--tx3); }
 
 /* ── Export menu ──────────────────────────────────────────────────── */
 
@@ -479,103 +413,7 @@
    destinations/run-compare.css) ─────────────────────────────────── */
 .theme-console .evidence .multirun__matrix th { color: var(--tx3); }
 
-/* ───────────────────────────────────────────────────────────────────
-   NarrativeTimeline.jsx — the Live-tab hero kill-chain timeline
-   ─────────────────────────────────────────────────────────────────── */
-
-.theme-console .narrative__timeline .tl-track {
-  background: linear-gradient(90deg, transparent, var(--bd2) 20%, var(--bd2) 80%, transparent);
-}
-.theme-console .narrative__timeline .tl-track-progress {
-  background: linear-gradient(90deg, var(--info), var(--ac-str));
-  box-shadow:0 0 8px color-mix(in srgb, var(--ac-str) 45%, transparent);
-}
-
-.theme-console .narrative__timeline .tl-step__time { color: var(--tx3); }
-.theme-console .narrative__timeline .tl-step__tid { color: var(--info); }
-.theme-console .narrative__timeline .tl-step__name { color: var(--tx); }
-
-.theme-console .narrative__timeline .tl-step__node {
-  background: var(--s1);
-  border-color: var(--info);
-  box-shadow: 0 0 0 4px var(--s0);
-}
-.theme-console .narrative__timeline .tl-step__node::after {
-  background: var(--info);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--info) 45%, transparent);
-}
-.theme-console .narrative__timeline .tl-step--pending .tl-step__node {
-  border-color: var(--warn);
-}
-.theme-console .narrative__timeline .tl-step--pending .tl-step__node::after {
-  background: var(--warn);
-  box-shadow: 0 0 8px var(--warn);
-}
-.theme-console .narrative__timeline .tl-step--idle .tl-step__node {
-  border-color: var(--bd2);
-}
-.theme-console .narrative__timeline .tl-step--idle .tl-step__node::after {
-  background: var(--bd2);
-  box-shadow: none;
-}
-
-.theme-console .narrative__timeline .tl-step__mttd { color: var(--ac-ink); }
-
-.theme-console .narrative__timeline .tl-det {
-  background: var(--s1);
-  border-color: var(--bd);
-  color: var(--tx3);
-}
-.theme-console .narrative__timeline .tl-det__plane { color: var(--tx2); }
-.theme-console .narrative__timeline .tl-det--detected {
-  border-color:var(--pos);
-  background: var(--ac-soft);
-  color: var(--ac-ink);
-}
-.theme-console .narrative__timeline .tl-det--detected .tl-det__plane { color: var(--ac-ink); }
-.theme-console .narrative__timeline .tl-det--pending {
-  border-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 16%, transparent);
-  color: var(--warn);
-}
-.theme-console .narrative__timeline .tl-det--pending .tl-det__plane { color: var(--warn); }
-.theme-console .narrative__timeline .tl-det--missed {
-  border-color: var(--crit);
-  background: color-mix(in srgb, var(--crit) 16%, transparent);
-  color: var(--crit);
-}
-.theme-console .narrative__timeline .tl-det--missed .tl-det__plane { color: var(--crit); }
-.theme-console .narrative__timeline .tl-det--prevented {
-  border-color: var(--pos);
-  background: var(--ac-soft);
-  color: var(--ac-ink);
-}
-.theme-console .narrative__timeline .tl-det--not-reached,
-.theme-console .narrative__timeline .tl-det--not-executed {
-  border-color: var(--tx3);
-  background: transparent;
-  color: var(--tx2);
-  opacity: 0.8;
-}
-.theme-console .narrative__timeline .tl-det--detected-not-prevented {
-  border-color: var(--crit);
-  background: color-mix(in srgb, var(--crit) 16%, transparent);
-  color: var(--crit);
-}
-
-.theme-console .narrative__timeline .stitch-svg .stitch-path {
-  stroke: var(--info);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--info) 45%, transparent));
-}
-.theme-console .narrative__timeline .narrative__stitch-label {
-  color: var(--info);
-  background: var(--ink);
-  border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
-}
-
-/* run-detail__eyebrow — the "Runs & Proof" breadcrumb label above the
-   masthead h1 (RunDetailView.jsx). Added by the InflightView pass;
-   kept here alongside the rest of the masthead rules above. */
+/* run-detail__eyebrow — the line above the masthead h1 (RunDetailView.jsx). */
 .theme-console .run-detail .run-detail__eyebrow {
   font-family: 'Montserrat', var(--font-display), sans-serif;
   font-size: 9px;
@@ -587,140 +425,6 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────
-   InflightView.jsx — the "Live" sub-tab: eyebrow/title/summary header,
-   empty and loading states, and the stats + Screenshot/Export footer.
-   `.narrative__timeline` above (NarrativeTimeline.jsx's own internals)
-   and `.evidence`/`.run-detail` above belong to other passes; this
-   section only touches the wrapper/header/footer chrome InflightView
-   itself renders. Reference: .design-ref/02-runs-amp-proof.html (the
-   "last run" card's pulse + eyebrow + stat-row language — the closest
-   analog in the mockup export to a live run header, since the split
-   03-rundetail-name.html "Live" tab documents a per-step log accordion
-   that belongs to a different data shape than the frames/stitches
-   NarrativeTimeline already renders; restyled in place rather than
-   forcing a layout with no backing data — see the task's gaps note).
-   ─────────────────────────────────────────────────────────────────── */
-
-.theme-console .narrative {
-  max-width: 1180px;
-  margin: 0 auto;
-}
-
-.theme-console .narrative__header {
-  border-bottom-color: var(--bd);
-}
-
-.theme-console .narrative__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: 'JetBrains Mono', var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--tx2);
-}
-.theme-console .narrative__eyebrow--live { color: var(--ac-ink); }
-.theme-console .narrative__eyebrow--live::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background:var(--pos);
-  animation: run-detail-live-pulse 1.6s ease-in-out infinite;
-}
-
-.theme-console .narrative__title {
-  font-family: 'Montserrat', var(--font-display), sans-serif;
-  font-size: 27px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--tx);
-}
-
-.theme-console .narrative__summary {
-  font-family: var(--font-ui);
-  font-weight: 400;
-  color: var(--tx2);
-}
-.theme-console .narrative__summary em {
-  color: var(--ac-ink);
-  font-style: normal;
-}
-
-/* The run's "did not execute as authored" lines, INSIDE the capture region so
-   the Screenshot PNG carries them (UI-09). A warning rule, not decoration: the
-   words carry the meaning, the amber only repeats it. */
-.theme-console .narrative__caveats {
-  margin-top: 12px;
-  padding: 9px 12px;
-  border-left: 3px solid var(--warn);
-  border-radius: 3px;
-  background: var(--s1);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--tx2);
-  text-align: left;
-}
-.theme-console .narrative__caveats strong { color: var(--tx); font-weight: 600; }
-.theme-console .narrative__caveats ul { margin: 4px 0 0; padding-left: 18px; }
-
-.theme-console .inflight-loading-note {
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  background: var(--s1);
-  color: var(--tx3);
-}
-
-.theme-console .inflight-empty__title {
-  font-family: 'Montserrat', var(--font-display), sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: var(--tx);
-}
-.theme-console .inflight-empty__desc {
-  font-family: var(--font-ui);
-  font-weight: 400;
-  color: var(--tx2);
-}
-
-.theme-console .narrative__footer {
-  background: var(--s1);
-  border: 1px solid var(--bd);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-}
-.theme-console .narrative__footer p {
-  font-family: var(--font-ui);
-  font-weight: 400;
-  font-size: 13px;
-  color: var(--tx2);
-}
-.theme-console .narrative__footer strong {
-  color: var(--ac-ink);
-  font-weight: 700;
-}
-
-.theme-console .inflight-footer-actions .btn {
-  border-radius: 6px;
-}
-.theme-console .inflight-footer-actions .btn:hover:not(:disabled) {
-  border-color: var(--ac);
-  color: var(--ac-ink);
-}
-.theme-console .inflight-footer-actions .btn--primary {
-  background: var(--ac-ink);
-  color: var(--ac-tx);
-  border-color: var(--ac);
-}
-.theme-console .inflight-footer-actions .btn--primary:hover:not(:disabled) {
-  background: var(--ac-str);
-  border-color: var(--ac-str);
-  color: var(--ac-tx);
-}
-
-/* ───────────────────────────────────────────────────────────────────
    Techniques tab (RunTechniquesView.jsx) — kill-chain strip + verdict
    table. Tones: hit / miss / pending / excluded / empty. An EMPTY stage
    is dimmed, never green — "no technique here" is not "all detected".
@@ -729,8 +433,6 @@
 .theme-console .run-detail .run-topo { display: flex; flex-direction: column; gap: 16px; }
 .theme-console .run-detail .run-tech__head,
 .theme-console .run-detail .run-topo__head { display: flex; flex-direction: column; gap: 6px; }
-.theme-console .run-detail .run-tech__verdict,
-.theme-console .run-detail .run-topo__engine-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .theme-console .run-detail .run-tech__k,
 .theme-console .run-detail .run-topo__k { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tx3); }
 .theme-console .run-detail .run-tech__totals,
@@ -743,19 +445,6 @@
 .theme-console .run-detail .run-topo__unproven { margin: 0; font-size: 12px; color: var(--warn-str); }
 .theme-console .run-detail .run-tech__empty,
 .theme-console .run-detail .run-topo__empty { padding: 40px 0; text-align: center; color: var(--tx3); font-size: 12px; }
-
-.theme-console .run-detail .run-tech__verdict-chip,
-.theme-console .run-detail .run-topo__verdict-chip { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-.theme-console .run-detail .run-tech__verdict-chip--pass,
-.theme-console .run-detail .run-topo__verdict-chip--pass { color: var(--pos); border-color: var(--pos); }
-.theme-console .run-detail .run-tech__verdict-chip--fail,
-.theme-console .run-detail .run-topo__verdict-chip--fail { color: var(--crit); border-color: var(--crit); }
-.theme-console .run-detail .run-tech__verdict-chip--pending,
-.theme-console .run-detail .run-topo__verdict-chip--pending { color: var(--warn-str); border-color: var(--warn-str); }
-.theme-console .run-detail .run-tech__verdict-chip--not_applicable,
-.theme-console .run-detail .run-tech__verdict-chip--unscored,
-.theme-console .run-detail .run-topo__verdict-chip--not_applicable,
-.theme-console .run-detail .run-topo__verdict-chip--unscored { color: var(--tx3); border-color: var(--bd2); }
 
 /* the strip — 14 equal columns that FIT their container. A kill chain is read
    left to right in one row, and a stage behind a scrollbar is a stage nobody
@@ -820,7 +509,7 @@
 .theme-console .run-detail .run-topo__unplaced-id { color: var(--tx); }
 .theme-console .run-detail .run-tech__foot,
 .theme-console .run-detail .run-topo__foot {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  display: flex; justify-content: flex-end; align-items: center; gap: 12px;
   font-size: 11px; color: var(--tx3);
 }
 .theme-console .run-detail .run-topo__foot-actions { display: flex; gap: 6px; }

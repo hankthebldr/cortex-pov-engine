@@ -33,7 +33,10 @@ describe('resultStatus', () => {
     // inference made server-side; only `outcome === 'missed'` is a miss.
     expect(resultStatus({ outcome: null }, 'missed')).toBe('pending')
     expect(resultStatus({ outcome: 'missed', observed: false })).toBe('missed')
-    expect(statusLabel('pending', { outcome: null, observed: false })).toBe('Awaiting reconcile')
+    // Unjudged reads Pending once the run has been reviewed, Not reviewed before.
+    expect(statusLabel('pending', { outcome: null, observed: false })).toBe('Pending')
+    expect(statusLabel('pending', { outcome: null, observed: false }, { reviewed: false })).toBe('Not reviewed')
+    expect(statusLabel('pending', { outcome: 'pending', outcome_reason: 'DEDUP_WINDOW' }, { reviewed: false })).toBe('Pending')
     expect(statusLabel('pending', { outcome: 'pending', outcome_reason: 'DEDUP_WINDOW' })).toBe('Pending')
     expect(statusLabel('missed', { outcome: 'missed' })).toBe('Missed')
   })

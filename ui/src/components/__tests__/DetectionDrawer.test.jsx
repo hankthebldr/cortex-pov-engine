@@ -27,7 +27,7 @@ describe('<DetectionDrawer />', () => {
   it('renders an empty shell when row is null', () => {
     const { container } = render(<DetectionDrawer row={null} open={false} />)
     expect(container.querySelector('.detection-drawer')).toBeTruthy()
-    expect(screen.queryByText('Operator notes')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Notes')).not.toBeInTheDocument()
   })
 
   it('renders TID, alert, MTTD, plane when row is supplied + open', () => {
@@ -57,7 +57,7 @@ describe('<DetectionDrawer />', () => {
   it('Mark detected fires onValidate(id, true, notes)', () => {
     const onValidate = vi.fn()
     render(<DetectionDrawer row={{ ...baseRow, observed: null }} open onValidate={onValidate} />)
-    const textarea = screen.getByLabelText(/Operator notes/i)
+    const textarea = screen.getByLabelText('Notes')
     fireEvent.change(textarea, { target: { value: 'observed in console at 12:41:45Z' } })
     fireEvent.click(screen.getByRole('button', { name: /mark detected/i }))
     expect(onValidate).toHaveBeenCalledWith(42, true, 'observed in console at 12:41:45Z')
@@ -86,7 +86,7 @@ describe('<DetectionDrawer />', () => {
   it('hydrates the notes textarea from row.notes on mount', () => {
     const withNotes = { ...baseRow, notes: 'previously saved' }
     render(<DetectionDrawer row={withNotes} open onValidate={() => {}} />)
-    const textarea = screen.getByLabelText(/Operator notes/i)
+    const textarea = screen.getByLabelText('Notes')
     expect(textarea.value).toBe('previously saved')
   })
 

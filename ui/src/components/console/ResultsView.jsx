@@ -15,7 +15,8 @@
  * Review notice, and every detection tab says "Not reviewed" — never a
  * scorecard, and never "missed". Tenant evidence still shows the stored read.
  *
- * The views are the ones that were tabs of a run's page, moved here unchanged.
+ * The views are the ones that were tabs of a run's page. They say the run's
+ * verdict once, here, on the verdict line; none repeats it.
  *
  * Props:
  *   run           the run row (newest first list's entry)

@@ -1,29 +1,33 @@
 import React, { useState, useEffect } from 'react'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import { updateResultNotes } from '../../api/client.js'
-import { resultStatus, statusLabel as labelFor, outcomeClass, isAttestationRefused } from '../../outcomes.js'
+import { isAttestationRefused } from '../../outcomes.js'
+import { detectionState } from './detectionState.js'
+import { tidySeconds } from './MttdHistogram.jsx'
+import { Button, Icon, StatusIcon } from './kit/index.js'
 
 /**
- * DetectionDrawer — operator drill-down for a single scorecard row.
+ * DetectionDrawer — one expected detection, opened from its scorecard row.
  *
- * Slides in from the right when a DC clicks a scorecard row in the
- * Evidence tab. Surfaces the full detection record so the DC can:
+ * Slides in from the right on Results › Detections. It carries the whole
+ * record so a DC can:
  *
- *   - Read the expected description vs alert title + observation timestamps
- *   - Inspect the raw alert id (with a copy-to-clipboard affordance)
- *   - Edit operator notes (validation context for the POV report)
- *   - Validate / un-validate with notes attached in one motion
- *   - See an MTTD breakdown (executed_at → observed_at)
+ *   - read the state (a StatusIcon and one word), the timing and the MTTD
+ *   - copy the alert id
+ *   - keep a note for the POV report
+ *   - mark the detection by hand (Mark detected · Mark missed · Reset)
  *
  * Props:
  *   row        — the scorecard row object (see useResultsData)
  *   open       — boolean
+ *   reviewed   — the run has been reviewed (default true)
  *   onClose    — () => void
  *   onValidate — (resultId, observed: boolean|null, notes: string) => void
  */
 export default function DetectionDrawer({
   row,
   open,
+  reviewed = true,
   onClose = () => {},
   onValidate = () => {},
 }) {
@@ -41,9 +45,7 @@ export default function DetectionDrawer({
   if (!row) return <aside className="detection-drawer" />
 
   // Outcome first (outcomes.js::resultStatus): a not_reached row is never Missed.
-  const statusKey = row.status ?? resultStatus(row)
-  const status = outcomeClass(statusKey)
-  const statusLabel = labelFor(statusKey, row)
+  const state = detectionState(row, { reviewed })
 
   const handleCopyAlertId = () => {
     if (!row.alertId) return
@@ -76,9 +78,10 @@ export default function DetectionDrawer({
 
   const fmtMttd = (s) => {
     if (s == null) return '—'
+    if (s < 60) return `${tidySeconds(s)}s`
     const mm = Math.floor(s / 60)
     const ss = Math.floor(s % 60).toString().padStart(2, '0')
-    return mm > 0 ? `${mm}m ${ss}s` : `${ss}s`
+    return `${mm}m ${ss}s`
   }
 
   return (
@@ -96,18 +99,18 @@ export default function DetectionDrawer({
         </div>
         <button
           type="button"
-          className="btn"
+          className="detection-drawer__close"
           onClick={onClose}
           aria-label="Close detection detail"
+          title="Close"
         >
-          <span>Close</span>
-          <span className="kbd">esc</span>
+          <Icon name="x" size={12} />
         </button>
       </div>
 
       <div className="detection-drawer__status-row">
-        <span className={`scorecard__status scorecard__status--${status}`}>
-          {statusLabel}
+        <span className="detection-drawer__state" title={state.title}>
+          <StatusIcon status={state.status} word={state.word} />
         </span>
         <span className="mono detection-drawer__plane">
           <span>{row.plane}</span>
@@ -134,94 +137,65 @@ export default function DetectionDrawer({
       </div>
 
       <div className="detection-drawer__section">
-        <div className="detection-drawer__section-title">Alert reference</div>
+        <div className="detection-drawer__section-title">Alert ID</div>
         <div className="detection-drawer__alert-id">
-          <span className="mono">{row.alertId || '—'}</span>
+          <span className="mono" title={row.alertId ? 'Search this ID in Cortex to open the alert' : undefined}>
+            {row.alertId || '—'}
+          </span>
           {row.alertId && (
-            <button
-              type="button"
-              className="detection-drawer__copy"
-              onClick={handleCopyAlertId}
-              aria-label="Copy alert ID to clipboard"
-              title="Copy alert ID to clipboard"
-            >
-              {copied ? '✓ copied' : 'copy'}
-            </button>
+            <Button verb="Copy" onClick={handleCopyAlertId} aria-label="Copy alert ID">
+              {copied ? 'Copied' : 'Copy'}
+            </Button>
           )}
         </div>
-        {row.alertId && (
-          <div className="detection-drawer__hint mono">
-            Paste this ID into the Cortex console search to jump to the
-            originating alert + causality graph.
-          </div>
-        )}
       </div>
 
       <div className="detection-drawer__section detection-drawer__section--notes">
-        <label htmlFor="detection-notes" className="detection-drawer__section-title">
-          Operator notes
+        <label
+          htmlFor="detection-notes"
+          className="detection-drawer__section-title"
+          title="Shown in the POV report, under this detection"
+        >
+          Notes
         </label>
         <textarea
           id="detection-notes"
           className="detection-drawer__notes"
-          placeholder="What did you observe? Edge cases, false-positive risk, follow-up actions for the customer brief…"
+          placeholder="What you observed"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={6}
         />
         <div className="detection-drawer__notes-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={handleSaveNote}
-            disabled={row.id == null || noteState === 'saving'}
-          >
+          <Button verb="Save" onClick={handleSaveNote} disabled={row.id == null || noteState === 'saving'}>
             Save note
-          </button>
+          </Button>
           {noteState && noteState !== 'saving' && (
-            <span className="mono detection-drawer__note-state" role="status">
-              {noteState === 'saved' ? 'saved' : `not saved — ${noteState}`}
+            <span
+              className="detection-drawer__note-state"
+              role="status"
+              title={noteState === 'saved' ? undefined : noteState}
+            >
+              {noteState === 'saved' ? 'Saved' : 'Not saved'}
             </span>
           )}
-        </div>
-        <div className="detection-drawer__hint mono">
-          Notes appear in the POV report under the matching scorecard row.
         </div>
       </div>
 
       {isAttestationRefused(row) ? (
-        <div className="detection-drawer__hint mono" data-testid="drawer-attestation-refused">
-          No manual attestation here: this step never ran, or it is a prevention — a hand
-          mark cannot stand in for the alert and host witnesses. Reconcile against the tenant.
+        <div
+          className="detection-drawer__hint"
+          data-testid="drawer-attestation-refused"
+          title="The step never ran, or it is a prevention. A hand mark cannot stand in for the alert; review against the tenant."
+        >
+          Cannot be marked by hand
         </div>
       ) : (
       <div className="detection-drawer__actions">
-        <button
-          type="button"
-          className={'btn' + (status === 'detected' ? ' btn--primary' : '')}
-          onClick={() => handleSave(true)}
-          disabled={row.id == null}
-        >
-          ✓ Mark detected
-        </button>
-        <button
-          type="button"
-          className="btn btn--danger"
-          onClick={() => handleSave(false)}
-          disabled={row.id == null}
-        >
-          ✗ Mark missed
-        </button>
+        <Button verb="Mark detected" onClick={() => handleSave(true)} disabled={row.id == null} />
+        <Button verb="Mark missed" onClick={() => handleSave(false)} disabled={row.id == null} />
         {row.observed != null && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => handleSave(null)}
-            disabled={row.id == null}
-            title="Reset to pending"
-          >
-            ○ Reset
-          </button>
+          <Button verb="Reset" onClick={() => handleSave(null)} disabled={row.id == null} title="Back to unjudged" />
         )}
       </div>
       )}

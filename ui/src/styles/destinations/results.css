@@ -56,8 +56,25 @@
   gap: 12px;
 }
 
-/* The scorecard's per-row controls are kit buttons at the row's scale. */
-.theme-console .evidence .row-action.kit-btn { padding: 0; gap: 0; }
+/* The detection drawer: kit controls, sentence-case labels, few words. */
+.theme-console .evidence .detection-drawer__close {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  background: transparent; color: var(--tx2);
+  border: 1px solid var(--bd2); border-radius: 6px; cursor: pointer;
+}
+.theme-console .evidence .detection-drawer__close:hover { color: var(--tx); border-color: var(--gr-matte); }
+.theme-console .evidence .detection-drawer__close:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.theme-console .evidence .detection-drawer__section-title {
+  font: 600 12px/1.2 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--tx2);
+}
+.theme-console .evidence .detection-drawer__notes-actions { display: flex; align-items: center; gap: 10px; }
+.theme-console .evidence .detection-drawer__note-state,
+.theme-console .evidence .detection-drawer__hint {
+  font: 400 12px/1.5 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--tx3);
+}
+.theme-console .evidence .detection-drawer__hint { margin: 0; padding: 14px 20px; }
+.theme-console .evidence .scorecard-empty { font: 400 12px/1.5 var(--font-ui); }
 
 /* The download list hangs off the kit Download button, in the console's
    own surfaces and type: every artifact reads the same, none is the default. */

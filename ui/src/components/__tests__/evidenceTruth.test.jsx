@@ -77,7 +77,7 @@ describe('Proof & Export — a failed fetch is not an empty scorecard', () => {
   it('a run with nothing seeded reads "—", not a measured 0 % coverage', async () => {
     installRoutes({ 'GET /api/results/run-E': { results: [] } })
     render(<EvidenceView lastRun={{ runId: 'run-E', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
-    await waitFor(() => expect(screen.getByText('no detections seeded for this run')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('No detections expected')).toBeInTheDocument())
     expect(document.querySelector('.kpi__value--detected')).toBeNull()
   })
 })

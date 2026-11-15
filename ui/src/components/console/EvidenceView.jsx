@@ -3,11 +3,12 @@ import '../../styles/destinations/run-detail.css'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
-import MttdHistogram from './MttdHistogram.jsx'
-import { Button, Icon } from './kit/index.js'
+import MttdHistogram, { tidySeconds } from './MttdHistogram.jsx'
+import { Button, StatusIcon } from './kit/index.js'
 import AlsoRaised from './AlsoRaised.jsx'
-import { isRunUnproven } from '../DetectionStoryline.jsx'
-import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
+import { isRunUnproven } from './runStatus.js'
+import { detectionState } from './detectionState.js'
+import { outcomeClass, isBulkAttestable, isAttestationRefused } from '../../outcomes.js'
 
 /**
  * EvidenceView — Results › Detections: each expected detection of one run and
@@ -15,8 +16,11 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  *
  * Layout:
  *   ▸ one action: Validate all (with the count it will skip)
- *   ▸ KPI row: Coverage % · Median MTTD · Analytics plane · Pending count
- *   ▸ Scorecard table with per-row validate (Detected / Missed / Reset)
+ *   ▸ four tiles: Coverage · Median MTTD · Analytics plane · Pending. Each is
+ *     a label, one number, and at most one short line.
+ *   ▸ the MTTD distribution (one line when there is none)
+ *   ▸ the scorecard: each row's state is a StatusIcon and one word
+ *     (detectionState.js), with its row actions as kit icon buttons
  *   ▸ "Also raised by Cortex (N)": the run's alerts that match no expected
  *     detection (AlsoRaised.jsx); absent when there are none
  *
@@ -27,11 +31,14 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  *   pinnedRun  — { runId, scenarioId, status } the run on screen
  *   activeRun  — { runId, scenarioId, ... } used when no run is pinned
  *   lastRun    — fallback run when neither is given
+ *   reviewed   — the run has been reviewed (default). A row nothing has
+ *                judged reads Pending when it has, Not reviewed when not.
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
+  reviewed = true,
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
   // derived active/last selection — explicit picks always win.
@@ -107,9 +114,7 @@ export default function EvidenceView({
           verb="Validate all"
           onClick={handleValidateAll}
           disabled={kpis.unvalidated === 0 || unproven}
-          title={unproven
-            ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
-            : 'Mark all pending detections as observed'}
+          title={unproven ? `Run ${runStatus}: nothing to mark` : 'Mark every pending detection as detected'}
         >
           Validate all
           {kpis.unvalidated > 0 && (
@@ -118,18 +123,18 @@ export default function EvidenceView({
         </Button>
         {kpis.skipped > 0 && (
           <span
-            className="mono evidence-header__skipped"
+            className="evidence-header__skipped"
             data-testid="validate-all-skipped"
-            title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
+            title="Not marked: the step never ran, it is a prevention, or the review found a miss. Mark those one at a time."
           >
-            {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
+            {kpis.skipped} skipped
           </span>
         )}
-        {loading && <span className="mono evidence-header__sync">syncing…</span>}
+        {loading && <span className="evidence-header__sync">Syncing…</span>}
       </div>
       {error && (
-        <div className="evidence-stale" role="status" data-testid="evidence-refresh-error">
-          Last refresh failed — showing the previous answer. <span className="mono">{error}</span>
+        <div className="evidence-stale" role="status" data-testid="evidence-refresh-error" title={error}>
+          Refresh failed · showing the last read
         </div>
       )}
       <KpiRow kpis={kpis} unproven={unproven} runStatus={runStatus} />
@@ -139,6 +144,7 @@ export default function EvidenceView({
       <Scorecard
         rows={rows}
         loading={loading}
+        reviewed={reviewed}
         selectedRowId={selectedRowId}
         onSelectRow={setSelectedRowId}
         onValidate={validate}
@@ -148,6 +154,7 @@ export default function EvidenceView({
 
       <DetectionDrawer
         row={selectedRow}
+        reviewed={reviewed}
         open={!!selectedRow}
         onClose={() => setSelectedRowId(null)}
         onValidate={(id, observed, notes) => {
@@ -162,14 +169,23 @@ export default function EvidenceView({
 
 /* ─── KPI row ─────────────────────────────────────────────────────────── */
 
+const NOT_COUNTED = 'Not counted: the step never ran, or its detector is still soaking'
+
+/** Coverage's one line: how many were detected, and how many were left out. */
+function coverageLine(kpis) {
+  const left = kpis.excluded > 0 ? `${kpis.excluded} not counted` : null
+  return [`${kpis.detected} of ${kpis.total} detected`, left].filter(Boolean).join(' · ')
+}
+
 function KpiRow({ kpis, unproven = false, runStatus = null }) {
   return (
     <div className="kpi-row">
       {unproven ? (
         <Kpi
           label="Coverage"
-          value="n/a"
-          meta={`run ${runStatus} — signal never generated`}
+          value="—"
+          meta={`Run ${runStatus}`}
+          title="The run did not finish, so no detection was put to the test"
           tone="tx"
         />
       ) : kpis.coverage == null ? (
@@ -177,10 +193,11 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Coverage"
           value="—"
           meta={kpis.coverageUnknown
-            ? 'server sent no coverage denominator'
+            ? 'Count not sent'
             : kpis.seeded > 0
-              ? `nothing to score — ${kpis.excluded} excluded (never ran or soaking)`
-              : 'no detections seeded for this run'}
+              ? `${kpis.excluded} not counted`
+              : 'No detections expected'}
+          title={kpis.coverageUnknown ? 'This SimCore sent no coverage count' : kpis.seeded > 0 ? NOT_COUNTED : undefined}
           tone="tx"
         />
       ) : (
@@ -189,17 +206,17 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           value={kpis.coverage}
           suffix="%"
           valueClass="kpi__value--detected"
-          meta={`${kpis.detected} / ${kpis.total} detections confirmed`
-            + (kpis.excluded > 0 ? ` · ${kpis.excluded} excluded (never ran or soaking)` : '')}
+          meta={coverageLine(kpis)}
+          title={kpis.excluded > 0 ? NOT_COUNTED : undefined}
           tone="ac"
         />
       )}
       <Kpi
-        label="MTTD · median"
-        value={kpis.median != null ? kpis.median : '—'}
+        label="Median MTTD"
+        value={kpis.median != null ? tidySeconds(kpis.median) : '—'}
         suffix={kpis.median != null ? 's' : ''}
         valueClass="kpi__value--signal"
-        meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
+        title="Median time to detect, across detected rows"
         tone={kpis.median != null ? 'ac' : 'tx'}
       />
       {kpis.stitchDenominator > 0 ? (
@@ -207,14 +224,14 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Analytics plane"
           value={kpis.stitched}
           suffix={` / ${kpis.stitchDenominator}`}
-          meta="analytics-plane detections observed"
+          title="Analytics-plane detections observed, of those that could have fired"
           tone="info"
         />
       ) : (
         <Kpi
           label="Analytics plane"
           value="—"
-          meta="no analytics-plane detection to score on this run"
+          meta="None on this run"
           tone="tx"
         />
       )}
@@ -222,16 +239,17 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         label="Pending"
         value={kpis.pending}
         valueClass="kpi__value--pending"
-        meta="awaiting validation"
+        title="Detections nothing has settled yet"
         tone={kpis.pending > 0 ? 'warn' : 'tx'}
       />
     </div>
   )
 }
 
-function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx' }) {
+/** One tile: a label, one number, and at most one short line under it. */
+function Kpi({ label, value, suffix = '', meta = '', title, valueClass = '', tone = 'tx' }) {
   return (
-    <div className={`kpi kpi--${tone}`}>
+    <div className={`kpi kpi--${tone}`} title={title}>
       <div className="kpi__label">{label}</div>
       <div className={'kpi__value ' + valueClass}>
         {value}
@@ -246,7 +264,7 @@ function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx
 
 /* ─── Scorecard ────────────────────────────────────────────────────────── */
 
-function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
+function Scorecard({ rows, loading, reviewed, selectedRowId, onSelectRow, onValidate }) {
   if (rows.length === 0 && !loading) {
     return (
       <div className="scorecard">
@@ -257,11 +275,9 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
           <div>Source</div>
-          <div>Status</div>
+          <div>State</div>
         </div>
-        <div className="scorecard-empty">
-          no results yet — Cortex Data Lake ingestion typically takes 30–120s
-        </div>
+        <div className="scorecard-empty">No expected detections</div>
       </div>
     )
   }
@@ -275,12 +291,13 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
         <div>Source</div>
-        <div>Status</div>
+        <div>State</div>
       </div>
       {rows.map((r, i) => (
         <ScorecardRow
           key={r.id ?? i}
           row={r}
+          reviewed={reviewed}
           isSelected={r.id != null && r.id === selectedRowId}
           onSelect={() => r.id != null && onSelectRow(r.id)}
           onValidate={onValidate}
@@ -290,10 +307,10 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
   )
 }
 
-function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
-  // The status the server's outcome axis says (outcomes.js::resultStatus).
-  const status = outcomeClass(row.status)
-  const statusLabel = labelFor(row.status, row)
+function ScorecardRow({ row, reviewed, isSelected, onSelect, onValidate }) {
+  // What became of the detection, from the server's outcome axis
+  // (outcomes.js::resultStatus), as a StatusIcon and one word.
+  const state = detectionState(row, { reviewed })
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).
@@ -302,7 +319,8 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
   return (
     <div
       className={'scorecard__row' + (isSelected ? ' scorecard__row--selected' : '')}
-      data-status={status}
+      data-status={outcomeClass(row.status)}
+      data-state={state.key}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -325,34 +343,19 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
       <div className="scorecard__id">{row.alertId || '—'}</div>
       <div className="scorecard__source">{row.alertSource || '—'}</div>
       <div className="scorecard__status-cell">
-        <span className={`scorecard__status scorecard__status--${status}`}>
-          {statusLabel}
+        <span className="scorecard__state" title={state.title}>
+          <StatusIcon status={state.status} word={state.word} />
         </span>
         {row.id != null && !isAttestationRefused(row) && (
           <div className="scorecard__row-actions">
             {row.observed !== true && (
-              <Button
-                className="row-action row-action--detected"
-                onClick={stop(() => onValidate(row.id, true, null))}
-                title="Mark as detected"
-                aria-label="Mark as detected"
-              ><Icon name="check" size={12} /></Button>
+              <Button verb="Mark detected" iconOnly onClick={stop(() => onValidate(row.id, true, null))} />
             )}
             {row.observed !== false && (
-              <Button
-                className="row-action row-action--missed"
-                onClick={stop(() => onValidate(row.id, false, null))}
-                title="Mark as missed"
-                aria-label="Mark as missed"
-              ><Icon name="x" size={12} /></Button>
+              <Button verb="Mark missed" iconOnly onClick={stop(() => onValidate(row.id, false, null))} />
             )}
             {row.observed != null && (
-              <Button
-                className="row-action"
-                onClick={stop(() => onValidate(row.id, null, null))}
-                title="Reset to pending"
-                aria-label="Reset to pending"
-              ><Icon name="repeat" size={12} /></Button>
+              <Button verb="Reset" iconOnly onClick={stop(() => onValidate(row.id, null, null))} />
             )}
           </div>
         )}
