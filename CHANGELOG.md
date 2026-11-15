@@ -33,6 +33,25 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   no longer passes it.
 - Wire contract: `docs/reference/api-and-agent-surface.md` §1.3.3.
 
+### Fixed — dependency warnings read the beacon's tool facts and show at launch
+
+- **A launch reported `sudo`, `ssh`, `scp` and `sshpass` missing on hosts that
+  had them (#327).** The check compared every name in a step's
+  `requires_interpreters` with the agent's interpreter list, which only holds
+  python, perl, ruby and node. A name that is not an interpreter is now read
+  from the tools the beacon reported: found is fine, looked for and not found
+  is missing, and a tool the beacon never looked for is listed as `unverified`
+  and is not a gap. `GET /api/agents/{id}/preflight` answers the same way.
+- **A real gap, and an install request that was ignored, were silent at launch
+  (#328).** A pull launch whose target lacks something a step needs now carries
+  the warning `RUNTIME_DEPENDENCY_GAP`. One that asks for
+  `allow_runtime_install` on a SimCore without
+  `CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL` carries `RUNTIME_INSTALL_NOT_ENABLED`.
+  Both are on the launch response, on `POST /api/runs/preflight` and in the
+  run's output. Neither refuses the launch.
+- A beacon's registration may now include `runtime_facts.probed`, the tools it
+  looked for. No beacon sends it yet.
+
 ### Changed — the Launch gate is about one scenario; Get started tracks the app
 
 - **The Launch gate read as both "this run" and "the whole app".** Under the

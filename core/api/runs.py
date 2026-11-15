@@ -1090,8 +1090,10 @@ async def _launch_run_impl(
     # (see LaunchResult.warnings): a string reservation SimCore also wrote onto
     # the run (an offline target, an unknown agent OS, a step running a
     # platform variant), and a {code, ...} dict from the container-agent
-    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN), which
-    # SimCore also wrote onto the run as one line.
+    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN) or the
+    # runtime-dependency preflight (RUNTIME_DEPENDENCY_GAP,
+    # RUNTIME_INSTALL_NOT_ENABLED), which SimCore also wrote onto the run as
+    # one line.
     if result.warnings:
         response["warnings"] = list(result.warnings)
 
@@ -1148,6 +1150,7 @@ async def launch_preflight(
         canary_run_id=body.canary_run_id,
         allow_missing_tools=body.allow_missing_tools,
         agent_profile_mode=body.agent_profile_mode,
+        allow_runtime_install=body.allow_runtime_install,
     )
     for check in evaluation.checks:
         row = check.to_dict()
