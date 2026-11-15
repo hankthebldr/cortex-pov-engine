@@ -1106,6 +1106,37 @@
 .theme-console .run-detail .run-case__disclaimer { margin: 8px 0 0; font-size: 11px; color: var(--tx3); }
 
 /* ───────────────────────────────────────────────────────────────────
+   AlsoRaised.jsx — Results › "Also raised by Cortex (N)" (#346).
+   Alerts Cortex raised for the run that match no expected detection.
+   No box: a title, one line of copy, one line per alert. They are
+   context, not coverage, so no pass/fail colour.
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .also-raised { margin: 28px 0 0; }
+.theme-console .also-raised__title {
+  margin: 0;
+  font: 600 15px/1.3 var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .also-raised__note { margin: 4px 0 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx3); }
+.theme-console .also-raised__list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .also-raised__item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bd);
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.theme-console .also-raised__name { color: var(--tx); font-weight: 600; }
+.theme-console .also-raised__count { color: var(--tx2); font-weight: 400; }
+.theme-console .also-raised__sep { color: var(--tx3); }
+
+/* ───────────────────────────────────────────────────────────────────
    TenantEvidencePanel.jsx — Results › tenant evidence (spec §7.5).
    No box around the panel: it sits below the scorecard and separates
    its blocks with a 1px top rule. Status is StatusIcon + one word (kit);

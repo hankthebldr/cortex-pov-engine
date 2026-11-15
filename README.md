@@ -213,9 +213,9 @@ language deps — nothing after that). No submodules touched, no toolchain
 installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
-CortexSim ships as tagged GitHub Releases — **v1.2.1** is the release this
+CortexSim ships as tagged GitHub Releases — **v1.2.3** is the release this
 tree describes, a hotfix cut 2026-11-15 and tagged by `tag-on-main.yml` when it
-merges to `main` (until that tag exists, **v1.2.0** is the latest published) — and
+merges to `main` (until that tag exists, **v1.2.2** is the latest tag) — and
 the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
 image is **not publicly pullable today** (an anonymous pull-token request is
@@ -1180,10 +1180,13 @@ make test-agent-cross   # beacon cross-compile gate
 
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
   — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0**, **v1.1.1** and **v1.2.0** are
-  published. **v1.2.1** (a hotfix: a failed step no longer reads as a Cortex miss)
-  is the release this tree describes, cut 2026-11-15; `tag-on-main.yml` tags it
-  from the first `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges
-  to `main`, and until then **v1.2.0** is the latest. Releases up to v1.1.1
+  published; **v1.2.1** (a hotfix: a failed step no longer reads as a Cortex miss)
+  and **v1.2.2** (a hotfix: verify-only XQL rows no longer count as Detection
+  Accuracy misses) were tagged 2026-11-15. **v1.2.3** (a hotfix: an alert credits
+  at most one run, and alerts a run did not expect are listed) is the release
+  this tree describes, cut 2026-11-15; `tag-on-main.yml` tags it from the first
+  `## [x.y.z]` heading in `CHANGELOG.md` when the release PR merges to `main`,
+  and until then **v1.2.2** is the latest tag. Releases up to v1.1.1
   attached `install.sh`, `stage2-linux.tar.gz`,
   `stage2-windows.zip` (which held one bash file, so it was never a Windows
   installer), `SHA256SUMS` and `manifest.json`. **v1.2.0 was the first release
@@ -1204,7 +1207,7 @@ make test-agent-cross   # beacon cross-compile gate
   That image is **not publicly pullable** — the v1.1.1 release run's own
   anonymous pull-token probe returned HTTP 401 (2026-11-12) — so don't
   `docker pull` it today. Build it locally instead (`./scripts/dev-up.sh`, or
-  `docker build -f core/Dockerfile -t cortexsim:v1.2.1 .` directly). Neither the
+  `docker build -f core/Dockerfile -t cortexsim:v1.2.3 .` directly). Neither the
   release image nor a local build stages the payload shelf: `/api/health` reads
   `payload_shelf` degraded (`SHELF_ARTIFACTS_MISSING`) until
   `./scripts/build-payloads.sh` runs before the build.

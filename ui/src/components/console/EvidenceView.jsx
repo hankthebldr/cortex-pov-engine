@@ -7,6 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import TenantEvidencePanel from './TenantEvidencePanel.jsx'
+import AlsoRaised from './AlsoRaised.jsx'
 import ReadBackButton from './ReadBackButton.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
 import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
@@ -18,6 +19,8 @@ import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationR
  *   ▸ view head with run id + timestamp + Validate-all + Export CTAs
  *   ▸ KPI row: Coverage % · Median MTTD · Stitch count · Pending count
  *   ▸ Scorecard table with per-row validate (Detected / Missed / Reset)
+ *   ▸ "Also raised by Cortex (N)": the run's alerts that match no expected
+ *     detection (AlsoRaised.jsx); absent when there are none
  *
  * Props:
  *   activeRun  — { runId, scenarioId, ... }
@@ -65,7 +68,8 @@ export default function EvidenceView({
       : lastRun?.status || null
   const unproven = isRunUnproven(runStatus)
 
-  const { rows, kpis, loading, loaded, error, validate, refresh } = useResultsData(targetRunId)
+  const { rows, kpis, additionalDetections, loading, loaded, error, validate, refresh } =
+    useResultsData(targetRunId)
   // A fetch that failed before any answer arrived is NOT an empty scorecard:
   // rendering it as one printed "Coverage 0 % · 0 / 0" and "no results yet —
   // ingestion typically takes 30–120s" for a SimCore that never answered.
@@ -211,6 +215,8 @@ export default function EvidenceView({
         onSelectRow={setSelectedRowId}
         onValidate={validate}
       />
+
+      <AlsoRaised alerts={additionalDetections} />
 
       <DetectionDrawer
         row={selectedRow}
