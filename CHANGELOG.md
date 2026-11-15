@@ -8,6 +8,18 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — the Launch gate is about one scenario; Get started tracks the app
+
+- **The Launch gate read as both "this run" and "the whole app".** Under the
+  armed scenario's New POV run it carried "This POVengine": the Cortex
+  connector ladder, tenants, attested facts and the SimCore components. It now
+  holds only the scenario's launch, says so ("It checks and starts one
+  scenario's run"), and links to Get started for the app's own status.
+- **Get started tracks this POVengine's status** under its setup steps: the
+  same "This POVengine" view, with Re-check. The old Readiness route, Review
+  scope on the safety banner, and the "see this POVengine" buttons in the
+  Composer and the preflight card now land there.
+
 ### Changed — the Firewall page walks Strata Logging Service and the firewall's policy
 
 - **The Firewall setup defaulted to syslog through a Broker VM.** Its two

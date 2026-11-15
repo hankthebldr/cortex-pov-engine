@@ -19,7 +19,6 @@ import { installRoutes } from '../../test/mockFetch.js'
 import { sectionFor, getDestination } from '../destinations.jsx'
 import OperationsView from '../../components/console/OperationsView.jsx'
 import TtpBrowserView from '../../components/console/TtpBrowserView.jsx'
-import ReadinessView from '../../components/console/ReadinessView.jsx'
 import EvidenceView from '../../components/console/EvidenceView.jsx'
 import CoverageView from '../../components/console/CoverageView.jsx'
 import DataStreamsView from '../../components/console/DataStreamsView.jsx'
@@ -43,16 +42,31 @@ describe('page h1 is the rail or tab label', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('library')))
   })
 
-  it('Launch gate', async () => {
+  it('Launch gate, with nothing armed: one scenario\'s run, and no app status', async () => {
+    installRoutes({ 'GET /api/agents': { agents: [], total: 0 } })
+    const Gate = getDestination('preflight').Component
+    render(<Gate params={{}} onNavigate={() => {}} />)
+    await waitFor(() => expect(h1Texts()).toEqual([railLabel('preflight')]))
+    // It said "the whole app" too: this POVengine's status sat under the run.
+    expect(screen.getByTestId('launch-gate-scope')).toHaveTextContent(/status .* is on Get started/i)
+    expect(screen.queryByTestId('readiness-view')).toBeNull()
+  })
+
+  it('Get started tracks this POVengine\'s status under its own h1', async () => {
     installRoutes({
       'GET /api/health': { status: 'ok', components: {} },
       'GET /api/credentials/integrations': { integrations: [] },
       'GET /api/connectors': { connectors: [] },
       'GET /api/assertions/runs': { runs: [] },
       'GET /api/assertions': { assertions: [], total: 0 },
+      'GET /api/agents': { agents: [], total: 0 },
+      'GET /api/runs': { runs: [], total: 0 },
     })
-    render(<ReadinessView />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('preflight')))
+    const Start = getDestination('start').Component
+    render(<Start params={{}} onNavigate={() => {}} />)
+    expect(await screen.findByTestId('readiness-view')).toBeInTheDocument()
+    await waitFor(() => expect(h1Texts()).toEqual([railLabel('start')]))
+    expect(await screen.findByRole('heading', { level: 2, name: 'This POVengine' })).toBeInTheDocument()
   })
 
   it('Results › Report', async () => {
@@ -100,7 +114,7 @@ describe('page h1 is the rail or tab label', () => {
 })
 
 describe('off-tab pages: one h1, and it is the registry label', () => {
-  it('the Launch gate keeps one h1 with a scenario armed: the panel and this POVengine are h2s', async () => {
+  it('the Launch gate keeps one h1 with a scenario armed, and carries no app status', async () => {
     installRoutes({
       'GET /api/scenarios/SIM-EDR-001': {
         scenario_id: 'SIM-EDR-001', name: 'Credential dumping', plane: 'EDR',
@@ -114,6 +128,7 @@ describe('off-tab pages: one h1, and it is the registry label', () => {
     await screen.findByTestId('new-run')
     expect(h1Texts()).toEqual([routeLabel('preflight')])
     expect(screen.getByRole('heading', { level: 2, name: 'New POV run' })).toBeInTheDocument()
+    expect(screen.queryByTestId('readiness-view')).toBeNull()
   })
 
   it('Lab', async () => {

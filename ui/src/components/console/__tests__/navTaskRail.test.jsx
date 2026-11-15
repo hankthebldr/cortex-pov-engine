@@ -101,8 +101,8 @@ describe('task rail', () => {
     expect(SECTIONS.proof.map(([id]) => id)).toEqual(['proof'])
   })
 
-  it('the legacy readiness id lights up the Launch gate', () => {
-    expect(navOwner('readiness')).toBe('preflight')
+  it('the legacy readiness id lights up Get started, where this POVengine\'s status lives', () => {
+    expect(navOwner('readiness')).toBe('start')
     expect(sectionFor('readiness')).toBeNull()
   })
 
