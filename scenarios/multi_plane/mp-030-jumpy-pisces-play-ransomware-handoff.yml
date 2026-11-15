@@ -205,6 +205,7 @@ steps:
   - id: step-03
     name: "NGFW threat log — WildFire malicious verdict on the SMB-transferred files (report sha256s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
@@ -213,7 +214,7 @@ steps:
       SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
-      cat > /tmp/mp-030-threat.yml <<YML
+      cat > "$C/mp-030-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-030
       name: "MP-030 — WildFire verdict on SMB-transferred files"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -250,7 +251,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-030-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-030-threat.yml" --live
     identity: direct
     mitre_technique: "T1570"
     platforms: ["linux"]
@@ -277,6 +278,7 @@ steps:
   - id: step-04
     name: "Sliver C2 beacon — recurring ssl/443 to the report's C2 domain/IP, as seen by the NGFW"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       dig +short americajobmail.site @${LAB_RESOLVER:-127.0.0.53}
@@ -286,7 +288,7 @@ steps:
       SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
-      cat > /tmp/mp-030-beacon.yml <<YML
+      cat > "$C/mp-030-beacon.yml" <<YML
       campaign_id: CMP-MP-BEACON-030
       name: "MP-030 — Sliver recurring beacon to report C2"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -310,7 +312,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-030-beacon.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-030-beacon.yml" --live
     identity: direct
     mitre_technique: "T1071.001"
     platforms: ["linux"]
@@ -467,7 +469,6 @@ cleanup:
     - "Remove-Item -Force -Recurse -ErrorAction SilentlyContinue 'C:\\Users\\Public\\Music\\cortexsim-mp030*', \"$env:SystemRoot\\Temp\\KB0722.log\", \"$env:TEMP\\cortexsim-mp030*\""
     - "$t = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }; Remove-Item -Force -ErrorAction SilentlyContinue \"\\\\$t\\C$\\Users\\Public\\Music\\cortexsim-mp030-*\""
     - "sc.exe delete cortexsim-edr-sensor; sc.exe delete cortexsim-mp030-psexesvc; net.exe user cortexsim-mp030-adm /delete; Write-Output cortexsim-mp030-windows-cleanup-complete"
-    - "rm -f /tmp/mp-030-threat.yml /tmp/mp-030-beacon.yml"
 
 author: "Henry Reed"
 created: "2026-10-27"

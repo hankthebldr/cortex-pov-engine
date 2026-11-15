@@ -126,7 +126,7 @@ steps:
     name: "BASELINE ARM — the same key used normally from corporate egress, on the models it always calls (must NOT alert)"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      D=/tmp/cortexsim-aiacc006; rm -rf /tmp/cortexsim-aiacc006 && mkdir -m 700 /tmp/cortexsim-aiacc006 || { echo "sandbox /tmp/cortexsim-aiacc006 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for N in 1 2 3 4 5; do
@@ -151,12 +151,12 @@ steps:
     name: "ANOMALOUS ARM — the same key replayed from infrastructure absent from its calling history"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for N in $(seq 1 40); do
         printf '{"run_tag":"%s","arm":"anomalous","cortexsim_label":"malicious","api_key_id":"%s","source_ip":"198.51.100.66","model":"gpt-4o-large","prompt_tokens":16000,"completion_tokens":8000,"user_agent":"aiohttp/3.12.15 tokenjack/1.0","seq":%s}\n' "$RUN_TAG" "$KEY" "$N"
-      done > "$D/anomalous-arm.ndjson"
+      done > "$C/anomalous-arm.ndjson"
       curl -s --max-time 5 -A "aiohttp/3.12.15 tokenjack/1.0" -o /dev/null "https://127.0.0.1/v1/chat/completions" 2>/dev/null || true
       echo cortexsim-aiacc006-anomalous-arm-emitted
     identity: www-data
@@ -184,12 +184,12 @@ steps:
     name: "Unauthorized compute — sustained inference on models this key has never called"
     command: |
       set -u
-      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
       KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
       for MODEL in gpt-4o-large claude-opus-xl gemini-ultra-pro; do
         printf '{"run_tag":"%s","cortexsim_label":"malicious","api_key_id":"%s","model":"%s","model_first_seen_for_key":true,"prompt_tokens":16000,"completion_tokens":8000}\n' "$RUN_TAG" "$KEY" "$MODEL"
-      done > "$D/model-novelty.ndjson"
+      done > "$C/model-novelty.ndjson"
       echo cortexsim-aiacc006-unauthorized-compute-emitted
     identity: www-data
     mitre_technique: "T1496"

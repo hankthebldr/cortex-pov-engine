@@ -108,7 +108,7 @@ moat_tier: "LEAD"
 steps:
   - id: step-01
     name: "dMSA object created outside CN=Managed Service Accounts (Security 5137)"
-    command: "mkdir -p /tmp/cortexsim-itdr-013 && echo '[SIM-ITDR-013] SAFE-MODE 5137: SharpSuccessor would create dMSA CN=websvc-dmsa outside CN=Managed Service Accounts as a non-privileged identity' | tee /tmp/cortexsim-itdr-013/5137-dmsa-create.marker; echo cortexsim-itdr-013-dmsa-object-created"
+    command: "rm -rf /tmp/cortexsim-itdr-013 && mkdir -m 700 /tmp/cortexsim-itdr-013 || { echo \"sandbox /tmp/cortexsim-itdr-013 could not be created fresh: something else is at that path\" >&2; exit 1; }; echo '[SIM-ITDR-013] SAFE-MODE 5137: SharpSuccessor would create dMSA CN=websvc-dmsa outside CN=Managed Service Accounts as a non-privileged identity' | tee /tmp/cortexsim-itdr-013/5137-dmsa-create.marker; echo cortexsim-itdr-013-dmsa-object-created"
     identity: svc-backup
     mitre_technique: "T1136.002"
     # Root step — links from the powershell.exe CGO session. dMSA / Windows
@@ -131,7 +131,7 @@ steps:
 
   - id: step-02
     name: "Dual privileged-attribute write in one logon session (paired Security 5136 + 4662)"
-    command: "printf '[SIM-ITDR-013] SAFE-MODE 5136 msDS-DelegatedMSAState=2\\n[SIM-ITDR-013] SAFE-MODE 5136 msDS-ManagedAccountPrecededByLink=CN=Administrator,CN=Users,DC=corp,DC=local\\n' | tee /tmp/cortexsim-itdr-013/5136-dual-attr-write.marker; echo cortexsim-itdr-013-dual-privileged-attribute-write"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-013 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-013 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '[SIM-ITDR-013] SAFE-MODE 5136 msDS-DelegatedMSAState=2\\n[SIM-ITDR-013] SAFE-MODE 5136 msDS-ManagedAccountPrecededByLink=CN=Administrator,CN=Users,DC=corp,DC=local\\n' | tee /tmp/cortexsim-itdr-013/5136-dual-attr-write.marker; echo cortexsim-itdr-013-dual-privileged-attribute-write"
     identity: svc-backup
     mitre_technique: "T1098"
     # Same attacker logon session as the 5137 creation — the dual 5136/4662
@@ -164,7 +164,7 @@ steps:
 
   - id: step-03
     name: "dMSA privileged TGT minted and inherited-privilege logon (Security 2946 / 4624)"
-    command: "echo '[SIM-ITDR-013] SAFE-MODE 2946/4624: Rubeus would request the dMSA TGT (inheriting Administrator privileges) and authenticate as the privilege-inherited dMSA' | tee /tmp/cortexsim-itdr-013/2946-4624-inherited-priv.marker; echo cortexsim-itdr-013-privileged-tgt-and-logon"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-013 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-013 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; echo '[SIM-ITDR-013] SAFE-MODE 2946/4624: Rubeus would request the dMSA TGT (inheriting Administrator privileges) and authenticate as the privilege-inherited dMSA' | tee /tmp/cortexsim-itdr-013/2946-4624-inherited-priv.marker; echo cortexsim-itdr-013-privileged-tgt-and-logon"
     identity: svc-backup
     mitre_technique: "T1550.003"
     # The privileged TGT (2946) and inherited-privilege logon (4624) run under

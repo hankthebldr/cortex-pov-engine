@@ -68,10 +68,11 @@ steps:
   - id: step-01
     name: "Seed victim directory + enumerate target files (T1083)"
     command: |
-      VDIR=/tmp/cortexsim_victim; mkdir -p $VDIR
+      rm -rf /tmp/cortexsim-edr-008 && mkdir -m 700 /tmp/cortexsim-edr-008 || { echo "sandbox /tmp/cortexsim-edr-008 could not be created fresh: something else is at that path" >&2; exit 1; }
+      VDIR=/tmp/cortexsim_victim; rm -rf "$VDIR" && mkdir -m 700 "$VDIR" || { echo "sandbox $VDIR could not be created fresh: something else is at that path" >&2; exit 1; }
       for i in $(seq 1 40); do echo "original content $i" > $VDIR/document_$i.dat; done
-      find $VDIR -type f | head -1000 > /tmp/cortexsim_targetlist.txt
-      echo "[*] seeded $(wc -l < /tmp/cortexsim_targetlist.txt) victim files"
+      find $VDIR -type f | head -1000 > /tmp/cortexsim-edr-008/cortexsim_targetlist.txt
+      echo "[*] seeded $(wc -l < /tmp/cortexsim-edr-008/cortexsim_targetlist.txt) victim files"
     identity: container-runtime
     mitre_technique: "T1083"
     platforms: ["linux", "container"]
@@ -85,12 +86,14 @@ steps:
   - id: step-02
     name: "Mass file rewrite + ransomware extension + SAFE-MODE marker + ransom note (T1486)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-edr-008 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-edr-008 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim_victim 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_victim is missing or not ours: step-01 did not complete" >&2; exit 1; }
       # Rewrite every victim file with the .cortexlock extension and an inert
       # SAFE-MODE marker (NO real encryption), then drop a ransom note. This is
       # the rapid mass-rewrite-with-uniform-extension encryptor fingerprint.
       while read -r f; do
         printf 'CORTEXSIM-SAFE-MODE-NOT-ENCRYPTED' > "${f}.cortexlock" && rm -f "$f"
-      done < /tmp/cortexsim_targetlist.txt
+      done < /tmp/cortexsim-edr-008/cortexsim_targetlist.txt
       printf 'Your files are locked (CORTEXSIM SAFE-MODE — nothing was actually encrypted).' \
         > /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt
     identity: container-runtime
@@ -172,8 +175,9 @@ steps:
 
 cleanup:
   commands:
-    - "for f in /tmp/cortexsim_victim/*.cortexlock; do orig=\"${f%.cortexlock}\"; [ -e \"$f\" ] && echo 'restored content' > \"$orig\" && rm -f \"$f\"; done 2>/dev/null || true"
-    - "rm -f /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt /tmp/cortexsim_targetlist.txt"
+    - "[ \"$(stat -c %F:%u:%a /tmp/cortexsim_victim 2>/dev/null)\" = \"directory:$(id -u):700\" ] && for f in /tmp/cortexsim_victim/*.cortexlock; do orig=\"${f%.cortexlock}\"; [ -e \"$f\" ] && echo 'restored content' > \"$orig\" && rm -f \"$f\"; done 2>/dev/null || true"
+    - "rm -f /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt"
+    - "rm -rf /tmp/cortexsim-edr-008"
     - "rm -rf /tmp/cortexsim_victim"
     - "echo '[CortexSim] SIM-EDR-008 cleanup complete — SAFE-MODE markers removed, victim dir restored'"
 

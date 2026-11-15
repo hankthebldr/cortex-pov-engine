@@ -94,9 +94,10 @@ steps:
   - id: step-01
     name: "Emit a recurring rare-domain HTTPS beacon into panw_ngfw_traffic_raw"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/ndr-012-beacon.yml <<YML
+      cat > "$C/ndr-012-beacon.yml" <<YML
       campaign_id: CMP-NDR-012
       name: "NGFW EAL — rare-domain recurring beacon"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -115,7 +116,7 @@ steps:
             burst_count: 8
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/ndr-012-beacon.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/ndr-012-beacon.yml" --live
       echo cortexsim-ndr-012-recurring-rare-domain-beacon-emitted
     identity: container-runtime
     mitre_technique: "T1071.001"
@@ -136,9 +137,10 @@ steps:
   - id: step-02
     name: "Large then massive HTTPS upload to a rare storage/mail domain (same source host)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/ndr-012-upload.yml <<YML
+      cat > "$C/ndr-012-upload.yml" <<YML
       campaign_id: CMP-NDR-012
       name: "NGFW EAL — large then massive HTTPS upload exfil"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -161,7 +163,7 @@ steps:
             event_pattern: massive_upload_rare_domain
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/ndr-012-upload.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/ndr-012-upload.yml" --live
       echo cortexsim-ndr-012-large-and-massive-https-upload-emitted
     identity: container-runtime
     mitre_technique: "T1048"
@@ -208,7 +210,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/ndr-012-beacon.yml /tmp/ndr-012-upload.yml"
     - "echo cortexsim-ndr-012-cleanup-complete"
 
 author: "Henry Reed"

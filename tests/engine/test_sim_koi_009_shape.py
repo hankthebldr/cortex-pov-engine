@@ -83,10 +83,19 @@ def test_six_steps_all_macos_direct(scenario):
 def test_zero_marker_only_steps(scenario, coverage_report):
     assert [s["id"] for s in scenario["steps"] if coverage_report.is_marker_only_step(s)] == []
 
+# The decoy root's ownership check looks the directory up with GNU stat and, on
+# macOS, falls back to BSD stat inside the same substitution. A failed lookup
+# makes the check refuse the step, so that `2>/dev/null ||` masks nothing; it is
+# the only one exempted.
+_SANDBOX_LOOKUP = ("stat -c %F:%u:%a /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null || "
+                   "stat -f %HT:%u:%Lp /tmp/CORTEXSIM-KOI009-DECOY 2>/dev/null")
+
+
 def test_no_exit_masking(scenario):
     for s in scenario["steps"]:
+        command = s["command"].replace(_SANDBOX_LOOKUP, "")
         for bad in ("|| true", "|| echo", "; true", "2>/dev/null ||"):
-            assert bad not in s["command"], (s["id"], bad)
+            assert bad not in command, (s["id"], bad)
 
 def test_seven_step_detections_one_correlation(scenario):
     per_step = [len(s["expected_detections"]) for s in scenario["steps"]]

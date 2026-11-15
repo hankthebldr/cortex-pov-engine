@@ -77,12 +77,13 @@ steps:
   - id: step-01
     name: "Anchor MTTD timestamp (terraform apply complete marker)"
     command: |
+      rm -rf /tmp/cortexsim-aispm-002 && mkdir -m 700 /tmp/cortexsim-aispm-002 || { echo "sandbox /tmp/cortexsim-aispm-002 could not be created fresh: something else is at that path" >&2; exit 1; }
       echo '[AISPM-002] Anchoring MTTD t0';
-      date -u +%s > /tmp/aispm-002-t0.txt
-      echo "[*] t0 = $(cat /tmp/aispm-002-t0.txt) ($(date -u))"
+      date -u +%s > /tmp/cortexsim-aispm-002/aispm-002-t0.txt
+      echo "[*] t0 = $(cat /tmp/cortexsim-aispm-002/aispm-002-t0.txt) ($(date -u))"
       # Sanity-check the fixture is present
       aws sagemaker list-endpoints --query 'Endpoints[?contains(EndpointName, `aispm`)].EndpointName' --output text \
-        | tee /tmp/aispm-002-endpoints.txt
+        | tee /tmp/cortexsim-aispm-002/aispm-002-endpoints.txt
     identity: root
     mitre_technique: "T1078.004"
     expected_detections:
@@ -95,11 +96,12 @@ steps:
   - id: step-02
     name: "Wait for Cortex Cloud AI-SPM model-security scan"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-002 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-002 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[AISPM-002] Sleeping for AI-SPM model-security scan';
       sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
-      date -u +%s > /tmp/aispm-002-t1.txt
-      echo "[*] t1 = $(cat /tmp/aispm-002-t1.txt)"
-      echo "[*] Elapsed: $(( $(cat /tmp/aispm-002-t1.txt) - $(cat /tmp/aispm-002-t0.txt) )) s"
+      date -u +%s > /tmp/cortexsim-aispm-002/aispm-002-t1.txt
+      echo "[*] t1 = $(cat /tmp/cortexsim-aispm-002/aispm-002-t1.txt)"
+      echo "[*] Elapsed: $(( $(cat /tmp/cortexsim-aispm-002/aispm-002-t1.txt) - $(cat /tmp/cortexsim-aispm-002/aispm-002-t0.txt) )) s"
     identity: root
     mitre_technique: "T1078.004"
     causality:
@@ -115,14 +117,16 @@ steps:
   - id: step-03
     name: "Probe AI-SPM findings + assert 3 model-security findings + MTTD ≤ 900s"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-aispm-002 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-aispm-002 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[AISPM-002] Querying Cortex Cloud for AI-SPM model-security findings';
       curl -fsSL \
         -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
         "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_model_security&tag=CortexSimAISPMFinding" \
-        | tee /tmp/aispm-002-findings.json | jq '.findings | length' || true
+        | tee "$C/aispm-002-findings.json" | jq '.findings | length' || true
 
-      FINDING_COUNT=$(jq -r '.findings | length' /tmp/aispm-002-findings.json 2>/dev/null || echo 0)
-      MTTD=$(( $(cat /tmp/aispm-002-t1.txt) - $(cat /tmp/aispm-002-t0.txt) ))
+      FINDING_COUNT=$(jq -r '.findings | length' "$C/aispm-002-findings.json" 2>/dev/null || echo 0)
+      MTTD=$(( $(cat /tmp/cortexsim-aispm-002/aispm-002-t1.txt) - $(cat /tmp/cortexsim-aispm-002/aispm-002-t0.txt) ))
 
       echo "[*] Findings raised:        $FINDING_COUNT"
       echo "[*] MTTD seconds:           $MTTD"
@@ -157,7 +161,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aispm-002-*.txt /tmp/aispm-002-findings.json"
+    - "rm -rf /tmp/cortexsim-aispm-002"
     - "echo '[CortexSim] SIM-AISPM-002 cleanup complete.'"
 
 author: "Henry Reed"

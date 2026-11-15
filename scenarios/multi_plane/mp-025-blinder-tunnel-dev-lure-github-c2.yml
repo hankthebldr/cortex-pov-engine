@@ -207,6 +207,7 @@ steps:
   - id: step-01
     name: "Unpack the Dubai Airports coding-test lure (DubaiAirport_Carrers_IT_Test.zip)"
     command: |
+      rm -rf /tmp/cortexsim-mp025 && mkdir -m 700 /tmp/cortexsim-mp025 || { echo "sandbox /tmp/cortexsim-mp025 could not be created fresh: something else is at that path" >&2; exit 1; }
       STAGE="/tmp/cortexsim-mp025/lure/DubaiAirport_Carrers_IT_Test"
       LURE="$HOME/Downloads/DubaiAirport_Carrers_IT_Test.zip"
       PROJ="$HOME/source/repos/DubaiAirport_Carrers_IT_Test"
@@ -428,12 +429,13 @@ steps:
   - id: step-06
     name: "GitHub SaaS relay seen at the network boundary: 8-session api.github.com burst (synthetic NGFW App-ID records)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
-      cat > /tmp/cortexsim-mp025-github.yml <<YML
+      cat > "$C/cortexsim-mp025-github.yml" <<YML
       campaign_id: CMP-MP-GITHUB-025
       name: "Blinder Tunnel — GitHub contents-API C2 cadence (SaaS relay at the network boundary)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -457,7 +459,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cortexsim-mp025-github.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cortexsim-mp025-github.yml" --live
     identity: container-runtime
     mitre_technique: "T1102.002"
     causality:
@@ -533,12 +535,13 @@ steps:
   - id: step-09
     name: "Network leg: Chisel tunnel sessions to the report endpoint and WildFire verdicts on Blackwood (synthetic NGFW logs)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
-      cat > /tmp/cortexsim-mp025-tunnel.yml <<YML
+      cat > "$C/cortexsim-mp025-tunnel.yml" <<YML
       campaign_id: CMP-MP-TUNNEL-025
       name: "Blinder Tunnel — Blackwood/Chisel tunnel + WildFire verdicts"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -588,7 +591,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cortexsim-mp025-tunnel.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cortexsim-mp025-tunnel.yml" --live
     identity: container-runtime
     mitre_technique: "T1572"
     causality:
@@ -626,7 +629,6 @@ cleanup:
   commands:
     - "for h in /home/* \"$HOME\"; do rb=\"$h/.local/share/Microsoft/RuntimeBrokers\"; if grep -qs cortexsim-mp025 \"$rb/RuntimeBroker.exe.config\"; then pkill -f \"$rb/RuntimeBroker.exe\"; rm -rf \"$rb\"; fi; a=\"$h/.config/autostart/MicrosoftRuntime.desktop\"; grep -qs cortexsim-mp025 \"$a\" && rm -f \"$a\"; p=\"$h/source/repos/DubaiAirport_Carrers_IT_Test\"; if grep -qs 'CortexSim SAFE-MODE replica' \"$p/FlightManager/FlightManager.csproj\"; then rm -rf \"$p\" \"$h/Downloads/DubaiAirport_Carrers_IT_Test.zip\"; fi; done; true"
     - "rm -rf /tmp/cortexsim-mp025"
-    - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
     # Native Windows teardown (CONT-11). The previous single line wrapped pwsh
     # in bash (`command -v pwsh && pwsh -Command ...`), which the Windows bundle
     # skips, so it never ran on Windows. The bash bundle and the K8s bootstrap

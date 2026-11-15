@@ -96,7 +96,8 @@ steps:
   - id: step-02
     name: "Launch Stratum JSON-RPC sessions against sinkhole"
     command: |
-      cat > /tmp/stratum-live.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/stratum-live.yml" <<'YML'
       campaign_id: CMP-NDR-003
       name: "NDR validation — Stratum App-ID"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -115,7 +116,7 @@ steps:
             sleep_seconds: 15
             wallet: "cortexsim-test-wallet"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/stratum-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/stratum-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1496"
     platforms: ["linux", "container"]
@@ -140,8 +141,7 @@ steps:
         detection_id: bioc-ngfw-eal-repeated-short-lived-tcp-sessions-to-mining-pool-port
 
 cleanup:
-  commands:
-    - "rm -f /tmp/stratum-live.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

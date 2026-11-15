@@ -95,9 +95,10 @@ steps:
   - id: step-02
     name: "Burst of 8 push attempts ending in approval — Okta shape"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-002.yml <<YML
+      cat > "$C/itdr-002.yml" <<YML
       campaign_id: CMP-ITDR-002
       name: "ITDR — Okta MFA fatigue"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -117,7 +118,7 @@ steps:
             iterations: 1
             burst_count: 8
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-002.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-002.yml" --live
     identity: container-runtime
     mitre_technique: "T1621"
     expected_detections:
@@ -162,9 +163,10 @@ steps:
   - id: step-03
     name: "Heavier burst (16 attempts) to confirm threshold sensitivity"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-002-heavy.yml <<YML
+      cat > "$C/itdr-002-heavy.yml" <<YML
       campaign_id: CMP-ITDR-002
       name: "ITDR — Okta MFA fatigue heavy"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -183,7 +185,7 @@ steps:
             iterations: 1
             burst_count: 16
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-002-heavy.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-002-heavy.yml" --live
     identity: container-runtime
     mitre_technique: "T1621"
     expected_detections:
@@ -198,8 +200,7 @@ steps:
     platforms: ["linux", "container"]
 
 cleanup:
-  commands:
-    - "rm -f /tmp/itdr-002.yml /tmp/itdr-002-heavy.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

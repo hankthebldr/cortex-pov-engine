@@ -101,9 +101,10 @@ steps:
   - id: step-02
     name: "Emit a thread-hijack reply-chain phishing message (Proofpoint TAP shape)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-004.yml <<YML
+      cat > "$C/email-004.yml" <<YML
       campaign_id: CMP-EMAIL-004
       name: "EMAIL — Proofpoint TAP thread hijack"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -122,7 +123,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-004.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-004.yml" --live
     identity: container-runtime
     mitre_technique: "T1566.002"
     platforms: ["linux"]
@@ -139,9 +140,10 @@ steps:
   - id: step-03
     name: "Stitch: the delivered hijack + permitted click correlates to the endpoint follow-on"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/email-004-m365.yml <<YML
+      cat > "$C/email-004-m365.yml" <<YML
       campaign_id: CMP-EMAIL-004
       name: "EMAIL — Microsoft 365 thread hijack"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -159,7 +161,7 @@ steps:
             target_user: "ada.lovelace@cortexsim-canary.invalid"
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/email-004-m365.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/email-004-m365.yml" --live
     identity: container-runtime
     mitre_technique: "T1534"
     platforms: ["linux"]
@@ -179,8 +181,7 @@ steps:
         detection_id: CR-EMAIL-0004
 
 cleanup:
-  commands:
-    - "rm -f /tmp/email-004.yml /tmp/email-004-m365.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-06-17"

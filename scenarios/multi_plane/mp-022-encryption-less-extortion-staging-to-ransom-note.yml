@@ -125,6 +125,7 @@ steps:
   - id: step-01
     name: "High-value share enumeration from the abused remote-access session"
     command: |
+      rm -rf /tmp/cortexsim-mp022 && mkdir -m 700 /tmp/cortexsim-mp022 || { echo "sandbox /tmp/cortexsim-mp022 could not be created fresh: something else is at that path" >&2; exit 1; }
       set -u
       D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
@@ -148,6 +149,7 @@ steps:
   - id: step-02
     name: "Mass staging — bulk read across the enumerated shares into one local staging path (no rename, no encryption)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp022 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp022 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -u
       D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
@@ -175,7 +177,7 @@ steps:
     name: "Chunked egress deliberately held below the per-session volume alert floor"
     command: |
       set -u
-      D=/tmp/cortexsim-mp022; mkdir -p "$D"
+      D=/tmp/cortexsim-mp022; [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp022 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp022 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
       CHUNK="${CORTEXSIM_CHUNK_BYTES:-48000000}"
       # Eight sessions, each under a typical per-session byte threshold. A stack
@@ -206,6 +208,7 @@ steps:
   - id: step-04
     name: "BENIGN COMPARISON ARM — legitimate quarterly archive job with the same bulk-read / compress / upload I/O shape"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp022 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp022 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -u
       D=/tmp/cortexsim-mp022; mkdir -p "$D/archive"
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
@@ -237,6 +240,7 @@ steps:
   - id: step-05
     name: "Ransom note written to the staged share set — no rename, no extension change, no encryption"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp022 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp022 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -u
       D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"

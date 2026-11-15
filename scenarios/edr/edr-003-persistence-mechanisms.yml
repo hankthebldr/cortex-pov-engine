@@ -81,11 +81,12 @@ steps:
   - id: step-01
     name: "Create malicious cron job for persistence"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[*] Creating simulated persistence cron entry';
-      echo '*/15 * * * * /tmp/.cortexsim_beacon 2>/dev/null' > /tmp/cortexsim_cron_test;
-      crontab -l 2>/dev/null > /tmp/cortexsim_cron_backup;
-      echo '# CortexSim EDR-003 test entry — will be removed in cleanup' >> /tmp/cortexsim_cron_test;
-      cat /tmp/cortexsim_cron_test;
+      echo '*/15 * * * * /tmp/.cortexsim_beacon 2>/dev/null' > "$C/cortexsim_cron_test";
+      crontab -l 2>/dev/null > "$C/cortexsim_cron_backup";
+      echo '# CortexSim EDR-003 test entry — will be removed in cleanup' >> "$C/cortexsim_cron_test";
+      cat "$C/cortexsim_cron_test";
       echo '[*] Cron persistence payload staged (NOT installed — display only for safety)'
     identity: root
     mitre_technique: "T1053.003"
@@ -122,8 +123,9 @@ steps:
   - id: step-02
     name: "Create malicious systemd service unit (staging only)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[*] Staging simulated systemd persistence unit';
-      cat > /tmp/cortexsim-backdoor.service << 'UNIT'
+      cat > "$C/cortexsim-backdoor.service" << 'UNIT'
       [Unit]
       Description=System Health Monitor
       After=network.target
@@ -138,7 +140,7 @@ steps:
       WantedBy=multi-user.target
       UNIT
       echo '[*] Systemd unit staged at /tmp/ (NOT installed to /etc/systemd/)'
-      cat /tmp/cortexsim-backdoor.service
+      cat "$C/cortexsim-backdoor.service"
     identity: root
     mitre_technique: "T1543.002"
     causality:
@@ -221,7 +223,7 @@ steps:
     name: "Plant SSH authorized_keys for persistent access"
     command: |
       echo '[*] Simulating SSH key-based persistence';
-      mkdir -p /tmp/.cortexsim_ssh_test;
+      rm -rf /tmp/.cortexsim_ssh_test && mkdir -m 700 /tmp/.cortexsim_ssh_test || { echo "sandbox /tmp/.cortexsim_ssh_test could not be created fresh: something else is at that path" >&2; exit 1; };
       ssh-keygen -t ed25519 -f /tmp/.cortexsim_ssh_test/id_ed25519 -N '' -q 2>/dev/null;
       echo "# CortexSim test key — NOT installed to any real authorized_keys" > /tmp/.cortexsim_ssh_test/authorized_keys;
       cat /tmp/.cortexsim_ssh_test/id_ed25519.pub >> /tmp/.cortexsim_ssh_test/authorized_keys 2>/dev/null;
@@ -275,10 +277,11 @@ steps:
   - id: step-05
     name: "Modify shell profile for login-triggered persistence"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       echo '[*] Simulating shell profile persistence';
-      echo '# CortexSim EDR-003 test — login trigger persistence' > /tmp/cortexsim_profile_test;
-      echo 'nohup /tmp/.cortexsim_beacon &>/dev/null &' >> /tmp/cortexsim_profile_test;
-      cat /tmp/cortexsim_profile_test;
+      echo '# CortexSim EDR-003 test — login trigger persistence' > "$C/cortexsim_profile_test";
+      echo 'nohup /tmp/.cortexsim_beacon &>/dev/null &' >> "$C/cortexsim_profile_test";
+      cat "$C/cortexsim_profile_test";
       echo '[*] Profile persistence payload staged at /tmp/ (NOT written to real .bashrc/.profile)'
     identity: root
     mitre_technique: "T1546.004"
@@ -315,7 +318,6 @@ steps:
 cleanup:
   commands:
     - "userdel cortexsim_testuser 2>/dev/null"
-    - "rm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test"
     - "rm -rf /tmp/.cortexsim_ssh_test"
     # Windows teardown, for a step interrupted between create and its in-step
     # delete. The bash bundle and the K8s bootstrap do NOT run these lines:

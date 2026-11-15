@@ -94,9 +94,10 @@ steps:
   - id: step-02
     name: "10 failed sign-ins triggering account lockout — Microsoft shape"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-005.yml <<YML
+      cat > "$C/itdr-005.yml" <<YML
       campaign_id: CMP-ITDR-005
       name: "ITDR — Microsoft brute-force lockout"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -116,7 +117,7 @@ steps:
             iterations: 1
             burst_count: 10
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-005.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-005.yml" --live
     identity: container-runtime
     mitre_technique: "T1110.003"
     expected_detections:
@@ -161,9 +162,10 @@ steps:
   - id: step-03
     name: "Same target user, second source IP — password spray pattern"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
-      cat > /tmp/itdr-005-spray.yml <<YML
+      cat > "$C/itdr-005-spray.yml" <<YML
       campaign_id: CMP-ITDR-005
       name: "ITDR — Microsoft password spray"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -182,7 +184,7 @@ steps:
             iterations: 1
             burst_count: 5
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/itdr-005-spray.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/itdr-005-spray.yml" --live
     identity: container-runtime
     mitre_technique: "T1110.003"
     expected_detections:
@@ -202,8 +204,7 @@ steps:
     platforms: ["linux", "container"]
 
 cleanup:
-  commands:
-    - "rm -f /tmp/itdr-005.yml /tmp/itdr-005-spray.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"
