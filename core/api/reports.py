@@ -555,39 +555,49 @@ async def executions_report(
     return report
 
 
-#: A cell that starts with one of these is read as a formula by Excel and Sheets.
-_CSV_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+#: Text that starts with one of these is read as a formula by Excel and Sheets.
+_CSV_FORMULA_LEAD = ("=", "+", "-", "@")
 
 
 def _csv_cell(value: Any) -> Any:
     """One CSV cell, safe to open in a spreadsheet.
 
-    Scenario and draft names are operator-written text. A text cell that starts
-    like a formula gets a leading ``'`` so the spreadsheet shows it instead of
-    running it. Numbers pass through; ``None`` is an empty cell.
+    Scenario and draft names are operator-written text. Text that starts like a
+    formula, after any leading whitespace, or that starts with a tab or a
+    carriage return, gets a leading ``'`` so the spreadsheet shows it instead
+    of running it; the text after the quote is unchanged. Numbers pass through;
+    ``None`` is an empty cell.
     """
     if value is None:
         return ""
-    if isinstance(value, str) and value.startswith(_CSV_FORMULA_LEAD):
+    if isinstance(value, str) and (
+            value.startswith(("\t", "\r")) or value.lstrip().startswith(_CSV_FORMULA_LEAD)):
         return "'" + value
     return value
+
+
+def _csv_list(items: Iterable[Any]) -> str:
+    """A list as one ``;``-joined cell. Each element is made safe on its own:
+    a spreadsheet that splits on ``;`` would put a later element at the start
+    of a cell."""
+    return ";".join(str(_csv_cell(item)) for item in items)
 
 
 def _csv_response(rows: list[dict[str, Any]]) -> Response:
     """One row per scenario; lists joined with ``;``. A scenario with no
     reviewed run leaves its outcome cells blank, never 0. Every cell goes
-    through :func:`_csv_cell`, the joined ones included."""
+    through :func:`_csv_cell`, and every element of a joined cell too."""
     buf = io.StringIO()
-    writer = csv.writer(buf, lineterminator="\n")
+    writer = csv.writer(buf, lineterminator="\n", quoting=csv.QUOTE_ALL)
     writer.writerow(CSV_COLUMNS)
     for row in rows:
         outcomes = row["outcomes"]
         sources = row["detection_sources"]
         flat = {
             **row,
-            "techniques": ";".join(row["techniques"]),
-            "tc_refs": ";".join(row["tc_refs"]),
-            "detection_sources": "" if sources is None else ";".join(s["label"] for s in sources),
+            "techniques": _csv_list(row["techniques"]),
+            "tc_refs": _csv_list(row["tc_refs"]),
+            "detection_sources": "" if sources is None else _csv_list(s["label"] for s in sources),
             **{k: ("" if outcomes is None else outcomes[k]) for k in ("expected", *OUTCOME_KEYS)},
         }
         writer.writerow([_csv_cell(flat.get(col)) for col in CSV_COLUMNS])

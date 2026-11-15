@@ -436,21 +436,31 @@ def test_csv_text_that_starts_like_a_formula_is_quoted(client, session_factory):
             _scenario("SIM-DRAFT-link", status="draft", name=link),
             _scenario("SIM-EDR-001", name="-1+1", tc_ref="=1+1", tc_refs=["=1+1", "TC-EDR-05"]),
             _scenario("SIM-EDR-002", name="Reverse shell", uc_ref="@SUM(1)"),
+            _scenario("SIM-EDR-003", name=" =SUM(A1:A9)", tc_ref="TC-EDR-03",
+                      tc_refs=["TC-EDR-03", "=2+2", "TC-EDR-05"]),
         ],
         runs=[
             _run("r-1", "SIM-DRAFT-link", started=datetime(2026, 11, 3)),
             _run("r-2", "SIM-EDR-001", started=datetime(2026, 11, 2)),
             _run("r-3", "SIM-EDR-002", started=datetime(2026, 11, 1), detail=READ_BACK),
+            _run("r-4", "SIM-EDR-003", started=datetime(2026, 10, 31)),
         ],
         results=[_result("r-3", "step-01", outcome="detected", observed=True)],
     )
     params = {"format": "csv", "include_drafts": "true"}
-    rows = {row["scenario_id"]: row for row in csv.DictReader(io.StringIO(
-        client.get("/api/reports/executions", params=params).text))}
+    text = client.get("/api/reports/executions", params=params).text
+    rows = {row["scenario_id"]: row for row in csv.DictReader(io.StringIO(text))}
     assert rows["SIM-DRAFT-link"]["name"] == "'" + link
     assert rows["SIM-EDR-001"]["name"] == "'-1+1"
-    # A cell built by joining a list is checked as a whole.
+    # Leading whitespace does not hide a formula; the text after the quote is as written.
+    assert rows["SIM-EDR-003"]["name"] == "' =SUM(A1:A9)"
+    # A joined cell is made safe element by element: a spreadsheet that splits
+    # on ';' would put the second element at the start of a cell.
     assert rows["SIM-EDR-001"]["tc_refs"] == "'=1+1;TC-EDR-05"
+    assert rows["SIM-EDR-003"]["tc_refs"] == "TC-EDR-03;'=2+2;TC-EDR-05"
+    # Every field is quoted, the header and the numbers included.
+    assert text.splitlines()[0].startswith('"scenario_id","name","plane"')
+    assert all(line.startswith('"') and line.endswith('"') for line in text.splitlines())
     assert rows["SIM-EDR-002"]["uc_ref"] == "'@SUM(1)"
     # Plain text and numbers are left as they are.
     assert rows["SIM-EDR-002"]["name"] == "Reverse shell"
@@ -460,6 +470,8 @@ def test_csv_text_that_starts_like_a_formula_is_quoted(client, session_factory):
     body = _get(client, include_drafts="true")
     assert _row(body["by_scenario"], "scenario_id", "SIM-DRAFT-link")["name"] == link
     assert _row(body["by_scenario"], "scenario_id", "SIM-EDR-001")["tc_refs"] == ["=1+1", "TC-EDR-05"]
+    assert _row(body["by_scenario"], "scenario_id", "SIM-EDR-003")["tc_refs"] == [
+        "TC-EDR-03", "=2+2", "TC-EDR-05"]
 
 
 # ─── The query ──────────────────────────────────────────────────────────────
