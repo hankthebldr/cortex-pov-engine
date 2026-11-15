@@ -2,8 +2,8 @@
  * ResultOfBar — whose results these are (design v26 §4.6).
  *
  * Results always opens with this bar: the scenario, the exact run of it, where
- * it ran, how it ended, and what it was read back from. A switcher moves
- * between runs that have been read back (the URL's `?run=`), so a result is
+ * it ran, how it ended, and what it was reviewed against. A switcher moves
+ * between runs that have been reviewed (the URL's `?run=`), so a result is
  * never shown without the run it belongs to.
  */
 import React from 'react'
@@ -56,19 +56,19 @@ export default function ResultOfBar({
         <div className="result-of__facts mono" title={id}>{facts.join(' · ')}</div>
         <div className={'result-of__readback' + (rb ? ' result-of__readback--yes' : '')}>
           {rb
-            ? `Read back from ${rb.from}${rb.at ? ` · ${absoluteTime(rb.at)}` : ''}`
-            : 'Not read back from the tenant'}
+            ? `Reviewed against ${rb.from}${rb.at ? ` · ${absoluteTime(rb.at)}` : ''}`
+            : 'Not reviewed against the tenant'}
         </div>
       </div>
       {readBackRuns.length > 0 && (
         <label className="result-of__switch">
-          <span className="result-of__switch-k">Read-back runs</span>
+          <span className="result-of__switch-k">Reviewed runs</span>
           <select
             aria-label="Result of run"
             value={inList ? id : ''}
             onChange={(e) => { if (e.target.value) onSwitch(e.target.value) }}
           >
-            {!inList && <option value="" disabled>Pick a read-back run</option>}
+            {!inList && <option value="" disabled>Pick a reviewed run</option>}
             {readBackRuns.map((r) => (
               <option key={runIdOf(r)} value={runIdOf(r)}>{optionLabel(r)}</option>
             ))}

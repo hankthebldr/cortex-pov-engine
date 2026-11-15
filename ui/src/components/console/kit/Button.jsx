@@ -20,7 +20,7 @@ import Icon from './Icon.jsx'
 void React
 
 export const VERBS = Object.freeze([
-  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
 ])
 
 /** The kit Icon each verb carries. */
@@ -30,7 +30,7 @@ export const VERB_ICONS = Object.freeze({
   Run: 'play',
   Customize: 'pencil',
   'Add to chain': 'plus',
-  'Read back': 'rotate',
+  Review: 'rotate',
   'Open results': 'external',
   'Abort run': 'stop',
 })

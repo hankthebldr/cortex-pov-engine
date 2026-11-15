@@ -12,15 +12,15 @@
  * with a status breakdown and a `+82 more` expander, not 83 lines of uuid.
  *
  * Honesty rules the cells carry:
- *   - no detection claim before the run is read back (design v26 §4.6): the
- *     result cell says "not read back", never "0 / 10";
+ *   - no detection claim before the run is reviewed (design v26 §4.6): the
+ *     result cell says "not reviewed", never "0 / 10";
  *   - a failed/aborted run with no hit shows `unproven`, never a miss;
  *   - a run with no Result rows shows no count, never `0 / 0`;
  *   - timestamps are UTC and say so in the hover title.
  *
  * Each row carries the five-stage lifecycle strip and ONE action for its
- * phase (runLifecycle.js): running → Open · nothing → — · unread → Read back
- * (primary) · reading → "Reading…" (disabled; the row keeps its place) ·
+ * phase (runLifecycle.js): running → Open · nothing → — · unread → Review
+ * (primary) · reading → "Reviewing…" (disabled; the row keeps its place) ·
  * ready → Open results. The scenario cell is the button that opens the run;
  * the row itself is not clickable, so no control is nested in another.
  */
@@ -52,7 +52,7 @@ function shortId(id) {
 }
 
 /**
- * The result cell: `{ text, tone, title }`. Only a read-back run has a
+ * The result cell: `{ text, tone, title }`. Only a reviewed run has a
  * detection count; every other phase says where the run is instead.
  */
 export function resultCell(run, lifecycle) {
@@ -62,11 +62,11 @@ export function resultCell(run, lifecycle) {
     case PHASE.NOTHING:
       return lifecycle.nothing === NOTHING.NOT_EXECUTED
         ? { text: NOT_EXECUTED_COPY.result, tone: 'none', title: NOT_EXECUTED_COPY.title }
-        : { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to read back' }
+        : { text: 'nothing ran', tone: 'none', title: 'the run ended before any step reached its agent — nothing to review' }
     case PHASE.READING:
-      return { text: 'reading back…', tone: 'live', title: 'reading this run back from the tenant' }
+      return { text: 'reviewing…', tone: 'live', title: 'reviewing this run against the tenant' }
     case PHASE.UNREAD:
-      return { text: 'not read back', tone: 'none', title: 'the tenant has not been read for this run, so it has no results yet' }
+      return { text: 'not reviewed', tone: 'none', title: 'the tenant has not been read for this run, so it has no results yet' }
     default: {
       const det = detectionCell(run)
       if (det.tone === 'unproven') return det
@@ -86,15 +86,15 @@ function RunAction({ id, lifecycle, onOpen, onReadBack, onOpenResults }) {
     case PHASE.RUNNING:
       return <Button variant="secondary" className="run-list__act" onClick={() => onOpen(id)}>Open</Button>
     case PHASE.UNREAD:
-      return <Button variant="primary" className="run-list__act" onClick={() => onReadBack(id)}>Read back</Button>
+      return <Button variant="primary" className="run-list__act" onClick={() => onReadBack(id)}>Review</Button>
     case PHASE.READING:
-      return <Button variant="secondary" className="run-list__act" disabled>Reading…</Button>
+      return <Button variant="secondary" className="run-list__act" disabled>Reviewing…</Button>
     case PHASE.READY:
       return <Button variant="secondary" className="run-list__act" onClick={() => onOpenResults(id)}>Open results</Button>
     default:
       return (
         <span className="run-list__noact" title={lifecycle.nothing === NOTHING.NOT_EXECUTED
-          ? NOT_EXECUTED_COPY.title : 'nothing ran, so there is nothing to read back'}>—</span>
+          ? NOT_EXECUTED_COPY.title : 'nothing ran, so there is nothing to review'}>—</span>
       )
   }
 }
@@ -104,7 +104,7 @@ function RunRow({ run, now, inGroup = false, reading, outcomes, onOpen, onReadBa
   const lifecycle = runLifecycle(run, { reading: reading.has(id) })
   const res = resultCell(run, lifecycle)
   const outcome = outcomes.get(id)
-  // Why the last read back read nothing — only while the run is still unread.
+  // Why the last review read nothing — only while the run is still unread.
   const why = outcome && !outcome.ok && lifecycle.phase === PHASE.UNREAD ? outcome.message : null
   return (
     <div
@@ -319,7 +319,7 @@ export default function RunList({
             <span>Agent</span>
             <span>Duration</span>
             <span>Lifecycle</span>
-            <span title="detected of expected, once the run is read back from the tenant">Result</span>
+            <span title="detected of expected, once the run is reviewed against the tenant">Result</span>
             <span>Status</span>
             <span />
           </div>

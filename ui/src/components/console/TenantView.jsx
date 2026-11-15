@@ -7,7 +7,7 @@ import CollectorTargetsPanel from './CollectorTargetsPanel.jsx'
  * TenantView — the Cortex tenant this instance reads detections back from.
  *
  * Real state only. The previous page rendered a fixed "Acme Financial" tenant
- * with nine canned health checks, four tabs of read-back surface and a binding
+ * with nine canned health checks, four tabs of review surface and a binding
  * wizard — all from the design prototype's seed catalog — while the header,
  * reading the actual provider, said "no tenant bound". Two answers to "which
  * tenant is this" on one screen is the worst kind of wrong, so the page now

@@ -1,7 +1,7 @@
 /* run-lifecycle.css — the run lifecycle (design v26 §4.6).
    ---------------------------------------------------------------------------
    The five-stage strip (compact on Runs rows, full on the run's page), the
-   Runs row's action column, the Results "Result of" bar, the read-back notice
+   Runs row's action column, the Results "Result of" bar, the review notice
    and the inline Abort confirm. Tokens only; no hex. Every stage carries a
    glyph as well as a colour: ✓ done · ● now · ✕ failed · – not yet. */
 
@@ -112,7 +112,7 @@
   font: 500 11.5px/1.2 var(--font-mono);
 }
 
-/* ── Read-back notice (Results and the run's Evidence tab) ─────────────── */
+/* ── Review notice (Results and the run's Evidence tab) ────────────────── */
 .theme-console .readback-notice {
   display: flex; align-items: center; gap: 14px;
   padding: 13px 15px; margin: 0 0 12px;

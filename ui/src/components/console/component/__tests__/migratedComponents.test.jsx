@@ -129,7 +129,7 @@ describe('Tenant component', () => {
   it('Read-back & integrations keeps the tenant form and the collector targets', async () => {
     mount(TenantComponent, { params: { tab: 'readback' } })
     const tabs = screen.getByRole('group', { name: 'Component pages' })
-    expect(within(tabs).getByRole('button', { name: 'Read-back & integrations' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(tabs).getByRole('button', { name: 'Review & integrations' })).toHaveAttribute('aria-pressed', 'true')
     await waitFor(() => expect(screen.getByTestId('collector-targets')).toBeInTheDocument())
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })

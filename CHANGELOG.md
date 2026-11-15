@@ -8,6 +8,18 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed
+
+- **The console's "Read back" action is now "Review".** The button on Runs, on
+  a run's page, on Results, in Runs › Compare and on the UC / TC Gaps list says
+  Review, and says Reviewing… while it runs. The fourth stage of the run
+  lifecycle strip says Reviewed, and every line that said a run was or was not
+  "read back" now says reviewed or not reviewed ("Ran — not reviewed", "Not
+  reviewed yet — Review the run."). The Tenant page's tab is now Review &
+  integrations. Only the words changed: the action still asks SimCore to read
+  the tenant for the run (`POST /api/runs/{id}/reconcile`), and no route, API
+  or backend behaviour moved.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is

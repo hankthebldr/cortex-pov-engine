@@ -32,8 +32,8 @@ import '../../styles/destinations/coverage.css'
  * kept as they were.
  *
  * What a scenario has proven comes from the run list only (dashboardModel.js):
- * Detected means a read-back run of it detected something. A scenario that is
- * authored, or that ran and was not read back, is never coloured as covered.
+ * Detected means a reviewed run of it detected something. A scenario that is
+ * authored, or that ran and was not reviewed, is never coloured as covered.
  *
  * Every cell and tile opens the scenarios it counts; each scenario opens its
  * sheet on Scenarios (`#/library?open=<id>`). The tab rides `?tab=`.
@@ -84,7 +84,7 @@ export default function CoverageView({ onNavigate, params = {}, setParams } = {}
         <p className="pov-page__lede">
           Every scenario in the library, counted three ways. Open any cell or technique to see the
           scenarios behind it and what they have proven so far. Detected means a run of the
-          scenario was read back from the tenant and detected something.
+          scenario was reviewed against the tenant and detected something.
         </p>
       </header>
 

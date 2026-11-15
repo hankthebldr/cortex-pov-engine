@@ -37,10 +37,10 @@ function shortId(id) {
  *
  * Pick two or three finished runs; each expected detection lines up across
  * them, so a second attempt shows what changed. The model, and the honesty
- * rule, live in runCompare.js: only a run that has been read back may say
- * Detected or Not seen; any other run says "Ran — not read back" or "Did not
- * run". Each column header carries the run's next action — Read back while it
- * is unread, Open results once it is — through the console's one Read back
+ * rule, live in runCompare.js: only a run that has been reviewed may say
+ * Detected or Not seen; any other run says "Ran — not reviewed" or "Did not
+ * run". Each column header carries the run's next action — Review while it
+ * is unread, Open results once it is — through the console's one Review
  * (useReadBack) and the Results route.
  *
  * Reached at Runs `?compare=1` and from the Compare toggle on Results.
@@ -54,8 +54,8 @@ export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
   const [full, setFull] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [results, setResults] = useState({})
-  // Runs whose read back has landed but whose fresh row has not: they keep
-  // reading as "Reading…" so the column does not flash back to Read back.
+  // Runs whose review has landed but whose fresh row has not: they keep
+  // reading as "Reviewing…" so the column does not flash back to Review.
   const [settling, setSettling] = useState(() => new Set())
 
   const loadRuns = useCallback(() => {
@@ -75,7 +75,7 @@ export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
     [picked, finished],
   )
 
-  // Fetch the results of every picked run not yet held. A read back drops a
+  // Fetch the results of every picked run not yet held. A review drops a
   // run's entry and bumps its generation, so an answer from before the read
   // back can never land over the one after it.
   const mounted = useRef(true)
@@ -121,7 +121,7 @@ export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
     try {
       await readBack(id)
       await loadRuns()
-      // The read back changed the run's outcomes: read its results again.
+      // The review changed the run's outcomes: read its results again.
       generation.current[id] = (generation.current[id] || 0) + 1
       setResults((prev) => {
         const next = { ...prev }
@@ -154,7 +154,7 @@ export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
     <div className="run-compare" data-testid="run-compare">
       <p className="run-compare__intro">
         Pick two or three finished runs. Each detection lines up across them, so a second
-        attempt shows what changed. A run that has not been read back makes no detection claim.
+        attempt shows what changed. A run that has not been reviewed makes no detection claim.
       </p>
 
       <section className="run-compare__picker" aria-labelledby="run-compare-pick">
@@ -320,7 +320,7 @@ export default function MultiRunCompare({ onOpenResults = openResultsByHash }) {
 /** A run's column header: what it is, where it is, and its next action. */
 function RunHead({ col, name, outcome, onReadBack, onOpenResults }) {
   const ph = PHASE_STATUS[col.phase] || PHASE_STATUS[PHASE.UNREAD]
-  // Why the last read back read nothing — only while the run is still unread.
+  // Why the last review read nothing — only while the run is still unread.
   const why = outcome && !outcome.ok && col.phase === PHASE.UNREAD ? outcome.message : null
   return (
     <div className="run-compare__head-in">
@@ -331,10 +331,10 @@ function RunHead({ col, name, outcome, onReadBack, onOpenResults }) {
       <span className="run-compare__head-row">
         <StatusIcon status={ph.status} word={ph.word} />
         {col.phase === PHASE.UNREAD && (
-          <Button variant="primary" className="run-compare__act" onClick={onReadBack}>Read back</Button>
+          <Button variant="primary" className="run-compare__act" onClick={onReadBack}>Review</Button>
         )}
         {col.phase === PHASE.READING && (
-          <Button variant="secondary" className="run-compare__act" disabled>Reading…</Button>
+          <Button variant="secondary" className="run-compare__act" disabled>Reviewing…</Button>
         )}
         {col.phase === PHASE.READY && (
           <Button variant="secondary" className="run-compare__act" onClick={onOpenResults}>Open results</Button>
@@ -359,7 +359,7 @@ function Cell({ cellKey }) {
  * Exactly two picked runs that point at each other are a report/block pair:
  * the server builds the delta and the console lays it out. The delta names
  * detected / prevented outcomes, so it is shown only once both runs have been
- * read back — the same rule as the grid.
+ * reviewed — the same rule as the grid.
  */
 function PairSection({ runs }) {
   const pairedRuns = runs.length === 2 && arePaired(runs[0], runs[1]) ? runs : null
@@ -383,7 +383,7 @@ function PairSection({ runs }) {
     return (
       <p className="run-compare__note" data-testid="pair-delta-unread">
         These two runs are a report / block pair. The prevention delta appears once both have
-        been read back.
+        been reviewed.
       </p>
     )
   }

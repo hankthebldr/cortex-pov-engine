@@ -47,23 +47,23 @@ describe('RunDetailView', () => {
     expect(screen.getAllByTestId('run-case')).toHaveLength(1)
   })
 
-  it('the run page offers Read back beside its case panel, behind a confirm', async () => {
+  it('the run page offers Review beside its case panel, behind a confirm', async () => {
     const h = routes()
     render(<RunDetailView runId="r1" run={READ} subTab="live" />)
     const panel = await screen.findByTestId('run-case')
     const button = panel.querySelector('button')
-    expect(button).toHaveTextContent('Read back')
+    expect(button).toHaveTextContent('Review')
     fireEvent.click(button)
     expect(screen.getByRole('dialog')).toHaveTextContent('Refreshing tenant evidence never does.')
     expect(seen(h).filter((c) => c.startsWith('POST '))).toEqual([])
   })
 
-  it('a READY run on the evidence tab has exactly one Read back', async () => {
+  it('a READY run on the evidence tab has exactly one Review', async () => {
     routes()
     render(<RunDetailView runId="r1" run={READ} subTab="evidence" />)
     await screen.findByTestId('tenant-evidence')
     await waitFor(() => expect(screen.getByTestId('tenant-evidence')).toHaveTextContent('Refresh reads it once'))
-    expect(screen.getAllByRole('button', { name: 'Read back' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
   })
 
   it('an unread run shows tenant evidence: one GET, no POST on mount', async () => {

@@ -14,7 +14,7 @@
  *   check    Test (the verb), and "What proves it"
  *   gear     Configure (the verb), and "What it needs"
  *   pencil   Customize (the verb)
- *   rotate   Read back (the verb)
+ *   rotate   Review (the verb)
  *   external Open results (the verb)
  *   target   a deep dive's thesis ("Why this matters")
  *   back     the header's Back: the previous place in the console's history

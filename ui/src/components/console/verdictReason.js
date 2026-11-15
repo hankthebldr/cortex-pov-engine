@@ -3,7 +3,7 @@
  *
  * `engine/verifier.py::score_run` sets `tc_verdict_detail.reason` only when no
  * Result was left to score (§1.3.1 of the API reference): `soak_pending` when
- * any row is still inside its soak window (it ran, and a read back after the
+ * any row is still inside its soak window (it ran, and a review after the
  * window closes can still score the run), `not_executed` when no row is (only
  * a re-run can). Neither is "verification outstanding", so the console names
  * it instead of leaving a bare `pending` chip.

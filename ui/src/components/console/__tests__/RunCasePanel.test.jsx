@@ -64,9 +64,9 @@ describe('RunCasePanel', () => {
     expect(screen.getByTestId('run-case-shared').textContent).toMatch(/3/)
   })
 
-  it('null ledger renders "not read yet"', () => {
+  it('null ledger renders "not reviewed yet"', () => {
     render(<RunCasePanel ledger={null} />)
-    expect(screen.getByText(/Not read yet/)).toBeTruthy()
+    expect(screen.getByText(/Not reviewed yet/)).toBeTruthy()
     expect(screen.getByText(CASE_DISCLAIMER)).toBeTruthy()
   })
 
@@ -138,15 +138,15 @@ describe('RunCasePanel', () => {
     expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
   })
 
-  it('NO_CASE_YET says the next Read back advances it, not a refresh', () => {
+  it('NO_CASE_YET says the next Review advances it, not a refresh', () => {
     render(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [],
       shared_with_other_runs: false }} />)
     const hint = screen.getByTestId('run-case-no-case-yet')
-    expect(hint.textContent).toMatch(/the next Read back/)
+    expect(hint.textContent).toMatch(/the next Review/)
     expect(hint.textContent).toMatch(/A refresh re-reads cases only/)
     // Identical to NO_CASE_YET_HINT in core/connectors/case_ledger.py.
     expect(NO_CASE_YET_HINT).toBe(
-      'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
+      'No case yet: the next Review re-reads these alerts and rebuilds the ledger once the tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.')
   })
 
   it('renders read_at as UTC', () => {
@@ -183,17 +183,17 @@ describe('RunCasePanel', () => {
   })
 })
 
-describe('RunCasePanel Read back action', () => {
-  const ACTION = <button type="button">Read back</button>
+describe('RunCasePanel Review action', () => {
+  const ACTION = <button type="button">Review</button>
 
-  it('RunCasePanel offers Read back in its empty state and under NO_CASE_YET', () => {
+  it('RunCasePanel offers Review in its empty state and under NO_CASE_YET', () => {
     const { rerender } = render(<RunCasePanel ledger={null} reconcileAction={ACTION} />)
-    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy()
     rerender(<RunCasePanel
       ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }}
       reconcileAction={ACTION}
     />)
-    expect(screen.getByRole('button', { name: 'Read back' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy()
     expect(screen.getByTestId('run-case-no-case-yet').textContent).toBe(NO_CASE_YET_HINT)
   })
 
@@ -206,13 +206,13 @@ describe('RunCasePanel Read back action', () => {
 })
 
 describe('RunCasePanel names the console verb, not "reconcile"', () => {
-  it('its empty, no-case and unreadable copy says Read back', () => {
+  it('its empty, no-case and unreadable copy says Review', () => {
     const { container, rerender } = render(<RunCasePanel ledger={null} />)
-    expect(container.textContent).toContain('Not read yet — Read back the run.')
+    expect(container.textContent).toContain('Not reviewed yet — Review the run.')
     rerender(<RunCasePanel ledger={{ ...LEDGER, merge_class: 'NO_CASE_YET', cases: [] }} />)
     expect(container.textContent).not.toMatch(/reconcile/i)
     rerender(<RunCasePanel ledger={{ ...LEDGER, code: undefined }} />)
-    expect(screen.getByTestId('run-case-unreadable').textContent).toContain('Read back the run to rebuild it.')
+    expect(screen.getByTestId('run-case-unreadable').textContent).toContain('Review the run to rebuild it.')
     expect(container.textContent).not.toMatch(/reconcile/i)
   })
 })

@@ -1,7 +1,7 @@
 import { test, expect } from './_fixtures'
 
 /**
- * Results › Tenant evidence, the one case panel, and Read back behind a confirm.
+ * Results › Tenant evidence, the one case panel, and Review behind a confirm.
  *
  * WHY AN E2E SPEC
  * ---------------
@@ -16,7 +16,7 @@ import { test, expect } from './_fixtures'
  * stored tenant evidence once (a GET); nothing here reads a tenant.
  */
 
-const BODY = "Read back reads the tenant and may change this run's verdict, marking detections "
+const BODY = "Review reads the tenant and may change this run's verdict, marking detections "
   + 'detected or missed. Refreshing tenant evidence never does.'
 
 test.describe.configure({ mode: 'serial' })
@@ -60,16 +60,16 @@ test('Runs › run shows the case panel once', async ({ page }) => {
   }
 })
 
-test('Read back on a read-back run asks first, and Cancel posts nothing', async ({ page }) => {
+test('Review on a reviewed run asks first, and Cancel posts nothing', async ({ page }) => {
   const posts: string[] = []
   page.on('request', (req) => {
     if (req.method() === 'POST' && req.url().includes('/reconcile')) posts.push(req.url())
   })
   await page.goto(`/#/proof?run=${runId}`)
   await expect(page.getByTestId('tenant-evidence')).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('button', { name: 'Read back' }).click()
+  await page.getByRole('button', { name: 'Review' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('Read back this run?')
+  await expect(dialog).toContainText('Review this run?')
   await expect(dialog).toContainText(BODY)
   await page.getByRole('button', { name: /^Cancel/ }).click()
   await expect(dialog).toHaveCount(0)

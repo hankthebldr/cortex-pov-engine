@@ -13,12 +13,12 @@ export const CASE_DISCLAIMER =
   'Tenant disposition is shown for context. It is not detection evidence.'
 
 /**
- * NO_CASE_YET advances only on a Read back: a refresh re-reads the cases a
+ * NO_CASE_YET advances only on a Review: a refresh re-reads the cases a
  * ledger names, and this one names none. Keep identical to `NO_CASE_YET_HINT`
  * in core/connectors/case_ledger.py.
  */
 export const NO_CASE_YET_HINT =
-  'No case yet: the next Read back re-reads these alerts and rebuilds the ledger once the ' +
+  'No case yet: the next Review re-reads these alerts and rebuilds the ledger once the ' +
   'tenant has grouped them into a case. A refresh re-reads cases only, and this ledger names none.'
 
 /**
@@ -56,7 +56,7 @@ export function ledgerUnreadableReason(l) {
   return null
 }
 
-/** True when the panel itself carries the Read back action (its empty state, or NO_CASE_YET). */
+/** True when the panel itself carries the Review action (its empty state, or NO_CASE_YET). */
 export function caseOffersReadBack(ledger) {
   if (!ledger || typeof ledger !== 'object') return true
   return !ledgerUnreadableReason(ledger) && ledger.merge_class === 'NO_CASE_YET'
@@ -67,7 +67,7 @@ export function caseOffersReadBack(ledger) {
  * h2 (the Results tenant evidence panel) passes 3 so the outline stays a tree.
  *
  * `reconcileAction` (a node, normally a ReadBackButton): offered beside the
- * empty-state text and the NO_CASE_YET hint, the two states only a read back
+ * empty-state text and the NO_CASE_YET hint, the two states only a review
  * advances. The panel never posts anything itself.
  */
 export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcileAction = null }) {
@@ -78,7 +78,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
         <div className="run-case__action-row">
-          <p className="run-case__empty">Not read yet — Read back the run.</p>
+          <p className="run-case__empty">Not reviewed yet — Review the run.</p>
           {reconcileAction}
         </div>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
@@ -91,7 +91,7 @@ export default function RunCasePanel({ ledger = null, headingLevel = 2, reconcil
       <section className="run-case" aria-label="Case" data-testid="run-case">
         <H className="run-case__h">Case</H>
         <p className="run-case__warn" role="alert" data-testid="run-case-unreadable">
-          Ledger unreadable: {unreadable}. Read back the run to rebuild it.
+          Ledger unreadable: {unreadable}. Review the run to rebuild it.
         </p>
         <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
       </section>

@@ -3,7 +3,7 @@
  *
  * The same ChainStage the Composer edits and a scenario's sheet previews, in
  * live mode, fed by this run's real steps (the scenario's authored chain),
- * the host's record of each step and — only once the run has been read back —
+ * the host's record of each step and — only once the run has been reviewed —
  * its Result rows (runChain.liveStepStates). A lane header opens the
  * component behind that signal path. A scenario with no authored chain shows
  * the stage's empty state, never a synthetic one.
@@ -34,7 +34,7 @@ export default function RunChain({ runId, run, lifecycle, onNavigate = () => {} 
     return () => { cancelled = true }
   }, [scenarioId])
 
-  // Result rows matter only once the run has been read back; before that no
+  // Result rows matter only once the run has been reviewed; before that no
   // card may say anything about a detection, so they are not even fetched.
   const ready = lifecycle?.phase === PHASE.READY
   const readAt = lifecycle?.readBack?.at || null
