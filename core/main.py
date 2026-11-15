@@ -211,14 +211,6 @@ async def lifespan(app: FastAPI):
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))
 
-    # 3a. Merge installed content into tool registry (no-op if not on a jumpbox)
-    from content_loader import merge_installed_tools  # noqa: PLC0415
-    try:
-        merged = merge_installed_tools()
-        logger.info("Content tools merged into registry: %d", merged)
-    except Exception:
-        logger.exception("content_loader merge failed — continuing without installed content")
-
     # 3. Initialize tool instantiator (set base_dir from config)
     instantiator._base_dir = settings.CORTEXSIM_BASE_DIR
     logger.info("Tool instantiator initialized base_dir=%s", settings.CORTEXSIM_BASE_DIR)
@@ -585,7 +577,6 @@ from api.tools import router as tools_router            # noqa: E402
 from api.tools_dist import router as tools_dist_router  # noqa: E402
 from api.agents import router as agents_router          # noqa: E402
 from api.mitre import router as mitre_router            # noqa: E402
-from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
 from api.collector_targets import router as collector_targets_router  # noqa: E402
@@ -633,7 +624,6 @@ app.include_router(tools_router, prefix="/api")
 app.include_router(tools_dist_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(mitre_router, prefix="/api")
-app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
 app.include_router(collector_targets_router, prefix="/api")
