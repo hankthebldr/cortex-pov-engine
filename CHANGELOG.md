@@ -8,6 +8,12 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed — the Launch gate says who runs cleanup, on kit controls
+
+- **Teardown names who runs it.** A current agent: "run by the agent after the run"; an older one: "run them yourself".
+- **Prevention context reads in sentence case.** "Attested, not verified" is one hint; the canary is the kit's **Run canary**.
+- **Each preflight check is one line.** Status icon, one word and the count; the detail sits behind a collapsed **Why**.
+
 ### Changed — Results on kit controls, a live runtime log, and EAL consent at launch
 
 - **A run's runtime log is live.** Output a step prints while it runs shows in
