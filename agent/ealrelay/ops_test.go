@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -407,9 +408,19 @@ func resetAfterRequest(t *testing.T) (addr string, requests <-chan string) {
 func TestHTTPOpResetAfterTheRequestIsWrittenCountsAsSent(t *testing.T) {
 	addr, requests := resetAfterRequest(t)
 	op := Op{Op: "http", Method: "GET", URL: "http://" + addr + "/uid/index.html?q=abc123", TimeoutS: 5}
-	sum, err := (&Runner{}).Run(context.Background(), []Op{op}, []string{addr})
+	var replyErr error // what the real transport returned
+	runner := &Runner{}
+	runner.HTTP = func(req *http.Request, op Op) (*http.Response, error) {
+		resp, err := runner.realHTTP(req, op)
+		replyErr = err
+		return resp, err
+	}
+	sum, err := runner.Run(context.Background(), []Op{op}, []string{addr})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if replyErr == nil {
+		t.Fatal("the far end answered instead of resetting")
 	}
 	if got := <-requests; got != "GET /uid/index.html?q=abc123" {
 		t.Errorf("the listener read %q", got)
@@ -420,8 +431,37 @@ func TestHTTPOpResetAfterTheRequestIsWrittenCountsAsSent(t *testing.T) {
 	if line := sum.Line(); line != "1 of 1 sent · 1 reset by peer" {
 		t.Errorf("line: %q", line)
 	}
-	if len(sum.ReplyErrors) != 1 || !strings.Contains(sum.ReplyErrors[0], "reset") {
+	// Each platform words a reset its own way (Windows: "forcibly closed by
+	// the remote host"), so the error is judged by its value, through the
+	// helper that classed it, never by its text.
+	if got := replyClass(replyErr); got != replyReset {
+		t.Errorf("the socket's reset reads %q: %v", got, replyErr)
+	}
+	if len(sum.ReplyErrors) != 1 || !strings.HasSuffix(sum.ReplyErrors[0], replyErr.Error()) {
 		t.Errorf("the reset is not on record: %v", sum.ReplyErrors)
+	}
+}
+
+// socketCode is one socket error the platform returns and the reply class it
+// is (errno_unix_test.go, errno_windows_test.go).
+type socketCode struct {
+	name  string
+	call  string
+	errno syscall.Errno
+	reply string
+}
+
+// The platform's own codes, wrapped as net/http hands them back, read as
+// their reply class.
+func TestReplyClassReadsTheSocketErrorByValue(t *testing.T) {
+	for _, c := range socketCodes {
+		t.Run(c.name, func(t *testing.T) {
+			err := &url.Error{Op: "Get", URL: "http://c2.example.test/", Err: &net.OpError{
+				Op: "read", Net: "tcp", Err: os.NewSyscallError(c.call, c.errno)}}
+			if got := replyClass(err); got != c.reply {
+				t.Errorf("%v reads %q, want %q", err, got, c.reply)
+			}
+		})
 	}
 }
 
