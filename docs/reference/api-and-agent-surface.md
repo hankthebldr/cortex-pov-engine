@@ -1640,13 +1640,28 @@ recorded under `tc_verdict_detail.measurement` with `family`, `basis`, `value`,
 
 | scenario `primary_kpi` (unit `%`) | value | basis |
 |---|---|---|
-| Detection Accuracy | `observed / seeded` over results that executed | `reconcile` or `manual` |
+| Detection Accuracy | `observed / seeded` over results that executed, less unmatched verify-only XQL rows | `reconcile` or `manual` |
 | Cross-Source Correlation Rate · Stitch Completeness · Correlation Coverage | `(alerts − incidents) / (alerts − 1)` | `alert_incident_ids` when the tenant stamps `incident_id`/`case_id` on alerts, else `host_incidents` from one `get_incidents` read scoped to the run's host |
 
 The guard: an **unscoped** pull withholds a PASS, a **truncated** pull
 withholds a FAIL, **zero matched** stays `pending`, and fewer than two alerts
 cannot yield a correlation rate. A re-score with no new evidence keeps the last
 measured value.
+
+**Verify-only XQL rows (2026-11-15, issue #272).** A row is verify-only when its
+declared type is `XQL` and no alert-raising card object backs it: its card
+object (`Result.detection_kind`, else the catalog entry for `ttp_ref` +
+`detection_id`) is an `xql_queries[]` query or a modeling rule, or there is no
+card (`connectors/measures.py::is_verify_only`). A query raises no alert, so
+while such a row is unmatched it leaves the Detection Accuracy numerator and
+denominator, as `not_reached` / `not_executed` rows do. A matched one counts on
+both sides. Its outcome is not changed: it still reads `missed`, and its own
+verdict is the Tier-2 verify verdict when it carries a `verification_xql`. With
+no alert-backed row left the measure is withheld and the run reads `pending`,
+never PASS. `measurement.verify_only` reports `{excluded, credited,
+no_verification_xql}`; the last counts excluded rows that Tier 2 cannot score
+either. Coverage (`coverage_pct`, the report's coverage table and the efficacy
+scorecard) is a different number and still counts these rows.
 
 **Credential config keys the `xsiam` connector reads:** `base_url` |
 `fqdn` | `tenant_url`, `api_key_id` | `auth_id`, `auth_mode`
