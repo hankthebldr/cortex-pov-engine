@@ -58,7 +58,10 @@ describe('Button', () => {
   })
 
   it('names the closed verb set from the design', () => {
-    expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run'])
+    expect(VERBS).toEqual([
+      'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+      'Download', 'Open run',
+    ])
   })
 
   it('gives every verb, and only a verb, an icon from the closed Icon set (design v33 C10)', () => {
@@ -75,6 +78,12 @@ describe('Button', () => {
     expect(svg).toHaveAttribute('data-icon', 'rotate')
     expect(svg).toHaveAttribute('aria-hidden', 'true')
     expect(b.firstChild).toBe(svg)
+  })
+
+  it('Download and Open run are verbs with their own icons', () => {
+    render(<><Button verb="Download" aria-label="Download CSV">CSV</Button><Button verb="Open run" /></>)
+    expect(screen.getByRole('button', { name: 'Download CSV' }).querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(screen.getByRole('button', { name: 'Open run' }).querySelector('svg')).toHaveAttribute('data-icon', 'terminal')
   })
 
   it('keeps the verb icon through a busy label', () => {
@@ -135,7 +144,7 @@ describe('Icon', () => {
     expect(ICONS).toEqual([
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
-      'back', 'forward',
+      'download', 'terminal', 'back', 'forward',
     ])
   })
 

@@ -16,6 +16,8 @@
  *   pencil   Customize (the verb)
  *   rotate   Read back (the verb)
  *   external Open results (the verb)
+ *   download Download (the verb): save a file from the console
+ *   terminal Open run (the verb): the run's own page
  *   target   a deep dive's thesis ("Why this matters")
  *   back     the header's Back: the previous place in the console's history
  *   forward  the header's Forward: the next place, after a Back
@@ -78,6 +80,8 @@ const SHAPES = {
       <circle cx="8" cy="8" r="2.2" />
     </g>
   ),
+  download: <path d="M8 2.6v7.6M4.8 7.2L8 10.4l3.2-3.2M2.8 13.2h10.4" {...STROKE} />,
+  terminal: <path d="M2 3h12v10H2zM4.8 6.6l2 1.8-2 1.8M8.6 10.4h2.6" {...STROKE} />,
   back: <path d="M13 8H3M7 4L3 8l4 4" {...STROKE} />,
   forward: <path d="M3 8h10M9 4l4 4-4 4" {...STROKE} />,
 }
