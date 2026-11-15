@@ -32,6 +32,10 @@
  *   down     jump to the newest line of a log
  *   x        close a sheet; mark a detection missed
  *   check-all  Validate all (the verb)
+ *   check-circle  Mark detected (the verb)
+ *   save     Save (the verb)
+ *
+ * `x` also draws Mark missed (the verb), and `repeat` Reset (the verb).
  *
  * `target` also draws Set active (the verb).
  */
@@ -160,6 +164,18 @@ const SHAPES = {
   down: <path d="M8 3v10M4 9l4 4 4-4" {...STROKE} />,
   x: <path d="M4 4l8 8M12 4l-8 8" {...STROKE} />,
   'check-all': <path d="M1.8 8.6l2.6 2.6 5-5.6M7.4 10.4l.8.8 6-6.8" {...STROKE} />,
+  'check-circle': (
+    <g {...STROKE}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M5.4 8.2l1.9 1.9 3.4-3.8" />
+    </g>
+  ),
+  save: (
+    <g {...STROKE}>
+      <path d="M3 3h8.2L13 4.8V13H3z" />
+      <path d="M5.4 3v3.2h4.6V3M5.4 13V9.4h5.2V13" />
+    </g>
+  ),
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

@@ -14,6 +14,9 @@
  * children say otherwise (a busy state such as "Launching…"). Anything that
  * only navigates is a link, not a Button. `href` renders the same control as
  * an <a>, for a file the browser downloads.
+ *
+ * `iconOnly` draws just the verb's icon, for a row of small actions: the verb
+ * is the button's accessible name and its tooltip.
  */
 import React from 'react'
 import Icon from './Icon.jsx'
@@ -30,6 +33,10 @@ export const VERBS = Object.freeze([
   'Pause', 'Clear', 'Screenshot',
   // Results › Detections: mark every detection that can be attested as seen.
   'Validate all',
+  // Results › Detections: one detection, by hand. Reset puts it back to unjudged.
+  'Mark detected', 'Mark missed', 'Reset',
+  // Keep what was typed (a note on a detection).
+  'Save',
 ])
 
 /** The kit Icon each verb carries. */
@@ -54,11 +61,25 @@ export const VERB_ICONS = Object.freeze({
   Clear: 'clear',
   Screenshot: 'camera',
   'Validate all': 'check-all',
+  'Mark detected': 'check-circle',
+  'Mark missed': 'x',
+  Reset: 'repeat',
+  Save: 'save',
 })
 
-export default function Button({ variant = 'secondary', type = 'button', verb, href, className = '', children, ...rest }) {
+export default function Button({
+  variant = 'secondary', type = 'button', verb, iconOnly = false, href, className = '', children, ...rest
+}) {
   const kind = ['primary', 'secondary', 'destructive'].includes(variant) ? variant : 'secondary'
-  const cls = `kit-btn kit-btn--${kind} ${className}`.trim()
+  const bare = iconOnly && !!verb
+  const cls = `kit-btn kit-btn--${kind}${bare ? ' kit-btn--icon' : ''} ${className}`.trim()
+  if (bare) {
+    return (
+      <button type={type} className={cls} data-verb={verb} aria-label={verb} title={verb} {...rest}>
+        <Icon name={VERB_ICONS[verb]} size={12} />
+      </button>
+    )
+  }
   const body = (
     <>
       {verb && <Icon name={VERB_ICONS[verb]} size={12} />}
