@@ -54,6 +54,7 @@ from engine.outcome import (
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOME_DETECTED,
     OUTCOME_MISSED,
+    OUTCOME_NOT_EXECUTED,
     OUTCOME_PENDING,
     OUTCOME_PREVENTED,
     SOAK_REASONS,
@@ -1115,6 +1116,10 @@ async def apply_verdicts(
     host_rows = (await db.execute(
         select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
     terminations = {so.step_id: so.termination for so in host_rows}
+    # #323: the exit status the host recorded beside each termination. An
+    # `exited` step with a non-zero status FAILED on the host, so its silence
+    # is not a miss (engine.outcome.silent_detect_verdict).
+    exit_codes = {so.step_id: so.exit_code for so in host_rows}
     # When each step's host record says it had finished (``/output`` arrival,
     # else the ``/complete`` record): the silent-row window starts there.
     reported_at = _reported_at_map(host_rows)
@@ -1194,7 +1199,8 @@ async def apply_verdicts(
                     termination=terminations.get(result.step_id),
                     window_closed=False,
                     block_mode_status=run.block_mode_status,
-                    module_mode=_row_module_mode(run, result))
+                    module_mode=_row_module_mode(run, result),
+                    exit_code=exit_codes.get(result.step_id))
                 if pv.outcome == OUTCOME_PREVENTED and unscoped:
                     # Any endpoint's alert could have been credited.
                     pv = PreventVerdict(OUTCOME_PENDING, "pending", PASS_WITHHELD_UNSCOPED)
@@ -1211,7 +1217,7 @@ async def apply_verdicts(
         await _judge_silent_results(db, run, results, terminations,
                                     window_seconds=window_seconds,
                                     evidence_complete=_evidence_complete(pull_context),
-                                    reported_at=reported_at)
+                                    reported_at=reported_at, exit_codes=exit_codes)
 
     await db.commit()
 
@@ -1300,6 +1306,7 @@ async def _judge_silent_results(
     db: AsyncSession, run: Run, results: list[Result], terminations: dict[str, Any],
     *, window_seconds: int, evidence_complete: bool,
     reported_at: Optional[dict[str, Any]] = None,
+    exit_codes: Optional[dict[str, Optional[int]]] = None,
 ) -> None:
     """Judge every still-unobserved Result.
 
@@ -1314,6 +1321,10 @@ async def _judge_silent_results(
       ``beacon_lost`` -> ``pending`` / ``HOST_EVIDENCE_ABSENT``, ``aborted`` ->
       ``pending`` / ``RUN_ABORTED``). An affirmative ``missed`` stands only on
       complete evidence — else ``pending`` / ``EVIDENCE_INCOMPLETE``.
+    * #323: an ``exited`` step whose ``exit_codes`` entry is non-zero failed on
+      the host: its silent ``detect`` rows (and ``prevent`` rows scored as a
+      detect) are ``not_executed`` / ``STEP_FAILED`` (``TOOL_ABSENT`` for exit
+      127), never ``missed``, with the exit status in the row's notes.
 
     Rows already ``not_reached`` / ``not_executed`` are never touched, nor is
     any row already judged beyond ``pending``.
@@ -1353,12 +1364,13 @@ async def _judge_silent_results(
                                 reported_at=reported_at)
         if now < end:
             continue
+        exit_code = (exit_codes or {}).get(r.step_id)
         if r.expected_outcome == "prevent":
             pv = evaluate_prevent(
                 agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
                 termination=terminations.get(r.step_id), window_closed=True,
                 block_mode_status=run.block_mode_status,
-                module_mode=_row_module_mode(run, r))
+                module_mode=_row_module_mode(run, r), exit_code=exit_code)
             if pv.outcome == OUTCOME_MISSED and not evidence_complete:
                 # Only a would-be fail softens to pending; a report-mode None
                 # stays None (and so is not written).
@@ -1367,6 +1379,8 @@ async def _judge_silent_results(
                     "pending" if pv.kpi_verdict == "fail" else pv.kpi_verdict,
                     EVIDENCE_INCOMPLETE)
             _write_prevent(r, pv)
+            if pv.outcome == OUTCOME_NOT_EXECUTED:
+                _note_failed_step(r, exit_code)
         else:
             # A `detect` expectation: silent after its window closed is a miss
             # -- WRITTEN, so no surface infers it from `observed=False` (R4/R7)
@@ -1377,7 +1391,8 @@ async def _judge_silent_results(
             # replaces `missed` with `detected` (apply_verdicts).
             # Round 4 C-1: a miss needs the host's word that the step ran --
             # an in-flight, queued, aborted or push run has no record.
-            judged = silent_detect_verdict(terminations.get(r.step_id), window_closed=True)
+            judged = silent_detect_verdict(terminations.get(r.step_id), window_closed=True,
+                                           exit_code=exit_code)
             if judged is None:
                 continue
             outcome, reason = judged
@@ -1385,6 +1400,19 @@ async def _judge_silent_results(
                 outcome, reason = OUTCOME_PENDING, EVIDENCE_INCOMPLETE
             r.outcome = outcome
             r.outcome_reason = reason
+            if outcome == OUTCOME_NOT_EXECUTED:
+                _note_failed_step(r, exit_code)
+
+
+def _note_failed_step(r: Any, exit_code: Optional[int]) -> None:
+    """Say in words why a silent row on a failed step is not a miss (#323).
+
+    The row's reason is a code (``STEP_FAILED`` / ``TOOL_ABSENT``); the note
+    carries the host's exit status into the report and the console.
+    """
+    note = f"the step failed on the host (exit {exit_code}), so a miss can't be claimed"
+    if note not in (r.notes or ""):
+        r.notes = ((r.notes + " | ") if r.notes else "") + note
 
 
 def _result_keys(r: Any) -> set:

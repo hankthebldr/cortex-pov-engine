@@ -8,6 +8,51 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-15
+
+**Hotfix for v1.2.0: a step that failed on the host no longer reads as
+"Cortex missed it" (#323).** One scoring change; no scenario, card, emitter,
+beacon or schema change.
+
+### Fixed
+
+- **A failed step is not a Cortex miss.** The beacon records a step that ends
+  on its own as `exited`, whatever its exit status. Reconcile wrote a silent
+  `detect` row on such a step `missed` once its window closed, so a step that
+  failed put "Cortex missed it" in the POV report for activity that never ran:
+  `python3 -m scripts.eal_simulator.cli` exiting 1 with `ModuleNotFoundError`
+  on 15 scenarios, `npm: command not found` on SIM-MP-028, a missing runtime
+  dependency. The host's exit status, already stored on every step record, now
+  reaches that judgement. A non-zero exit reads `not_executed` /
+  `STEP_FAILED`; exit 127 ("command not found") reads `not_executed` /
+  `TOOL_ABSENT`; the row's notes carry the exit status. A `not_executed` row
+  leaves the efficacy denominator, so it is neither a hit nor a miss, and a run
+  whose only rows failed reads `pending`, never FAIL. `prevent` rows scored as
+  a detect (report or unknown profile mode, or a module attested Report) follow
+  the same rule. Exit 0, or a record with no exit status, still reads `missed`;
+  `signaled`, `timeout` and `anchor_terminated` are unchanged; an alert matched
+  inside the window still credits the row. The storyline reads "the step failed
+  on the host, so a miss can't be claimed".
+
+### Known limitations
+
+- **A tool missing inside `|| true` still reads as a miss.** SIM-EDR-001
+  step-05 prints `strings not found` and exits 0 through its `|| echo`, so the
+  host record says the step ran. That half of #323 is still open: it needs a
+  launch check against the host beacon's tool roster or a content change, not
+  a scoring change.
+- **Block-mode `prevent` rows do not read the exit status.** In a block-mode
+  run a non-zero exit can be the agent's own block of a child process, so the
+  two-witness rule is unchanged: a silent block-mode `prevent` row on an
+  `exited` step still reads `missed` / fail.
+- **A tool that exits non-zero after doing its work now under-claims.** A step
+  whose last command is `grep` with no match exits 1 and reads `not_executed`,
+  not `missed`.
+- **Rows 1.2.0 already wrote `missed` keep it.** Reconcile never re-judges a
+  decided row, so re-run a scenario to re-score it. A `not_executed` row cannot
+  be attested by hand (`409 RESULT_STEP_NOT_RUN`), like every other
+  `not_executed` row.
+
 ## [1.2.0] - 2026-11-14
 
 **SimCore learns what a POV's tenant can receive before the run, and is

@@ -234,3 +234,66 @@ def test_aborted_is_pending_run_aborted_in_report_and_unknown_mode():
         v = oc.evaluate_prevent(agent_profile_mode=mode, alert_outcome=None,
                                 termination="aborted", window_closed=True, block_mode_status=None)
         assert (v.outcome, v.reason) == ("pending", oc.RUN_ABORTED), mode
+
+
+# --- #323: a failed step is not a Cortex miss ---------------------------------
+
+def test_step_failed_reason_exists():
+    assert oc.STEP_FAILED == "STEP_FAILED"
+
+
+@pytest.mark.parametrize("exit_code, reason", [
+    (1, "STEP_FAILED"),     # ModuleNotFoundError, a permission error, ...
+    (2, "STEP_FAILED"),
+    (-1, "STEP_FAILED"),    # the beacon could not start the step's shell
+    (127, "TOOL_ABSENT"),   # sh: command not found
+])
+def test_exited_with_a_failure_status_is_not_executed_never_missed(exit_code, reason):
+    v = oc.silent_detect_verdict("exited", window_closed=True, exit_code=exit_code)
+    assert v == ("not_executed", reason)
+    assert oc.is_in_denominator(*v) is False
+
+
+@pytest.mark.parametrize("exit_code", [0, None])
+def test_exited_zero_or_unrecorded_status_is_still_missed(exit_code):
+    assert oc.silent_detect_verdict("exited", window_closed=True,
+                                    exit_code=exit_code) == ("missed", None)
+
+
+@pytest.mark.parametrize("termination", ["signaled", "timeout", "anchor_terminated"])
+def test_exit_code_does_not_change_the_other_ran_terminations(termination):
+    # A kill or a spent budget is not a failure the step made on its own.
+    assert oc.silent_detect_verdict(termination, window_closed=True,
+                                    exit_code=137) == ("missed", None)
+
+
+def test_a_failed_step_is_unjudged_while_its_window_is_open():
+    # An alert can still arrive for whatever the step did before it failed.
+    assert oc.silent_detect_verdict("exited", window_closed=False, exit_code=1) is None
+
+
+def test_exit_code_never_masks_an_unknown_termination():
+    with pytest.raises(ValueError):
+        oc.silent_detect_verdict("crashed", window_closed=True, exit_code=1)
+
+
+@pytest.mark.parametrize("mode", ["report", "unknown"])
+def test_prevent_scored_as_detect_on_a_failed_step_is_not_executed(mode):
+    v = oc.evaluate_prevent(agent_profile_mode=mode, alert_outcome=None,
+                            termination="exited", window_closed=True,
+                            block_mode_status=None, exit_code=1)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("not_executed", None, oc.STEP_FAILED)
+
+
+def test_prevent_on_a_module_attested_report_on_a_failed_step_is_not_executed():
+    v = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                            termination="exited", window_closed=True,
+                            block_mode_status=None, module_mode="report", exit_code=127)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("not_executed", None, oc.TOOL_ABSENT)
+
+
+def test_prevent_scored_as_detect_with_exit_zero_is_still_missed():
+    v = oc.evaluate_prevent(agent_profile_mode="report", alert_outcome=None,
+                            termination="exited", window_closed=True,
+                            block_mode_status=None, exit_code=0)
+    assert (v.outcome, v.reason) == ("missed", None)

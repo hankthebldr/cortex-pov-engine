@@ -837,3 +837,143 @@ def test_every_production_reconcile_call_passes_the_shared_window_end():
     assert all("window_end_by_result" in kws for _, kws in calls), calls
     defs = [str(p) for p in core.rglob("*.py") if "def result_window_end" in p.read_text()]
     assert len(defs) == 1 and defs[0].endswith("connectors/service.py"), defs
+
+
+# ── #323 — a failed step is not a Cortex miss ──────────────────────────────
+
+async def _record_exit(SessionLocal, exit_code, step_id="step-01"):
+    """What a /complete with `steps[]` leaves for a step that ended on its own
+    with ``exit_code``: `exited` is "any exit status" (agent/executor/shell.go)."""
+    from models import StepOutcome
+
+    async with SessionLocal() as db:
+        ran = datetime.utcnow() - timedelta(minutes=10)
+        db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=exit_code,
+                           termination="exited", started_at=ran, recorded_at=ran))
+        await db.commit()
+
+
+@pytest.mark.parametrize("exit_code, reason", [(1, "STEP_FAILED"), (127, "TOOL_ABSENT")])
+def test_silent_detect_row_on_a_failed_step_is_not_executed_never_missed(
+        session_factory, exit_code, reason):
+    """The #323 repro: `python3 -m scripts.eal_simulator.cli` exits 1 with
+    ModuleNotFoundError, no alert arrives, the window closes on complete
+    evidence. That is not "Cortex missed it" -- the step never did its work."""
+    from api.runs import _result_icon
+
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_exit(session_factory, exit_code))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict, r.observed) == (
+        "not_executed", reason, None, False)
+    assert f"the step failed on the host (exit {exit_code}), so a miss can't be claimed" in (
+        r.notes or "")
+    assert _result_icon(r) == "⚠"
+
+
+def test_a_second_sweep_leaves_a_failed_step_row_and_its_note_alone(session_factory):
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_exit(session_factory, 1))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("not_executed", "STEP_FAILED")
+    assert (r.notes or "").count("so a miss can't be claimed") == 1
+
+
+@pytest.mark.parametrize("exit_code", [0, None])
+def test_silent_detect_row_on_a_clean_exit_is_still_missed(session_factory, exit_code):
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_exit(session_factory, exit_code))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("missed", None)
+    assert not r.notes
+
+
+def test_an_alert_inside_the_window_still_credits_a_failed_step(session_factory):
+    # Whatever the step did before it failed can raise an alert: a match wins.
+    from connectors.service import apply_verdicts
+    from models import Result
+    from sqlalchemy import select
+
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_exit(session_factory, 1))
+    v = _matched_verdict(session_factory)
+
+    async def _go():
+        async with session_factory() as db:
+            results = list((await db.execute(select(Result))).scalars().all())
+            await apply_verdicts(db, "run-1", results, [v], source="t",
+                                 pull_context=COMPLETE, window_seconds=60)
+    asyncio.run(_go())
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.observed) == ("detected", True)
+
+
+@pytest.mark.parametrize("mode", ["report", "unknown"])
+def test_report_mode_prevent_row_on_a_failed_step_is_not_executed(session_factory, mode):
+    """A `prevent` row scored as a detect takes the same rule (`_as_detect`)."""
+    _silent_prevent_row(session_factory)
+
+    def fn(run, rows):
+        run.agent_profile_mode = mode
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_record_exit(session_factory, 1))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict) == ("not_executed", "STEP_FAILED", None)
+    assert "(exit 1), so a miss can't be claimed" in (r.notes or "")
+
+
+ACC_60 = {"kpi": "Detection Accuracy", "op": "≥", "value": 60, "unit": "%"}
+
+
+def _accuracy_run(SessionLocal, exit_codes):
+    """A Detection-Accuracy run, one `detect` row per step, host records as given."""
+    _seed(SessionLocal, results=len(exit_codes), threshold=ACC_60,
+          primary_kpi="Detection Accuracy")
+
+    def fn(run, rows):
+        for r in rows.values():
+            r.expected_outcome = "detect"
+    asyncio.run(_mutate(SessionLocal, fn))
+    for i, code in enumerate(exit_codes):
+        asyncio.run(_record_exit(SessionLocal, code, step_id=f"step-0{i + 1}"))
+
+
+async def _apply_and_read_run(SessionLocal, verdicts):
+    from connectors.service import apply_verdicts
+    from models import Result, Run
+    from sqlalchemy import select
+
+    async with SessionLocal() as db:
+        results = list((await db.execute(select(Result))).scalars().all())
+        summary, _ = await apply_verdicts(db, "run-1", results, verdicts, source="t",
+                                          pull_context=COMPLETE, window_seconds=60)
+        run = (await db.execute(select(Run))).scalars().first()
+        return summary, run.tc_verdict
+
+
+def test_a_failed_step_does_not_drag_a_run_to_fail(session_factory):
+    """step-01 ran clean and Cortex alerted; step-02 failed on the host. Read as
+    a miss, step-02 made it 1 of 2 = 50 % < 60 %: FAIL. It never did its work,
+    so it leaves the denominator and the run is judged on the step that did."""
+    _accuracy_run(session_factory, [0, 1])
+    summary, verdict = asyncio.run(_apply_and_read_run(
+        session_factory, [_matched_verdict(session_factory, "step-01")]))
+    assert verdict == "pass"
+    m = summary["measurement"]
+    assert (m["observed"], m["seeded"], m["excluded"]["not_executed"]) == (1, 1, 1)
+
+
+def test_a_run_whose_only_steps_failed_is_never_fail(session_factory):
+    _accuracy_run(session_factory, [1, 127])
+    summary, verdict = asyncio.run(_apply_and_read_run(session_factory, []))
+    rows = asyncio.run(_results_by_step(session_factory))
+    assert {(r.outcome, r.outcome_reason) for r in rows.values()} == {
+        ("not_executed", "STEP_FAILED"), ("not_executed", "TOOL_ABSENT")}
+    m = summary["measurement"]
+    assert (m["value"], m["seeded"], m["excluded"]["not_executed"]) == (None, 0, 2)
+    assert verdict in ("pending", "not_applicable")
