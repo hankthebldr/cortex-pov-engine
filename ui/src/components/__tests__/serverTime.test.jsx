@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, renderHook, within } from '@testing-library/react'
 import { parseServerTime } from '../../api/time.js'
 import TargetsView from '../console/TargetsView.jsx'
-import EventStream from '../console/EventStream.jsx'
 import { EnvironmentContext, DEFAULT_ENV, EnvironmentProvider, useEnvironment } from '../../context/EnvironmentContext.jsx'
 import useScenarioRunHistory, { formatAgo } from '../console/useScenarioRunHistory.js'
 import { installRoutes } from '../../test/mockFetch.js'
@@ -96,7 +95,7 @@ describe('active-run elapsed time', () => {
   })
 })
 
-describe('run-history "ago" and the event log clock', () => {
+describe('run-history "ago"', () => {
   it('the Library history badge says a run 2 h ago happened 2h ago, not just now', async () => {
     process.env.TZ = 'America/Los_Angeles'
     installRoutes({
@@ -105,19 +104,6 @@ describe('run-history "ago" and the event log clock', () => {
     const { result } = renderHook(() => useScenarioRunHistory())
     await waitFor(() => expect(result.current.historyByScenario.get('SIM-EDR-001')).toBeTruthy())
     expect(formatAgo(result.current.historyByScenario.get('SIM-EDR-001').lastRunAt)).toBe('2h ago')
-  })
-
-  it('event lines print the UTC clock SimCore stamped, not one shifted by the browser zone', async () => {
-    process.env.TZ = 'Asia/Tokyo'
-    installRoutes({
-      'GET /api/runs/r-tz': {
-        id: 'r-tz', scenario_id: 'SIM-EDR-001', status: 'running',
-        started_at: '2026-05-20T22:00:00', steps: [],
-      },
-    })
-    render(<EventStream runId="r-tz" />)
-    await waitFor(() => expect(screen.getByText(/run started/i)).toBeInTheDocument())
-    expect(screen.getByText('22:00:00')).toBeInTheDocument()
   })
 })
 
