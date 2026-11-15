@@ -44,14 +44,14 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **175 HTTP routes total** (counted 2026-11-13 with the walker below on the
-  1.2.0 release tree after `dev` was merged in, on the host venv). Routers under `/api`,
+- **176 HTTP routes total** (counted 2026-11-15 with the walker below, on the
+  host venv, after `GET /api/reports/executions` was added to `dev`). Routers under `/api`,
   plus the app-level `GET /api/health` and a static file mount at `/`, plus 4
-  FastAPI-owned docs/openapi routes. The ground truth's static count is 165 route
+  FastAPI-owned docs/openapi routes. The ground truth's static count is 166 route
   decorators; the walker adds the 4 docs routes and the 6 shelf artifact routes that
   `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
-  `/api/shelf` without a decorator. On 2026-11-12, before the tenant reader merged,
-  the walker read 166. Per-prefix breakdown: run
+  `/api/shelf` without a decorator. On the 1.2.0 release tree (2026-11-13) the
+  walker read 175. Per-prefix breakdown: run
   the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
@@ -1954,6 +1954,104 @@ against a live tenant, and the `statement` field says so
 Reply (200): `{tenant, issues | cases | endpoints, total_count, filter_count, truncated, unrecognised_values, excluded_non_security, duplicate_rows, queries_issued, data_notice, ledger}`. `tenant` is the integration name; `ledger` is the per-tenant ledger snapshot. Rows are the tenant reader's allowlisted projections (`connectors/tenant_reader.py::project_issue` / `project_case` / `project_endpoint`): free text a tenant user wrote (issue and case names, the endpoint's prevention policy) appears only under `tenant_text`, beside the fixed `data_notice`. Issues and cases read the strict `DATA` / `TOTAL_COUNT` / `FILTER_COUNT` envelope through the connector's own reader (`connectors/xsiam.py::parse_reply`); endpoints read the strict `endpoints` / `total_count` envelope through the same reader, so a reply without an `endpoints` list (a lowercase `data` included) is a parse error, not "no record". The run-scoped reader's own endpoint read (`get_endpoints`) reads the same strict envelope, so there its endpoint section is `XSIAM_PARSE_ERROR`, never `ENDPOINT_NOT_FOUND`. The catalog client removes the tenant's outer `reply` key before these routes see the reply, so they cannot check that wrapper: a bare `{"DATA": …}` document is read as if it were wrapped, where the connector's strict reads reject it. `total_count` is the tenant's `TOTAL_COUNT` (tenant-wide for issues, not this filter's size) and `filter_count` its `FILTER_COUNT` (always null for endpoints, whose envelope has none); either is null when the tenant sent none or capped it (`9,999+`). `truncated` is true when the tenant holds matching rows past the last one returned (`FILTER_COUNT` > `offset` + rows read, or a capped count), and **null, never false**, when `FILTER_COUNT` is missing; for endpoints it is `total_count` > records returned, and null when there is no `total_count` and the page came back full. `unrecognised_values` lists issue `detection.method` values outside the documented vocabulary, verbatim (`{}` when every value is known; null for cases and endpoints, which carry no checked vocabulary). `excluded_non_security` is null for cases and endpoints, which are not domain-filtered. `duplicate_rows` counts issue rows dropped because an earlier row had the same id (an issue arriving between pages shifts the newest-first window by one, so the next page repeats a row and fewer than `limit` issues return); null for cases and endpoints, which are not de-duplicated. `queries_issued` is the requests the tenant answered.
 
 Errors: an envelope the reader does not recognise (a lowercase `data` in place of `DATA` included, or a row that is not an object) or a row missing a required field (issue `id`, `_insert_time`, `detection.method`, `domain`; case `case_id`; endpoint `endpoint_id`, `endpoint_name`) is **502 `XSIAM_PARSE_ERROR`**, never zero rows; its `detail` names `XSIAM_ENVELOPE_UNRECOGNISED` or the field, and quotes only identifier-shaped reply keys (at most 10, each at most 40 ASCII letters, digits, `_`, `.` or `-`); any other key (free text, a longer or non-ASCII name, the overflow) is counted, never quoted. The quoted names still come from the tenant, so a key of up to 40 identifier characters can appear. The connector's own reads use the same key rule. An application error the tenant sends inside a 200 (`err_code` / `err_msg`) is 502 `XSIAM_QUERY_ERROR` (429 `XSIAM_QUOTA_ERROR` for `XQL_0003` or a quota message); its `detail` quotes the `err_code` (at most 64 characters) and the `err_msg` (at most 200, marked when cut), both neutralised as tenant text is, and never the rest of the reply: with no `err_msg` it names the code alone. That rule is the client's (`XsiamClient._check_app_error` and the XQL start), so it holds for every catalog op; the connector's own reads (`parse_reply`, `parse_object_reply`) use the same formatter and the same value-based test (a non-empty `err_code` or `err_msg`), and an error object beside a `reply` key, at the top level or inside it, is an error on every path, while a null, empty or zero `err_code` / `err_msg` is not. A refusal by CortexSim's own request budget is 429 `XSIAM_QUOTA_ERROR` with `retry_after_seconds`; on a second page it names the refused page and says the rows already read are not returned, because a cut read is not a complete result. A tenant 429 is 429 `XSIAM_QUOTA_ERROR` and opens the breaker. Other tenant failures keep the `XsiamError` codes above.
+
+### 1.18 Reports (`core/api/reports.py`, prefix `/reports`)
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/reports/executions` | Every run on this instance, rolled up and mapped scenario → technique → test case → plane → detection source → outcome. The console's Reports page (`#/coverage`, Executions tab) reads it | `{generated_at, window, filters, filter_options, empty, engine_runs, totals, by_scenario[], by_technique[], by_test_case[], by_plane[], by_agent[], detection_sources}`; `format=csv` is one row per scenario as an attachment |
+
+**Read-only, zero outbound calls, SQL aggregates only.** It reads `runs`,
+`results`, `step_outcomes` and `scenarios`. No statement selects `Run.output`
+or a whole `Result` row, and the statement count does not grow with the run
+count (`tests/api/test_reports_executions.py` pins both).
+
+Query parameters, all optional:
+
+| param | meaning |
+|---|---|
+| `since`, `until` | ISO-8601, compared with `Run.started_at`. An offset is converted to UTC, never dropped. Unreadable → 422 `INVALID_TIME_RANGE` (it is not read as "all time") |
+| `plane` | the scenario's plane, e.g. `EDR` |
+| `status` | `Run.status`, e.g. `complete` |
+| `agent` | the agent id the run was sent to (`Run.target`) |
+| `include_drafts` | default `false`: runs of `SIM-DRAFT-*` scenarios are left out |
+| `format` | `json` (default) or `csv`; anything else is 422 |
+
+A run is **reviewed** when SimCore recorded a tenant read on it, the rule the
+console uses (`ui/src/components/console/runLifecycle.js::readBackOf`):
+`tc_verdict_detail.source` starts `reconcile:`, or
+`tc_verdict_detail.verification.queries_issued > 0`. A completion-time score is
+not a review.
+
+Response fields (timestamps are UTC, ISO-8601 ending `+00:00`):
+
+- `generated_at`; `window` `{since, until, first_run_at, last_run_at}`;
+  `filters` as applied; `filter_options` `{planes, statuses, agents}`, read from
+  the whole instance so a filter row keeps its choices while a filter is on.
+- `empty` — no run matches. `engine_runs` — runs on the instance before any
+  filter, so "nothing has run" and "nothing matches" are told apart.
+- `totals.runs` — `total`; `by_status` with every known status
+  (`pending · running · complete · failed · aborted · staged`), zero included;
+  `unrecognised` `{status: n}`; `reviewed`; `not_reviewed`.
+- `totals.scenarios` — `exercised` (scenarios with a run in scope), `corpus`
+  (loaded scenarios, drafts excluded, within `plane`), `corpus_exercised`,
+  `corpus_not_run`. With no filter set, `corpus_not_run` is "never run".
+- `totals.techniques_exercised`, `totals.test_cases_touched` — distinct
+  techniques (the scenario's primary and its steps') and distinct `tc_refs` of
+  the exercised scenarios.
+- `totals.steps`, from `step_outcomes` — `recorded`; `ran` (`exited`, exit 0);
+  `failed` (`exited`, non-zero); `did_not_run` (`not_run`); `interrupted` with
+  `interrupted_by` (`signaled`, `anchor_terminated`, `timeout`, `aborted`,
+  `beacon_lost`); `unrecognised`; `runs_with_host_record`;
+  `runs_without_host_record` (a staged bundle, or a beacon that sent no
+  `steps[]`: nothing is claimed about its steps).
+- `totals.detections` — `expected`, one count per outcome (`prevented`,
+  `detected`, `detected_not_prevented`, `missed`, `pending`, `not_reached`,
+  `not_executed`), `not_reviewed` and `unrecognised` `{outcome: n}`.
+- `by_scenario[]` — `scenario_id`, `name`, `plane`, `techniques[]`, `uc_ref`,
+  `tc_refs[]`, `detection_sources` (`[{id, label}]`, the ingestion doors its
+  expected detections need, derived as `GET /api/doors` derives them; `null`
+  when they cannot be derived), `runs`, `runs_by_status`, `first_run_at`,
+  `last_run_at`, `last_status`, `last_run_id`, `reviewed_runs`,
+  `last_reviewed_run_id`, `last_reviewed_at`, and `outcomes`: the detection
+  counts of its most recent reviewed run. Newest run first.
+- `by_technique[]` `{technique, name, …}` and `by_test_case[]`
+  `{tc_ref, name, uc_ref, …}` — `scenarios[]`, `runs`, `last_run_at`,
+  `reviewed_scenarios` and `outcomes` summed over each scenario's most recent
+  reviewed run. A technique counts only the detections on the steps that carry
+  it (a step naming no technique carries the scenario's primary); a test case
+  takes the whole run of every scenario bound to it through `tc_refs`.
+- `by_plane[]` `{plane, runs, scenarios}`; `by_agent[]`
+  `{agent, runs, scenarios, last_run_at}`, where `agent` is `null` for runs
+  sent to no agent.
+- `detection_sources` — `{available, reason, failed[]}`. `available: false`
+  with `REGISTRY_ABSENT` or `REGISTRY_MALFORMED` when the dataset requirement
+  registry cannot be read; `failed` lists scenarios whose doors could not be
+  derived. In either case the row's `detection_sources` is `null`, never `[]`.
+
+What the counts do and do not say:
+
+- **Not reviewed is not missed.** A detection with no outcome that nobody
+  observed, on a run nobody reviewed, is `not_reviewed`. On a reviewed run the
+  same row is `pending`, as the Results page reads it. `missed` is only ever an
+  engine outcome.
+- **Never run is not 0 %.** A scenario with no run in scope has no row.
+  `outcomes` is `null`, not zeros, for a scenario, technique or test case no
+  reviewed run reached.
+- **An unrecognised value is named.** A run status, result outcome or step
+  termination outside its vocabulary is counted under `unrecognised`, keyed by
+  the value, and added to no known bucket. `exited` with no exit code is
+  reported there as `exited (no exit code)`.
+- **A run is an execution fired, not a detection proven.** `exercised` means
+  "has a run in scope", whatever the run's status; a staged bundle counts as a
+  run and reads `staged`.
+
+CSV columns: `scenario_id, name, plane, techniques, uc_ref, tc_refs,
+detection_sources, runs, first_run_at, last_run_at, last_status, last_run_id,
+reviewed_runs, last_reviewed_run_id, last_reviewed_at, expected, prevented,
+detected, detected_not_prevented, missed, pending, not_reached, not_executed`.
+Lists are joined with `;` (detection sources by label). A scenario with no
+reviewed run leaves its outcome cells blank.
 
 ---
 
