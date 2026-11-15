@@ -887,6 +887,17 @@
 .theme-console .sc-count strong { color: var(--tx2); font-weight: 600; }
 .theme-console .sc-foot__spacer { flex: 1; }
 .theme-console .sc-foot .sc-history { position: static; margin: 0; }
+/* #344: the facts are one unit that shrinks and wraps; the history chip stays
+   on one line and truncates; the actions never shrink. */
+.theme-console .library-layout .sc-foot { flex-wrap: nowrap; gap: 10px; }
+.theme-console .sc-foot__facts {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+}
+.theme-console .sc-foot__facts .sc-history { max-width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; }
+.theme-console .sc-foot__facts .sc-history__count,
+.theme-console .sc-foot__facts .sc-history__ago { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.theme-console .sc-foot__actions { flex: none; display: flex; gap: 6px; }
 
 /* ── Scenarios filter row (v26 §4.4) ── */
 .theme-console .ops-filter-row {

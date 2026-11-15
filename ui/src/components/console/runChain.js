@@ -6,9 +6,9 @@
  *   - the host's record of each step (`buildStepRows`: ok · error · severed ·
  *     not_reached · running · queued · staged) says whether it RAN;
  *   - the run's Result rows say whether its detection was SEEN — and they mean
- *     something only once the run has been read back from the tenant.
+ *     something only once the run has been reviewed against the tenant.
  *
- * So before the read back a card says only "Ran — not read back" or "Did not
+ * So before the review a card says only "Ran — not reviewed" or "Did not
  * run" (a step with no record yet is left Waiting). After it: Detected when a
  * row for the step is a hit, Broken when the step failed on the host and
  * nothing was seen, Not seen when it expected a detection that did not come.

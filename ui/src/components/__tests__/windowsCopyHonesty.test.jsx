@@ -127,7 +127,10 @@ describe('Agents surface — the push card and the legacy hint', () => {
     const card = screen.getByText('Offline bundle').closest('.target-card')
     expect(card.textContent).not.toMatch(/always ready/i)
     expect(card.textContent).toMatch(/no agent needed/i)
-    expect(card.textContent).toMatch(/no \.ps1 bundle has run on a Windows host/i)
+    // Short on the card; the full caveat is the line's tooltip.
+    const caveat = within(card).getByTestId('push-windows-caveat')
+    expect(caveat.textContent).toMatch(/not yet run on a host/i)
+    expect(caveat.getAttribute('title')).toMatch(/no \.ps1 bundle has run on a Windows host/i)
     await waitFor(() => expect(card).toBeTruthy())
   })
 

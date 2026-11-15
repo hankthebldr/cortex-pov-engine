@@ -16,7 +16,7 @@ void React
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const BODY = "Read back reads the tenant and may change this run's verdict, marking detections "
+const BODY = "Review reads the tenant and may change this run's verdict, marking detections "
   + 'detected or missed. Refreshing tenant evidence never does.'
 
 const posts = (handler) => handler.mock.calls
@@ -32,9 +32,9 @@ describe('ReadBackButton', () => {
   it('the confirm copy is verbatim and cancel posts nothing', async () => {
     const handler = installRoutes({ 'POST /api/runs/r1/reconcile': SUMMARY })
     render(<ReadBackButton runId="r1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Read back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
     const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveTextContent('Read back this run?')
+    expect(dialog).toHaveTextContent('Review this run?')
     expect(dialog).toHaveTextContent(BODY)
     fireEvent.click(screen.getByRole('button', { name: /^Cancel/ }))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -45,7 +45,7 @@ describe('ReadBackButton', () => {
     const handler = installRoutes({ 'POST /api/runs/r1/reconcile': SUMMARY })
     const onDone = vi.fn()
     render(<ReadBackButton runId="r1" onDone={onDone} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Read back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
     fireEvent.click(screen.getByRole('dialog').querySelector('.btn--primary'))
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
     const sent = posts(handler)
@@ -65,7 +65,7 @@ describe('ReadBackButton', () => {
         <ReadBackButton runId="r1" />
       </ReadBackProvider>,
     )
-    const [first, second] = screen.getAllByRole('button', { name: 'Read back' })
+    const [first, second] = screen.getAllByRole('button', { name: 'Review' })
     // Open both confirms before either is confirmed, then confirm both.
     fireEvent.click(first)
     fireEvent.click(second)
@@ -73,16 +73,16 @@ describe('ReadBackButton', () => {
     expect(confirms).toHaveLength(2)
     fireEvent.click(confirms[0])
     fireEvent.click(confirms[1])
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Reading…' })).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Reviewing…' })).toHaveLength(2))
     release()
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Read back' })).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(2))
     expect(posts(handler)).toHaveLength(1)
   })
 
   it('opens with Cancel focused, so a reflexive Enter changes no verdict', async () => {
     installRoutes({})
     render(<ReadBackButton runId="r1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Read back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Cancel/ })))
   })
 })

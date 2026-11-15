@@ -7,14 +7,14 @@
  * dashboard at once. What each scenario has PROVEN comes from the run list
  * (GET /api/runs) and nowhere else:
  *
- *   Detected      a run of it was read back from the tenant and SimCore
+ *   Detected      a run of it was reviewed against the tenant and SimCore
  *                 counted at least one detection on that run
- *   Not seen yet  a run of it was read back and nothing was detected
- *   Pending       it was launched, and no run of it has been read back
+ *   Not seen yet  a run of it was reviewed and nothing was detected
+ *   Pending       it was launched, and no run of it has been reviewed
  *   Never run     no run of it executed a step
  *
  * AUTHORED IS NOT PROVEN. A scenario that exists, or that ran and was never
- * read back, is never counted as covered. "Read back" is `readBackOf(run)`,
+ * reviewed, is never counted as covered. "Reviewed" is `readBackOf(run)`,
  * the one rule the Runs and Results pages use.
  *
  * Nothing here reads `povdata/` for values; the plane table there is naming
@@ -32,9 +32,9 @@ import { doorStateFor, notOpenDoorIds, readinessKind } from './doors/doorModel.j
  * list could not be read: then no scenario can be called detected or never run.
  */
 export const STATE = Object.freeze({
-  detected: Object.freeze({ key: 'detected', word: 'Detected', status: 'up', rank: 4, sub: 'in a read-back run' }),
-  not_seen: Object.freeze({ key: 'not_seen', word: 'Not seen yet', status: 'degraded', rank: 3, sub: 'read back, nothing detected' }),
-  pending: Object.freeze({ key: 'pending', word: 'Pending', status: 'unknown', rank: 2, sub: 'launched, not read back yet' }),
+  detected: Object.freeze({ key: 'detected', word: 'Detected', status: 'up', rank: 4, sub: 'in a reviewed run' }),
+  not_seen: Object.freeze({ key: 'not_seen', word: 'Not seen yet', status: 'degraded', rank: 3, sub: 'reviewed, nothing detected' }),
+  pending: Object.freeze({ key: 'pending', word: 'Pending', status: 'unknown', rank: 2, sub: 'launched, not reviewed yet' }),
   never: Object.freeze({ key: 'never', word: 'Never run', status: 'off', rank: 1, sub: 'authored, not proven' }),
   unknown: Object.freeze({ key: 'unknown', word: "Can't check", status: 'unknown', rank: 0, sub: 'the run list did not load' }),
 })
@@ -81,7 +81,7 @@ export function runState(run) {
     const n = run.detected_count
     if (typeof n === 'number' && n > 0) return 'detected'
     if (n === 0) return 'not_seen'
-    // Read back, but this SimCore reported no count: not a claim either way.
+    // Reviewed, but this SimCore reported no count: not a claim either way.
     return 'pending'
   }
   return runLifecycle(run).phase === PHASE.NOTHING ? 'never' : 'pending'

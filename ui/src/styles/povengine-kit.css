@@ -60,7 +60,16 @@
 .kit-btn--primary:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover); }
 .kit-btn--destructive:hover:not(:disabled) { filter: brightness(1.08); }
 .kit-btn--secondary:hover:not(:disabled) { border-color: var(--gr-matte); }
+/* Button with href renders an <a>; the console's link colour and hover
+   underline must not reach it. */
+.theme-console a.kit-btn--primary     { color: var(--btn-tx); }
+.theme-console a.kit-btn--secondary   { color: var(--tx); }
+.theme-console a.kit-btn--destructive { color: var(--s0); }
+.theme-console a.kit-btn--secondary:hover { border-color: var(--gr-matte); }
 .kit-btn:disabled { opacity: .45; cursor: not-allowed; }
+/* A toggle (aria-pressed): pressed reads as on, unpressed as off. */
+.kit-btn--secondary[aria-pressed='true'] { background: var(--s2); border-color: var(--ac-line); }
+.kit-btn--secondary[aria-pressed='false'] { color: var(--tx3); }
 .kit-btn:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 /* ── Toast ──────────────────────────────────────────────────────────────── */

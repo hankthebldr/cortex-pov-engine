@@ -82,9 +82,10 @@ describe('production bundle — React Flow stays out of the entry chunk', () => 
     // Measured pre-Task-8 baseline was 98.79 kB raw. The design v26 shell is
     // eager by design (rail and component model, header instance status, ⌘K
     // index, read-back, toast, the shared kit): dev measured 146.6 KiB and the
-    // rail merged onto it 155.7 KiB (2026-11-13). The limit is for a LIBRARY
-    // landing here — React Flow alone is ~180 kB — not for shell code, so it
-    // sits at 170 KiB: a whole library still trips it.
-    expect(size).toBeLessThan(170 * 1024)
+    // rail merged onto it 155.7 KiB (2026-11-13); the kit's Fleet verbs and
+    // icons (#339) put it at 170.2 KiB (2026-11-15). The limit is for a
+    // LIBRARY landing here — React Flow alone is ~180 kB — not for shell
+    // code, so it sits at 175 KiB: a whole library still trips it.
+    expect(size).toBeLessThan(175 * 1024)
   })
 })

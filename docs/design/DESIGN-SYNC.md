@@ -35,14 +35,14 @@ built. All into `dev`.
 | Change | What the code does | PR |
 |---|---|---|
 | C1 · New POV run on the Launch gate · v33 MVP | The Launch gate (`preflight`) is the one page a run starts from: What runs › Readiness › Where it runs (agents inline with their state; an offline one listed, not choosable; the offline bundle) › What it will do › an authorisation tick that starts unticked › one **Run**, disabled with its reasons listed. Push: Run saves the bundle and records the run (Staged); no separate download. `guided` and `readiness` redirect to it, and every launch link goes straight there. | #299, #307 |
-| C2 · Runs · Compare | Runs header: primary **Run** (the verb set has no "New run") beside Compare runs. Compare picks 2–3 finished runs; only a read-back run may say Detected / Not seen; others say "Ran — not read back" / "Did not run". | #301 |
+| C2 · Runs · Compare | Runs header: primary **Run** (the verb set has no "New run") beside Compare runs. Compare picks 2–3 finished runs; only a reviewed run may say Detected / Not seen; others say "Ran — not reviewed" / "Did not run". | #301 |
 | C2b · Lab target + WAITING runs | **Not built.** The v33 MVP keeps push runs Staged and draws no lab target. The UC/TC page reads an unreported push run as "Waiting" rather than "ran". | — |
 | C3 · VerdictReason | Run detail: a "Test case" line (PENDING + "nothing executed" / "detectors soaking" + the TC + the action sentence) and the Cortex Engine line under the chain. | #291 |
 | C4 · verb fixes | Already on `dev` before this pass. | — |
 | C5 · Catalog | TTP cards filter by **Subdomain** and Tactic (owner override, below). UC/TC: four tiles, verdict as icon + word, a Runs rollup. | #292, #305 |
 | C6 · UC/TC tabs | Index · Mechanisms · Coverage (the five-stage proof path) · Gaps (one verb per row), all from SimCore; mechanism tenant state and door checks read "Can't check" until an API reports them. | #305 |
 | C7 · component explanations | Every component page opens with What it is · Why the POV needs it · What it unlocks · Where it lives, corrected where the canvas copy claimed more than the code does. | #302 |
-| C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a read-back run. | #308 |
+| C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a reviewed run. | #308 |
 | C9 · navigation | Header Back / Forward (⌘[ / ⌘]) over the router's own history, and a clickable breadcrumb journey › page › object. | #303 |
 | C10 · deep-dive thesis + verbs | Scenario, TTP and detection sheets open with "Why this matters" (Thesis · Why we simulate it · What proves it · What it needs) from the documents' own fields; actions are verbs with icons, navigation is links. | #304 |
 | v33 · library completeness + stepper | Every Scenarios card shows UC/TC · Source (its doors) · MITRE; an **Unmapped** filter with its count (205 corpus scenarios: 8 unmapped, all for underived detection sources). The extended library, the 362 staged pairs under `drafts/detection-library/`, is listed read-only (`GET /api/scenarios/staged`): not launchable, not coverage. A Scenarios › Build a chain › Launch gate › Run stepper carries the scenario / run id between the four pages. | #310 |
@@ -245,7 +245,7 @@ slice is the Reports page only; Runs and Results change in slices 2 and 3.
 | Executions tab | The first, default tab. One read of `GET /api/reports/executions`: a filter row (24 h · 7 d · 30 d · All, Plane, Status, Agent, Include drafts), a totals strip, and one table switched between By scenario, By technique and By test case. Each scenario row opens its last reviewed run in Results, or the run when none was reviewed. Downloads as CSV and JSON. No Compare runs on this page. |
 | What it never draws | A detection nobody reviewed as Missed (it reads **Not reviewed**); a scenario that never ran as a row; an empty engine as a table ("No runs yet" and **Run**); a failed read as an empty one. |
 | The library tabs | Detection source × Use case, MITRE ATT&CK, Planes × doors, PANW stack and Competitive follow unchanged. Their scenario strip moved inside the tab, and the library is read only once one of them is opened. |
-| Verbs | The closed set gained two: **Download** (icon `download`) and **Open run** (icon `terminal`). The set is now Configure · Test · Run · Customize · Add to chain · Read back · Open results · Abort run · Download · Open run. |
+| Verbs | The closed set gained one: **Open run** (icon `terminal`), for a scenario with no reviewed run. The downloads use **Download**, which Agents › Fleet added (#339). The whole set is in the Shared constructs row below. |
 
 ## Screen map
 
@@ -260,7 +260,7 @@ or a link.
 | POVengine | Components › POVengine (API tab generated from OpenAPI) | `component/PovengineComponent.jsx` |
 | Agents | Components › Agents (Fleet tab is the former Agents page) | `component/AgentsComponent.jsx` → `TargetsView.jsx` |
 | Lab | Components › Agents (`#/environments`) | `components/console/LabView.jsx` |
-| Tenant | Components › Tenant (Read-back & integrations tab) | `component/TenantComponent.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
+| Tenant | Components › Tenant (Review & integrations tab) | `component/TenantComponent.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
 | HTTP collector | Components › HTTP collector | `component/HttpCollectorComponent.jsx` |
 | Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
 | Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
@@ -285,7 +285,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verbs, the closed set: Configure · Test · Run · Customize · Add to chain · Read back · Open results · Abort run · Download · Open run |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot are the run Live tab's stream and timeline controls (Download there saves the POV report). Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
@@ -294,7 +294,7 @@ or a link.
 
 Retired routes redirect: `setup`, `scope` → Get started; `validation` →
 Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
-Read-back / Sources tab; `readiness` is an alias of the Launch gate.
+Review & integrations / Sources tab; `readiness` is an alias of the Launch gate.
 
 All eight slices of the v26 handoff are in `dev` (PRs #250, #252, #253, #254,
 #257, #258, #259, #260, plus the Broken step sheet).

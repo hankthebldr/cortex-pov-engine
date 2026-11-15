@@ -61,7 +61,7 @@ export default function OverviewView({ onNavigate = () => {} }) {
     ['A blocked technique is not a failed detection',
       'When a prevention profile or a firewall stops a step, the run record says so. Prevention working is a result, not an absence.'],
     ['Absence is qualified, never assumed',
-      'A detection that could not be read back because the API key lacks the scope exports as unverifiable. A rule installed but disabled exports as NOT PRESENT. Neither is a miss.'],
+      'A detection that could not be read from the tenant because the API key lacks the scope exports as unverifiable. A rule installed but disabled exports as NOT PRESENT. Neither is a miss.'],
     ['Every claim carries the probe that produced it',
       'Each verdict names the XQL or API call behind it, so the readout can be re-derived from the tenant after this instance is gone.'],
     ['The instance is ephemeral; the export is the deliverable',

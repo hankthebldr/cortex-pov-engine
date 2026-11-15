@@ -170,7 +170,7 @@ function FlowStepper(props) {
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
-// component inventory, the authored CLI items, and the tenant read-back. Each
+// component inventory, the authored CLI items, and the tenant review. Each
 // was a thing the console already implied and never gave you a place to do.
 const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
 const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
@@ -466,7 +466,7 @@ function GetStartedSurface({ params = {}, onNavigate = () => {} }) {
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
 function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
-  // One Read back for the list and the run's page (design v26 §4.6).
+  // One Review for the list and the run's page (design v26 §4.6).
   const { reading, outcomes, readBack } = useReadBack()
   // The live-run telemetry used to be a permanent shell row above every
   // destination. It is a property of the RUN, so it belongs on the run's own
@@ -599,7 +599,7 @@ function LastRunCard({ onOpen = () => {} }) {
   const stats = [
     ['Status', shown.status || 'unknown'],
     // The same result cell as the run list: no detection count until the run
-    // has been read back, `unproven` for a failed run with no hit.
+    // has been reviewed, `unproven` for a failed run with no hit.
     ['Result', resultCell(shown, runLifecycle(shown)).text],
     ['Started', absoluteTime(shown.started_at) || '—'],
     // The agent is the run's `target` column — this card used to read two
@@ -730,14 +730,14 @@ const ReadinessSurface = withSuspense(ReadinessView)
 // Agents, Tenant and Firewall are component pages now (component/*.jsx); their
 // former surfaces live on as those pages' management tabs: TargetsView is
 // Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
-// Read-back & integrations, and the firewall steps are Firewall's Setup and
+// Review & integrations, and the firewall steps are Firewall's Setup and
 // Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
 // Results (design v26 §4.6). Always about ONE run, named in the "Result of"
-// bar, with a switcher across the runs that have been read back. The run is
-// `?run=` when the URL names one, otherwise the newest read-back run — never
+// bar, with a switcher across the runs that have been reviewed. The run is
+// `?run=` when the URL names one, otherwise the newest reviewed run — never
 // the live run or the last run to end, because neither has results until the
-// tenant has been read for it. A run that has not been read back gets its bar,
-// the reason and Read back instead of a scorecard, and with no run read back
+// tenant has been read for it. A run that has not been reviewed gets its bar,
+// the reason and Review instead of a scorecard, and with no run reviewed
 // at all the page says so and points at Runs. Results never appear without a
 // run.
 function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
@@ -757,7 +757,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
         <div className="view-head"><div><h1>Report</h1></div></div>
         {runs.length === 0 ? (
           <div className="results-empty__body">
-            <p>No runs yet. Results come from a run that has finished and been read back from the tenant.</p>
+            <p title="Results come from a finished run that has been reviewed against the tenant">No runs yet</p>
             <Button variant="primary" onClick={() => onNavigate('library')}>Run</Button>
           </div>
         ) : runParam ? (
@@ -767,9 +767,8 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
           </div>
         ) : (
           <div className="results-empty__body">
-            <p>
-              No run has been read back yet. A run must be read back from the tenant before it has
-              results: Read back a finished run on <a href="#/runs">Runs</a>.
+            <p title="A run has results only once it is reviewed against the tenant">
+              No reviewed runs — review one on <a href="#/runs">Runs</a>
             </p>
           </div>
         )}

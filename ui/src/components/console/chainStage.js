@@ -75,7 +75,7 @@ export const LIVE_STATES = Object.freeze({
   broken:      { status: 'down',    word: 'Broken' },
   waiting:     { status: 'unknown', word: 'Waiting' },
   not_seen:    { status: 'unknown', word: 'Not seen' },
-  ran:         { status: 'off',     word: 'Ran — not read back' },
+  ran:         { status: 'off',     word: 'Ran — not reviewed' },
   did_not_run: { status: 'off',     word: 'Did not run' },
 })
 

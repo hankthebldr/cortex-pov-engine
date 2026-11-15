@@ -64,13 +64,13 @@ export const RS_CHIP = {
 /**
  * The two credential kinds, kept apart deliberately.
  *
- * Configuring alert read-back must not silently authorise XQL against the
+ * Configuring the alert read for Review must not silently authorise XQL against the
  * tenant's metered query quota. A DC has to be able to see WHICH of the two
  * they hold, because they buy different things.
  */
 export const CREDENTIAL_KINDS = {
   xsiam: {
-    label: 'Reconcile (alert read-back)',
+    label: 'Reconcile (alerts for Review)',
     buys: 'pulls observed alerts for a run window → evidence-backed MTTD',
     doesNotBuy: 'does NOT authorise XQL; assertions and Tier-2 verification stay `pending`',
   },
