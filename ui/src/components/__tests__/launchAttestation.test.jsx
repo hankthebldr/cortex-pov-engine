@@ -53,6 +53,20 @@ function routes(over = {}) {
 }
 
 describe('launch form — prevention context', () => {
+  // Sentence case and one short line: the group is named "Prevention context"
+  // and says once, as its description, that what it holds is attested, not
+  // verified. The canary is the kit's Run canary verb with its icon.
+  it('reads as one short group on kit controls', async () => {
+    routes()
+    render(<Harness />)
+    const group = await screen.findByRole('group', { name: 'Prevention context' })
+    expect(group).toHaveAccessibleDescription('Attested, not verified')
+    const canary = screen.getByRole('button', { name: 'Run canary' })
+    expect(canary).toHaveClass('kit-btn', 'kit-btn--secondary')
+    expect(canary).toHaveAttribute('data-verb', 'Run canary')
+    expect(canary.querySelector('svg')).toHaveAttribute('data-icon', 'flask')
+  })
+
   it('default body is unchanged when nothing is set', async () => {
     const posted = routes()
     render(<Harness />)
@@ -91,14 +105,14 @@ describe('launch form — prevention context', () => {
     expect(values.sort()).toEqual(['r-done', 'r-fail'])
   })
 
-  it('Run canary first calls /canary, shows the run id and sends canary_run_id', async () => {
+  it('Run canary calls /canary, shows the run id and sends canary_run_id', async () => {
     let canaryBody = null
     const posted = routes({
       'POST /api/runs/canary': (_u, init) => { canaryBody = JSON.parse(init.body); return { run_id: 'canary-9', scenario_id: 'SIM-CANARY' } },
     })
     render(<Harness />)
     await waitFor(() => expect(screen.getByLabelText(/Pair with run/i).options.length).toBeGreaterThan(1))
-    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Run canary' }))
     expect(await screen.findByText(/canary-9/)).toBeInTheDocument()
     expect(canaryBody).toEqual({ target_agent_id: 'agent-1' })
     await userEvent.click(screen.getByRole('button', { name: 'fire' }))
@@ -114,7 +128,7 @@ describe('launch form — prevention context', () => {
     })
     render(<Harness />)
     await screen.findByLabelText(/Agent profile mode/i)
-    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Run canary' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/block mode will be attested-only/)
     expect(alert.textContent).toMatch(/CANARY_NOT_AVAILABLE/)
@@ -170,7 +184,7 @@ describe('launch form — prevention context', () => {
     })
     render(<Harness />)
     await screen.findByLabelText(/Agent profile mode/i)
-    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Run canary' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).not.toContain('[object Object]')
     expect(alert.textContent).toMatch(/CANARY_NOT_AVAILABLE/)
@@ -189,7 +203,7 @@ describe('launch form — prevention context', () => {
     render(<Harness />)
     await waitFor(() => expect(screen.getByLabelText(/Pair with run/i).options.length).toBeGreaterThan(1))
     await userEvent.selectOptions(screen.getByLabelText(/Pair with run/i), 'r-done')
-    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Run canary' }))
     await screen.findByText(/canary-9/)
     await userEvent.click(screen.getByRole('button', { name: 'switch' }))
     await userEvent.click(screen.getByRole('button', { name: 'fire' }))

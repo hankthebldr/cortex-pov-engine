@@ -67,6 +67,7 @@ describe('Button', () => {
       'Open run',
       'Validate all',
       'Mark detected', 'Reset', 'Save',
+      'Run canary',
     ])
   })
 
@@ -180,6 +181,7 @@ describe('Icon', () => {
       'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
       'pause', 'clear', 'camera', 'down', 'terminal',
       'x', 'check-all', 'check-circle', 'save',
+      'flask',
     ])
   })
 
