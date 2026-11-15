@@ -33,8 +33,9 @@ export function hashFor(destination, params) {
  * @param {Object}  opts
  * @param {string}  opts.defaultDestination  fallback when the hash is empty/unknown
  * @param {(id:string)=>boolean} [opts.isValid]  guard for unknown destinations
- * @param {(id:string)=>boolean} [opts.isRedirect]  a destination that only
- *        forwards elsewhere; it never stays in the history
+ * @param {(id:string, params:Object)=>boolean} [opts.isRedirect]  a
+ *        destination (or one address of it) that only forwards elsewhere; it
+ *        never stays in the history
  */
 export default function useConsoleRouter({ defaultDestination = 'library', isValid, isRedirect } = {}) {
   const parse = useCallback(() => {
@@ -64,7 +65,7 @@ export default function useConsoleRouter({ defaultDestination = 'library', isVal
   const record = useCallback((prev, loc, traversal = false) => ({
     ...loc,
     history: recordLocation(prev.history, loc, {
-      isRedirect: (id) => !!(isRedirectRef.current && isRedirectRef.current(id)),
+      isRedirect: (id, params) => !!(isRedirectRef.current && isRedirectRef.current(id, params)),
       traversal,
     }),
   }), [])

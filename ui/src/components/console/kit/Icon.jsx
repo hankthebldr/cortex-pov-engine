@@ -30,6 +30,8 @@
  *   clear    Clear (the verb): empty a buffer this browser holds
  *   camera   Screenshot (the verb)
  *   down     jump to the newest line of a log
+ *   x        close a sheet; mark a detection missed
+ *   check-all  Validate all (the verb)
  *
  * `target` also draws Set active (the verb).
  */
@@ -156,6 +158,8 @@ const SHAPES = {
     </g>
   ),
   down: <path d="M8 3v10M4 9l4 4 4-4" {...STROKE} />,
+  x: <path d="M4 4l8 8M12 4l-8 8" {...STROKE} />,
+  'check-all': <path d="M1.8 8.6l2.6 2.6 5-5.6M7.4 10.4l.8.8 6-6.8" {...STROKE} />,
 }
 
 export const ICONS = Object.freeze(Object.keys(SHAPES))

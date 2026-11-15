@@ -1,8 +1,8 @@
 /* run-lifecycle.css — the run lifecycle (design v26 §4.6).
    ---------------------------------------------------------------------------
    The five-stage strip (compact on Runs rows, full on the run's page), the
-   Runs row's action column, the Results "Result of" bar, the review notice
-   and the inline Abort confirm. Tokens only; no hex. Every stage carries a
+   Runs row's state, review and action columns, the Results "Result of" bar,
+   the review notice and the inline Abort confirm. Tokens only; no hex. Every stage carries a
    glyph as well as a colour: ✓ done · ● now · ✕ failed · – not yet. */
 
 /* ── Strip ─────────────────────────────────────────────────────────────── */
@@ -62,12 +62,13 @@
 .theme-console .run-abort-confirm { display: inline-flex; align-items: center; gap: 8px; }
 .theme-console .run-abort-confirm__q { font: 500 12px/1 var(--font-ui); color: var(--tx2); white-space: nowrap; }
 
-/* ── Runs list: lifecycle, result and action columns ──────────────────── */
+/* ── Runs list: lifecycle, state, review and action columns ───────────── */
 .theme-console .run-list .run-list__head,
 .theme-console .run-list .run-list__row {
   grid-template-columns:
-    minmax(140px, 1.3fr) 76px minmax(96px, 1fr) 62px 92px minmax(120px, 1fr) 96px 116px;
+    minmax(140px, 1.3fr) 76px minmax(96px, 1fr) 62px 92px 108px minmax(120px, 1fr) 124px;
 }
+.theme-console .run-list .run-list__status { justify-content: flex-start; }
 .theme-console .run-list .run-list__row { cursor: default; }
 .theme-console .run-list .run-list__row:hover { border-color: var(--bd2); }
 .theme-console .run-list__open {
@@ -77,7 +78,7 @@
 }
 .theme-console .run-list__open:hover .run-list__scenario-id { color: var(--tx); text-decoration: underline; }
 .theme-console .run-list__open:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
-.theme-console .run-list__result { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.theme-console .run-list__review { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
 .theme-console .run-list__why { font: 400 10.5px/1.35 var(--font-ui); color: var(--warn); }
 .theme-console .run-list__action { display: flex; justify-content: flex-end; }
 .theme-console .run-list__act { padding: 6px 10px; font-size: 11px; white-space: nowrap; }
@@ -112,7 +113,7 @@
   font: 500 11.5px/1.2 var(--font-mono);
 }
 
-/* ── Review notice (Results and the run's Evidence tab) ────────────────── */
+/* ── Review notice (Results, for a run that has not been reviewed) ─────── */
 .theme-console .readback-notice {
   display: flex; align-items: center; gap: 14px;
   padding: 13px 15px; margin: 0 0 12px;
@@ -130,6 +131,14 @@
 /* Below the width the eight columns need, the table scrolls itself rather
    than pushing the page sideways. */
 .theme-console .run-list .run-list__table { overflow-x: auto; }
+
+/* ── Runs list: the strip for the run in flight ───────────────────────── */
+/* Its Abort is the kit button, at the strip's own scale. */
+.theme-console .telemetry .tel-spacer { flex: 1; }
+.theme-console .telemetry .telemetry__abort {
+  flex: none; padding: 4px 10px;
+  font: 600 11px/1 var(--font-ui); letter-spacing: 0;
+}
 
 /* ── Runs header (design change C2) ───────────────────────────────────── */
 /* Secondary Compare runs beside the primary Run; the Compare page's way back. */

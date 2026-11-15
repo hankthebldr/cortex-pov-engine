@@ -6,17 +6,16 @@ import {
   downloadReportBundle,
   downloadReportScorecard,
 } from '../../api/client.js'
+import { Button } from './kit/index.js'
 
 /**
- * ExportMenu — split button on the Evidence header.
+ * ExportMenu — the report downloads of one run, on Results.
  *
- * Primary action (left half) ships the full POV bundle — the artifact
- * a DC actually walks out of a meeting with: markdown narrative,
- * scoring matrix, ATT&CK Navigator layer, and a manifest, all in
- * one tar.gz.
- *
- * The chevron (right half) reveals the individual artifacts for the
- * cases where the customer only asked for the Navigator layer, etc.
+ * One secondary kit Button, Download, opens the list: the full POV bundle
+ * first — the artifact a DC walks out of a meeting with (markdown narrative,
+ * scoring matrix, ATT&CK Navigator layer and a manifest in one tar.gz) — then
+ * each artifact on its own, for when the customer asked only for the Navigator
+ * layer, say.
  *
  * Props:
  *   runId     — current run id (required to download)
@@ -64,36 +63,25 @@ export default function ExportMenu({ runId, onError = () => {}, disabled = false
     }
   }
 
-  const busyLabel = (kind, fallback) => (busy === kind ? 'Exporting…' : fallback)
+  const busyLabel = (kind, fallback) => (busy === kind ? 'Downloading…' : fallback)
 
   return (
     <div className="export-menu" ref={wrapRef}>
-      <div className="export-menu__split">
-        <button
-          type="button"
-          className="btn btn--primary export-menu__primary"
-          onClick={() => doExport('bundle', downloadReportBundle, 'tar.gz')}
-          disabled={disabled || busy != null || !runId}
-          title="Full POV briefing bundle (report + matrix + Navigator layer + manifest)"
-        >
-          {busyLabel('bundle', 'Export POV briefing')}
-        </button>
-        <button
-          type="button"
-          className="btn btn--primary export-menu__chevron"
-          onClick={() => setOpen((v) => !v)}
-          disabled={disabled || busy != null || !runId}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-label="Show all export options"
-        >
-          ▾
-        </button>
-      </div>
+      <Button
+        verb="Download"
+        className="export-menu__trigger"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled || busy != null || !runId}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Download this run's report"
+      >
+        {busy != null ? 'Downloading…' : undefined}
+      </Button>
 
       {open && (
         <div className="export-menu__dropdown" role="menu">
-          <div className="export-menu__section-label mono">briefing artifacts</div>
+          <div className="export-menu__section-label">Briefing</div>
 
           <MenuItem
             label={busyLabel('bundle', 'POV briefing bundle (all)')}
@@ -121,7 +109,7 @@ export default function ExportMenu({ runId, onError = () => {}, disabled = false
             disabled={busy != null}
           />
 
-          <div className="export-menu__section-label mono">executive scorecard</div>
+          <div className="export-menu__section-label">Executive scorecard</div>
 
           <MenuItem
             label={busyLabel('scorecard-md', 'Executive scorecard')}
@@ -151,7 +139,7 @@ function MenuItem({ label, sub, onClick, disabled, primary = false }) {
       disabled={disabled}
     >
       <div className="export-menu__item-label">{label}</div>
-      <div className="export-menu__item-sub mono">{sub}</div>
+      <div className="export-menu__item-sub">{sub}</div>
     </button>
   )
 }

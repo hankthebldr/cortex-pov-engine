@@ -18,7 +18,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import TenantEvidencePanel, { TENANT_EVIDENCE_SENTENCES } from '../TenantEvidencePanel.jsx'
 import useTenantEvidence from '../useTenantEvidence.js'
-import EvidenceView from '../EvidenceView.jsx'
 import { installRoutes } from '../../../test/mockFetch.js'
 
 void React
@@ -162,19 +161,12 @@ describe('mounting Results issues no POST and the hook sets no interval', () => 
     expect(calls(handler)).toEqual(['GET /api/runs/r1/tenant-evidence'])
   })
 
-  it('Results sends one GET of tenant evidence and no POST in 60 s', async () => {
+  it('the panel sends one GET of tenant evidence and no POST in 60 s', async () => {
     vi.useFakeTimers()
-    const handler = installRoutes({
-      'GET /api/results/r1': { run_id: 'r1', total: 0, results: [] },
-      'GET /api/runs/r1/tenant-evidence': NOT_READ,
-    })
-    render(<EvidenceView pinnedRun={{ runId: 'r1', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    const handler = installRoutes({ 'GET /api/runs/r1/tenant-evidence': NOT_READ })
+    render(<TenantEvidencePanel runId="r1" />)
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
-    const seen = calls(handler)
-    expect(seen.filter((c) => c === 'GET /api/runs/r1/tenant-evidence')).toHaveLength(1)
-    expect(seen.filter((c) => c.startsWith('POST '))).toEqual([])
-    // The scorecard's own 8 s poll is untouched.
-    expect(seen.filter((c) => c === 'GET /api/results/r1').length).toBeGreaterThan(1)
+    expect(calls(handler)).toEqual(['GET /api/runs/r1/tenant-evidence'])
   })
 })
 

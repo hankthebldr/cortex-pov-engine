@@ -49,6 +49,26 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   no longer passes it.
 - Wire contract: `docs/reference/api-and-agent-surface.md` §1.3.3.
 
+### Changed — Runs shows what was attempted; Results shows what Cortex saw
+
+- **A run's page has one panel: the runtime log.** One block per step: the
+  command that was attempted, the account it ran as, how it went (Queued ·
+  Running · Ran · Failed · Timed out · Did not run · Aborted) with exit code
+  and duration, and its output. A finished run is built from the stored output
+  and the host's step record; a live run is re-read as its stream moves.
+- **Runs no longer shows a detection verdict.** A row, a run's page, its chain
+  and the live strip say how the run went and whether it is reviewed.
+- **Results holds the detection views.** One verdict line, then Detections ·
+  Storyline · Techniques · Topology · Causality · Tenant evidence
+  (`#/proof?run=<id>&tab=<tab>`). A run that has not been reviewed says "Not
+  reviewed" in every tab. What changes how the results read (another account,
+  a platform variant, a refused step, launch warnings, attestations) is one
+  collapsed line above the verdict.
+- **Old links still work:** `#/runs?run=<id>&tab=evidence|storyline|
+  techniques|topology|causality` open the same tab of Results.
+- Validate all, the report Download list, and the Runs list's state, pager and
+  Abort are console kit controls. Compare runs stays on the Runs list only.
+
 ### Fixed — dependency warnings read the beacon's tool facts and show at launch
 
 - **A launch reported `sudo`, `ssh`, `scp` and `sshpass` missing on hosts that

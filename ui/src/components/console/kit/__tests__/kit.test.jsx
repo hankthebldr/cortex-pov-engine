@@ -15,6 +15,7 @@ describe('StatusIcon', () => {
     ['down', 'Down', '✕'],
     ['off', 'Off', '–'],
     ['unknown', 'Unknown', '?'],
+    ['running', 'Running', '●'],
   ])('%s is a glyph AND a word, announced once', (status, word, glyph) => {
     const { container } = render(<StatusIcon status={status} />)
     const icon = screen.getByRole('img', { name: word })
@@ -63,6 +64,7 @@ describe('Button', () => {
       'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
       'Switch',
       'Pause', 'Clear', 'Screenshot',
+      'Validate all',
     ])
   })
 
@@ -160,6 +162,7 @@ describe('Icon', () => {
       'back', 'forward',
       'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
       'pause', 'clear', 'camera', 'down',
+      'x', 'check-all',
     ])
   })
 

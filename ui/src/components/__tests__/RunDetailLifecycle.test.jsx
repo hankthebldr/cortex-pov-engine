@@ -3,10 +3,12 @@
  * (design v26 §4.6).
  *
  *   - The five-stage lifecycle strip, the current stage marked as the step.
- *   - One primary action by phase: Read back on a finished run nobody has read
- *     back; Open results once it has been.
+ *   - One primary action by phase: Review on a finished run nobody has
+ *     reviewed; Open results once it has been.
  *   - Abort run is an inline confirm on the run's own page: "Stop this run on
  *     the agent?" · Keep running · Abort now.
+ *   - The chain says how each step went on the host, reviewed or not; a step
+ *     that failed opens its troubleshooting sheet.
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -36,7 +38,7 @@ function mount(run, props = {}, env = {}) {
   installRoutes({ 'GET /api/runs/:id': { ...run, output: '' } })
   return render(
     <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run], ...env }}>
-      <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
+      <RunDetailView runId={run.run_id} run={run} {...props} />
     </EnvironmentContext.Provider>,
   )
 }
@@ -67,13 +69,20 @@ describe('Run detail lifecycle', () => {
     mount({ ...base, detected_count: 3, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }, { onNavigate })
     fireEvent.click(screen.getByRole('button', { name: 'Open results' }))
     expect(onNavigate).toHaveBeenCalledWith('proof', { run: 'run-1' })
-    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent('3 of 10 detected · xsiam:lab')
+    // Reviewed, and through what — never what the review found.
+    expect(screen.getByTestId('run-lifecycle-message')).toHaveTextContent('Ran · reviewed via xsiam:lab')
+    expect(screen.getByTestId('run-lifecycle')).not.toHaveTextContent(/detected/i)
   })
 
-  it('the Evidence tab of an unread run shows no scorecard — it offers Review instead', () => {
-    mount(base, { subTab: 'evidence' })
+  it('says how the run went as a StatusIcon and a word under its title', () => {
+    mount({ ...base, status: 'failed' })
+    expect(within(screen.getByTestId('run-state')).getByRole('img', { name: 'Failed' })).toBeInTheDocument()
+  })
+
+  it('an unread run has one Review and no scorecard', () => {
+    mount(base)
     expect(screen.queryByRole('button', { name: /validate all/i })).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Review' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
   })
 })
 
@@ -143,36 +152,49 @@ describe('Run detail — the chain, live (ChainStage)', () => {
   ]
 
   function mountChain(run, props = {}, results = []) {
-    installRoutes({
+    const calls = installRoutes({
       'GET /api/runs/:id': { ...run, output: '', step_outcomes: OUTCOMES },
       'GET /api/scenarios/:id': SCENARIO,
       'GET /api/results/:id': { results },
     })
-    return render(
+    render(
       <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
-        <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
+        <RunDetailView runId={run.run_id} run={run} {...props} />
       </EnvironmentContext.Provider>,
     )
+    return calls
   }
 
-  it('leads with the run’s chain in live mode; before a read back each step says only Ran', async () => {
+  it('leads with the run’s chain in live mode; each step says only how it went', async () => {
     mountChain(base)
-    const stage = await screen.findByTestId('chain-stage')
-    expect(stage).toHaveAttribute('data-mode', 'live')
     const card = await screen.findByTestId('stage-card-step-01')
     await waitFor(() => expect(card).toHaveAttribute('data-state', 'ran'))
-    expect(card).toHaveTextContent('Ran — not reviewed')
-    expect(stage).not.toHaveTextContent(/Detected|Not seen/)
+    const stage = screen.getByTestId('chain-stage')
+    expect(stage).toHaveAttribute('data-mode', 'live')
+    expect(within(card).getByRole('img', { name: 'Ran' })).toBeInTheDocument()
+    expect(stage).not.toHaveTextContent(/Detected|Not seen|not reviewed/)
   })
 
-  it('after the read back a step whose detection was seen says Detected', async () => {
+  it('after the review the chain still says only how each step went', async () => {
     const read = { ...base, detected_count: 1, tc_verdict_detail: { source: 'reconcile:xsiam:lab' } }
-    mountChain(read, {}, [
+    const calls = mountChain(read, {}, [
       { id: 1, step_id: 'step-01', outcome: 'detected' },
       { id: 2, step_id: 'step-02', outcome: 'missed' },
     ])
-    await waitFor(() => expect(screen.getByTestId('stage-card-step-01')).toHaveAttribute('data-state', 'detected'))
-    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'not_seen'))
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-01')).toHaveAttribute('data-state', 'ran'))
+    expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'ran')
+    expect(screen.getByTestId('chain-stage')).not.toHaveTextContent(/Detected|Not seen|Broken/)
+    // What Cortex saw is Results': the run's page does not even ask for it.
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/api/results'))).toBe(false)
+  })
+
+  it('the chain and the runtime log agree on every step', async () => {
+    mountChain(base)
+    await waitFor(() => expect(screen.getAllByTestId('runtime-step')).toHaveLength(2))
+    for (const block of screen.getAllByTestId('runtime-step')) {
+      const card = screen.getByTestId(`stage-card-${block.getAttribute('data-step')}`)
+      expect(card).toHaveAttribute('data-state', block.getAttribute('data-state'))
+    }
   })
 
   it('a lane header opens the component behind it', async () => {
@@ -183,7 +205,7 @@ describe('Run detail — the chain, live (ChainStage)', () => {
   })
 })
 
-describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
+describe('Run detail — a Failed step opens its troubleshooting sheet', () => {
   const SCENARIO = {
     scenario_id: 'SIM-EDR-001',
     name: 'Credential dumping',
@@ -193,8 +215,7 @@ describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
       { id: 'step-02', name: 'Dump the process', command: 'gcore 1', mitre_technique: 'T1003.007' },
     ],
   }
-  // step-02 was killed by a signal POVengine did not send, and the read back
-  // found nothing for it: Broken.
+  // step-02 was killed by a signal POVengine did not send: it failed on the host.
   const OUTCOMES = [
     { step_id: 'step-01', termination: 'exited', rc: 0 },
     { step_id: 'step-02', termination: 'signaled', rc: 137, signal: 9 },
@@ -212,17 +233,17 @@ describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
     })
     return render(
       <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
-        <RunDetailView runId={run.run_id} run={run} subTab="live" {...props} />
+        <RunDetailView runId={run.run_id} run={run} {...props} />
       </EnvironmentContext.Provider>,
     )
   }
 
-  it('only the Broken card is a button; it opens the causes in the order to check', async () => {
+  it('only the Failed card is a button; it opens the causes in the order to check', async () => {
     mountBroken(read)
-    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'broken'))
+    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'failed'))
     // A card with nowhere to go is not a button.
     expect(screen.getByTestId('stage-card-step-01').tagName).toBe('DIV')
-    fireEvent.click(screen.getByRole('button', { name: /step-02 · Dump the process · Broken/ }))
+    fireEvent.click(screen.getByRole('button', { name: /step-02 · Dump the process · Failed/ }))
 
     const sheet = screen.getByRole('dialog', { name: /step-02/ })
     // The host's record the causes were read from.
@@ -239,16 +260,16 @@ describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
   it('a cause opens the place that fixes it and closes the sheet', async () => {
     const onNavigate = vi.fn()
     mountBroken(read, { onNavigate })
-    fireEvent.click(await screen.findByRole('button', { name: /step-02 · Dump the process · Broken/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /step-02 · Dump the process · Failed/ }))
     const sheet = screen.getByRole('dialog', { name: /step-02/ })
     fireEvent.click(within(sheet).getByRole('button', { name: /Read what the step printed/ }))
-    expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'run-1', tab: 'live' })
+    expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'run-1' })
     expect(screen.queryByRole('dialog', { name: /step-02/ })).toBeNull()
   })
 
   it('Escape closes the sheet and returns focus to the card', async () => {
     mountBroken(read)
-    const card = await screen.findByRole('button', { name: /step-02 · Dump the process · Broken/ })
+    const card = await screen.findByRole('button', { name: /step-02 · Dump the process · Failed/ })
     card.focus()
     fireEvent.click(card)
     expect(screen.getByRole('dialog', { name: /step-02/ })).toBeInTheDocument()
@@ -257,42 +278,13 @@ describe('Run detail — a Broken step opens its troubleshooting sheet', () => {
     expect(card).toHaveFocus()
   })
 
-  it('before the read back no card is a button: nothing can be Broken yet', async () => {
+  it('a step that failed on the host opens its sheet before the review too', async () => {
     mountBroken(base)
-    await waitFor(() => expect(screen.getByTestId('stage-card-step-02')).toHaveAttribute('data-state', 'ran'))
-    expect(screen.getByTestId('stage-card-step-02').tagName).toBe('DIV')
+    fireEvent.click(await screen.findByRole('button', { name: /step-02 · Dump the process · Failed/ }))
+    const sheet = screen.getByRole('dialog', { name: /step-02/ })
+    expect(within(sheet).getByRole('img', { name: 'Failed' })).toBeInTheDocument()
+    // Nothing in it claims what a review found.
+    expect(sheet).not.toHaveTextContent(/review found/i)
   })
 })
 
-describe('Run detail — a pending test case says why (design C3)', () => {
-  const nothingRan = {
-    ...base,
-    tc_verdict: 'pending',
-    tc_verdict_detail: { source: 'complete', reason: 'not_executed' },
-  }
-  const scenarios = [{ scenario_id: 'SIM-EDR-001', name: 'Credential Dumping', tc_ref: 'TC-EDR-01' }]
-
-  it('the header names the test case, PENDING, the reason chip and what to do', () => {
-    mount(nothingRan, {}, { scenarios })
-    const line = screen.getByTestId('run-verdict-header')
-    expect(within(line).getByText('Test case')).toBeInTheDocument()
-    expect(within(line).getByTestId('run-verdict-header-verdict')).toHaveTextContent(/pending/i)
-    expect(within(line).getByTestId('run-verdict-header-reason')).toHaveTextContent('nothing executed')
-    expect(line).toHaveTextContent('TC-EDR-01')
-    // The action is visible text, not a tooltip.
-    expect(line).toHaveTextContent(/Re-run the scenario/)
-  })
-
-  it('the Cortex Engine terminal under the chain states the same verdict and reason', () => {
-    mount({ ...nothingRan, tc_verdict_detail: { source: 'complete', reason: 'soak_pending' } }, {}, { scenarios })
-    const engine = screen.getByTestId('run-verdict-engine')
-    expect(engine).toHaveTextContent('CORTEX ENGINE')
-    expect(within(engine).getByTestId('run-verdict-engine-reason')).toHaveTextContent('detectors soaking')
-  })
-
-  it('a verdict with no reason draws neither line', () => {
-    mount({ ...base, tc_verdict: 'pass' }, {}, { scenarios })
-    expect(screen.queryByTestId('run-verdict-header')).toBeNull()
-    expect(screen.queryByTestId('run-verdict-engine')).toBeNull()
-  })
-})

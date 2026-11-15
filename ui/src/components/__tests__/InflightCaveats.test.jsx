@@ -16,7 +16,6 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import InflightView, { runCaveatLines } from '../console/InflightView.jsx'
-import RunDetailView from '../console/RunDetailView.jsx'
 
 void React
 
@@ -92,18 +91,5 @@ describe('InflightView — the screenshot region carries the caveats', () => {
     render(<InflightView activeRun={null} lastRun={{ runId: 'run-win-1', scenarioId: 'SIM-EDR-013', status: 'complete' }} />)
     await waitFor(() => expect(document.querySelector('.narrative__capture')).not.toBeNull())
     expect(screen.queryByTestId('narrative-caveats')).toBeNull()
-  })
-})
-
-describe('RunDetailView → Live tab', () => {
-  it('hands the run\'s own degradations to the capture region', async () => {
-    routes()
-    render(<RunDetailView runId="run-win-1" run={RUN} subTab="live" />)
-    const block = await screen.findByTestId('narrative-caveats')
-    expect(block.closest('.narrative__capture')).not.toBeNull()
-    // The frame header says 1/3: the total is the scenario's, not the frames seen.
-    expect(block.textContent).toMatch(/1 of 3 steps ran as the beacon account/)
-    expect(block.textContent).toMatch(/1 step ran a platform variant/)
-    expect(block.textContent).toMatch(/1 step never ran on this host/)
   })
 })

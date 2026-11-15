@@ -23,6 +23,12 @@
 .kit-status--unknown  .kit-status__icon { background: var(--s3); color: var(--tx3); }
 .kit-status--off      .kit-status__word,
 .kit-status--unknown  .kit-status__word { color: var(--tx3); }
+/* In progress: the accent wash and line the lifecycle strip gives "now". */
+.kit-status--running  .kit-status__icon {
+  background: var(--ac-soft); color: var(--ac-ink, var(--ac));
+  box-shadow: inset 0 0 0 1px var(--ac-line); font-size: 7px;
+}
+.kit-status--running  .kit-status__word { color: var(--tx); }
 
 /* ── ErrorBadge ─────────────────────────────────────────────────────────── */
 /* Greyscale, the same height and corner as a button; only the "!" carries the

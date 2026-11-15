@@ -62,7 +62,7 @@ describe('Results › Result of', () => {
     expect(bar).toHaveTextContent('SIM-EDR-003')
     expect(bar).toHaveTextContent('run-read')
     expect(bar).toHaveTextContent(/reviewed via xsiam:lab/i)
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Report')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Results')
   })
 
   it('switches between read-back runs only, through the URL', async () => {
