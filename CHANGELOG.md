@@ -8,6 +8,22 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — pull runs clean up after themselves
+
+- **A pull run left its files, units, cron lines and accounts on the target.**
+  Only a push bundle ran the scenario's `cleanup.commands`. The beacon now
+  runs them when a run ends: after the last step, a failed step, a timeout or
+  an abort. The run's output ends with a `=== CLEANUP` section showing each
+  command and its exit code. A failed cleanup does not fail the run (#324).
+- **The report says when cleanup did not happen.** "Cleanup Not Run" now
+  appears only when no beacon reported a cleanup, and "Cleanup Incomplete"
+  when a command failed. A run that cleaned up has neither.
+- **Update the beacons.** A beacon from before this change ignores the cleanup
+  it is sent, and the launch says so (`CLEANUP_NOT_RUN`, a notice that does
+  not hold the launch). Re-install the beacon from this SimCore to get it.
+- Windows cleanup lines run under PowerShell or cmd; no Windows host has run
+  this path yet. `cleanup.k8s_teardown` is not sent to a beacon.
+
 ### Added — the beacon reports each step's command and streams its output
 
 - **A pull run was silent while a step ran, and never showed the command.**

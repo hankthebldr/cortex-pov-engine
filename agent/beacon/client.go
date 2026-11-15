@@ -83,6 +83,10 @@ type Task struct {
 	// the wire entirely when false, so a task for any scenario without a
 	// runtime-dependency gap is byte-identical to before this feature existed.
 	RuntimeInstallAuthorized bool `json:"runtime_install_authorized,omitempty"`
+	// Cleanup is the scenario's cleanup for this host's OS, run when the task
+	// ends (cleanup.go). Nil from a SimCore that sends none.
+	Cleanup    *TaskCleanup `json:"cleanup,omitempty"`
+	cleanupRan bool
 	// LiveOutput, when SimCore sends it, asks this beacon to report each step's
 	// command before it runs and to stream its output while it runs
 	// (liveout.go). An older SimCore does not send it, and nothing new is posted.
@@ -881,15 +885,17 @@ func (c *BeaconClient) SendOutput(runID, stepID, output string) error {
 // fan-out run's completion once per task only when the body says which task it
 // is (RG-AGENT-03): an anonymous retry used to count as a second endpoint.
 func (c *BeaconClient) Complete(runID string, exitCode int, summary string, steps []StepOutcome) error {
-	return c.complete(runID, "", exitCode, summary, steps)
+	return c.complete(runID, "", exitCode, summary, steps, nil)
 }
 
 // completeTask is Complete for a task this beacon collected: it adds task_id.
+// Every task exit passes through here, so this is also where the scenario's
+// cleanup runs (cleanup.go), before the completion is sent.
 func (c *BeaconClient) completeTask(task *Task, exitCode int, summary string, steps []StepOutcome) error {
-	return c.complete(task.RunID, task.TaskID, exitCode, summary, steps)
+	return c.complete(task.RunID, task.TaskID, exitCode, summary, steps, c.runTaskCleanup(task, steps))
 }
 
-func (c *BeaconClient) complete(runID, taskID string, exitCode int, summary string, steps []StepOutcome) error {
+func (c *BeaconClient) complete(runID, taskID string, exitCode int, summary string, steps []StepOutcome, cleanup *CleanupOutcome) error {
 	if steps == nil {
 		steps = []StepOutcome{} // encode [] never null
 	}
@@ -904,6 +910,9 @@ func (c *BeaconClient) complete(runID, taskID string, exitCode int, summary stri
 	}
 	if taskID != "" {
 		body["task_id"] = taskID
+	}
+	if cleanup != nil {
+		body["cleanup"] = cleanup
 	}
 	_, err := c.postRetry(fmt.Sprintf("/api/runs/%s/complete", runID), body)
 	if err != nil {
@@ -1057,9 +1066,9 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	//
 	// Placed above the hasCausalityContract() dispatch so ALL THREE execution
 	// paths (this loop, executeTaskChained, executeTaskPerStep) inherit it from
-	// one place. Teardown is registered in the same statement: pull mode never
-	// executes a scenario's cleanup.commands — only push_generator emits those —
-	// so the beacon owns removal outright and it cannot be delegated to content.
+	// one place. Teardown is registered in the same statement: a scenario's
+	// cleanup.commands (cleanup.go) know nothing about staged tooling, so the
+	// beacon owns removal outright and it cannot be delegated to content.
 	// Every abort/shutdown/fail-fast branch in the three executors returns
 	// normally, so this defer fires on every exit path.
 	if len(task.Artifacts) > 0 {
@@ -1263,8 +1272,9 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		c.executeTaskPerStep(ctx, task)
 		return
 	}
-	// RG-AGENT-01 / RG-AGENT-02: pull mode runs no scenario cleanup, so ending
-	// the session is the only teardown this run's background helpers get. Every
+	// RG-AGENT-01 / RG-AGENT-02: a scenario's cleanup.commands (cleanup.go) need
+	// not stop what its steps left running, and an older SimCore sends none, so
+	// ending the session is the teardown this run's background helpers get. Every
 	// exit below that is not a clean finish — abort or control loss before or
 	// during a step, timeout, a refused tool, an execution error, fail-fast —
 	// leaves chainClean false and the session is Abandoned: everything the chain

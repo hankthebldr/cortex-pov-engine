@@ -410,7 +410,8 @@ run has asserted the account yet). Each Windows step frame now carries
 `[cortexsim] executed as <account> (elevated token | token NOT elevated)`, so
 the run record will say. `root`, `container-runtime` and
 `administrator` on a non-elevated token read `… requires an elevated token`.
-A Windows beacon registers `["shell", "powershell", "artifact-fetch", "live-output"]`,
+A Windows beacon registers
+`["shell", "powershell", "artifact-fetch", "cleanup", "live-output"]`,
 plus `elevated` only when its token is elevated (`agent/capabilities.go`). It is
 **not** `identity-harness`, deliberately, so SimCore's agent list never implies
 a Windows target can honour a scenario's declared `identity:`. If a Windows

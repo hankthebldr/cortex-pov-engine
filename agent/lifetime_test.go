@@ -79,6 +79,44 @@ func TestRunUntilShutdown_CleanReturnOnSignal(t *testing.T) {
 	}
 }
 
+// A scenario cleanup still running when the grace ends has its own bound from
+// the signal. Exiting under it leaves the host half cleaned and the run without
+// its completion, so main waits for it, and still only for so long.
+func TestRunUntilShutdown_WaitsForACleanupInFlight(t *testing.T) {
+	oldFlight, oldGrace := cleanupInFlight, cleanupGrace
+	t.Cleanup(func() { cleanupInFlight, cleanupGrace = oldFlight, oldGrace })
+	cleanupInFlight = func() bool { return true }
+	cleanupGrace = 3 * time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	sigCh <- syscall.SIGTERM
+	// The loop needs 400 ms after the signal: longer than the 100 ms grace.
+	finishing := func(c context.Context) {
+		<-c.Done()
+		time.Sleep(400 * time.Millisecond)
+	}
+	if runUntilShutdown(ctx, cancel, finishing, sigCh, 100*time.Millisecond) {
+		t.Fatal("the beacon gave up on a loop that was finishing a cleanup")
+	}
+
+	// A cleanup that never ends is still bounded.
+	cleanupGrace = 200 * time.Millisecond
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	sigCh <- syscall.SIGTERM
+	block := make(chan struct{})
+	defer close(block)
+	start := time.Now()
+	if !runUntilShutdown(ctx2, cancel2, func(context.Context) { <-block }, sigCh, 100*time.Millisecond) {
+		t.Fatal("a loop that never returned was reported as a clean return")
+	}
+	if el := time.Since(start); el > 2*time.Second {
+		t.Fatalf("took %s to give up, want ~300ms", el)
+	}
+}
+
 func TestRunUntilShutdown_ReturnsWhenLoopEndsOnItsOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
