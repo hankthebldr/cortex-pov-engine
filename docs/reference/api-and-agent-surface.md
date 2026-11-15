@@ -553,7 +553,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
   otherwise `detected` when `observed` is true (a manual validation, incl. pre-branch
-  runs), else `pending` — rendered "awaiting reconcile", with no reason token. `missed`
+  runs), else `pending` — rendered "awaiting reconcile" in the report and "Pending" in the
+  console ("Not reviewed" where the run has not been reviewed), with no reason token. `missed`
   exists only as an engine outcome: neither a terminal run status nor an `observed_at`
   without `observed` makes one.
 - **`pending` is never a coverage hit.** Every coverage numerator (`/api/results`,

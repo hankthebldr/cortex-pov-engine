@@ -89,6 +89,14 @@ From **Operations**:
 4. **Launch** (or ⌘L). Drawer closes; the telemetry strip lights
    up; the run's page opens on **Runs**.
 
+A scenario with an EAL step (one SimCore sends itself, or a step that
+calls the EAL CLI) adds one row to the Launch gate: **Send live EAL
+traffic**, **Authorized by** and **Includes C2-shaped traffic**. Left
+unticked, those steps run dry and send nothing. To send them, tick the
+first box and name who authorised it; tick the third as well when a
+step's plugin is C2-shaped (a beacon, a tunnel). The name is remembered
+in your browser; the ticks are not.
+
 ### 4. Watch (Runs › the run)
 
 Runs shows what was attempted. The run's page has its five-stage
@@ -96,17 +104,31 @@ lifecycle, its chain, and one panel, the **runtime log**: one block per
 step, in order, with
 
 - the step's number, name, technique and the account it ran as;
-- the command that was attempted (a long one shows one line; **Show
-  all** opens it);
+- the command that was attempted. It shows one line, the first that
+  does something (the scratch-folder set-up is skipped); **Show all**
+  opens the whole command;
 - how it went: **Queued · Running · Ran · Failed · Timed out · Did not
   run · Aborted**, with the exit code and duration;
 - what it printed.
 
 While the run is live the page follows it: the step on the agent reads
-Running, and each step's output appears when the agent reports it. The
-chain above the log says the same thing card by card; a **Failed** card
-opens the likely causes, in the order to check. Nothing on Runs says
-what was detected. That is Results.
+Running with the command the agent reported, and its output appears as
+it is printed. When the step ends, the output SimCore stored replaces
+the live text. This needs a current beacon; on an older one each step's
+output appears when the step ends, and the page says *Live output needs
+the new beacon*.
+
+After the steps, **Cleanup** is its own block: *Clean*, *1 of 3 failed*,
+*Not run* or *Pending*, with each command, its output and its exit code
+behind one line.
+
+Anything SimCore said when it accepted the launch (the agent was
+offline, it lacks an interpreter a step needs, its beacon does not run
+cleanup) is one line above the chain; hover it for SimCore's sentence.
+
+The chain above the log says the same thing card by card; a **Failed**
+card opens the likely causes, in the order to check. Nothing on Runs
+says what was detected. That is Results.
 
 To stop a live run, use **Abort run** on its page and confirm with
 **Abort now**; the run reads Aborted everywhere and the header's
@@ -138,25 +160,29 @@ its bar and Review, and every tab says *Not reviewed*. Without a tenant
 credential, importing the tenant's alerts by hand
 (`POST /api/runs/{id}/observations`) also counts as a review.
 
-Once a run is reviewed, the Detections scorecard fills in. For each
-expected detection:
+Once a run is reviewed, the Detections scorecard fills in. Each
+expected detection has one state:
 
-- ✓ Detected (green) — found the alert in Cortex console, copy the
-  alert ID into the operator notes.
-- ✗ Missed (red) — sometimes legitimate (e.g. report-only mode in
-  the customer's environment); write up the reason.
-- ○ Pending (amber) — waiting on you or on Cortex Data Lake
-  ingestion (30–120s typical).
+- **Detected** / **Prevented** — Cortex raised the alert (or blocked
+  the step). Copy the alert ID into the notes.
+- **Missed** — the review found no alert for a step that ran. Sometimes
+  legitimate (e.g. report-only mode in the customer's environment);
+  write up the reason.
+- **Pending** — nothing has settled it yet: waiting on you, or on Cortex
+  Data Lake ingestion (30–120s typical).
+- **Not reached** / **Not executed** — the step never ran, so there was
+  nothing to detect. These are left out of coverage.
+- **Not prevented** — a block that only detected.
 
 **Click any scorecard row** to open the drill-down side panel. There
 you'll find:
 
 - Timing: executed_at, observed_at, computed MTTD
-- The raw alert ID with one-click copy (paste into the Cortex
-  console search to jump to the causality graph)
-- An operator notes textarea (notes ride with the validation into
-  the POV report)
-- Mark detected / missed / reset, all in one motion
+- The raw alert ID with **Copy** (paste into the Cortex console search
+  to jump to the causality graph)
+- Notes (they ride with the validation into the POV report)
+- **Mark detected**, **Mark missed** and **Reset**. The same three are
+  icon buttons on each scorecard row.
 
 Use **Validate all** when you've eyeballed every alert in the
 Cortex console and confirmed everything fired. Or validate
