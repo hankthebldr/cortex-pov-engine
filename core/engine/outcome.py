@@ -56,6 +56,14 @@ UPSTREAM_SEVERED = "UPSTREAM_SEVERED"
 UPSTREAM_NOT_EXECUTED = "UPSTREAM_NOT_EXECUTED"
 UPSTREAM_FAILED = "UPSTREAM_FAILED"
 TOOL_ABSENT = "TOOL_ABSENT"
+#: A step the host reports ``exited`` with a non-zero exit status: it ran and
+#: FAILED (``ModuleNotFoundError``, a missing runtime dependency, a permission
+#: error), so it never did what its detections look for. Its silent rows are
+#: ``not_executed``, never ``missed`` -- a failed step is not a Cortex miss
+#: (#323). Exit 127 ("command not found") reads ``TOOL_ABSENT`` instead.
+STEP_FAILED = "STEP_FAILED"
+#: The POSIX shell's "command not found" exit status: the step's tool is absent.
+EXIT_COMMAND_NOT_FOUND = 127
 #: The beacon refused a step its host platform cannot run (a linux-only step
 #: dispatched to a Windows beacon, say). It never executed, so its silent
 #: detections say nothing about Cortex: ``not_executed``, never ``missed``.
@@ -203,8 +211,9 @@ DETECT_MISS_TERMINATIONS = frozenset({
 })
 
 
-def silent_detect_verdict(termination: Optional[str],
-                          window_closed: bool) -> Optional[tuple[str, Optional[str]]]:
+def silent_detect_verdict(termination: Optional[str], window_closed: bool,
+                          exit_code: Optional[int] = None,
+                          ) -> Optional[tuple[str, Optional[str]]]:
     """``(outcome, reason)`` for a silent row scored as a detect, or None.
 
     Round 4 C-1: no host record, no miss. ``missed`` only when the host says
@@ -212,11 +221,20 @@ def silent_detect_verdict(termination: Optional[str],
     (``RUN_ABORTED``); no record, or a ``beacon_lost`` that witnesses nothing,
     is ``HOST_EVIDENCE_ABSENT``. None while the window is open, and for
     ``not_run`` (the host exclusions own that row). Unknown terminations raise.
+
+    #323: ``exited`` means "ended on its own, any exit status". With a
+    non-zero ``exit_code`` the step failed on the host, so its silence says
+    nothing about Cortex: ``not_executed`` / ``STEP_FAILED`` (``TOOL_ABSENT``
+    for exit 127). ``exit_code`` 0 or None (an older record) keeps ``missed``.
     """
     if termination is not None and termination not in TERMINATIONS:
         raise ValueError(f"unrecognised termination: {termination!r}")
     if not window_closed or termination == TERMINATION_NOT_RUN:
         return None
+    if termination == TERMINATION_EXITED and exit_code not in (None, 0):
+        if exit_code == EXIT_COMMAND_NOT_FOUND:
+            return OUTCOME_NOT_EXECUTED, TOOL_ABSENT
+        return OUTCOME_NOT_EXECUTED, STEP_FAILED
     if termination in DETECT_MISS_TERMINATIONS:
         return OUTCOME_MISSED, None
     if termination == TERMINATION_ABORTED:
@@ -236,13 +254,15 @@ def _pending(reason: Optional[str] = None) -> PreventVerdict:
 
 
 def _as_detect(alert_outcome: Optional[str], termination: Optional[str],
-               window_closed: bool, detected_reason: Optional[str]) -> PreventVerdict:
+               window_closed: bool, detected_reason: Optional[str],
+               exit_code: Optional[int] = None) -> PreventVerdict:
     """A ``prevent`` row scored as a detect: never graded as prevention."""
     if alert_outcome is not None:
         reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else detected_reason
         return PreventVerdict(OUTCOME_DETECTED, None, reason)
-    # No alert: the detect rule, host record required (round 4 C-1).
-    judged = silent_detect_verdict(termination, window_closed)
+    # No alert: the detect rule, host record required (round 4 C-1); a step
+    # that failed on the host is not_executed, never missed (#323).
+    judged = silent_detect_verdict(termination, window_closed, exit_code)
     if judged is None:
         return PreventVerdict(OUTCOME_PENDING, None, None)
     return PreventVerdict(judged[0], None, judged[1])
@@ -251,7 +271,8 @@ def _as_detect(alert_outcome: Optional[str], termination: Optional[str],
 def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
                      termination: Optional[str], window_closed: bool,
                      block_mode_status: Optional[str],
-                     module_mode: Optional[str] = None) -> PreventVerdict:
+                     module_mode: Optional[str] = None,
+                     exit_code: Optional[int] = None) -> PreventVerdict:
     """Evaluate a ``prevent`` expectation (spec section 5.3).
 
     ``module_mode`` is :func:`resolve_module_mode`'s answer for this row.
@@ -260,6 +281,10 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
     ``report`` scores the row as a detect (a Detected alert reads
     ``MODULE_NOT_IN_BLOCK``, never a fail); ``disabled`` holds a silent row
     ``pending`` / ``MODULE_DISABLED`` (any alert contradicts the attestation).
+
+    ``exit_code`` is the host's exit status beside ``termination``. It reaches
+    only the rows scored as a detect (:func:`silent_detect_verdict`, #323);
+    the block-mode two-witness branch does not read it.
     """
     if agent_profile_mode not in PROFILE_MODES:
         raise ValueError(f"unrecognised agent_profile_mode: {agent_profile_mode!r}")
@@ -270,13 +295,14 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
 
     if agent_profile_mode != "block":
         # Report/unknown mode: scored as a detect; never graded as prevention.
-        return _as_detect(alert_outcome, termination, window_closed, None)
+        return _as_detect(alert_outcome, termination, window_closed, None, exit_code)
 
     if module_mode == "report":
         # The profile set THIS module to Report: a Detected alert is the
         # module working as configured. A Prevented one contradicts the
         # attestation, exactly as it does in a report-mode run.
-        return _as_detect(alert_outcome, termination, window_closed, MODULE_NOT_IN_BLOCK)
+        return _as_detect(alert_outcome, termination, window_closed, MODULE_NOT_IN_BLOCK,
+                          exit_code)
     if module_mode == "disabled":
         if alert_outcome is not None:
             # A disabled module raised nothing; an alert matched to it says

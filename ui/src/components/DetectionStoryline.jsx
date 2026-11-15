@@ -3,7 +3,7 @@ import { isRunUnproven } from './console/runStatus.js'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
-import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile } from '../outcomes.js'
+import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile, STEP_FAILED } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -220,6 +220,13 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
           {det.outcome_reason && (
             <span className="storyline-observed__reason">{det.outcome_reason}</span>
           )}
+        </div>
+      ) : key === 'not_executed' && det.outcome_reason === STEP_FAILED ? (
+        // #323: the step ran and exited non-zero, so its silence says nothing
+        // about Cortex. The exit status is in the row's notes.
+        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
+          Signal never generated — the step failed on the host, so a miss can't be
+          claimed.
         </div>
       ) : key === 'not_executed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
