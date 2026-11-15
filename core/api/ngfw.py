@@ -460,6 +460,10 @@ async def preflight_panos(db: AsyncSession, integration: Optional[str],
                                  "the stored API key could not be decrypted",
                                  REM_CREDENTIAL_UNDECRYPTABLE)
     else:
+        # The decrypt stamped `last_accessed_at`, which opened a write
+        # transaction. Commit it before the firewall calls: held across them it
+        # locks every other writer out until the firewall answers (#326).
+        await db.commit()
         report = await run_panos_preflight(
             row.config or {}, secret, firewall=row.name,
             agents=refs, transport=_transport_override,

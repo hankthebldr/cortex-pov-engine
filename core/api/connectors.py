@@ -365,6 +365,11 @@ async def preflight_connector(
             )],
         ).to_dict()
 
+    # The decrypt stamped `last_accessed_at`, which opened a write transaction.
+    # Commit it before the probes below go to the network: held across them it
+    # locks every other writer out until the tenant answers (#326).
+    await db.commit()
+
     # Read before the preflight: a failed store rolls the session back, which
     # expires the row, and an async lazy reload here would turn a good report
     # into a 500.

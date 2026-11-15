@@ -276,7 +276,7 @@ first — `make rust-dist` does both phases.
 
 - `core/main.py` — FastAPI app entry, lifespan handler (init DB → load scenarios → init tool instantiator)
 - `core/config.py` — Pydantic Settings from env vars (`CORTEXSIM_PORT`, `CORTEXSIM_ENV`, etc.)
-- `core/database.py` — async SQLAlchemy with SQLite at `{BASE_DIR}/data/cortexsim.db`
+- `core/database.py` — async SQLAlchemy with SQLite at `{BASE_DIR}/data/cortexsim.db`, opened in WAL with a 5 s busy timeout (`configure_sqlite`, #326); the `-wal` / `-shm` side files belong to it. SQLite allows one writer, so a path that decrypts a credential commits before it calls the tenant, and the beacon's `/tasks` and `/control` polls and the heartbeat sweep skip a bookkeeping write when the database is busy rather than fail.
 - `core/models.py` — ORM: Scenario, Run, Result (with MTTD timing), ToolInstance, Agent (all have `.to_dict()`)
 - `core/api/` — FastAPI routers: scenarios, runs (with report export), results (with validation), tools, agents, mitre (coverage heatmap data), uctc (UC/TC index read surface), pov (entitlement scoping)
 - `core/engine/` — scenario_loader (YAML→DB with Pydantic validation), orchestrator (auto-seeds Result rows from expected_detections), push_generator, uctc_registry (v2.2 index → frozen dataclasses), verifier (scores runs against thresholds)

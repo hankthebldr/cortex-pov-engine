@@ -23,6 +23,45 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   stay unjudged (a `prevent` row caps at `pending`), and later steps read
   `not_reached`. A run whose agent went offline mid-run still ends `complete`,
   severed at the step. Runs already closed as `complete` keep that status.
+- **"database is locked" while SimCore reads the tenant (#326).** While a
+  Tier-2 verify waited on the tenant, the beacon's `GET /api/agents/{id}/tasks`
+  and the heartbeat sweep failed with `database is locked`: 44 times in one
+  minute on 2026-11-14, 152 in that day's log. A beacon that cannot poll looks
+  gone, and that is how a live run came to be closed as abandoned. Three
+  changes:
+  - **No write is held open across an outbound call.** Reading a stored
+    credential stamps its last-access time, which opens a write, and SQLite
+    allows one writer. Verify, reconcile, the case-ledger refresh, the
+    tenant-evidence read, the connector, firewall and collector preflights, the
+    assertion runner and the `/api/xsiam` routes all went on to the network
+    with that write open. Each now commits it first. A reconcile also commits
+    its "credential verified" stamp before it reads incidents and cases.
+  - **The database opens in WAL mode**, with a 5 s busy timeout and
+    `synchronous=NORMAL`, so a reader and the writer no longer wait on each
+    other. The busy timeout was already 5 s by the driver's default; SimCore
+    now sets it itself.
+  - **A busy database no longer fails the beacon's polls.** `/tasks` and
+    `/control` skip their `last_seen` stamp for that poll and answer 200 (a
+    500 on `/control` made the beacon stop its step); the heartbeat sweep
+    skips its pass. A task whose delivery cannot be recorded stays queued for
+    the next poll. Before, it was dropped from the queue until a restart.
+
+### Upgrading from 1.2.1 or older
+
+- **The database switches to WAL on first start, and a backup is now three
+  files.** Two side files can appear next to `cortexsim.db`:
+  `cortexsim.db-wal` and `cortexsim.db-shm`. Recent commits live in `-wal`
+  until SQLite folds them back, so a copy of `cortexsim.db` alone can miss
+  recent runs. Back up every `cortexsim.db*` file with SimCore stopped, or use
+  SQLite's online backup while it runs; the commands are in
+  `docs/release/mvp-launch-runbook.md` §8.5. When you restore, remove the old
+  side files with the database they belonged to. The switch needs no action
+  and is stored in the file; an older release opens a WAL database as it is.
+- **Keep the database on storage local to one host.** SQLite's WAL is only
+  safe when every process that opens the file runs on the same machine. The
+  compose volume is. A Helm install whose `persistence` volume is shared by
+  pods on different nodes (the `ReadWriteMany` option) is not: use one replica
+  on node-local storage.
 
 ## [1.2.1] - 2026-11-15
 

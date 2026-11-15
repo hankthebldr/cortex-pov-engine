@@ -421,6 +421,15 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   `pending`), and later steps are `not_run` / `UPSTREAM_SEVERED` (rows
   `not_reached`). A run whose agent went offline (beacon-lost, §1.3.1) still
   ends `complete`, severed at the step.
+- **A busy database does not fail a poll (#326).** SQLite allows one writer.
+  When another one holds the lock past the 5 s busy timeout,
+  `GET /api/agents/{id}/tasks` and `GET /api/runs/{id}/control` skip their
+  `last_seen` stamp for that poll and answer 200 as usual (they used to answer
+  500, which the beacon reads on `/control` as a lost channel and stops its
+  step). A task whose delivery cannot be recorded is not handed out: the poll
+  answers `{"task": null}` and the task stays queued for the next poll. The
+  heartbeat sweep skips its pass. `/output` and `/complete` are evidence, not
+  bookkeeping, and still fail so the beacon retries them.
 - **Pull dispatch by target OS (2026-11).** Each task step now carries `shell`
   (`powershell` | `cmd` | absent for POSIX), `resolved_from` (`primary` |
   `neutral` | `variant:<os>`) and `platform_variants`. The command dispatched is the
