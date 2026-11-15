@@ -36,6 +36,11 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   offline and another agent is online, the header now shows the agent as
   offline with a **Switch to** button naming the online agent (the most
   recently seen, if there are several). It does not switch on its own.
+- **Scenario cards keep Run and Customize whole** (#344). In a two-column
+  grid the card footer ran out of room: Run was cut off at the card's edge and
+  the run-history chip ("10× run · 1d ago") wrapped onto three lines. The step
+  and detection counts and the history chip now shrink together, the chip stays
+  on one line and truncates, and the buttons keep their full width.
 
 ## [1.2.0] - 2026-11-14
 
