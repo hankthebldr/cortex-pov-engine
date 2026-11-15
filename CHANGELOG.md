@@ -8,6 +8,22 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A run its beacon abandoned reads `failed`, not `complete` (#326).** When a
+  beacon stayed alive but stopped reporting on a run, SimCore closed the run as
+  `complete` and said what had happened only in its output ("BEACON ABANDONED
+  TASK ... Steps without host evidence are not a coverage measurement"). The
+  Runs list, the report and the API then showed a run nobody saw finish as a
+  finished run (run `5cc8c6b4`, SIM-NDR-007). Such a run now ends `failed`. Its
+  output opens the marker with `RUN FAILED: BEACON_ABANDONED_TASK` and its
+  `run.status` frame carries the same code as `termination`. The console
+  already treats a `failed` run as one that proves nothing about coverage.
+  Its results are unchanged: the rows of the first step with no host record
+  stay unjudged (a `prevent` row caps at `pending`), and later steps read
+  `not_reached`. A run whose agent went offline mid-run still ends `complete`,
+  severed at the step. Runs already closed as `complete` keep that status.
+
 ## [1.2.1] - 2026-11-15
 
 **Hotfix for v1.2.0: a step that failed on the host no longer reads as
