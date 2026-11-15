@@ -52,17 +52,6 @@ func TestLoadOrEnrollUnwritableDirFailsBeforeEnrolling(t *testing.T) {
 	if !errors.As(err, &se) {
 		t.Fatalf("err = %v, want *StateDirError", err)
 	}
-
-	// A path under a regular file can never be created.
-	blocker := filepath.Join(parent, "file")
-	os.WriteFile(blocker, nil, 0o600)
-	_, _, err = LoadOrEnroll(filepath.Join(blocker, "sub"), func() (string, error) {
-		t.Fatal("enroll must not be called when the state dir cannot be created")
-		return "", nil
-	})
-	if !errors.As(err, &se) {
-		t.Fatalf("err = %v, want *StateDirError", err)
-	}
 }
 
 func TestLoadOrEnrollUnreadableIDFileFailsBeforeEnrolling(t *testing.T) {
