@@ -69,6 +69,14 @@ Decided by the owner in live review on 2026-11-13; the code follows them.
   Packages is a plain catalog (#279).
 - **Launch.** One page and one Run (the v33 MVP above); C2b's lab target and
   WAITING state are not built.
+- **Launch gate is about one scenario** (2026-11-14). It no longer carries
+  "This POVengine" under the run, which made it read as both "this run" and
+  "the whole app". That status (connector ladder, tenants, attested facts,
+  This SimCore, Not checked) is tracked on Get started, under the setup
+  steps, and the old `readiness` route lands there. The gate states its scope
+  in one line and links to Get started. This takes the alternative to D-1 of
+  the 2026-11-13 one-model spec (which merged Get started into the gate); its
+  server-side readiness model is unaffected.
 
 ### Not built, or found and left (follow-ups)
 
