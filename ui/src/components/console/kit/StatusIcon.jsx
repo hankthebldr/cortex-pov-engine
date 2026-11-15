@@ -12,6 +12,8 @@
  *   down      ✕  Down      (not working)
  *   off       –  Off       (never configured)
  *   unknown   ?  Unknown   (POVengine cannot see it) — never green
+ *   running   ●  Running   (in progress: a run, a step, a review) — the
+ *                          accent, not the green of done
  *
  * `word` overrides the label for the same tone (configuration rows say
  * OK · Missing · Changed · Can't check). An unrecognised status renders as
@@ -27,6 +29,7 @@ export const STATUS = {
   down:     { word: 'Down',     glyph: '✕', tone: 'down' },
   off:      { word: 'Off',      glyph: '–', tone: 'off' },
   unknown:  { word: 'Unknown',  glyph: '?', tone: 'unknown' },
+  running:  { word: 'Running',  glyph: '●', tone: 'running' },
 }
 
 export default function StatusIcon({ status = 'unknown', word, size = 'row', showWord = true, className = '' }) {
