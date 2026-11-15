@@ -416,3 +416,21 @@ func TestEnrollAndRegisterSendEmptyListsNotNull(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadOrEnrollFileParentFailsBeforeEnrolling(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, reused, err := LoadOrEnroll(filepath.Join(blocker, "sub"), func() (string, error) {
+		t.Fatal("enroll must not be called when the state dir cannot be created")
+		return "", nil
+	})
+	var se *StateDirError
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *StateDirError", err)
+	}
+	if id != "" || reused {
+		t.Fatalf("got id=%q reused=%v for an unusable state directory", id, reused)
+	}
+}

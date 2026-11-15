@@ -312,8 +312,8 @@ stamp `severity: "high"` on every rule.
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
-| POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. No Run, Result, task or event. |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. A pull launch also carries two `{code, …}` warnings from the runtime-dependency preflight (below): `RUNTIME_DEPENDENCY_GAP` and `RUNTIME_INSTALL_NOT_ENABLED`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. `warnings[]` is what the launch would carry for the same body, the runtime-dependency warnings included (it reads `allow_runtime_install`). No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
@@ -358,6 +358,26 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   `consent.simulation_authorized` it is the first key of the live gate for the
   run's in-process EAL steps (§1.3.2); a blank name counts as none. It gates
   nothing else and refuses no launch.
+- **Runtime-dependency warnings** (pull). The launch compares each step's
+  `requires_interpreters` with what the target agent reported at registration.
+  An interpreter (`python`, `perl`, `ruby`, `node`) is judged on the agent's
+  `interpreters` roster. Any other name (`sudo`, `ssh`, …) is judged on
+  `runtime_facts.tools`: found is fine, looked for and not found is missing, and
+  a name the beacon never looked for is `unverified`, which is not a gap.
+  "Looked for" is `runtime_facts.probed` when the beacon sends it, otherwise the
+  standard probe list (`engine.agent_manifest.PROBE_TOOLS`). An agent that sent
+  no tool list was never asked, so every such name is `unverified`.
+  `Run.runtime_dependency_gaps` holds one `{step_id, missing[], unverified[]?}`
+  per step that has either, and `GET /api/agents/{agent_id}/preflight` (§1.6)
+  answers the same way. Two warnings follow, on the launch response, on the dry
+  run and on `Run.output` as one `!! CODE: …` line each. Neither refuses the
+  launch: the beacon's own check at execution time does that, per step.
+  - `{"code": "RUNTIME_DEPENDENCY_GAP", "agent_id", "steps": […], "missing": […], "detail"}`
+    when a step has a missing name.
+  - `{"code": "RUNTIME_INSTALL_NOT_ENABLED", "agent_id", "detail"}` when the
+    body set `allow_runtime_install: true` and
+    `CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL` is off. The run is recorded
+    `runtime_install_authorized: false` and nothing is installed.
 - `/complete` appends a `--- COMPLETION SUMMARY ---` block to `run.output` and
   decrements `open_tasks`. A non-zero `exit_code` makes the run `failed`, and
   failure is sticky across a fan-out. The endpoint that brings `open_tasks` to 0
@@ -495,7 +515,7 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -517,6 +537,17 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
   `prevent` rows follow the same rule. `kpi_verdict` is left to the Tier-2 verifier. A later matched
   alert replaces `missed` with `detected`.
+- **A failed step is not a miss (1.2.1, #323).** `exited` means "ended on its own, any
+  exit status". When the host record carries a non-zero `exit_code`, the step failed on
+  the host (`ModuleNotFoundError`, a missing runtime dependency, a permission error), so
+  once its window closes with no alert its silent `detect` rows — and `prevent` rows
+  scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
+  `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
+  notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  `anchor_terminated` are unchanged; an alert matched inside the window still credits
+  the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
+  `missed`, and the block-mode two-witness branch does not read `exit_code`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
@@ -858,6 +889,7 @@ is 0***: nothing on this path has delivered to a live tenant.
 | POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[], runtime_facts?}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND`; **409 `AGENT_HAS_OPEN_RUNS`** with `run_ids` while a task is queued for the agent or a non-terminal run targets it, directly or via the routing ledger (round 2). Fix: `POST /api/runs/{id}/abort`; nothing is cancelled implicitly |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
+| GET | `/api/agents/{agent_id}/preflight` | Can this agent run this scenario? Advisory: read from what the agent reported at registration (§1.3, runtime-dependency warnings) | query: `scenario_id` | `{agent_id, scenario_id, ready, gaps:[{step_id, missing[], unverified[]?}], agent_interpreters[]}`. `ready` is false only when a step has a `missing` name; a step with only `unverified` names is listed and is not a gap. 404 `AGENT_NOT_FOUND` / `SCENARIO_NOT_FOUND` |
 
 - **Installer parameter validation (2026-11).** Before this change, `id` /
   `server` / `token` / `interval` went into the script text verbatim:
@@ -1023,9 +1055,12 @@ is 0***: nothing on this path has delivered to a live tenant.
   download and the pod sits in `Init:Error`. An IP literal always passes.
 - **`runtime_facts`.** `register` and `enroll` accept an optional `runtime_facts`
   object (`container`, `pod_name`, `pod_namespace`, `node_name`, `posture_profile`,
-  `prepare_status`, `tools[]`, `accounts[]`, `anchor_rename`; unknown keys ignored,
-  wrong types 422), stored on `agents.runtime_facts` and returned in
+  `prepare_status`, `tools[]`, `probed[]`, `accounts[]`, `anchor_rename`; unknown
+  keys ignored, wrong types 422), stored on `agents.runtime_facts` and returned in
   `agent.to_dict()`. Every beacon now sends it (`container: false` off a pod).
+  `tools[]` is what the beacon found; `probed[]` is what it looked for. No beacon
+  sends `probed[]` yet, and without it the runtime-dependency preflight (§1.3)
+  assumes the standard probe list.
   `capabilities` and `interpreters` accept `null` as `[]`.
 - **Launch gate for container agents** (`POST /api/runs`): `409
   AGENT_POSTURE_INSUFFICIENT` and `409 AGENT_TOOL_ABSENT` (override with
@@ -1629,13 +1664,28 @@ recorded under `tc_verdict_detail.measurement` with `family`, `basis`, `value`,
 
 | scenario `primary_kpi` (unit `%`) | value | basis |
 |---|---|---|
-| Detection Accuracy | `observed / seeded` over results that executed | `reconcile` or `manual` |
+| Detection Accuracy | `observed / seeded` over results that executed, less unmatched verify-only XQL rows | `reconcile` or `manual` |
 | Cross-Source Correlation Rate · Stitch Completeness · Correlation Coverage | `(alerts − incidents) / (alerts − 1)` | `alert_incident_ids` when the tenant stamps `incident_id`/`case_id` on alerts, else `host_incidents` from one `get_incidents` read scoped to the run's host |
 
 The guard: an **unscoped** pull withholds a PASS, a **truncated** pull
 withholds a FAIL, **zero matched** stays `pending`, and fewer than two alerts
 cannot yield a correlation rate. A re-score with no new evidence keeps the last
 measured value.
+
+**Verify-only XQL rows (2026-11-15, issue #272).** A row is verify-only when its
+declared type is `XQL` and no alert-raising card object backs it: its card
+object (`Result.detection_kind`, else the catalog entry for `ttp_ref` +
+`detection_id`) is an `xql_queries[]` query or a modeling rule, or there is no
+card (`connectors/measures.py::is_verify_only`). A query raises no alert, so
+while such a row is unmatched it leaves the Detection Accuracy numerator and
+denominator, as `not_reached` / `not_executed` rows do. A matched one counts on
+both sides. Its outcome is not changed: it still reads `missed`, and its own
+verdict is the Tier-2 verify verdict when it carries a `verification_xql`. With
+no alert-backed row left the measure is withheld and the run reads `pending`,
+never PASS. `measurement.verify_only` reports `{excluded, credited,
+no_verification_xql}`; the last counts excluded rows that Tier 2 cannot score
+either. Coverage (`coverage_pct`, the report's coverage table and the efficacy
+scorecard) is a different number and still counts these rows.
 
 **Credential config keys the `xsiam` connector reads:** `base_url` |
 `fqdn` | `tenant_url`, `api_key_id` | `auth_id`, `auth_mode`

@@ -274,6 +274,15 @@ and clean) and `runtime_install_authorized` — check both before reading a
 `failed` run as a detection result. Full mechanism:
 `docs/design/agent-runtime-dependencies.md`.
 
+A few scenarios list tools there that are not interpreters (`sudo`, `ssh`,
+`scp`, `sshpass`). Those are judged on the tools the beacon reported
+(`runtime_facts.tools`), not on the interpreter roster. A tool the beacon
+never looked for is listed as `unverified` and is not a gap. A real gap is
+also a warning on the launch itself (`RUNTIME_DEPENDENCY_GAP`), and asking
+for `allow_runtime_install` on a SimCore that has not enabled it warns too
+(`RUNTIME_INSTALL_NOT_ENABLED`). Neither refuses the launch. See
+`docs/reference/api-and-agent-surface.md` §1.3.
+
 **No equivalent preflight exists yet for identity readiness.** Until one
 does, run this by hand before the first launch against a new jumpbox —
 pull the identities a scenario actually needs straight from the API (no
