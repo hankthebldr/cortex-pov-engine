@@ -287,7 +287,8 @@ async def reconcile_run(
     verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=window_ends,
-                         attribution=attribution, refused=refused)
+                         attribution=attribution, refused=refused,
+                         already_credited=await credited_alert_ids(db, run.run_id))
 
     # ── what the scorer cannot know on its own: the pull context ──────────
     truncation = (pull.detail or {}).get("truncation")
@@ -1120,6 +1121,11 @@ async def match_window_ends(db: AsyncSession, run_id: str, results: list, *,
 # Which run an alert belongs to (#347)
 # ---------------------------------------------------------------------------
 
+#: How a row's note names the alert that credited it across the BIOC /
+#: Analytics BIOC label (``MatchVerdict.matched_via``, #346). The report and
+#: the console read the note.
+_CREDITED_BY = {"abioc": "an Analytics BIOC", "bioc": "a BIOC"}
+
 #: The columns of another run's rows the attribution rule reads. Plain column
 #: rows, never ``Result`` entities: a partly loaded entity would sit in the
 #: session's identity map and be handed to the next ``select(Result)``.
@@ -1298,6 +1304,58 @@ async def withdraw_foreign_credits(
     return withdrawn
 
 
+async def credited_alert_ids(db: AsyncSession, run_id: str) -> set[str]:
+    """The external ids of the alerts on record against a row of this run.
+
+    What the matcher must not use for a second BIOC / Analytics BIOC
+    cross-label credit (``reconcile(already_credited=...)``): its own
+    consumption lasts one pass, and the next reconcile would otherwise hand
+    the same alert to the next unobserved row.
+    """
+    return {ext for ext in (await db.execute(
+        select(Observation.external_id).where(
+            Observation.run_id == run_id, Observation.result_id.is_not(None),
+            Observation.external_id.is_not(None)))).scalars().all()}
+
+
+def step_at(when: datetime, reported: list[tuple[datetime, str]]) -> Optional[str]:
+    """The step that was running at ``when``, from the host's step records.
+
+    ``reported`` is ``(time the step reported, step id)`` in time order; a
+    step reports when it ends (``StepOutcome.started_at``). The step running
+    at ``when`` is therefore the first to report at or after it; an alert
+    later than every record follows the last step. None with no record.
+    """
+    for at, step_id in reported:
+        if at >= when:
+            return step_id
+    return reported[-1][1] if reported else None
+
+
+def _additional_entries(attribution: Attribution, alerts: list, host_rows: list,
+                        results: list) -> list[dict[str, Any]]:
+    """The run's alerts that match no expected row, as stored and served."""
+    reported = sorted(
+        ((so.started_at or so.recorded_at, so.step_id) for so in host_rows
+         if so.termination != "not_run" and (so.started_at or so.recorded_at) is not None),
+        key=lambda pair: pair[0])
+    names = {r.step_id: r.step_name for r in results if r.step_id}
+    out = []
+    for alert in attribution.additional(alerts):
+        step_id = step_at(alert.observed_at, reported)
+        out.append({
+            "alert_external_id": alert.external_id, "alert_name": alert.name,
+            "alert_source": getattr(alert, "alert_source", None),
+            "techniques": list(alert.techniques or ()),
+            "severity": alert.severity,
+            "action": getattr(alert, "action_pretty", None) or getattr(alert, "action", None),
+            "alert_outcome": getattr(alert, "outcome", None),
+            "observed_at": alert.observed_at.isoformat(),
+            "step_id": step_id, "step_name": names.get(step_id),
+        })
+    return out
+
+
 def _refused_alerts(refused: Optional[list[dict[str, Any]]],
                     attribution: Attribution) -> list[dict[str, Any]]:
     """The matcher's refusals, one entry per alert (it refuses per row)."""
@@ -1329,29 +1387,42 @@ def _alert_entry_key(entry: dict[str, Any]) -> Any:
 def _record_attribution(
     run: Run, attribution: Attribution, alerts: list, *, source: str,
     refused: Optional[list[dict[str, Any]]], withdrawn: Optional[list[dict[str, Any]]],
+    host_rows: list, results: list, credited: set,
 ) -> dict[str, Any]:
     """Store what this review found on ``run.alert_attribution``; return the
     keys the reconcile summary gains. Not committed (it rides the caller's).
 
-    An entry stored by an earlier review is kept when its alert was not in
-    this pull (the tenant ages alerts out; a manual batch is a sample) and
-    replaced by this review's answer when it was.
+    ``additional`` is the run's alerts that match no expected row (#346);
+    ``unattributed`` the ones that match this run and another with nothing to
+    single one out (#347). An entry stored by an earlier review is kept when
+    its alert was not in this pull (the tenant ages alerts out; a manual batch
+    is a sample) and replaced by this review's answer when it was. A stored
+    alert that has since credited a row (``credited``: the external ids on
+    record against a row) is dropped: it is a detection now.
     """
     not_credited = _refused_alerts(refused, attribution)
     unattributed = [e for e in not_credited if e["reason"] == AMBIGUOUS_RUNS]
     seen = {a.external_id or (a.observed_at.isoformat(), a.name)
             for a in alerts if a.observed_at is not None}
     stored = run.alert_attribution if isinstance(run.alert_attribution, dict) else {}
-    kept = [e for e in stored.get("unattributed") or ()
-            if isinstance(e, dict) and _alert_entry_key(e) not in seen]
+
+    def kept(name: str) -> list[dict[str, Any]]:
+        return [e for e in stored.get(name) or ()
+                if isinstance(e, dict) and _alert_entry_key(e) not in seen
+                and e.get("alert_external_id") not in credited]
+
+    additional = sorted(
+        kept("additional") + _additional_entries(attribution, alerts, host_rows, results),
+        key=lambda e: e.get("observed_at") or "")
     run.alert_attribution = {
         **stored,
         "reviewed_at": datetime.utcnow().isoformat(),
         "source": source,
         "host": attribution.run.host,
-        "unattributed": kept + unattributed,
+        "additional": additional,
+        "unattributed": kept("unattributed") + unattributed,
     }
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = {"additional_detections": additional}
     if not_credited:
         out["not_credited"] = not_credited
     if unattributed:
@@ -1407,7 +1478,9 @@ async def apply_verdicts(
     (:func:`run_attribution`); with it, the alerts the matcher ``refused`` and
     the stored credits :func:`withdraw_foreign_credits` took back
     (``withdrawn``) are recorded on ``Run.alert_attribution`` and reported in
-    the summary (``not_credited``, ``unattributed``, ``withdrawn_credits``).
+    the summary (``not_credited``, ``unattributed``, ``withdrawn_credits``),
+    with the run's alerts that match no expected row (``additional_detections``,
+    #346): listed on the run, credited to nothing, outside Detection Accuracy.
 
     Returns ``(summary, newly_matched)``.
     """
@@ -1487,9 +1560,11 @@ async def apply_verdicts(
             continue
         result.observed = True
         result.observed_at = v.observed_at
+        via = _CREDITED_BY.get(getattr(v, "matched_via", None))
         note = (f"auto-validated via {source} "
                 f"(matched on {', '.join(v.matched_on)}; "
-                f"alert={v.alert_external_id or v.alert_name or 'n/a'})")
+                + (f"credited by {via}; " if via else "")
+                + f"alert={v.alert_external_id or v.alert_name or 'n/a'})")
         result.notes = ((result.notes + " | ") if result.notes else "") + note
         result.alert_action = v.alert_action
         result.alert_outcome = v.alert_outcome
@@ -1523,8 +1598,10 @@ async def apply_verdicts(
 
     attributed: dict[str, Any] = {}
     if run is not None and attribution is not None:
-        attributed = _record_attribution(run, attribution, alerts, source=source,
-                                         refused=refused, withdrawn=withdrawn)
+        attributed = _record_attribution(
+            run, attribution, alerts, source=source, refused=refused, withdrawn=withdrawn,
+            host_rows=host_rows, results=results,
+            credited={key[2] for key in seen_obs if key[0] is not None and key[1] == "ext"})
 
     await db.commit()
 
@@ -1534,7 +1611,8 @@ async def apply_verdicts(
                 "type": "result.observed", "run_id": run_id,
                 "data": {"result_id": result.id, "observed": True, "plane": result.plane,
                          "mttd_seconds": result.mttd_seconds, "source": source,
-                         "matched_on": v.matched_on},
+                         "matched_on": v.matched_on,
+                         "matched_via": getattr(v, "matched_via", None)},
             })
         except Exception:  # pragma: no cover - defensive
             logger.exception("event_bus publish failed result_id=%d", result.id)

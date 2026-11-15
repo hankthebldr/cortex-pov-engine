@@ -166,8 +166,9 @@ async def ingest_observations(
     """
     from connectors.matcher import scope_to_host
     from connectors.service import (NEVER_DELIVERED_WARNING, apply_verdicts,
-                                    attribution_warnings, host_source,
-                                    match_window_ends, reconcile_candidates,
+                                    attribution_warnings, credited_alert_ids,
+                                    host_source, match_window_ends,
+                                    reconcile_candidates,
                                     reported_step_ids, resolve_run_host,
                                     run_attribution, window_by_type,
                                     withdraw_foreign_credits)
@@ -196,7 +197,8 @@ async def ingest_observations(
                          only_unobserved=not body.reevaluate,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=window_ends,
-                         attribution=attribution, refused=refused)
+                         attribution=attribution, refused=refused,
+                         already_credited=await credited_alert_ids(db, run_id))
     matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(

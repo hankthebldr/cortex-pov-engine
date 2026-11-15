@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -29,6 +30,24 @@ _SCENARIO_ID_RE = re.compile(r"^scenario_id:\s*[\"']?([A-Za-z0-9-]+)", re.MULTIL
 
 def _epoch_ms(naive_utc: datetime) -> int:
     return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+@contextmanager
+def matcher_as_in_1_2_0():
+    """The matcher's 1.2.0 family gate: BIOC and Analytics BIOC never cross.
+
+    With no attribution passed as well, ``reconcile`` then credits exactly
+    what 1.2.0 did. The control uses this so "before" is the released
+    behaviour and not today's matcher with one rule removed.
+    """
+    from connectors import matcher
+
+    saved = matcher.BEHAVIOURAL_FAMILIES
+    matcher.BEHAVIOURAL_FAMILIES = frozenset()
+    try:
+        yield
+    finally:
+        matcher.BEHAVIOURAL_FAMILIES = saved
 
 
 def _scenario_documents(wanted: set[str]) -> dict[str, dict]:
@@ -215,9 +234,33 @@ class Sweep:
                         "own_run": raised_in == self.short(r.run_id)})
         return sorted(out, key=lambda c: (c["run"], c["detection_id"] or ""))
 
-    async def without_the_one_run_rule(self, SessionLocal) -> list[dict[str, Any]]:
-        """What the matcher credits when every alert in a row's window is
-        taken: the 1.2.0 behaviour, computed without touching the database."""
+    async def dispositions(self, SessionLocal) -> dict[str, dict[str, Any]]:
+        """Where each of the fixture's alerts ended up, by alert id.
+
+        ``credited``: the runs with a row it credits. ``additional``: the runs
+        that list it as an additional detection. ``unattributed``: the runs
+        that record it as unattributed. Each run is the fixture's short id.
+        """
+        from models import Run
+        from sqlalchemy import select
+
+        out = {aid: {"raised_in": a["run"], "credited": [], "additional": [],
+                     "unattributed": []} for aid, a in self.alerts.items()}
+        for c in await self.credits(SessionLocal):
+            out[c["alert_id"]]["credited"].append(c["run"])
+        async with SessionLocal() as db:
+            runs = (await db.execute(select(Run))).scalars().all()
+        for run in runs:
+            stored = run.alert_attribution or {}
+            for name in ("additional", "unattributed"):
+                for entry in stored.get(name) or ():
+                    out[entry["alert_external_id"]][name].append(self.short(run.run_id))
+        return out
+
+    async def as_1_2_0(self, SessionLocal) -> list[dict[str, Any]]:
+        """What 1.2.0 credited: every alert in a row's window is taken (no
+        one-run rule) and BIOC never crosses to Analytics BIOC. Computed
+        without touching the database."""
         from connectors.matcher import reconcile, scope_to_host
         from connectors.service import match_window_ends, window_by_type
         from connectors.xsiam import XsiamConnector
@@ -234,10 +277,12 @@ class Sweep:
                     Result.run_id == self.run_id(short)))).scalars().all())
                 ends = await match_window_ends(db, self.run_id(short), results,
                                                window_seconds=3600)
-                for v in reconcile(results, eligible, window_seconds=3600,
-                                   only_unobserved=False,
-                                   window_seconds_by_type=window_by_type(),
-                                   window_end_by_result=ends):
+                with matcher_as_in_1_2_0():
+                    verdicts = reconcile(results, eligible, window_seconds=3600,
+                                         only_unobserved=False,
+                                         window_seconds_by_type=window_by_type(),
+                                         window_end_by_result=ends)
+                for v in verdicts:
                     if not v.matched:
                         continue
                     raised_in = self.alerts[v.alert_external_id]["run"]

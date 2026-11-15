@@ -26,17 +26,53 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   nothing ties it to one, it credits neither and is listed as unattributed.
   The reconcile summary names every alert a run was not given, why, and the
   run it belongs to (`not_credited`).
+- **Real alerts on a run's own steps are credited or shown (#346).** On the
+  same sweep, 22 of the 25 alerts Cortex raised on the endpoint credited
+  nothing in their own run and appeared nowhere. Now every one is either
+  credited or listed on its run:
+  - *An alert from an XDR Agent module on a run that expects no Prevention
+    detection (15 of them)* is listed as an **additional detection**:
+    "Also raised by Cortex (N)" on the Results page, one line each (name,
+    source, step, time); "Other alerts Cortex raised for this run" in the
+    Markdown report; `additional_detections` in the JSON report, in
+    `GET /api/results/{run_id}` and in the reconcile summary. It does not mark
+    any expected detection "detected", and it is not counted in coverage or
+    Detection Accuracy, which still measure the expected detections only. The
+    list holds the alerts raised on the run's endpoint, from its launch until
+    the next run starts there or an hour after it ended, that match none of
+    its expected detections.
+  - *A BIOC raised where an Analytics BIOC was expected, or the reverse (4)*:
+    the two labels are now one family when something else identifies the
+    detection, namely the exact technique, the rule name or the detection id.
+    Such a credit is marked: the detection's note reads "credited by an
+    Analytics BIOC" (or "a BIOC"), the report prints it, and the API carries
+    `matched_via`. One alert credits one detection this way, and never one
+    the run also expects under the alert's own label. None of the sweep's four
+    carries such a key (their techniques differ from the expected ones), so
+    they are listed as additional detections rather than credited. An XDR
+    Agent alert still never credits a BIOC, ABIOC, XQL, Correlation or IOC
+    detection.
+  - *A technique the scenario does not expect (3: SIM-EDR-024, SIM-KOI-012,
+    SIM-MP-018)*: each is a built-in detection the scenario does not declare
+    (an uncommon service start from the systemd timer, a second agent module,
+    an analytics rule on the step's shell), not a wrong technique on a step,
+    so the scenarios are unchanged and the alerts are listed as additional
+    detections.
 
 ### Upgrading from 1.2.x
 
 - **One new nullable column, added at startup:** `runs.alert_attribution`
-  (JSON). No action is needed; a run stored before the upgrade reads `NULL`,
-  meaning "not reviewed", until it is reconciled again.
+  (JSON). It holds a run's additional detections and its unattributed alerts.
+  No action is needed; a run stored before the upgrade reads `NULL`, meaning
+  "not reviewed", and shows no "Also raised by Cortex" section until it is
+  reconciled again (Read back). Nothing is back-filled at upgrade.
 - **A stored run that carries a cross-run credit is not rewritten at upgrade.**
   It changes when the run is reviewed again: `POST /api/runs/{id}/reconcile`,
-  `POST /api/runs/{id}/observations`, Read back in the console, or the
-  auto-reconcile sweep while the run is still inside its lookback. On that
-  review, a detection credited by an alert that belongs to another run goes
+  `POST /api/runs/{id}/observations` or Read back in the console. The
+  auto-reconcile sweep reviews a stored run only while it is inside the
+  lookback, under the attempt cap and still has an unobserved detection, so
+  read back the runs of a back-to-back sweep yourself. On that review, a
+  detection credited by an alert that belongs to another run goes
   back to unobserved, loses its MTTD and is judged again in the same pass (so
   it is credited from the run's own alert when there is one). The detection's
   note says which alert was withdrawn and why, the reconcile summary lists it

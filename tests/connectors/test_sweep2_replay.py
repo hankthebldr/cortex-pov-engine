@@ -4,7 +4,12 @@ Seventeen runs back to back on one endpoint raised 25 alerts there. On 1.2.0,
 reconcile credited 5 rows: 3 from an alert of their own run, 1 from an NGFW
 alert that names no host, and 1 FALSE one: SIM-EDR-018's ABIOC row, from the
 alert SIM-MP-003 raised 32 minutes later (base technique T1059 + the ABIOC
-family), with an MTTD of 1,920 s.
+family), with an MTTD of 1,920 s. The other 22 host alerts credited nothing
+and were shown nowhere.
+
+After: every alert is credited to its own run (4), listed on its own run as
+an additional detection (22), or recorded unattributed with a reason (0 in
+this sweep); no run holds another run's alert.
 
 The fixture is the issue's table (``tests/fixtures/sweep2_replay``); the rows
 are seeded from the real scenario files; the reconcile is the production
@@ -16,7 +21,7 @@ import asyncio
 
 import pytest
 
-from tests.connectors.sweep2_replay import Sweep
+from tests.connectors.sweep2_replay import Sweep, matcher_as_in_1_2_0
 
 # The windows are naive UTC; a fixture that mints epochs in host-local time
 # must fail here, not on a laptop.
@@ -71,10 +76,11 @@ def test_the_seeded_rows_are_the_counts_the_issue_reports(sweep, session_factory
 
 # ── before: 1.2.0 ───────────────────────────────────────────────────────────
 
-def test_without_the_one_run_rule_the_replay_reproduces_the_false_credit(sweep, session_factory):
-    """The control. Taking every alert in a row's window, as 1.2.0 did, gives
-    the issue's five credits exactly: 3 own-run, 1 host-less, 1 cross-run."""
-    credits = asyncio.run(sweep.without_the_one_run_rule(session_factory))
+def test_the_1_2_0_matcher_reproduces_the_issues_five_credits(sweep, session_factory):
+    """The control. Taking every alert in a row's window, with BIOC and
+    Analytics BIOC kept apart, as 1.2.0 did, gives the issue's five credits
+    exactly: 3 own-run, 1 host-less, 1 cross-run."""
+    credits = asyncio.run(sweep.as_1_2_0(session_factory))
 
     expected = {(c["run"], c["alert_id"]): c for c in sweep.data["credited_in_1_2_0"]}
     assert {_key(c) for c in credits} == set(expected)
@@ -110,6 +116,77 @@ def test_no_run_is_credited_with_another_runs_alert(sweep, session_factory):
     assert refused[FOREIGN_ALERT]["run_id"] == sweep.run_id(MP_003)
     assert refused[FOREIGN_ALERT]["scenario_id"] == "SIM-MP-003"
     assert "unattributed" not in edr018                              # it has an owner
+
+
+def test_every_alert_is_credited_listed_or_unattributed_on_its_own_run(sweep, session_factory):
+    """The whole table, accounted for. Before: 3 host alerts credited their
+    own run, 1 credited another run, 21 left no trace."""
+    asyncio.run(sweep.reconcile_all(session_factory))
+    where = asyncio.run(sweep.dispositions(session_factory))
+
+    assert len(where) == 26
+    for alert_id, d in where.items():
+        places = d["credited"] + d["additional"] + d["unattributed"]
+        assert len(places) == 1, (alert_id, d)                # exactly one place ...
+        assert places == [d["raised_in"]], (alert_id, d)      # ... and it is its own run
+
+    credited = sorted(a for a, d in where.items() if d["credited"])
+    additional = sorted(a for a, d in where.items() if d["additional"])
+    unattributed = [a for a, d in where.items() if d["unattributed"]]
+    assert credited == ["1502466", "1502493", "1502499", "1502539"]
+    assert len(additional) == 22 and unattributed == []
+
+
+def test_the_alerts_the_family_gate_dropped_are_listed_not_credited(sweep, session_factory):
+    """15 agent-module alerts hit runs that expect no Prevention row. They are
+    real detections, so they are shown; they credit no expected rule."""
+    summaries = asyncio.run(sweep.reconcile_all(session_factory))
+    where = asyncio.run(sweep.dispositions(session_factory))
+
+    agent = [aid for aid, a in sweep.alerts.items()
+             if a["source"] == "XDR Agent" and "family gate" in a["in_1_2_0"]]
+    assert len(agent) == 15
+    assert all(where[aid]["additional"] == [sweep.alerts[aid]["run"]] for aid in agent)
+    assert all(not where[aid]["credited"] for aid in agent)
+
+    # SIM-KOI-005: four agent alerts, six expected rows, none of them credited.
+    koi005 = summaries["186856b3"]
+    assert [e["alert_external_id"] for e in koi005["additional_detections"]] == [
+        "1502496", "1502495", "1502494", "1502492"]
+    assert koi005["observed"] == 0 and koi005["newly_matched"] == 0
+    assert koi005["total_expected"] == 6      # the denominator did not move
+
+
+def test_the_four_label_mismatches_carry_no_identity_key_and_are_listed(sweep, session_factory):
+    """BIOC raised where ABIOC was expected (or the reverse) on four runs. The
+    labels may now cross, but only on an exact technique, the rule name or the
+    detection id, and none of these four has one: listed, not credited."""
+    asyncio.run(sweep.reconcile_all(session_factory))
+    where = asyncio.run(sweep.dispositions(session_factory))
+    for alert_id in ("1502423", "1502440", "1502439", "1502502"):
+        d = where[alert_id]
+        assert d["additional"] == [d["raised_in"]] and not d["credited"], (alert_id, d)
+
+
+def test_the_three_technique_mismatches_are_listed_on_their_own_run(sweep, session_factory):
+    """SIM-EDR-024, SIM-KOI-012 and SIM-MP-018: a built-in detection the
+    scenario does not declare, tagged with a technique no expected row has."""
+    asyncio.run(sweep.reconcile_all(session_factory))
+    where = asyncio.run(sweep.dispositions(session_factory))
+    for alert_id in ("1502477", "1502497", "1502505"):
+        d = where[alert_id]
+        assert d["additional"] == [d["raised_in"]] and not d["credited"], (alert_id, d)
+
+
+def test_an_additional_detection_carries_what_the_page_shows(sweep, session_factory):
+    summary = asyncio.run(sweep.reconcile(session_factory, EDR_018))
+    assert [(e["alert_external_id"], e["alert_name"], e["alert_source"], e["techniques"])
+            for e in summary["additional_detections"]] == [
+        ("1502439", "Dumping Registry hives with passwords", "XDR BIOC", ["T1003"]),
+        ("1502431", "Potentially Dangerous Tool - 433033227", "XDR Agent", [])]
+    first = summary["additional_detections"][0]
+    assert first["observed_at"] == sweep.when("05:37:05").isoformat()
+    assert set(first) >= {"step_id", "step_name", "severity", "action", "alert_outcome"}
 
 
 def test_the_false_row_is_unobserved_with_no_mttd(sweep, session_factory):
@@ -155,9 +232,10 @@ def _store_the_1_2_0_credit(sweep, session_factory) -> None:
                 Result.run_id == sweep.run_id(EDR_018)))).scalars().all())
             ends = await match_window_ends(db, sweep.run_id(EDR_018), results,
                                            window_seconds=3600)
-            verdicts = reconcile(results, eligible, window_seconds=3600,
-                                 window_seconds_by_type=window_by_type(),
-                                 window_end_by_result=ends)
+            with matcher_as_in_1_2_0():
+                verdicts = reconcile(results, eligible, window_seconds=3600,
+                                     window_seconds_by_type=window_by_type(),
+                                     window_end_by_result=ends)
             await apply_verdicts(db, sweep.run_id(EDR_018), results, verdicts,
                                  source="xsiam:replay",
                                  pull_context={"basis": "reconcile", "unscoped": False,

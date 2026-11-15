@@ -22,6 +22,10 @@ The rule, as one pure function of the runs on the host:
 * An alert goes to at most one run. One that no single run can be shown to
   own is UNATTRIBUTED (``AMBIGUOUS_RUNS``): it credits nothing.
 
+The same timeline answers #346's other question: which alerts did the run
+raise that it does NOT expect (:meth:`Attribution.additional`)? Those are
+listed on the run as additional detections and credit no row.
+
 Every run's reconcile evaluates this same function over the same runs, so two
 runs can never both take one alert, whichever is reconciled first.
 
@@ -316,6 +320,50 @@ class Attribution:
 
     def _lapse_reason(self, when: datetime) -> str:
         return RUN_NOT_BEGUN if self.held_from(self.run) > when else LATER_RUN_STARTED
+
+    # ── alerts the run raised that it did not expect (#346) ─────────────────
+
+    def additional(self, alerts: Sequence[ObservedAlert]) -> list[ObservedAlert]:
+        """The alerts that are this run's and match none of its expected rows.
+
+        An alert qualifies when it names the run's host, fell inside the run's
+        window (its launch to its end plus the default match window) while the
+        run held the host, has no identity key with ANY expected row of the
+        run (one that has is a credit or a repeat firing of one), and is not
+        tied to another run by a rule name, detection id or run marker. An
+        alert that names no host is never listed: nothing ties it to this
+        endpoint. Time order.
+
+        The settle time is the DEFAULT window for every alert family, not the
+        longer Analytics one. A row may wait a day for its Analytics alert
+        because an identity key still has to agree; here only the clock ties
+        the alert to the run, and a day of an endpoint's unrelated Analytics
+        alerts listed under a run would be a false attribution.
+        """
+        mine = self.run
+        if not mine.host:
+            return []
+        rows = [prepared for prepared, _lower, _upper in self._prepared_rows(mine)]
+        last = (mine.ended_at or mine.began_at) + timedelta(seconds=self._window)
+        out: list[ObservedAlert] = []
+        for alert in alerts:
+            when = alert.observed_at
+            if when is None or _short_host(getattr(alert, "host", None)) != mine.host:
+                continue
+            if not mine.launched_at <= when <= last:
+                continue
+            if self.displaced_by(mine, when) is not None:
+                continue
+            side = _prepare_alert(alert)
+            if any(_keys_for(row, side) for row in rows):
+                continue
+            marked = self._marked(alert)
+            if marked and mine not in marked:
+                continue
+            if any(self._claim(other, alert) == _STRONG for other in self._contenders(alert)[1:]):
+                continue
+            out.append(alert)
+        return sorted(out, key=lambda a: a.observed_at)
 
     def known(self, run_id: Optional[str]) -> Optional[HostRun]:
         """The run with this id, when it is this run or one near it."""
