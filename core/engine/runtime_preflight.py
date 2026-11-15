@@ -45,6 +45,9 @@ from typing import Any, Iterable, Optional
 # a Go test fails if the two drift).
 from engine.agent_manifest import PROBE_TOOLS
 
+GAP_CODE = "RUNTIME_DEPENDENCY_GAP"
+INSTALL_NOT_ENABLED_CODE = "RUNTIME_INSTALL_NOT_ENABLED"
+
 # Kept in sync (by hand, not by codegen) with agent/executor/interpreter.go's
 # interpreterAliases. A drift here only widens or narrows the ADVISORY
 # preflight signal — it can never cause a false "ran successfully", because
@@ -170,3 +173,43 @@ def evaluate_runtime_readiness(
                 step_id=step.get("id", ""), missing=missing, unverified=unverified))
     return RuntimeReadiness(
         ready=not any(g.missing for g in gaps), gaps=gaps, agent_interpreters=available)
+
+
+def launch_warnings(
+    readiness: RuntimeReadiness,
+    agent_id: str,
+    *,
+    install_requested: bool = False,
+    install_enabled: bool = False,
+) -> list[dict[str, Any]]:
+    """The warnings a launch against ``agent_id`` carries, as ``{code, ...}``
+    dicts. Neither refuses the launch.
+
+    * ``RUNTIME_DEPENDENCY_GAP`` when a step has a ``missing`` name.
+    * ``RUNTIME_INSTALL_NOT_ENABLED`` when the launch asked for a runtime
+      install and this deployment has not enabled it.
+    """
+    out: list[dict[str, Any]] = []
+    gapped = [g for g in readiness.gaps if g.missing]
+    if gapped:
+        missing = list(dict.fromkeys(name for g in gapped for name in g.missing))
+        out.append({
+            "code": GAP_CODE,
+            "agent_id": agent_id,
+            "steps": [g.step_id for g in gapped],
+            "missing": missing,
+            "detail": (
+                f"The agent did not report {', '.join(missing)}, and the beacon will "
+                f"not run these steps without {'it' if len(missing) == 1 else 'them'}."
+            ),
+        })
+    if install_requested and not install_enabled:
+        out.append({
+            "code": INSTALL_NOT_ENABLED_CODE,
+            "agent_id": agent_id,
+            "detail": (
+                "Runtime install is off on this SimCore "
+                "(CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL), so nothing will be installed."
+            ),
+        })
+    return out
