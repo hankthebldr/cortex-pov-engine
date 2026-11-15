@@ -202,3 +202,95 @@
 }
 .theme-console .targets .deploy-os { border-radius: 6px; }
 .theme-console .targets .deploy-snippet { border-radius: 6px; }
+
+/* ── 8. Fleet: removing agent rows (#339) ──────────────────────────
+   Triggers (Select, Delete all offline, Delete selected, a row's
+   Delete) are outlined; only the confirmed step is the filled coral
+   kit destructive button. The trigger hover is the console's
+   .btn--danger pattern, carried onto a kit button. ─────────────── */
+.theme-console .targets .fleet-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.theme-console .targets .kit-btn.btn--danger:hover:not(:disabled) {
+  border-color: var(--crit); color: var(--crit); background: var(--crit-soft);
+}
+.theme-console .targets .fleet-toolbar__select[aria-pressed="true"] {
+  background: var(--ac-soft); border-color: var(--ac-line); color: var(--ac-ink);
+}
+
+.theme-console .targets .fleet-bulk {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+  font-family: var(--font-ui); font-size: 12px; line-height: 1.5; color: var(--tx2);
+}
+.theme-console .targets .fleet-bulk--confirm {
+  border-color: var(--crit); box-shadow: 0 0 0 1px var(--crit-soft);
+}
+.theme-console .targets .fleet-bulk__q {
+  margin: 0; font-size: 13px; font-weight: 600; color: var(--tx);
+}
+/* Eight rows show; a longer list scrolls inside the panel and is a tab
+   stop (TargetsView sets tabIndex past BULK_LIST_SCROLLS_AT). */
+.theme-console .targets .fleet-bulk__ids {
+  list-style: none; margin: 0; padding: 6px 10px;
+  max-height: 154px; overflow-y: auto;
+  background: var(--s0); border: 1px solid var(--bd); border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6;
+  color: var(--tx);
+}
+.theme-console .targets .fleet-bulk__ids li { overflow-wrap: anywhere; }
+.theme-console .targets .fleet-bulk__ids:focus-visible {
+  outline: 2px solid var(--ac); outline-offset: 2px;
+}
+.theme-console .targets .fleet-bulk__note { margin: 0; font-size: 11px; }
+.theme-console .targets .fleet-bulk__actions {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px;
+}
+.theme-console .targets .fleet-bulk__bar {
+  height: 4px; border-radius: 2px; overflow: hidden; background: var(--s2);
+}
+.theme-console .targets .fleet-bulk__bar > span {
+  display: block; height: 100%; background: var(--tx2);
+  transition: width 160ms ease-out;
+}
+.theme-console .targets .fleet-bulk__counts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+}
+.theme-console .targets .fleet-bulk__refused {
+  margin: 0; padding-left: 16px;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; overflow-wrap: anywhere;
+}
+.theme-console .targets .fleet-bulk__refused-id { color: var(--tx); font-weight: 600; }
+.theme-console .targets .fleet-bulk__refused code { color: var(--crit); }
+
+/* Select mode: one checkbox strip at the top of each card. */
+.theme-console .targets .target-card__pick {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px 0;
+  font-family: var(--font-ui); font-size: 11px; color: var(--tx2);
+  cursor: pointer;
+}
+/* A console-wide input rule makes inputs full width; a checkbox is not one. */
+.theme-console .targets .target-card__pick input {
+  width: auto; flex: none; margin: 0; accent-color: var(--ac);
+}
+.theme-console .targets .target-card.is-picked { border-color: var(--crit); }
+
+/* Per-row inline confirm: the question left, Cancel / Delete right, the
+   host-side removal steps one collapsed line below. */
+.theme-console .targets .target-card__confirm { flex-wrap: wrap; }
+.theme-console .targets .target-card__confirm-q { margin-right: auto; }
+.theme-console .targets .target-card__how {
+  padding: 0 12px 8px; background: var(--c-void);
+}
+.theme-console .targets .target-card__how-toggle {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--font-ui); font-size: 11px; color: var(--tx2);
+}
+.theme-console .targets .target-card__how-toggle:hover { color: var(--tx); }
+.theme-console .targets .target-card__how-toggle:focus-visible {
+  outline: 2px solid var(--ac); outline-offset: 2px;
+}
+.theme-console .targets .card-action:disabled { opacity: .45; cursor: not-allowed; }

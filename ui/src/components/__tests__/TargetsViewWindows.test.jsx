@@ -245,6 +245,8 @@ describe('Agent cards · delete says what it does and how to really remove a bea
     mount({ agents: [agent] })
     const c = screen.getByText(agent.agent_id).closest('.target-card')
     fireEvent.click(within(c).getByRole('button', { name: /delete/i }))
+    // The host-side steps sit behind a disclosure under the inline confirm (#339).
+    fireEvent.click(within(c).getByRole('button', { name: /How to remove the beacon from the host/ }))
     // Same element: the card keeps its key across the confirm re-render.
     return c
   }
@@ -312,7 +314,7 @@ describe('Agent cards · a refused delete says why and offers the abort (OPS-08)
     )
     const c = screen.getByText('jb-stuck').closest('.target-card')
     fireEvent.click(within(c).getByRole('button', { name: /delete/i }))
-    fireEvent.click(within(c).getByRole('button', { name: /Delete row/i }))
+    fireEvent.click(within(c).getByRole('button', { name: 'Delete' }))
     return { c, refreshAgents }
   }
 

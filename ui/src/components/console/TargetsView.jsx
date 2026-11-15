@@ -42,6 +42,7 @@ import {
   WindowsCaveats,
 } from './DeployParts.jsx'
 import { trapTabKey } from './focusTrap.js'
+import { Button, StatusIcon } from './kit/index.js'
 import '../../styles/destinations/agents.css'
 import '../../styles/destinations/deploy-console.css'
 
@@ -148,6 +149,27 @@ function containerFactsLine(f) {
   ].filter(Boolean).join(' · ')
 }
 
+// What a failed DELETE /api/agents/{id} said, in the shape the card renders.
+// SimCore refuses with 409 AGENT_HAS_OPEN_RUNS (+ run_ids) while a run is owed
+// to the agent or in flight on it, and 404 AGENT_NOT_FOUND for a row that is
+// already gone. A request that never got an answer has no code.
+function refusalOf(err) {
+  const p = err?.payload || {}
+  const detail = typeof err?.detail === 'string' ? err.detail : null
+  return {
+    code: err?.code || null,
+    message: detail || err?.message || 'SimCore refused the delete.',
+    runIds: Array.isArray(p.run_ids) ? p.run_ids : [],
+    aborted: {},
+  }
+}
+
+const plural = (n, one, many = `${one}s`) => (n === 1 ? one : many)
+
+// The id list in a bulk confirm scrolls past this many rows; only then is it a
+// tab stop, so a keyboard can scroll it.
+const BULK_LIST_SCROLLS_AT = 8
+
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {}, embedded = false }) {
   const Title = embedded ? 'h2' : 'h1'
   // ── Global scope from the provider (agents + active agent are ambient) ─────
@@ -197,31 +219,135 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // nothing. SimCore refuses with 409 AGENT_HAS_OPEN_RUNS while a run is owed
   // to the agent or in flight on it; ending such a run is the operator's call.
   const [deleteRefusal, setDeleteRefusal] = useState({})
+  // The per-row confirm keeps the host-side uninstall steps behind a
+  // disclosure, so nothing sits between the Delete click and the confirm.
+  const [howOpen, setHowOpen] = useState(false)
+  const rowConfirmRef = useRef(null)
+  const deleteTriggerRefs = useRef({})   // agent_id → that row's Delete button
+  const rowReturnFocusRef = useRef(null) // agent_id whose Delete gets focus back
 
-  const removeAgent = useCallback(async (agentId) => {
-    setBusyDelete(agentId)
+  // ── Bulk delete: "Delete all offline (N)" and select mode ─────────────────
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState([])         // agent ids, click order
+  const [bulkConfirm, setBulkConfirm] = useState(null) // {kind: 'offline'|'selected', ids}
+  const [bulkProgress, setBulkProgress] = useState(null) // {current, total} while running
+  const [bulkSummary, setBulkSummary] = useState(null)   // {total, deleted[], refused[]}
+  const bulkRef = useRef(null)
+  const bulkToolbarRef = useRef(null)
+  const bulkReturnFocusRef = useRef(null) // the toolbar button that opened the confirm
+  const bulkRunningRef = useRef(false)    // pauses the 10 s poll while a batch runs
+  const bulkBusy = bulkProgress !== null
+
+  // One DELETE. A refusal is recorded against its row (the card renders it,
+  // abort controls included) and returned; null means the row is gone.
+  const deleteOne = useCallback(async (agentId) => {
     setDeleteRefusal((m) => { const n = { ...m }; delete n[agentId]; return n })
     try {
       await deleteAgent(agentId)
+      return null
+    } catch (err) {
+      const refusal = refusalOf(err)
+      setDeleteRefusal((m) => ({ ...m, [agentId]: refusal }))
+      return refusal
+    }
+  }, [])
+
+  const removeAgent = useCallback(async (agentId) => {
+    setBusyDelete(agentId)
+    try {
       // The provider owns the agent list; re-pull so the header switcher and
       // this surface both reflect the removal (its stale-pointer guard clears
       // the active pointer + falls back if the deleted agent was active).
-      await refreshAgents()
-    } catch (err) {
-      const p = err?.payload || {}
-      const detail = typeof err?.detail === 'string' ? err.detail : null
-      setDeleteRefusal((m) => ({
-        ...m,
-        [agentId]: {
-          code: err?.code || null,
-          message: detail || err?.message || 'SimCore refused the delete.',
-          runIds: Array.isArray(p.run_ids) ? p.run_ids : [],
-          aborted: {},
-        },
-      }))
+      if (!(await deleteOne(agentId))) await refreshAgents()
+    } finally {
+      rowReturnFocusRef.current = agentId
+      setBusyDelete(null); setPendingDelete(null)
     }
-    finally { setBusyDelete(null); setPendingDelete(null) }
-  }, [refreshAgents])
+  }, [deleteOne, refreshAgents])
+
+  const openRowDelete = useCallback((agentId) => {
+    setBulkConfirm(null)
+    setHowOpen(false)
+    setPendingDelete(agentId)
+  }, [])
+
+  const cancelRowDelete = useCallback((agentId) => {
+    rowReturnFocusRef.current = agentId
+    setPendingDelete(null)
+  }, [])
+
+  // Focus lands on Cancel when a row confirm opens, and goes back to the row's
+  // Delete when it closes (if the row is still there).
+  useEffect(() => {
+    if (pendingDelete) {
+      rowConfirmRef.current?.querySelector('[data-confirm-cancel]')?.focus()
+      return
+    }
+    const back = rowReturnFocusRef.current
+    rowReturnFocusRef.current = null
+    if (back) deleteTriggerRefs.current[back]?.focus()
+  }, [pendingDelete])
+
+  const askBulk = useCallback((kind, ids, opener) => {
+    if (!ids.length) return
+    setPendingDelete(null)
+    setBulkSummary(null)
+    bulkReturnFocusRef.current = opener
+    setBulkConfirm({ kind, ids })
+  }, [])
+
+  const cancelBulk = useCallback(() => setBulkConfirm(null), [])
+
+  useEffect(() => {
+    if (bulkConfirm) {
+      bulkRef.current?.querySelector('[data-confirm-cancel]')?.focus()
+      return
+    }
+    const back = bulkReturnFocusRef.current
+    bulkReturnFocusRef.current = null
+    if (back) bulkToolbarRef.current?.querySelector(`[data-bulk-action="${back}"]`)?.focus()
+  }, [bulkConfirm])
+
+  // One DELETE at a time, never in parallel: SQLite takes one writer, and the
+  // order in the summary is the order on screen. A refusal never stops the
+  // batch. The list is re-pulled once, after the last call.
+  const runBulk = useCallback(async (ids) => {
+    bulkReturnFocusRef.current = null
+    setBulkConfirm(null)
+    setBulkSummary(null)
+    bulkRunningRef.current = true
+    const deleted = []
+    const refused = []
+    try {
+      for (let i = 0; i < ids.length; i += 1) {
+        setBulkProgress({ current: i + 1, total: ids.length })
+        const refusal = await deleteOne(ids[i])
+        if (refusal) refused.push({ id: ids[i], ...refusal })
+        else deleted.push(ids[i])
+      }
+    } finally {
+      bulkRunningRef.current = false
+      setBulkProgress(null)
+      setSelectMode(false)
+      setSelected([])
+      setBulkSummary({ total: ids.length, deleted, refused })
+    }
+    await refreshAgents()
+  }, [deleteOne, refreshAgents])
+
+  useEffect(() => {
+    if (bulkSummary) bulkRef.current?.querySelector('[data-summary-dismiss]')?.focus()
+  }, [bulkSummary])
+
+  const toggleSelectMode = useCallback(() => {
+    setSelectMode((on) => !on)
+    setSelected([])
+    setBulkConfirm(null)
+  }, [])
+
+  const toggleSelected = useCallback((agentId) => {
+    setSelected((s) => (s.includes(agentId) ? s.filter((x) => x !== agentId) : [...s, agentId]))
+  }, [])
 
   const abortOpenRun = useCallback(async (agentId, runId) => {
     let text
@@ -345,8 +471,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   useEffect(() => { refreshBundles() }, [refreshBundles])
   useEffect(() => {
     // Keep beacon liveness + bundle list fresh. Agents flow through the
-    // provider so a refresh here re-scopes the header switcher too.
-    const t = setInterval(refresh, 10_000)
+    // provider so a refresh here re-scopes the header switcher too. A bulk
+    // delete re-pulls once when it ends, so the poll sits that batch out.
+    const t = setInterval(() => { if (!bulkRunningRef.current) refresh() }, 10_000)
     return () => clearInterval(t)
   }, [refresh])
 
@@ -359,6 +486,119 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     setAgent(id)
     onSelectTarget({ kind: 'agent', id, label: a.hostname || a.host || id })
   }, [setAgent, onSelectTarget])
+
+  // "All offline" is offline by SimCore's own liveness word: never online,
+  // stale, enrolled or unknown, and never the active agent.
+  const agentIds = agents.map(agentIdOf)
+  const offlineIds = agents
+    .filter((a) => agentLiveness(a).state === LIVENESS.OFFLINE && agentIdOf(a) !== activeAgentId)
+    .map(agentIdOf)
+  // Fleet order, and only rows that are still on the list.
+  const selectedIds = agentIds.filter((id) => selected.includes(id))
+
+  const bulkLiveText = bulkProgress
+    ? `Deleting ${bulkProgress.current} of ${bulkProgress.total}…`
+    : bulkSummary
+      ? `Deleted ${bulkSummary.deleted.length} of ${bulkSummary.total}.`
+        + (bulkSummary.refused.length ? ` Refused ${bulkSummary.refused.length}.` : '')
+      : ''
+
+  let bulkPanel = null
+  if (bulkConfirm) {
+    const { kind, ids } = bulkConfirm
+    const n = ids.length
+    const byId = new Map(agents.map((a) => [agentIdOf(a), a]))
+    const notOffline = ids.filter((id) => agentLiveness(byId.get(id)).state !== LIVENESS.OFFLINE).length
+    const question = `Delete ${n} ${kind === 'offline' ? 'offline' : 'selected'} ${plural(n, 'agent')}?`
+    const scrolls = n > BULK_LIST_SCROLLS_AT
+    bulkPanel = (
+      <div
+        className="fleet-bulk fleet-bulk--confirm"
+        role="group"
+        aria-labelledby="fleet-bulk-question"
+        ref={bulkRef}
+        data-testid="fleet-bulk-confirm"
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelBulk() } }}
+      >
+        <p className="fleet-bulk__q" id="fleet-bulk-question">{question}</p>
+        <ul
+          className={'fleet-bulk__ids' + (scrolls ? ' fleet-bulk__ids--scroll' : '')}
+          aria-label="Agents to delete"
+          tabIndex={scrolls ? 0 : undefined}
+        >
+          {ids.map((id) => <li key={id} className="mono">{id}</li>)}
+        </ul>
+        <p className="fleet-bulk__note">
+          {kind === 'offline'
+            ? 'The active agent and agents that are online, stale or waiting for a first poll are not included. '
+            : ''}
+          {kind === 'selected' && ids.includes(activeAgentId)
+            ? 'Includes the active agent: the header switcher moves to another agent. '
+            : ''}
+          {kind === 'selected' && notOffline > 0
+            ? `${notOffline} of these ${plural(notOffline, 'is', 'are')} not offline: a beacon still running re-registers on its next poll and its row comes back. `
+            : ''}
+          Each delete removes the registry row only. Run history stays.
+        </p>
+        <div className="fleet-bulk__actions">
+          <Button variant="secondary" data-confirm-cancel="" onClick={cancelBulk}>Cancel</Button>
+          <Button variant="destructive" onClick={() => runBulk(ids)}>
+            Delete {n} {plural(n, 'agent')}
+          </Button>
+        </div>
+      </div>
+    )
+  } else if (bulkProgress) {
+    const { current, total } = bulkProgress
+    bulkPanel = (
+      // Visual only; the live region below is what assistive tech hears.
+      <div className="fleet-bulk fleet-bulk--progress" aria-hidden="true">
+        <p className="fleet-bulk__q">Deleting {current} of {total}…</p>
+        <div className="fleet-bulk__bar"><span style={{ width: `${((current - 1) / total) * 100}%` }} /></div>
+      </div>
+    )
+  } else if (bulkSummary) {
+    const { deleted, refused } = bulkSummary
+    bulkPanel = (
+      <div className="fleet-bulk fleet-bulk--summary" ref={bulkRef} data-testid="fleet-bulk-summary">
+        <div className="fleet-bulk__counts">
+          <StatusIcon status={deleted.length ? 'up' : 'off'} word={`Deleted ${deleted.length}`} />
+          {refused.length > 0 && <StatusIcon status="down" word={`Refused ${refused.length}`} />}
+        </div>
+        {refused.length > 0 && (
+          <>
+            <ul className="fleet-bulk__refused" aria-label="Refused deletes">
+              {refused.map((r) => (
+                <li key={r.id}>
+                  <span className="mono fleet-bulk__refused-id">{r.id}</span>
+                  {r.code && <>{' '}<code className="mono">{r.code}</code></>}
+                  {r.runIds.length > 0 ? (
+                    <>
+                      {' '}· open {plural(r.runIds.length, 'run')}:{' '}
+                      {r.runIds.map((rid, i) => (
+                        <React.Fragment key={rid}>
+                          {i > 0 && ', '}
+                          <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>
+                        </React.Fragment>
+                      ))}
+                    </>
+                  ) : (
+                    <> · {r.message}</>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="fleet-bulk__note">
+              Each refused row keeps its reason, with an Abort control for every open run.
+            </p>
+          </>
+        )}
+        <div className="fleet-bulk__actions">
+          <Button variant="secondary" data-summary-dismiss="" onClick={() => setBulkSummary(null)}>Dismiss</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="targets">
@@ -394,6 +634,38 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               + Deploy agent
             </button>
           </div>
+          {agents.length > 0 && (
+            <div className="fleet-toolbar" role="group" aria-label="Remove agent rows" ref={bulkToolbarRef}>
+              <Button
+                variant="secondary"
+                className="fleet-toolbar__select"
+                aria-pressed={selectMode}
+                disabled={bulkBusy}
+                onClick={toggleSelectMode}
+              >Select</Button>
+              {selectMode && (
+                <Button
+                  variant="secondary"
+                  className="btn--danger"
+                  data-bulk-action="selected"
+                  disabled={bulkBusy || selectedIds.length === 0}
+                  onClick={() => askBulk('selected', selectedIds, 'selected')}
+                >Delete selected ({selectedIds.length})</Button>
+              )}
+              {offlineIds.length > 0 && (
+                <Button
+                  variant="secondary"
+                  className="btn--danger"
+                  data-bulk-action="offline"
+                  disabled={bulkBusy}
+                  onClick={() => askBulk('offline', offlineIds, 'offline')}
+                >Delete all offline ({offlineIds.length})</Button>
+              )}
+            </div>
+          )}
+          {bulkPanel}
+          {/* Always mounted, so the first progress line is announced. */}
+          <p className="sr-only" role="status" aria-live="polite" data-testid="fleet-bulk-live">{bulkLiveText}</p>
           {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
           {agentsError && (
             <div className="target-card target-card--empty" role="alert" data-testid="agents-load-error">
@@ -437,8 +709,21 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   'target-card target-card--agent'
                   + (isSel('agent', id) ? ' is-selected' : '')
                   + (isActive ? ' is-active' : '')
+                  + (selectMode && selected.includes(id) ? ' is-picked' : '')
                 }
               >
+                {selectMode && (
+                  <label className="target-card__pick">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(id)}
+                      disabled={bulkBusy}
+                      onChange={() => toggleSelected(id)}
+                      aria-label={`Select ${id}`}
+                    />
+                    <span aria-hidden="true">Select for delete</span>
+                  </label>
+                )}
                 <button
                   type="button"
                   className="target-card__select"
@@ -482,10 +767,40 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 <AgentCapabilities agent={a} />
 
                 {confirming ? (
-                  <>
+                  // Escape cancels from anywhere in the confirm, the disclosure
+                  // and its Copy button included.
+                  <div
+                    className="target-card__confirming"
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelRowDelete(id) } }}
+                  >
+                    <div
+                      className="target-card__confirm"
+                      role="group"
+                      aria-label={`Delete ${id}?`}
+                      ref={rowConfirmRef}
+                    >
+                      <span className="target-card__confirm-q">Delete <strong className="mono">{id}</strong>?</span>
+                      <Button variant="secondary" data-confirm-cancel="" onClick={() => cancelRowDelete(id)}>Cancel</Button>
+                      <Button
+                        variant="destructive"
+                        disabled={busyDelete === id || bulkBusy}
+                        onClick={() => removeAgent(id)}
+                      >{busyDelete === id ? 'Deleting…' : 'Delete'}</Button>
+                    </div>
+                    <div className="target-card__how">
+                      <button
+                        type="button"
+                        className="target-card__how-toggle"
+                        aria-expanded={howOpen}
+                        onClick={() => setHowOpen((v) => !v)}
+                      >
+                        <span aria-hidden="true">{howOpen ? '▾' : '▸'}</span> How to remove the beacon from the host
+                      </button>
+                    </div>
+                    {howOpen && (
                     <div className="target-card__remove" data-testid="agent-remove-help">
                       <p>
-                        This <strong>removes the registry row only</strong>. A beacon still running on the
+                        Delete <strong>removes the registry row only</strong>. A beacon still running on the
                         host re-registers on its next poll and the row comes back. To remove the beacon
                         itself, run this on the host{targetOs === 'windows' ? ' in Windows PowerShell as Administrator' : ', as the user who installed it'}:
                       </p>
@@ -513,17 +828,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       )}
                       <CopyLive feedback={cardCopy.feedback} testId="agent-copy-live" />
                     </div>
-                    <div className="target-card__confirm">
-                      <span>Delete <strong className="mono">{id}</strong> from the registry?</span>
-                      <button type="button" className="btn btn--xs" onClick={() => setPendingDelete(null)}>Cancel</button>
-                      <button
-                        type="button"
-                        className="btn btn--xs btn--danger"
-                        disabled={busyDelete === id}
-                        onClick={() => removeAgent(id)}
-                      >{busyDelete === id ? '…' : 'Delete row'}</button>
-                    </div>
-                  </>
+                    )}
+                  </div>
                 ) : (
                   <>
                   {deleteRefusal[id] && (
@@ -581,9 +887,12 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     )}
                     <button
                       type="button"
+                      ref={(el) => { deleteTriggerRefs.current[id] = el }}
                       className="card-action card-action--danger"
-                      onClick={() => setPendingDelete(id)}
-                      title="Delete this agent"
+                      disabled={bulkBusy}
+                      onClick={() => openRowDelete(id)}
+                      aria-label={`Delete ${id}`}
+                      title="Delete this agent's registry row"
                     >✕ delete</button>
                   </div>
                   </>
