@@ -433,16 +433,56 @@ def test_relay_wire_step_outside_the_campaign_allowlist_returns_no_ops(client, s
     assert "safety_violation" in printed["step_results"][0]["error"]
 
 
-def test_relay_c2_beacon_without_c2_consent_is_dry(client, session_factory):
+@pytest.mark.parametrize("step, allowlist, op_kind", [
+    # C2 by name.
+    (C2, ["c2.example.test"], "http"),
+    # C2 only by the techniques its metadata declares (T1572): the campaign
+    # model's name list does not know it, the registry does.
+    (DNS, ["exfil.example.test", "127.0.0.1"], "dns"),
+])
+def test_relay_c2_plugin_without_c2_consent_is_dry(
+        client, session_factory, step, allowlist, op_kind):
+    plugin = step["plugin"]
+
+    # Consent to simulate, a named operator, but no C2 consent: a dry run.
     res = _launch(session_factory, consent={"simulation_authorized": True},
                   authorized_by="tester")
-    r = _relay(client, res.run_id, campaign_yaml=_campaign(
-        C2, target_allowlist=["c2.example.test"]))
-    body = r.json()
-    assert body["ops"] == []
-    assert json.loads(body["stdout"])["relay"]["code"] == "EAL_DRY_RUN_NO_C2_CONSENT"
+    body = _relay(client, res.run_id,
+                  campaign_yaml=_campaign(step, target_allowlist=allowlist)).json()
+    assert body["ops"] == [] and body["allowlist"] == []
+    printed = json.loads(body["stdout"])
+    assert printed["dry_run"] is True
+    assert printed["relay"]["code"] == "EAL_DRY_RUN_NO_C2_CONSENT"
+    assert plugin in printed["relay"]["detail"]
     assert [(x.outcome, x.outcome_reason) for x in _rows(session_factory)] == [
         ("not_executed", "EAL_DRY_RUN_NO_C2_CONSENT")]
+
+    # The relay and the campaign launch ask one classification.
+    from api.eal import _campaign_c2_plugins
+    from eal_simulator import get_default_registry
+    from eal_simulator.campaign import Campaign
+    from eal_simulator.safety import campaign_c2_plugins, is_c2_plugin
+
+    campaign = Campaign.model_validate(
+        {"campaign_id": "CMP-TEST-001", "name": "x", "steps": [{"step_id": "step-01", **step}]})
+    assert _campaign_c2_plugins(campaign) == [plugin]
+    assert campaign_c2_plugins(campaign.steps, get_default_registry()) == [plugin]
+    if plugin == "dns_tunnel_exfil":
+        assert not is_c2_plugin(plugin), "this case must be C2 by its metadata alone"
+
+
+@pytest.mark.parametrize("step, allowlist, op_kind", [
+    (C2, ["c2.example.test"], "http"),
+    (DNS, ["exfil.example.test", "127.0.0.1"], "dns"),
+])
+def test_relay_c2_plugin_with_c2_consent_goes_live(
+        client, session_factory, step, allowlist, op_kind):
+    res = _launch(session_factory, **LIVE)  # c2_authorized among the consent
+    body = _relay(client, res.run_id,
+                  campaign_yaml=_campaign(step, target_allowlist=allowlist)).json()
+    assert json.loads(body["stdout"])["dry_run"] is False
+    assert op_kind in {o["op"] for o in body["ops"]}
+    assert [(x.outcome, x.outcome_reason) for x in _rows(session_factory)] == [(None, None)]
 
 
 def test_relay_bounds_the_operations_it_hands_out(client, session_factory):
@@ -457,6 +497,37 @@ def test_relay_bounds_the_operations_it_hands_out(client, session_factory):
     assert body["ops"] == []
     assert body["exit_code"] != 0
     assert "EAL_WIRE_PLAN_REFUSED" in body["stdout"]
+
+
+def test_a_refused_plan_stops_the_collector_steps_too(client, session_factory, recorder):
+    """A campaign goes live whole or not at all. The plan is rendered before
+    anything is sent, so refusing it leaves the collector untouched."""
+    endless = {"plugin": "c2_http_beacon", "params": {
+        "target_url": "http://c2.example.test/x", "iterations": 5000, "sleep_seconds": 0.1}}
+    res = _launch(session_factory, **LIVE)
+    body = _relay(client, res.run_id, campaign_yaml=_campaign(
+        M365, endless, target_allowlist=["c2.example.test"])).json()
+    assert body["exit_code"] != 0 and body["ops"] == []
+    assert "EAL_WIRE_PLAN_REFUSED" in body["stdout"]
+    assert recorder.posts == []
+    assert [(x.outcome, x.outcome_reason) for x in _rows(session_factory)] == [
+        ("not_executed", "EAL_WIRE_PLAN_REFUSED")]
+
+
+def test_relay_refuses_a_campaign_that_uses_yaml_aliases(client, session_factory, recorder):
+    """A YAML alias lets a few lines stand for a structure that is enormous
+    once walked. The text comes from a target; it is refused before parsing."""
+    bomb = (
+        "a: &a [x, x, x, x, x, x, x, x, x]\n"
+        "b: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a]\n"
+        "c: &c [*b, *b, *b, *b, *b, *b, *b, *b, *b]\n"
+        + _campaign({"plugin": "m365_activity_emitter", "params": {}})
+        + "extra: *c\n")
+    res = _launch(session_factory, **LIVE)
+    body = _relay(client, res.run_id, campaign_yaml=bomb).json()
+    assert body["exit_code"] == 2
+    assert "YAML alias" in body["stderr"]
+    assert recorder.posts == [] and body["ops"] == []
 
 
 def test_relay_unrendered_wire_plugin_is_not_executed_not_missed(client, session_factory, recorder):

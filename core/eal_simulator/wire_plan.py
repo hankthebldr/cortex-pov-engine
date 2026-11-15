@@ -11,7 +11,7 @@ beacon performs them from the target.
 Four operations, all JSON-serialisable dicts::
 
     {"op": "http",  "method", "url", "headers", "timeout_s", "verify_tls",
-                    "body_b64" | "body_random_bytes"}
+                    "body_random_bytes"}             # the beacon also takes body_b64
     {"op": "dns",   "qname", "qtype", "resolver"}      # resolver "" = the host's own
     {"op": "tcp",   "host", "port", "timeout_s", "probe",
                     "frames": [{"send_b64", "read"}]}   # read = seconds to wait for a reply
@@ -19,7 +19,15 @@ Four operations, all JSON-serialisable dicts::
 
 Nothing in this module opens a socket or resolves a name. Every destination is
 checked against the campaign's allowlist with the same ``authorise`` call the
-plugin itself makes, and :func:`bound` caps what one step may be handed.
+plugin itself makes.
+
+The campaign text comes from a target, so nothing it says is allowed to
+multiply work without limit. Operations are added through one :class:`Plan`,
+which refuses the operation that would cross a ceiling instead of checking a
+finished list, and each renderer first asks ``Plan.expect`` whether its
+parameters can fit at all, before it builds anything. A plugin's own params
+allow far more than a step should be handed: one beacon a day for a year is a
+valid ``c2_http_beacon`` step.
 
 A renderer can drift from its plugin's ``run()``. ``spec/eal_wire_ops_cases.json``
 pins the rendered operations for a fixed seed; a Python test and a Go test both
@@ -48,29 +56,110 @@ from .plugins import (
 )
 from .safety import SafetyError, url_host_port
 
-# What one relayed step may be handed. The beacon holds its own copy of the
-# first four and refuses a response that exceeds them.
+# What one relayed campaign may be handed. The beacon holds its own copy and
+# refuses a reply that exceeds them.
 MAX_OPS = 4096
 MAX_SLEEP_SECONDS = 600.0           # one sleep op
-MAX_TOTAL_SLEEP_SECONDS = 3600.0    # every sleep op of one step
+MAX_TOTAL_SLEEP_SECONDS = 3600.0    # every sleep op together
 MAX_BODY_RANDOM_BYTES = 1024 ** 3   # one http op
 MAX_TOTAL_BODY_BYTES = 4 * 1024 ** 3
 MAX_HTTP_TIMEOUT_S = 3600.0
 MAX_TCP_TIMEOUT_S = 60.0
 MAX_FRAME_READ_S = 60.0
-MAX_FRAME_BYTES = 1024 * 1024       # one tcp frame / inline http body, decoded
+MAX_FRAME_BYTES = 1024 * 1024       # one tcp frame, decoded
+
+PLAN_REFUSED = "EAL_WIRE_PLAN_REFUSED"
 
 Authorise = Callable[..., None]
 Op = dict[str, Any]
 
 
 class WirePlanError(Exception):
-    """A plan that may not be handed to a beacon. ``code`` is stable."""
+    """A plan that may not be handed to a beacon. ``code`` is stable, and
+    ``built`` is how many operations existed when it was refused."""
 
-    def __init__(self, code: str, detail: str) -> None:
-        super().__init__(f"{code}: {detail}")
-        self.code = code
+    def __init__(self, detail: str, *, built: int = 0) -> None:
+        super().__init__(f"{PLAN_REFUSED}: {detail}")
+        self.code = PLAN_REFUSED
         self.detail = detail
+        self.built = built
+
+
+class Plan:
+    """The operations of one relayed campaign, bounded as they are added.
+
+    Every operation goes through one of the four methods below, and each
+    refuses the operation that would cross a ceiling. So a plan is never
+    larger than its ceilings at any moment, whatever a renderer loops over.
+    """
+
+    def __init__(self) -> None:
+        self.ops: list[Op] = []
+        self.sleep_seconds = 0.0
+        self.body_bytes = 0
+
+    def refuse(self, detail: str) -> WirePlanError:
+        return WirePlanError(detail, built=len(self.ops))
+
+    def expect(self, *, ops: int, sleep: float = 0.0, longest_sleep: float = 0.0,
+               body: int = 0, largest_body: int = 0) -> None:
+        """Refuse a step whose parameters already say it cannot fit, before a
+        single operation is built for it. Arithmetic only."""
+        if len(self.ops) + ops > MAX_OPS:
+            raise self.refuse(
+                f"{ops} more operations would make {len(self.ops) + ops}, "
+                f"over the {MAX_OPS} one step may be handed")
+        if longest_sleep > MAX_SLEEP_SECONDS:
+            raise self.refuse(
+                f"a {longest_sleep:g}s sleep, over the {MAX_SLEEP_SECONDS:g}s one operation may wait")
+        if self.sleep_seconds + sleep > MAX_TOTAL_SLEEP_SECONDS:
+            raise self.refuse(
+                f"{self.sleep_seconds + sleep:g}s of sleep in all, over the "
+                f"{MAX_TOTAL_SLEEP_SECONDS:g}s one step may wait")
+        if largest_body > MAX_BODY_RANDOM_BYTES:
+            raise self.refuse(
+                f"a {largest_body}-byte request body, over the {MAX_BODY_RANDOM_BYTES} one request may carry")
+        if self.body_bytes + body > MAX_TOTAL_BODY_BYTES:
+            raise self.refuse(
+                f"{self.body_bytes + body} bytes of request body in all, over the "
+                f"{MAX_TOTAL_BODY_BYTES} one step may send")
+
+    def _add(self, op: Op) -> None:
+        if len(self.ops) >= MAX_OPS:
+            raise self.refuse(f"over the {MAX_OPS} operations one step may be handed")
+        self.ops.append(op)
+
+    def http(self, method: str, url: str, headers: dict[str, str], *, timeout_s: float,
+             verify_tls: bool, body_random_bytes: int = 0) -> None:
+        self.expect(ops=1, body=body_random_bytes, largest_body=body_random_bytes)
+        op: Op = {
+            "op": "http", "method": method, "url": url, "headers": headers,
+            "timeout_s": min(float(timeout_s), MAX_HTTP_TIMEOUT_S), "verify_tls": verify_tls,
+        }
+        if body_random_bytes > 0:
+            op["body_random_bytes"] = int(body_random_bytes)
+        self._add(op)
+        self.body_bytes += max(int(body_random_bytes), 0)
+
+    def dns(self, qname: str, qtype: str, resolver: str) -> None:
+        self._add({"op": "dns", "qname": qname, "qtype": qtype, "resolver": resolver})
+
+    def tcp(self, host: str, port: int, timeout_s: float, frames: list[Op], *,
+            probe: bool = False) -> None:
+        for frame in frames:
+            if len(frame.get("send_b64") or "") > MAX_FRAME_BYTES * 4 // 3 + 4:
+                raise self.refuse("a tcp frame over 1 MiB")
+            if "read" in frame:
+                frame["read"] = min(float(frame["read"]), MAX_FRAME_READ_S)
+        self._add({"op": "tcp", "host": host, "port": int(port),
+                   "timeout_s": min(float(timeout_s), MAX_TCP_TIMEOUT_S),
+                   "probe": probe, "frames": frames})
+
+    def sleep(self, seconds: float) -> None:
+        seconds = round(float(seconds), 3)
+        self.expect(ops=1, sleep=seconds, longest_sleep=seconds)
+        self._add({"op": "sleep", "seconds": seconds})
+        self.sleep_seconds += seconds
 
 
 class WireContext:
@@ -105,112 +194,105 @@ def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
-def _sleep(seconds: float) -> Op:
-    return {"op": "sleep", "seconds": round(float(seconds), 3)}
-
-
-def _tcp(host: str, port: int, timeout_s: float, frames: list[Op], *, probe: bool = False) -> Op:
-    return {"op": "tcp", "host": host, "port": int(port), "timeout_s": float(timeout_s),
-            "probe": probe, "frames": frames}
+def _between(count: int, seconds: float) -> tuple[int, float]:
+    """``(sleep ops, total seconds)`` for a sleep between each of ``count``
+    actions: none when the sleep is zero."""
+    gaps = max(count - 1, 0) if seconds > 0 else 0
+    return gaps, gaps * seconds
 
 
 # ---------------------------------------------------------------------------
-# One renderer per plugin. Each follows its plugin's run() line for line.
+# One renderer per plugin. Each follows its plugin's run() line for line, and
+# opens with the arithmetic that says whether its parameters can fit.
 # ---------------------------------------------------------------------------
 
 
-def _c2_http_beacon(p: c2_http_beacon.C2HttpBeaconParams, wc: WireContext) -> list[Op]:
+def _c2_http_beacon(p: c2_http_beacon.C2HttpBeaconParams, wc: WireContext, plan: Plan) -> None:
     host, _port = url_host_port(p.target_url)
     wc.authorise(host)
+    body = p.body_size_bytes if p.method == "POST" else 0
+    longest = p.sleep_seconds * (1 + p.jitter_pct / 100.0)  # iterations x sleep x jitter
+    plan.expect(ops=2 * p.iterations - 1, sleep=longest * (p.iterations - 1),
+                longest_sleep=longest if p.iterations > 1 else 0.0,
+                body=body * p.iterations, largest_body=body)
     alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-    ops: list[Op] = []
     for i in range(p.iterations):
         ua = wc.rng.choice(p.user_agents) if p.user_agents else "CortexSim/1.0"
         url = p.target_url
         if p.dga_query_param:
             token = "".join(wc.rng.choice(alphabet) for _ in range(12))
             url = f"{url}{'&' if '?' in url else '?'}q={token}"
-        op: Op = {
-            "op": "http", "method": p.method, "url": url,
-            "headers": {**wc.telemetry_headers, "User-Agent": ua},
-            "timeout_s": float(p.request_timeout), "verify_tls": wc.verify_tls,
-        }
-        if p.method == "POST" and p.body_size_bytes > 0:
-            op["body_random_bytes"] = int(p.body_size_bytes)
-        ops.append(op)
+        plan.http(p.method, url, {**wc.telemetry_headers, "User-Agent": ua},
+                  timeout_s=p.request_timeout, verify_tls=wc.verify_tls, body_random_bytes=body)
         if i < p.iterations - 1:
             delta = p.sleep_seconds * (p.jitter_pct / 100.0)
-            jittered = p.sleep_seconds if p.jitter_pct <= 0 else max(
-                0.0, p.sleep_seconds + wc.rng.uniform(-delta, delta))
-            ops.append(_sleep(jittered))
-    return ops
+            plan.sleep(p.sleep_seconds if p.jitter_pct <= 0 else max(
+                0.0, p.sleep_seconds + wc.rng.uniform(-delta, delta)))
 
 
-def _dns_tunnel_exfil(p: dns_tunnel_exfil.DnsTunnelExfilParams, wc: WireContext) -> list[Op]:
+def _dns_tunnel_exfil(p: dns_tunnel_exfil.DnsTunnelExfilParams, wc: WireContext, plan: Plan) -> None:
     wc.authorise(p.base_domain)
     # The plugin sends an A query through the host's resolver whatever
     # ``resolver`` says; only a TXT query goes to the named one.
-    resolver = (p.resolver or "") if p.query_type == "TXT" else ""
+    resolver = _resolver_pin(p.resolver) if p.resolver and p.query_type == "TXT" else ""
     if resolver:
-        wc.authorise(_resolver_pin(resolver))
-    ops: list[Op] = []
+        wc.authorise(resolver)
+    gaps, total = _between(p.chunks, p.sleep_seconds)  # chunks x sleep
+    plan.expect(ops=p.chunks + gaps, sleep=total, longest_sleep=p.sleep_seconds)
     for i in range(p.chunks):
         label = dns_tunnel_exfil._encode_chunk(  # noqa: SLF001 - the plugin's own encoder
             wc.rng.randbytes(p.chunk_size_bytes), p.encoding)
-        ops.append({
-            "op": "dns", "qname": f"{label}.exfil-{i:04d}.{p.base_domain}",
-            "qtype": p.query_type, "resolver": _resolver_pin(resolver) if resolver else "",
-        })
+        plan.dns(f"{label}.exfil-{i:04d}.{p.base_domain}", p.query_type, resolver)
         if p.sleep_seconds > 0 and i < p.chunks - 1:
-            ops.append(_sleep(p.sleep_seconds))
-    return ops
+            plan.sleep(p.sleep_seconds)
 
 
 def _stratum_tcp_connect(
-    p: stratum_tcp_connect.StratumTcpConnectParams, wc: WireContext,
-) -> list[Op]:
+    p: stratum_tcp_connect.StratumTcpConnectParams, wc: WireContext, plan: Plan,
+) -> None:
     wc.authorise(p.target_host, port=p.target_port)
-    ops: list[Op] = []
+    gaps, total = _between(p.iterations, p.sleep_seconds)  # iterations x sleep
+    plan.expect(ops=p.iterations + gaps, sleep=total, longest_sleep=p.sleep_seconds)
     for i in range(p.iterations):
         subscribe = {"id": wc.rng.randint(1, 9999), "jsonrpc": "2.0",
                      "method": "mining.subscribe", "params": [p.user_agent]}
         login = {"id": wc.rng.randint(1, 9999), "jsonrpc": "2.0", "method": "login",
                  "params": {"login": p.wallet, "pass": "x", "agent": p.user_agent}}
-        ops.append(_tcp(p.target_host, p.target_port, p.connect_timeout, [
+        plan.tcp(p.target_host, p.target_port, p.connect_timeout, [
             {"send_b64": _b64((json.dumps(subscribe) + "\n").encode())},
             {"send_b64": _b64((json.dumps(login) + "\n").encode()),
              "read": float(p.idle_seconds)},
-        ]))
+        ])
         if i < p.iterations - 1 and p.sleep_seconds > 0:
-            ops.append(_sleep(p.sleep_seconds))
-    return ops
+            plan.sleep(p.sleep_seconds)
 
 
-def _bulk_https_exfil(p: bulk_https_exfil.BulkHttpsExfilParams, wc: WireContext) -> list[Op]:
+def _bulk_https_exfil(p: bulk_https_exfil.BulkHttpsExfilParams, wc: WireContext, plan: Plan) -> None:
     host, _port = url_host_port(p.target_url)
     wc.authorise(host)
     per_request = p.total_bytes // p.request_count
-    ops: list[Op] = []
-    sent = 0
+    last = p.total_bytes - per_request * (p.request_count - 1)  # total_bytes / request_count
+    plan.expect(ops=p.request_count, body=p.total_bytes, largest_body=max(per_request, last))
     for i in range(p.request_count):
-        size = per_request if i < p.request_count - 1 else p.total_bytes - sent
-        sent += size
-        ops.append({
-            "op": "http", "method": p.method, "url": p.target_url,
-            "headers": dict(wc.telemetry_headers), "body_random_bytes": int(size),
-            "timeout_s": float(p.request_timeout), "verify_tls": wc.verify_tls,
-        })
-    return ops
+        plan.http(p.method, p.target_url, dict(wc.telemetry_headers),
+                  timeout_s=p.request_timeout, verify_tls=wc.verify_tls,
+                  body_random_bytes=per_request if i < p.request_count - 1 else last)
 
 
-def _smb_rpc_sweep(p: smb_rpc_sweep.SmbRpcSweepParams, wc: WireContext) -> list[Op]:
+def _smb_rpc_sweep(p: smb_rpc_sweep.SmbRpcSweepParams, wc: WireContext, plan: Plan) -> None:
     wc.authorise(p.target_cidr.split("/", 1)[0])
     net = ipaddress.ip_network(p.target_cidr, strict=False)
+    # How many addresses net.hosts() yields, without asking it for them.
+    usable = net.num_addresses
+    if usable > 2:
+        usable -= 2 if net.version == 4 else 1
+    hosts = min(p.max_hosts, usable)  # max_hosts x ports x inter_host_delay
+    gaps = hosts if p.inter_host_delay > 0 else 0
+    plan.expect(ops=hosts * len(p.ports) + gaps, sleep=gaps * p.inter_host_delay,
+                longest_sleep=p.inter_host_delay)
     # The plugin's host list, cut to max_hosts without first building all of it
-    # (a /8 is 16 million addresses, and this text came from a target).
-    hosts = itertools.islice(net.hosts() if net.num_addresses > 2 else iter(net), p.max_hosts)
-    ops: list[Op] = []
-    for ip in hosts:
+    # (a /8 is 16 million addresses).
+    for ip in itertools.islice(net.hosts() if net.num_addresses > 2 else iter(net), hosts):
         try:
             wc.authorise(str(ip))
         except SafetyError:
@@ -218,28 +300,28 @@ def _smb_rpc_sweep(p: smb_rpc_sweep.SmbRpcSweepParams, wc: WireContext) -> list[
         # A connect-and-close probe. A closed port is the expected answer, so
         # the beacon does not count it as a failed operation. ``probe_ntlm`` (an
         # impacket session setup) has no operation and is not rendered.
-        ops.extend(_tcp(str(ip), port, p.connect_timeout, [], probe=True) for port in p.ports)
+        for port in p.ports:
+            plan.tcp(str(ip), port, p.connect_timeout, [], probe=True)
         if p.inter_host_delay > 0:
-            ops.append(_sleep(p.inter_host_delay))
-    return ops
+            plan.sleep(p.inter_host_delay)
 
 
-def _ftp_egress(p: ftp_egress.FtpEgressParams, wc: WireContext) -> list[Op]:
+def _ftp_egress(p: ftp_egress.FtpEgressParams, wc: WireContext, plan: Plan) -> None:
     wc.authorise(p.target_host, port=p.target_port)
+    gaps, total = _between(p.iterations, p.sleep_seconds)  # iterations x sleep
+    plan.expect(ops=p.iterations + gaps, sleep=total, longest_sleep=p.sleep_seconds)
     commands = [f"USER {p.username}\r\n", f"PASS {p.password}\r\n", "SYST\r\n",
                 f"NOOP {p.banner_agent}\r\n"]
-    ops: list[Op] = []
     for i in range(p.iterations):
         frames: list[Op] = [{"read": float(p.connect_timeout)}]  # the server greeting
         frames += [{"send_b64": _b64(c.encode("ascii")), "read": 0.5} for c in commands]
         # ``send_stor`` opens a second connection to a port the server names in
         # its PASV reply. No operation can express that, so the control session
-        # is rendered without the STOR.
+        # is rendered without the STOR (and ``stor_bytes`` multiplies nothing).
         frames.append({"send_b64": _b64(b"QUIT\r\n"), "read": float(p.idle_seconds)})
-        ops.append(_tcp(p.target_host, p.target_port, p.connect_timeout, frames))
+        plan.tcp(p.target_host, p.target_port, p.connect_timeout, frames)
         if i < p.iterations - 1 and p.sleep_seconds > 0:
-            ops.append(_sleep(p.sleep_seconds))
-    return ops
+            plan.sleep(p.sleep_seconds)
 
 
 def _ssh_kexinit(rng: random.Random) -> bytes:
@@ -256,9 +338,10 @@ def _ssh_kexinit(rng: random.Random) -> bytes:
     return len(body).to_bytes(4, "big") + body
 
 
-def _ssh_egress(p: ssh_egress.SshEgressParams, wc: WireContext) -> list[Op]:
+def _ssh_egress(p: ssh_egress.SshEgressParams, wc: WireContext, plan: Plan) -> None:
     wc.authorise(p.target_host, port=p.target_port)
-    ops: list[Op] = []
+    gaps, total = _between(p.iterations, p.sleep_seconds)  # iterations x sleep
+    plan.expect(ops=p.iterations + gaps, sleep=total, longest_sleep=p.sleep_seconds)
     for i in range(p.iterations):
         frames: list[Op] = [
             {"read": float(p.connect_timeout)},  # drain a server banner sent first
@@ -267,13 +350,12 @@ def _ssh_egress(p: ssh_egress.SshEgressParams, wc: WireContext) -> list[Op]:
         if p.send_kexinit:
             frames.append({"send_b64": _b64(_ssh_kexinit(wc.rng))})
         frames[-1]["read"] = float(p.idle_seconds)
-        ops.append(_tcp(p.target_host, p.target_port, p.connect_timeout, frames))
+        plan.tcp(p.target_host, p.target_port, p.connect_timeout, frames)
         if i < p.iterations - 1 and p.sleep_seconds > 0:
-            ops.append(_sleep(p.sleep_seconds))
-    return ops
+            plan.sleep(p.sleep_seconds)
 
 
-RENDERERS: dict[str, Callable[[Any, WireContext], list[Op]]] = {
+RENDERERS: dict[str, Callable[[Any, WireContext, Plan], None]] = {
     "c2_http_beacon": _c2_http_beacon,
     "dns_tunnel_exfil": _dns_tunnel_exfil,
     "stratum_tcp_connect": _stratum_tcp_connect,
@@ -294,13 +376,19 @@ def has_renderer(plugin: str) -> bool:
     return plugin in RENDERERS
 
 
-def render(plugin: str, params: BaseModel, wc: WireContext) -> list[Op]:
-    """The ordered operations for one validated step. Raises ``SafetyError``
-    when a destination is outside the campaign allowlist, exactly as the plugin
-    would, and ``WirePlanError`` when the plan is over a bound."""
-    ops = RENDERERS[plugin](params, wc)
-    bound(ops)
-    return ops
+def render(plugin: str, params: BaseModel, wc: WireContext,
+           plan: Optional[Plan] = None) -> list[Op]:
+    """Add one validated step's operations to ``plan`` and return them.
+
+    Pass the same ``plan`` for every step of a campaign: the ceilings are the
+    campaign's, not each step's. Raises ``SafetyError`` when a destination is
+    outside the campaign allowlist, exactly as the plugin would, and
+    ``WirePlanError`` at the operation that would cross a ceiling.
+    """
+    plan = plan if plan is not None else Plan()
+    start = len(plan.ops)
+    RENDERERS[plugin](params, wc, plan)
+    return plan.ops[start:]
 
 
 def _resolver_pin(resolver: str) -> str:
@@ -321,8 +409,8 @@ def destinations(op: Op) -> list[str]:
     if kind == "tcp":
         return [f"{op['host']}:{op['port']}"]
     if kind == "dns":
-        # The registrable part the renderer built the name under: everything
-        # after the two generated labels.
+        # The zone the renderer built the name under: everything after the two
+        # generated labels.
         out = ["dns:" + str(op["qname"]).split(".", 2)[-1]]
         if op.get("resolver"):
             out.append(str(op["resolver"]))
@@ -333,53 +421,8 @@ def destinations(op: Op) -> list[str]:
 def allowlist_for(ops: list[Op]) -> list[str]:
     """Every destination the plan touches, once each, in first-use order. Built
     from the rendered operations, never from campaign text."""
-    out: list[str] = []
+    seen: dict[str, None] = {}
     for op in ops:
         for dest in destinations(op):
-            if dest not in out:
-                out.append(dest)
-    return out
-
-
-def bound(ops: list[Op]) -> None:
-    """Refuse a plan over any ceiling. A plugin's own params allow far more
-    than a step should be handed (a beacon a day for a year is valid)."""
-    if len(ops) > MAX_OPS:
-        raise WirePlanError("EAL_WIRE_PLAN_REFUSED",
-                            f"{len(ops)} operations, over the {MAX_OPS} one step may be handed")
-    total_sleep = 0.0
-    total_body = 0
-    for op in ops:
-        kind = op.get("op")
-        if kind == "sleep":
-            seconds = float(op["seconds"])
-            if seconds > MAX_SLEEP_SECONDS:
-                raise WirePlanError(
-                    "EAL_WIRE_PLAN_REFUSED",
-                    f"a {seconds:g}s sleep, over the {MAX_SLEEP_SECONDS:g}s one operation may wait")
-            total_sleep += seconds
-        elif kind == "http":
-            body = int(op.get("body_random_bytes") or 0)
-            if body > MAX_BODY_RANDOM_BYTES:
-                raise WirePlanError(
-                    "EAL_WIRE_PLAN_REFUSED",
-                    f"a {body}-byte request body, over the {MAX_BODY_RANDOM_BYTES} one request may carry")
-            total_body += body
-            if len(op.get("body_b64") or "") > MAX_FRAME_BYTES * 4 // 3 + 4:
-                raise WirePlanError("EAL_WIRE_PLAN_REFUSED", "an inline request body over 1 MiB")
-            op["timeout_s"] = min(float(op.get("timeout_s") or 0) or 30.0, MAX_HTTP_TIMEOUT_S)
-        elif kind == "tcp":
-            op["timeout_s"] = min(float(op.get("timeout_s") or 0) or 5.0, MAX_TCP_TIMEOUT_S)
-            for frame in op.get("frames") or []:
-                if "read" in frame:
-                    frame["read"] = min(float(frame["read"]), MAX_FRAME_READ_S)
-                if len(frame.get("send_b64") or "") > MAX_FRAME_BYTES * 4 // 3 + 4:
-                    raise WirePlanError("EAL_WIRE_PLAN_REFUSED", "a tcp frame over 1 MiB")
-    if total_sleep > MAX_TOTAL_SLEEP_SECONDS:
-        raise WirePlanError(
-            "EAL_WIRE_PLAN_REFUSED",
-            f"{total_sleep:g}s of sleep in all, over the {MAX_TOTAL_SLEEP_SECONDS:g}s one step may wait")
-    if total_body > MAX_TOTAL_BODY_BYTES:
-        raise WirePlanError(
-            "EAL_WIRE_PLAN_REFUSED",
-            f"{total_body} bytes of request body in all, over the {MAX_TOTAL_BODY_BYTES} one step may send")
+            seen.setdefault(dest)
+    return list(seen)

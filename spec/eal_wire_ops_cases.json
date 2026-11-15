@@ -301,9 +301,9 @@
             "X-Simulation-Campaign-ID": "CMP-SPEC-006",
             "X-Simulation-Source": "cortexsim-eal-simulator/1.0"
           },
-          "body_random_bytes": 1500,
           "timeout_s": 300.0,
-          "verify_tls": false
+          "verify_tls": false,
+          "body_random_bytes": 1500
         },
         {
           "op": "http",
@@ -314,9 +314,9 @@
             "X-Simulation-Campaign-ID": "CMP-SPEC-006",
             "X-Simulation-Source": "cortexsim-eal-simulator/1.0"
           },
-          "body_random_bytes": 1501,
           "timeout_s": 300.0,
-          "verify_tls": false
+          "verify_tls": false,
+          "body_random_bytes": 1501
         }
       ],
       "allowlist": [

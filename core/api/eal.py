@@ -244,19 +244,12 @@ def _campaign_c2_plugins(campaign: Campaign) -> list[str]:
     Each step plugin name is joined to its registry metadata so the
     classifier can consider the plugin's declared MITRE techniques in addition
     to the explicit name allowlist. Unknown plugins fall back to name-only
-    classification.
+    classification. The classification itself is ``safety.campaign_c2_plugins``,
+    which the beacon relay asks too, so the two cannot disagree.
     """
-    from eal_simulator.safety import classify_c2_plugins  # noqa: PLC0415
+    from eal_simulator.safety import campaign_c2_plugins  # noqa: PLC0415
 
-    reg = _get_executor().registry
-    pairs: list[tuple[str, Optional[list[str]]]] = []
-    for step in campaign.steps:
-        techniques: Optional[list[str]] = None
-        if reg.has(step.plugin):
-            meta = reg.get(step.plugin).metadata()
-            techniques = list(meta.get("mitre_techniques") or [])
-        pairs.append((step.plugin, techniques))
-    return classify_c2_plugins(pairs)
+    return campaign_c2_plugins(campaign.steps, _get_executor().registry)
 
 
 # ---------------------------------------------------------------------------

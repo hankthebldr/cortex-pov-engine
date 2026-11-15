@@ -63,6 +63,103 @@ def test_a_destination_outside_the_campaign_allowlist_is_not_rendered():
         _render({**case, "target_allowlist": ["198.51.100.9"]})
 
 
+def _sweep(**params):
+    from eal_simulator import get_default_registry
+
+    return get_default_registry().get("smb_rpc_sweep").validate_params(
+        {"target_cidr": "10.20.0.0/16", **params})
+
+
+def _context():
+    from eal_simulator import wire_plan
+
+    return wire_plan.WireContext(campaign_id="CMP-SPEC-001", simulation_run_id="cortexsim-spec",
+                                 authorise=lambda *a, **k: None, rng=random.Random(1))
+
+
+def test_wire_plan_stops_at_op_cap_while_rendering(monkeypatch):
+    """The campaign text comes from a target. A /16 swept on 100 ports is
+    4096 x 100 probes by its own params; none of them may be built just to
+    find out there are too many."""
+    from eal_simulator import wire_plan
+
+    params = _sweep(ports=list(range(1, 101)), max_hosts=4096, inter_host_delay=0)
+
+    # The arithmetic refuses it before the sweep loop builds anything.
+    plan = wire_plan.Plan()
+    with pytest.raises(wire_plan.WirePlanError) as refused:
+        wire_plan.render("smb_rpc_sweep", params, _context(), plan)
+    assert refused.value.code == "EAL_WIRE_PLAN_REFUSED"
+    assert refused.value.built == 0 and plan.ops == []
+
+    # Without that arithmetic the loop still cannot outgrow the cap: every
+    # operation is added through the plan, which refuses the one past it.
+    monkeypatch.setattr(wire_plan.Plan, "expect", lambda self, **kw: None)
+    plan = wire_plan.Plan()
+    with pytest.raises(wire_plan.WirePlanError) as refused:
+        wire_plan.render("smb_rpc_sweep", params, _context(), plan)
+    assert refused.value.built == len(plan.ops) == wire_plan.MAX_OPS
+
+
+def test_a_sweep_takes_at_most_256_ports():
+    from pydantic import ValidationError
+
+    assert len(_sweep(ports=list(range(1, 257))).ports) == 256
+    with pytest.raises(ValidationError):
+        _sweep(ports=list(range(1, 258)))
+
+
+@pytest.mark.parametrize("plugin, params, what", [
+    ("c2_http_beacon", {"target_url": "http://c2.example.test/x", "iterations": 10_000,
+                        "sleep_seconds": 0.1}, "operations"),
+    ("c2_http_beacon", {"target_url": "http://c2.example.test/x", "iterations": 3,
+                        "sleep_seconds": 86_400}, "sleep"),
+    ("c2_http_beacon", {"target_url": "http://c2.example.test/x", "iterations": 100,
+                        "sleep_seconds": 60}, "sleep in all"),
+    ("c2_http_beacon", {"target_url": "http://c2.example.test/x", "iterations": 4097,
+                        "sleep_seconds": 0.1, "method": "POST",
+                        "body_size_bytes": 1_048_576}, "operations"),
+    ("bulk_https_exfil", {"target_url": "https://x.example.test/u",
+                          "total_bytes": 2 * 1024 ** 3, "request_count": 1}, "request body"),
+    ("bulk_https_exfil", {"target_url": "https://x.example.test/u",
+                          "total_bytes": 8 * 1024 ** 3, "request_count": 16}, "request body in all"),
+    ("dns_tunnel_exfil", {"base_domain": "x.example.test", "chunks": 2000,
+                          "sleep_seconds": 5}, "sleep in all"),
+    ("stratum_tcp_connect", {"target_host": "192.0.2.1", "target_port": 3333,
+                             "iterations": 200, "sleep_seconds": 600}, "sleep in all"),
+    ("ftp_egress", {"target_host": "192.0.2.1", "iterations": 100,
+                    "sleep_seconds": 600}, "sleep in all"),
+    ("ssh_egress", {"target_host": "192.0.2.1", "iterations": 200,
+                    "sleep_seconds": 600}, "sleep in all"),
+    ("smb_rpc_sweep", {"target_cidr": "10.20.0.0/16", "max_hosts": 4096,
+                       "ports": [445]}, "operations"),
+])
+def test_every_multiplying_parameter_is_refused_before_anything_is_built(plugin, params, what):
+    """Each of these is valid for its plugin and far past what one step may be
+    handed. The renderer's own arithmetic refuses it with nothing built."""
+    from eal_simulator import get_default_registry, wire_plan
+
+    validated = get_default_registry().get(plugin).validate_params(params)
+    plan = wire_plan.Plan()
+    with pytest.raises(wire_plan.WirePlanError) as refused:
+        wire_plan.render(plugin, validated, _context(), plan)
+    assert what in refused.value.detail
+    assert refused.value.built == 0 and plan.ops == []
+
+
+def test_one_plan_bounds_a_whole_campaign_not_each_step():
+    """Two steps that each fit, on one plan, do not fit together."""
+    from eal_simulator import get_default_registry, wire_plan
+
+    step = get_default_registry().get("c2_http_beacon").validate_params(
+        {"target_url": "http://c2.example.test/x", "iterations": 1500, "sleep_seconds": 0.1})
+    plan = wire_plan.Plan()
+    assert len(wire_plan.render("c2_http_beacon", step, _context(), plan)) == 2999
+    with pytest.raises(wire_plan.WirePlanError):
+        wire_plan.render("c2_http_beacon", step, _context(), plan)
+    assert len(plan.ops) == 2999
+
+
 def test_ssh_kexinit_frame_is_the_plugins_packet():
     """The renderer restates the plugin's packet builder so it can seed the
     random bytes. Everything that is not random must be the same."""

@@ -76,7 +76,6 @@ EXIT_USAGE = 2
 EXIT_NOT_RELAYABLE = 3
 
 NOT_RELAYABLE = "EAL_WIRE_NOT_RELAYABLE"
-PLAN_REFUSED = "EAL_WIRE_PLAN_REFUSED"
 NO_CONSENT_DETAIL = (
     "live delivery needs consent.simulation_authorized and a named "
     "authorized_by on the launch"
@@ -308,7 +307,7 @@ async def _run(
     from eal_simulator.safety import (  # noqa: PLC0415
         SafetyError,
         SafetyPolicy,
-        classify_c2_plugins,
+        campaign_c2_plugins,
     )
     from eal_simulator.targets import apply_targets, collector_plugin_names  # noqa: PLC0415
     from engine.collector_targets import load_specs, load_tokens  # noqa: PLC0415
@@ -321,6 +320,11 @@ async def _run(
     if not campaign_yaml or len(campaign_yaml.encode("utf-8")) > MAX_CAMPAIGN_BYTES:
         return _usage(f"campaign file is empty or over {MAX_CAMPAIGN_BYTES} bytes")
     try:
+        # An alias lets a few bytes of text stand for an enormous structure
+        # once something walks it. A campaign file has no use for one.
+        if any(isinstance(event, yaml.AliasEvent)
+               for event in yaml.parse(campaign_yaml, Loader=yaml.SafeLoader)):
+            return _usage("campaign file uses a YAML alias, which the relay does not accept")
         raw = yaml.safe_load(campaign_yaml)
     except yaml.YAMLError:
         return _usage("campaign file is not valid YAML")
@@ -383,18 +387,30 @@ async def _run(
                   if kind[cs.step_id] == "wire" and cs.step_id not in errors]
 
     # ── may it go live? ─────────────────────────────────────────────────────
+    # The one policy object for this campaign: the launch's consent, and the
+    # campaign's own allowlist for the destinations its network steps name.
+    policy = SafetyPolicy(
+        simulation_authorized=grant.authorized_by is not None,
+        authorized_by=grant.authorized_by, target_allowlist=campaign.target_allowlist,
+        dry_run=False, c2_authorized=grant.c2_authorized)
     blockers: dict[str, tuple[str, str]] = {}
     dry: Optional[tuple[str, str]] = None
-    c2 = classify_c2_plugins((cs.plugin, None) for cs in campaign.steps)
     if not want_live:
         dry = ("EAL_DRY_RUN_REQUESTED", "the step asked for a dry run")
     elif grant.authorized_by is None:
         dry = ("EAL_DRY_RUN_NO_CONSENT", NO_CONSENT_DETAIL)
-    elif c2 and not grant.c2_authorized:
-        dry = ("EAL_DRY_RUN_NO_C2_CONSENT",
-               f"plugin(s) {sorted(set(c2))} are C2-shaped and need "
-               "consent.c2_authorized on the launch")
     else:
+        # The C2 gate every live campaign passes (api/eal.py launch): the same
+        # classification, by name and by each plugin's MITRE techniques, and
+        # the same policy check. Asked before anything is rendered or sent.
+        c2 = campaign_c2_plugins(campaign.steps, registry)
+        try:
+            policy.assert_c2_authorized(c2)
+        except SafetyError:
+            dry = ("EAL_DRY_RUN_NO_C2_CONSENT",
+                   f"plugin(s) {sorted(set(c2))} are C2-shaped and need "
+                   "consent.c2_authorized on the launch")
+    if dry is None:
         blockers = _eal_live_blockers(
             collector_steps, resolutions, collector_plugins,
             authorized_by=grant.authorized_by, rejected=set(errors))
@@ -408,6 +424,36 @@ async def _run(
                    f"held at dry-run because step(s) {held} cannot run; the campaign "
                    "goes live whole or not at all")
     is_live = dry is None
+
+    # ── render the network-shape steps for the beacon ───────────────────────
+    # Before anything is sent. One Plan for the whole campaign, bounded as it
+    # grows; a plan that is refused stops the campaign, collector steps included.
+    plan = wire_plan.Plan()
+    rendered: dict[str, dict[str, Any]] = {}
+    for cs in wire_steps if is_live else []:
+        wc = wire_plan.WireContext(
+            campaign_id=campaign.campaign_id,
+            simulation_run_id=BaseSimulation.new_simulation_run_id(),
+            authorise=policy.authorise,
+            verify_tls=bool(raw.get("verify_tls", False)))
+        before = len(plan.ops)
+        try:
+            step_ops = wire_plan.render(cs.plugin, wire_params[cs.step_id], wc, plan)
+        except SafetyError as exc:
+            del plan.ops[before:]
+            rendered[cs.step_id] = _step_result(
+                cs, "error", error=f"safety_violation: {exc}",
+                detail={"failure_code": TARGET_NOT_AUTHORISED})
+        except wire_plan.WirePlanError as exc:
+            await _account(db, grant, run_id, step_id, status="refused", code=exc.code)
+            return _reply(EXIT_INCOMPLETE,
+                          stdout=f"{exc.code}: {cs.step_id} ({cs.plugin}): {exc.detail}\n")
+        else:
+            detail: dict[str, Any] = {"operations": len(step_ops), "performed_by": "beacon"}
+            if cs.plugin in wire_plan.NOT_RENDERED:
+                detail["not_rendered"] = wire_plan.NOT_RENDERED[cs.plugin]
+            rendered[cs.step_id] = _step_result(cs, "relayed", detail=detail)
+    ops = plan.ops
 
     # ── run the collector steps here ────────────────────────────────────────
     tokens: dict[str, str] = {}
@@ -436,42 +482,6 @@ async def _run(
             Campaign(campaign_id=campaign.campaign_id, name=campaign.name,
                      steps=run_steps, **kw),
             run_id=run_id)
-
-    # ── render the network-shape steps for the beacon ───────────────────────
-    ops: list[dict[str, Any]] = []
-    rendered: dict[str, dict[str, Any]] = {}
-    refused: Optional[str] = None
-    if is_live and wire_steps:
-        policy = SafetyPolicy(
-            simulation_authorized=True, authorized_by=grant.authorized_by,
-            target_allowlist=campaign.target_allowlist, dry_run=False,
-            c2_authorized=grant.c2_authorized)
-        for cs in wire_steps:
-            wc = wire_plan.WireContext(
-                campaign_id=campaign.campaign_id,
-                simulation_run_id=BaseSimulation.new_simulation_run_id(),
-                authorise=policy.authorise,
-                verify_tls=bool(raw.get("verify_tls", False)))
-            try:
-                step_ops = wire_plan.render(cs.plugin, wire_params[cs.step_id], wc)
-                wire_plan.bound(ops + step_ops)
-            except SafetyError as exc:
-                rendered[cs.step_id] = _step_result(
-                    cs, "error", error=f"safety_violation: {exc}",
-                    detail={"failure_code": TARGET_NOT_AUTHORISED})
-            except wire_plan.WirePlanError as exc:
-                refused = f"{exc.code}: {cs.step_id} ({cs.plugin}): {exc.detail}"
-                break
-            else:
-                ops += step_ops
-                detail: dict[str, Any] = {"operations": len(step_ops), "performed_by": "beacon"}
-                if cs.plugin in wire_plan.NOT_RENDERED:
-                    detail["not_rendered"] = wire_plan.NOT_RENDERED[cs.plugin]
-                rendered[cs.step_id] = _step_result(cs, "relayed", detail=detail)
-    if refused is not None:
-        await _account(db, grant, run_id, step_id, status="refused", code=PLAN_REFUSED,
-                       delivered=_delivered(state))
-        return _reply(EXIT_INCOMPLETE, stdout=refused + "\n")
 
     # ── the printed result, in campaign order ───────────────────────────────
     ran = {r["step_id"]: r for r in (state.to_dict()["step_results"] if state else [])}
