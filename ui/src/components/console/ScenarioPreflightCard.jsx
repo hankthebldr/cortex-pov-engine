@@ -2,6 +2,9 @@ import React, { useMemo } from 'react'
 import { preflightScenario, PF, PF_STATUS } from './readiness/scenarioPreflight.js'
 import { StatusIcon } from './kit/index.js'
 
+// Why these are checked before the run, as the Preflight label's tooltip.
+const WHY_FIRST = "A step that did not run as authored reads as a gap in the customer's coverage."
+
 /** A severity as the kit's StatusIcon and one word. */
 function Severity({ status }) {
   const s = PF_STATUS[status] || PF_STATUS[PF.UNKNOWN]
@@ -91,17 +94,11 @@ export default function ScenarioPreflightCard({
   return (
     <section className="launch-card launch-card--preflight" data-testid="scenario-preflight">
       <div className="launch-card__kicker">
-        Preflight
+        <span title={WHY_FIRST}>Preflight</span>
         <span className="preflight-verdict" data-testid="preflight-verdict" data-verdict={pf.verdict}>
           <Severity status={pf.verdict} />
         </span>
       </div>
-
-      <p className="preflight__lede">
-        Checked before the run, because every failure below produces the same artefact: a run that
-        did not execute as authored, whose absent detections read in a POV report as a gap in the{' '}
-        <strong>customer&apos;s</strong> coverage.
-      </p>
 
       <ul className="preflight__checks">
         {pf.checks.map((c) => <CheckRow key={c.id} check={c} />)}

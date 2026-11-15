@@ -14,7 +14,7 @@
  */
 import React from 'react'
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import { sectionFor, getDestination } from '../destinations.jsx'
 import OperationsView from '../../components/console/OperationsView.jsx'
@@ -48,8 +48,23 @@ describe('page h1 is the rail or tab label', () => {
     render(<Gate params={{}} onNavigate={() => {}} />)
     await waitFor(() => expect(h1Texts()).toEqual([railLabel('preflight')]))
     // It said "the whole app" too: this POVengine's status sat under the run.
-    expect(screen.getByTestId('launch-gate-scope')).toHaveTextContent(/status .* is on Get started/i)
+    // Now one short line points there, and the empty state is one short line.
+    expect(screen.getByTestId('launch-gate-scope')).toHaveTextContent(/^Tenant, agents and collectors are on Get started\.$/)
+    expect(screen.getByTestId('launch-gate-armed')).toHaveTextContent(/^Arm a scenario from Scenarios to begin\.$/)
     expect(screen.queryByTestId('readiness-view')).toBeNull()
+  })
+
+  it('Launch gate, armed: one short line naming the scenario id, its name in the tooltip', async () => {
+    installRoutes({
+      'GET /api/agents': { agents: [], total: 0 },
+      'GET /api/scenarios/:id': { scenario_id: 'SIM-EDR-001', name: 'Credential Dumping — /etc/shadow and Mimipenguin', steps: [] },
+    })
+    const Gate = getDestination('preflight').Component
+    render(<Gate params={{ arm: 'SIM-EDR-001' }} onNavigate={() => {}} />)
+    const armed = await screen.findByTestId('launch-gate-armed')
+    await waitFor(() => expect(armed).toHaveTextContent(/^Armed: SIM-EDR-001$/))
+    expect(within(armed).getByText('SIM-EDR-001'))
+      .toHaveAttribute('title', 'Credential Dumping — /etc/shadow and Mimipenguin')
   })
 
   it('Get started tracks this POVengine\'s status under its own h1', async () => {

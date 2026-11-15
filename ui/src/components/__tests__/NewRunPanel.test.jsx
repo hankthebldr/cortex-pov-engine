@@ -34,6 +34,18 @@ describe('NewRunPanel', () => {
     expect(onSelect).toHaveBeenCalledWith({ kind: 'agent', id: 'a1', label: 'web-01' })
   })
 
+  it('changing the scenario is a kit Switch button, readable, that goes back to Scenarios', () => {
+    const onChangeScenario = vi.fn()
+    render(<NewRunPanel scenario={{ scenario_id: 'X' }} targets={targets} onChangeScenario={onChangeScenario} />)
+    const b = screen.getByRole('button', { name: 'Switch scenario' })
+    expect(b).toHaveClass('kit-btn', 'kit-btn--secondary')
+    expect(b).not.toHaveClass('linklike')
+    expect(b).toHaveAttribute('data-verb', 'Switch')
+    expect(b.querySelector('svg')).toHaveAttribute('data-icon', 'swap')
+    fireEvent.click(b)
+    expect(onChangeScenario).toHaveBeenCalled()
+  })
+
   it('with nothing blocking, Run is enabled and fires onRun', () => {
     const onRun = vi.fn()
     render(<NewRunPanel scenario={{ scenario_id: 'X' }} targets={targets} selected={{ kind: 'agent', id: 'a1' }}

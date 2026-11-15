@@ -125,6 +125,37 @@ describe('LaunchView preflight', () => {
     expect(why.open).toBe(true)
   })
 
+  // The card is its checks. Why they are checked first is one line, kept as
+  // the Preflight label's tooltip rather than a paragraph above them.
+  it('keeps why it checks first in the Preflight tooltip, not a paragraph', async () => {
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const card = await screen.findByTestId('scenario-preflight')
+    expect(card).not.toHaveTextContent(/every failure below|same artefact/)
+    expect(within(card).getByText('Preflight')).toHaveAttribute(
+      'title', "A step that did not run as authored reads as a gap in the customer's coverage.")
+  })
+
+  // Tool consent is one compact row per gated tool class, like the EAL row:
+  // the checkbox and one sentence, and "Required" while the run waits on it.
+  it('asks for tool consent in one compact row, Required until it is ticked', async () => {
+    installRoutes(ROUTES({
+      'GET /api/tools/adapters': {
+        adapters: [{ ...ADAPTERS.adapters[0], safety_class: 'dual-use-lab-only' }], total: 1,
+      },
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    const box = await screen.findByRole('checkbox', { name: 'I authorize lab-only use of dual-use tools (LinPEAS)' })
+    const row = box.closest('.launch-consent__row')
+    expect(within(row).getByRole('img', { name: 'Required' })).toBeInTheDocument()
+    expect(screen.queryByText(/tool consent required|blocking run/i)).toBeNull()
+    expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/lab-only consent/)
+
+    fireEvent.click(box)
+    expect(box).toBeChecked()
+    expect(within(row).queryByRole('img', { name: 'Required' })).toBeNull()
+    expect(screen.getByTestId('launch-blockers')).not.toHaveTextContent(/lab-only consent/)
+  })
+
   // Who runs the scenario's cleanup depends on the beacon chosen: one that
   // advertises `cleanup` runs it after the run; an older one does not (#361).
   it('says who runs the teardown for the agent that is chosen', async () => {

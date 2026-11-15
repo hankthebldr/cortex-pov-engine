@@ -387,13 +387,15 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
       <div className="view-head">
         <div>
           <h1>{title}</h1>
-          <div className="view-head__meta">
+          {/* One short line each: what is armed (its name is the tooltip; the
+              run panel below names it in full), and where the app's own status is. */}
+          <div className="view-head__meta" data-testid="launch-gate-armed">
             {scenario
-              ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>It checks and starts one scenario&apos;s run. Arm one from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+              ? <>Armed: <strong className="mono" title={scenario.name || undefined}>{scenario.scenario_id || scenario.id}</strong></>
+              : <>Arm a scenario from <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
           </div>
           <div className="view-head__meta guided-flow__scope" data-testid="launch-gate-scope">
-            This POVengine&apos;s own status (tenant, agents, collectors) is on{' '}
+            Tenant, agents and collectors are on{' '}
             <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('start')}>Get started</button>.
           </div>
         </div>

@@ -52,9 +52,7 @@ export default function NewRunPanel({
         </div>
         <div className="new-run__what-title">{scenario?.name || sid}</div>
       </div>
-      <button type="button" className="linklike new-run__change" onClick={onChangeScenario}>
-        Pick another scenario
-      </button>
+      <Button verb="Switch" className="new-run__change" onClick={onChangeScenario}>Switch scenario</Button>
 
       {readiness && (
         <>

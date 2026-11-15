@@ -29,7 +29,7 @@
 }
 .theme-console .new-run__what-meta { font-size: 10px; color: var(--tx3); }
 .theme-console .new-run__what-title { margin-top: 5px; font: 600 13px/1.35 var(--font-ui); color: var(--tx); }
-.theme-console .new-run__change { margin-top: 6px; font-size: 11px; color: var(--tx2); }
+.theme-console .new-run__change { margin-top: 8px; }
 .theme-console .new-run__readiness { display: grid; gap: 12px; }
 
 .theme-console .new-run__targets { border: 1px solid var(--bd); border-radius: 7px; overflow: hidden; }
@@ -117,6 +117,17 @@
 }
 .theme-console .launch-eal__name:disabled { color: var(--tx3); background: transparent; }
 .theme-console .launch-eal__name:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+/* Consent for the scenario's gated tools (LaunchView ToolConsentRow): one
+   compact row each, like the EAL row; "Required" at the end while unticked. */
+.theme-console .launch-consent { display: grid; gap: 6px; margin: 0 0 12px; }
+.theme-console .launch-consent__row {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 9px 12px; background: var(--s2); border: 1px solid var(--bd); border-radius: 7px;
+  font: 400 11.5px/1.5 var(--font-ui); color: var(--tx2);
+}
+.theme-console .launch-consent__tick { display: inline-flex; align-items: center; gap: 7px; flex: 1; min-width: 0; cursor: pointer; }
+.theme-console .launch-consent__tick input { flex: none; width: auto; margin: 0; padding: 0; accent-color: var(--ac); }
+.theme-console .launch-consent__row .kit-status { flex: none; margin-left: auto; }
 .theme-console .new-run__run { width: 100%; justify-content: center; padding: 11px; font-size: 13px; }
 .theme-console .new-run__note { margin-top: 8px; font-size: 11px; color: var(--tx2); }
 .theme-console .new-run__blockers { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
