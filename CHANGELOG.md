@@ -8,34 +8,46 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-15
+
+**Hotfix for v1.2.3: a run its beacon abandoned reads `failed`, and reading the
+tenant no longer locks the database (#326).** One run status, one database
+setting and a commit before each outbound call; no scenario, card, emitter,
+beacon or schema change. The database file switches to WAL mode, so read the
+upgrade notes before you back it up.
+
 ### Fixed
 
-- **A run its beacon abandoned reads `failed`, not `complete` (#326).** When a
-  beacon stayed alive but stopped reporting on a run, SimCore closed the run as
+- **A run its beacon abandoned reads `failed`, not `complete`.** When a beacon
+  stayed alive but stopped reporting on a run, SimCore closed the run as
   `complete` and said what had happened only in its output ("BEACON ABANDONED
   TASK ... Steps without host evidence are not a coverage measurement"). The
   Runs list, the report and the API then showed a run nobody saw finish as a
-  finished run (run `5cc8c6b4`, SIM-NDR-007). Such a run now ends `failed`. Its
-  output opens the marker with `RUN FAILED: BEACON_ABANDONED_TASK` and its
-  `run.status` frame carries the same code as `termination`. The console
-  already treats a `failed` run as one that proves nothing about coverage.
-  Its results are unchanged: the rows of the first step with no host record
-  stay unjudged (a `prevent` row caps at `pending`), and later steps read
-  `not_reached`. A run whose agent went offline mid-run still ends `complete`,
-  severed at the step. Runs already closed as `complete` keep that status.
-- **"database is locked" while SimCore reads the tenant (#326).** While a
-  Tier-2 verify waited on the tenant, the beacon's `GET /api/agents/{id}/tasks`
-  and the heartbeat sweep failed with `database is locked`: 44 times in one
-  minute on 2026-11-14, 152 in that day's log. A beacon that cannot poll looks
-  gone, and that is how a live run came to be closed as abandoned. Three
-  changes:
+  finished run (run `5cc8c6b4`, SIM-NDR-007). Such a run now ends `failed`,
+  which the console already shows as a run that proves nothing about coverage.
+  Its output opens the marker with `RUN FAILED: BEACON_ABANDONED_TASK`, and its
+  `run.status` frame carries the same code as `termination`. Its results are
+  unchanged: the rows of the first step with no host record stay unjudged (a
+  `prevent` row caps at `pending`), and later steps read `not_reached`. A run
+  whose agent went offline mid-run still ends `complete`, severed at the step.
+  Runs already closed as `complete` keep that status.
+- **No more `database is locked` while SimCore reads the tenant.** While a
+  review of one run waited on the tenant, the beacon's poll for work
+  (`GET /api/agents/{id}/tasks`) and the heartbeat sweep failed with
+  `database is locked`: 44 times in one minute on 2026-11-14, 152 in that day's
+  log. A beacon that cannot poll looks gone, and that is how a live run came to
+  be closed as abandoned. Three changes:
   - **No write is held open across an outbound call.** Reading a stored
     credential stamps its last-access time, which opens a write, and SQLite
     allows one writer. Verify, reconcile, the case-ledger refresh, the
     tenant-evidence read, the connector, firewall and collector preflights, the
     assertion runner and the `/api/xsiam` routes all went on to the network
     with that write open. Each now commits it first. A reconcile also commits
-    its "credential verified" stamp before it reads incidents and cases.
+    its "credential verified" stamp before it reads incidents and cases, and
+    a review that withdraws a cross-run credit (1.2.3) commits the withdrawal
+    before those reads. The row is still judged again in the same review; if
+    that review then fails, the withdrawal stays on the row with its note and
+    the next review judges it.
   - **The database opens in WAL mode**, with a 5 s busy timeout and
     `synchronous=NORMAL`, so a reader and the writer no longer wait on each
     other. The busy timeout was already 5 s by the driver's default; SimCore
@@ -46,7 +58,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
     skips its pass. A task whose delivery cannot be recorded stays queued for
     the next poll. Before, it was dropped from the queue until a restart.
 
-### Upgrading from 1.2.1 or older
+### Upgrading from 1.2.3 or older
 
 - **The database switches to WAL on first start, and a backup is now three
   files.** Two side files can appear next to `cortexsim.db`:
