@@ -550,6 +550,31 @@ class RunOutputFrame(Base):
                                                   default=datetime.utcnow)
 
 
+class StepStart(Base):
+    """The beacon's report that it is about to run a step, and with what command.
+
+    Written by a ``kind: "start"`` ``/output`` frame (``engine.live_output``),
+    before the step's process exists. ``started_at`` here IS when the step
+    started. It is kept apart from :class:`StepOutcome` on purpose: that row's
+    ``started_at`` means "the step had finished by then", and beacon-lost
+    severing and the silent-row window read it that way.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "step_starts"
+    __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_step_starts_run_step"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String, nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    identity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                 default=datetime.utcnow)
+
+
 class Observation(Base):
     """Tenant evidence: one raw alert pulled back for a run."""
 

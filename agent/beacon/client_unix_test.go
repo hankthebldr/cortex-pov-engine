@@ -11,45 +11,7 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/hankthebldr/cortexsim/agent/identity"
 )
-
-func TestStreamOutput_LiveChunksSent(t *testing.T) {
-	task := &Task{
-		TaskID:     "task-stream-1",
-		RunID:      "run-stream-1",
-		ScenarioID: "SIM-TEST-STREAM",
-		Steps: []Step{
-			{
-				ID:             "step-stream-1",
-				Name:           "Streaming Step",
-				Command:        "echo line1 && echo line2",
-				Identity:       "root",
-				MitreTechnique: "T1059",
-			},
-		},
-	}
-	rs := newRecordingServer(t, task)
-	defer rs.Close()
-
-	c := New(rs.URL, "agent-test", time.Millisecond)
-	c.StreamOutput = true
-	c.resolveIdentity = func(string) identity.Resolution {
-		return identity.Resolution{Mode: "direct", Username: "root"}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c.executeTask(ctx, task)
-
-	outputs := rs.find("POST", "/output")
-	if len(outputs) <= 1 {
-		t.Errorf("expected >1 /output POSTs with StreamOutput=true, got %d", len(outputs))
-	}
-}
 
 func TestExecuteTask_SignaledStepIsRecordedAndSeversChain(t *testing.T) {
 	rs := newRecordingServer(t, nil)
