@@ -14,6 +14,7 @@ from drifting apart silently.
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-11-13 · canvas version `1794626399-70f5` ("v33": v26 + changes C1–C10) |
+| Code-side last sync | 2026-11-15 · canvas version `1794768805-384b` (version 36): a CODE STATE note for `dev@845bb2e1` at the top of the page's header comment (below) |
 | Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) · design v33 C1–C10 + Launch gate MVP (2026-11-13, PRs #286–#308, below) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
 | Current handoff | **Design v33 → `ui/src`, 2026-11-13:** the canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff, recorded below. v26's own handoff: `docs/design/2026-11-13-v26-design-to-code.md` |
@@ -24,6 +25,28 @@ from drifting apart silently.
 > lists, and the owner reviews a `:8888` container rebuilt from `dev`. Where
 > the owner's live review overrode the canvas, the override is listed below
 > and the canvas is the side that has to catch up.
+
+> **Sync runs both ways (2026-11-15).** Until this date no Code session had
+> written to the canvas. The overrides below reached only this file, which
+> the canvas agent never reads. So the canvas kept drawing v33 while `dev`
+> shipped PRs #317–#371, and today it drew Composer sub-steps on that stale
+> base. The rule from now on:
+>
+> - **Code to canvas.** After each UI merge into `dev`, a Code session
+>   rewrites the **CODE STATE** note at the top of the canvas page's header
+>   comment: rail, verb set, status words, copy and colour rules, what each
+>   page does, owner word rules, and what the canvas has that code does not.
+>   Edit only that comment, never the drawing, and record the new canvas
+>   version in the manifest above.
+> - **Canvas to code.** A canvas change comes to code only through a handoff
+>   note that says what it changes against CODE STATE. Diff the page against
+>   the last copy read, and never port a screen that contradicts CODE STATE
+>   without the owner's word.
+>
+> Open on the canvas at version 36, not built: step sub-steps, palette Add to
+> chain and Add expected detection (no backend model; the sub-step copy uses
+> the banned word "shelf"); Composer draft / WIP / orphan states (to be
+> designed on the existing drafts API).
 
 ## Runs, Results, Reports: one job per page (2026-11-15)
 
