@@ -260,11 +260,31 @@ def test_exited_zero_or_unrecorded_status_is_still_missed(exit_code):
                                     exit_code=exit_code) == ("missed", None)
 
 
-@pytest.mark.parametrize("termination", ["signaled", "timeout", "anchor_terminated"])
-def test_exit_code_does_not_change_the_other_ran_terminations(termination):
-    # A kill or a spent budget is not a failure the step made on its own.
+@pytest.mark.parametrize("termination", ["signaled", "anchor_terminated"])
+def test_exit_code_does_not_change_the_host_kill_terminations(termination):
+    # A kill is not a failure the step made on its own: it ran until stopped.
     assert oc.silent_detect_verdict(termination, window_closed=True,
                                     exit_code=137) == ("missed", None)
+
+
+@pytest.mark.parametrize("exit_code", [124, None])
+def test_a_timed_out_step_is_not_executed_never_missed(exit_code):
+    # The lab's SIM-MP-003 step-03: DNS hung, the step hit its 180 s limit.
+    v = oc.silent_detect_verdict("timeout", window_closed=True, exit_code=exit_code)
+    assert v == ("not_executed", "STEP_TIMED_OUT")
+    assert oc.is_in_denominator(*v) is False
+
+
+def test_a_timed_out_step_is_unjudged_while_its_window_is_open():
+    assert oc.silent_detect_verdict("timeout", window_closed=False, exit_code=124) is None
+
+
+@pytest.mark.parametrize("mode", ["report", "unknown"])
+def test_prevent_scored_as_detect_on_a_timed_out_step_is_not_executed(mode):
+    v = oc.evaluate_prevent(agent_profile_mode=mode, alert_outcome=None,
+                            termination="timeout", window_closed=True,
+                            block_mode_status=None, exit_code=124)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("not_executed", None, "STEP_TIMED_OUT")
 
 
 def test_a_failed_step_is_unjudged_while_its_window_is_open():

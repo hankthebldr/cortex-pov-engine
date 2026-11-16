@@ -35,6 +35,7 @@
  *   check-all  Validate all (the verb)
  *   check-circle  Mark detected (the verb)
  *   save     Save (the verb)
+ *   flask    Run canary (the verb): a known-benign probe run
  *
  * `repeat` also draws Reset (the verb).
  *
@@ -176,6 +177,12 @@ const SHAPES = {
     <g {...STROKE}>
       <path d="M3 3h8.2L13 4.8V13H3z" />
       <path d="M5.4 3v3.2h4.6V3M5.4 13V9.4h5.2V13" />
+    </g>
+  ),
+  flask: (
+    <g {...STROKE}>
+      <path d="M5.6 2.4h4.8M6.6 2.4v4L3 13.2h10L9.4 6.4v-4" />
+      <path d="M4.6 10.2h6.8" />
     </g>
   ),
 }

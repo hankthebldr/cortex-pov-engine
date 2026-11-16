@@ -78,7 +78,6 @@ def _runtime_content_paths() -> dict[str, str]:
         "tool-adapter packs": str(Path(IMAGE_BASE) / "tools" / "packs"),
         "UC/TC v2.2 snapshot": str(Path(IMAGE_BASE) / "docs" / "uc_tc_mapping" / "_v2.2-source"),
         "payload shelf": str(Path(IMAGE_BASE) / "payloads"),
-        "IaC modules": str(Path(IMAGE_BASE) / "infra" / "modules"),
     }
     return paths
 

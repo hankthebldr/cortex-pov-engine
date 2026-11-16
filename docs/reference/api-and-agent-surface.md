@@ -44,11 +44,12 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **177 HTTP routes total** (counted 2026-11-15 with the walker below, on the
-  host venv, after `POST /api/eal/relay` and `GET /api/reports/executions`
-  were added; the 1.2.0 release tree read 175). Routers under `/api`,
+- **172 HTTP routes total** (counted 2026-11-15 with the walker below, on the
+  host venv, after the IaC generator's `/api/infra/*` (4) and
+  `/api/scenarios/{id}/infra-hints` moved to `feature/scenarios-cloud-posture`;
+  177 before that, and the 1.2.0 release tree read 175). Routers under `/api`,
   plus the app-level `GET /api/health` and a static file mount at `/`, plus 4
-  FastAPI-owned docs/openapi routes. The ground truth's static count is 167 route
+  FastAPI-owned docs/openapi routes. The ground truth's static count is 162 route
   decorators; the walker adds the 4 docs routes and the 6 shelf artifact routes that
   `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
   `/api/shelf` without a decorator. On the 1.2.0 release tree (2026-11-13) the
@@ -101,7 +102,6 @@ before or across routers:
 | `INSTALL_IN_PROGRESS` | 409 | `POST /api/tools/{tool}/install` | One install at a time; it runs off the event loop. |
 | `XQL_WRITE_STAGE_REFUSED` | 400 | `POST /api/xsiam/tenants/{name}/xql`, `…/operations/OP-XQL-START-XQL-QUERY` (now tagged body-inspected), the verifier runners, and Composer draft save | The query carries an XQL `target` stage, which writes a dataset or lookup. Enforced inside `XsiamClient.start_xql_query`, under 16 quote/comment/escape readings; refused if any one reading sees a `target`. |
 | `RESERVED_SECRET_NAME` | 400 | `PUT /api/credentials/secrets` | The `__cortexsim__/` namespace holds the master-key check row (was a 500). |
-| `VALIDATION_ERROR` | 422 | `POST /api/infra/generate` | `dc_ssh_cidr` shorter than /16 (IPv4) or /48 (IPv6); the same CIDR also gates port 8888. |
 | `VALIDATION_ERROR` | 422 | `POST` / `PUT /api/scenarios/drafts` | A control character (CR/LF, tab, NUL, ESC, DEL, NEL, U+2028/2029) in a single-line field: name, author, tags, step id/name, or detection description / `detection_id` / `ttp_ref`. `command` stays multi-line. |
 
 CORS is **not mounted** unless `CORTEXSIM_CORS_ORIGINS` names origins, and it
@@ -117,14 +117,6 @@ that carry the header record no `last_ip` (logged once). The first ignored
 header from each unlisted peer logs one WARNING (bounded at 64 peers) and
 feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 `127.0.0.1`) can rewrite `request.client` before this code runs.
-`400 BAD_INFRA_PARAM` (`POST /api/infra/generate`) refuses a `region`,
-`jumpbox_size`, `tags` or `dc_ssh_cidr` value outside its allow-list before
-any HCL is rendered (SEC-17); `dc_ssh_cidr` must be written in the CIDR
-alphabet, so an IPv6 zone id is refused. The request model refuses a `region`
-or `jumpbox_size` outside the AWS shapes first, with `422` (from `dev`), so on
-the route the 400 is in practice `tags` and a zone-id CIDR; the generator
-re-checks all four for a caller that skips the model, and the templates write
-every string as an escaped HCL literal.
 
 ### 1.1 Health (app-level, `core/main.py`)
 
@@ -148,7 +140,6 @@ every string as an escaped HCL literal.
 | GET | `/api/scenarios/staged` | The **extended library**: the staged draft pairs under `drafts/detection-library/`, read only (not loaded, not launchable, not counted as coverage) | — | `{loaded, code, detail, registry_loaded, source, launchable:false, counted_as_coverage:false, scenarios[<summary> + doors, doors_code, doors_detail, staged{card, platform, source, findings, launchable:false}], total, projection}`; `loaded:false` + `STAGED_LIBRARY_ABSENT` when the directory is not on this SimCore (the image does not ship `drafts/`); 500 `STAGED_LIBRARY_UNREADABLE`, 500 `DATASET_REGISTRY_MALFORMED` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/tenant-content` | What the scenario (or saved draft) needs to exist in the tenant. Read-only; see §1.2.1 | — | the tenant-content manifest, 404 `SCENARIO_NOT_FOUND`, 422 `TENANT_CONTENT_UNREADABLE` |
-| GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
 | GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=auto\|bash\|powershell\|k8s` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition` + `X-CortexSim-Bundle-Target`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` (reason codes incl. `MIXED_DIALECT`) / `PUSH_NOT_SUPPORTED` |
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
@@ -534,7 +525,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`,
+`STEP_TIMED_OUT`, `INPUTS_NOT_SENT`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -546,11 +538,12 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   the Tier-2 verifier's. An `aborted` termination reads `pending` /
   `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
   was cut short; its verdict is undefined); a `timeout` stays
-  `missed` / fail (the step ran its whole budget unprevented).
+  `missed` / fail for a block-mode `prevent` row (the step ran its whole budget
+  unprevented), while a row scored as a detect reads `not_executed` / `STEP_TIMED_OUT`.
 - **A silent `detect` row is written `missed` — when the host says it ran.** Once its
   window closes with no matched alert, the silent-row judgement
   (`outcome.py::silent_detect_verdict`) writes `outcome = missed` only when the step's
-  host record is `exited`, `timeout`, `signaled` or `anchor_terminated`, and only on
+  host record is `exited`, `signaled` or `anchor_terminated`, and only on
   complete evidence (a host-scoped, untruncated, lossless credential pull; else
   `pending` / `EVIDENCE_INCOMPLETE`). No record or `beacon_lost` → `pending` /
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
@@ -563,10 +556,30 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
   `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
   notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
-  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` /
   `anchor_terminated` are unchanged; an alert matched inside the window still credits
   the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
   `missed`, and the block-mode two-witness branch does not read `exit_code`.
+- **A timed-out step is not a miss.** A step the host records `timeout` was stopped
+  at its time limit before it finished its work (SIM-MP-003 step-03, DNS hung). Its
+  silent `detect` rows, and `prevent` rows scored as a detect, read `not_executed` /
+  `STEP_TIMED_OUT` once the window closes, with "the step timed out on the host" in
+  the notes. A block-mode `prevent` row on a timed-out step still reads `missed` /
+  fail. An alert matched inside the window still credits the row.
+- **A correlation with nothing to join is not a miss (#378).** A silent `Correlation`
+  row that would read `missed` reads `not_executed` / `INPUTS_NOT_SENT` when every
+  row it joins sent nothing. The corpus does not declare which detections a
+  correlation fuses (the card's rule logic is prose), so its inputs are every
+  non-Correlation row on an earlier step of the run, and on its own step, in the
+  launched scenario's step order. An input sent nothing when it is already
+  `not_executed` / `not_reached` (an EAL step that stayed dry or delivered 0
+  records, a refused or never-run step), or is undecided on a step the host
+  records `not_run`, failed (non-zero exit) or timed out. A credited input, a decided
+  `missed` one, or one with no host record counts as sent, so a run where some
+  inputs were delivered keeps `missed`. A correlation with no input rows is judged
+  as before. An alert matched to the correlation still credits it.
+- **Decided rows are not re-judged.** A row already `missed` keeps it under both
+  rules; re-run the scenario to re-score it.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
@@ -1665,17 +1678,11 @@ install removes its own items and fails `NEEDS_ROOT`.
 - **Only counts scenarios with `status == "active"`** (`mitre.py:38`). Draft/
   deprecated scenarios are invisible to the heatmap (GAP-API-009).
 
-### 1.8 Infra / IaC (`core/api/infra.py`, prefix `/infra`)
+### 1.8 Infra / IaC — moved
 
-| Method | Full path | Purpose | Request | Response |
-|--------|-----------|---------|---------|----------|
-| GET | `/api/infra/modules` | List Terraform modules | query: `provider=aws` (default) | `{"modules":[<metadata>],"total":N}` |
-| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic): `region` must be an AWS region (`us-east-1`, `us-gov-west-1`), `params.jumpbox_size` an AWS instance type (`t3.medium`, `m7i-flex.large`, ≤32 chars); string values reach the `.tf`/`.tfvars` only as escaped HCL literals | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 request validation (incl. a bad `region`/`jumpbox_size`); 422 `GENERATION_FAILED` |
-| GET | `/api/infra/bundles` | List previously generated bundles | — | `{"bundles":[<summary>],"total":N}` |
-| GET | `/api/infra/bundles/{bundle_id}/download` | Download tar.gz | — | `FileResponse` gzip; 404 `BUNDLE_NOT_FOUND` |
-
-- These routes are **sync** (`def`, not `async def`) — they do blocking filesystem
-  work (`shutil.copytree`) off the event loop is *not* offloaded (GAP-API-010).
+The IaC topology generator (`/api/infra/*`) and `GET /api/scenarios/{id}/infra-hints`
+moved to `feature/scenarios-cloud-posture` on 2026-11-15, targeted for a 1.4.x
+release. Their contract is documented there.
 
 ### 1.9 EAL Traffic Simulator (`core/api/eal.py`, prefix `/eal`)
 
@@ -1732,7 +1739,7 @@ install removes its own items and fails `NEEDS_ROOT`.
 - EAL run statuses are a *different enum* (`pending`/`success`/`failed`/etc. from
   the executor) than core Runs. Abort is cooperative and cannot pre-empt an
   in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
-  no retention sweep (same as `infra/blueprints`).
+  no retention sweep.
 
 ### 1.9.1 Collector targets (`core/api/collector_targets.py`, prefix `/collector-targets`)
 
@@ -3301,13 +3308,13 @@ authoring TTP routes (gated, UI has TTP authoring affordances behind the env fla
 
 - **Tool adapters** (`docs/tool-adapters.md`): consent gate (`c2_authorized`,
   `simulation_authorized`) enforced in `orchestrator._check_adapter_consent`;
-  adapter catalog consumed by `/api/tools/adapters*`, `/api/scenarios/{id}/infra-hints`,
-  report `tools_used` table, and push-bundle installs.
+  adapter catalog consumed by `/api/tools/adapters*`, report `tools_used`
+  table, and push-bundle installs.
 - **TTP corpus** (`detection_scanner/ttps/`): `Result.ttp_ref` is the join key;
   `/api/ttps/{id}/runs` closes the static-content ↔ live-run loop; orchestrator
   enriches Results from `engine.ttp_catalog`.
 - **IaC generator** (`docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`):
-  `/api/scenarios/{id}/infra-hints` → `/api/infra/generate` handoff.
+  on `feature/scenarios-cloud-posture` since 2026-11-15 (1.4.x).
 - **EAL simulator**: parallel campaign/run lifecycle (`/api/eal/*`) reusing the
   safety-authorization philosophy but a separate executor + status enum.
 - **Credentials** (Phase 9): `IntegrationCredential` referenced by future XSIAM/AWS
@@ -3905,7 +3912,6 @@ elevated install and uninstall phases only. Server rows are verified by host tes
 | `sudo` sweep | POSIX uninstaller | §1.6, *POSIX uninstall*. |
 | Shelf wording | `/api/shelf/compose`, `/api/shelf/resolve` | A bad `server` is worded for "a payload plan" and names the body's `server` field or `?server=`, not the installer's. |
 | Exemption reasons | `GET /api/tools/adapters`, `unstaged_adapters[]` | Rows gain `shelf_backed` and `artifact_exempt {reason_code, reason, revisit}`; `UnstagedAdapter` gains `reason_code`, `revisit`, `tier`. Tiers 1/2/3/5 read `SOURCE_TREE_ON_DISK` / `IAC_PROVISIONED` / `EXTERNAL_ONLY`. The console does not render them yet. |
-| `BAD_INFRA_PARAM` (400) | `POST /api/infra/generate` | §1, SEC-17. |
 
 ### 11.3 Beacon
 

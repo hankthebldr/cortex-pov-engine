@@ -294,28 +294,6 @@ export async function getScenario(id) {
   return request(`/api/scenarios/${id}`)
 }
 
-/**
- * GET /api/scenarios/:id/infra-hints
- *
- * Resolve a scenario's external_tools[] into IaC generator hints
- * (adapter_refs the scenario declares + suggested_modules derived
- * from each adapter's install.iac_module). Used by the LabView's
- * "Hint from scenario" affordance to auto-fill the auto-pull picker.
- *
- * @param {string} scenarioId
- * @returns {Promise<{
- *   scenario_id: string,
- *   plane: string,
- *   adapter_refs: string[],
- *   resolved_adapters: Array<{adapter_ref, name, tier, safety_class, iac_module}>,
- *   unresolved_refs: string[],
- *   suggested_modules: string[],
- * }>}
- */
-export async function getScenarioInfraHints(scenarioId) {
-  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
-}
-
 /** Extension a bundle is saved under when the server names no file. */
 const BUNDLE_EXT = { bash: 'sh', powershell: 'ps1', k8s: 'yml' }
 
@@ -867,56 +845,6 @@ export async function downloadReportScorecard(runId, { html = false } = {}) {
  */
 export async function getReportJSON(runId) {
   return request(`/api/runs/${runId}/report?format=json`)
-}
-
-// ─── Infra (IaC Topology Generator) ──────────────────────────────────────────
-
-/**
- * GET /api/infra/modules?provider=aws
- * @param {string} provider
- * @returns {Promise<{modules: Array, total: number}>}
- */
-export async function getInfraModules(provider = 'aws') {
-  return request(`/api/infra/modules?provider=${encodeURIComponent(provider)}`)
-}
-
-/**
- * POST /api/infra/generate
- * @param {Object} body
- * @param {string} body.provider          'aws' | 'gcp' | 'azure'
- * @param {string} body.region            cloud region (e.g. 'us-east-1')
- * @param {string[]} body.modules         IaC modules the operator picked
- * @param {string[]} [body.adapter_refs]  optional adapter_ref ids — backend
- *                                        auto-includes each adapter's iac_module
- * @param {Object} body.params            project / SSH / sizing params
- * @returns {Promise<Object>}             response includes auto_included_modules[]
- */
-export async function generateInfra(body) {
-  return request('/api/infra/generate', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-/**
- * GET /api/infra/bundles
- * @returns {Promise<{bundles: Array, total: number}>}
- */
-export async function getInfraBundles() {
-  return request('/api/infra/bundles')
-}
-
-/**
- * GET /api/infra/bundles/:bundle_id/download
- * Returns the tar.gz as a Blob for download.
- * @param {string} bundleId
- * @returns {Promise<Blob>}
- */
-export async function downloadInfraBundle(bundleId) {
-  const response = await request(`/api/infra/bundles/${bundleId}/download`, {
-    _returnBlob: true,
-  })
-  return response.blob()
 }
 
 // ─── MITRE ──────────────────────────────────────────────────────────────────

@@ -211,4 +211,22 @@ describe('<DetectionStoryline /> on a step that failed on the host (#323)', () =
     expect(screen.queryByText('Missed')).toBeNull()
     expect(screen.queryByText(/STEP_FAILED/)).toBeNull()
   })
+
+  it.each([
+    ['STEP_TIMED_OUT', 'step timed out', /the step timed out on the host/i],
+    ['INPUTS_NOT_SENT', 'inputs not sent', /the steps this correlation joins sent nothing/i],
+  ])('%s reads as one short line, never "run did not complete"', async (reason, label, title) => {
+    const body = storylineFor('complete', 'not_executed')
+    for (const d of body.detection_storyline.steps[0].detections) d.outcome_reason = reason
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }))
+    render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
+    await screen.findByText(/Credential extraction tool/)
+
+    expect(screen.getAllByText(`Signal never generated · ${label}`)).toHaveLength(2)
+    expect(screen.getAllByTitle(title)).toHaveLength(2)
+    expect(screen.queryByText(/run did not complete/)).toBeNull()
+    expect(screen.queryByText(new RegExp(reason))).toBeNull()
+  })
 })

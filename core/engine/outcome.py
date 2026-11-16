@@ -64,6 +64,19 @@ TOOL_ABSENT = "TOOL_ABSENT"
 STEP_FAILED = "STEP_FAILED"
 #: The POSIX shell's "command not found" exit status: the step's tool is absent.
 EXIT_COMMAND_NOT_FOUND = 127
+#: A step the host reports ``timeout``: it hit its time limit (a hung DNS
+#: lookup, a stalled download) and was stopped before it finished its work. Its
+#: silent rows scored as a detect are ``not_executed``, never ``missed``, as a
+#: failed step's are. The block-mode two-witness branch does not read it.
+STEP_TIMED_OUT = "STEP_TIMED_OUT"
+#: A Correlation row whose run sent nothing on the steps it joins (#378): every
+#: input row's step stayed dry, failed, timed out or never ran, so the rule had
+#: no alert to fuse. ``not_executed``, never ``missed``.
+INPUTS_NOT_SENT = "INPUTS_NOT_SENT"
+#: Detection types that fire on other rows' alerts, not on records their own
+#: step sends. A Correlation rule fuses the alerts of the run's other
+#: detections; its step is often an ``echo`` that sends nothing itself.
+AGGREGATE_SIGNAL_TYPES = frozenset({"Correlation"})
 #: The beacon refused a step its host platform cannot run (a linux-only step
 #: dispatched to a Windows beacon, say). It never executed, so its silent
 #: detections say nothing about Cortex: ``not_executed``, never ``missed``.
@@ -83,7 +96,8 @@ HOST_EVIDENCE_ABSENT = "HOST_EVIDENCE_ABSENT"
 #: A row whose step the host reports ``aborted`` (an agent-side cancel, one
 #: endpoint of a fan-out, an operator stop) -- any expectation, any profile mode:
 #: the run was cut short and its verdict is undefined, so silence is not a miss.
-#: A ``timeout`` is different -- the step ran its whole budget unprevented.
+#: A ``timeout`` is different for a block-mode ``prevent`` row -- the step ran
+#: its whole budget unprevented; a row scored as a detect reads STEP_TIMED_OUT.
 RUN_ABORTED = "RUN_ABORTED"
 
 #: A ``prevent`` row in a block-mode run whose module the operator attested
@@ -203,12 +217,43 @@ def host_outcome_for_step(termination: Optional[str], reason: Optional[str]) -> 
     raise ValueError(f"not_run with unrecognised reason: {reason!r}")
 
 
-#: Host terminations that say a step RAN (to its end, its budget, or until the
-#: host stopped it). Only these let a silent ``detect`` row read ``missed``.
+#: Host terminations that say a step RAN (to its end, or until the host
+#: stopped it). Only these let a silent ``detect`` row read ``missed``. A
+#: ``timeout`` is not one: the step was stopped before it finished its work.
 DETECT_MISS_TERMINATIONS = frozenset({
-    TERMINATION_EXITED, TERMINATION_TIMEOUT, TERMINATION_SIGNALED,
-    TERMINATION_ANCHOR_TERMINATED,
+    TERMINATION_EXITED, TERMINATION_SIGNALED, TERMINATION_ANCHOR_TERMINATED,
 })
+
+
+def host_failure_reason(termination: Optional[str],
+                        exit_code: Optional[int]) -> Optional[str]:
+    """Why a step that ended on the host never did its work, or None.
+
+    ``exited`` non-zero: ``STEP_FAILED``, or ``TOOL_ABSENT`` for exit 127
+    (#323). ``timeout``: ``STEP_TIMED_OUT``. Anything else: None.
+    """
+    if termination == TERMINATION_EXITED and exit_code not in (None, 0):
+        return TOOL_ABSENT if exit_code == EXIT_COMMAND_NOT_FOUND else STEP_FAILED
+    if termination == TERMINATION_TIMEOUT:
+        return STEP_TIMED_OUT
+    return None
+
+
+def sent_nothing(outcome: Optional[str], observed: Optional[bool],
+                 termination: Optional[str], exit_code: Optional[int]) -> bool:
+    """True when a row's step is known to have sent Cortex nothing (#378).
+
+    Already ``not_executed`` / ``not_reached`` (an EAL step that stayed dry or
+    delivered 0 records, a refused or never-run step), or still undecided on a
+    step the host reports ``not_run``, failed or timed out. A credited row, a
+    decided ``missed``, or a step with no host record is not known to be silent.
+    """
+    if outcome in EXCLUDED_FROM_DENOMINATOR:
+        return True
+    if observed or outcome not in (None, OUTCOME_PENDING):
+        return False
+    return (termination == TERMINATION_NOT_RUN
+            or host_failure_reason(termination, exit_code) is not None)
 
 
 def silent_detect_verdict(termination: Optional[str], window_closed: bool,
@@ -226,15 +271,15 @@ def silent_detect_verdict(termination: Optional[str], window_closed: bool,
     non-zero ``exit_code`` the step failed on the host, so its silence says
     nothing about Cortex: ``not_executed`` / ``STEP_FAILED`` (``TOOL_ABSENT``
     for exit 127). ``exit_code`` 0 or None (an older record) keeps ``missed``.
+    A ``timeout`` is read the same way: ``not_executed`` / ``STEP_TIMED_OUT``.
     """
     if termination is not None and termination not in TERMINATIONS:
         raise ValueError(f"unrecognised termination: {termination!r}")
     if not window_closed or termination == TERMINATION_NOT_RUN:
         return None
-    if termination == TERMINATION_EXITED and exit_code not in (None, 0):
-        if exit_code == EXIT_COMMAND_NOT_FOUND:
-            return OUTCOME_NOT_EXECUTED, TOOL_ABSENT
-        return OUTCOME_NOT_EXECUTED, STEP_FAILED
+    failed = host_failure_reason(termination, exit_code)
+    if failed is not None:
+        return OUTCOME_NOT_EXECUTED, failed
     if termination in DETECT_MISS_TERMINATIONS:
         return OUTCOME_MISSED, None
     if termination == TERMINATION_ABORTED:

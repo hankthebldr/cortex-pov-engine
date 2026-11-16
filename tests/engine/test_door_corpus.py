@@ -76,6 +76,14 @@ with none, ``needs_doors`` (196 -> 197).
 Re-pinned 2026-11-14: SIM-EDR-027 drops its step-02 gzip row after two lab runs
 on pov-target-01 recorded no event for that command (total 1,453 -> 1,452,
 xdr_agent 529 -> 528, XDR_AGENT_SOLE 528 -> 527; scenarios and states unchanged).
+
+Re-pinned 2026-11-15: the CSPM, ASM and AI_SPM planes (18 scenarios, 124
+detections) moved to feature/scenarios-cloud-posture for a 1.4.x release. Total
+1,452 -> 1,328, xdr_agent 528 -> 522 (109 -> 106 scenarios), XDR_AGENT_SOLE
+527 -> 521; ngfw_traffic, cloud_aws, cloud_gcp, saas_okta, xpanse and
+ngfw_threat fall; NO_DATASET 223 -> 199, DOORS_UNKNOWN 61 -> 60, NO_PROVIDER
+39 -> 20. The collector route is unchanged. With every door open, ready
+155 -> 138 and not_evaluated 8 -> 7; with none, needs_doors 197 -> 180.
 """
 from __future__ import annotations
 
@@ -123,21 +131,21 @@ def corpus():
 # doors counts once under each. Collector-route and underived detections are
 # counted below, not here.
 DOOR_COUNTS: dict[str, tuple[int, int]] = {
-    "xdr_agent": (528, 109),
-    "ngfw_traffic": (136, 49),
-    "cloud_aws": (67, 21),
-    "saas_okta": (24, 14),
+    "xdr_agent": (522, 106),
+    "ngfw_traffic": (121, 44),
+    "cloud_aws": (30, 10),
+    "saas_okta": (22, 13),
     "prisma_browser": (23, 6),
     "windows_events": (22, 8),
     "xdr_agent_xth": (22, 8),
     "saas_o365": (19, 9),
     "saas_entra": (15, 9),
-    "xpanse": (15, 8),
+    "xpanse": (4, 2),
     "tenant_incidents": (14, 4),
     "ngfw_stitch": (11, 9),
-    "cloud_gcp": (9, 3),
+    "cloud_gcp": (5, 2),
     "ngfw_globalprotect": (8, 3),
-    "ngfw_threat": (7, 3),
+    "ngfw_threat": (2, 2),
     "proofpoint_tap": (5, 5),
     "cloud_azure": (3, 2),
     "koi_aes": (3, 2),
@@ -150,7 +158,7 @@ DOOR_COUNTS: dict[str, tuple[int, int]] = {
 # the 68 on collector steps (47 IOC, 21 correlation), less the 2 the beta merge
 # removed, plus SIM-KOI-012's Prevention row, less SIM-EDR-025's (now an ABIOC).
 UNDERIVED: dict[str, int] = {
-    "CARD_NOT_FOUND": 0, "NO_DATASET": 223, "DOORS_UNKNOWN": 61, "NO_PROVIDER": 39,
+    "CARD_NOT_FOUND": 0, "NO_DATASET": 199, "DOORS_UNKNOWN": 60, "NO_PROVIDER": 20,
     "UNREGISTERED_DATASET": 0,
 }
 COLLECTOR_BY_TYPE: dict[str, int] = {
@@ -167,7 +175,8 @@ COLLECTOR_BY_TYPE: dict[str, int] = {
 # SIM-EDR-026 adds 5 (2026-11-13).
 # SIM-EDR-029 adds 6 (2026-11-13).
 # SIM-EDR-028 adds 5 (2026-11-13).
-XDR_AGENT_SOLE = 527
+# The posture planes' move to feature/scenarios-cloud-posture takes 6 (2026-11-15).
+XDR_AGENT_SOLE = 521
 
 
 def test_corpus_door_counts(corpus):
@@ -194,15 +203,16 @@ def test_corpus_door_counts(corpus):
                 for door in {d for element in req.all_of for d in element}:
                     door_dets[door] += 1
                     door_scen.setdefault(door, set()).add(sc["scenario_id"])
-    assert total == 1452
+    assert total == 1328
     assert collector == 216
-    assert door_dets["xdr_agent"] == 528, (
+    assert door_dets["xdr_agent"] == 522, (
         "509 (514 xdr_data less the 5 on collector steps) less 5 the beta merge removed, "
         "plus SIM-EDR-025 step-05's ABIOC and SIM-MP-038 step-01"
         ", plus SIM-EDR-027's 6"
         ", plus SIM-EDR-026's 5"
         ", plus SIM-EDR-029's 6"
-        ", plus SIM-EDR-028's 5")
+        ", plus SIM-EDR-028's 5"
+        ", less the 6 the posture planes took to feature/scenarios-cloud-posture")
     assert xdr_sole == XDR_AGENT_SOLE
     assert {d: (door_dets[d], len(door_scen[d])) for d in door_dets} == DOOR_COUNTS
     assert set(underived) <= set(UNDERIVED_CODES)
@@ -213,8 +223,8 @@ def test_corpus_door_counts(corpus):
 # With every door open for one agent, a scenario still falls short only on what no
 # door can open here: collector routes (no target resolved) and underived rows.
 # needs_doors 11 are collector-only scenarios; not_evaluated 8 derive no detection.
-ALL_OPEN_STATES: dict[str, int] = {"ready": 155, "partial": 31, "needs_doors": 11, "not_evaluated": 8}
-NONE_OPEN_STATES: dict[str, int] = {"needs_doors": 197, "not_evaluated": 8}
+ALL_OPEN_STATES: dict[str, int] = {"ready": 138, "partial": 31, "needs_doors": 11, "not_evaluated": 7}
+NONE_OPEN_STATES: dict[str, int] = {"needs_doors": 180, "not_evaluated": 7}
 
 
 def test_corpus_readiness(corpus):
@@ -229,11 +239,11 @@ def test_corpus_readiness(corpus):
         for key in ("total", "scorable", "underived", "route_blocked", "unevaluated"):
             sums[key] += out[key]
         none_open[scenario_readiness(sc, set(), agent_id="a1", catalog=cat, registry=registry)["state"]] += 1
-    assert sums["total"] == 1452
+    assert sums["total"] == 1328
     assert sums["route_blocked"] == 216
     assert sums["unevaluated"] == 0
     assert sums["underived"] == sum(UNDERIVED.values())
     # Every derived detection off the collector route is scorable when every door is open.
-    assert sums["scorable"] == 1452 - 216 - sum(UNDERIVED.values())
+    assert sums["scorable"] == 1328 - 216 - sum(UNDERIVED.values())
     assert dict(all_open) == ALL_OPEN_STATES
     assert dict(none_open) == NONE_OPEN_STATES

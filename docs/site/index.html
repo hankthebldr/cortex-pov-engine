@@ -4,11 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>POVengine — Detection simulation for Cortex</title>
-<meta name="description" content="POVengine sends controlled attack signal into Cortex XSIAM and XDR, then reads the alerts back. 205 scenarios across 16 detection planes." />
+<meta name="description" content="POVengine sends controlled attack signal into Cortex XSIAM and XDR, then reads the alerts back. 187 scenarios across 13 detection planes." />
 <meta name="theme-color" content="#F1F1F1" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <meta property="og:title" content="POVengine — Detection simulation for Cortex" />
-<meta property="og:description" content="Controlled signal into Cortex XSIAM and XDR, read back as measured detections. 205 scenarios, 16 planes, 27 ingestion doors." />
+<meta property="og:description" content="Controlled signal into Cortex XSIAM and XDR, read back as measured detections. 187 scenarios, 13 planes, 27 ingestion doors." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -38,7 +38,7 @@ function toggleTheme() {
   --s0:#F1F1F1; --s1:#FFFFFF; --s2:#FAFAFA; --s3:#EDEDED;
   --bd:#E9E9E9; --bd2:#C7C7C7;
   --tx:#000000; --tx2:#595959; --tx3:#696969;
-  --ac:#0A6231; --ac-ink:#0A6231; --ac-soft:#DBF8EA; --ac-line:#ADD8B1;
+  --ac:#0A6231; --ac-ink:#0A6231; --ac-soft:#DBF8EA; --ac-line:#ADD8B1; --ac-tx:#FFFFFF;
   --br:#00CC66; --gr-matte:#238A4D;
   --warn:#7D5E11;
   --font-display:'Montserrat','Helvetica Neue',Helvetica,Arial,sans-serif;
@@ -52,7 +52,7 @@ function toggleTheme() {
     --s0:#000000; --s1:#141414; --s2:#1F1F1F; --s3:#2B2B2B;
     --bd:#333333; --bd2:#4A4A4A;
     --tx:#FFFFFF; --tx2:#C7C7C7; --tx3:#9A9A9A;
-    --ac:#00CC66; --ac-ink:#2FD67F; --ac-soft:#122A1E; --ac-line:#0C6136;
+    --ac:#00CC66; --ac-ink:#2FD67F; --ac-soft:#122A1E; --ac-line:#0C6136; --ac-tx:#0B1F14;
     --warn:#C7AA47;
     color-scheme:dark;
   }
@@ -61,7 +61,7 @@ function toggleTheme() {
   --s0:#000000; --s1:#141414; --s2:#1F1F1F; --s3:#2B2B2B;
   --bd:#333333; --bd2:#4A4A4A;
   --tx:#FFFFFF; --tx2:#C7C7C7; --tx3:#9A9A9A;
-  --ac:#00CC66; --ac-ink:#2FD67F; --ac-soft:#122A1E; --ac-line:#0C6136;
+  --ac:#00CC66; --ac-ink:#2FD67F; --ac-soft:#122A1E; --ac-line:#0C6136; --ac-tx:#0B1F14;
   --warn:#C7AA47;
   color-scheme:dark;
 }
@@ -142,20 +142,51 @@ pre{
 pre code{background:none; padding:0; font-size:inherit; overflow-wrap:normal}
 .c{color:var(--tx3)}
 
-/* ══════════ signal-path diagram (reflows to stacked cards on a phone) ══════════ */
-.flow__head{display:grid; grid-template-columns:repeat(4,1fr); gap:32px; padding:0 18px 8px}
-.flow__head span{font:500 10px/1.3 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--tx3)}
-.lane{margin:0 0 10px; padding:14px 18px 16px}
-.lane__k{font:700 10.5px/1 var(--font-mono); letter-spacing:.12em; color:var(--ac-ink); margin:0 0 10px; display:flex; align-items:center; gap:8px}
-.lane__k::before{content:""; width:7px; height:7px; border-radius:50%; background:var(--br)}
-.lane dl{display:grid; grid-template-columns:repeat(4,1fr); gap:32px; margin:0}
-.lane__c{position:relative; min-width:0}
-.lane__c dt{display:none}
-.lane__c dd{margin:0; font-size:14px; line-height:1.4}
-.lane__c small{display:block; margin-top:4px; font:400 11.5px/1.45 var(--font-mono); color:var(--tx2); overflow-wrap:anywhere}
-.lane__c:not(:last-child)::before{content:""; position:absolute; top:9px; right:-22px; width:14px; height:1px; background:var(--ac)}
-.lane__c:not(:last-child)::after{content:""; position:absolute; top:6px; right:-24px; border:4px solid transparent; border-left:6px solid var(--ac); border-right:0}
-.ds{font-family:var(--font-mono); font-size:13px; overflow-wrap:anywhere}
+/* ══════════ diagrams: drawn SVG, a wide and a tall version of each ══════════ */
+.fig{margin:0 0 14px}
+.fig svg{display:block; width:100%; height:auto; overflow:visible}
+.fig .fig__tall{display:none}
+.fig figcaption{font-size:13px; color:var(--tx3); margin:10px 0 0}
+.fig text{font-family:var(--font-ui)}
+.fig .h,.fig .hs{fill:var(--tx3); font:500 10px var(--font-mono); letter-spacing:.1em}
+.fig .hs{font-size:9px}
+.fig .k,.fig .ks{fill:var(--ac-ink); font:700 10px var(--font-mono); letter-spacing:.12em}
+.fig .ks{font-size:9px; letter-spacing:.08em}
+.fig .kb{fill:var(--tx2); font:700 10px var(--font-mono); letter-spacing:.12em}
+.fig .t{fill:var(--tx); font:600 13px var(--font-ui)}
+.fig .t-lg{fill:var(--tx); font:700 16px var(--font-display)}
+.fig .t-s{fill:var(--tx); font:600 12px var(--font-ui)}
+.fig .t2{fill:var(--tx2); font:400 11.5px var(--font-ui)}
+.fig .t2s{fill:var(--tx2); font:400 10.5px var(--font-ui)}
+.fig .m{fill:var(--tx); font:500 11px var(--font-mono)}
+.fig .ms{fill:var(--tx); font:500 9.5px var(--font-mono)}
+.fig .m2{fill:var(--tx2); font:400 10.5px var(--font-mono)}
+.fig .m-c{fill:var(--tx); font:700 11px var(--font-mono)}
+.fig .m-c2{fill:var(--ac-tx); font:700 11px var(--font-mono)}
+.fig .big{fill:var(--tx); font:700 30px var(--font-mono)}
+.fig .bx{fill:var(--s1); stroke:var(--bd2)}
+.fig .bx-core{fill:var(--s1); stroke:var(--ac); stroke-width:1.5}
+.fig .bx-ten{fill:var(--ac-soft); stroke:var(--ac-line)}
+.fig .bx-ten2{fill:var(--ac-soft); stroke:var(--ac); stroke-width:1.5}
+.fig .bx-ds{fill:var(--s1); stroke:var(--ac-line)}
+.fig .bx-eng{fill:var(--s1); stroke:var(--ac); stroke-width:1.5}
+.fig .bx-rb{fill:var(--s0); stroke:var(--bd2); stroke-dasharray:3 3}
+.fig .bx-next{fill:var(--s0); stroke:var(--tx3); stroke-width:1.2; stroke-dasharray:5 4}
+.fig .ed-n{stroke:var(--tx3); stroke-width:1.3; fill:none; stroke-dasharray:5 4}
+.fig .kn,.fig .kns{fill:var(--tx3); font:700 10px var(--font-mono); letter-spacing:.12em}
+.fig .kns{font-size:9px; letter-spacing:.08em}
+.fig .sep{stroke:var(--bd)}
+.fig .ed{stroke:var(--ac); stroke-width:1.5; fill:none}
+.fig .ed-r{stroke:var(--ac); stroke-width:1.5; fill:none; stroke-dasharray:5 4}
+.fig .ed-s{stroke:var(--ac); stroke-width:1.2; stroke-dasharray:2 3; fill:none}
+.fig .ed-s2{stroke:var(--bd2); stroke-width:2}
+.fig .ed-b{stroke:var(--tx3); stroke-width:1.3; fill:none; stroke-dasharray:5 5}
+.fig .ll{stroke:var(--bd2); stroke-dasharray:3 4}
+.fig .ah{fill:var(--ac)}
+.fig .ahb{fill:var(--tx3)}
+.fig .dot{fill:var(--ac)}
+.fig .step{fill:var(--s1); stroke:var(--bd2); stroke-width:1.5}
+.fig .step-on{fill:var(--ac)}
 
 /* ══════════ rows (connectors, execution paths) ══════════ */
 .rows{padding:2px 0}
@@ -164,9 +195,6 @@ pre code{background:none; padding:0; font-size:inherit; overflow-wrap:normal}
 .row__n{font-weight:600; font-size:14px}
 .row__w{font-size:14px; color:var(--tx2)}
 .row__r{font:400 12px/1.5 var(--font-mono); color:var(--tx); overflow-wrap:anywhere}
-.ladder{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:16px 0 0; font-size:13px; color:var(--tx2)}
-.ladder b{font:700 10.5px/1 var(--font-mono); letter-spacing:.1em; color:var(--tx); padding:6px 8px; border:1px solid var(--bd2); border-radius:4px; background:var(--s1)}
-.ladder i{font-style:normal; color:var(--tx3)}
 
 /* ══════════ door groups + plugin lists ══════════ */
 .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
@@ -190,6 +218,7 @@ pre code{background:none; padding:0; font-size:inherit; overflow-wrap:normal}
 .bar-r__t{height:8px; background:var(--s3); border-radius:0 4px 4px 0}
 .bar-r__f{height:8px; background:var(--gr-matte); border-radius:0 4px 4px 0}
 .bar-r__n{font:700 12px/1 var(--font-mono); text-align:right}
+.bar-r--tot{border-top:1px solid var(--bd2); margin-top:6px; padding-top:9px}
 
 /* ══════════ footer ══════════ */
 footer{margin-top:80px; border-top:1px solid var(--bd); padding:24px 0 56px; font:400 12px/1.6 var(--font-mono); color:var(--tx3)}
@@ -204,6 +233,10 @@ footer a{border-bottom:0}
   .bar-r{grid-template-columns:96px 1fr 34px}
   .bar-r__e{display:none}
 }
+@media (max-width:900px){
+  .fig .fig__wide{display:none}
+  .fig .fig__tall{display:block; max-width:460px; margin:0 auto}
+}
 @media (max-width:640px){
   .wrap{padding:0 16px}
   .bar__in{padding:10px 16px}
@@ -213,11 +246,6 @@ footer a{border-bottom:0}
   .stats{grid-template-columns:1fr 1fr}
   .stats dd{font-size:22px}
   .grid,.grid--2{grid-template-columns:1fr}
-  .flow__head{display:none}
-  .lane dl{grid-template-columns:1fr; gap:10px}
-  .lane__c{display:grid; grid-template-columns:72px 1fr; gap:10px}
-  .lane__c dt{display:block; font:500 10px/1.9 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--tx3)}
-  .lane__c::before,.lane__c::after{display:none}
   .row{grid-template-columns:1fr; gap:4px}
   td,th{padding-left:12px; padding-right:12px}
 }
@@ -253,9 +281,9 @@ footer a{border-bottom:0}
     <p class="base">Built on the CortexSim engine. The repo, the <code>cortexsim-agent</code> beacon, <code>CORTEXSIM_*</code> settings and the API keep that name.</p>
 
     <dl class="stats">
-      <div><dt>Scenarios</dt><dd>205</dd></div>
-      <div><dt>Detection planes</dt><dd>16</dd></div>
-      <div><dt>Expected detections</dt><dd>1452</dd></div>
+      <div><dt>Scenarios</dt><dd>187</dd></div>
+      <div><dt>Detection planes</dt><dd>13</dd></div>
+      <div><dt>Expected detections</dt><dd>1328</dd></div>
       <div><dt>Ingestion doors</dt><dd>27</dd></div>
       <div><dt>EAL plugins</dt><dd>27</dd></div>
       <div><dt>Tool adapters</dt><dd>91</dd></div>
@@ -277,52 +305,13 @@ footer a{border-bottom:0}
   <!-- ── 01 ─────────────────────────────────────────────── -->
   <section class="sec" id="paths">
     <div class="sechead"><span class="sechead__i">01</span><h2>How signal reaches Cortex</h2></div>
-    <p class="lede">Four signal paths. Each ends in a dataset Cortex already reads.</p>
+    <p class="lede">Three signal paths. Each ends in a dataset Cortex already reads.</p>
 
-    <div class="flow__head" aria-hidden="true">
-      <span>POVengine runs</span><span>Door</span><span>Cortex dataset</span><span>Read back</span>
-    </div>
-
-    <div class="lane card">
-      <p class="lane__k">ENDPOINT RUNTIME</p>
-      <dl>
-        <div class="lane__c"><dt>Runs</dt><dd>Beacon runs the step on the host<small>cortexsim-agent · identity harness</small></dd></div>
-        <div class="lane__c"><dt>Door</dt><dd>XDR agent<small>threat hunting for XTH rules</small></dd></div>
-        <div class="lane__c"><dt>Dataset</dt><dd class="ds">xdr_data</dd></div>
-        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back<small>matched to the run's expected detections</small></dd></div>
-      </dl>
-    </div>
-
-    <div class="lane card">
-      <p class="lane__k">LIVE TRAFFIC</p>
-      <dl>
-        <div class="lane__c"><dt>Runs</dt><dd>Wire plugin, sent from the endpoint<small>EAL relay · 7 network shapes</small></dd></div>
-        <div class="lane__c"><dt>Door</dt><dd>NGFW logs<small>Strata Logging Service or syslog · stitched to the endpoint</small></dd></div>
-        <div class="lane__c"><dt>Dataset</dt><dd class="ds">panw_ngfw_*_raw<br/>network_story</dd></div>
-        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back<small>NGFW preflight first</small></dd></div>
-      </dl>
-    </div>
-
-    <div class="lane card">
-      <p class="lane__k">LOG INJECTION</p>
-      <dl>
-        <div class="lane__c"><dt>Runs</dt><dd>Collector emitter POSTs records<small>15 emitters · or an offline bundle</small></dd></div>
-        <div class="lane__c"><dt>Door</dt><dd>HTTP log collector<small>a collector target, key in the vault</small></dd></div>
-        <div class="lane__c"><dt>Dataset</dt><dd class="ds">&lt;vendor&gt;_&lt;product&gt;_raw</dd></div>
-        <div class="lane__c"><dt>Read back</dt><dd>Arrival check<small>then alert read-back</small></dd></div>
-      </dl>
-    </div>
-
-    <div class="lane card">
-      <p class="lane__k">CLOUD CONTROL PLANE</p>
-      <dl>
-        <div class="lane__c"><dt>Runs</dt><dd>Cloud CLI from the beacon<small>aws · gcloud · gsutil · az · bq · kubectl</small></dd></div>
-        <div class="lane__c"><dt>Door</dt><dd>Provider audit logs<small>AWS · GCP · Azure</small></dd></div>
-        <div class="lane__c"><dt>Dataset</dt><dd class="ds">cloud_audit_logs</dd></div>
-        <div class="lane__c"><dt>Read back</dt><dd>Alert read-back</dd></div>
-      </dl>
-    </div>
-    <p class="note">These are the Composer's lanes, read from each step's command. A fifth, No action, holds steps that only print.</p>
+    <figure class="fig">
+      <svg class="fig__wide" viewBox="0 0 1000 460" role="img" aria-label="Signal flow: scenarios through SimCore, three signal paths, the ingestion doors and Cortex datasets into the detection engine, with a read-only read-back loop to results."><defs><marker id="f1wa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f1wb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><text x="0" y="20" class="h">CORPUS</text><text x="140" y="20" class="h">SIMCORE</text><text x="300" y="20" class="h">RUNS</text><text x="530" y="20" class="h">DOOR</text><text x="726" y="20" class="h">DATASET</text><rect x="710" y="34" width="290" height="324" rx="8" class="bx-ten"/><text x="726" y="54" class="k">CORTEX TENANT</text><rect x="0" y="141" width="110" height="108" rx="6" class="bx"/><text x="55" y="180" class="big" text-anchor="middle">187</text><text x="55" y="200" class="t2" text-anchor="middle">scenarios</text><text x="55" y="218" class="t2" text-anchor="middle">185 TTP cards</text><text x="55" y="235" class="t2" text-anchor="middle">1328 detections</text><line x1="110" y1="195" x2="137" y2="195" class="ed" marker-end="url(#f1wa)"/><rect x="140" y="40" width="124" height="312" rx="8" class="bx-core"/><text x="202" y="68" class="t-lg" text-anchor="middle">SimCore</text><line x1="156" y1="82" x2="248" y2="82" class="sep"/><text x="202" y="108" class="t2" text-anchor="middle">scenario loader</text><text x="202" y="134" class="t2" text-anchor="middle">identity harness</text><text x="202" y="160" class="t2" text-anchor="middle">payload shelf</text><text x="202" y="186" class="t2" text-anchor="middle">orchestrator</text><text x="202" y="212" class="t2" text-anchor="middle">EAL executor</text><text x="202" y="238" class="t2" text-anchor="middle">Launch gate</text><line x1="156" y1="282" x2="248" y2="282" class="sep"/><text x="202" y="306" class="t" text-anchor="middle">Results</text><text x="202" y="324" class="t2" text-anchor="middle">matcher · MTTD</text><line x1="264" y1="95" x2="297" y2="95" class="ed" marker-end="url(#f1wa)"/><text x="300" y="55" class="k">ENDPOINT RUNTIME</text><rect x="300" y="63" width="190" height="64" rx="6" class="bx"/><text x="314" y="90" class="t">Beacon or bundle</text><text x="314" y="109" class="t2">Linux · macOS · Windows</text><line x1="490" y1="95" x2="527" y2="95" class="ed" marker-end="url(#f1wa)"/><rect x="530" y="63" width="160" height="64" rx="6" class="bx"/><text x="544" y="90" class="t">XDR agent</text><text x="544" y="109" class="t2">endpoint telemetry</text><line x1="690" y1="95" x2="723" y2="95" class="ed" marker-end="url(#f1wa)"/><rect x="726" y="71" width="146" height="48" rx="4" class="bx-ds"/><text x="738" y="99" class="m">xdr_data</text><line x1="872" y1="95" x2="893" y2="95" class="ed" marker-end="url(#f1wa)"/><line x1="264" y1="195" x2="297" y2="195" class="ed" marker-end="url(#f1wa)"/><text x="300" y="155" class="k">LIVE TRAFFIC</text><rect x="300" y="163" width="190" height="64" rx="6" class="bx"/><text x="314" y="190" class="t">EAL relay</text><text x="314" y="209" class="t2">wire ops from the endpoint</text><line x1="490" y1="195" x2="527" y2="195" class="ed" marker-end="url(#f1wa)"/><rect x="530" y="163" width="160" height="64" rx="6" class="bx"/><text x="544" y="190" class="t">NGFW logs</text><text x="544" y="209" class="t2">SLS or syslog</text><line x1="690" y1="195" x2="723" y2="195" class="ed" marker-end="url(#f1wa)"/><rect x="726" y="171" width="146" height="48" rx="4" class="bx-ds"/><text x="738" y="191" class="m">panw_ngfw_*_raw</text><text x="738" y="207" class="m">network_story</text><line x1="872" y1="195" x2="893" y2="195" class="ed" marker-end="url(#f1wa)"/><line x1="264" y1="295" x2="297" y2="295" class="ed" marker-end="url(#f1wa)"/><text x="300" y="255" class="k">LOG INJECTION</text><rect x="300" y="263" width="190" height="64" rx="6" class="bx"/><text x="314" y="290" class="t">Collector emitter</text><text x="314" y="309" class="t2">SimCore or offline bundle</text><line x1="490" y1="295" x2="527" y2="295" class="ed" marker-end="url(#f1wa)"/><rect x="530" y="263" width="160" height="64" rx="6" class="bx"/><text x="544" y="290" class="t">HTTP log collector</text><text x="544" y="309" class="t2">collector target</text><line x1="690" y1="295" x2="723" y2="295" class="ed" marker-end="url(#f1wa)"/><rect x="726" y="271" width="146" height="48" rx="4" class="bx-ds"/><text x="738" y="291" class="m">&lt;vendor&gt;_</text><text x="738" y="307" class="m">&lt;product&gt;_raw</text><line x1="872" y1="295" x2="893" y2="295" class="ed" marker-end="url(#f1wa)"/><line x1="610" y1="127" x2="610" y2="163" class="ed-s"/><text x="618" y="149" class="t2">stitched</text><rect x="896" y="50" width="96" height="292" rx="6" class="bx-eng"/><text x="944" y="74" class="k" text-anchor="middle">DETECTION</text><text x="944" y="88" class="k" text-anchor="middle">ENGINE</text><text x="944" y="112" class="m" text-anchor="middle">XQL</text><text x="944" y="132" class="m" text-anchor="middle">BIOC</text><text x="944" y="152" class="m" text-anchor="middle">ABIOC</text><text x="944" y="172" class="m" text-anchor="middle">Correlation</text><text x="944" y="192" class="m" text-anchor="middle">IOC</text><text x="944" y="212" class="m" text-anchor="middle">Analytics</text><text x="944" y="232" class="m" text-anchor="middle">Prevention</text><line x1="910" y1="250" x2="978" y2="250" class="sep"/><text x="944" y="274" class="t" text-anchor="middle">alerts</text><text x="944" y="294" class="t" text-anchor="middle">issues</text><text x="944" y="314" class="t" text-anchor="middle">cases</text><path d="M944 342 V400 H202 V355" class="ed-b" marker-end="url(#f1wb)"/><rect x="400" y="386" width="300" height="28" rx="4" class="bx-rb"/><text x="414" y="405" class="kb">READ-BACK</text><text x="492" y="405" class="t2">alert pull → matcher → MTTD</text><text x="0" y="452" class="h">SOLID = SIGNAL IN   ·   DASHED = READ-ONLY, OFF UNTIL A CREDENTIAL IS SET</text></svg>
+      <svg class="fig__tall" viewBox="0 0 360 559" role="img" aria-label="Signal flow: scenarios through SimCore, three signal paths, the ingestion doors and Cortex datasets into the detection engine, with a read-only read-back."><defs><marker id="f1ta" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f1tb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><rect x="16" y="6" width="328" height="40" rx="6" class="bx"/><text x="30" y="31" class="k">CORPUS</text><text x="104" y="31" class="t">187 scenarios · 185 TTP cards</text><line x1="180" y1="46" x2="180" y2="61" class="ed" marker-end="url(#f1ta)"/><rect x="16" y="64" width="328" height="54" rx="8" class="bx-core"/><text x="30" y="86" class="t">SimCore</text><text x="30" y="104" class="t2s">loader · harness · orchestrator · Launch gate</text><path d="M16 91 H8 V335" class="ed"/><rect x="226" y="126" width="128" height="347" rx="8" class="bx-ten"/><text x="236" y="142" class="ks">CORTEX TENANT</text><text x="28" y="142" class="ks">ENDPOINT RUNTIME</text><line x1="8" y1="175" x2="26" y2="175" class="ed" marker-end="url(#f1ta)"/><rect x="28" y="150" width="88" height="50" rx="6" class="bx"/><text x="36" y="172" class="t-s">Beacon</text><text x="36" y="188" class="t2s">or push bundle</text><line x1="116" y1="175" x2="127" y2="175" class="ed" marker-end="url(#f1ta)"/><rect x="129" y="150" width="88" height="50" rx="6" class="bx"/><text x="137" y="172" class="t-s">XDR agent</text><text x="137" y="188" class="t2s">endpoint</text><line x1="217" y1="175" x2="232" y2="175" class="ed" marker-end="url(#f1ta)"/><rect x="234" y="150" width="112" height="50" rx="4" class="bx-ds"/><text x="242" y="179" class="ms">xdr_data</text><text x="28" y="222" class="ks">LIVE TRAFFIC</text><line x1="8" y1="255" x2="26" y2="255" class="ed" marker-end="url(#f1ta)"/><rect x="28" y="230" width="88" height="50" rx="6" class="bx"/><text x="36" y="252" class="t-s">EAL relay</text><text x="36" y="268" class="t2s">from endpoint</text><line x1="116" y1="255" x2="127" y2="255" class="ed" marker-end="url(#f1ta)"/><rect x="129" y="230" width="88" height="50" rx="6" class="bx"/><text x="137" y="252" class="t-s">NGFW logs</text><text x="137" y="268" class="t2s">SLS · syslog</text><line x1="217" y1="255" x2="232" y2="255" class="ed" marker-end="url(#f1ta)"/><rect x="234" y="230" width="112" height="50" rx="4" class="bx-ds"/><text x="242" y="251" class="ms">panw_ngfw_*_raw</text><text x="242" y="267" class="ms">network_story</text><text x="28" y="302" class="ks">LOG INJECTION</text><line x1="8" y1="335" x2="26" y2="335" class="ed" marker-end="url(#f1ta)"/><rect x="28" y="310" width="88" height="50" rx="6" class="bx"/><text x="36" y="332" class="t-s">Emitter</text><text x="36" y="348" class="t2s">collector POST</text><line x1="116" y1="335" x2="127" y2="335" class="ed" marker-end="url(#f1ta)"/><rect x="129" y="310" width="88" height="50" rx="6" class="bx"/><text x="137" y="332" class="t-s">HTTP log</text><text x="137" y="348" class="t2s">collector</text><line x1="217" y1="335" x2="232" y2="335" class="ed" marker-end="url(#f1ta)"/><rect x="234" y="310" width="112" height="50" rx="4" class="bx-ds"/><text x="242" y="331" class="ms">&lt;vendor&gt;_</text><text x="242" y="347" class="ms">&lt;product&gt;_raw</text><line x1="290" y1="360" x2="290" y2="377" class="ed" marker-end="url(#f1ta)"/><rect x="234" y="379" width="112" height="86" rx="6" class="bx-eng"/><text x="290" y="398" class="ks" text-anchor="middle">DETECTION ENGINE</text><text x="290" y="418" class="t2s" text-anchor="middle">XQL · BIOC · ABIOC</text><text x="290" y="434" class="t2s" text-anchor="middle">Correlation · IOC</text><text x="290" y="454" class="t-s" text-anchor="middle">→ alerts · cases</text><path d="M234 429 H180 V493" class="ed-b" marker-end="url(#f1tb)"/><rect x="16" y="495" width="328" height="44" rx="4" class="bx-rb"/><text x="30" y="513" class="kb">READ-BACK</text><text x="30" y="529" class="t2s">alert pull → matcher → MTTD, in SimCore</text><text x="16" y="551" class="hs">DASHED = READ-ONLY, OFF UNTIL A CREDENTIAL IS SET</text></svg>
+      <figcaption>The lanes are the Composer's signal paths, read from each step's command.</figcaption>
+    </figure>
 
     <h3>Execution paths</h3>
     <div class="card rows">
@@ -332,6 +321,13 @@ footer a{border-bottom:0}
       <div class="row"><div class="row__n">EAL relay</div><div class="row__w">The beacon hands EAL steps to SimCore. Collector steps go from SimCore; network steps run from the endpoint.</div><div class="row__r">POST /api/eal/relay</div></div>
       <div class="row"><div class="row__n">EAL offline bundle</div><div class="row__w">Pre-rendered records, POSTed from inside the network.</div><div class="row__r">POST /api/eal/campaigns/{id}/bundle</div></div>
     </div>
+
+    <h3>EAL relay</h3>
+    <figure class="fig">
+      <svg class="fig__wide" viewBox="0 0 1000 444" role="img" aria-label="EAL relay sequence: the beacon swaps a step&#x27;s EAL call for its own eal subcommand, SimCore sends collector records and returns network operations, and the endpoint performs them."><defs><marker id="f2wa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f2wb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><rect x="10" y="8" width="160" height="48" rx="6" class="bx"/><text x="90" y="29" class="t" text-anchor="middle">Step shell</text><text x="90" y="46" class="m2" text-anchor="middle">cortexsim-agent eal</text><line x1="90" y1="56" x2="90" y2="410" class="ll"/><rect x="220" y="8" width="160" height="48" rx="6" class="bx"/><text x="300" y="29" class="t" text-anchor="middle">Beacon</text><text x="300" y="46" class="m2" text-anchor="middle">cortexsim-agent</text><line x1="300" y1="56" x2="300" y2="410" class="ll"/><rect x="440" y="8" width="160" height="48" rx="6" class="bx-core"/><text x="520" y="29" class="t" text-anchor="middle">SimCore</text><text x="520" y="46" class="m2" text-anchor="middle">/api/eal/relay</text><line x1="520" y1="56" x2="520" y2="410" class="ll"/><rect x="660" y="8" width="160" height="48" rx="6" class="bx"/><text x="740" y="29" class="t" text-anchor="middle">Collector target</text><text x="740" y="46" class="m2" text-anchor="middle">HTTP log collector</text><line x1="740" y1="56" x2="740" y2="410" class="ll"/><rect x="840" y="8" width="160" height="48" rx="6" class="bx"/><text x="920" y="29" class="t" text-anchor="middle">Network</text><text x="920" y="46" class="m2" text-anchor="middle">firewall · sinkhole</text><line x1="920" y1="56" x2="920" y2="410" class="ll"/><line x1="296" y1="96" x2="96" y2="96" class="ed" marker-end="url(#f2wa)"/><text x="195.0" y="88" class="t2" text-anchor="middle">EAL call → cortexsim-agent eal</text><circle cx="300" cy="96" r="3" class="dot"/><line x1="94" y1="140" x2="294" y2="140" class="ed" marker-end="url(#f2wa)"/><text x="195.0" y="132" class="t2" text-anchor="middle">ticket + campaign, over loopback</text><circle cx="90" cy="140" r="3" class="dot"/><line x1="304" y1="184" x2="514" y2="184" class="ed" marker-end="url(#f2wa)"/><text x="410.0" y="176" class="t2" text-anchor="middle">POST /api/eal/relay</text><circle cx="300" cy="184" r="3" class="dot"/><line x1="524" y1="228" x2="734" y2="228" class="ed" marker-end="url(#f2wa)"/><text x="630.0" y="220" class="t2" text-anchor="middle">collector steps: SimCore POSTs the records</text><circle cx="520" cy="228" r="3" class="dot"/><line x1="516" y1="272" x2="306" y2="272" class="ed-r" marker-end="url(#f2wa)"/><text x="410.0" y="264" class="t2" text-anchor="middle">exit_code · stdout · ops[] · allowlist[]</text><circle cx="520" cy="272" r="3" class="dot"/><line x1="296" y1="316" x2="96" y2="316" class="ed-r" marker-end="url(#f2wa)"/><text x="195.0" y="308" class="t2" text-anchor="middle">the reply</text><circle cx="300" cy="316" r="3" class="dot"/><line x1="94" y1="360" x2="914" y2="360" class="ed" marker-end="url(#f2wa)"/><text x="505.0" y="352" class="t2" text-anchor="middle">ops[]: http · dns · tcp, sent from the endpoint</text><circle cx="90" cy="360" r="3" class="dot"/><rect x="30" y="384" width="120" height="26" rx="4" class="bx-rb"/><text x="90" y="401" class="t2" text-anchor="middle">exits with exit_code</text><text x="0" y="436" class="h">NOT RELAYED YET (EXIT 3): llm_provider_egress · oauth_grant_emulator · agentic_egress · browser_attack_runner · airs_prompt_attack</text></svg>
+      <svg class="fig__tall" viewBox="0 0 360 440" role="img" aria-label="EAL relay sequence: the endpoint relays its EAL call to SimCore, SimCore sends collector records and returns network operations, and the endpoint performs them."><defs><marker id="f2ta" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f2tb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><rect x="10" y="8" width="108" height="44" rx="6" class="bx"/><text x="64" y="27" class="t-s" text-anchor="middle">Endpoint</text><text x="64" y="43" class="t2s" text-anchor="middle">step + beacon</text><line x1="64" y1="52" x2="64" y2="392" class="ll"/><rect x="130" y="8" width="108" height="44" rx="6" class="bx-core"/><text x="184" y="27" class="t-s" text-anchor="middle">SimCore</text><text x="184" y="43" class="t2s" text-anchor="middle">/api/eal/relay</text><line x1="184" y1="52" x2="184" y2="392" class="ll"/><rect x="246" y="8" width="108" height="44" rx="6" class="bx"/><text x="300" y="27" class="t-s" text-anchor="middle">Destination</text><text x="300" y="43" class="t2s" text-anchor="middle">collector · network</text><line x1="300" y1="52" x2="300" y2="392" class="ll"/><path d="M68 82 H96 V100 H70" class="ed" marker-end="url(#f2ta)"/><text x="102" y="88" class="t2s">EAL call becomes</text><text x="102" y="101" class="ms">cortexsim-agent eal</text><line x1="68" y1="150" x2="178" y2="150" class="ed" marker-end="url(#f2ta)"/><text x="124.0" y="143" class="ms" text-anchor="middle">POST /api/eal/relay</text><circle cx="64" cy="150" r="3" class="dot"/><line x1="188" y1="204" x2="294" y2="204" class="ed" marker-end="url(#f2ta)"/><text x="242.0" y="197" class="t2s" text-anchor="middle">collector records</text><circle cx="184" cy="204" r="3" class="dot"/><line x1="180" y1="258" x2="70" y2="258" class="ed-r" marker-end="url(#f2ta)"/><text x="124.0" y="251" class="ms" text-anchor="middle">exit_code · ops[]</text><circle cx="184" cy="258" r="3" class="dot"/><line x1="68" y1="312" x2="294" y2="312" class="ed" marker-end="url(#f2ta)"/><text x="182.0" y="305" class="t2s" text-anchor="middle">ops[]: http · dns · tcp</text><circle cx="64" cy="312" r="3" class="dot"/><rect x="14" y="352" width="132" height="26" rx="4" class="bx-rb"/><text x="80" y="369" class="t2s" text-anchor="middle">exits; the step goes on</text><text x="14" y="418" class="hs">5 WIRE PLUGINS ARE NOT RELAYED YET</text><text x="14" y="432" class="hs">(EXIT 3, EAL_WIRE_NOT_RELAYABLE)</text></svg>
+      <figcaption>Collector steps go from SimCore. Network steps run from the endpoint, so the firewall sees the endpoint as the source.</figcaption>
+    </figure>
   </section>
 
   <!-- ── 02 ─────────────────────────────────────────────── -->
@@ -414,6 +410,13 @@ footer a{border-bottom:0}
       </div>
     </div>
     <p class="pipes"><b>Routes into a dataset:</b> native integration · HTTP log collector · Broker VM syslog · Broker VM Windows Event Collector · Cribl (dedicated or generic UUID).</p>
+
+    <h3>Firewall logs</h3>
+    <figure class="fig">
+      <svg class="fig__wide" viewBox="0 0 1000 422" role="img" aria-label="Firewall logs into Cortex: PAN-OS NGFW through Strata Logging Service, firewall syslog through the Broker VM Syslog Collector, and POVengine&#x27;s collector emitters through the HTTP log collector, each into a dataset and its XDM mapping. A POVengine syslog sender is planned for the next release."><defs><marker id="f4wa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f4wb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><text x="0" y="20" class="h">SOURCE</text><text x="220" y="20" class="h">TRANSPORT</text><text x="450" y="20" class="h">CORTEX DATASET</text><text x="660" y="20" class="h">MAPPING</text><text x="850" y="20" class="h">DETECTION</text><text x="0" y="38" class="k">NGFW LOG FORWARDING</text><rect x="0" y="46" width="190" height="64" rx="6" class="bx"/><text x="14" y="73" class="t">PAN-OS NGFW</text><text x="14" y="92" class="t2">sees the relay's live traffic</text><line x1="190" y1="78" x2="217" y2="78" class="ed" marker-end="url(#f4wa)"/><rect x="220" y="46" width="190" height="64" rx="6" class="bx"/><text x="234" y="73" class="t">Strata Logging Service</text><text x="234" y="92" class="t2">log forwarding profile</text><line x1="410" y1="78" x2="447" y2="78" class="ed" marker-end="url(#f4wa)"/><rect x="450" y="54" width="170" height="48" rx="4" class="bx-ds"/><text x="462" y="82" class="m">panw_ngfw_*_raw</text><line x1="620" y1="78" x2="657" y2="78" class="ed" marker-end="url(#f4wa)"/><rect x="660" y="46" width="160" height="64" rx="6" class="bx"/><text x="674" y="73" class="t">XDM: built in</text><text x="674" y="92" class="t2">native integration</text><line x1="820" y1="78" x2="847" y2="78" class="ed" marker-end="url(#f4wa)"/><text x="0" y="138" class="k">SYSLOG</text><rect x="0" y="146" width="190" height="64" rx="6" class="bx"/><text x="14" y="173" class="t">Firewall syslog</text><text x="14" y="192" class="t2">PAN-OS or third-party, CEF</text><line x1="190" y1="178" x2="217" y2="178" class="ed" marker-end="url(#f4wa)"/><rect x="220" y="146" width="190" height="64" rx="6" class="bx-core"/><text x="234" y="173" class="t">Broker VM</text><text x="234" y="192" class="t2">Syslog Collector applet</text><line x1="410" y1="178" x2="447" y2="178" class="ed" marker-end="url(#f4wa)"/><rect x="450" y="154" width="170" height="48" rx="4" class="bx-ds"/><text x="462" y="174" class="m">&lt;vendor&gt;_</text><text x="462" y="190" class="m">&lt;product&gt;_raw</text><line x1="620" y1="178" x2="657" y2="178" class="ed" marker-end="url(#f4wa)"/><rect x="660" y="146" width="160" height="64" rx="6" class="bx"/><text x="674" y="173" class="t">XDM: content pack</text><text x="674" y="192" class="t2">parsing + modeling rules</text><line x1="820" y1="178" x2="847" y2="178" class="ed" marker-end="url(#f4wa)"/><text x="0" y="312" class="k">LOG INJECTION</text><rect x="0" y="320" width="190" height="64" rx="6" class="bx"/><text x="14" y="347" class="t">Collector emitters</text><text x="14" y="366" class="t2">5 firewall and VPN shapes</text><line x1="190" y1="352" x2="217" y2="352" class="ed" marker-end="url(#f4wa)"/><rect x="220" y="320" width="190" height="64" rx="6" class="bx"/><text x="234" y="347" class="t">HTTP log collector</text><text x="234" y="366" class="t2">collector target</text><line x1="410" y1="352" x2="447" y2="352" class="ed" marker-end="url(#f4wa)"/><rect x="450" y="328" width="170" height="48" rx="4" class="bx-ds"/><text x="462" y="348" class="m">&lt;vendor&gt;_</text><text x="462" y="364" class="m">&lt;product&gt;_raw</text><line x1="620" y1="352" x2="657" y2="352" class="ed" marker-end="url(#f4wa)"/><rect x="660" y="320" width="160" height="64" rx="6" class="bx"/><text x="674" y="347" class="t">XDM: modeling rule</text><text x="674" y="366" class="t2">needed before Analytics</text><line x1="820" y1="352" x2="847" y2="352" class="ed" marker-end="url(#f4wa)"/><text x="0" y="225" class="kn">SYSLOG SENDER · NEXT RELEASE</text><rect x="0" y="233" width="190" height="64" rx="6" class="bx-next"/><text x="14" y="260" class="t">POVengine syslog sender</text><text x="14" y="279" class="t2">TCP to the Broker VM · planned</text><path d="M190 265 H315 V212" class="ed-n" marker-end="url(#f4wb)"/><rect x="850" y="40" width="150" height="350" rx="6" class="bx-eng"/><text x="925" y="66" class="k" text-anchor="middle">DETECTION ENGINE</text><text x="925" y="128" class="t-s" text-anchor="middle">Analytics, BIOC, IOC</text><text x="925" y="146" class="t2" text-anchor="middle">need normalized (XDM)</text><text x="925" y="164" class="t2" text-anchor="middle">logs</text><line x1="866" y1="214" x2="984" y2="214" class="sep"/><text x="925" y="262" class="t-s" text-anchor="middle">XQL, Correlation</text><text x="925" y="280" class="t2" text-anchor="middle">also read the raw</text><text x="925" y="298" class="t2" text-anchor="middle">dataset</text><text x="0" y="414" class="h">POVENGINE READS THE NGFW'S FORWARDING SETUP (SLS, SYSLOG, EAL) READ-ONLY BEFORE A RUN</text></svg>
+      <svg class="fig__tall" viewBox="0 0 360 410" role="img" aria-label="Firewall logs into Cortex: NGFW through Strata Logging Service, firewall syslog through the Broker VM, POVengine emitters through the HTTP log collector; a syslog sender is planned."><defs><marker id="f4ta" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ah"/></marker><marker id="f4tb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahb"/></marker></defs><text x="16" y="26" class="ks">PAN-OS NGFW · FORWARDING</text><rect x="16" y="34" width="100" height="50" rx="6" class="bx"/><text x="24" y="56" class="t-s">Strata Logging</text><text x="24" y="72" class="t2s">Service</text><line x1="116" y1="59" x2="125" y2="59" class="ed" marker-end="url(#f4ta)"/><rect x="127" y="34" width="110" height="50" rx="4" class="bx-ds"/><text x="135" y="63" class="ms">panw_ngfw_*_raw</text><line x1="237" y1="59" x2="246" y2="59" class="ed" marker-end="url(#f4ta)"/><rect x="248" y="34" width="96" height="50" rx="6" class="bx"/><text x="256" y="56" class="t-s">XDM</text><text x="256" y="72" class="t2s">built in</text><text x="16" y="106" class="ks">FIREWALL SYSLOG · CEF</text><rect x="16" y="114" width="100" height="50" rx="6" class="bx-core"/><text x="24" y="136" class="t-s">Broker VM</text><text x="24" y="152" class="t2s">Syslog Collector</text><line x1="116" y1="139" x2="125" y2="139" class="ed" marker-end="url(#f4ta)"/><rect x="127" y="114" width="110" height="50" rx="4" class="bx-ds"/><text x="135" y="135" class="ms">&lt;vendor&gt;_</text><text x="135" y="151" class="ms">&lt;product&gt;_raw</text><line x1="237" y1="139" x2="246" y2="139" class="ed" marker-end="url(#f4ta)"/><rect x="248" y="114" width="96" height="50" rx="6" class="bx"/><text x="256" y="136" class="t-s">XDM</text><text x="256" y="152" class="t2s">content pack</text><text x="344" y="186" class="kns" text-anchor="end">SYSLOG SENDER · NEXT RELEASE</text><rect x="16" y="194" width="328" height="34" rx="6" class="bx-next"/><text x="28" y="215" class="t-s">POVengine syslog sender → Broker VM</text><path d="M66 194 V165" class="ed-n" marker-end="url(#f4tb)"/><text x="16" y="256" class="ks">POVENGINE EMITTERS</text><rect x="16" y="264" width="100" height="50" rx="6" class="bx"/><text x="24" y="286" class="t-s">HTTP log</text><text x="24" y="302" class="t2s">collector</text><line x1="116" y1="289" x2="125" y2="289" class="ed" marker-end="url(#f4ta)"/><rect x="127" y="264" width="110" height="50" rx="4" class="bx-ds"/><text x="135" y="285" class="ms">&lt;vendor&gt;_</text><text x="135" y="301" class="ms">&lt;product&gt;_raw</text><line x1="237" y1="289" x2="246" y2="289" class="ed" marker-end="url(#f4ta)"/><rect x="248" y="264" width="96" height="50" rx="6" class="bx"/><text x="256" y="286" class="t-s">XDM</text><text x="256" y="302" class="t2s">modeling rule</text><line x1="296" y1="314" x2="296" y2="338" class="ed" marker-end="url(#f4ta)"/><rect x="16" y="340" width="328" height="58" rx="6" class="bx-eng"/><text x="28" y="360" class="ks">DETECTION ENGINE</text><text x="28" y="377" class="t2s">Analytics, BIOC, IOC need normalized logs</text><text x="28" y="391" class="t2s">XQL and Correlation read the raw dataset too</text></svg>
+      <figcaption>Three ways firewall logs reach Cortex today. The dashed sender is planned, not built.</figcaption>
+    </figure>
   </section>
 
   <!-- ── 03 ─────────────────────────────────────────────── -->
@@ -464,6 +467,7 @@ footer a{border-bottom:0}
         </ul>
       </div>
     </div>
+    <p class="note">Next release: a syslog sender to the Broker VM Syslog Collector.</p>
   </section>
 
   <!-- ── 04 ─────────────────────────────────────────────── -->
@@ -482,16 +486,18 @@ footer a{border-bottom:0}
       <div class="row"><div class="row__n">Collector check</div><div class="row__w">Configured → reachable → accepted; then whether tagged records arrived.</div><div class="row__r">POST /api/collector-targets/{name}/preflight · /arrival</div></div>
     </div>
 
-    <div class="ladder" aria-label="Launch gate rungs">
-      <span>Launch gate reads each connection as</span>
-      <b>AUTHORED</b><i>→</i><b>CONFIGURED</b><i>→</i><b>REACHABLE</b><i>→</i><b>VERIFIED</b>
-    </div>
+    <h3>Launch gate</h3>
+    <figure class="fig">
+      <svg class="fig__wide" viewBox="0 0 1000 104" role="img" aria-label="Launch gate rungs: authored, configured, reachable, verified."><polygon points="0,8 232,8 248,52 232,96 0,96" class="bx"/><text x="18" y="36" class="k">1  AUTHORED</text><text x="18" y="60" class="t2">loads clean under</text><text x="18" y="77" class="t2">strict validation</text><polygon points="250,8 482,8 498,52 482,96 250,96 268,52" class="bx"/><text x="284" y="36" class="k">2  CONFIGURED</text><text x="284" y="60" class="t2">credential stored in</text><text x="284" y="77" class="t2">the encrypted vault</text><polygon points="500,8 732,8 748,52 732,96 500,96 518,52" class="bx"/><text x="534" y="36" class="k">3  REACHABLE</text><text x="534" y="60" class="t2">preflight: DNS/TLS · auth ·</text><text x="534" y="77" class="t2">scope · datasets · clock</text><polygon points="750,8 982,8 998,52 982,96 750,96 768,52" class="bx-ten2"/><text x="784" y="36" class="k">4  VERIFIED</text><text x="784" y="60" class="t2">ran on a live tenant,</text><text x="784" y="77" class="t2">alert read back</text></svg>
+      <svg class="fig__tall" viewBox="0 0 360 296" role="img" aria-label="Launch gate rungs: authored, configured, reachable, verified."><line x1="22" y1="33" x2="22" y2="83" class="ed-s2"/><circle cx="22" cy="20" r="13" class="step"/><text x="22" y="24" class="m-c" text-anchor="middle">1</text><text x="48" y="24" class="k">AUTHORED</text><text x="48" y="42" class="t2">loads clean under</text><text x="48" y="58" class="t2">strict validation</text><line x1="22" y1="109" x2="22" y2="159" class="ed-s2"/><circle cx="22" cy="96" r="13" class="step"/><text x="22" y="100" class="m-c" text-anchor="middle">2</text><text x="48" y="100" class="k">CONFIGURED</text><text x="48" y="118" class="t2">credential stored in</text><text x="48" y="134" class="t2">the encrypted vault</text><line x1="22" y1="185" x2="22" y2="235" class="ed-s2"/><circle cx="22" cy="172" r="13" class="step"/><text x="22" y="176" class="m-c" text-anchor="middle">3</text><text x="48" y="176" class="k">REACHABLE</text><text x="48" y="194" class="t2">preflight: DNS/TLS · auth ·</text><text x="48" y="210" class="t2">scope · datasets · clock</text><circle cx="22" cy="248" r="13" class="step-on"/><text x="22" y="252" class="m-c2" text-anchor="middle">4</text><text x="48" y="252" class="k">VERIFIED</text><text x="48" y="270" class="t2">ran on a live tenant,</text><text x="48" y="286" class="t2">alert read back</text></svg>
+      <figcaption>Each connection shows the rung it has reached.</figcaption>
+    </figure>
   </section>
 
   <!-- ── 05 ─────────────────────────────────────────────── -->
   <section class="sec" id="coverage">
     <div class="sechead"><span class="sechead__i">05</span><h2>Coverage</h2></div>
-    <p class="lede">205 scenarios, 850 steps, 1452 expected detections. 241 ATT&amp;CK techniques across 14 tactics.</p>
+    <p class="lede">187 scenarios, 779 steps, 1328 expected detections. 236 ATT&amp;CK techniques across 14 tactics.</p>
 
     <h3>Scenarios per plane</h3>
     <div class="card bars" role="table" aria-label="Scenarios per detection plane">
@@ -503,31 +509,23 @@ footer a{border-bottom:0}
       <div class="bar-r" role="row" title="NDR — 12 scenarios"><span class="bar-r__p" role="cell">NDR</span><span class="bar-r__e" role="cell">Network Security · Firewall Analytics</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:30.8%"></span></span><span class="bar-r__n" role="cell">12</span></div>
       <div class="bar-r" role="row" title="CLOUD_APP — 10 scenarios"><span class="bar-r__p" role="cell">CLOUD_APP</span><span class="bar-r__e" role="cell">Cortex Cloud App Security</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:25.6%"></span></span><span class="bar-r__n" role="cell">10</span></div>
       <div class="bar-r" role="row" title="TIM — 9 scenarios"><span class="bar-r__p" role="cell">TIM</span><span class="bar-r__e" role="cell">Cortex Threat Intel Management</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:23.1%"></span></span><span class="bar-r__n" role="cell">9</span></div>
-      <div class="bar-r" role="row" title="AI_SPM — 7 scenarios"><span class="bar-r__p" role="cell">AI_SPM</span><span class="bar-r__e" role="cell">Cortex AI Security Posture Management</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:17.9%"></span></span><span class="bar-r__n" role="cell">7</span></div>
       <div class="bar-r" role="row" title="AI_ACCESS — 6 scenarios"><span class="bar-r__p" role="cell">AI_ACCESS</span><span class="bar-r__e" role="cell">Cortex AI Access Security</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:15.4%"></span></span><span class="bar-r__n" role="cell">6</span></div>
-      <div class="bar-r" role="row" title="ASM — 6 scenarios"><span class="bar-r__p" role="cell">ASM</span><span class="bar-r__e" role="cell">Cortex Attack Surface Management</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:15.4%"></span></span><span class="bar-r__n" role="cell">6</span></div>
       <div class="bar-r" role="row" title="BROWSER — 6 scenarios"><span class="bar-r__p" role="cell">BROWSER</span><span class="bar-r__e" role="cell">Prisma Browser</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:15.4%"></span></span><span class="bar-r__n" role="cell">6</span></div>
       <div class="bar-r" role="row" title="AIRS — 5 scenarios"><span class="bar-r__p" role="cell">AIRS</span><span class="bar-r__e" role="cell">Cortex AI Runtime Security</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:12.8%"></span></span><span class="bar-r__n" role="cell">5</span></div>
-      <div class="bar-r" role="row" title="CSPM — 5 scenarios"><span class="bar-r__p" role="cell">CSPM</span><span class="bar-r__e" role="cell">Cortex Cloud Posture Management</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:12.8%"></span></span><span class="bar-r__n" role="cell">5</span></div>
       <div class="bar-r" role="row" title="DLP — 5 scenarios"><span class="bar-r__p" role="cell">DLP</span><span class="bar-r__e" role="cell">Cortex Enterprise DLP · XDR Agent</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:12.8%"></span></span><span class="bar-r__n" role="cell">5</span></div>
       <div class="bar-r" role="row" title="EMAIL — 5 scenarios"><span class="bar-r__p" role="cell">EMAIL</span><span class="bar-r__e" role="cell">XSIAM ingestion · Proofpoint TAP, M365</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:12.8%"></span></span><span class="bar-r__n" role="cell">5</span></div>
     </div>
 
     <h3>Expected detections by type</h3>
-    <div class="card">
-      <table>
-        <thead><tr><th>Type</th><th>What it is</th><th class="n">Count</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">XQL</td><td>Query-defined detection</td><td class="n">586</td></tr>
-          <tr><td class="mono">BIOC</td><td>Behavioral IOC</td><td class="n">374</td></tr>
-          <tr><td class="mono">ABIOC</td><td>Analytics BIOC, auto-tuned</td><td class="n">166</td></tr>
-          <tr><td class="mono">Correlation</td><td>Multi-source rule</td><td class="n">149</td></tr>
-          <tr><td class="mono">IOC</td><td>Atomic indicator</td><td class="n">119</td></tr>
-          <tr><td class="mono">Analytics</td><td>Baseline deviation</td><td class="n">56</td></tr>
-          <tr><td class="mono">Prevention</td><td>Agent prevention block</td><td class="n">2</td></tr>
-          <tr class="tot"><td>Total</td><td></td><td class="n">1452</td></tr>
-        </tbody>
-      </table>
+    <div class="card bars" role="table" aria-label="Expected detections by type">
+      <div class="bar-r" role="row" title="XQL — 504 expected detections"><span class="bar-r__p" role="cell">XQL</span><span class="bar-r__e" role="cell">Query-defined detection</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:100.0%"></span></span><span class="bar-r__n" role="cell">504</span></div>
+      <div class="bar-r" role="row" title="BIOC — 361 expected detections"><span class="bar-r__p" role="cell">BIOC</span><span class="bar-r__e" role="cell">Behavioral IOC</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:71.6%"></span></span><span class="bar-r__n" role="cell">361</span></div>
+      <div class="bar-r" role="row" title="ABIOC — 161 expected detections"><span class="bar-r__p" role="cell">ABIOC</span><span class="bar-r__e" role="cell">Analytics BIOC, auto-tuned</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:31.9%"></span></span><span class="bar-r__n" role="cell">161</span></div>
+      <div class="bar-r" role="row" title="Correlation — 137 expected detections"><span class="bar-r__p" role="cell">Correlation</span><span class="bar-r__e" role="cell">Multi-source rule</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:27.2%"></span></span><span class="bar-r__n" role="cell">137</span></div>
+      <div class="bar-r" role="row" title="IOC — 107 expected detections"><span class="bar-r__p" role="cell">IOC</span><span class="bar-r__e" role="cell">Atomic indicator</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:21.2%"></span></span><span class="bar-r__n" role="cell">107</span></div>
+      <div class="bar-r" role="row" title="Analytics — 56 expected detections"><span class="bar-r__p" role="cell">Analytics</span><span class="bar-r__e" role="cell">Baseline deviation</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:11.1%"></span></span><span class="bar-r__n" role="cell">56</span></div>
+      <div class="bar-r" role="row" title="Prevention — 2 expected detections"><span class="bar-r__p" role="cell">Prevention</span><span class="bar-r__e" role="cell">Agent prevention block</span><span class="bar-r__t" role="presentation"><span class="bar-r__f" style="display:block;width:0.6%"></span></span><span class="bar-r__n" role="cell">2</span></div>
+      <div class="bar-r bar-r--tot" role="row"><span class="bar-r__p" role="cell">TOTAL</span><span class="bar-r__e" role="cell"></span><span role="presentation"></span><span class="bar-r__n" role="cell">1328</span></div>
     </div>
 
     <h3>Beyond detections</h3>
@@ -535,14 +533,14 @@ footer a{border-bottom:0}
       <table>
         <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">205</td></tr>
-          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">18</td></tr>
-          <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">7</td></tr>
+          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">187</td></tr>
+          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">5</td></tr>
+          <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">6</td></tr>
           <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">FY27 index: 90 of 266 test cases backed by a scenario, 16 more by an assertion. An assertion that cannot fail does not load.</p>
+    <p class="note">FY27 index: 71 of 266 test cases backed by a scenario, 14 more by an assertion. An assertion that cannot fail does not load.</p>
   </section>
 
   <!-- ── 06 ─────────────────────────────────────────────── -->

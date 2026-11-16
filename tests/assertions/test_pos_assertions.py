@@ -1,29 +1,23 @@
 """Behavioural tests for the shipped POS assertion pack (``assertions/pos/``).
 
 ``tests/engine/test_assertions.py`` proves the substrate is sound. This module
-proves the eleven POS *artifacts* are sound, which is the claim the
+proves the shipped POS *artifacts* are sound, which is the claim the
 anti-inflation rule cares about: an artifact can satisfy every schema guard and
 still be a claim nobody can disprove.
 
 The load-bearing tests here are negative, and two of them are the reason the
 file exists:
 
-* **A POS assertion must go RED against a tenant whose posture engine found
-  nothing.** An empty answer from a reachable dataset is a discovery failure, and
-  a check that reads it as green proves nothing. Every shipped check is driven
-  through the real evaluator on an empty tenant and must come back ``fail``.
 * **A POS assertion must never go GREEN without a tenant.** No integration, a
   dry run, an unreachable tenant, a 401, a quota error — all ``pending``
   ("still owed"), never ``pass`` and never ``not_applicable`` ("unscoreable by
   construction"). Collapsing those two would let 92 open POS gaps disappear into
   a bucket that reads as benign.
 
-Plus the anti-drift lock the substrate does not carry: every planted-finding tag
-key and tag value a query joins on is read back out of the module's own
-``main.tf``, and every threshold is reconciled against the fixture's real arity.
-Rename a tag in Terraform, or delete a planted resource, and these fail — which
-is the only thing standing between "9 planted findings discovered" and a query
-asking about a resource that no longer exists.
+The Terraform-fixtured artifacts (POS-CSPM/DSPM/AISP/ASM) and their
+planted-arity and tag-join tests moved to ``feature/scenarios-cloud-posture``
+with ``infra/`` on 2026-11-15. The artifacts left here are stimulated by a
+scenario run or an EAL campaign.
 """
 from __future__ import annotations
 
@@ -34,90 +28,35 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 POS_DIR = os.path.join(REPO_ROOT, "assertions", "pos")
-MODULES = os.path.join(REPO_ROOT, "infra", "modules", "aws")
 SCENARIOS = os.path.join(REPO_ROOT, "scenarios")
 
-CSPM_001 = "POS-CSPM-001"
-CSPM_002 = "POS-CSPM-002"
-CSPM_003 = "POS-CSPM-003"
-DSPM_001 = "POS-DSPM-001"
-DSPM_002 = "POS-DSPM-002"
-DSPM_003 = "POS-DSPM-003"
-DSPM_004 = "POS-DSPM-004"
-AISP_001 = "POS-AISP-001"
-AISP_002 = "POS-AISP-002"
-AISP_003 = "POS-AISP-003"
-AISP_005 = "POS-AISP-005"
-ASM_001 = "POS-ASM-001"
-ASM_002 = "POS-ASM-002"
 ERV_002 = "POS-ERV-002"
 ERV_004 = "POS-ERV-004"
 AGTX_008 = "POS-AGTX-008"
 
-ALL_POS = (
-    CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002, DSPM_003, DSPM_004,
-    AISP_001, AISP_002, AISP_003, AISP_005, ASM_001, ASM_002,
-    ERV_002, ERV_004, AGTX_008,
-)
-
-# The planted-arity subset: artifacts whose stimulus is an IaC fixture that
-# plants a KNOWN number of findings. For these, and only these, an empty answer
-# from a reachable dataset is a discovery FAILURE — the engine put 9 things in
-# the account and the posture engine found none, so `fail` is the honest verdict
-# and `pending` would launder a miss into "still owed".
-#
-# ERV_002/ERV_004/AGTX_008 are stimulated behaviourally instead, and their
-# populations are whatever the PLATFORM did — incidents it opened, actions an
-# agent took, providers that ingested. Empty there means the stimulus never
-# produced anything to measure ("the agent never ran", "NGFW never ingested"),
-# which is genuinely still-owed rather than a discovery miss. Holding them to
-# the planted-arity rule would manufacture red against tenants with a coverage
-# gap the assertion's own second check already reports precisely.
-PLANTED_POS = (
-    CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002, DSPM_003, DSPM_004,
-    AISP_001, AISP_002, AISP_003, AISP_005, ASM_001, ASM_002,
-)
+ALL_POS = (ERV_002, ERV_004, AGTX_008)
 
 # The index rows each artifact binds. Asserted explicitly so a re-key of the
 # pack cannot silently move a binding onto a different test case.
 EXPECTED_BINDINGS = {
-    CSPM_001: ("UCS-CSPM-02", "TC-CSPM-02"),
-    CSPM_002: ("UCS-CSPM-04", "TC-CSPM-04"),
-    CSPM_003: ("UCS-CSPM-01", "TC-CSPM-01"),
-    DSPM_001: ("UCS-DSPM-01", "TC-DSPM-01"),
-    DSPM_002: ("UCS-DSPM-03", "TC-DSPM-03"),
-    DSPM_003: ("UCS-DSPM-01", "TC-DSPM-01"),
-    DSPM_004: ("UCS-DSPM-02", "TC-DSPM-02"),
-    AISP_001: ("UCS-AISP-01", "TC-AISP-01"),
-    AISP_002: ("UCS-AISP-02", "TC-AISP-02"),
-    AISP_003: ("UCS-AISP-03", "TC-AISP-03"),
-    AISP_005: ("UCS-AISP-05", "TC-AISP-05"),
-    ASM_001: ("UCS-ASM-03", "TC-ASM-05"),
-    ASM_002: ("UCS-ASM-04", "TC-ASM-06"),
     ERV_002: ("UCS-ERV-01", "TC-ERV-02"),
     ERV_004: ("UCS-ERV-02", "TC-ERV-04"),
     AGTX_008: ("UCS-AGTX-04", "TC-AGTX-08"),
 }
 
 # Measurable threshold rows in the live index.
-SCOREABLE = {CSPM_003, DSPM_004, AGTX_008}
+SCOREABLE = {AGTX_008}
 
-# Context every artifact needs to render. Values are shaped like the real
-# `terraform output` they come from.
+# Context every artifact needs to render. The behaviourally-stimulated POS
+# artifacts (scenario_run / eal_campaign) bind their own context. Without an
+# entry here their queries cannot render and every outcome resolves
+# PROBE_QUERY_FAILED, which masks the very codes the anti-inflation tests below
+# are asserting.
 CONTEXT = {
-    "planted_resource_id": "cortexsim-cspm-public-3f9a1c",
-    "asm_target_ip": "203.0.113.44",
-    "asm_website_bucket": "cortexsim-asm-website-3f9a1c",
-    # Behaviourally-stimulated POS artifacts (scenario_run / eal_campaign) bind
-    # their own context. Without an entry here their queries cannot render and
-    # every outcome resolves PROBE_QUERY_FAILED, which masks the very codes the
-    # anti-inflation tests below are asserting.
     "target_host": "cortexsim-lab-node-01",
     "run_tag": "cortexsim-run-3f9a1c",
     "canary": "cxs3f9a1c",
 }
-
-T0 = 1_800_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -170,52 +109,11 @@ def constant_runner(rows):
     return _run
 
 
-def sequence_runner(*batches):
-    """A tenant that answers each successive query with the next batch."""
-    calls = list(batches)
-
-    async def _run(_query):
-        return calls.pop(0) if calls else []
-
-    return _run
-
-
 def raising_runner(exc):
     async def _run(_query):
         raise exc
 
     return _run
-
-
-def satisfying_rows(spec):
-    """Rows a healthy tenant would return for this artifact's primary check —
-    exactly enough distinct values to clear the authored bar."""
-    check = spec.primary_check
-    if check.probe == "xql_latency":
-        # precursor then outcome, five minutes apart: well inside the 900 s bar.
-        return None
-    key = check.params["distinct_key"]
-    return [{key: f"value-{i}"} for i in range(int(check.threshold.value))]
-
-
-def tf_source(module):
-    with open(os.path.join(MODULES, module, "main.tf"), encoding="utf-8") as fh:
-        return fh.read()
-
-
-def planted_tag_values(module, tag_key):
-    """Every ``CortexSim*Finding = "<slug>"`` value the module's Terraform sets."""
-    return set(re.findall(rf'{tag_key}\s*=\s*"([a-z0-9-]+)"', tf_source(module)))
-
-
-def tag_filter_values(query):
-    """Tag values a query joins on — only ``filter tags contains "..."`` stages.
-
-    Scoped deliberately: ``filter resource_type contains "sagemaker"`` is a
-    resource-type predicate, not a planted-tag join, and reconciling it against
-    Terraform tag values would be comparing two different things.
-    """
-    return set(re.findall(r'filter\s+tags\s+contains\s+"([A-Za-z0-9-]+)"', query))
 
 
 def queries_of(spec):
@@ -244,18 +142,6 @@ async def evaluate(spec, **kwargs):
 
 def test_pack_contains_exactly_the_shipped_artifacts(pos_specs):
     assert sorted(pos_specs) == sorted(ALL_POS)
-
-
-def test_planted_subset_is_exactly_the_iac_backed_artifacts(pos_specs):
-    """PLANTED_POS is what the fixture-arity tests below run against. It must be
-    derivable from the artifacts themselves, not maintained by hand — otherwise
-    a new fixture-backed assertion could be added to ALL_POS, quietly skip the
-    empty-tenant and partial-discovery guards, and nobody would see it."""
-    derived = {aid for aid in ALL_POS
-               if spec_of(pos_specs, aid).stimulus.kind == "iac_fixture"}
-    assert derived == set(PLANTED_POS), (
-        f"PLANTED_POS is stale: iac_fixture-backed artifacts are {sorted(derived)}"
-    )
 
 
 def test_every_artifact_loads_clean_under_strict_refs(pos_specs):
@@ -298,7 +184,7 @@ def test_every_artifact_binds_a_pos_row_in_the_live_index(pos_specs):
 
 
 def test_scoreable_split_matches_the_index(pos_specs):
-    """The honest coverage story: one of eleven can produce a scored pass."""
+    """The honest coverage story: only AGTX-008 can produce a scored pass."""
     from engine.assertions import tc_scoreable  # noqa: PLC0415
     from engine.uctc_registry import registry  # noqa: PLC0415
 
@@ -343,13 +229,6 @@ def test_every_artifact_plants_the_state_it_measures(pos_specs):
             f"plant or generate the state it measures, not ask an uncontrolled tenant"
         )
         assert spec.stimulus.detail, f"{aid}: stimulus carries no operator detail"
-        if spec.stimulus.kind == "iac_fixture":
-            module = (spec.stimulus.iac_module or "").split("/")[-1]
-            assert os.path.isdir(os.path.join(MODULES, module)), (
-                f"{aid} depends on infra module {spec.stimulus.iac_module!r}, "
-                f"which does not exist"
-            )
-            assert "terraform apply" in spec.stimulus.detail
         if spec.stimulus.kind == "scenario_run":
             # The scenario must actually be in the corpus, or the artifact names
             # a stimulus nobody can run — the scenario_run equivalent of naming
@@ -365,42 +244,6 @@ def test_every_artifact_plants_the_state_it_measures(pos_specs):
 # ---------------------------------------------------------------------------
 # THE ANTI-INFLATION TESTS
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_empty_tenant_is_fail_not_pass(pos_specs):
-    """A reachable posture dataset that carries none of the planted findings is
-    a DISCOVERY FAILURE. This is the single most important test in the file: an
-    assertion that reads an empty answer as green proves nothing at all."""
-    for aid in PLANTED_POS:
-        spec = spec_of(pos_specs, aid)
-        if spec.primary_check.probe == "xql_latency":
-            continue  # covered by the latency-specific tests below
-        outcome = await evaluate(spec, runner=constant_runner([]))
-        assert outcome.verdict == "fail", (
-            f"{aid} returned {outcome.verdict!r} against a tenant that discovered "
-            f"nothing: {outcome.score.detail}"
-        )
-        assert outcome.checks[0].outcome.measured_value == 0
-
-
-@pytest.mark.asyncio
-async def test_partial_discovery_is_fail(pos_specs):
-    """One short of the fixture's arity is red. The bar is the planted count; a
-    threshold that forgives a miss converts a reportable gap into a green tick."""
-    for aid in PLANTED_POS:
-        spec = spec_of(pos_specs, aid)
-        check = spec.primary_check
-        if check.probe == "xql_latency":
-            continue
-        key = check.params["distinct_key"]
-        short = int(check.threshold.value) - 1
-        rows = [{key: f"value-{i}"} for i in range(short)]
-        outcome = await evaluate(spec, runner=constant_runner(rows))
-        assert outcome.verdict == "fail", (
-            f"{aid} passed with {short} of {int(check.threshold.value)} "
-            f"{check.threshold.unit} discovered"
-        )
 
 
 @pytest.mark.asyncio
@@ -459,9 +302,9 @@ async def test_tenant_and_transport_errors_are_pending_never_fail(pos_specs):
 
 @pytest.mark.asyncio
 async def test_missing_context_value_is_pending_not_a_silent_bad_query(pos_specs):
-    """The two ASM artifacts and the latency artifact need operator-supplied
-    context. Forgetting it must not run a half-rendered query."""
-    for aid in (ASM_001, ASM_002, CSPM_003):
+    """Every artifact needs operator-supplied context. Forgetting it must not
+    run a half-rendered query."""
+    for aid in ALL_POS:
         spec = spec_of(pos_specs, aid)
         outcome = await evaluate(spec, runner=constant_runner([]), context={})
         assert outcome.verdict == "pending", f"{aid}: {outcome.verdict}"
@@ -472,228 +315,13 @@ async def test_missing_context_value_is_pending_not_a_silent_bad_query(pos_specs
 async def test_injection_shaped_context_value_is_refused(pos_specs):
     """Context lands inside query text, so anything that could reshape the query
     is refused before substitution — pending, never a silent bad query."""
-    spec = spec_of(pos_specs, ASM_002)
+    spec = spec_of(pos_specs, ERV_002)
     outcome = await evaluate(
         spec, runner=constant_runner([]),
-        context={"asm_target_ip": '1.1.1.1" or true or "'},
+        context={**CONTEXT, "target_host": 'host-01" or true or "'},
     )
     assert outcome.verdict == "pending"
     assert outcome.reason == "probe_query_failed"
-
-
-@pytest.mark.asyncio
-async def test_satisfied_tenant_reports_evidence_not_a_scored_pass(pos_specs):
-    """The qualitative clamp, asserted rather than narrated. Per-check verdicts
-    stay a real ``pass`` — something was genuinely measured — while the run-level
-    verdict clamps to ``not_applicable`` for the ten rows the index scores
-    "Qualitative pass". A coverage number that hides this split overstates what
-    was proven."""
-    from engine.uctc_registry import registry  # noqa: PLC0415
-
-    if not registry.loaded:
-        pytest.skip("UC/TC index snapshot absent")
-    for aid in PLANTED_POS:
-        if aid in SCOREABLE:
-            continue
-        spec = spec_of(pos_specs, aid)
-        if spec.primary_check.probe == "xql_latency":
-            continue
-        outcome = await evaluate(spec, runner=constant_runner(satisfying_rows(spec)))
-        assert outcome.checks[0].verdict.verdict == "pass", f"{aid}: check did not pass"
-        assert outcome.verdict == "not_applicable", (
-            f"{aid} reported {outcome.verdict!r}; the index carries no measurable "
-            f"threshold for {spec.tc_ref}, so a machine pass would assert "
-            f"something the index never defined"
-        )
-        assert outcome.reason == "tc_unscoreable"
-
-
-@pytest.mark.asyncio
-async def test_not_entitled_is_not_applicable_and_silence_is_not_benign(pos_specs):
-    """A missing add-on is a commercial gap and belongs on the upsell list, not
-    on the failure list. But an OMITTED entitlement profile must never buy that
-    benign verdict."""
-    from engine.assertions import entitlements  # noqa: PLC0415
-
-    spec = spec_of(pos_specs, CSPM_001)
-    _base, required = entitlements(spec)
-    if not required:
-        pytest.skip("index snapshot carries no add-on requirement for TC-CSPM-02")
-    outcome = await evaluate(spec, runner=constant_runner([]), entitled_addons=[])
-    assert outcome.verdict == "not_applicable"
-    assert outcome.reason == "not_entitled"
-
-    # Omitted profile: treated as entitled, so the empty tenant is still red.
-    outcome = await evaluate(spec, runner=constant_runner([]))
-    assert outcome.verdict == "fail"
-
-
-# ---------------------------------------------------------------------------
-# The latency artifact — the one that can produce a real scored pass
-# ---------------------------------------------------------------------------
-
-
-def _audit_row(ts):
-    return {"_time": ts, "event_name": "CreateBucket"}
-
-
-def _posture_row(ts):
-    return {"_time": ts, "resource_id": CONTEXT["planted_resource_id"]}
-
-
-@pytest.mark.asyncio
-async def test_discovery_latency_inside_the_bar_is_a_real_scored_pass(pos_specs):
-    spec = spec_of(pos_specs, CSPM_003)
-    runner = sequence_runner([_audit_row(T0)], [_posture_row(T0 + 300)])
-    outcome = await evaluate(spec, runner=runner)
-    assert outcome.checks[0].outcome.measured_value == 300
-    assert outcome.verdict == "pass", (
-        f"TC-CSPM-01 is the one first-slice POS row with a measurable threshold; "
-        f"a cleared bar must not be clamped. Got {outcome.verdict}: {outcome.score.detail}"
-    )
-
-
-@pytest.mark.asyncio
-async def test_discovery_latency_over_the_bar_is_fail_and_reports_the_number(pos_specs):
-    """1800 s against a 900 s budget is a completely different conversation from
-    "nothing happened" — which is why the threshold is not inside the query."""
-    spec = spec_of(pos_specs, CSPM_003)
-    runner = sequence_runner([_audit_row(T0)], [_posture_row(T0 + 1800)])
-    outcome = await evaluate(spec, runner=runner)
-    assert outcome.verdict == "fail"
-    assert outcome.checks[0].outcome.measured_value == 1800
-
-
-@pytest.mark.asyncio
-async def test_no_provisioning_record_is_pending_not_fail(pos_specs):
-    """No CloudTrail event for the resource means the control plane is not
-    ingested. That is an INGESTION gap; blaming the posture engine's discovery
-    latency for it reports the wrong product red."""
-    spec = spec_of(pos_specs, CSPM_003)
-    runner = sequence_runner([], [_posture_row(T0 + 300)])
-    outcome = await evaluate(spec, runner=runner)
-    assert outcome.verdict == "pending"
-    assert outcome.reason == "precursor_missing"
-
-
-@pytest.mark.asyncio
-async def test_provisioned_but_never_discovered_is_fail(pos_specs):
-    """The precursor is positively proven and the asset never appears. This is
-    the capability failing, and it is the only case where absence is red."""
-    spec = spec_of(pos_specs, CSPM_003)
-    runner = sequence_runner([_audit_row(T0)], [])
-    outcome = await evaluate(spec, runner=runner)
-    assert outcome.verdict == "fail"
-    assert outcome.checks[0].outcome.code == "OUTCOME_ABSENT"
-
-
-# ---------------------------------------------------------------------------
-# The anti-drift lock — the fixture is the ground truth, not the query
-# ---------------------------------------------------------------------------
-
-
-def test_cspm_queries_join_on_tags_terraform_actually_writes(pos_specs):
-    """Every ``CortexSimCSPMFinding`` slug a query filters on must exist in the
-    cspm module's Terraform. Rename a tag there and this fails, instead of the
-    query silently asking about a resource class that no longer exists."""
-    planted = planted_tag_values("cspm", "CortexSimCSPMFinding")
-    assert len(planted) == 9, f"cspm plants {len(planted)} classes, expected 9: {sorted(planted)}"
-    for aid in (CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002):
-        spec = spec_of(pos_specs, aid)
-        for _check, _name, query in queries_of(spec):
-            for slug in tag_filter_values(query) - {"CortexSimCSPMFinding"}:
-                assert slug in planted, (
-                    f"{aid} filters on tag value {slug!r}, which infra/modules/aws/"
-                    f"cspm/main.tf does not plant"
-                )
-
-
-def test_aispm_queries_join_on_tags_terraform_actually_writes(pos_specs):
-    planted = planted_tag_values("ai-spm", "CortexSimAISPMFinding")
-    for aid in (AISP_001, AISP_002, AISP_003, AISP_005):
-        spec = spec_of(pos_specs, aid)
-        for _check, _name, query in queries_of(spec):
-            for slug in tag_filter_values(query) - {"CortexSimAISPMFinding"}:
-                assert slug in planted, (
-                    f"{aid} filters on tag value {slug!r}, which infra/modules/aws/"
-                    f"ai-spm/main.tf does not plant"
-                )
-
-
-def test_tag_keys_used_by_queries_exist_in_terraform(pos_specs):
-    """The tag KEY is the join column for CSPM and AI-SPM. It is written by our
-    Terraform, never by the product, which is why the join survives a change in
-    the product's own finding vocabulary."""
-    for module, key, artifacts in (
-        ("cspm", "CortexSimCSPMFinding", (CSPM_001, CSPM_002, DSPM_001)),
-        ("ai-spm", "CortexSimAISPMFinding", (AISP_001, AISP_002)),
-    ):
-        assert key in tf_source(module)
-        for aid in artifacts:
-            spec = spec_of(pos_specs, aid)
-            assert any(key in q for _c, _n, q in queries_of(spec)), (
-                f"{aid} does not join on {key}"
-            )
-
-
-def test_thresholds_equal_the_fixtures_real_arity(pos_specs):
-    """Every bar is the planted count read back out of Terraform. A bar chosen
-    to be reachable rather than to be true is the failure this pack exists to
-    avoid, so it is reconciled here rather than trusted."""
-    cspm = tf_source("cspm")
-    aispm = tf_source("ai-spm")
-    asm = tf_source("asm")
-
-    # 9 tagged CSPM resources across 6 distinct AWS resource types.
-    cspm_tagged = re.findall(r'resource "(\w+)" "\w+" \{', cspm)
-    assert len(planted_tag_values("cspm", "CortexSimCSPMFinding")) == 9
-    assert spec_of(pos_specs, CSPM_001).primary_check.threshold.value == 9
-    cspm_types = {
-        "aws_s3_bucket", "aws_security_group", "aws_iam_role",
-        "aws_iam_user", "aws_ebs_volume", "aws_cloudtrail",
-    }
-    assert cspm_types <= set(cspm_tagged)
-    assert spec_of(pos_specs, CSPM_002).primary_check.threshold.value == len(cspm_types)
-
-    # 3 tagged S3 buckets — the untagged CloudTrail log bucket is not counted.
-    s3_tagged = len(re.findall(
-        r'resource "aws_s3_bucket" "\w+" \{(?:[^}]|\}[^\n])*?CortexSimCSPMFinding', cspm))
-    assert s3_tagged == 3, f"cspm tags {s3_tagged} S3 buckets, expected 3"
-    assert spec_of(pos_specs, DSPM_001).primary_check.threshold.value == 3
-
-    # 6 AI-SPM resource-level tags (the two S3 OBJECT tags are deliberately
-    # excluded — a resource inventory does not enumerate object tags).
-    object_tag_values = set(re.findall(
-        r'resource "aws_s3_object" "\w+" \{(?:[^}]|\}[^\n])*?'
-        r'CortexSimAISPMFinding\s*=\s*"([a-z0-9-]+)"', aispm))
-    resource_level = planted_tag_values("ai-spm", "CortexSimAISPMFinding") - object_tag_values
-    optional = {"shadow-ai-on-unmanaged-gpu"}  # enable_shadow_gpu defaults false
-    assert len(resource_level - optional) == 6, sorted(resource_level)
-    assert spec_of(pos_specs, AISP_001).primary_check.threshold.value == 6
-
-    # 3 SageMaker-typed resources.
-    sagemaker = len(re.findall(r'resource "aws_sagemaker_\w+" "\w+"', aispm))
-    assert sagemaker == 3, f"ai-spm declares {sagemaker} sagemaker resources"
-    assert spec_of(pos_specs, AISP_002).primary_check.threshold.value == 3
-
-    # 6 world-open ingress ports on the asm host (port 22 is closed).
-    ports = {int(p) for p in re.findall(r"from_port\s*=\s*(\d+)", asm)} - {0}
-    assert ports == {80, 443, 2222, 6379, 9001, 9200}, sorted(ports)
-    assert spec_of(pos_specs, ASM_002).primary_check.threshold.value == len(ports)
-    for port in ports:
-        assert str(port) in queries_of(spec_of(pos_specs, ASM_002))[0][2]
-
-
-def test_object_level_tags_are_never_a_threshold(pos_specs):
-    """``insecure-model-serialization-pickle`` and ``training-data-pii-content``
-    are S3 OBJECT tags. A posture inventory enumerates resources, so a threshold
-    counting them would go red against a correct platform. TC-AISP-04 was dropped
-    for exactly this reason and no query may reach for them."""
-    forbidden = {"insecure-model-serialization-pickle", "training-data-pii-content"}
-    for aid in ALL_POS:
-        for _c, _n, query in queries_of(spec_of(pos_specs, aid)):
-            for slug in forbidden:
-                assert slug not in query, f"{aid} joins on object-level tag {slug!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -760,18 +388,6 @@ def test_sharpened_thresholds_carry_a_rationale(pos_specs):
                     f"{aid} claims threshold.source=index on a row the index does "
                     f"not score"
                 )
-
-
-def test_asm_lookback_is_a_full_discovery_day(pos_specs):
-    """Regression guard on a deliberate inconsistency. The ASM artifacts hardcode
-    an 86400 s window instead of the 3600 s ``lookback_seconds`` builtin the
-    other nine use, because external discovery runs daily: a one-hour window
-    against a once-a-day scanner reports zero and paints a correct platform red.
-    'Fixing' this for consistency would manufacture that red."""
-    for aid in (ASM_001, ASM_002):
-        for _c, _n, query in queries_of(spec_of(pos_specs, aid)):
-            assert "current_time() - 86400" in query
-            assert "lookback_seconds" not in query
 
 
 def test_queries_are_time_bounded(pos_specs):

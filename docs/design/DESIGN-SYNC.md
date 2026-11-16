@@ -14,6 +14,7 @@ from drifting apart silently.
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-11-13 · canvas version `1794626399-70f5` ("v33": v26 + changes C1–C10) |
+| Code-side last sync | 2026-11-15 · canvas version `1794768805-384b` (version 36): a CODE STATE note for `dev@845bb2e1` at the top of the page's header comment (below) |
 | Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) · design v33 C1–C10 + Launch gate MVP (2026-11-13, PRs #286–#308, below) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
 | Current handoff | **Design v33 → `ui/src`, 2026-11-13:** the canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff, recorded below. v26's own handoff: `docs/design/2026-11-13-v26-design-to-code.md` |
@@ -24,6 +25,28 @@ from drifting apart silently.
 > lists, and the owner reviews a `:8888` container rebuilt from `dev`. Where
 > the owner's live review overrode the canvas, the override is listed below
 > and the canvas is the side that has to catch up.
+
+> **Sync runs both ways (2026-11-15).** Until this date no Code session had
+> written to the canvas. The overrides below reached only this file, which
+> the canvas agent never reads. So the canvas kept drawing v33 while `dev`
+> shipped PRs #317–#371, and today it drew Composer sub-steps on that stale
+> base. The rule from now on:
+>
+> - **Code to canvas.** After each UI merge into `dev`, a Code session
+>   rewrites the **CODE STATE** note at the top of the canvas page's header
+>   comment: rail, verb set, status words, copy and colour rules, what each
+>   page does, owner word rules, and what the canvas has that code does not.
+>   Edit only that comment, never the drawing, and record the new canvas
+>   version in the manifest above.
+> - **Canvas to code.** A canvas change comes to code only through a handoff
+>   note that says what it changes against CODE STATE. Diff the page against
+>   the last copy read, and never port a screen that contradicts CODE STATE
+>   without the owner's word.
+>
+> Open on the canvas at version 36, not built: step sub-steps, palette Add to
+> chain and Add expected detection (no backend model; the sub-step copy uses
+> the banned word "shelf"); Composer draft / WIP / orphan states (to be
+> designed on the existing drafts API).
 
 ## Runs, Results, Reports: one job per page (2026-11-15)
 
@@ -62,11 +85,13 @@ Same owner rules (one short line per state; kit controls only). As built:
 | **Results › Detections** | A row's state is StatusIcon + one word from `detectionState.js`: Detected · Prevented · Missed · Pending · Not reached · Not executed · Not reviewed, plus Not prevented (a block that only detected). An unjudged row reads Pending on a reviewed run, Not reviewed otherwise; "Awaiting reconcile" is retired everywhere. Tiles: sentence-case label, one number, at most one line ("3 of 6 detected · 2 not counted"). The MTTD panel is one line when empty. Row actions are icon-only kit buttons; the drawer uses kit buttons and a StatusIcon. |
 | **Results › Techniques, Topology** | No "Run verdict" chip (the verdict line at the top of Results owns it) and no status boilerplate in the totals. Each explanation is one line with its detail in a tooltip. The Storyline's per-detection sentences are one line each, same rule. |
 | **Launch gate: EAL consent** | Shown only when the armed scenario has an EAL step (`channel: eal`, or a command that calls the EAL CLI): one row, "Send live EAL traffic" · "Authorized by" (remembered per browser) · "Includes C2-shaped traffic" (`EalConsentRow.jsx`, `ealConsent.js`). Ticked, the launch sends `consent.simulation_authorized`, `authorized_by` and, with the third box, `consent.c2_authorized`; unticked it sends nothing new. The third box shows with the first: the console has no way yet to ask SimCore which plugins it counts as C2-shaped. |
+| **Launch gate: teardown, prevention context, readiness** | "What it will do › Teardown" names who runs the scenario's cleanup (`newRun.runPlan`, from the chosen agent's `capabilities`): an agent with `cleanup` "run by the agent after the run", one without "run them yourself" (SimCore's `CLEANUP_NOT_RUN`), the offline bundle "run by the bundle" (bash, PowerShell and the k8s bootstrap all run it). Prevention context is a sentence-case group, "Attested, not verified" its one-line description, and **Run canary** a kit Button. Each preflight check is one line, StatusIcon + Ready · Degraded · Blocked · Unknown, the label and its count; a check that is not Ready opens its detail and fix (a short line each) behind "Why"; why they are checked first is the Preflight label's tooltip, not a paragraph. Tool consent (dual-use, C2) is one compact row each, like the EAL row: the tick, one sentence, and StatusIcon "Required" while unticked. **Switch** ("Switch scenario") is a kit Button under What runs. Under the heading, one short line each: "Armed: <id>" (name in the tooltip) and "Tenant, agents and collectors are on Get started." |
 
 Kit additions in this pass: the verbs **Mark detected** (icon `check-circle`),
-**Reset** (icon `repeat`) and **Save** (icon `save`); the icons `check-circle`
-and `save`; and `Button iconOnly`, which draws a verb as its icon alone with
-the verb as its accessible name and tooltip (a row of small actions).
+**Reset** (icon `repeat`), **Save** (icon `save`) and **Run canary** (icon
+`flask`); the icons `check-circle`, `save` and `flask`; and `Button
+iconOnly`, which draws a verb as its icon alone with the verb as its
+accessible name and tooltip (a row of small actions).
 
 A row offers only the marks `PUT /api/results/{id}/validate` takes
 (`detectionState.rowActions`): Mark detected until it reads Detected, and
@@ -340,7 +365,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341). Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341), and the Launch gate's Switch scenario. Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Run canary starts the known-benign canary from the Launch gate's prevention context. Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |

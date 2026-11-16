@@ -72,7 +72,8 @@ def test_the_corpus_is_the_expected_size(parsed):
     # 202 -> 203 on 2026-11-13: SIM-EDR-026 (crond masquerade from a scratch path, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
     # 203 -> 204 on 2026-11-13: SIM-EDR-029 (sshpass credential-stuffing burst against a .invalid host, binds already-evidenced TC-EDR-03/TC-EDR-05; promoted from the staged draft library).
     # 204 -> 205 on 2026-11-13: SIM-EDR-028 (sudoedit burst in the CVE-2021-3156 probe form, binds already-evidenced TC-EDR-05; promoted from the staged draft library).
-    assert len(parsed) == 205
+    # 205 -> 187 on 2026-11-15: the CSPM, ASM and AI_SPM planes (18 scenarios) moved to feature/scenarios-cloud-posture for a 1.4.x release.
+    assert len(parsed) == 187
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

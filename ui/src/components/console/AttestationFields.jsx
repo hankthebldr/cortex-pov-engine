@@ -1,5 +1,6 @@
 import React, { useId } from 'react'
 import LaunchErrorNotice from './LaunchErrorNotice.jsx'
+import { Button } from './kit/index.js'
 
 const PAIR_CODES = new Set(['PAIR_INVALID', 'CANARY_INVALID'])
 
@@ -18,7 +19,9 @@ export function isAttestationError(lastRun) {
  *
  * Everything here is an operator DECLARATION. It rides on the run as
  * "attested, not verified"; the console never presents it as measured. Fields
- * left at their default are not sent at all.
+ * left at their default are not sent at all. The group says so once, as its
+ * one-line description; labels are sentence case and the canary is the kit's
+ * Run canary verb.
  *
  * Props: `launch` — the useLaunchScenario() return value.
  */
@@ -42,8 +45,9 @@ export default function AttestationFields({ launch }) {
   )
 
   return (
-    <fieldset className="launch-attest" data-testid="launch-attestation">
-      <legend className="launch-attest__legend">Prevention context (attested, not verified)</legend>
+    <fieldset className="launch-attest" data-testid="launch-attestation" aria-describedby={id('hint')}>
+      <legend className="launch-attest__legend">Prevention context</legend>
+      <p className="launch-attest__hint" id={id('hint')}>Attested, not verified</p>
 
       <label className="launch-field" htmlFor={id('mode')}>
         <span className="launch-field__label">Agent profile mode</span>
@@ -95,14 +99,9 @@ export default function AttestationFields({ launch }) {
       </label>
 
       <div className="launch-field launch-attest__canary">
-        <button
-          type="button"
-          className="btn btn--xs"
-          onClick={launch.runCanary}
-          disabled={launch.canaryBusy}
-        >
-          {launch.canaryBusy ? 'Running canary…' : 'Run canary first'}
-        </button>
+        <Button verb="Run canary" onClick={launch.runCanary} disabled={launch.canaryBusy}>
+          {launch.canaryBusy ? 'Running canary…' : undefined}
+        </Button>
         {launch.canaryRunId && (
           <span className="mono" data-testid="launch-canary-run">
             Canary run {launch.canaryRunId}

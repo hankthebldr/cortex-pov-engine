@@ -671,7 +671,7 @@ def test_aborted_never_replaces_a_decided_hit(session_factory):
     assert asyncio.run(_results_by_step(session_factory))["step-01"].outcome == "detected"
 
 
-@pytest.mark.parametrize("termination", ["timeout", "signaled", "anchor_terminated"])
+@pytest.mark.parametrize("termination", ["signaled", "anchor_terminated"])
 def test_a_detect_step_the_host_ran_or_stopped_is_a_miss(session_factory, termination):
     _silent_detect_row(session_factory, termination=termination)
     asyncio.run(_apply_silent(session_factory, COMPLETE))
@@ -977,3 +977,186 @@ def test_a_run_whose_only_steps_failed_is_never_fail(session_factory):
     m = summary["measurement"]
     assert (m["value"], m["seeded"], m["excluded"]["not_executed"]) == (None, 0, 2)
     assert verdict in ("pending", "not_applicable")
+
+
+# ── A timed-out step is not a Cortex miss ──────────────────────────────────
+
+async def _record_timeout(SessionLocal, step_id="step-01"):
+    """What the beacon records for a step that hit its time limit: `timeout`
+    with exit 124 (agent/beacon/step_outcome.go::recordTimeout)."""
+    from models import StepOutcome
+
+    async with SessionLocal() as db:
+        ran = datetime.utcnow() - timedelta(minutes=10)
+        db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=124,
+                           termination="timeout", started_at=ran, recorded_at=ran))
+        await db.commit()
+
+
+def test_silent_detect_row_on_a_timed_out_step_is_not_executed_never_missed(session_factory):
+    """The lab's SIM-MP-003: step-03 hit its 180 s limit while DNS hung, so it
+    never did its work. Once its window closes it is not "Cortex missed it"."""
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_timeout(session_factory))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict, r.observed) == (
+        "not_executed", "STEP_TIMED_OUT", None, False)
+    assert "the step timed out on the host, so a miss can't be claimed" in (r.notes or "")
+
+
+def test_an_alert_inside_the_window_still_credits_a_timed_out_step(session_factory):
+    from connectors.service import apply_verdicts
+    from models import Result
+    from sqlalchemy import select
+
+    _silent_detect_row(session_factory)
+    asyncio.run(_record_timeout(session_factory))
+    v = _matched_verdict(session_factory)
+
+    async def _go():
+        async with session_factory() as db:
+            results = list((await db.execute(select(Result))).scalars().all())
+            await apply_verdicts(db, "run-1", results, [v], source="t",
+                                 pull_context=COMPLETE, window_seconds=60)
+    asyncio.run(_go())
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.observed) == ("detected", True)
+
+
+# ── #378 — a Correlation row whose inputs sent nothing is not a miss ───────
+
+def _correlation_run(SessionLocal, rows, hosts):
+    """A pull run shaped like SIM-CDR-019, in scenario order.
+
+    ``rows`` is ``[(step_id, signal_type, stamp), ...]``: ``stamp`` is the
+    reason an EAL step that sent nothing already carries (the relay writes
+    ``not_executed`` with it), None for an undecided row. ``hosts`` maps each
+    step to its host record ``(termination, exit_code)``. Every step reported
+    10 min ago, so a 60 s window has closed on all of them.
+    """
+    from models import Result, Scenario, StepOutcome
+    from sqlalchemy import select
+
+    _seed(SessionLocal, results=0)
+    ran = datetime.utcnow() - timedelta(minutes=10)
+
+    async def _do():
+        async with SessionLocal() as db:
+            scenario = (await db.execute(select(Scenario))).scalars().first()
+            scenario.steps = [{"id": s} for s in dict.fromkeys(r[0] for r in rows)]
+            for step_id, signal_type, stamp in rows:
+                db.add(Result(
+                    run_id="run-1", step_id=step_id, plane="CDR", signal_type=signal_type,
+                    expected_detection=f"{signal_type} on {step_id}", observed=False,
+                    executed_at=ran, detection_id=f"{signal_type.lower()}-{step_id}",
+                    outcome="not_executed" if stamp else None, outcome_reason=stamp))
+            for step_id, (termination, exit_code) in hosts.items():
+                db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=exit_code,
+                                   termination=termination, started_at=ran, recorded_at=ran))
+            await db.commit()
+    asyncio.run(_do())
+
+
+async def _rows(SessionLocal):
+    from models import Result
+    from sqlalchemy import select
+
+    async with SessionLocal() as db:
+        return {(r.step_id, r.signal_type): r
+                for r in (await db.execute(select(Result))).scalars().all()}
+
+
+CLEAN = ("exited", 0)
+
+
+@pytest.mark.parametrize("stamp", ["EAL_DRY_RUN_TARGET_FAILING", "EAL_DRY_RUN_NO_C2_CONSENT"])
+def test_a_correlation_whose_inputs_sent_nothing_is_not_executed_never_missed(
+        session_factory, stamp):
+    """The 1.2.4 lab repro (SIM-CDR-019, SIM-NDR-012): both relayed collector
+    steps stayed dry, so no input record left SimCore, and the echo step that
+    carries CR-CDR-0019 exits 0. Its row closed `missed`: a Cortex miss
+    (denominator 1, coverage 0 %) for a correlation that had nothing to join."""
+    _correlation_run(session_factory, [
+        ("step-01", "ABIOC", stamp), ("step-01", "XQL", stamp),
+        ("step-02", "ABIOC", stamp), ("step-02", "XQL", stamp),
+        ("step-03", "Correlation", None),
+    ], {"step-01": CLEAN, "step-02": CLEAN, "step-03": CLEAN})
+    summary, _ = asyncio.run(_apply_silent(session_factory, COMPLETE))
+    rows = asyncio.run(_rows(session_factory))
+    c = rows[("step-03", "Correlation")]
+    assert (c.outcome, c.outcome_reason, c.kpi_verdict, c.observed) == (
+        "not_executed", "INPUTS_NOT_SENT", None, False)
+    assert "the steps it joins sent nothing, so a miss can't be claimed" in (c.notes or "")
+    # The inputs keep the reason the relay gave them.
+    assert {(r.outcome, r.outcome_reason) for k, r in rows.items() if k[0] != "step-03"} == {
+        ("not_executed", stamp)}
+    assert (summary["denominator"], summary["excluded"]["not_executed"]) == (0, 5)
+
+
+def test_a_correlation_with_one_input_delivered_is_still_missed(session_factory):
+    # step-02 sent its records and Cortex raised nothing: the correlation had
+    # an input to join, so its silence is a miss, as before.
+    _correlation_run(session_factory, [
+        ("step-01", "ABIOC", "EAL_DRY_RUN_TARGET_FAILING"),
+        ("step-02", "XQL", None),
+        ("step-03", "Correlation", None),
+    ], {"step-01": CLEAN, "step-02": CLEAN, "step-03": CLEAN})
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    c = asyncio.run(_rows(session_factory))[("step-03", "Correlation")]
+    assert (c.outcome, c.outcome_reason) == ("missed", None)
+
+
+def test_inputs_that_failed_or_timed_out_on_the_host_sent_nothing(session_factory):
+    _correlation_run(session_factory, [
+        ("step-01", "BIOC", None),
+        ("step-02", "BIOC", None),
+        ("step-03", "Correlation", None),
+    ], {"step-01": ("exited", 1), "step-02": ("timeout", 124), "step-03": CLEAN})
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    rows = asyncio.run(_rows(session_factory))
+    assert (rows[("step-01", "BIOC")].outcome_reason,
+            rows[("step-02", "BIOC")].outcome_reason) == ("STEP_FAILED", "STEP_TIMED_OUT")
+    c = rows[("step-03", "Correlation")]
+    assert (c.outcome, c.outcome_reason) == ("not_executed", "INPUTS_NOT_SENT")
+
+
+def test_only_earlier_steps_feed_a_correlation(session_factory):
+    # The correlation on step-02 joins step-01, which stayed dry. step-03 ran
+    # after it and cannot have supplied its input.
+    _correlation_run(session_factory, [
+        ("step-01", "ABIOC", "EAL_DRY_RUN_TARGET_FAILING"),
+        ("step-02", "Correlation", None),
+        ("step-03", "BIOC", None),
+    ], {"step-01": CLEAN, "step-02": CLEAN, "step-03": CLEAN})
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    rows = asyncio.run(_rows(session_factory))
+    assert (rows[("step-02", "Correlation")].outcome,
+            rows[("step-02", "Correlation")].outcome_reason) == ("not_executed", "INPUTS_NOT_SENT")
+    assert rows[("step-03", "BIOC")].outcome == "missed"
+
+
+def test_an_alert_that_matches_the_correlation_still_credits_it(session_factory):
+    from connectors.matcher import MatchVerdict
+    from connectors.service import apply_verdicts
+    from models import Result
+    from sqlalchemy import select
+
+    _correlation_run(session_factory, [
+        ("step-01", "ABIOC", "EAL_DRY_RUN_TARGET_FAILING"),
+        ("step-02", "Correlation", None),
+    ], {"step-01": CLEAN, "step-02": CLEAN})
+    c = asyncio.run(_rows(session_factory))[("step-02", "Correlation")]
+    v = MatchVerdict(result_id=c.id, matched=True,
+                     observed_at=datetime.utcnow() - timedelta(minutes=9),
+                     matched_on=["detection_id"], alert_external_id="corr-1",
+                     alert_name="CR-CDR-0019", alert_outcome="detected")
+
+    async def _go():
+        async with session_factory() as db:
+            results = list((await db.execute(select(Result))).scalars().all())
+            await apply_verdicts(db, "run-1", results, [v], source="t",
+                                 pull_context=COMPLETE, window_seconds=60)
+    asyncio.run(_go())
+    c = asyncio.run(_rows(session_factory))[("step-02", "Correlation")]
+    assert (c.outcome, c.observed) == ("detected", True)

@@ -149,7 +149,6 @@ const CoverageView = makeLazySurface(() => import('../components/console/Coverag
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
-const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -387,13 +386,15 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
       <div className="view-head">
         <div>
           <h1>{title}</h1>
-          <div className="view-head__meta">
+          {/* One short line each: what is armed (its name is the tooltip; the
+              run panel below names it in full), and where the app's own status is. */}
+          <div className="view-head__meta" data-testid="launch-gate-armed">
             {scenario
-              ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>It checks and starts one scenario&apos;s run. Arm one from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+              ? <>Armed: <strong className="mono" title={scenario.name || undefined}>{scenario.scenario_id || scenario.id}</strong></>
+              : <>Arm a scenario from <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
           </div>
           <div className="view-head__meta guided-flow__scope" data-testid="launch-gate-scope">
-            This POVengine&apos;s own status (tenant, agents, collectors) is on{' '}
+            Tenant, agents and collectors are on{' '}
             <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('start')}>Get started</button>.
           </div>
         </div>
@@ -724,7 +725,6 @@ function UcTcSurface({ params = {}, ...rest }) {
 }
 const EalSurface = withSuspense(EalConsole)
 const DataStreamsSurface = withSuspense(DataStreamsView)
-const EnvironmentsSurface = withSuspense(LabView)
 // The Launch Gate: "will this chain actually reach the target?". Deliberately
 // NOT the default destination — a health page that greets you every morning
 // stops being read.
@@ -876,7 +876,8 @@ export const DESTINATIONS = [
   { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
   { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
   { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
-  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
+  // The IaC generator's Lab page moved to feature/scenarios-cloud-posture; an old link lands on Agents.
+  { id: 'environments', label: 'Agents',          hidden: true, redirect: true, navParent: 'components', icon: 'building', Component: redirectTo('component-agents') },
   { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
   // The old Readiness page was this POVengine's status, which is Get started's.
