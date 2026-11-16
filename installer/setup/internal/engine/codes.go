@@ -48,6 +48,11 @@ const (
 	// name, or nothing was given and nothing could be detected. Blocking.
 	CodeAddressInvalid Code = "ADDRESS_INVALID"
 
+	// Added by the Linux config step: the master secret or the env file could
+	// not be created, or an existing secret file is not a valid secret (it is
+	// never replaced). Blocking.
+	CodeConfigWriteFailed Code = "CONFIG_WRITE_FAILED"
+
 	// Added by the step engine: the run's context ended (Ctrl-C, the wizard
 	// closing, a deadline) before the next phase started. Blocking.
 	CodeCancelled Code = "CANCELLED"

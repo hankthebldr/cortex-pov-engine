@@ -1,0 +1,16 @@
+# Written by povengine-setup. Do not edit: the installer replaces this file.
+[Unit]
+Description=POVengine private containerd
+
+[Service]
+Type=notify
+Environment=PATH=/opt/povengine/engine:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/povengine/engine/containerd --config /opt/povengine/engine/containerd.toml --address /run/povengine/containerd/containerd.sock --root /var/lib/povengine/containerd --state /run/povengine/containerd
+Restart=always
+RestartSec=2
+Delegate=yes
+KillMode=process
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target

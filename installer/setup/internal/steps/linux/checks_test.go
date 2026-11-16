@@ -189,7 +189,7 @@ func TestHostCheck_ApplyChangesNothing(t *testing.T) {
 }
 
 const (
-	ownInspect = "docker -H unix:///run/povengine/docker.sock inspect --format {{.Id}} povengine-simcore"
+	ownInspect = "docker --config /opt/povengine/engine/cli -H unix:///run/povengine/docker.sock inspect --format {{.Id}} povengine-simcore"
 	ownID      = "3f9c1d2e7a4b5c6d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90123456789ab"
 )
 

@@ -24,6 +24,7 @@ type EnvInput struct {
 // this input is skipped.
 var EnvKeyOrder = []string{
 	"CORTEXSIM_ENV",
+	"CORTEXSIM_PORT",
 	"CORTEXSIM_SECRET",
 	"CORTEXSIM_ALLOWED_HOSTS",
 	"CORTEXSIM_PUBLIC_URLS",
@@ -40,8 +41,12 @@ var EnvKeyOrder = []string{
 // CR, LF or NUL, which the format cannot carry.
 func RenderEnv(in EnvInput) ([]byte, error) {
 	hostPort := net.JoinHostPort(in.Address, strconv.Itoa(in.Port))
+	// CORTEXSIM_PORT is always written, the default included: SimCore reports
+	// where it listens from this setting (/api/health), and the image's own
+	// default is 8888 whatever port uvicorn was given.
 	vals := map[string]string{
 		"CORTEXSIM_ENV":             "production",
+		"CORTEXSIM_PORT":            strconv.Itoa(in.Port),
 		"CORTEXSIM_SECRET":          in.Secret,
 		"CORTEXSIM_ALLOWED_HOSTS":   strings.Join(allowedHosts(in), ","),
 		"CORTEXSIM_PUBLIC_URLS":     "http://" + hostPort,
