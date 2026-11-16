@@ -1,0 +1,58 @@
+name: installer-spike
+
+# Throwaway R2 spike for the jumpbox installer: can a GitHub-hosted Windows
+# runner run WSL2 plus dockerd at all? The answer is recorded in
+# docs/superpowers/specs/2026-11-15-jumpbox-installer-spikes.md. Delete this
+# workflow once that document is filled in.
+#
+# GitHub dispatches workflow_dispatch only for workflows on the default branch,
+# so this also runs on a push to the feature branch that touches the spike.
+on:
+  push:
+    branches:
+      - feature/docker-jumpbox-installer
+    paths:
+      - 'installer/spikes/**'
+      - '.github/workflows/installer-spike.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: WSL2 plus dockerd probe
+        run: >-
+          .\installer\spikes\wsl-service-spike.ps1 -Mode probe
+          -ResultPath "$env:GITHUB_WORKSPACE\spike-result.json"
+
+      - name: Clean up
+        if: always()
+        continue-on-error: true
+        run: >-
+          .\installer\spikes\wsl-service-spike.ps1 -Mode cleanup
+          -ResultPath "$env:GITHUB_WORKSPACE\spike-cleanup.json"
+
+      - name: Upload spike-result.json
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-result-${{ matrix.os }}
+          path: |
+            spike-result.json
+            spike-cleanup.json
+          if-no-files-found: warn
+          retention-days: 14
