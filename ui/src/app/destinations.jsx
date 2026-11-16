@@ -142,6 +142,7 @@ export function makeLazySurface(loader, title) {
  */
 const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Scenarios')
 const ComposerView = makeLazySurface(() => import('../components/console/ComposerView.jsx'), 'Composer')
+const ArtexSurface = makeLazySurface(() => import('../components/console/ArtexSurface.jsx'), 'ARTEX')
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
@@ -813,6 +814,8 @@ export const JOURNEYS = [
   { id: 'onboard',   num: '1', label: 'Onboard & connect' },
   { id: 'compose',   num: '2', label: 'Compose & simulate' },
   { id: 'observe',   num: '3', label: 'Run & observe' },
+  // Opt-in offensive tooling embedded under /artex/ (ARTEX).
+  { id: 'offensive', num: '4', label: 'Offensive' },
   // Not a step in the journey: what the scenarios are made of.
   { id: 'reference', num: '',  label: 'Reference' },
 ]
@@ -841,6 +844,10 @@ export const DESTINATIONS = [
   // v33 C8 dashboards as further tabs. The id stays 'coverage' — it is the
   // route, and `#/coverage` links keep working.
   { id: 'coverage',   label: 'Reports',       group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
+
+  // ── 4 · Offensive ──
+  // Immersive: ARTEX is a full app framed same-origin from /artex/. Exit lands on Runs.
+  { id: 'artex',      label: 'ARTEX',         group: 'offensive', icon: 'threat-warning', Component: ArtexSurface, immersive: true, exitTo: 'runs' },
 
   // ── Reference ──
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },

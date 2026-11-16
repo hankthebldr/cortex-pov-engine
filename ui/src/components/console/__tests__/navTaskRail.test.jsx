@@ -23,18 +23,20 @@ describe('task rail', () => {
   const rail = DESTINATIONS.filter((d) => !d.hidden && d.group)
   const railIds = new Set(rail.map((d) => d.id))
 
-  it('is three numbered journeys, then Reference', () => {
+  it('is three numbered journeys, Offensive, then Reference', () => {
     const groups = navGroups()
     expect(groups.map((g) => [g.num, g.label])).toEqual([
       ['1', 'Onboard & connect'],
       ['2', 'Compose & simulate'],
       ['3', 'Run & observe'],
+      ['4', 'Offensive'],
       ['', 'Reference'],
     ])
     expect(groups[0].items.map((i) => i.label)).toEqual(['Get started', 'Components'])
     expect(groups[1].items.map((i) => i.label)).toEqual(['Scenarios', 'Build a chain', 'Launch gate'])
     expect(groups[2].items.map((i) => i.label)).toEqual(['Runs', 'Results', 'Reports'])
-    expect(groups[3].items.map((i) => i.label)).toEqual(['Catalog'])
+    expect(groups[3].items.map((i) => i.label)).toEqual(['ARTEX'])
+    expect(groups[4].items.map((i) => i.label)).toEqual(['Catalog'])
   })
 
   it("Simulate's tabs are rail items now, so Scenarios has no tab strip", () => {

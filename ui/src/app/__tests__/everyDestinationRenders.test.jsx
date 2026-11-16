@@ -101,9 +101,9 @@ describe('every destination renders itself, and only itself', () => {
   })
   afterEach(cleanup)
 
-  it('the rail is the three journeys plus Reference', () => {
+  it('the rail is the three journeys, Offensive, plus Reference', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Reports', 'Catalog'],
+      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Reports', 'ARTEX', 'Catalog'],
     )
   })
 
