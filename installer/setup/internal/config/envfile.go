@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/hankthebldr/cortexsim/installer/setup/internal/engine"
 )
 
 // EnvInput is everything the env file is built from.
@@ -50,6 +52,9 @@ func RenderEnv(in EnvInput) ([]byte, error) {
 		vals["CORTEXSIM_BIND"] = in.Address
 	}
 	if p := strings.TrimSpace(in.Proxy); p != "" && !strings.EqualFold(p, "none") {
+		if proxyHasCredentials(p) {
+			return nil, fmt.Errorf("%s: the proxy URL carries a user name or password, which is not supported in v1", engine.CodeProxyAuthUnsupported)
+		}
 		vals["HTTPS_PROXY"] = p
 		vals["HTTP_PROXY"] = p
 		vals["NO_PROXY"] = strings.Join(noProxy(in), ",")
@@ -112,20 +117,41 @@ func PublicLines(env []byte) []string {
 	return out
 }
 
-// maskCredentials turns scheme://user:pass@host into scheme://***@host.
+// proxyHasCredentials reports whether a proxy URL, with or without a scheme,
+// carries user info. It does not parse with net/url, which reads "host:port"
+// as a scheme; the authority is the text before the first / ? or #.
+func proxyHasCredentials(p string) bool {
+	if i := strings.Index(p, "://"); i >= 0 {
+		p = p[i+3:]
+	}
+	if end := strings.IndexAny(p, "/?#"); end >= 0 {
+		p = p[:end]
+	}
+	return strings.Contains(p, "@")
+}
+
+// maskCredentials turns [scheme://]user:pass@host into [scheme://]***@host.
+// RenderEnv refuses credentialed proxies, so this is defence in depth for a
+// file written by other means.
 func maskCredentials(line string) string {
-	i := strings.Index(line, "://")
-	if i < 0 {
+	k := strings.Index(line, "=")
+	if k < 0 {
 		return line
 	}
-	rest := line[i+3:]
-	end := strings.IndexAny(rest, "/?#")
-	if end < 0 {
-		end = len(rest)
+	key, val := line[:k+1], line[k+1:]
+	prefix := ""
+	if i := strings.Index(val, "://"); i >= 0 {
+		prefix, val = val[:i+3], val[i+3:]
+	} else if !strings.HasSuffix(strings.TrimSuffix(key, "="), "PROXY") {
+		return line
 	}
-	at := strings.LastIndex(rest[:end], "@")
+	end := strings.IndexAny(val, "/?#")
+	if end < 0 {
+		end = len(val)
+	}
+	at := strings.LastIndex(val[:end], "@")
 	if at < 0 {
 		return line
 	}
-	return line[:i+3] + "***" + rest[at:]
+	return key + prefix + "***" + val[at:]
 }

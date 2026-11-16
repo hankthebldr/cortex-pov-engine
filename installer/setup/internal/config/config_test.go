@@ -306,32 +306,50 @@ func TestRenderEnv_RefusesNewlineAndNUL(t *testing.T) {
 	}
 }
 
-func TestPublicLines_NeverContainsSecret(t *testing.T) {
-	in := base()
-	in.Secret = "TOPSECRETVALUE"
-	in.Proxy = "http://alice:p%40ss@198.51.100.7:3128"
-	b, err := RenderEnv(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := PublicLines(b)
-	joined := strings.Join(lines, "\n")
-	if strings.Contains(joined, "TOPSECRETVALUE") || strings.Contains(joined, "CORTEXSIM_SECRET") {
-		t.Fatal("secret in public lines")
-	}
-	if strings.Contains(joined, "alice") || strings.Contains(joined, "p%40ss") {
-		t.Fatalf("proxy credentials leaked: %s", joined)
-	}
-	found := false
-	for _, l := range lines {
-		if l == "HTTPS_PROXY=http://***@198.51.100.7:3128" {
-			found = true
+func TestRenderEnv_RefusesCredentialedProxy(t *testing.T) {
+	for _, p := range []string{
+		"http://alice:pw@198.51.100.7:3128",
+		"alice:pw@198.51.100.7:3128",
+		"alice@198.51.100.7:3128",
+		"http://alice@198.51.100.7:3128/x",
+	} {
+		in := base()
+		in.Proxy = p
+		_, err := RenderEnv(in)
+		if err == nil || !strings.Contains(err.Error(), "PROXY_AUTH_UNSUPPORTED") {
+			t.Fatalf("proxy %q: err = %v", p, err)
+		}
+		if strings.Contains(err.Error(), "alice") || strings.Contains(err.Error(), "pw") {
+			t.Fatalf("error leaks credentials: %v", err)
 		}
 	}
-	if !found {
-		t.Fatalf("masked proxy line missing: %v", lines)
+	in := base()
+	in.Proxy = "198.51.100.7:3128"
+	if _, err := RenderEnv(in); err != nil {
+		t.Fatalf("scheme-less proxy without credentials refused: %v", err)
 	}
-	if len(lines) != len(strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"))-1 {
-		t.Fatalf("expected every line but the secret: %v", lines)
+}
+
+func TestPublicLines_NeverContainsSecret(t *testing.T) {
+	env := []byte("CORTEXSIM_ENV=production\n" +
+		"CORTEXSIM_SECRET=TOPSECRETVALUE\n" +
+		"HTTPS_PROXY=http://alice:p%40ss@198.51.100.7:3128\n" +
+		"HTTP_PROXY=alice:pw@198.51.100.7:3128\n" +
+		"NO_PROXY=localhost\n")
+	lines := PublicLines(env)
+	joined := strings.Join(lines, "\n")
+	for _, bad := range []string{"TOPSECRETVALUE", "CORTEXSIM_SECRET", "alice", "p%40ss", ":pw"} {
+		if strings.Contains(joined, bad) {
+			t.Fatalf("%q leaked: %s", bad, joined)
+		}
+	}
+	want := []string{
+		"CORTEXSIM_ENV=production",
+		"HTTPS_PROXY=http://***@198.51.100.7:3128",
+		"HTTP_PROXY=***@198.51.100.7:3128",
+		"NO_PROXY=localhost",
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("lines = %v, want %v", lines, want)
 	}
 }
