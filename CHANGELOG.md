@@ -8,6 +8,50 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-15
+
+**The 1.2.x close-out: pull runs clean up after themselves, show their output
+live and send EAL steps through SimCore, Runs, Results and Reports are rebuilt
+on kit controls, and a step that sent nothing no longer reads as a Cortex
+miss.** The CSPM, ASM and AI_SPM planes and the IaC generator leave this
+release for a 1.4.x branch. Counted on this tree: 187 scenarios across 13
+planes · 185 TTP cards · 27 EAL plugins · 1328 step-detections · 2149 catalog
+detection objects · 14 assertion artifacts · 162 route decorators (172 served
+routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
+#324, #325, #327, #328, #339, #340, #341, #344, #378.
+
+### Upgrading from 1.2.4
+
+- **Reinstall each beacon from this SimCore to get the new pull behaviour.**
+  The beacon gains three capabilities: `cleanup` (it runs the scenario's
+  `cleanup.commands` when a pull run ends), `live-output` (it reports each
+  step's command and streams its output while the step runs) and `eal-relay`
+  (a step that calls the EAL CLI runs through SimCore). Run the install
+  one-liner again on each target. An older beacon keeps working without them:
+  its runs leave their files on the target (the launch says
+  `CLEANUP_NOT_RUN`), post each step's output once at the end, and fail EAL CLI
+  steps (the launch says `EAL_RELAY_UNAVAILABLE`).
+- **The database is extended at startup; no action is needed.** The first
+  start adds the nullable column `runs.cleanup`
+  (`ALTER TABLE runs ADD COLUMN cleanup JSON`) and creates two tables,
+  `step_starts` and `eal_relay_steps`. A run from an older release reads "no
+  cleanup reported", never "clean".
+- **The CSPM, ASM and AI_SPM scenarios, the IaC generator and the Lab page are
+  not in this release.** They moved to `feature/scenarios-cloud-posture` for
+  1.4.x (#379): 18 scenarios, 18 TTP cards, 14 assertions, `/api/infra/*` and
+  `/api/scenarios/{id}/infra-hints`, which this release does not serve (a GET
+  answers 404, `POST /api/infra/generate` 405). An old
+  `#/environments` link opens Agents.
+- **A database from 1.2.4 or older keeps those 18 scenarios' rows.** SimCore
+  loads scenarios from YAML and never removes a row whose file is gone, so on
+  an upgraded database they still list under Scenarios and still count in
+  `/api/health`'s `scenario_catalog`, the UC/TC index and the MITRE coverage.
+  A fresh data volume starts at 187; this matters only when you keep a
+  database across the upgrade.
+- **From 1.2.3 or older, read the 1.2.4 note too.** The database switches to
+  WAL on first start, so a backup takes every `cortexsim.db*` file (or SQLite's
+  online backup), and the volume must be local to one host.
+
 ### Changed — cloud posture and the IaC generator move to their own branch (1.4.x)
 
 - **The CSPM, ASM and AI_SPM planes leave `dev`.** Their 18 scenarios and 18
@@ -121,9 +165,8 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   executed, never missed.
 - **Relayed NGFW log-emitter steps (`ngfw_eal_emitter`, `ngfw_threat_emitter`)
   and the C2, DNS, FTP and SSH steps also need `consent.c2_authorized` on the
-  launch.** The console does not send `authorized_by` yet, so a console launch
-  runs these steps dry until the console change lands. Launch through the API
-  to send.
+  launch.** The Launch gate's EAL consent row sends all three (see the Results
+  entry above); an API launch sends them in its body.
 - **Not in pull mode yet:** `llm_provider_egress`, `oauth_grant_emulator`,
   `agentic_egress`, `browser_attack_runner` and `airs_prompt_attack`. Such a
   step stops with `EAL_WIRE_NOT_RELAYABLE` and its results read not executed.
@@ -170,8 +213,8 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   flight, `live_tail`. The run event stream gains `stepId`, `live`, `phase`,
   `command` and `seq`; its existing fields are unchanged.
 - **Needs the new beacon on the target.** An older beacon keeps working and
-  posts each step once, at the end. The console's runtime log view for this
-  is a separate change.
+  posts each step once, at the end. The run page's runtime log shows the live
+  output (see the Results entry above).
 - **`--stream-output` is retired.** It posted from inside the step's own
   output pipe, skipped chained steps, and its output was stored twice. The
   beacon still accepts the flag and ignores it; the Kubernetes agent manifest
@@ -466,6 +509,8 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   Connecting, Error or Paused, and the footer's Screenshot and Download (the
   POV report) are kit verbs. Review and Open results buttons carry their icons
   everywhere. The kit gains the Pause, Clear and Screenshot verbs.
+- The beacon's enrollment test for a state directory whose parent is a regular
+  file now runs on Windows too (#228). Test only; the beacon is unchanged.
 
 ### Fixed
 
