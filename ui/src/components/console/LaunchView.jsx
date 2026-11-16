@@ -66,7 +66,7 @@ function ToolConsentRow({ checked, onChange, children }) {
  *
  * Props:
  *   scenario        — full scenario detail (or null)
- *   selectedTarget  — { kind:'agent'|'push'|'iac', id, label } | null
+ *   selectedTarget  — { kind:'agent'|'push', id, label } | null
  *   onRunComplete   — (run) => void
  *   onError         — (msg) => void
  *   onGoLibrary     — () => void

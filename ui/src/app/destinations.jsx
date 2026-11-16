@@ -149,7 +149,6 @@ const CoverageView = makeLazySurface(() => import('../components/console/Coverag
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
-const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -726,7 +725,6 @@ function UcTcSurface({ params = {}, ...rest }) {
 }
 const EalSurface = withSuspense(EalConsole)
 const DataStreamsSurface = withSuspense(DataStreamsView)
-const EnvironmentsSurface = withSuspense(LabView)
 // The Launch Gate: "will this chain actually reach the target?". Deliberately
 // NOT the default destination — a health page that greets you every morning
 // stops being read.
@@ -878,7 +876,8 @@ export const DESTINATIONS = [
   { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
   { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
   { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
-  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
+  // The IaC generator's Lab page moved to feature/scenarios-cloud-posture; an old link lands on Agents.
+  { id: 'environments', label: 'Agents',          hidden: true, redirect: true, navParent: 'components', icon: 'building', Component: redirectTo('component-agents') },
   { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
   // The old Readiness page was this POVengine's status, which is Get started's.

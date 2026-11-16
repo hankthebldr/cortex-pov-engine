@@ -284,106 +284,6 @@
       "delivery": "agent",
       "detection_steps_without_signal": 0,
       "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Model Security Assessment \u2014 Overprivileged Role + Misconfig Findings",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-002",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Static Risk Analysis \u2014 Hardcoded Credentials + Insecure Pickle + Unvalidated Inputs",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-004",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Sensitive Data Classification \u2014 PII/PHI/PCI in Training Sets",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-005",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Security Dashboard & Posture \u2014 Aggregate View Across All Discovered AI Assets",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-006",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
         "BIOC"
       ],
       "egress_tools": [],
@@ -2825,35 +2725,6 @@
       "delivery": "agent",
       "detection_steps_without_signal": 1,
       "detection_types": [
-        "XQL",
-        "Correlation",
-        "IOC"
-      ],
-      "egress_tools": [],
-      "name": "Code-to-Cloud Extortion \u2014 Exposed IAM Key to Stolen-Key S3 Mass-Export + Ransom (Cortex Cloud CSPM)",
-      "needs_target_egress": false,
-      "plane": "CSPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-CSPM-005",
-      "service_identities": [
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.8,
-      "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 5,
-      "steps_with_detections": 5,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 1,
-      "detection_types": [
         "BIOC",
         "XQL",
         "Correlation",
@@ -3027,31 +2898,6 @@
         "developer",
         "www-data"
       ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.75,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 1,
-      "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Asset Discovery & Inventory \u2014 Shadow AI Detection",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-001",
-      "service_identities": [],
       "shelf_backed_tools": [],
       "signal_ratio": 0.75,
       "status": "active",
@@ -3628,31 +3474,6 @@
       "steps_real_signal": 3,
       "steps_total": 4,
       "steps_with_detections": 4,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 1,
-      "detection_types": [
-        "XQL"
-      ],
-      "egress_tools": [],
-      "name": "AI Ecosystem & Supply Chain Risk \u2014 Vulnerable ML Dependencies + EU AI Act",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-003",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.667,
-      "status": "active",
-      "steps_real_signal": 2,
-      "steps_total": 3,
-      "steps_with_detections": 3,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -4548,37 +4369,6 @@
       "detection_types": [
         "ABIOC",
         "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "GCP Vertex AI Double Agent \u2014 Deployed Reasoning-Engine Steals P4SA Token for Cross-Project GCS Read + Image Exfil",
-      "needs_target_egress": false,
-      "plane": "AI_SPM",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-AISPM-007",
-      "service_identities": [
-        "svc-backup",
-        "vertex-agent",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.6,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 5,
-      "steps_with_detections": 5,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 2,
-      "detection_types": [
-        "ABIOC",
-        "XQL",
         "Analytics",
         "Correlation"
       ],
@@ -5064,141 +4854,6 @@
       "delivery": "agent",
       "detection_steps_without_signal": 0,
       "detection_types": [
-        "XQL",
-        "BIOC",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-NMAP",
-        "TOOL-NUCLEI"
-      ],
-      "name": "ASM \u2014 Internet-Exposed Attack-Surface Discovery & Enumeration",
-      "needs_target_egress": true,
-      "plane": "ASM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-001",
-      "service_identities": [
-        "container-runtime"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-NUCLEI"
-      ],
-      "name": "ASM \u2014 Inbound Vulnerability-Scanning Reconnaissance",
-      "needs_target_egress": true,
-      "plane": "ASM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-002",
-      "service_identities": [
-        "container-runtime"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-THEHARVESTER"
-      ],
-      "name": "ASM \u2014 Passive OSINT Victim-Info Gathering Reconnaissance",
-      "needs_target_egress": true,
-      "plane": "ASM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-003",
-      "service_identities": [
-        "container-runtime"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-CMSEEK",
-        "TOOL-COMMIX",
-        "TOOL-FEROXBUSTER",
-        "TOOL-GOBUSTER",
-        "TOOL-NIKTO",
-        "TOOL-SQLMAP",
-        "TOOL-WHATWEB"
-      ],
-      "name": "ASM \u2014 Web-Application Attack-Surface Enumeration & Exploitation",
-      "needs_target_egress": true,
-      "plane": "ASM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-004",
-      "service_identities": [
-        "container-runtime"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 7,
-      "steps_total": 7,
-      "steps_with_detections": 7,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
         "BIOC"
       ],
       "egress_tools": [],
@@ -5342,64 +4997,6 @@
       "steps_real_signal": 6,
       "steps_total": 6,
       "steps_with_detections": 6,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-PROWLER",
-        "TOOL-SCOUTSUITE"
-      ],
-      "name": "Cloud Posture Misconfiguration Sweep \u2014 Cortex Cloud CSPM",
-      "needs_target_egress": true,
-      "plane": "CSPM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-CSPM-001",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-PROWLER"
-      ],
-      "name": "Cloud Posture Drift Correlation \u2014 Cortex Cloud CSPM",
-      "needs_target_egress": true,
-      "plane": "CSPM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-CSPM-002",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 4,
-      "steps_with_detections": 4,
       "tier": "YELLOW",
       "unknown_adapter_refs": []
     },
@@ -5826,63 +5423,6 @@
       "delivery": "agent",
       "detection_steps_without_signal": 1,
       "detection_types": [
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-PROWLER"
-      ],
-      "name": "IAM Trust-Policy / PassRole Posture Finding Correlated to Runtime AssumeRole + IMDS Privilege-Escalation Chain",
-      "needs_target_egress": true,
-      "plane": "CSPM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-CSPM-003",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.8,
-      "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 5,
-      "steps_with_detections": 5,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 1,
-      "detection_types": [
-        "XQL",
-        "ABIOC",
-        "Correlation"
-      ],
-      "egress_tools": [
-        "TOOL-PROWLER"
-      ],
-      "name": "Unencrypted-Snapshot / KMS-Gap Posture Finding Correlated to Cross-Account Snapshot Export \u2014 Cortex Cloud CSPM",
-      "needs_target_egress": true,
-      "plane": "CSPM",
-      "reason": "needs target egress for a tool (pre-stage or allow egress)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-CSPM-004",
-      "service_identities": [],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.75,
-      "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 1,
-      "detection_types": [
         "BIOC",
         "XQL",
         "Correlation"
@@ -5937,68 +5477,6 @@
       "steps_total": 3,
       "steps_with_detections": 3,
       "tier": "YELLOW",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 5,
-      "detection_types": [
-        "ABIOC",
-        "BIOC",
-        "XQL",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "ASM Exposure-to-RCE: Internet-Exposed WSUS (CVE-2025-59287) \u2192 Domain Recon \u2192 Webhook Exfil",
-      "needs_target_egress": false,
-      "plane": "ASM",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-005",
-      "service_identities": [
-        "svc-backup",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 5,
-      "steps_with_detections": 5,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 4,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "ABIOC",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "ASM \u2014 Scattered Spider Pre-Attack OSINT + Help-Desk Profiling as a Vishing-Precursor Recon Correlation",
-      "needs_target_egress": false,
-      "plane": "ASM",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-006",
-      "service_identities": [
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "RED",
       "unknown_adapter_refs": []
     },
     {
@@ -6095,22 +5573,20 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 172,
-      "RED": 5,
-      "YELLOW": 28
+      "GREEN": 164,
+      "RED": 3,
+      "YELLOW": 20
     },
-    "detection_steps_without_signal": 142,
+    "detection_steps_without_signal": 126,
     "eal_delivered": 72,
     "scenarios_consent_gated": 5,
-    "scenarios_needing_target_egress": 27,
-    "scenarios_total": 205,
+    "scenarios_needing_target_egress": 19,
+    "scenarios_total": 187,
     "signal_free_scenarios": [
-      "SIM-ASM-005",
-      "SIM-ASM-006",
       "SIM-EDR-019",
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 850
+    "total_steps": 779
   }
 }

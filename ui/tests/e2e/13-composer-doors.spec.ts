@@ -21,7 +21,7 @@ import type { Page } from '@playwright/test'
  *                  (it used to read "Broker VM relay")
  *   SIM-CDR-023    both steps POST records to a collector → COLLECTOR
  *                  (they used to read "Cloud")
- *   SIM-AISPM-003  calls AWS, then waits, then acts → CLOUD, NONE, ENDPOINT
+ *   SIM-CDR-018    calls AWS, acts on the host, then waits → CLOUD, ENDPOINT, NONE
  *
  * Spec: docs/superpowers/specs/2026-11-10-composer-doors-design.md
  */
@@ -88,12 +88,12 @@ test('SIM-CDR-023: collector steps read as log injection, and the badge fits the
   expect(geo.clipped, 'badge text is not clipped').toBe(false)
 })
 
-test('SIM-AISPM-003: Lanes lens draws each card inside the band its path names', async ({ page }) => {
-  await openComposer(page, 'SIM-AISPM-003')
+test('SIM-CDR-018: Lanes lens draws each card inside the band its path names', async ({ page }) => {
+  await openComposer(page, 'SIM-CDR-018')
   await openLanes(page)
   await expect(badge(page, 'step-01')).toHaveText('AGT → CLOUD')
-  await expect(badge(page, 'step-02')).toHaveText('AGT · no action')
   await expect(badge(page, 'step-03')).toHaveText('AGT')
+  await expect(badge(page, 'step-04')).toHaveText('AGT · no action')
 
   const placed = await page.evaluate(() => {
     const bands = Object.fromEntries([...document.querySelectorAll('.chain-stage__lane')]
@@ -102,18 +102,18 @@ test('SIM-AISPM-003: Lanes lens draws each card inside the band its path names',
     // The WHOLE card sits inside its band, not just its centre.
     const inBand = (id: string) => Object.entries(bands)
       .find(([, b]) => card(id).top >= b.top - 0.5 && card(id).bottom <= b.bottom + 0.5)?.[0] || null
-    return { 'step-01': inBand('step-01'), 'step-02': inBand('step-02'), 'step-03': inBand('step-03'), keys: Object.keys(bands) }
+    return { 'step-01': inBand('step-01'), 'step-03': inBand('step-03'), 'step-04': inBand('step-04'), keys: Object.keys(bands) }
   })
   // Launch and Proof are the run's Start and Stop points, not lanes.
   expect(placed.keys).toEqual(['ENDPOINT', 'COLLECTOR', 'WIRE', 'CLOUD', 'NONE', 'ENG'])
   expect(placed['step-01']).toBe('CLOUD')
-  expect(placed['step-02']).toBe('NONE')
   expect(placed['step-03']).toBe('ENDPOINT')
+  expect(placed['step-04']).toBe('NONE')
   await expect(page.getByTestId('chain-stage')).toContainText('CLOUD CONTROL PLANE')
 })
 
 test('a Lanes card is a button: pressing it opens that step in the inspector', async ({ page }) => {
-  await openComposer(page, 'SIM-AISPM-003')
+  await openComposer(page, 'SIM-CDR-018')
   await openLanes(page)
   await page.getByTestId('stage-card-step-03').click()
   await expect(page.getByTestId('stage-card-step-03')).toHaveAttribute('aria-pressed', 'true')

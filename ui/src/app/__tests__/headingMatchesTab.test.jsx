@@ -23,7 +23,6 @@ import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContex
 import CoverageView from '../../components/console/CoverageView.jsx'
 import DataStreamsView from '../../components/console/DataStreamsView.jsx'
 import UcTcIndexView from '../../components/console/UcTcIndexView.jsx'
-import LabView from '../../components/console/LabView.jsx'
 import EalConsole from '../../components/EalConsole.jsx'
 
 void React
@@ -155,18 +154,6 @@ describe('off-tab pages: one h1, and it is the registry label', () => {
     expect(h1Texts()).toEqual([routeLabel('preflight')])
     expect(screen.getByRole('heading', { level: 2, name: 'New POV run' })).toBeInTheDocument()
     expect(screen.queryByTestId('readiness-view')).toBeNull()
-  })
-
-  it('Lab', async () => {
-    installRoutes({
-      'GET /api/infra/modules': { modules: [], total: 0 },
-      'GET /api/infra/bundles': { bundles: [], total: 0 },
-      'GET /api/tools/adapters': { adapters: [], total: 0 },
-    })
-    render(<LabView />)
-    await waitFor(() => expect(h1Texts()).toEqual([routeLabel('environments')]))
-    // "Infrastructure" was the retired nav group; the page no longer wears it.
-    expect(screen.queryByText('Infrastructure')).toBeNull()
   })
 
   it('Traffic / EAL, as plain text', async () => {

@@ -51,17 +51,14 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   // route with `?tab=mitre`.
   'ATT&CK Coverage': { dest: 'coverage', params: { tab: 'mitre' } },
   // `hidden` means "routable but not in the rail", so gotoView addresses it by
-  // URL instead of clicking a button that does not exist. Three of these are
+  // URL instead of clicking a button that does not exist. Two of these are
   // hidden as of the POVengine IA:
-  //   environments — its content is the Components destination now, but the
-  //                  Lab surface itself is still mounted and still worth
-  //                  testing, so the route stays.
-  //   eal          — same story, folded into Data Streams.
+  //   eal          — folded into Data Streams, but the surface itself is still
+  //                  mounted and still worth testing, so the route stays.
   //   guided       — always was hidden; the optional demo path.
   // Marking them here rather than deleting the specs is deliberate: the
   // surfaces still exist and still have behaviour worth guarding. What changed
   // is how you reach them, and that is exactly what this table is for.
-  'Environments': { dest: 'environments', hidden: true },
   // The Launch gate (design v33): the one place a run starts. The old
   // 'Launch' entry pointed at the guided flow, which now redirects here.
   'Launch gate': { dest: 'preflight' },

@@ -46,7 +46,6 @@ IR_008 = "PLT-IR-008"
 ERV_001 = "PLT-ERV-001"
 ITDR_006 = "PLT-ITDR-006"
 XDL_001 = "PLT-XDL-001"
-XTI_001 = "PLT-XTI-001"
 NDR_005 = "PLT-NDR-005"
 APB_005 = "PLT-APB-005"
 
@@ -56,14 +55,13 @@ APB_005 = "PLT-APB-005"
 # THIS tuple, not over the directory.
 ALL_PLT = (IR_008, ERV_001, ITDR_006, XDL_001)
 
-# Everything the pack ships. XTI_001's stimulus is an IaC fixture (TAXII feeds),
-# NDR_005's names a source family with no emitter behind it (cisco_asa_raw), and
-# APB_005 reads xsiam_incidents — a dataset the PLATFORM writes and the engine
+# Everything the pack ships. NDR_005's names a source family with no emitter
+# behind it (cisco_asa_raw), and APB_005 reads xsiam_incidents — a dataset the PLATFORM writes and the engine
 # never emits. None can be replayed by the `emitted` fixture, so they are
 # inventory- and structure-guarded here rather than behaviour-guarded, and
 # forcing them into the replay harness would mean asserting against records this
 # repo fabricated rather than records an emitter produced.
-ALL_PLT_ON_DISK = ALL_PLT + (XTI_001, NDR_005, APB_005)
+ALL_PLT_ON_DISK = ALL_PLT + (NDR_005, APB_005)
 
 TOKEN = "csim-9f2a41c0d3e7"
 COLLECTOR = "https://collector.cortexsim-canary.invalid/logs/v1/event"
@@ -389,7 +387,7 @@ def lake_for(spec_id: str, emitted: dict) -> _Lake:
 
 
 def test_pack_is_exactly_the_artifacts_on_disk(plt_specs):
-    """The index carries 43 PLT rows. Seven are bound here. The other 36 are an
+    """The index carries 43 PLT rows. Six are bound here. The other 37 are an
     honest gap, and inflating this list is the failure mode that matters.
 
     Asserted against the DIRECTORY, so a new artifact cannot land without being

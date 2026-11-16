@@ -68,7 +68,6 @@ TTPS_DIR = REPO_ROOT / "detection_scanner" / "ttps"
 PACKS_DIR = REPO_ROOT / "tools" / "packs"
 ASSERTIONS_DIR = REPO_ROOT / "assertions"
 EAL_PLUGINS_DIR = REPO_ROOT / "core" / "eal_simulator" / "plugins"
-IAC_AWS_DIR = REPO_ROOT / "infra" / "modules" / "aws"
 API_DIR = REPO_ROOT / "core" / "api"
 MAIN_PY = REPO_ROOT / "core" / "main.py"
 OUT_JSON = REPO_ROOT / "docs" / "reference" / "ground-truth.json"
@@ -187,10 +186,6 @@ def count_assertions_filesystem() -> dict[str, Any]:
 
 def count_eal_plugins() -> int:
     return len([f for f in EAL_PLUGINS_DIR.glob("*.py") if f.name != "__init__.py"])
-
-
-def count_iac_modules_aws() -> int:
-    return len([p for p in IAC_AWS_DIR.iterdir() if p.is_dir()]) if IAC_AWS_DIR.is_dir() else 0
 
 
 _ROUTE_DECORATOR_RE = re.compile(
@@ -669,7 +664,6 @@ def build() -> dict[str, Any]:
             "pos_assertions": uctc["pos_assertions"],
         },
         "eal_plugins": count_eal_plugins(),
-        "iac_modules_aws": count_iac_modules_aws(),
         "http_routes": count_http_routes_static(),
         "strict_refs_check": (boot_refs if boot_refs is not None
                                else {"status": "not_run", "note": (
@@ -727,7 +721,6 @@ def render_markdown(doc: dict[str, Any]) -> str:
     lines.append(f"| Correlation share (step-detections) | {c['correlation_share']:.1%} |")
     lines.append(f"| Distinct MITRE techniques (base) | {c['mitre_distinct_techniques']} ({c['mitre_distinct_base_techniques']}) |")
     lines.append(f"| EAL plugins | {doc['eal_plugins']} |")
-    lines.append(f"| AWS IaC modules | {doc['iac_modules_aws']} |")
     lines.append("")
     if c.get("scenarios_per_plane"):
         lines.append("### Scenarios per plane")
@@ -874,7 +867,7 @@ def main() -> int:
     print(f"scenarios={doc['corpus']['scenarios_loadable']} cards={doc['corpus']['ttp_cards']} "
           f"planes={doc['corpus']['detection_planes']} adapters={doc['adapters']['packs_total']} "
           f"assertions={doc['assertions']['artifacts_total']} eal_plugins={doc['eal_plugins']} "
-          f"iac_modules_aws={doc['iac_modules_aws']} routes={doc['http_routes']['decorator_count']}")
+          f"routes={doc['http_routes']['decorator_count']}")
     return 0
 
 

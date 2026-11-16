@@ -9,7 +9,6 @@ from __future__ import annotations
 import warnings
 
 import httpx
-import pytest
 
 
 #: Degraded components that do not fail the smoke, each ONLY with the code
@@ -67,8 +66,6 @@ def test_openapi_reachable(client: httpx.Client) -> None:
         "/api/agents",
         "/api/agents/register",
         "/api/mitre/coverage",
-        "/api/infra/modules",
-        "/api/infra/generate",
     ):
         assert must_have in paths, f"missing path {must_have} in OpenAPI"
 
@@ -104,14 +101,3 @@ def test_mitre_coverage_renders(client: httpx.Client) -> None:
     assert "techniques" in body or "matrix" in body or "tactics" in body, (
         f"unexpected coverage shape: {list(body.keys())}"
     )
-
-
-@pytest.mark.parametrize("provider", ["aws"])
-def test_infra_modules_listed(client: httpx.Client, provider: str) -> None:
-    r = client.get("/api/infra/modules", params={"provider": provider})
-    assert r.status_code == 200
-    body = r.json()
-    modules = body.get("modules", body)
-    # AWS is feature-complete with 10 modules per CLAUDE.md.  Allow drift but
-    # fail if catalog is empty.
-    assert len(modules) >= 4, f"only {len(modules)} {provider} modules listed"

@@ -453,51 +453,6 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
     "SIM-AIRS-005": (["TC-AIRS-08"], REMAP,
         "Unbounded consumption — token-exhaustion DoS as a runtime behavioral anomaly."),
 
-    # ── AI_SPM ─────────────────────────────────────────────────────────────
-    # A clean 1:1 with UC-AISP. Note these are POS-class assertions: the
-    # scenarios validate posture findings, not fired detections, so S-14 fires
-    # by design and Phase 4 should treat them as fixtures.
-    "SIM-AISPM-001": (["TC-AISP-01"], REMAP,
-        "AI asset discovery and inventory — shadow-AI detection. 1:1 with the index."),
-    "SIM-AISPM-002": (["TC-AISP-02"], REMAP,
-        "AI model security assessment — overprivileged role and misconfiguration findings."),
-    "SIM-AISPM-003": (["TC-AISP-03"], REMAP,
-        "AI ecosystem and supply-chain risk over vulnerable ML dependencies."),
-    "SIM-AISPM-004": (["TC-AISP-04"], REMAP,
-        "AI static risk analysis — hardcoded credentials, insecure pickle, unvalidated input."),
-    "SIM-AISPM-005": (["TC-AISP-05"], REMAP,
-        "AI sensitive-data classification across training sets."),
-    "SIM-AISPM-006": (["TC-AISP-06"], REMAP,
-        "AI security dashboard and aggregate posture view."),
-    "SIM-AISPM-007": (["TC-CITH-04", "TC-CIEM-03"], REMAP,
-        "Vertex AI double agent stealing a P4SA token — runtime, not posture, so it binds DET rows."),
-
-    # ── ASM ────────────────────────────────────────────────────────────────
-    "SIM-ASM-001": (["TC-ASM-05", "TC-ASM-06"], REMAP,
-        "Internet-exposed surface discovery covering registered ranges and service identification."),
-    "SIM-ASM-002": (["TC-ASM-06", "TC-CVM-03"], REMAP,
-        "Inbound vulnerability-scan recon correlating exposure with vulnerable services."),
-    "SIM-ASM-003": (["TC-ASM-01", "TC-ASM-05"], REMAP,
-        "Passive OSINT victim-info gathering feeding unmanaged-asset context."),
-    "SIM-ASM-004": (["TC-WAAS-03", "TC-ASM-06"], REMAP,
-        "Web-application enumeration and injection — the OWASP Top 10 detection case."),
-    "SIM-ASM-005": (["TC-CVM-03", "TC-WAAS-03", "TC-ASM-07"], REMAP,
-        "Internet-exposed WSUS (CVE-2025-59287) escalating from exposure to RCE."),
-    "SIM-ASM-006": (["TC-ASM-03", "TC-ASM-01"], REMAP,
-        "Scattered Spider OSINT and help-desk profiling — Unit 42 TI against ASM findings."),
-
-    # ── CSPM ───────────────────────────────────────────────────────────────
-    "SIM-CSPM-001": (["TC-CSPM-02", "TC-CSPM-01", "TC-CSPM-04"], REMAP,
-        "Posture misconfiguration sweep against planted findings — OOTB policy evaluation."),
-    "SIM-CSPM-002": (["TC-CSPM-04", "TC-CSPM-03"], REMAP,
-        "Posture drift correlation surfacing as prioritized cases."),
-    "SIM-CSPM-003": (["TC-CIEM-03", "TC-CIEM-01", "TC-CSPM-02"], REMAP,
-        "IAM trust-policy and PassRole finding correlated to a runtime AssumeRole."),
-    "SIM-CSPM-004": (["TC-CSPM-02", "TC-DSPM-03"], REMAP,
-        "Unencrypted-snapshot and KMS-gap findings correlated to cross-account sharing."),
-    "SIM-CSPM-005": (["TC-SSCAN-01", "TC-ASPM-01", "TC-ERV-05"], REMAP,
-        "Exposed .env to stolen-key S3 mass export — the code-to-cloud traceability chain end to end."),
-
     # ── TIM ────────────────────────────────────────────────────────────────
     "SIM-TIM-001": (["TC-TH-02", "TC-TIM-02", "TC-XTI-03", "TC-NDR-06"], REMAP,
         "TAXII feed match stitched to an outbound session, then pushed to the EDL — "
@@ -785,10 +740,10 @@ PLT_NOT_BOUND: dict[str, str] = {
 #
 # Same discipline as PLT_ASSERTION_CROSSWALK: AUTHORED, not PROVEN, reported on
 # its own line and NEVER folded into the `index TCs evidenced` number (which
-# walks Scenario rows only). TC-CSPM-02 is authored by POS-CSPM-001 against the
-# AWS cspm module, so POS-CSPM-004 adds breadth (a Kubernetes resource class)
-# and moves the coverage number by ZERO. The report prints that split as
-# net-new vs breadth-not-coverage for every class.
+# walks Scenario rows only). POS-CSPM-004 is the only binder of TC-CSPM-02 on
+# this branch: the AWS arm (POS-CSPM-001) moved to feature/scenarios-cloud-posture
+# with infra/ on 2026-11-15. The report prints the split as net-new vs
+# breadth-not-coverage for every class.
 #
 # assertion_id -> (tc_refs, headline mechanism, what it deliberately does NOT prove)
 # ---------------------------------------------------------------------------
@@ -811,10 +766,9 @@ POS_ASSERTION_CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "workloads (SIM-CDR-003/-004/-012) surface in cortex_cloud_posture, "
         "joined on OUR cortexsim.io/posture-finding label, never the product's "
         "finding vocabulary.",
-        "COVERAGE — TC-CSPM-02 is already authored by POS-CSPM-001, so this is "
-        "BREADTH not coverage and moves the number by zero. Also: framework "
-        "attribution, severity, remediation text, and false positives (recall "
-        "only)."),
+        "The AWS arm of TC-CSPM-02 (POS-CSPM-001 moved to "
+        "feature/scenarios-cloud-posture). Also: framework attribution, severity, "
+        "remediation text, and false positives (recall only)."),
 }
 
 # POS index rows examined during the K8s pass and NOT bound, with the reason —

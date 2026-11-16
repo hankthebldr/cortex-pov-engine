@@ -159,7 +159,11 @@ def test_corpus_signal_paths():
     commands on the beacon host).
 
     SIM-EDR-028 on 2026-11-13: ENDPOINT 546 -> 549 (its 3 steps, all
-    commands on the beacon host)."""
+    commands on the beacon host).
+
+    2026-11-15: the CSPM, ASM and AI_SPM planes moved to
+    feature/scenarios-cloud-posture for a 1.4.x release: ENDPOINT 549 -> 516,
+    CLOUD 41 -> 19, NONE 111 -> 95."""
     counts: dict[str, int] = {}
     unplaced = []
     for sid, step in _corpus_steps():
@@ -168,4 +172,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 549, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 516, "COLLECTOR": 100, "WIRE": 49, "CLOUD": 19, "NONE": 95}

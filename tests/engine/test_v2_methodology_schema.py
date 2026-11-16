@@ -26,7 +26,6 @@ sys.path.insert(0, str(REPO_ROOT / "core"))
 from engine.scenario_loader import (  # noqa: E402
     KpiThreshold,
     ScenarioSchema,
-    _parse_and_validate,
 )
 
 
@@ -153,35 +152,6 @@ def test_per_detection_verification_xql_and_kpi_contribution() -> None:
     assert det.kpi_contribution is not None
     assert det.kpi_contribution.kpi == "MTTD"
     assert det.kpi_contribution.value == 60
-
-
-def test_reference_aispm_scenario_parses_cleanly() -> None:
-    """The reference SIM-AISPM-001 scenario validates end-to-end —
-    catches drift between docs/methodology and the actual YAML."""
-    path = REPO_ROOT / "scenarios" / "ai_spm" / "sim-aispm-001-ai-asset-discovery.yml"
-    assert path.exists(), f"reference scenario missing at {path}"
-    schema, err = _parse_and_validate(str(path))
-    assert err is None, f"reference scenario failed validation:\n{err}"
-    assert schema is not None
-    assert schema.scenario_id == "SIM-AISPM-001"
-    assert schema.plane == "AI_SPM"
-    assert schema.moat_tier == "MOAT"
-    assert schema.methodology_family == "F3"
-    assert schema.primary_kpi == "Asset Discovery Coverage"
-    assert schema.threshold is not None and schema.threshold.value == 100
-    # The ref was once normalized to TC-AISPM-* for internal consistency with
-    # uc_ref (UCS-AISPM-01). That made it dangle: the v2.2 master index carries
-    # this test case as TC-AISP-01. The crosswalk re-keyed it onto the real id,
-    # which is the whole point of validating refs as a foreign key.
-    assert schema.tc_ref == "TC-AISP-01"
-    assert schema.tc_refs == ["TC-AISP-01"]
-    # Sanity: at least one step has an expected_detection with verification_xql.
-    has_xql = any(
-        det.verification_xql
-        for step in schema.steps
-        for det in step.expected_detections
-    )
-    assert has_xql, "expected at least one verification_xql in the reference scenario"
 
 
 def test_invalid_plane_still_rejected() -> None:

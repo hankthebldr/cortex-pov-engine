@@ -8,6 +8,22 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — cloud posture and the IaC generator move to their own branch (1.4.x)
+
+- **The CSPM, ASM and AI_SPM planes leave `dev`.** Their 18 scenarios and 18
+  TTP cards now live on `feature/scenarios-cloud-posture`, which is planned for
+  a 1.4.x release. The corpus is 187 scenarios across 13 planes, 1,328
+  step-detections.
+- **The IaC topology generator goes with them.** That covers `infra/`, the
+  `/api/infra/*` routes, `/api/scenarios/{id}/infra-hints`, the jumpbox content
+  loader, the console's Lab page and the IaC labs column on Agents. An old
+  `#/environments` link opens Agents.
+- **The 14 assertions whose stimulus is a Terraform module go too.** These are
+  POS-CSPM, POS-DSPM, POS-AISP, POS-ASM and PLT-XTI-001; 14 assertions remain.
+  POS-CSPM-004 (the Kubernetes arm) is now the only binder of TC-CSPM-02.
+- **Coverage floor.** Reconnaissance (TA0043) has one scenario left, so
+  `coverage-strict` takes a per-tactic floor of 1 for it until ASM returns.
+
 ### Fixed — the Launch gate says who runs cleanup, on kit controls
 
 - **Teardown names who runs it.** A current agent: "run by the agent after the run"; an older one: "run them yourself".

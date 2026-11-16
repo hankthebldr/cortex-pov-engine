@@ -286,7 +286,7 @@ export default function AgentsComponent({ params = {}, setParams = () => {}, onN
       manageTab={{
         id: 'fleet',
         label: 'Fleet',
-        render: () => <TargetsView embedded onGoToLab={() => onNavigate('environments')} />,
+        render: () => <TargetsView embedded />,
       }}
       setup={() => (
         <ConfigureFrame

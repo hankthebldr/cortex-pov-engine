@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  getInfraBundles,
   deleteAgent,
   abortRun,
   agentInstallUrl,
@@ -129,7 +128,7 @@ function AgentCapabilities({ agent }) {
  *      back from `useEnvironment().agent`.
  *
  * When embedded in the guided "New POV run" flow, `onSelectTarget` is also
- * provided: selecting an agent/push/iac card lifts it as the launch target
+ * provided: selecting an agent/push card lifts it as the launch target
  * (pull vs push mode is derived downstream). Selecting an agent does BOTH —
  * sets the global active agent AND lifts the guided launch target — so the two
  * concepts stay in sync instead of drifting.
@@ -137,7 +136,6 @@ function AgentCapabilities({ agent }) {
  * Props (all optional — the standalone Agents destination passes none):
  *   selectedTarget  — { kind, id } | null   guided-flow launch target
  *   onSelectTarget  — (target) => void       lift the guided launch target
- *   onGoToLab       — () => void             open the Environments/IaC generator
  *   embedded        — boolean                mounted inside another page, which
  *                                            owns the h1; the title steps down to h2
  */
@@ -172,16 +170,14 @@ const plural = (n, one, many = `${one}s`) => (n === 1 ? one : many)
 // tab stop, so a keyboard can scroll it.
 const BULK_LIST_SCROLLS_AT = 8
 
-export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {}, embedded = false }) {
+export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, embedded = false }) {
   const Title = embedded ? 'h2' : 'h1'
   // ── Global scope from the provider (agents + active agent are ambient) ─────
-  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors, healthModel } = useEnvironment()
+  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors, healthModel, loading: envLoading } = useEnvironment()
+  const agentsLoading = Boolean(envLoading?.agents)
   const agentsError = errors?.agents || null
   const activeAgentId = activeAgent ? agentIdOf(activeAgent) : null
 
-  // ── Local scope: IaC bundles are not part of the ambient env, fetched here.
-  const [bundles, setBundles] = useState([])
-  const [loading, setLoading] = useState(true)
   // Deploy-agent flow: mint an enrollment token → copy ONE line → SimCore
   // assigns the id when the jumpbox redeems it. The legacy self-asserted-id
   // installer is kept behind a disclosure for hosts that cannot reach back.
@@ -458,21 +454,10 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     }
   }, [deployOpen, closeDeploy])
 
-  // ── Bundles (local) + agent liveness refresh (provider) ────────────────────
-  const refreshBundles = useCallback(() => {
-    setLoading(true)
-    getInfraBundles()
-      .then((bv) => setBundles(Array.isArray(bv) ? bv : (bv && bv.bundles) || []))
-      .catch(() => setBundles([]))
-      .finally(() => setLoading(false))
-  }, [])
-
+  // ── Agent liveness refresh (provider) ──────────────────────────────────────
   const refresh = useCallback(() => {
-    refreshBundles()
     refreshAgents()
-  }, [refreshBundles, refreshAgents])
-
-  useEffect(() => { refreshBundles() }, [refreshBundles])
+  }, [refreshAgents])
   useEffect(() => {
     // Keep beacon liveness + bundle list fresh. Agents flow through the
     // provider so a refresh here re-scopes the header switcher too. A bulk
@@ -654,7 +639,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           {bulkPanel}
           {/* Always mounted, so the first progress line is announced. */}
           <p className="sr-only" role="status" aria-live="polite" data-testid="fleet-bulk-live">{bulkLiveText}</p>
-          {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
+          {agentsLoading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
           {agentsError && (
             <div className="target-card target-card--empty" role="alert" data-testid="agents-load-error">
               <div className="target-card__title">Agent list not loaded</div>
@@ -664,7 +649,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               <Button verb="Refresh" onClick={refresh}>Retry</Button>
             </div>
           )}
-          {!loading && !agentsError && agents.length === 0 && (
+          {!agentsLoading && !agentsError && agents.length === 0 && (
             <div className="target-card target-card--empty">
               <div className="target-card__title">No agents registered</div>
               <p className="target-card__sub">Deploy a beacon, or use the push bundle.</p>
@@ -895,50 +880,6 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             </p>
             {isSel('push', 'bundle') && <span className="target-card__selected">Selected · push mode</span>}
           </button>
-        </section>
-
-        {/* ── IaC labs ───────────────────────────────────────────────── */}
-        <section className="target-col">
-          <div className="target-col__title">
-            <span className="plane-dot plane-dot--pending" /> Lab environments
-            <span className="target-col__count">{bundles.length}</span>
-          </div>
-          {loading && bundles.length === 0 && (
-            <div className="target-card target-card--ghost">loading environments…</div>
-          )}
-          {!loading && bundles.length === 0 && (
-            <div className="target-card target-card--empty">
-              <div className="target-card__title">No environments yet</div>
-              {/* Navigation, so a link (design v33 C10). */}
-              <a className="target-card__link" href="#/environments" onClick={(e) => { e.preventDefault(); onGoToLab() }}>
-                Provision an environment
-              </a>
-            </div>
-          )}
-          {bundles.map((b) => {
-            const id = b.bundle_id || b.id
-            return (
-              <button
-                key={id}
-                type="button"
-                className={'target-card target-card--iac' + (isSel('iac', id) ? ' is-selected' : '')}
-                onClick={() => onSelectTarget({ kind: 'iac', id, label: id })}
-              >
-                <div className="target-card__head">
-                  <span className="target-card__title mono">{id}</span>
-                </div>
-                <p className="target-card__sub">
-                  {(b.modules || b.selected_modules || []).join(', ') || b.provider || 'aws'} ·{' '}
-                  {b.created_at ? serverDate(b.created_at).toLocaleDateString() : 'bundle'}
-                </p>
-              </button>
-            )
-          })}
-          {bundles.length > 0 && (
-            <a className="target-card__link" href="#/environments" onClick={(e) => { e.preventDefault(); onGoToLab() }}>
-              New environment
-            </a>
-          )}
         </section>
       </div>
 

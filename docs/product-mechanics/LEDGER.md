@@ -94,7 +94,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 - **Why we ask:** Detectors window on time. A record filed under the wrong `_time` falls outside every correlation window and every analytics test period while looking perfectly ingested.
 - **What the answer moves:** Emitter timestamp generation per data source; telemetry-replay of historical datasets; MTTD baselines.
 - **Settle it in the lab:** Emit three canary records stamped now, now-3d, now+1h; compare `_time` and `_insert_time` for each.
-- **Touches:** `all collector-POST emitters`, `infra/modules/aws/telemetry-replay`
+- **Touches:** `all collector-POST emitters`
 - **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ING-04
@@ -888,7 +888,7 @@ Indicator-value matching (hash, IP, domain, URL) against agent and network data,
 **What CortexSim assumes today**
 
 - IOC matches attach at the file/image (sha256) level of the causality graph. — `docs/reference/causality-graph-methodology.md#11-endpoint-the-causality-instance-ci-graph-and-the-cgo`
-- A TAXII feed (mocktaxii) plus matching outbound traffic produces a stitched IOC + NDR + EDR detection. — `infra/modules/aws/tim ; scenarios/tim/`
+- A TAXII feed (mocktaxii) plus matching outbound traffic produces a stitched IOC + NDR + EDR detection. The AWS `tim` lab module that provisions both moved to feature/scenarios-cloud-posture (1.4.x). — `scenarios/tim/`
 
 **How this differs from**
 
@@ -1328,7 +1328,7 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
 - On Windows every non-direct identity collapses to `direct` and is recorded as IDENTITY NOT HONOURED, so a pulled Windows step runs as the beacon's service account. — `agent/identity/platform.go:212`
 - The AD emitter POSTs Windows Security events (4769, 4624, …) to a collector under the dataset name `msft_windows_security`; nine cards read that name, and none reads `pan_dss_raw`. — `core/eal_simulator/plugins/ad_windows_emitter.py:66`
 - The IdP emitter names its dataset in the record body (`okta_sso`) and plants the shared principal as the canary token. — `core/eal_simulator/plugins/idp_signin_emulator.py:146 ; core/eal_simulator/stitch_params.py`
-- The only domain CortexSim can build is the AWS `itdr` module; 14 scenarios need a domain. — `infra/modules/aws/itdr`
+- CortexSim builds no domain on this branch: the AWS `itdr` module moved to feature/scenarios-cloud-posture (1.4.x); 14 scenarios need a domain. — `scenarios/itdr/README.md`
 
 **How this differs from**
 
@@ -1470,7 +1470,7 @@ Everything on the firewall that decides whether an NGFW record exists in the ten
 
 - Synthetic NGFW threat records may only carry action alert or allow; block-class actions are refused. A real lab firewall running block profiles writes drop, reset or sinkhole, which the synthetic contract never produces, so the two shapes differ in the action field. — `core/eal_simulator/plugins/ngfw_threat_emitter.py:162`
 - Synthetic NGFW records default the source user to corp\cortexsim-canary and the source address to 10.0.12.34. A firewall with no User-ID or Cloud Identity Engine mapping logs no user at all. — `core/eal_simulator/plugins/ngfw_eal_emitter.py:83 ; core/eal_simulator/plugins/ngfw_threat_emitter.py:45`
-- The NDR IaC module's VM-Series path documents HTTP log forwarding to a lab collector, not the logging-service path a customer firewall uses for XSIAM (CSP registration, device certificate, logging-service region). The PAN-OS preflight checks that path on a registered firewall, but nothing in the repo generates the firewall config a lab needs. — `infra/modules/aws/ndr/README.md:27 ; core/integrations/panos/preflight.py:47`
+- The NDR IaC module's VM-Series path (on feature/scenarios-cloud-posture) documents HTTP log forwarding to a lab collector, not the logging-service path a customer firewall uses for XSIAM (CSP registration, device certificate, logging-service region). The PAN-OS preflight checks that path on a registered firewall, but nothing in the repo generates the firewall config a lab needs. — `core/integrations/panos/preflight.py:47`
 - EAL needs both the device enhanced-application-logging switch and the EAL flag on each log forwarding profile: the preflight degrades when either is off (PN_EAL_DEVICE_OFF, PN_LFP_EAL_OFF). PM-NGF-01 asks whether both are required. — `core/integrations/panos/preflight.py:732 ; core/integrations/panos/preflight.py:815`
 - A block-class profile action changes nothing about the NGFW issue; it only stops the artefact before the endpoint. The preflight degrades on block, sinkhole and signature `default` actions, DNS Security categories included, and its PN_PROFILE_BLOCKS remediation says "a block still writes a threat log" so only the agent half is lost. PM-NGF-02 asks whether that holds. — `core/integrations/panos/sources.py:131 ; core/integrations/panos/sources.py:661`
 - The NGFW source user is a stitch key: the preflight degrades a source zone without User-ID because "user-principal stitches cannot resolve on the firewall side" (PN_ZONE_USERID_OFF). PM-NGF-03 asks whether XSIAM joins on it at all. — `core/integrations/panos/sources.py:163 ; core/integrations/panos/sources.py:926`
@@ -1497,7 +1497,7 @@ Everything on the firewall that decides whether an NGFW record exists in the ten
   - *if* device switch alone is enough → Drop PN_LFP_EAL_OFF from the profile checks; keep PN_EAL_DEVICE_OFF.
   - *if* both are required → Keep both preflight checks as they are.
 - **Settle it in the lab:** Turn off the profile-level EAL flag on the lab-scoped rule only, generate the same FTP egress from a lab host, and compare EAL dataset rows with and without the flag over 15 minutes.
-- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/integrations/panos/preflight.py`, `infra/modules/aws/ndr`
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/integrations/panos/preflight.py`
 
 #### PM-NGF-02
 
