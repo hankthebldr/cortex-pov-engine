@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -215,11 +216,26 @@ func TestRenderEnv_PublicURLAndInstallVars(t *testing.T) {
 		"CORTEXSIM_INSTALL_ADDRESS": "192.0.2.10:8888",
 		"CORTEXSIM_INSTALLED_BY":    "povengine-setup/1.3.0+linux",
 		"CORTEXSIM_ENV":             "production",
+		"CORTEXSIM_PORT":            "8888",
 		"CORTEXSIM_SECRET":          strings.Repeat("s", 64),
 	}
 	for k, v := range want {
 		if m[k] != v {
 			t.Errorf("%s = %q, want %q", k, m[k], v)
+		}
+	}
+}
+
+// SimCore reads CORTEXSIM_PORT to report where it listens (/api/health), and
+// the image defaults it to 8888, so the env file carries the chosen port
+// every time, the default included.
+func TestRenderEnv_PortAlwaysWritten(t *testing.T) {
+	for _, port := range []int{8888, 9443} {
+		in := base()
+		in.Port = port
+		m := render(t, in)
+		if got, want := m["CORTEXSIM_PORT"], strconv.Itoa(port); got != want {
+			t.Errorf("port %d: CORTEXSIM_PORT = %q, want %q", port, got, want)
 		}
 	}
 }
@@ -279,8 +295,24 @@ func TestRenderEnv_KeyOrderIsStable(t *testing.T) {
 		k, _, _ := strings.Cut(l, "=")
 		keys = append(keys, k)
 	}
-	if !reflect.DeepEqual(keys, EnvKeyOrder) {
-		t.Fatalf("order %v, want %v", keys, EnvKeyOrder)
+	want := []string{
+		"CORTEXSIM_ENV",
+		"CORTEXSIM_PORT",
+		"CORTEXSIM_SECRET",
+		"CORTEXSIM_ALLOWED_HOSTS",
+		"CORTEXSIM_PUBLIC_URLS",
+		"CORTEXSIM_INSTALLED_BY",
+		"CORTEXSIM_INSTALL_ADDRESS",
+		"CORTEXSIM_BIND",
+		"HTTPS_PROXY",
+		"HTTP_PROXY",
+		"NO_PROXY",
+	}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("order %v, want %v", keys, want)
+	}
+	if !reflect.DeepEqual(EnvKeyOrder, want) {
+		t.Fatalf("EnvKeyOrder %v, want %v", EnvKeyOrder, want)
 	}
 	b2, _ := RenderEnv(in)
 	if string(b) != string(b2) {

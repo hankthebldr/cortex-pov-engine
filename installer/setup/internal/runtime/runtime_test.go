@@ -19,6 +19,9 @@ var fixedPrefix = []string{
 	"--restart", "unless-stopped",
 	"--env-file", "/etc/povengine/simcore.env",
 	"-v", "/var/lib/povengine/data:/app/data",
+	// A missing image fails instead of reaching for a registry: the install
+	// works offline.
+	"--pull", "never",
 }
 
 func input() RunInput {

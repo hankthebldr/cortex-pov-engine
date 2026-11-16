@@ -24,8 +24,11 @@ const unitHeader = "# Written by povengine-setup. Do not edit: the installer rep
 
 // EngineUnit is povengine-engine.service: the private Docker engine (§7.1).
 // Its own socket, data root, exec root and pidfile keep it apart from a
-// Docker engine the customer already runs, and with no iptables, masquerade
-// or bridge of its own it cannot change the host's network.
+// Docker engine the customer already runs, and with no iptables or ip6tables
+// rules, masquerade or bridge of its own it never touches the host firewall
+// (ip6tables is on by default from Docker 27, and --iptables=false does not
+// turn it off). --group root keeps the socket root's alone, even on a host
+// whose docker group reaches the customer's own engine.
 //
 // PATH puts the bundled containerd and runc first, because dockerd starts
 // them by name. Type=notify makes systemd wait until dockerd says it is ready,
@@ -43,7 +46,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 Environment=PATH=/opt/povengine/engine:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/opt/povengine/engine/dockerd --host unix:///run/povengine/docker.sock --data-root /var/lib/povengine/engine --exec-root /run/povengine/exec --pidfile /run/povengine/dockerd.pid --iptables=false --ip-masq=false --bridge=none
+ExecStart=/opt/povengine/engine/dockerd --host unix:///run/povengine/docker.sock --group root --data-root /var/lib/povengine/engine --exec-root /run/povengine/exec --pidfile /run/povengine/dockerd.pid --iptables=false --ip6tables=false --ip-masq=false --bridge=none
 RuntimeDirectory=povengine
 Restart=always
 RestartSec=2

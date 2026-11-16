@@ -170,6 +170,22 @@ func TestUnits_MatchGolden(t *testing.T) {
 	}
 }
 
+// The private engine never touches the host firewall (IPv4 or IPv6) and its
+// socket is root's alone.
+func TestEngineUnit_LeavesTheHostFirewallAndSocketToRoot(t *testing.T) {
+	var execStart string
+	for _, l := range strings.Split(EngineUnit(), "\n") {
+		if strings.HasPrefix(l, "ExecStart=") {
+			execStart = l
+		}
+	}
+	for _, flag := range []string{" --iptables=false", " --ip6tables=false", " --ip-masq=false", " --bridge=none", " --group root"} {
+		if !strings.Contains(execStart+" ", flag+" ") {
+			t.Errorf("dockerd lacks %q:\n%s", strings.TrimSpace(flag), execStart)
+		}
+	}
+}
+
 func TestServiceUnit_ListenOnlyQuotesTheHealthCommand(t *testing.T) {
 	in := goldenRunInput()
 	in.ListenOnly = true
@@ -469,6 +485,9 @@ func TestConfig_WritesEnvFile0600(t *testing.T) {
 	}
 	if got := h.Files[p.EnvFile]; !bytes.Equal(got, want) {
 		t.Fatalf("env file:\n%s\nwant:\n%s", got, want)
+	}
+	if !bytes.Contains(h.Files[p.EnvFile], []byte("\nCORTEXSIM_PORT=8888\n")) {
+		t.Fatal("the env file does not carry the chosen port")
 	}
 }
 

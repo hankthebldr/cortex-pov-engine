@@ -27,7 +27,9 @@ type RunInput struct {
 // RunArgs returns the arguments after `docker -H unix:///run/povengine/docker.sock`
 // that start SimCore: host networking (beacons' real source addresses reach
 // SimCore, and the container shares the jumpbox's host name), restart on
-// crash, the installer's env file and the data bind mount.
+// crash, the installer's env file and the data bind mount. --pull never makes
+// a missing image fail at once instead of reaching for a registry: the
+// install works offline, and a default-deny network would only hang the pull.
 //
 // The image's HEALTHCHECK and CMD listen on 0.0.0.0:8888 and probe
 // 127.0.0.1:8888. When the operator asks to listen on one address, or for
@@ -49,6 +51,7 @@ func RunArgs(in RunInput) []string {
 		"--restart", "unless-stopped",
 		"--env-file", in.EnvFile,
 		"-v", in.DataDir + ":/app/data",
+		"--pull", "never",
 	}
 	if !in.ListenOnly && port == DefaultPort {
 		return append(args, in.Image)
