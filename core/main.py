@@ -294,9 +294,11 @@ async def _db_context():
 # FastAPI app
 # ---------------------------------------------------------------------------
 
+from api.health import APP_VERSION  # noqa: E402  (single version source; OpenAPI must not drift)
+
 app = FastAPI(
     title="CortexSim",
-    version="1.2.5",
+    version=APP_VERSION,
     description="Enterprise detection simulation engine for Palo Alto Networks Cortex",
     docs_url="/api/docs",
     redoc_url="/api/redoc",

@@ -1002,11 +1002,38 @@ def test_artex_origin_unset_is_ok_not_enabled_and_makes_no_call(monkeypatch):
     assert comp["origin_configured"] is False
 
 
+def _artex_client(handler):
+    import httpx
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
 def test_artex_configured_but_unreachable_is_degraded(monkeypatch):
     import config
+    import httpx
     from api import health
 
-    monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "http://127.0.0.1:1")
-    comp = asyncio.run(health.probe_artex_health())
+    monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "http://artex:8787")
+
+    def handler(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    comp = asyncio.run(health.probe_artex_health(client=_artex_client(handler)))
     assert comp["status"] == "degraded"
     assert comp["code"] == "ARTEX_UNREACHABLE"
+
+
+def test_artex_configured_and_reachable_is_ok(monkeypatch):
+    import config
+    import httpx
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "http://artex:8787")
+
+    def handler(request):
+        return httpx.Response(200, json={"initialized": True})
+
+    comp = asyncio.run(health.probe_artex_health(client=_artex_client(handler)))
+    assert comp["status"] == "ok"
+    assert comp["code"] == "ARTEX_READY"
+    assert comp["reachability"] == "reachable"

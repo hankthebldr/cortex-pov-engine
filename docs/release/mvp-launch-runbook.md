@@ -923,14 +923,24 @@ profile fails closed at `up` until it is set.
   ARTEX through `/artex/*`, including the pre-`/setup` first-run admin
   bootstrap. ARTEX's own `/setup` and login are not a protection at the proxy
   layer.
-- **Hardening that does apply:** the outermost Host guard
-  (`CORTEXSIM_ALLOWED_HOSTS`) gates `/artex/*` like every route; the proxy
-  rejects cross-site state-changing requests and path escape; ARTEX `8787` and
-  its `8788` listener are internal to the compose network and not published to
-  the host.
-- **Operator guidance:** bring up the `offensive` profile only on a trusted
-  network. Restrict the published port (`CORTEXSIM_BIND` and/or a host
-  firewall). Complete ARTEX's `/setup` immediately after first bring-up.
+- **Same-origin trust:** the console frames ARTEX through the proxy on its own
+  origin, so the iframe `sandbox` gives no isolation. The framed app runs with
+  the console origin's privileges: it can read the console's `localStorage` and
+  call every unauthenticated SimCore `/api/*`. Enabling ARTEX means trusting the
+  pinned ARTEX image with full SimCore-origin access.
+- **Hardening that does apply:** the outermost Host guard gates `/artex/*` like
+  every route (it passes `localhost`, IP literals and the host's own name/FQDN
+  as well as `CORTEXSIM_ALLOWED_HOSTS` entries, so the allowlist is not the sole
+  control); the proxy rejects cross-site state-changing requests and path
+  escape; ARTEX `8787` and its `8788` listener are internal to the compose
+  network and not published to the host.
+- **Hard preconditions. Do not enable the `offensive` profile unless all hold**
+  (the pre-`/setup` admin bootstrap is unauthenticated):
+  - the host is on a trusted network;
+  - the published port is restricted (`CORTEXSIM_BIND` and/or a host firewall);
+  - ARTEX's `/setup` is completed immediately after first bring-up.
+- `/api/health` is zero-outbound only while ARTEX is disabled; with an origin
+  set, the `artex` component makes one bounded (3 s) probe per health read.
 - `artex-postgres` publishes nothing and keeps its data on `artex_pgdata`.
 - Self-update is off: `ARTEX_UPDATE_GITHUB_TOKEN` is not set.
 

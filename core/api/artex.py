@@ -25,7 +25,6 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, Request
-from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse, RedirectResponse, StreamingResponse
 
 router = APIRouter(tags=["artex"])
@@ -198,20 +197,18 @@ async def artex_proxy(path: str, request: Request):
         return _error(502, "ARTEX_PROXY_UPSTREAM_ERROR", "ARTEX upstream unreachable",
                       f"{type(exc).__name__}: {exc}")
 
-    async def _close() -> None:
-        await upstream.aclose()
-        await client.aclose()
-
     async def _body():
         # Raw (still content-encoded) bytes, forwarded chunk by chunk as they arrive.
+        # The single close point: the finally also runs when the client disconnects
+        # and Starlette cancels / closes this generator mid-stream.
         try:
             async for chunk in upstream.aiter_raw():
                 yield chunk
         finally:
-            await _close()
+            await upstream.aclose()
+            await client.aclose()
 
-    response = StreamingResponse(_body(), status_code=upstream.status_code,
-                                 background=BackgroundTask(_close))
+    response = StreamingResponse(_body(), status_code=upstream.status_code)
     response.raw_headers = [(k, v) for k, v in upstream.headers.raw
                             if k.decode("latin-1").lower() not in _DROP_RESPONSE]
     return response
