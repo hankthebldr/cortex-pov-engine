@@ -58,17 +58,19 @@ func TestRunArgs_Default(t *testing.T) {
 	}
 }
 
-// The image's --host 0.0.0.0 is IPv4-only, so beacons dialling an IPv6
-// address would never connect. Binding :: is dual-stack on Linux, and the
-// image's own 127.0.0.1 health probe still answers, so only the command is
-// overridden.
-func TestRunArgs_IPv6AddressListensDualStack(t *testing.T) {
+// The image's --host 0.0.0.0 is IPv4 only, so beacons dialling an IPv6
+// address would never connect. --host :: is no better: asyncio and uvloop set
+// IPV6_V6ONLY on every IPv6 listening socket, so it would refuse IPv4 (the
+// image's 127.0.0.1 health check, the installer's loopback probe, IPv4
+// beacons). An empty host makes them listen on 0.0.0.0 and on [::] both, so
+// only the command is overridden and the 127.0.0.1 probe still answers.
+func TestRunArgs_IPv6AddressListensOnEveryAddress(t *testing.T) {
 	in := input()
 	in.Address = "2001:db8::10"
 	got := RunArgs(in)
 	want := concat(fixedPrefix,
 		[]string{testImage},
-		[]string{"uvicorn", "main:app", "--host", "::", "--port", "8888", "--workers", "1", "--timeout-graceful-shutdown", "5"},
+		[]string{"uvicorn", "main:app", "--host", "", "--port", "8888", "--workers", "1", "--timeout-graceful-shutdown", "5"},
 	)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv:\n got  %q\n want %q", got, want)
@@ -79,7 +81,7 @@ func TestRunArgs_IPv6AddressListensDualStack(t *testing.T) {
 	want = concat(fixedPrefix,
 		[]string{"--health-cmd", "curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:9443/api/health"},
 		[]string{testImage},
-		[]string{"uvicorn", "main:app", "--host", "::", "--port", "9443", "--workers", "1", "--timeout-graceful-shutdown", "5"},
+		[]string{"uvicorn", "main:app", "--host", "", "--port", "9443", "--workers", "1", "--timeout-graceful-shutdown", "5"},
 	)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("port 9443 argv:\n got  %q\n want %q", got, want)

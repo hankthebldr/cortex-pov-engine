@@ -228,7 +228,7 @@ func TestEngineUnit_IsolatedFromTheHostsDockerAndContainerd(t *testing.T) {
 		"--address /run/povengine/containerd/containerd.sock",
 		"--root /var/lib/povengine/containerd",
 		"--state /run/povengine/containerd")
-	if containerdConfig != "version = 2\ndisabled_plugins = [\"io.containerd.grpc.v1.cri\"]\n" {
+	if containerdConfig != wantContainerdConfig {
 		t.Errorf("containerd.toml = %q", containerdConfig)
 	}
 	if daemonJSON != "{}\n" {
@@ -313,6 +313,27 @@ func TestDockerCLI_NeverReadsRootsConfig(t *testing.T) {
 	}
 }
 
+// An empty --host must survive systemd's parsing as one empty argument.
+func TestServiceUnit_IPv6AddressListensOnEveryAddress(t *testing.T) {
+	in := goldenRunInput()
+	in.Address = "2001:db8::10"
+	line := execStart(t, ServiceUnit(in))
+	want := " --pull never " + testImageRef + ` uvicorn main:app --host "" --port 8888 --workers 1 --timeout-graceful-shutdown 5`
+	if !strings.HasSuffix(line, want) {
+		t.Fatalf("ExecStart does not bind every address:\n%s", line)
+	}
+	if strings.Contains(line, "--health-cmd") {
+		t.Fatalf("the image's own 127.0.0.1 health check answers at 8888; no override wanted:\n%s", line)
+	}
+	in.Port = 9443
+	line = execStart(t, ServiceUnit(in))
+	want = ` --health-cmd "curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:9443/api/health" ` + testImageRef +
+		` uvicorn main:app --host "" --port 9443 --workers 1 --timeout-graceful-shutdown 5`
+	if !strings.HasSuffix(line, want) {
+		t.Fatalf("port 9443 ExecStart:\n%s", line)
+	}
+}
+
 func TestServiceUnit_ListenOnlyQuotesTheHealthCommand(t *testing.T) {
 	in := goldenRunInput()
 	in.ListenOnly = true
@@ -343,6 +364,11 @@ func TestSystemdQuote(t *testing.T) {
 }
 
 // ----------------------------------------------------------------- engine
+
+// wantContainerdConfig is the private containerd's whole config: no CRI (not a
+// Kubernetes node), no /opt/containerd (the opt plugin) and no NRI socket.
+const wantContainerdConfig = "version = 2\n" +
+	`disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.internal.v1.opt", "io.containerd.nri.v1.nri"]` + "\n"
 
 const (
 	enableContainerd = "systemctl enable --now povengine-containerd.service"
@@ -412,7 +438,7 @@ func TestEngine_FreshInstall(t *testing.T) {
 		EngineUnitPath:                          EngineUnit(),
 		ContainerdUnitPath:                      ContainerdUnit(),
 		"/opt/povengine/engine/daemon.json":     "{}\n",
-		"/opt/povengine/engine/containerd.toml": "version = 2\ndisabled_plugins = [\"io.containerd.grpc.v1.cri\"]\n",
+		"/opt/povengine/engine/containerd.toml": wantContainerdConfig,
 	} {
 		if got := string(h.Files[path]); got != want {
 			t.Errorf("%s:\n%s\nwant:\n%s", path, got, want)

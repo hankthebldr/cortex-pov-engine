@@ -25,8 +25,9 @@ type RunInput struct {
 	ListenOnly                    bool
 }
 
-// RunArgs returns the arguments after `docker -H unix:///run/povengine/docker.sock`
-// that start SimCore: host networking (beacons' real source addresses reach
+// RunArgs returns the arguments after the private engine's CLI prefix
+// (`/opt/povengine/engine/docker --config /opt/povengine/engine/cli
+// -H unix:///run/povengine/docker.sock`) that start SimCore: host networking (beacons' real source addresses reach
 // SimCore, and the container shares the jumpbox's host name), restart on
 // crash, the installer's env file and the data bind mount. --pull never makes
 // a missing image fail at once instead of reaching for a registry: the
@@ -36,8 +37,10 @@ type RunInput struct {
 // 127.0.0.1:8888. When the operator asks to listen on one address, or for
 // another port, both are overridden to match, because a probe of a port or
 // address uvicorn does not listen on would mark a working SimCore unhealthy.
-// 0.0.0.0 is IPv4 only, so for an IPv6 address the command binds :: instead
-// (dual-stack on Linux); the image's 127.0.0.1 probe still answers there.
+// 0.0.0.0 is IPv4 only, so for an IPv6 address the command passes an empty
+// --host: asyncio (and uvloop) then listen on 0.0.0.0 and on [::] both, and
+// the image's 127.0.0.1 probe still answers. "::" would not do: both set
+// IPV6_V6ONLY on every IPv6 listening socket, so it refuses IPv4.
 func RunArgs(in RunInput) []string {
 	name := in.Name
 	if name == "" {
@@ -66,7 +69,7 @@ func RunArgs(in RunInput) []string {
 	case in.ListenOnly:
 		bind, probe = in.Address, in.Address
 	case v6:
-		bind = "::"
+		bind = "" // every address, IPv4 and IPv6
 	}
 	p := strconv.Itoa(port)
 	if in.ListenOnly || port != DefaultPort {

@@ -29,10 +29,12 @@ const (
 	daemonJSON     = "{}\n"
 
 	// containerdConfigPath is the private containerd's --config. Everything
-	// else is set by flag; the CRI plugin is off because nothing here is a
-	// Kubernetes node.
+	// else is set by flag. Off: CRI (nothing here is a Kubernetes node), opt
+	// (it would create /opt/containerd) and NRI (it would create an NRI
+	// socket, which on a Kubernetes node is the node's).
 	containerdConfigPath = engineDir + "/containerd.toml"
-	containerdConfig     = "version = 2\ndisabled_plugins = [\"io.containerd.grpc.v1.cri\"]\n"
+	containerdConfig     = "version = 2\n" +
+		`disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.internal.v1.opt", "io.containerd.nri.v1.nri"]` + "\n"
 )
 
 // unitHeader marks the units as the installer's: a re-run replaces them.
