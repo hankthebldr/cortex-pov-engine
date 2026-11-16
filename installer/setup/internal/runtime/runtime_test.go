@@ -58,6 +58,46 @@ func TestRunArgs_Default(t *testing.T) {
 	}
 }
 
+// The image's --host 0.0.0.0 is IPv4-only, so beacons dialling an IPv6
+// address would never connect. Binding :: is dual-stack on Linux, and the
+// image's own 127.0.0.1 health probe still answers, so only the command is
+// overridden.
+func TestRunArgs_IPv6AddressListensDualStack(t *testing.T) {
+	in := input()
+	in.Address = "2001:db8::10"
+	got := RunArgs(in)
+	want := concat(fixedPrefix,
+		[]string{testImage},
+		[]string{"uvicorn", "main:app", "--host", "::", "--port", "8888", "--workers", "1", "--timeout-graceful-shutdown", "5"},
+	)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv:\n got  %q\n want %q", got, want)
+	}
+
+	in.Port = 9443
+	got = RunArgs(in)
+	want = concat(fixedPrefix,
+		[]string{"--health-cmd", "curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:9443/api/health"},
+		[]string{testImage},
+		[]string{"uvicorn", "main:app", "--host", "::", "--port", "9443", "--workers", "1", "--timeout-graceful-shutdown", "5"},
+	)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("port 9443 argv:\n got  %q\n want %q", got, want)
+	}
+}
+
+// An IPv4 address, or a host name, keeps the image's own command and health
+// check at the default port.
+func TestRunArgs_IPv4AndNamesKeepTheImageDefault(t *testing.T) {
+	for _, addr := range []string{"192.0.2.10", "::ffff:192.0.2.10", "pov.example.test"} {
+		in := input()
+		in.Address = addr
+		if got, want := RunArgs(in), concat(fixedPrefix, []string{testImage}); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: argv:\n got  %q\n want %q", addr, got, want)
+		}
+	}
+}
+
 func TestRunArgs_EmptyNameIsTheContainerName(t *testing.T) {
 	in := input()
 	in.Name = ""

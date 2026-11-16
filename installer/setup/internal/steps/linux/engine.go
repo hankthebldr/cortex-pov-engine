@@ -97,10 +97,12 @@ func fileIs(h host.Host, name, content string) bool {
 
 // ----------------------------------------------------------------- Engine
 
-// Engine installs and starts the private Docker engine: the static binaries in
-// /opt/povengine/engine and povengine-engine.service (§7.1). An engine that
-// already answers with the packaged version under the current unit is left
-// alone, so a re-run changes nothing.
+// Engine installs and starts the private Docker engine (§7.1): the static
+// binaries in /opt/povengine/engine, the CLI's empty config directory, the
+// engine's daemon.json and containerd.toml, and the povengine-containerd and
+// povengine-engine units. An engine that already answers with the packaged
+// version, with every one of those files in place, is left alone, so a re-run
+// changes nothing.
 type Engine struct {
 	Clock
 	h       host.Host
@@ -125,8 +127,20 @@ func (s *Engine) serverVersion(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
-// current reports whether the engine runs the packaged version under the
-// current unit, and the version that answered ("" = none).
+// engineFile is one file the engine step writes, in write order.
+type engineFile struct{ path, content string }
+
+func engineFiles() []engineFile {
+	return []engineFile{
+		{daemonJSONPath, daemonJSON},
+		{containerdConfigPath, containerdConfig},
+		{ContainerdUnitPath, ContainerdUnit()},
+		{EngineUnitPath, EngineUnit()},
+	}
+}
+
+// current reports whether the engine runs the packaged version with every
+// installer file in place, and the version that answered ("" = none).
 func (s *Engine) current(ctx context.Context) (isCurrent bool, running string) {
 	running = s.serverVersion(ctx)
 	if running == "" {
@@ -138,7 +152,15 @@ func (s *Engine) current(ctx context.Context) (isCurrent bool, running string) {
 	if _, err := s.h.Stat(engineDockerd); err != nil {
 		return false, running
 	}
-	return fileIs(s.h, EngineUnitPath, EngineUnit()), running
+	if fi, err := s.h.Stat(ownEngineCLIConfig); err != nil || !fi.IsDir() {
+		return false, running
+	}
+	for _, f := range engineFiles() {
+		if !fileIs(s.h, f.path, f.content) {
+			return false, running
+		}
+	}
+	return true, running
 }
 
 func (s *Engine) Check(ctx context.Context, _ *engine.State) engine.Result {
@@ -163,7 +185,7 @@ func (s *Engine) Apply(ctx context.Context, _ *engine.State) engine.Result {
 		return ok("Engine " + running + " is running")
 	}
 	fail := func(detail string) engine.Result { return block(engine.CodeEngineStartFailed, detail) }
-	journal := "; see: journalctl -u " + engineUnitName
+	journal := func(units ...string) string { return "; see: journalctl -u " + strings.Join(units, " -u ") }
 
 	if err := s.h.MkdirAll(engineDir, 0o755); err != nil {
 		return fail("cannot create " + engineDir + ": " + err.Error())
@@ -171,20 +193,30 @@ func (s *Engine) Apply(ctx context.Context, _ *engine.State) engine.Result {
 	if _, stderr, err := runFor(ctx, s.h, extractTimeout, "tar", "-xzf", s.archive, "-C", engineDir, "--strip-components=1"); err != nil {
 		return fail("cannot unpack the engine into " + engineDir + ": " + failure(stderr, err))
 	}
-	if err := s.h.WriteFile(EngineUnitPath, []byte(EngineUnit()), unitMode); err != nil {
-		return fail("cannot write " + EngineUnitPath + ": " + err.Error())
+	if err := s.h.MkdirAll(ownEngineCLIConfig, 0o700); err != nil {
+		return fail("cannot create " + ownEngineCLIConfig + ": " + err.Error())
+	}
+	for _, f := range engineFiles() {
+		if err := s.h.WriteFile(f.path, []byte(f.content), unitMode); err != nil {
+			return fail("cannot write " + f.path + ": " + err.Error())
+		}
 	}
 	if _, stderr, err := runFor(ctx, s.h, commandTimeout, "systemctl", "daemon-reload"); err != nil {
 		return fail("systemctl daemon-reload failed: " + failure(stderr, err))
 	}
-	if _, stderr, err := runFor(ctx, s.h, unitTimeout, "systemctl", "enable", "--now", engineUnitName); err != nil {
-		return fail("the engine did not start: " + failure(stderr, err) + journal)
+	// containerd first: the engine Requires it, and Type=notify returns only
+	// once its socket answers.
+	for _, unit := range []string{containerdUnitName, engineUnitName} {
+		if _, stderr, err := runFor(ctx, s.h, unitTimeout, "systemctl", "enable", "--now", unit); err != nil {
+			return fail(unit + " did not start: " + failure(stderr, err) + journal(unit))
+		}
 	}
 	if running != "" {
-		// enable --now leaves a running unit alone; the new binaries and
-		// unit take effect only on a restart.
-		if _, stderr, err := runFor(ctx, s.h, unitTimeout, "systemctl", "restart", engineUnitName); err != nil {
-			return fail("the engine did not restart: " + failure(stderr, err) + journal)
+		// enable --now leaves running units alone; new binaries, units or
+		// config take effect only on a restart (systemd orders it:
+		// containerd, then the engine).
+		if _, stderr, err := runFor(ctx, s.h, unitTimeout, "systemctl", "restart", containerdUnitName, engineUnitName); err != nil {
+			return fail("the engine did not restart: " + failure(stderr, err) + journal(containerdUnitName, engineUnitName))
 		}
 	}
 
@@ -193,7 +225,7 @@ func (s *Engine) Apply(ctx context.Context, _ *engine.State) engine.Result {
 		answered = s.serverVersion(ctx)
 		return answered != ""
 	}) {
-		return fail(fmt.Sprintf("the engine did not answer on %s within %s", strings.TrimPrefix(ownEngineSocket, "unix://"), engineWait) + journal)
+		return fail(fmt.Sprintf("the engine did not answer on %s within %s", strings.TrimPrefix(ownEngineSocket, "unix://"), engineWait) + journal(engineUnitName, containerdUnitName))
 	}
 	return ok("Engine " + answered + " is running")
 }

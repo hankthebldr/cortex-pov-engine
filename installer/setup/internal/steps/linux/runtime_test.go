@@ -22,7 +22,7 @@ import (
 var update = flag.Bool("update", false, "rewrite the unit-file golden files from the code")
 
 const (
-	dockerCLI     = "/opt/povengine/engine/docker -H unix:///run/povengine/docker.sock"
+	dockerCLI     = "/opt/povengine/engine/docker --config /opt/povengine/engine/cli -H unix:///run/povengine/docker.sock"
 	versionCmd    = dockerCLI + " version --format {{.Server.Version}}"
 	healthCmd     = dockerCLI + " inspect --format {{.State.Health.Status}} povengine-simcore"
 	testArchive   = "/tmp/povengine-1.3.0/payload/docker-29.0.4.tgz"
@@ -150,8 +150,9 @@ func goldenRunInput() runtime.RunInput {
 
 func TestUnits_MatchGolden(t *testing.T) {
 	for name, got := range map[string]string{
-		"povengine-engine.service.golden": EngineUnit(),
-		"povengine.service.golden":        ServiceUnit(goldenRunInput()),
+		"povengine-containerd.service.golden": ContainerdUnit(),
+		"povengine-engine.service.golden":     EngineUnit(),
+		"povengine.service.golden":            ServiceUnit(goldenRunInput()),
 	} {
 		path := filepath.Join("testdata", name)
 		if *update {
@@ -170,19 +171,145 @@ func TestUnits_MatchGolden(t *testing.T) {
 	}
 }
 
+// execStart returns a unit's ExecStart= line.
+func execStart(t *testing.T, unit string) string {
+	t.Helper()
+	for _, l := range strings.Split(unit, "\n") {
+		if strings.HasPrefix(l, "ExecStart=") {
+			return l
+		}
+	}
+	t.Fatalf("no ExecStart= in:\n%s", unit)
+	return ""
+}
+
+// hasFlags fails for each flag (with its value) missing from line.
+func hasFlags(t *testing.T, line string, flags ...string) {
+	t.Helper()
+	for _, f := range flags {
+		if !strings.Contains(line+" ", " "+f+" ") {
+			t.Errorf("missing %q in:\n%s", f, line)
+		}
+	}
+}
+
 // The private engine never touches the host firewall (IPv4 or IPv6) and its
 // socket is root's alone.
 func TestEngineUnit_LeavesTheHostFirewallAndSocketToRoot(t *testing.T) {
-	var execStart string
-	for _, l := range strings.Split(EngineUnit(), "\n") {
-		if strings.HasPrefix(l, "ExecStart=") {
-			execStart = l
+	hasFlags(t, execStart(t, EngineUnit()),
+		"--iptables=false", "--ip6tables=false", "--ip-masq=false", "--bridge=none", "--group root")
+}
+
+// Without --config-file dockerd reads the customer's /etc/docker/daemon.json,
+// and without --containerd it attaches to a running system containerd: the
+// image would land in the customer's containerd and their restarts or prunes
+// would take SimCore down.
+func TestEngineUnit_IsolatedFromTheHostsDockerAndContainerd(t *testing.T) {
+	unit := EngineUnit()
+	hasFlags(t, execStart(t, unit),
+		"--config-file /opt/povengine/engine/daemon.json",
+		"--containerd /run/povengine/containerd/containerd.sock",
+		"--containerd-namespace povengine",
+		"--containerd-plugins-namespace povengine-plugins")
+	for _, l := range []string{"Requires=povengine-containerd.service\n", "After=povengine-containerd.service"} {
+		if !strings.Contains(unit, l) {
+			t.Errorf("engine unit lacks %q:\n%s", strings.TrimSpace(l), unit)
 		}
 	}
-	for _, flag := range []string{" --iptables=false", " --ip6tables=false", " --ip-masq=false", " --bridge=none", " --group root"} {
-		if !strings.Contains(execStart+" ", flag+" ") {
-			t.Errorf("dockerd lacks %q:\n%s", strings.TrimSpace(flag), execStart)
+	// Stopping the engine must not delete the running containerd's socket
+	// and state, which live under the engine's runtime directory.
+	if !strings.Contains(unit, "\nRuntimeDirectoryPreserve=yes\n") {
+		t.Errorf("engine unit removes /run/povengine (and containerd's state) when it stops:\n%s", unit)
+	}
+
+	cd := ContainerdUnit()
+	hasFlags(t, execStart(t, cd),
+		"--config /opt/povengine/engine/containerd.toml",
+		"--address /run/povengine/containerd/containerd.sock",
+		"--root /var/lib/povengine/containerd",
+		"--state /run/povengine/containerd")
+	if containerdConfig != "version = 2\ndisabled_plugins = [\"io.containerd.grpc.v1.cri\"]\n" {
+		t.Errorf("containerd.toml = %q", containerdConfig)
+	}
+	if daemonJSON != "{}\n" {
+		t.Errorf("daemon.json = %q", daemonJSON)
+	}
+}
+
+// The docker CLI reads root's ~/.docker/config.json and copies its proxies
+// into every container it runs. Every call to the private engine's CLI, the
+// installer's and the units', points it at the installer's own empty
+// config directory instead.
+func TestDockerCLI_NeverReadsRootsConfig(t *testing.T) {
+	const prefix = "/opt/povengine/engine/docker --config /opt/povengine/engine/cli -H unix:///run/povengine/docker.sock "
+	for _, listenOnly := range []bool{false, true} {
+		in := goldenRunInput()
+		in.ListenOnly = listenOnly
+		for _, l := range strings.Split(ServiceUnit(in), "\n") {
+			k, cmd, found := strings.Cut(l, "=")
+			if !found || !strings.HasPrefix(k, "Exec") {
+				continue
+			}
+			if !strings.HasPrefix(strings.TrimPrefix(cmd, "-"), prefix) {
+				t.Errorf("%s does not use the installer's CLI config:\n%s", k, l)
+			}
 		}
+	}
+
+	// Every docker invocation the steps make, including the port check's.
+	h := &seqHost{
+		Fake: &host.Fake{
+			Paths: map[string]string{"ss": "/usr/bin/ss"},
+			Files: map[string][]byte{
+				"/opt/povengine/engine/docker": []byte("ELF"),
+				"/proc/4242/cgroup":            []byte("0::/system.slice/docker-" + ownID + ".scope\n"),
+			},
+			Responses: map[string]host.FakeResponse{
+				"ss -Hltnp": {Stdout: td(t, "ss-listen-8888-ours.txt")},
+				dockerCLI + " inspect --format {{.Id}} povengine-simcore": {Stdout: []byte(ownID + "\n")},
+				tarCmd:                    {},
+				"systemctl daemon-reload": {},
+				enableContainerd:          {},
+				enableEngine:              {},
+				loadCmd:                   {},
+				healthCmd:                 {Stdout: []byte("healthy\n")},
+				loopbackURL:               {Status: 200, Body: td(t, "health-api-auth-only.json")},
+				addressURL:                {Status: 200, Body: td(t, "health-api-auth-only.json")},
+			},
+		},
+		seq: map[string][]host.FakeResponse{
+			// Engine: Check, Apply's own look, then the first poll answers.
+			versionCmd: {{Err: errNotRunning}, {Err: errNotRunning}, {Stdout: []byte(testEngineVer + "\n")}},
+			// Image: Check, Apply's own look, then after the load.
+			inspectCmd: {{Err: errNotRunning}, {Err: errNotRunning}, {Stdout: []byte(idA + "\n")}},
+		},
+	}
+	fc := newFakeClock()
+	eng := NewEngine(h, testArchive, testEngineVer)
+	eng.Clock = fc.clock()
+	hg := NewHealthGate(h)
+	hg.Clock = fc.clock()
+	st := runtimeState()
+	for _, s := range []engine.Step{NewPortFree(h), eng, NewImage(h, testImageRef, idA, testImagePath), hg} {
+		if r := s.Check(ctx, st); r.Blocks() {
+			t.Fatalf("%s Check: %+v", s.ID(), r)
+		}
+		if r := s.Apply(ctx, st); r.Blocks() {
+			t.Fatalf("%s Apply: %+v", s.ID(), r)
+		}
+	}
+	calls := 0
+	for _, c := range h.Calls {
+		if c.Method != "Run" || (c.Args[0] != "docker" && !strings.HasSuffix(c.Args[0], "/docker")) {
+			continue
+		}
+		calls++
+		if len(c.Args) < 3 || c.Args[1] != "--config" || c.Args[2] != "/opt/povengine/engine/cli" {
+			t.Errorf("docker called without the installer's CLI config: %q", c.Args)
+		}
+	}
+	if calls < 5 {
+		t.Fatalf("only %d docker calls seen; the scenario did not exercise the steps", calls)
 	}
 }
 
@@ -217,13 +344,35 @@ func TestSystemdQuote(t *testing.T) {
 
 // ----------------------------------------------------------------- engine
 
+const (
+	enableContainerd = "systemctl enable --now povengine-containerd.service"
+	enableEngine     = "systemctl enable --now povengine-engine.service"
+	restartEngine    = "systemctl restart povengine-containerd.service povengine-engine.service"
+)
+
+// installedEngine is a host where the installer's engine files are all in
+// place and current.
+func installedEngine() *host.Fake {
+	h := &host.Fake{Files: map[string][]byte{
+		"/opt/povengine/engine/dockerd":         []byte("ELF"),
+		"/opt/povengine/engine/daemon.json":     []byte(daemonJSON),
+		"/opt/povengine/engine/containerd.toml": []byte(containerdConfig),
+		ContainerdUnitPath:                      []byte(ContainerdUnit()),
+		EngineUnitPath:                          []byte(EngineUnit()),
+	}}
+	_ = h.MkdirAll("/opt/povengine/engine/cli", 0o700)
+	h.Calls = nil
+	return h
+}
+
 func TestEngine_FreshInstall(t *testing.T) {
 	fc := newFakeClock()
 	h := &seqHost{
 		Fake: &host.Fake{Responses: map[string]host.FakeResponse{
 			tarCmd:                    {},
 			"systemctl daemon-reload": {},
-			"systemctl enable --now povengine-engine.service": {},
+			enableContainerd:          {},
+			enableEngine:              {},
 		}},
 		seq: map[string][]host.FakeResponse{
 			// Check, Apply's own look, then two polls: not yet, then up.
@@ -248,14 +397,26 @@ func TestEngine_FreshInstall(t *testing.T) {
 		"run " + versionCmd,
 		"mkdir /opt/povengine/engine -rwxr-xr-x",
 		"run " + tarCmd,
+		"mkdir /opt/povengine/engine/cli -rwx------",
+		"write /opt/povengine/engine/daemon.json -rw-r--r--",
+		"write /opt/povengine/engine/containerd.toml -rw-r--r--",
+		"write /etc/systemd/system/povengine-containerd.service -rw-r--r--",
 		"write /etc/systemd/system/povengine-engine.service -rw-r--r--",
 		"run systemctl daemon-reload",
-		"run systemctl enable --now povengine-engine.service",
+		"run " + enableContainerd,
+		"run " + enableEngine,
 		"run " + versionCmd,
 		"run " + versionCmd,
 	})
-	if got := string(h.Files[EngineUnitPath]); got != EngineUnit() {
-		t.Fatalf("unit file content is not EngineUnit():\n%s", got)
+	for path, want := range map[string]string{
+		EngineUnitPath:                          EngineUnit(),
+		ContainerdUnitPath:                      ContainerdUnit(),
+		"/opt/povengine/engine/daemon.json":     "{}\n",
+		"/opt/povengine/engine/containerd.toml": "version = 2\ndisabled_plugins = [\"io.containerd.grpc.v1.cri\"]\n",
+	} {
+		if got := string(h.Files[path]); got != want {
+			t.Errorf("%s:\n%s\nwant:\n%s", path, got, want)
+		}
 	}
 	if fc.slept != engineEvery {
 		t.Fatalf("slept %v, want one poll interval (%v)", fc.slept, engineEvery)
@@ -267,8 +428,9 @@ func TestEngine_NeverAnswersIsStartFailed(t *testing.T) {
 	h := &host.Fake{Responses: map[string]host.FakeResponse{
 		tarCmd:                    {},
 		"systemctl daemon-reload": {},
-		"systemctl enable --now povengine-engine.service": {},
-		versionCmd: {Err: errNotRunning},
+		enableContainerd:          {},
+		enableEngine:              {},
+		versionCmd:                {Err: errNotRunning},
 	}}
 	s := NewEngine(h, testArchive, testEngineVer)
 	s.Clock = fc.clock()
@@ -289,31 +451,33 @@ func TestEngine_NeverAnswersIsStartFailed(t *testing.T) {
 }
 
 func TestEngine_EnableFailureIsStartFailed(t *testing.T) {
-	h := &host.Fake{Responses: map[string]host.FakeResponse{
-		tarCmd:                    {},
-		"systemctl daemon-reload": {},
-		"systemctl enable --now povengine-engine.service": {Stderr: []byte("Job for povengine-engine.service failed.\n"), Err: errNotRunning},
-		versionCmd: {Err: errNotRunning},
-	}}
-	s := NewEngine(h, testArchive, testEngineVer)
-	s.Clock = newFakeClock().clock()
-	r := s.Apply(ctx, runtimeState())
-	if r.Code != engine.CodeEngineStartFailed {
-		t.Fatalf("got %+v, want ENGINE_START_FAILED", r)
-	}
-	if !strings.Contains(r.Detail, "Job for povengine-engine.service failed.") {
-		t.Errorf("detail should carry systemctl's message: %q", r.Detail)
+	for unit, key := range map[string]string{
+		"povengine-containerd.service": enableContainerd,
+		"povengine-engine.service":     enableEngine,
+	} {
+		h := &host.Fake{Responses: map[string]host.FakeResponse{
+			tarCmd:                    {},
+			"systemctl daemon-reload": {},
+			enableContainerd:          {},
+			enableEngine:              {},
+			versionCmd:                {Err: errNotRunning},
+		}}
+		h.Responses[key] = host.FakeResponse{Stderr: []byte("Job for " + unit + " failed.\n"), Err: errNotRunning}
+		s := NewEngine(h, testArchive, testEngineVer)
+		s.Clock = newFakeClock().clock()
+		r := s.Apply(ctx, runtimeState())
+		if r.Code != engine.CodeEngineStartFailed {
+			t.Fatalf("%s: got %+v, want ENGINE_START_FAILED", unit, r)
+		}
+		if !strings.Contains(r.Detail, "Job for "+unit+" failed.") || !strings.Contains(r.Detail, "journalctl -u "+unit) {
+			t.Errorf("%s: detail should carry systemctl's message and the unit's journal: %q", unit, r.Detail)
+		}
 	}
 }
 
 func TestEngine_AlreadyRunningIsIdempotent(t *testing.T) {
-	h := &host.Fake{
-		Files: map[string][]byte{
-			EngineUnitPath:                  []byte(EngineUnit()),
-			"/opt/povengine/engine/dockerd": []byte("ELF"),
-		},
-		Responses: map[string]host.FakeResponse{versionCmd: {Stdout: []byte(testEngineVer + "\n")}},
-	}
+	h := installedEngine()
+	h.Responses = map[string]host.FakeResponse{versionCmd: {Stdout: []byte(testEngineVer + "\n")}}
 	s := NewEngine(h, testArchive, testEngineVer)
 	s.Clock = newFakeClock().clock()
 	st := runtimeState()
@@ -327,18 +491,14 @@ func TestEngine_AlreadyRunningIsIdempotent(t *testing.T) {
 }
 
 func TestEngine_RunningOtherVersionIsReplacedAndRestarted(t *testing.T) {
-	h := &host.Fake{
-		Files: map[string][]byte{
-			EngineUnitPath:                  []byte(EngineUnit()),
-			"/opt/povengine/engine/dockerd": []byte("ELF"),
-		},
-		Responses: map[string]host.FakeResponse{
-			versionCmd:                {Stdout: []byte("28.5.2\n")},
-			tarCmd:                    {},
-			"systemctl daemon-reload": {},
-			"systemctl enable --now povengine-engine.service": {},
-			"systemctl restart povengine-engine.service":      {},
-		},
+	h := installedEngine()
+	h.Responses = map[string]host.FakeResponse{
+		versionCmd:                {Stdout: []byte("28.5.2\n")},
+		tarCmd:                    {},
+		"systemctl daemon-reload": {},
+		enableContainerd:          {},
+		enableEngine:              {},
+		restartEngine:             {},
 	}
 	s := NewEngine(h, testArchive, testEngineVer)
 	s.Clock = newFakeClock().clock()
@@ -346,10 +506,39 @@ func TestEngine_RunningOtherVersionIsReplacedAndRestarted(t *testing.T) {
 		t.Fatalf("Apply: %+v", r)
 	}
 	got := strings.Join(ops(h), "\n")
-	for _, want := range []string{"run " + tarCmd, "run systemctl restart povengine-engine.service"} {
+	for _, want := range []string{"run " + tarCmd, "run " + restartEngine} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("a running engine of another version must be replaced and restarted; missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+// A daemon.json someone edited (log driver, storage driver, userns remap...)
+// would be inherited silently; the installer puts its own back and restarts.
+func TestEngine_EditedDaemonJSONIsRewritten(t *testing.T) {
+	h := installedEngine()
+	h.Files["/opt/povengine/engine/daemon.json"] = []byte(`{"log-driver":"syslog"}`)
+	h.Responses = map[string]host.FakeResponse{
+		versionCmd:                {Stdout: []byte(testEngineVer + "\n")},
+		tarCmd:                    {},
+		"systemctl daemon-reload": {},
+		enableContainerd:          {},
+		enableEngine:              {},
+		restartEngine:             {},
+	}
+	s := NewEngine(h, testArchive, testEngineVer)
+	s.Clock = newFakeClock().clock()
+	if r := s.Check(ctx, runtimeState()); r.Code != engine.CodeOK || strings.HasSuffix(r.Detail, "is running") {
+		t.Fatalf("Check took an edited daemon.json for current: %+v", r)
+	}
+	if r := s.Apply(ctx, runtimeState()); r.Code != engine.CodeOK {
+		t.Fatalf("Apply: %+v", r)
+	}
+	if got := string(h.Files["/opt/povengine/engine/daemon.json"]); got != "{}\n" {
+		t.Fatalf("daemon.json = %q, want {}", got)
+	}
+	if !strings.Contains(strings.Join(ops(h), "\n"), "run "+restartEngine) {
+		t.Fatalf("the engine was not restarted onto the rewritten config: %q", ops(h))
 	}
 }
 

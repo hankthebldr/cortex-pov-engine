@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"net"
+	"net/netip"
 	"strconv"
 )
 
@@ -35,6 +36,8 @@ type RunInput struct {
 // 127.0.0.1:8888. When the operator asks to listen on one address, or for
 // another port, both are overridden to match, because a probe of a port or
 // address uvicorn does not listen on would mark a working SimCore unhealthy.
+// 0.0.0.0 is IPv4 only, so for an IPv6 address the command binds :: instead
+// (dual-stack on Linux); the image's 127.0.0.1 probe still answers there.
 func RunArgs(in RunInput) []string {
 	name := in.Name
 	if name == "" {
@@ -53,17 +56,24 @@ func RunArgs(in RunInput) []string {
 		"-v", in.DataDir + ":/app/data",
 		"--pull", "never",
 	}
-	if !in.ListenOnly && port == DefaultPort {
+	v6 := isIPv6(in.Address)
+	if !in.ListenOnly && port == DefaultPort && !v6 {
 		return append(args, in.Image)
 	}
 
 	bind, probe := "0.0.0.0", "127.0.0.1"
-	if in.ListenOnly {
+	switch {
+	case in.ListenOnly:
 		bind, probe = in.Address, in.Address
+	case v6:
+		bind = "::"
 	}
 	p := strconv.Itoa(port)
-	health := "curl -fsS --max-time 5 -o /dev/null http://" + net.JoinHostPort(probe, p) + "/api/health"
-	args = append(args, "--health-cmd", health, in.Image)
+	if in.ListenOnly || port != DefaultPort {
+		health := "curl -fsS --max-time 5 -o /dev/null http://" + net.JoinHostPort(probe, p) + "/api/health"
+		args = append(args, "--health-cmd", health)
+	}
+	args = append(args, in.Image)
 	return append(args,
 		"uvicorn", "main:app",
 		"--host", bind,
@@ -71,4 +81,11 @@ func RunArgs(in RunInput) []string {
 		"--workers", "1",
 		"--timeout-graceful-shutdown", "5",
 	)
+}
+
+// isIPv6 reports whether a is an IPv6 address literal (an IPv4-mapped one
+// counts as IPv4).
+func isIPv6(a string) bool {
+	ip, err := netip.ParseAddr(a)
+	return err == nil && ip.Is6() && !ip.Is4In6()
 }

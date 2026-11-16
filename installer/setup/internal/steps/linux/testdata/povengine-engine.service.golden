@@ -1,14 +1,16 @@
 # Written by povengine-setup. Do not edit: the installer replaces this file.
 [Unit]
 Description=POVengine private container engine
-After=network-online.target
+Requires=povengine-containerd.service
+After=povengine-containerd.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=notify
 Environment=PATH=/opt/povengine/engine:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/opt/povengine/engine/dockerd --host unix:///run/povengine/docker.sock --group root --data-root /var/lib/povengine/engine --exec-root /run/povengine/exec --pidfile /run/povengine/dockerd.pid --iptables=false --ip6tables=false --ip-masq=false --bridge=none
+ExecStart=/opt/povengine/engine/dockerd --config-file /opt/povengine/engine/daemon.json --host unix:///run/povengine/docker.sock --group root --containerd /run/povengine/containerd/containerd.sock --containerd-namespace povengine --containerd-plugins-namespace povengine-plugins --data-root /var/lib/povengine/engine --exec-root /run/povengine/exec --pidfile /run/povengine/dockerd.pid --iptables=false --ip6tables=false --ip-masq=false --bridge=none
 RuntimeDirectory=povengine
+RuntimeDirectoryPreserve=yes
 Restart=always
 RestartSec=2
 Delegate=yes

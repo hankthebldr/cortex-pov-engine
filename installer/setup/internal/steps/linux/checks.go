@@ -23,6 +23,7 @@ const (
 
 	ownEngineSocket    = "unix:///run/povengine/docker.sock"
 	ownEngineDocker    = "/opt/povengine/engine/docker"
+	ownEngineCLIConfig = "/opt/povengine/engine/cli" // the private CLI's --config directory, empty
 	ownContainerName   = "povengine-simcore"
 	composeProject     = "cortex-pov-engine"
 	composeNamePrefix  = "cortex-pov-engine-simcore-"
@@ -363,7 +364,7 @@ func (s *PortFree) containerID(ctx context.Context) string {
 	if _, err := s.h.Stat(ownEngineDocker); err == nil {
 		docker = ownEngineDocker
 	}
-	out, err := run(ctx, s.h, docker, "-H", ownEngineSocket, "inspect", "--format", "{{.Id}}", ownContainerName)
+	out, err := run(ctx, s.h, docker, "--config", ownEngineCLIConfig, "-H", ownEngineSocket, "inspect", "--format", "{{.Id}}", ownContainerName)
 	if err != nil {
 		return ""
 	}
