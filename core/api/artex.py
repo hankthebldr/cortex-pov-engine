@@ -10,6 +10,11 @@ made (no client is even constructed). Otherwise one short GET goes to
 which answers ``{"initialized": bool}``. Any connect error, non-2xx or unrecognised body is
 ``unreachable`` -- an unrecognised shape is never read as "not initialized".
 
+  ANY /artex/{path}      -- transparent, streaming reverse proxy (``proxy_router``, mounted at the
+                           app root, NOT under /api). The ``/artex`` prefix is kept on the wire
+                           because ARTEX strips it itself. Responses are never buffered, so
+                           ``text/event-stream`` frames flow through as the upstream emits them.
+
 ``probe_artex`` is module-level and client-injectable so the health component and the reverse
 proxy can reuse it.
 """
@@ -18,7 +23,9 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from starlette.background import BackgroundTask
+from starlette.responses import JSONResponse, StreamingResponse
 
 router = APIRouter(tags=["artex"])
 
@@ -71,3 +78,79 @@ async def probe_artex(settings: Any, client: Optional[httpx.AsyncClient] = None)
 async def artex_status() -> dict[str, Any]:
     import config
     return await probe_artex(config.settings)
+
+
+# ---------------------------------------------------------------------------
+# Reverse proxy
+# ---------------------------------------------------------------------------
+
+proxy_router = APIRouter(tags=["artex"])
+
+# Test seam: an httpx transport to use instead of the network (same role as the
+# injectable client on probe_artex). None in production.
+_transport: Optional[httpx.AsyncBaseTransport] = None
+
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
+    "proxy-authorization", "proxy-authenticate", "proxy-connection",
+})
+# Dropped inbound only: host is the upstream's, content-length is recomputed by httpx.
+_DROP_REQUEST = _HOP_BY_HOP | {"host", "content-length"}
+# Dropped outbound only: the body is streamed, so the length is not known to Starlette.
+_DROP_RESPONSE = _HOP_BY_HOP | {"content-length"}
+
+
+def _error(status: int, code: str, error: str, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": error, "code": code, "detail": detail})
+
+
+@proxy_router.api_route(
+    "/artex/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    include_in_schema=False,
+)
+async def artex_proxy(path: str, request: Request):
+    import config
+
+    origin = (getattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "") or "").strip().rstrip("/")
+    if not origin:
+        return _error(404, "ARTEX_NOT_ENABLED", "ARTEX is not enabled",
+                      "CORTEXSIM_ARTEX_ORIGIN is empty; the embedded ARTEX service is not enabled.")
+
+    url = f"{origin}/artex/{path}"
+    if request.url.query:
+        url = f"{url}?{request.url.query}"
+    headers = [(k, v) for k, v in request.headers.raw
+               if k.decode("latin-1").lower() not in _DROP_REQUEST]
+    body = await request.body()
+
+    # No read timeout: SSE streams legitimately idle between frames.
+    client = httpx.AsyncClient(transport=_transport,
+                               timeout=httpx.Timeout(connect=5.0, read=None, write=30.0, pool=5.0))
+    try:
+        upstream = await client.send(
+            client.build_request(request.method, url, headers=headers, content=body or None),
+            stream=True,
+        )
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        return _error(502, "ARTEX_PROXY_UPSTREAM_ERROR", "ARTEX upstream unreachable",
+                      f"{type(exc).__name__}: {exc}")
+
+    async def _close() -> None:
+        await upstream.aclose()
+        await client.aclose()
+
+    async def _body():
+        # Raw (still content-encoded) bytes, forwarded chunk by chunk as they arrive.
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await _close()
+
+    response = StreamingResponse(_body(), status_code=upstream.status_code,
+                                 background=BackgroundTask(_close))
+    response.raw_headers = [(k, v) for k, v in upstream.headers.raw
+                            if k.decode("latin-1").lower() not in _DROP_RESPONSE]
+    return response
