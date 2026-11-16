@@ -126,7 +126,7 @@ func TestMarkedStepRunsItsCampaignThroughSimCoreAndSendsFromHere(t *testing.T) {
 
 	// The step's stored output is SimCore's, then the account of what was sent.
 	out := strings.Join(s.outputs, "\n")
-	if !strings.Contains(out, "{\"status\": \"complete\"}") || !strings.Contains(out, "\"reached\": 2") {
+	if !strings.Contains(out, "{\"status\": \"complete\"}") || !strings.Contains(out, "\"sent\": 2") {
 		t.Errorf("step output:\n%s", out)
 	}
 	if code, _ := s.complete["exit_code"].(float64); code != 0 {
@@ -199,7 +199,7 @@ func TestMarkedStepStreamsItsEalOutputAsTheStepsLiveChunks(t *testing.T) {
 		t.Fatalf("final frames: %v", finals)
 	}
 	out, _ := finals[0]["output"].(string)
-	if !strings.Contains(out, "{\"status\": \"complete\"}") || !strings.Contains(out, "\"reached\": 1") {
+	if !strings.Contains(out, "{\"status\": \"complete\"}") || !strings.Contains(out, "\"sent\": 1") {
 		t.Errorf("the step's stored frame:\n%s", out)
 	}
 	if len(s.relays) != 1 {

@@ -500,6 +500,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   it has written, so a Correlation row or a timed-out step's row that an
   earlier version wrote `missed` stays `missed`. Re-run the scenario to score
   it under these rules.
+- **A relayed request the far end resets still counts as sent** (#374).
 - **A finished run's stdout panel shows what the run printed** (#340). The
   panel on a run's Live tab showed only the live stream, so a run that had
   already ended said "waiting for agent…" even though SimCore had stored its

@@ -422,6 +422,85 @@ def test_relay_wire_step_returns_ops_inside_allowlist(client, session_factory, r
     assert [(x.outcome, x.outcome_reason) for x in _rows(session_factory)] == [(None, None)]
 
 
+# SIM-NDR-001 step-03 as the 1.2.4 lab ran it (#374): 12 beacons, 11 sleeps.
+NDR_001_BEACON = {"plugin": "c2_http_beacon", "params": {
+    "target_url": "http://c2.example.test:8080/uid/index.html", "iterations": 12,
+    "sleep_seconds": 1, "jitter_pct": 0, "method": "GET", "dga_query_param": True}}
+
+#: How the beacon's ``eal`` exits after performing the operations
+#: (agent/ealrelay/cli.go): 0 once any operation was sent, whatever the far end
+#: replied (a reset, an HTTP 500, nothing); 1 when none was sent.
+EXIT_ALL_SENT_EVERY_ONE_RESET = 0
+EXIT_NONE_SENT = 1
+
+
+def _relay_ndr_001_and_complete(client, session_factory, step_exit_code):
+    """Relay the 12-beacon step live, then report it as the beacon does."""
+    res = _launch(session_factory, **LIVE)
+    body = _relay(client, res.run_id, campaign_yaml=_campaign(
+        NDR_001_BEACON, target_allowlist=["c2.example.test"])).json()
+    assert [o["op"] for o in body["ops"]].count("http") == 12
+    # Issued live: the relay's ledger leaves the rows to be judged.
+    assert [(x.outcome, x.outcome_reason) for x in _rows(session_factory)] == [(None, None)]
+    done = client.post(f"/api/runs/{res.run_id}/complete", json={
+        "exit_code": step_exit_code, "summary": "", "agent_id": AGENT,
+        "steps": [
+            {"step_id": "step-01", "exit_code": 0, "termination": "exited"},
+            {"step_id": "step-02", "exit_code": step_exit_code, "termination": "exited"},
+        ]})
+    assert done.status_code == 200, done.text
+    return res.run_id
+
+
+def test_relayed_requests_the_far_end_reset_are_credited_by_their_alert(client, session_factory):
+    run_id = _relay_ndr_001_and_complete(client, session_factory, EXIT_ALL_SENT_EVERY_ONE_RESET)
+    obs = client.post(f"/api/runs/{run_id}/observations", json={"observations": [{
+        "external_id": "a-374", "name": "periodic beacon", "technique": "T1071.001",
+        "detection_id": "xql-periodic-beacon", "host": "lab-relay",
+        "observed_at": datetime.utcnow().isoformat() + "Z"}]})
+    assert obs.status_code == 200, obs.text
+    [row] = _rows(session_factory)
+    assert (row.outcome, row.observed) == ("detected", True)
+
+
+@pytest.mark.parametrize("step_exit_code, judged", [
+    # Every request sent, every one reset: the step did its work, so a silent
+    # row is a miss of Cortex's once the window closes.
+    (EXIT_ALL_SENT_EVERY_ONE_RESET, ("missed", None)),
+    # Nothing left the endpoint: the step failed, and its silence says nothing.
+    (EXIT_NONE_SENT, ("not_executed", "STEP_FAILED")),
+])
+def test_relayed_requests_the_far_end_reset_are_judged_after_the_window(
+        client, session_factory, step_exit_code, judged):
+    from datetime import timedelta
+
+    from connectors.service import apply_verdicts
+    from models import Result, StepOutcome
+
+    run_id = _relay_ndr_001_and_complete(client, session_factory, step_exit_code)
+
+    async def _close_the_window_and_judge():
+        async with session_factory() as db:
+            ran = datetime.utcnow() - timedelta(minutes=10)
+            for model in (Result, StepOutcome):
+                for row in (await db.execute(
+                        select(model).where(model.run_id == run_id))).scalars().all():
+                    if model is Result:
+                        row.executed_at = ran
+                    else:
+                        row.started_at = row.recorded_at = ran
+            await db.commit()
+            results = list((await db.execute(
+                select(Result).where(Result.run_id == run_id))).scalars().all())
+            await apply_verdicts(db, run_id, results, [], source="t", window_seconds=60,
+                                 pull_context={"basis": "reconcile", "unscoped": False,
+                                               "truncated": False, "alert_incidents": {}})
+
+    asyncio.run(_close_the_window_and_judge())
+    [row] = _rows(session_factory)
+    assert (row.outcome, row.outcome_reason) == judged
+
+
 def test_relay_wire_step_outside_the_campaign_allowlist_returns_no_ops(client, session_factory):
     res = _launch(session_factory, **LIVE)
     r = _relay(client, res.run_id, campaign_yaml=_campaign(
