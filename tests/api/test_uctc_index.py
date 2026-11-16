@@ -45,7 +45,7 @@ def client(make_client):
 
 @pytest.fixture
 def seeded(session_factory):
-    """Seed the real 170-scenario evidence set from the crosswalk.
+    """Seed the real scenario evidence set (187 rows) from the crosswalk.
 
     Only the columns the reverse index touches are populated; the rest carry
     placeholders because this surface never reads them.
@@ -59,11 +59,16 @@ def seeded(session_factory):
     CVE-2026-0257, PHP2Shell). All three bind already-evidenced TCs, so the evidenced
     pins (90) do not move; in-use payloads 34 -> 35 (POV-SC-013).
     192 -> 193 on 2026-10-28: SIM-KOI-009 (GlassWorm agentic endpoint, binds already-evidenced TC-SCA-01/TC-SSCAN-01; evidenced pins unchanged).
+    193 -> 187 on 2026-11-15: the CSV is re-emitted for the 1.2.5 release. It had
+    not been emitted since 193, so it gains the 12 rows authored since
+    (SIM-CDR-030, SIM-EDR-023..029, SIM-KOI-010..012, SIM-MP-038) and loses the
+    18 CSPM, ASM and AI_SPM rows that moved to feature/scenarios-cloud-posture
+    (#380). The pins below move to `uctc_crosswalk_v2.2.py --report` on that tree.
     """
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 193
+    assert len(rows) == 187
 
     async def _seed() -> None:
         async with session_factory() as session:
@@ -116,9 +121,12 @@ def test_summary_reports_the_index_totals(client, seeded):
 
 def test_summary_reports_the_evidence_ground_truth(client, seeded):
     ev = client.get("/api/uctc/summary").json()["evidence"]
-    assert ev["evidenced"] == 90  # 89 -> 90 on 2026-10-27: TC-DLP-07 enters via the CSV catch-up (ccf40d5 rows)
+    # 89 -> 90 on 2026-10-27: TC-DLP-07 enters via the CSV catch-up (ccf40d5 rows).
+    # 90 -> 71 and 70 -> 69 on 2026-11-15: the cloud-posture rows left (#380);
+    # `--report` reads "71/266 (DET/HNT 69/107)" on that tree.
+    assert ev["evidenced"] == 71
     assert ev["detection_backable"] == 107
-    assert ev["evidenced_detection_backable"] == 70
+    assert ev["evidenced_detection_backable"] == 69
     # Over half the detection-backable surface carries no measurable threshold,
     # so the verifier can never return a pass for it.
     assert ev["unscoreable"] == 57
@@ -407,8 +415,8 @@ def test_unknown_test_case_is_a_structured_404(client, seeded):
 def test_coverage_totals_match_the_summary(client, seeded):
     cov = client.get("/api/uctc/coverage").json()
     summ = client.get("/api/uctc/summary").json()["evidence"]
-    assert cov["totals"]["evidenced"] == summ["evidenced"] == 90
-    assert cov["totals"]["evidenced_detection_backable"] == 70
+    assert cov["totals"]["evidenced"] == summ["evidenced"] == 71
+    assert cov["totals"]["evidenced_detection_backable"] == 69
 
 
 def test_coverage_by_use_case_puts_the_worst_gap_first(client, seeded):
@@ -440,7 +448,7 @@ def test_coverage_by_plane_is_scenario_derived(client, seeded):
 
 def test_gaps_default_to_the_actionable_detection_classes(client, seeded):
     body = client.get("/api/uctc/gaps").json()
-    assert body["total"] == 37
+    assert body["total"] == 38  # 37 -> 38 on 2026-11-15: 107 - 69 evidenced
     assert all(g["evidence"]["evidenced"] is False for g in body["gaps"])
     assert {g["validation_class"] for g in body["gaps"]} <= {"DET", "HNT"}
     assert body["scope"]["validation_class"] == "DET,HNT"
@@ -482,7 +490,9 @@ def test_payloads_report_engine_usage_and_the_split_flag(client, seeded):
     body = client.get("/api/uctc/payloads").json()
     assert body["total"] == 140
     in_use = client.get("/api/uctc/payloads?in_use=true").json()
-    assert in_use["total"] == 35  # 33 -> 34 on 2026-10-27: same CSV catch-up; 34 -> 35 on 2026-10-28: SIM-MP-037 binds POV-SC-013
+    # 33 -> 34 on 2026-10-27: same CSV catch-up; 34 -> 35 on 2026-10-28: SIM-MP-037
+    # binds POV-SC-013; 35 -> 28 on 2026-11-15: the CSPM, ASM and AI_SPM rows left.
+    assert in_use["total"] == 28
     assert all(p["scenario_count"] > 0 for p in in_use["payloads"])
     sc1 = next(p for p in body["payloads"] if p["pov_scenario_id"] == "POV-SC-001")
     assert sc1["needs_split"] is True
