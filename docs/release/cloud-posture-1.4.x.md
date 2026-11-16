@@ -24,8 +24,8 @@ and ship in a 1.4.x release. Nothing on this list is in 1.2.x or 1.3.x.
 as well. To bring `dev` in without losing anything:
 
 1. `git merge origin/dev` on this branch.
-2. `git revert -m 1 <merge commit>`, where the merge commit is the one that
-   landed `chore/scenarios-pull-cloud-posture` on `dev`.
+2. `git revert -m 1 caa06f5e`. That is the merge commit of PR #380, which
+   landed `chore/scenarios-pull-cloud-posture` on `dev` on 2026-11-15.
 
 After step 2 the files are back, on top of current `dev`. Merge `dev` in that
 way before each round of work. When the work is ready for 1.4.x, open the PR
