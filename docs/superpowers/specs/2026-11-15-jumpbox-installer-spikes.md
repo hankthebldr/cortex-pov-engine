@@ -56,20 +56,27 @@ How each row is read:
 
 ## R2: WSL2 plus dockerd on hosted Windows runners
 
-Run id: pending (CI run).
+Run id: 43895310147 (first run; failed on a script bug, see below). The docker
+rows wait for a re-run.
 
 | Check | windows-2022 | windows-2025 |
 |---|---|---|
-| Windows build and edition | pending (CI run) | pending (CI run) |
-| Hypervisor present | pending (CI run) | pending (CI run) |
-| `wsl --version` | pending (CI run) | pending (CI run) |
-| `wsl --update` | pending (CI run) | pending (CI run) |
-| Optional features (VM Platform, WSL) | pending (CI run) | pending (CI run) |
-| Rootfs SHA-256 matches pin | pending (CI run) | pending (CI run) |
-| `wsl --import --version 2` | pending (CI run) | pending (CI run) |
-| `apk add docker` | pending (CI run) | pending (CI run) |
-| `docker info` | pending (CI run) | pending (CI run) |
-| `docker run --rm hello-world` | pending (CI run) | pending (CI run) |
+| Windows build and edition | build 20348, Windows Server 2022 | build 26100, Windows Server 2025 |
+| Hypervisor present | yes | yes |
+| `wsl --version` | WSL 3.0.5.0, kernel 6.18.58.1-1 | WSL 3.0.5.0, kernel 6.18.58.1-1 |
+| `wsl --update` | exit 0 | exit 0 |
+| `wsl --set-default-version 2` | exit 0 | exit 0 |
+| Optional features (VM Platform, WSL) | pending (CI re-run) | pending (CI re-run) |
+| Rootfs SHA-256 matches pin | yes | yes |
+| `wsl --import --version 2` | ok (exit 0) | ok (exit 0) |
+| Mirrored networking available | no (build below 22621) | yes |
+| `apk add docker` | failed in run 43895310147: `apk` not on PATH under `wsl --exec` (script bug, fixed); pending (CI re-run) | same; pending (CI re-run) |
+| `docker info` | pending (CI re-run) | pending (CI re-run) |
+| `docker run --rm hello-world` | pending (CI re-run) | pending (CI re-run) |
+
+So far: hosted runners expose a hypervisor and import a WSL2 distribution; the
+open question is dockerd inside it. Every in-distro program is now called by
+absolute path (`wsl --exec` is not a login shell, so `/sbin` is off PATH).
 
 ## Decisions
 
