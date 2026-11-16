@@ -242,7 +242,7 @@ first — `make rust-dist` does both phases.
 - The image declares a `HEALTHCHECK` (`curl -fsS` on `/api/health`, every 30 s, start period 60 s). It checks liveness only: `docker ps` healthy means the process answers, not that nothing is degraded, and Docker does not restart an unhealthy container. Container logs are capped at 5 × 20 MB. The `CMD` pins `--workers 1`, because SimCore is single-process (queue, event bus and SQLite live in the process); before, `WEB_CONCURRENCY=4` gave four workers. The Helm chart's API `replicaCount` defaults to 1 for the same reason (was 2). All authored; no container ran in this pass.
 - The `docker.sock` mount is gone.
 - `X-Forwarded-For` is honoured only from peers in `CORTEXSIM_TRUSTED_PROXIES` (CIDRs, empty default). It is now a `Settings` field: the process environment wins, then `.env`, so a host-run `.env` may carry it (before round 2 that refused to boot). The first ignored header from each unlisted peer logs one WARNING (bounded at 64 peers). `/api/health`'s `agents` component reads `XFF_FROM_UNTRUSTED_PEER` with `ignored_forwarders[]` when there are any, else `AGENT_ADDRESS_SHARED` when distinct hostnames share one `last_ip`.
-- `POST /api/infra/generate` refuses request text that is not a region, instance type, tag, or a CIDR written in the CIDR alphabet (no IPv6 zone id) with `400 BAD_INFRA_PARAM`, before any bundle directory exists (SEC-17). Since the merge with `dev` (#212) the request model refuses a `region` or `jumpbox_size` outside the AWS shapes first, with `422`, and `infra/templates` no longer interpolate raw: every string goes through the `hcl_string` / `hcl_object` filters as an escaped HCL literal, a second layer behind the allow-list.
+- `POST /api/infra/generate` and its SEC-17 allow-list (`400 BAD_INFRA_PARAM`, the `422` request model and the escaped `hcl_string` / `hcl_object` template filters) left `dev` with the IaC generator for `feature/scenarios-cloud-posture` (1.4.x); this tree serves no `/api/infra/*` route.
 - `POST /api/tools/{tool}/start` fills only open template placeholders (`400 BAD_TOOL_PARAM`); it used to be a verified unauthenticated root RCE through `params.binary` (SEC-02).
 - An XQL `target` stage is refused with `400 XQL_WRITE_STAGE_REFUSED` on every path.
 - The `.env.example` placeholder secret is refused in development as well as production.
@@ -362,14 +362,19 @@ The FY27 Use-Case / Test-Case master index is the sales-motion source of truth. 
 > leading count in each row was re-read from `docs/reference/ground-truth.md`
 > (`scenarios_per_plane`) on 2026-11-15 for the 1.2.5 release; the examples
 > after it are not exhaustive.
+>
+> **CSPM, ASM and AI_SPM are not on `dev` or `main`.** Their 18 scenarios, 18
+> TTP cards and the IaC modules that planted their findings moved to
+> `feature/scenarios-cloud-posture` for 1.4.x (#380, tracking #379). The
+> per-plane IaC modules the rows below used to name went with the generator.
 
 | Plane | Cortex Engine | Status |
 |-------|--------------|--------|
-| CDR | Cortex Cloud / Prisma Cloud Compute | 29 scenarios (container enum · cryptominer · container escape · k8s lateral · wildfire trigger · systemd/cron persistence (`SIM-CDR-006`) · cluster/container posture sweep wiring Trivy/Kube-bench/Kubescape/Gitleaks/Cloudsplaining (`SIM-CDR-007`) · IAM-key abuse + S3 exfil (`SIM-CDR-008`) · **sock-shop microservices behavioral anomaly — first ABIOC (`SIM-CDR-009`)** · ransomware-in-container (`SIM-CDR-010`) · k8s-goat escape chain (`SIM-CDR-011`) · WildFire-in-container + misconfig (`SIM-CDR-012`) · insecure-deployment ELF detonation (`SIM-CDR-013`) · malicious-k8s multi-stage ABIOC chain (`SIM-CDR-014`) · **XDM modeling-rule substrate proof (`SIM-CDR-015`)** — all six ported from `xsiam-prisma-cdr-lab`) + IaC module (EKS) |
-| EDR | Cortex XDR Agent | 29 scenarios (credential dumping · reverse shell · persistence · defense evasion · lateral movement · LSASS memory dump (`SIM-EDR-006`) · ESXi inhibit-recovery (`SIM-EDR-007`) · Linux ransomware impact (`SIM-EDR-008`) · rclone bulk exfil (`SIM-EDR-009`)) + IaC module (diverse Linux targets) |
-| NDR | Network Security / Firewall Analytics | 12 scenarios (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil (`TTP-2026-0068`) · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
-| ITDR | Cortex ITDR | 20 scenarios (active) — 5 synthetic IdP audit-log emissions via the `idp_signin_emulator` EAL plugin (impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout) · `SIM-ITDR-006` AD offline-roasting harvest (AS-REP Roast + Kerberoast via `TOOL-IMPACKET`/`TOOL-RUBEUS`) · `SIM-ITDR-007` AD privilege-escalation chain wiring Pypykatz/BloodyAD/KrbRelayUp/PrintSpoofer/Tokenvator · `SIM-ITDR-008` helpdesk-MFA-reset account takeover — IaC module (AD lab with seeded roastable accounts) |
-| TIM | Cortex Threat Intel Management | 9 scenarios (`tim-001` TAXII IOC-feed match · `tim-002` adversary infrastructure staging — first Resource Development (TA0042) coverage) + IaC module (TAXII + fake C2) |
+| CDR | Cortex Cloud / Prisma Cloud Compute | 29 scenarios (container enum · cryptominer · container escape · k8s lateral · wildfire trigger · systemd/cron persistence (`SIM-CDR-006`) · cluster/container posture sweep wiring Trivy/Kube-bench/Kubescape/Gitleaks/Cloudsplaining (`SIM-CDR-007`) · IAM-key abuse + S3 exfil (`SIM-CDR-008`) · **sock-shop microservices behavioral anomaly — first ABIOC (`SIM-CDR-009`)** · ransomware-in-container (`SIM-CDR-010`) · k8s-goat escape chain (`SIM-CDR-011`) · WildFire-in-container + misconfig (`SIM-CDR-012`) · insecure-deployment ELF detonation (`SIM-CDR-013`) · malicious-k8s multi-stage ABIOC chain (`SIM-CDR-014`) · **XDM modeling-rule substrate proof (`SIM-CDR-015`)** — all six ported from `xsiam-prisma-cdr-lab`) |
+| EDR | Cortex XDR Agent | 29 scenarios (credential dumping · reverse shell · persistence · defense evasion · lateral movement · LSASS memory dump (`SIM-EDR-006`) · ESXi inhibit-recovery (`SIM-EDR-007`) · Linux ransomware impact (`SIM-EDR-008`) · rclone bulk exfil (`SIM-EDR-009`)) |
+| NDR | Network Security / Firewall Analytics | 12 scenarios (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil (`TTP-2026-0068`) · FTP cleartext+STOR · SSH outbound+KEXINIT) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
+| ITDR | Cortex ITDR | 20 scenarios (active) — 5 synthetic IdP audit-log emissions via the `idp_signin_emulator` EAL plugin (impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout) · `SIM-ITDR-006` AD offline-roasting harvest (AS-REP Roast + Kerberoast via `TOOL-IMPACKET`/`TOOL-RUBEUS`) · `SIM-ITDR-007` AD privilege-escalation chain wiring Pypykatz/BloodyAD/KrbRelayUp/PrintSpoofer/Tokenvator · `SIM-ITDR-008` helpdesk-MFA-reset account takeover |
+| TIM | Cortex Threat Intel Management | 9 scenarios (`tim-001` TAXII IOC-feed match · `tim-002` adversary infrastructure staging — first Resource Development (TA0042) coverage) |
 | Cloud App | Cortex Cloud App Security | 10 scenarios (active) — outbound OAuth 2.0 authorize requests against Okta / Microsoft / Google with planted risky scopes via the `oauth_grant_emulator` EAL plugin (Phase 9) |
 | Analytics | XSIAM Correlation Engine | 38 multi-plane stitching scenarios (`scenarios/multi_plane/mp-001..038-*.yml`; `SIM-MP-023..038` are Unit 42 chains; with `apb-001` the ANALYTICS plane totals 39 in the ground truth; `SIM-MP-006` is the NGFW↔container 5-tuple+10s causality stitch) |
 | AI_ACCESS | Cortex AI Access Security | 6 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
@@ -487,93 +492,20 @@ The console's token contract is `ui/src/styles/cortex-tokens.css` (dark is the d
 
 `CORTEXSIM_AGENT_CONTEXT.md` in repo root is the complete Phase 1 build specification. Section numbers (4.1–4.6) correspond to deliverables. Phase 2 preview is in Section 11 — context only, do not build yet.
 
-## IaC Topology Generator
+## IaC Topology Generator — moved to `feature/scenarios-cloud-posture` (1.4.x)
 
-> **Moved 2026-11-15.** The generator (`infra/`, `core/engine/infra_*.py`, `core/api/infra.py`, `core/content_loader.py`, the console's Lab page) lives on `feature/scenarios-cloud-posture`, targeted for a 1.4.x release, with the CSPM, ASM and AI_SPM planes. None of it is on `dev` or `main`. This section describes that branch. To work on it, merge `dev` into the branch, then `git revert -m 1` the merge of the removal PR there so the files come back.
+The generator left `dev` on 2026-11-15 with the CSPM, ASM and AI_SPM planes and the 14 Terraform-fixtured assertions (#380, tracking #379): `infra/`, `core/engine/infra_*.py`, `core/api/infra.py` (the four `/api/infra/*` routes), `/api/scenarios/{id}/infra-hints`, `core/content_loader.py`, `scripts/jumpbox/install-content.sh`, the Dockerfile's `COPY infra/` and the console's Lab page. None of it is on `dev` or `main`, and 1.2.5 does not ship it; it is planned for a 1.4.x release.
 
-The IaC generator produces Terraform bundles Torque can consume as blueprints. Phase A supports AWS with `base`, `edr`, `cdr`, and `content-library` modules. The DC selects modules + parameters in the UI and downloads a tar.gz bundle containing a ready-to-apply root Terraform config plus all selected module directories.
+What stays on `dev`: the optional scenario fields `required_content` and `infra_modules_needed` (both default to empty lists, so scenarios load unchanged), tier-3 adapter packs' `iac_module`, and the plane vocabulary (`PLANE_REGISTRY` still names CSPM, ASM and AI_SPM). An old `#/environments` link opens Agents.
 
-### Key paths
+To work on the generator, check out `feature/scenarios-cloud-posture`, merge `dev` into it, then `git revert -m 1` the merge of #380 there so the files come back; `docs/release/cloud-posture-1.4.x.md` on that branch has the steps. Design: `docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`.
 
-- `infra/modules/{provider}/{module}/` — Terraform modules (+ `content.yml`, `README.md` with YAML frontmatter)
-- `infra/templates/*.j2` — Jinja2 root-bundle templates rendered by the generator
-- `infra/blueprints/` — generated bundles (gitignored)
-- `core/engine/infra_generator.py` — core generation logic (uses `shutil.copytree` with ignore callback to strip `.terraform/` artifacts)
-- `core/engine/infra_catalog.py` — module metadata loader (reads README.md frontmatter + content.yml)
-- `core/engine/infra_models.py` — Pydantic request/response models
-- `core/api/infra.py` — `/api/infra/*` endpoints
-- `core/content_loader.py` — merges `/opt/cortexsim/content/installed.json` into TOOL_REGISTRY at startup
-- `core/tools/registry.py` — now exposes `STATIC_TOOL_REGISTRY` (built-ins) and runtime `TOOL_REGISTRY`
-- `scripts/jumpbox/install-content.sh` — runs on provisioned jumpbox via cloud-init; clones/installs each module's declared content
+## Multi-plane stitching scenarios
 
-### API endpoints
-
-- `POST /api/infra/generate` — generate a bundle, returns `bundle_id` and `download_url`
-- `GET  /api/infra/modules[?provider=aws]` — list available modules
-- `GET  /api/infra/bundles` — list previously generated bundles
-- `GET  /api/infra/bundles/{bundle_id}/download` — download tar.gz
-
-### Design rules (IaC-specific)
-
-- **Base module always included** in any bundle (enforced in `InfraGenerator._normalize_modules`).
-- **Static TOOL_REGISTRY always wins** over installed-content entries — `content_loader` never overwrites.
-- **Module metadata lives in `README.md` frontmatter**, not in Python — adding a module is filesystem-only.
-- **Bundles are stateless artifacts** — no DB schema. File-system is source of truth.
-- **Never commit `.terraform/` or `.terraform.lock.hcl`** into module directories — they pollute generated bundles. The generator also strips them via an `ignore` callback.
-
-### Scenario schema additions
-
-Scenarios may optionally declare `required_content` (open-source tool repos needed) and `infra_modules_needed` (IaC module names to pre-select). Both default to empty lists — existing scenarios load unchanged.
-
-### Tests
-
-Python tests live under `tests/`. Run: `.venv/bin/pytest tests/ -v`. The suite covers Pydantic models, module catalog, generator (including a regression guard that bundles don't contain `.terraform` artifacts), API endpoints, and content loader. The `tests/conftest.py` sets `CORTEXSIM_BASE_DIR` to the repo root via `setdefault` so tests resolve `infra/modules/` correctly.
-
-### Phase scope
-
-- **Phase A** (done): AWS + `base`, `edr`, `cdr`, `content-library`
-- **Phase B-1** (done): AWS + `itdr`, `ndr`
-- **Phase B-2** (done): AWS + `cspm`, `asm`, `tim`, `telemetry-replay`
-- **Phase B-3** (done): AWS + `ai-spm` (AI Security Posture Management — 14 resources, 8 planted findings; backs the AI_SPM plane)
-- **Phase C** (pending): GCP provider port of all above
-- **Phase D** (pending): Azure provider port of all above
-- **Phase E** (design only): `onprem` provider type (Ansible + Docker Compose)
-
-AWS is feature-complete with **11 modules** covering every active detection plane (`base`, `edr`, `cdr`, `content-library`, `itdr`, `ndr`, `cspm`, `asm`, `tim`, `telemetry-replay`, `ai-spm`). Full design: `docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`.
-
-### CSPM, ASM, TIM, telemetry-replay modules (AWS)
-
-**`cspm`** — Intentionally misconfigured AWS resources for Cortex Cloud CSPM validation. Plants 9 findings: public S3 bucket, unversioned bucket, no-KMS bucket, SG with SSH open to world, SG with DB ports (3306/5432/6379) open to world, IAM role with `AdministratorAccess`, IAM user with wildcard `iam:*` policy, unencrypted EBS volume, weak CloudTrail (no log-file-validation, no multi-region, no global events). Every resource tagged with `CortexSimCSPMFinding=<type>` for easy cross-reference.
-
-**`asm`** — Deliberately exposed public EC2 running nginx (directory listing + bait files), weak TLS (self-signed + RSA-1024), SSH on non-standard port 2222 with password auth, Redis on 6379 with no auth, fake Elasticsearch banner on 9200, gocortexbrokenbank on 9001. Plus a separate public-website S3 bucket. For validating that Cortex ASM discovers and enumerates the full attack surface.
-
-**`tim`** — TAXII 2.1 server (mocktaxii) + fake C2 HTTP endpoint + Route53 private zone with 5 IOC-style subdomain records (`c2-beacon`, `exfil-drop`, `payload-delivery`, `dga-1a2b3c`, `cryptominer-pool`) that resolve to the fake C2. Produces both the IOC feed *and* the matching outbound traffic for testing stitched IOC+NDR+EDR detection.
-
-**`telemetry-replay`** — Content-only module (no Terraform resources). Clones curated EVTX/PCAP/JSON attack datasets (EVTX-ATTACK-SAMPLES, mordor, cyber_simulation, ML datasets, EDR-Telemetry coverage comparisons) plus replay tooling (chainsaw, tcpreplay, sigma-rules-crawler). For POVs focused on parser/correlation validation without live attack execution.
-
-### AI_SPM module (AWS)
-
-**`ai-spm`** — AI Security Posture Management lab for Cortex AI-SPM validation. 14 Terraform resources plant 8 posture findings (exposed AI assets, weak model-endpoint config, AI supply-chain risk, sensitive-data exposure, etc.) that the 6 AI_SPM scenarios (`sim-aispm-001..006`) and their TTP cards (`TTP-2026-0054..0059`) exercise. Backs the 13th active detection plane (AI_SPM). See `infra/modules/aws/ai-spm/README.md` and `scenarios/ai_spm/`.
-
-### ITDR and NDR modules (AWS)
-
-**`itdr`** — Windows AD lab: Domain Controller (Server 2022) auto-promotes to new forest on boot, seeds 50 users + 5 Kerberoast-vulnerable service accounts (weak password + SPN set) + 1 AS-REP-Roastable DA-equivalent account. Workstations (Server 2022 Core) auto-join the domain via user_data. Content: Impacket, Rubeus, Certipy, SharpHound/BloodHound, Mimikatz, msInvader. DA password stored in SSM SecureString.
-
-**`ndr`** — Network topology for firewall+XDR stitching: VPC Flow Logs enabled, attack endpoint in DMZ generates controlled C2/DNS-tunnel traffic against `testmynids.org`, log collector (nginx + ackbarx) accepts HTTP/syslog/SNMP from NGFW. Three stitching patterns via `ndr_stitching_pattern` var:
-- `marketplace_vmseries` — PAN VM-Series from AWS Marketplace (DC brings license)
-- `external_ngfw_forward` — existing customer NGFW forwards logs to collector (default)
-- `suricata_lab` — Suricata IDS stand-in for labs without NGFW
-
-### Multi-plane stitching scenarios
-
-`scenarios/multi_plane/mp-*.yml` (5 scenarios) — scenarios with `plane: ANALYTICS` that exercise XSIAM's correlation engine across firewall + endpoint + identity + cloud planes (the on-disk filenames are `mp-NNN-*.yml`; the scenario IDs are `SIM-MP-NNN`):
+`scenarios/multi_plane/mp-*.yml` (38 scenarios, `mp-001..038`; the first five are below) — scenarios with `plane: ANALYTICS` that exercise XSIAM's correlation engine across firewall + endpoint + identity + cloud planes (the on-disk filenames are `mp-NNN-*.yml`; the scenario IDs are `SIM-MP-NNN`):
 
 - **SIM-MP-001** (`mp-001-c2-beacon-ngfw-xdr-stitch.yml`) — C2 beacon callback stitching NGFW session logs with XDR process lineage
 - **SIM-MP-002** (`mp-002-kerberoast-lateral-smb.yml`) — Kerberoast → Pass-the-Hash → DCSync chain correlating ITDR + EDR + NDR signal
 - **SIM-MP-003** (`mp-003-data-staged-exfil-dns-tunnel.yml`) — Staged exfiltration via DNS tunnel, XDR stage detection + NGFW DNS anomaly stitched
 - **SIM-MP-004** (`mp-004-apt29-cloud-cred-theft.yml`) — APT29-style cloud credential theft; the only multi-plane scenario shipping a self-contained runnable package under `scenarios/multi_plane/packages/SIM-MP-004/`
 - **SIM-MP-005** (`mp-005-cross-plane-correlation.yml`) — cross-plane correlation incident stitching endpoint + network + identity signal
-
-### On-prem provider (Phase E, design only)
-
-Future phase adds `"onprem"` as a fourth provider alongside aws/gcp/azure. Modules emit Ansible playbooks + Docker Compose instead of Terraform HCL. DC supplies target host inventory; playbooks configure existing VMs as CortexSim targets. See the design doc's On-Prem Provider addendum for details.

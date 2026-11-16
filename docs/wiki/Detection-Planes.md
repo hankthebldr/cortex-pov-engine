@@ -4,7 +4,7 @@ CortexSim organises scenarios by **detection plane** — the Cortex engine that
 should fire on the simulated TTP. Plane is the primary filter in the console's
 scenario browser and the primary axis in the POV report.
 
-**16 planes carry loadable scenarios.** Per-plane counts, tactic coverage,
+**13 planes carry loadable scenarios** (counted 2026-11-15 from `docs/reference/ground-truth.md`). The CSPM, ASM and AI_SPM planes moved to `feature/scenarios-cloud-posture` for a 1.4.x release. Per-plane counts, tactic coverage,
 detection-type mix and the full scenario list live on the generated plane
 pages — they are rebuilt from the corpus on every merge, so they cannot drift
 from the YAML.
@@ -13,23 +13,20 @@ from the YAML.
 
 | Plane | Cortex engine | Scenarios | Primary driver |
 |---|---|---:|---|
-| [[Plane-CDR\|CDR]] | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
-| [[Plane-ANALYTICS\|ANALYTICS]] | XSIAM Correlation Engine | 23 | multi-plane stitching |
-| [[Plane-EDR\|EDR]] | Cortex XDR Agent | 22 | identity-harness shell · signalbench |
+| [[Plane-ANALYTICS\|ANALYTICS]] | XSIAM Correlation Engine | 39 | multi-plane stitching |
+| [[Plane-CDR\|CDR]] | Cortex Cloud / Prisma Cloud Compute | 29 | container-runtime exec · K8s manifests |
+| [[Plane-EDR\|EDR]] | Cortex XDR Agent | 29 | identity-harness shell · signalbench |
 | [[Plane-ITDR\|ITDR]] | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
+| [[Plane-KOI\|KOI]] | Agentic endpoint / supply chain | 12 | `cortex-malicious-agentic-pack` · `agentic_egress` |
 | [[Plane-NDR\|NDR]] | Network Security / Firewall Analytics | 12 | EAL simulator (HTTP/DNS/TCP plugins) |
 | [[Plane-CLOUD_APP\|CLOUD_APP]] | Cortex Cloud App Security | 10 | `oauth_grant_emulator` |
 | [[Plane-TIM\|TIM]] | Cortex Threat Intel Management | 9 | mocktaxii · IOC feeds |
-| [[Plane-KOI\|KOI]] | Agentic endpoint / supply chain | 8 | `cortex-malicious-agentic-pack` · `agentic_egress` |
-| [[Plane-AI_SPM\|AI_SPM]] | Cortex AI Security Posture Management | 7 | `ai-spm` IaC planted findings |
 | [[Plane-AI_ACCESS\|AI_ACCESS]] | Cortex AI Access Security | 6 | `llm_provider_egress` |
-| [[Plane-ASM\|ASM]] | Cortex Attack Surface Management | 6 | `asm` IaC exposed surface |
 | [[Plane-BROWSER\|BROWSER]] | Prisma Browser | 6 | `cortex-browser-attacker` · `browser_attack_runner` |
 | [[Plane-AIRS\|AIRS]] | Cortex AI Runtime Security | 5 | `cortex-prompt-attacker` · `airs_prompt_attack` |
-| [[Plane-CSPM\|CSPM]] | Cortex Cloud Posture Management | 5 | `cspm` IaC intentional misconfigs |
 | [[Plane-EMAIL\|EMAIL]] | XSIAM / NG-SIEM ingestion | 5 | `email_emitter` |
 | [[Plane-DLP\|DLP]] | Enterprise DLP · DSPM · DDR · Endpoint DLP | 5 | endpoint + cloud data-movement TTPs |
-| | **Total** | **177** | |
+| | **Total** | **187** | |
 
 `EMAIL` is third-party log ingestion plus correlation — **not** a first-party
 PANW product surface.
@@ -44,9 +41,10 @@ diagnosing a missing detection:
 - **EAL simulator** (NDR, CLOUD_APP, AI_ACCESS, AIRS, BROWSER, KOI, EMAIL, and
   the analytics log-streamers) — emits network or log shapes the identity
   harness cannot produce. See [[EAL Simulator]].
-- **IaC planted findings** (CSPM, ASM, TIM, AI_SPM) — Terraform stands up
-  deliberately misconfigured or deliberately exposed resources for a posture
-  engine to discover. There is no runtime TTP to execute.
+- **IaC planted findings** (CSPM, ASM, AI_SPM) — Terraform stood up
+  deliberately misconfigured or exposed resources for a posture engine to
+  discover. Those planes and the IaC generator are on
+  `feature/scenarios-cloud-posture` (1.4.x), not in 1.2.5.
 - **Correlation over the others** (ANALYTICS) — no signal of its own; it
   exercises XSIAM's ability to stitch signal that the other planes produced.
 

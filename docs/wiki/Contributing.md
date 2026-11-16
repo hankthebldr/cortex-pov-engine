@@ -70,7 +70,7 @@ only — do not target a feature branch unless explicitly told.
 | New OWASP class in vulnerable-llm | Yes — both safe and compromised paths |
 | New mutator / scorer in prompt-attacker | Yes — pure transformations / detection assertions |
 | Doc-only change | No |
-| New IaC module | Yes — module catalog test + generator regression test |
+| New IaC module (on `feature/scenarios-cloud-posture`, 1.4.x) | Yes — module catalog test + generator regression test |
 
 ## What needs a brainstorm doc
 
