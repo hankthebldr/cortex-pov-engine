@@ -8,6 +8,43 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-16
+
+**ARTEX, an AI-autonomous offensive pentest platform, joins the console as an
+opt-in companion service.** A new Offensive → ARTEX tab frames ARTEX on
+SimCore's own origin through a same-origin reverse proxy. It is off by default;
+a plain POV is unchanged. Design:
+`docs/superpowers/specs/2026-11-16-artex-integration-design.md`.
+
+### Added — ARTEX as an opt-in Offensive tab
+
+- **Offensive → ARTEX console tab** (immersive). It frames `/artex/` once ARTEX
+  answers, and shows a setup gate otherwise. ARTEX's own `/setup` and login run
+  inside the frame.
+- **`/artex/*` reverse proxy** to `CORTEXSIM_ARTEX_ORIGIN`. It streams SSE, keeps
+  the `/artex` prefix on the wire, and refuses path escape and cross-site
+  requests. ARTEX's `8787` is never published to the host.
+- **`GET /api/artex/status`** reports reachability and first-run (`initialized`).
+  No outbound call while disabled.
+- **`artex` health component.** `ok` with `ARTEX_NOT_ENABLED` when the origin is
+  unset; degraded when a configured origin is unreachable.
+- **`CORTEXSIM_ARTEX_ORIGIN` setting.** Empty by default (ARTEX not enabled).
+- **Opt-in `offensive` compose profile**: `artex` and `artex-postgres`, no
+  published ports, self-update off.
+
+### Changed
+
+- Version 1.3.0 (`CORTEXSIM_VERSION`, `APP_VERSION`, `.env.example`).
+- ARTEX side, in its own repo (not in this tree): `/artex` base-prefix support
+  (`basePath`) and the embedded-image build script
+  `scripts/build-embedded-image.sh`.
+
+### Upgrading from 1.2.5
+
+- A default POV needs no action. Enabling ARTEX needs the embedded image, a
+  URL-safe `POSTGRES_PASSWORD` and `CORTEXSIM_ARTEX_ORIGIN`; see
+  `docs/release/mvp-launch-runbook.md` §9.
+
 ## [1.2.5] - 2026-11-16
 
 **The 1.2.x close-out: pull runs clean up after themselves, show their output

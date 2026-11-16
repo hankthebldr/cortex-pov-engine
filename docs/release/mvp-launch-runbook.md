@@ -871,3 +871,70 @@ before it and passed after; host and httptest evidence only, no lab run):
   guard, so a manifest can bake a `?server=` name SimCore will refuse. That
   file belongs to the container-agent branch. The installer half is fixed
   (`f529365`).
+
+## 9 · Offensive profile (ARTEX, opt-in, 1.3.0)
+
+ARTEX is an AI-autonomous offensive pentest platform (AGPLv3) run as a companion
+service. It is off unless you enable it. A default POV (no `offensive` profile,
+`CORTEXSIM_ARTEX_ORIGIN` empty) starts no ARTEX container and is unchanged.
+Design: `docs/superpowers/specs/2026-11-16-artex-integration-design.md`.
+
+### 9.1 Bring-up (two steps, both required)
+
+1. **Build the embedded ARTEX image** in the ARTEX repo. The script bakes the
+   frontend with `NEXT_PUBLIC_BASE_PATH=/artex`:
+
+   ```bash
+   cd <ARTEX repo>
+   scripts/build-embedded-image.sh
+   ```
+
+   If the tag you built is not `cortexsim-artex-embedded:local`, set
+   `ARTEX_EMBED_IMAGE` to it in `.env`.
+
+2. **Opt in and start the profile** in the POV engine's `.env`:
+
+   ```
+   CORTEXSIM_ARTEX_ORIGIN=http://artex:8787
+   POSTGRES_PASSWORD=<URL-safe, see 9.2>
+   ```
+
+   Then from the POV engine checkout:
+
+   ```bash
+   docker compose --profile offensive up -d
+   ```
+
+   Open the console, go to **Offensive → ARTEX**, and complete ARTEX's own
+   `/setup` (first-run admin) inside the frame. That is the separate setup.
+
+### 9.2 `POSTGRES_PASSWORD` must be URL-safe
+
+The password is interpolated into `ARTEX_PG_DSN=postgres://artex:…@artex-postgres:5432/artex`.
+A `@`, `/`, `:`, `?`, `#` or `%` in it breaks the DSN. Use letters and digits.
+The `artex-postgres` service refuses to start with an empty password, so the
+profile fails closed at `up` until it is set.
+
+### 9.3 Security posture and what is published
+
+- **The `/artex/*` proxy has no authentication of its own.** It inherits
+  SimCore's SEC-01 posture: the operator API is unauthenticated until SEC-01
+  lands. Anyone who can reach SimCore's port and pass the Host guard can reach
+  ARTEX through `/artex/*`, including the pre-`/setup` first-run admin
+  bootstrap. ARTEX's own `/setup` and login are not a protection at the proxy
+  layer.
+- **Hardening that does apply:** the outermost Host guard
+  (`CORTEXSIM_ALLOWED_HOSTS`) gates `/artex/*` like every route; the proxy
+  rejects cross-site state-changing requests and path escape; ARTEX `8787` and
+  its `8788` listener are internal to the compose network and not published to
+  the host.
+- **Operator guidance:** bring up the `offensive` profile only on a trusted
+  network. Restrict the published port (`CORTEXSIM_BIND` and/or a host
+  firewall). Complete ARTEX's `/setup` immediately after first bring-up.
+- `artex-postgres` publishes nothing and keeps its data on `artex_pgdata`.
+- Self-update is off: `ARTEX_UPDATE_GITHUB_TOKEN` is not set.
+
+### 9.4 Stop and keep data
+
+`docker compose --profile offensive down` stops the ARTEX services. Without `-v`
+it keeps `artex_data` and `artex_pgdata`.
