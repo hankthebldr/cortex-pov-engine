@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	minDiskKiB   = 10 << 20 // 10 GiB, in 1024-byte blocks (df -Pk)
-	minMemoryKiB = 4 << 20  // 4 GiB, in kB (/proc/meminfo)
+	minDiskKiB = 10 << 20 // 10 GiB, in 1024-byte blocks (df -Pk)
+	// 3.5 GiB of MemTotal (kB): a nominal 4 GB machine reports 3.7-3.9 GiB.
+	minMemoryKiB = 3670016
 
 	defaultPort = 8888
 
@@ -126,7 +127,7 @@ func (s *HostCheck) Check(ctx context.Context, st *engine.State) engine.Result {
 	}
 	st.Facts[FactMemoryGiB] = strconv.FormatInt(memKiB>>20, 10)
 	if memKiB < minMemoryKiB {
-		return block(engine.CodeMemoryLow, fmt.Sprintf("%d GiB of memory; at least 4 GiB needed", memKiB>>20))
+		return block(engine.CodeMemoryLow, fmt.Sprintf("%.1f GiB of memory; a 4 GB-class machine (at least 3.5 GiB usable) is needed", float64(memKiB)/(1<<20)))
 	}
 
 	if warning != nil {

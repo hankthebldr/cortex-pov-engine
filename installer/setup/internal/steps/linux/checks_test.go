@@ -687,3 +687,16 @@ func TestStepsAreCheckOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestHostCheck_MemoryFloor(t *testing.T) {
+	h := healthyHost(t)
+	h.Files["/proc/meminfo"] = []byte("MemTotal:        3880000 kB\n")
+	if r := check(t, NewHostCheck(h), newState()); r.Code != engine.CodeOK {
+		t.Fatalf("a nominal 4 GB machine must pass: %+v", r)
+	}
+	h.Files["/proc/meminfo"] = []byte("MemTotal:        3600000 kB\n")
+	r := check(t, NewHostCheck(h), newState())
+	if r.Code != engine.CodeMemoryLow || !r.Blocks() || !strings.Contains(r.Detail, "3.4 GiB") {
+		t.Fatalf("got %+v", r)
+	}
+}
