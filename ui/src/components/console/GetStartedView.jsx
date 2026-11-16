@@ -45,6 +45,8 @@ import {
 const FIRST_SCENARIO = 'SIM-EDR-001'
 
 export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
+  const { health } = useEnvironment()
+  const install = health?.install
   const { steps, requiredLeft, next, ready, setStepConfirmed } = useSetupProgress()
   const requiredTotal = steps.filter((s) => s.required).length
   // `?step=<id>` opens a named step, so another page (the Components hub's
@@ -56,6 +58,11 @@ export default function GetStartedView({ params = {}, onNavigate = () => {} }) {
     <div className="pov-page gs" data-testid="get-started">
       <header className="gs__head">
         <h1 className="gs__title">Get started</h1>
+        {install && (
+          <p className="gs__lede">
+            Installed by setup {String(install.installed_by).replace(/^povengine-setup\//, '')} · listening at {install.address}
+          </p>
+        )}
         <p className="gs__lede">
           {ready
             ? 'This instance is ready. Run any scenario from Scenarios, or finish the optional steps to unlock network and log-source scenarios.'

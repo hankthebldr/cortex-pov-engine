@@ -431,8 +431,10 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       version: baseHealth.version,
       sensors,
       tenantHealth,
+      // /api/health's top-level install block (null on a compose deployment).
+      install: (healthBody && healthBody.install) || null,
     }
-  }, [baseHealth, tenantHealth])
+  }, [baseHealth, tenantHealth, healthBody])
 
   // Component-level readiness, derived once here so the banner, the header and
   // the Readiness surface cannot disagree about whether this deployment is whole.

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -1150,6 +1151,29 @@ async def component_health(app: Any = None) -> dict[str, dict[str, Any]]:
     return components
 
 
+_INSTALLED_BY_RE = re.compile(r"^(povengine-setup/[^+\s]+)\+(linux|windows)$")
+
+
+def install_block() -> dict[str, Any] | None:
+    """Top-level ``install`` block: set only when the setup program started SimCore.
+
+    ``None`` on a compose deployment. Not a component: it never affects
+    ``status``. A CORTEXSIM_INSTALLED_BY that does not match
+    ``povengine-setup/<version>+<linux|windows>`` is reported raw with
+    ``platform: null`` rather than read as a clean install or raised on.
+    """
+    raw = (settings.CORTEXSIM_INSTALLED_BY or "").strip()
+    if not raw:
+        return None
+    m = _INSTALLED_BY_RE.match(raw)
+    return {
+        "installed_by": m.group(1) if m else raw,
+        "address": settings.CORTEXSIM_INSTALL_ADDRESS,
+        "listen": "address" if settings.CORTEXSIM_BIND else "all",
+        "platform": m.group(2) if m else None,
+    }
+
+
 async def health_payload(app: Any = None) -> dict[str, Any]:
     components = await component_health(app)
     degraded = sorted(
@@ -1166,6 +1190,7 @@ async def health_payload(app: Any = None) -> dict[str, Any]:
         "degraded_components": degraded,
         "checked": list(COMPONENT_KEYS),
         "not_checked": [dict(item) for item in NOT_CHECKED],
+        "install": install_block(),
     }
 
 
