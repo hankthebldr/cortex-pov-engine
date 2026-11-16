@@ -148,6 +148,41 @@ func TestRun_ApplyFailureStops(t *testing.T) {
 	}
 }
 
+// factStep records what each phase learned in State.Facts, as real steps do.
+type factStep struct{}
+
+func (factStep) ID() string    { return "facts" }
+func (factStep) Title() string { return "facts" }
+
+func (factStep) Check(_ context.Context, st *State) Result {
+	st.Facts["checked"] = "yes"
+	return pass
+}
+
+func (factStep) Apply(_ context.Context, st *State) Result {
+	st.Facts["applied"] = "yes"
+	return pass
+}
+
+func TestRun_StepsCanWriteFactsIntoAZeroState(t *testing.T) {
+	for _, tc := range []struct {
+		mode Mode
+		want map[string]string
+	}{
+		{ModeCheck, map[string]string{"checked": "yes"}},
+		{ModeApply, map[string]string{"checked": "yes", "applied": "yes"}},
+	} {
+		st := &State{}
+		rep := Run(context.Background(), []Step{factStep{}}, st, tc.mode, nil)
+		if rep.Final != CodeOK {
+			t.Errorf("mode %d: Final = %q, want OK", tc.mode, rep.Final)
+		}
+		if !reflect.DeepEqual(st.Facts, tc.want) {
+			t.Errorf("mode %d: Facts = %v, want %v", tc.mode, st.Facts, tc.want)
+		}
+	}
+}
+
 func TestRun_CancelledContextStopsBeforeTheNextPhase(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

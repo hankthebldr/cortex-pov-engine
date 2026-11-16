@@ -36,7 +36,8 @@ type Choices struct {
 }
 
 // State is shared by every step of one run. Facts carries what earlier steps
-// learned (detected addresses, versions, ids) to later ones.
+// learned (detected addresses, versions, ids) to later ones; Run creates the
+// map when it is nil, so a step may always write to it.
 type State struct {
 	Version  string
 	Platform string
@@ -98,6 +99,9 @@ type Report struct {
 // CANCELLED with ctx.Err() as its detail.
 func Run(ctx context.Context, steps []Step, st *State, mode Mode, emit func(Event)) Report {
 	rep := Report{Final: CodeOK}
+	if st.Facts == nil {
+		st.Facts = map[string]string{}
+	}
 
 	// record files one result and reports whether the run must stop.
 	record := func(s Step, phase string, r Result) (stop bool) {

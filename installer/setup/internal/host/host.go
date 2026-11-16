@@ -19,6 +19,14 @@ import (
 type Host interface {
 	// Run executes name with args and returns what it wrote. err is non-nil
 	// when the command could not start or exited non-zero (*exec.ExitError).
+	//
+	// The caller owns the deadline: Run waits as long as ctx allows, so pass a
+	// ctx with a timeout for anything that can hang. When ctx is done the
+	// process is killed, and Run returns within a few seconds even if a
+	// grandchild still holds stdout or stderr. A command that exits but leaves
+	// a background process holding its output (a script that starts a daemon
+	// without redirecting it) also returns after that delay, with
+	// exec.ErrWaitDelay; such a daemon should get its own stdio.
 	Run(ctx context.Context, name string, args ...string) (stdout, stderr []byte, err error)
 	ReadFile(name string) ([]byte, error)
 	// WriteFile replaces name with data and leaves it with exactly perm,
@@ -38,6 +46,10 @@ const (
 	httpTimeout = 10 * time.Second
 	// maxHTTPBody caps what HTTPGet reads; /api/health answers in kilobytes.
 	maxHTTPBody = 4 << 20
+	// runWaitDelay bounds how long Run waits, once ctx is done or the command
+	// has exited, for a process that will not die or for output pipes a
+	// leftover grandchild still holds open.
+	runWaitDelay = 3 * time.Second
 )
 
 // OS returns the Host backed by the real operating system.
@@ -58,6 +70,9 @@ func (osHost) Run(ctx context.Context, name string, args ...string) ([]byte, []b
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// Cancelling ctx kills only the direct child. Without a wait delay, a
+	// grandchild holding the output pipes keeps Wait blocked until it exits.
+	cmd.WaitDelay = runWaitDelay
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
 }
