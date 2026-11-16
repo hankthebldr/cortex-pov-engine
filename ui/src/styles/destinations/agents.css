@@ -143,16 +143,11 @@
   box-shadow:0 0 0 1px var(--ac-line);
 }
 
-/* ── 5. Card head: id, an Active tag (a selection, not a status), and
-   the liveness StatusIcon pushed right. ─────────────────────────── */
+/* ── 5. Card head: id and the liveness StatusIcon pushed right. The
+   active agent is shown by the card's highlight only: a word on the
+   card read as "online". ─────────────────────────────────────────── */
 .theme-console .targets .target-card__head .target-card__title { min-width: 0; overflow-wrap: anywhere; }
 .theme-console .targets .target-card__status { margin-left: auto; flex: none; }
-.theme-console .targets .target-card__tag {
-  flex: none;
-  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
-  color: var(--ac-ink); background: var(--ac-soft);
-  border: 1px solid var(--ac-line); border-radius: 4px; padding: 1px 6px;
-}
 
 /* ── 5b. Capabilities + execution identity — neutral chips (a roster,
    not a state), one line of prose under them. Amber ink only when the
