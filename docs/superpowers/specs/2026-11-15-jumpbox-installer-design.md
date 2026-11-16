@@ -1,6 +1,6 @@
 # Jumpbox installer — design
 
-**Status:** Draft, awaiting owner approval
+**Status:** Approved by the owner, 2026-11-15
 **Date:** 2026-11-15
 **Target release:** 1.3.0 (milestone `1.3.0`, tracking issue #376)
 **Branch:** `feature/docker-jumpbox-installer`, cut from `dev`. Topic branches
