@@ -453,6 +453,37 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ### Fixed
 
+- **A correlation with nothing to join is not a Cortex miss** (#378). In the
+  1.2.4 lab pass, SIM-CDR-019 and SIM-NDR-012 relayed their collector steps
+  dry, so no input record left SimCore, yet the `echo` step carrying the
+  correlation exited 0 and its row closed `missed` once the window shut: a
+  Cortex miss (denominator 1, coverage 0 %) for a rule that had no alerts to
+  fuse. A silent Correlation row now reads `not_executed` / `INPUTS_NOT_SENT`
+  when every row it joins sent nothing, with "the steps it joins sent nothing"
+  in its notes, and leaves the efficacy denominator. The corpus does not say
+  which detections a correlation fuses, so its inputs are every other
+  non-Correlation row on an earlier step of the run, or on its own step. An
+  input sent nothing when it is already `not_executed` or `not_reached` (an
+  EAL step that stayed dry or delivered no record, a refused or never-run
+  step), or when its step failed, timed out or did not run on the host. If any
+  input was delivered, the correlation reads `missed` as before. An alert that
+  matches the correlation still credits it. The storyline reads "Signal never
+  generated · inputs not sent".
+- **A timed-out step is not a Cortex miss.** In the same lab pass SIM-MP-003
+  step-03 hit its 180 s limit while DNS hung, so step-04 never ran, and
+  step-03's silent rows read `missed` once the window closed. A step the host
+  records `timeout` is now read like a failed one: its silent `detect` rows,
+  and `prevent` rows scored as a detect, read `not_executed` /
+  `STEP_TIMED_OUT`, with "the step timed out on the host" in the notes. An
+  alert matched inside the window still credits the row. A block-mode
+  `prevent` row on a timed-out step still reads `missed` / fail: the step ran
+  its whole budget unprevented. `signaled` and `anchor_terminated` (the host
+  stopped the step) still read `missed`. The storyline reads "Signal never
+  generated · step timed out".
+- **Rows already decided keep their verdict.** Review never re-judges a row
+  it has written, so a Correlation row or a timed-out step's row that an
+  earlier version wrote `missed` stays `missed`. Re-run the scenario to score
+  it under these rules.
 - **A relayed request the far end resets still counts as sent** (#374).
 - **A finished run's stdout panel shows what the run printed** (#340). The
   panel on a run's Live tab showed only the live stream, so a run that had

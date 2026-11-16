@@ -534,7 +534,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`,
+`STEP_TIMED_OUT`, `INPUTS_NOT_SENT`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -546,11 +547,12 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   the Tier-2 verifier's. An `aborted` termination reads `pending` /
   `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
   was cut short; its verdict is undefined); a `timeout` stays
-  `missed` / fail (the step ran its whole budget unprevented).
+  `missed` / fail for a block-mode `prevent` row (the step ran its whole budget
+  unprevented), while a row scored as a detect reads `not_executed` / `STEP_TIMED_OUT`.
 - **A silent `detect` row is written `missed` — when the host says it ran.** Once its
   window closes with no matched alert, the silent-row judgement
   (`outcome.py::silent_detect_verdict`) writes `outcome = missed` only when the step's
-  host record is `exited`, `timeout`, `signaled` or `anchor_terminated`, and only on
+  host record is `exited`, `signaled` or `anchor_terminated`, and only on
   complete evidence (a host-scoped, untruncated, lossless credential pull; else
   `pending` / `EVIDENCE_INCOMPLETE`). No record or `beacon_lost` → `pending` /
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
@@ -563,10 +565,30 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
   `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
   notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
-  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` /
   `anchor_terminated` are unchanged; an alert matched inside the window still credits
   the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
   `missed`, and the block-mode two-witness branch does not read `exit_code`.
+- **A timed-out step is not a miss.** A step the host records `timeout` was stopped
+  at its time limit before it finished its work (SIM-MP-003 step-03, DNS hung). Its
+  silent `detect` rows, and `prevent` rows scored as a detect, read `not_executed` /
+  `STEP_TIMED_OUT` once the window closes, with "the step timed out on the host" in
+  the notes. A block-mode `prevent` row on a timed-out step still reads `missed` /
+  fail. An alert matched inside the window still credits the row.
+- **A correlation with nothing to join is not a miss (#378).** A silent `Correlation`
+  row that would read `missed` reads `not_executed` / `INPUTS_NOT_SENT` when every
+  row it joins sent nothing. The corpus does not declare which detections a
+  correlation fuses (the card's rule logic is prose), so its inputs are every
+  non-Correlation row on an earlier step of the run, and on its own step, in the
+  launched scenario's step order. An input sent nothing when it is already
+  `not_executed` / `not_reached` (an EAL step that stayed dry or delivered 0
+  records, a refused or never-run step), or is undecided on a step the host
+  records `not_run`, failed (non-zero exit) or timed out. A credited input, a decided
+  `missed` one, or one with no host record counts as sent, so a run where some
+  inputs were delivered keeps `missed`. A correlation with no input rows is judged
+  as before. An alert matched to the correlation still credits it.
+- **Decided rows are not re-judged.** A row already `missed` keeps it under both
+  rules; re-run the scenario to re-score it.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
