@@ -103,6 +103,14 @@ jobs:
             echo "tags=${IMG}:${TAG},${IMG}:latest"
           } >> "$GITHUB_OUTPUT"
 
+      # The payload shelf ships in the release: core/Dockerfile COPYs payloads/,
+      # so staging before the build puts the 8 pinned artifacts in the image
+      # (and in every package built from it). Unpinned artifacts are refused.
+      - name: Stage the payload shelf
+        env:
+          PAYLOAD_ALLOW_UNPINNED: "0"
+        run: bash scripts/build-payloads.sh
+
       - name: Build and push
         id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -305,67 +313,9 @@ jobs:
           DIGEST: ${{ needs.build-image.outputs.digest }}
           REPO: ${{ github.repository }}
           AGENT_GO_VERSION: ${{ needs.build-agent.outputs.go_version }}
+          SHELF_SOURCES: ${{ github.workspace }}/payloads/sources.json
         run: |
-          python3 - <<'PY'
-          import hashlib, json, os, pathlib, datetime
-          d = pathlib.Path(".")
-          tag = os.environ["TAG"]
-          artifacts = []
-          for p in sorted(d.iterdir()):
-              if p.name in ("SHA256SUMS", "manifest.json") or p.is_dir():
-                  continue
-              h = hashlib.sha256(p.read_bytes()).hexdigest()
-              artifacts.append({
-                  "name": p.name,
-                  "size": p.stat().st_size,
-                  "sha256": h,
-                  "url": f"https://github.com/{os.environ['REPO']}/releases/download/{tag}/{p.name}",
-              })
-          manifest = {
-              "schema_version": 1,
-              "release": tag,
-              "generated_at": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-              "image": {
-                  "ref": f"{os.environ['IMAGE']}:{tag}",
-                  "latest": f"{os.environ['IMAGE']}:latest",
-                  "digest": os.environ.get("DIGEST", ""),
-                  "platforms": ["linux/amd64", "linux/arm64"],
-              },
-              "artifacts": artifacts,
-          }
-          # The beacon matrix, described rather than just listed, so a reader
-          # of the manifest alone learns what the binaries are NOT.
-          extras = {"cortexsim-agent-SHA256SUMS", "cortexsim-agent-buildinfo.txt"}
-          beacons = []
-          for p in sorted(d.glob("cortexsim-agent-*")):
-              if p.name in extras:
-                  continue
-              goos, goarch = p.name[len("cortexsim-agent-"):].removesuffix(".exe").split("-", 1)
-              beacons.append({
-                  "name": p.name,
-                  "os": goos,
-                  "arch": goarch,
-                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
-              })
-          if len(beacons) != 5 or not all((d / x).is_file() for x in extras):
-              raise SystemExit(f"beacon assets incomplete: {[b['name'] for b in beacons]}")
-          manifest["agent"] = {
-              "go_version": os.environ["AGENT_GO_VERSION"],
-              "build": "scripts/build-agent-dist.sh: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w'",
-              "signed": False,
-              "executed_on_target_os_by_release": False,
-              "sha256sums": "cortexsim-agent-SHA256SUMS",
-              "buildinfo": "cortexsim-agent-buildinfo.txt",
-              "binaries": beacons,
-              "notes": [
-                  "Not code-signed: no Authenticode signature on the Windows .exe, no Apple notarization on the darwin builds.",
-                  "Built and structurally checked (file set, PE header, embedded GOOS) on Linux by this run; not executed on Windows or macOS by this run.",
-                  "Not expected to be byte-identical to the beacon baked into the container image, which core/Dockerfile builds with its own Go toolchain. Verify each copy against its own checksums, never across the two.",
-              ],
-          }
-          pathlib.Path("manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-          print(pathlib.Path("manifest.json").read_text())
-          PY
+          python3 "${GITHUB_WORKSPACE}/scripts/release/build_manifest.py"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -475,6 +425,8 @@ jobs:
             echo "**Beacon binaries — unsigned.** \`cortexsim-agent-linux-{amd64,arm64}\`, \`cortexsim-agent-darwin-{amd64,arm64}\` and \`cortexsim-agent-windows-amd64.exe\` were cross-compiled from this tag by \`scripts/build-agent-dist.sh\` with ${AGENT_GO_VERSION} (\`CGO_ENABLED=0 -trimpath -ldflags='-s -w'\`). They are **not code-signed**: the Windows \`.exe\` carries no Authenticode signature and the darwin builds are not notarized, so SmartScreen, Defender or Gatekeeper may warn or block them. This run built them on Linux and checked their structure (file set, PE header, embedded GOOS); it did not execute them on Windows or macOS. Per-binary checksums are in \`cortexsim-agent-SHA256SUMS\` and the \`go version -m\` build record in \`cortexsim-agent-buildinfo.txt\`."
             echo
             echo "The supported install path is unchanged: SimCore serves the beacon baked into its own image from \`/api/agents/binary\`, and the installer verifies it against that SimCore. That baked copy is built separately, by \`core/Dockerfile\` with its own Go toolchain, so it is **not expected to be byte-identical** to the assets here; compare each copy only against its own checksums."
+            echo
+            echo "**Payload shelf.** The container image and every installer package carry the payload shelf: the third-party tool artifacts the scenarios stage onto a target, each pinned to a digest. The artifacts and their licences are listed in \`manifest.json\` under \`shelf\`."
             echo
             echo "Verify artifact integrity with \`SHA256SUMS\` or \`manifest.json\`."
             echo
