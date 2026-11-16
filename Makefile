@@ -272,8 +272,7 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target, with th
 
 check-image-sources: ## assert the BUILT IMAGE carries every sources/ tree SimCore reads at runtime (needs `make build`)
 	docker run --rm --entrypoint sh $(IMAGE) -c '\
-	  for t in cortex-malicious-agentic-pack cortex-prompt-attacker cortex-vulnerable-llm \
-	           cortex-browser-attacker mocktaxii gocortexbrokenbank; do \
+	  for t in cortex-malicious-agentic-pack mocktaxii gocortexbrokenbank; do \
 	    test -d "/app/sources/$$t" || { echo "MISSING /app/sources/$$t"; exit 1; }; \
 	    echo "sources OK: /app/sources/$$t"; \
 	  done'

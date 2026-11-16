@@ -429,9 +429,11 @@ secret, no path. Absent on a compose deployment, which keeps reading as today.
 ### 8.5 Image parity: `sources/` in the image
 
 `core/Dockerfile` gains a `COPY` of the `sources/` trees SimCore itself reads at
-runtime: the in-tree packs (`cortex-malicious-agentic-pack`,
-`cortex-prompt-attacker`, `cortex-vulnerable-llm`, `cortex-browser-attacker`)
-and the public submodules SimCore starts (`mocktaxii`, `gocortexbrokenbank`).
+runtime: `cortex-malicious-agentic-pack` (read in-process by the KOI plugin) and
+the public submodules SimCore starts (`mocktaxii`, `gocortexbrokenbank`). The
+other in-tree packs (`cortex-prompt-attacker`, `cortex-browser-attacker`,
+`cortex-vulnerable-llm`) are not copied: the first two are found on PATH and the
+third is a target run elsewhere, so SimCore never reads their trees.
 Never the private-origin submodules (`CDR`, `xsiam-prisma-cdr-lab`). A test
 derives the list from the code paths that read `sources/` (tool registry
 `source_path`, the agentic pack lookup) and fails when the image lacks one, so
