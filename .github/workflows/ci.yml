@@ -179,6 +179,10 @@ jobs:
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make IMAGE=cortexsim:ci check-agent-shelf
 
+      - name: Runtime sources image-parity gate (image carries the sources/ trees SimCore reads)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make IMAGE=cortexsim:ci check-image-sources
+
       # The MCP server ships in the image (Gate B parity): the built image must
       # import core/mcp_server/ and the pinned SDK and register every tool. The
       # host suite cannot see this; it runs from the checkout. Fails closed — a

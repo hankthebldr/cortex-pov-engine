@@ -382,6 +382,17 @@ COPY payloads/ /app/payloads/
 # than 500ing.
 COPY --from=rust-builder /out/ /app/rust-dist/
 
+# The sources/ trees SimCore reads at runtime. docker-compose bind-mounts
+# ./sources, but the installer runs this image with no bind mounts. The KOI
+# agentic_egress plugin reads the agentic pack in-process; the tool registry
+# starts mocktaxii and gocortexbrokenbank from their source_path. Directory-level
+# COPY, like the rust-builder stage: an uninitialised submodule still builds.
+# The Rust tools are in /app/rust-dist above; sources/CDR and
+# sources/xsiam-prisma-cdr-lab are private-origin and must never be copied.
+COPY sources/cortex-malicious-agentic-pack/ /app/sources/cortex-malicious-agentic-pack/
+COPY sources/mocktaxii/                     /app/sources/mocktaxii/
+COPY sources/gocortexbrokenbank/            /app/sources/gocortexbrokenbank/
+
 ENV CORTEXSIM_BASE_DIR=/app
 ENV CORTEXSIM_ENV=production
 ENV CORTEXSIM_PORT=8888
