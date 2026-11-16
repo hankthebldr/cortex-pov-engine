@@ -98,14 +98,13 @@ unprivileged shell user and expect identity-harnessed steps to work.
 `docs/reference/lab-readiness.md` (regenerate with `make lab-ready`) ranks every
 scenario into three tiers so you never demo one that cannot emit:
 
-- **GREEN (145)** — real signal on every detection-bearing step, every tool
+- **GREEN (164 on 2026-11-15)** — real signal on every detection-bearing step, every tool
   stock or payload-shelf-backed. Runs on a provisioned target under default-deny.
   **Start here.**
-- **YELLOW (26)** — real signal but needs a tool fetched from the internet on the
+- **YELLOW (20)** — real signal but needs a tool fetched from the internet on the
   target, or a launch-consent gate. Pre-stage the tool (or allow egress) first.
-- **RED (6, tabletop)** — signal-free: declares detections but no step invokes a
-  real binary (`SIM-EDR-019`, `SIM-TIM-005`, `SIM-ASM-005`, `SIM-ASM-006`,
-  `SIM-MP-020`, `SIM-ITDR-016`). **Never run these expecting detections** —
+- **RED (3, tabletop)** — signal-free: declares detections but no step invokes a
+  real binary (`SIM-EDR-019`, `SIM-ITDR-016`, `SIM-TIM-005`). **Never run these expecting detections** —
   seeding their Result rows manufactures an all-missed POV. `SIM-EDR-019` is the
   trap: it is marketed as a causality-strong flagship but all 7 steps are
   `echo '[SAFE-MODE ...]'`.
@@ -331,7 +330,7 @@ docker exec cortexsim-tier-d-target bash /root/cortexsim-SIM-EDR-001.sh
 > end with `-File`. The GPO policy warning has not fired on Windows: the
 > runner's MachinePolicy and UserPolicy are Undefined.
 
-Thirteen scenarios emit a Windows bundle: `SIM-ASM-005`, `SIM-EDR-003/004/005`,
+Twelve scenarios emit a Windows bundle: `SIM-EDR-003/004/005`,
 `SIM-ITDR-006`, `SIM-MP-001/020` and `SIM-NDR-005/007` emit both targets, and
 `SIM-EDR-006/013/017/021` are Windows-only. `GET /api/scenarios/{id}` reports
 which in `bundle_targets`. Download on the jumpbox and copy the file over:
@@ -371,8 +370,7 @@ now:
   whose input is unset (`OPERATOR_INPUT_MISSING`). `SIM-EDR-005` step-05 and
   `SIM-MP-020` step-02 need `USERDNSDOMAIN`, so a domain-joined host.
   `SIM-EDR-017` step-01 needs `CORTEXSIM_C2_HOST` set to an egress host you own.
-  `STAGE_HOST` (`SIM-ASM-005` step-04) and `CORTEXSIM_STITCH_WAIT_SECONDS`
-  (`SIM-EDR-017`) are optional.
+  `CORTEXSIM_STITCH_WAIT_SECONDS` (`SIM-EDR-017`) is optional.
 - **marks admin steps `NOT_ELEVATED`** in a non-elevated session instead of
   running them.
 - **refuses to start (exit 2)** when part of the scenario's cleanup cannot run

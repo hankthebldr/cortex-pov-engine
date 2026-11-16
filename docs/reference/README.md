@@ -120,6 +120,22 @@
   **G-03**. Counts live in the ground truth's `grouping` block; measured at 198
   scenarios: G-04 `GROUPING_KEY_UNKNOWN` **1042 of 1411** step-detections, G-02 2,
   G-01/G-03/G-05 0. Advisory by design: the analysis is by key class, not value.
+  At 187 scenarios (2026-11-15): G-04 **972 of 1328**, G-02 2, G-01/G-03/G-05 0.
+- **Counted ground truth (regenerated 2026-11-15 — the 1.2.5 release, after the cloud-posture split):**
+  **187 loadable scenarios · 185 TTP cards · 27 EAL plugins** across 13 planes · 779 steps ·
+  1328 step-detections (XQL 504 · BIOC 361 · ABIOC 161 · Correlation 137 · IOC 107 · Analytics 56 ·
+  Prevention 2) · 2149 catalog detection objects · 236 MITRE techniques (125 base) across 14 tactics ·
+  14 assertion artifacts (POS 5 · PLT 6 · AUT 3) · 91 adapter packs · 162 route decorators
+  (172 served routes). Index TCs evidenced by a scenario **71/266** (DET/HNT 69/107); the 14
+  assertions bind 14 more rows no scenario reaches. `signal_quality`: 13 stitched chains,
+  236 high-quality signals of 1328 (17.8%), 84 marker-only steps of 779 (10.8%), 95 in-band
+  indicators (+11 not in-band) in 16 scenarios. Lab readiness GREEN 164 · YELLOW 20 · RED 3.
+  Gates on this tree: `check-ground-truth` and `check-lab-ready` regenerate with no diff,
+  `validate-detection` 376 pass / 0 warn / 0 fail, `check-refs` 6 passed, `coverage-strict`
+  exits 0 (Correlation 10.3%, 137 of 1328; TA0043 takes a floor of 1 until ASM returns). The
+  CSPM, ASM and AI_SPM planes (18 scenarios, 18 cards), the 14 Terraform-fixtured assertions and
+  the IaC generator moved to `feature/scenarios-cloud-posture` for 1.4.x; the entries below
+  that count them describe the tree before the move. Source: `ground-truth.md`, which wins.
 - **Counted ground truth (regenerated 2026-10-28 — SIM-KOI-009 GlassWorm pass; the 13 stitched chains and `SIM-MP-035..037` below were added by the earlier Unit 42 recent-posts pass):**
   **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1377 step-detections ·
   2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:

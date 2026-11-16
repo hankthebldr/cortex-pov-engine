@@ -296,7 +296,7 @@ async def _db_context():
 
 app = FastAPI(
     title="CortexSim",
-    version="1.2.4",
+    version="1.2.5",
     description="Enterprise detection simulation engine for Palo Alto Networks Cortex",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
