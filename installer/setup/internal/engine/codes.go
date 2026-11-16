@@ -39,6 +39,10 @@ const (
 	CodeProxyPACUnsupported               Code = "PROXY_PAC_UNSUPPORTED"
 	CodeEndpointProtectionExclusionNeeded Code = "ENDPOINT_PROTECTION_EXCLUSION_NEEDED"
 
+	// Added by the env-file step: a proxy URL carries credentials, which v1
+	// does not support (spec §8.6). Blocking.
+	CodeProxyAuthUnsupported Code = "PROXY_AUTH_UNSUPPORTED"
+
 	// Added by the step engine: the run's context ended (Ctrl-C, the wizard
 	// closing, a deadline) before the next phase started. Blocking.
 	CodeCancelled Code = "CANCELLED"
