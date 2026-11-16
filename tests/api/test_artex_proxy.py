@@ -30,6 +30,15 @@ def _resp(status: int, data: bytes, headers=None) -> httpx.Response:
     return httpx.Response(status, headers=headers, stream=_Body(data))
 
 
+def _request(raw_path: str, method: str = "GET"):
+    from starlette.requests import Request
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request({"type": "http", "method": method, "path": raw_path, "raw_path": raw_path.encode(),
+                    "query_string": b"", "headers": [(b"host", b"console")]}, receive)
+
+
 @pytest.fixture
 def origin(monkeypatch):
     monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", ORIGIN)
@@ -98,17 +107,9 @@ def test_proxy_streams_event_stream_unbuffered(origin, monkeypatch):
 
     _install(monkeypatch, handler)
 
-    class _Req:  # minimal stand-in for starlette.Request
-        method = "GET"
-        headers = httpx.Headers({"accept": "text/event-stream"})
-        url = httpx.URL("http://console/artex/api/update/stream")
-
-        async def body(self):
-            return b""
-
-    # Request needs .headers.raw and .url.query
     async def run():
-        resp = await asyncio.wait_for(artex.artex_proxy("api/update/stream", _Req()), 2)
+        resp = await asyncio.wait_for(
+            artex.artex_proxy("api/update/stream", _request("/artex/api/update/stream")), 2)
         assert isinstance(resp, artex.StreamingResponse)
         assert resp.status_code == 200
         assert dict(resp.headers)["content-type"] == "text/event-stream"
@@ -161,3 +162,90 @@ def test_proxy_404_when_origin_empty_makes_no_outbound(monkeypatch):
     assert r.status_code == 404
     assert r.json()["code"] == "ARTEX_NOT_ENABLED"
     assert calls == []
+
+
+# --- hardening -------------------------------------------------------------
+
+def _no_forward(monkeypatch):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return _resp(200, b"x")
+
+    _install(monkeypatch, handler)
+    return calls
+
+
+@pytest.mark.parametrize("raw", ["/artex/%2e%2e/foo", "/artex/../foo", "/artex/%2E%2E/foo",
+                                 "/artex/a/./b", "/artex/a%5Cb", "/artex/a%3Fb", "/artex/a%23b",
+                                 "/artex/a%252e", "/artex/a%2Fb"])
+def test_proxy_rejects_path_escape(origin, monkeypatch, raw):
+    calls = _no_forward(monkeypatch)
+    resp = asyncio.run(artex.artex_proxy("x", _request(raw)))
+    assert resp.status_code == 400
+    assert json.loads(resp.body)["code"] == "ARTEX_PROXY_BAD_PATH"
+    assert calls == []
+
+
+def test_proxy_encoded_dotdot_over_http_never_reaches_root(origin, monkeypatch):
+    calls = _no_forward(monkeypatch)
+    r = _client().get("/artex/%2e%2e/foo")
+    assert r.status_code == 400 and calls == []
+
+
+def test_proxy_nested_path_still_proxies(origin, monkeypatch):
+    calls = _no_forward(monkeypatch)
+    assert _client().get("/artex/api/x/y").status_code == 200
+    assert calls[0].url.path == "/artex/api/x/y"
+
+
+def test_proxy_cross_site_post_refused(origin, monkeypatch):
+    calls = _no_forward(monkeypatch)
+    r = _client().post("/artex/api/x", json={}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403 and r.json()["code"] == "ARTEX_PROXY_CROSS_SITE"
+    assert calls == []
+
+
+def test_proxy_same_origin_and_headerless_post_proxied(origin, monkeypatch):
+    calls = _no_forward(monkeypatch)
+    c = _client()
+    assert c.post("/artex/api/x", json={}, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+    assert c.post("/artex/api/x", json={}).status_code == 200
+    assert len(calls) == 2
+
+
+def test_proxy_foreign_origin_post_refused_but_get_allowed(origin, monkeypatch):
+    calls = _no_forward(monkeypatch)
+    c = _client()
+    assert c.post("/artex/api/x", json={}, headers={"Origin": "http://evil.example"}).status_code == 403
+    assert c.post("/artex/api/x", json={}, headers={"Origin": "http://testserver"}).status_code == 200
+    assert c.get("/artex/api/x", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+    assert len(calls) == 2
+
+
+def test_bare_artex_redirects_to_slash(origin, monkeypatch):
+    r = _client().get("/artex?a=1", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/artex/?a=1"
+
+
+def test_proxy_closes_upstream_after_consumption(origin, monkeypatch):
+    closed = []
+
+    class _Rec(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"abc"
+
+        async def aclose(self):
+            closed.append(True)
+
+    _install(monkeypatch, lambda req: httpx.Response(200, stream=_Rec()))
+    assert _client().get("/artex/api/x").content == b"abc"
+    assert closed
+
+
+def test_proxy_preserves_multiple_set_cookie(origin, monkeypatch):
+    _install(monkeypatch, lambda req: httpx.Response(
+        200, headers=[("set-cookie", "a=1; Path=/"), ("set-cookie", "b=2; Path=/")], stream=_Body(b"ok")))
+    r = _client().get("/artex/api/x")
+    assert r.headers.get_list("set-cookie") == ["a=1; Path=/", "b=2; Path=/"]

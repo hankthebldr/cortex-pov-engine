@@ -21,11 +21,12 @@ proxy can reuse it.
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, Request
 from starlette.background import BackgroundTask
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, RedirectResponse, StreamingResponse
 
 router = APIRouter(tags=["artex"])
 
@@ -104,6 +105,58 @@ def _error(status: int, code: str, error: str, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": error, "code": code, "detail": detail})
 
 
+# Accepted v1 limitations (deliberately not fixed):
+#   * the request body is read fully into memory, not streamed upstream (fine for ARTEX's API);
+#   * WebSockets are not proxied (ARTEX streams over SSE).
+
+_PREFIX = "/artex"
+_STATE_CHANGING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _bad_path(detail: str) -> JSONResponse:
+    return _error(400, "ARTEX_PROXY_BAD_PATH", "Invalid ARTEX proxy path", detail)
+
+
+def _upstream_rest(request: Request) -> Optional[str]:
+    """The still-encoded path after /artex, or None when it could escape the prefix."""
+    raw = request.scope.get("raw_path")
+    raw_path = raw.decode("latin-1") if raw else request.url.path.replace("%", "%25")
+    if "?" in raw_path:  # defensive: raw_path should carry no query
+        raw_path = raw_path.split("?", 1)[0]
+    if not raw_path.startswith(_PREFIX):
+        return None
+    rest = raw_path[len(_PREFIX):]
+    if rest and not rest.startswith("/"):
+        return None
+    for seg in rest.split("/")[1:]:
+        dec = unquote(seg)
+        if dec in (".", "..") or any(c in dec for c in "\\?#%/"):
+            return None
+        if "\\" in seg:
+            return None
+    return rest or "/"
+
+
+def _cross_site(request: Request) -> bool:
+    if request.method not in _STATE_CHANGING:
+        return False
+    sfs = (request.headers.get("sec-fetch-site") or "").lower()
+    if sfs == "cross-site":
+        return True
+    if sfs == "same-origin":
+        return False
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return urlparse(origin).netloc.lower() != (request.headers.get("host") or "").lower()
+    return False
+
+
+@proxy_router.get("/artex", include_in_schema=False)
+async def artex_bare(request: Request):
+    target = "/artex/" + (f"?{request.url.query}" if request.url.query else "")
+    return RedirectResponse(target, status_code=307)
+
+
 @proxy_router.api_route(
     "/artex/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
@@ -117,7 +170,15 @@ async def artex_proxy(path: str, request: Request):
         return _error(404, "ARTEX_NOT_ENABLED", "ARTEX is not enabled",
                       "CORTEXSIM_ARTEX_ORIGIN is empty; the embedded ARTEX service is not enabled.")
 
-    url = f"{origin}/artex/{path}"
+    if _cross_site(request):
+        return _error(403, "ARTEX_PROXY_CROSS_SITE", "Cross-site request refused",
+                      "State-changing requests to ARTEX must be same-origin.")
+    rest = _upstream_rest(request)
+    if rest is None:
+        return _bad_path("The path has a dot segment, backslash or encoded separator.")
+    url = f"{origin}{_PREFIX}{rest}"
+    if not httpx.URL(url).path.startswith(_PREFIX + "/"):
+        return _bad_path("The path would leave the /artex prefix.")
     if request.url.query:
         url = f"{url}?{request.url.query}"
     headers = [(k, v) for k, v in request.headers.raw
