@@ -969,3 +969,44 @@ def test_mcp_on_with_zero_registered_tools_is_degraded(monkeypatch):
     assert comp["status"] == "degraded"
     assert comp["code"] == "MCP_NO_TOOLS"
     assert comp["mounted"] is True
+
+
+# ---------------------------------------------------------------------------
+# artex component — opt-in embedded ARTEX, ok when disabled, zero outbound
+# ---------------------------------------------------------------------------
+
+
+def test_artex_is_a_declared_component():
+    from api import health
+
+    assert "artex" in health.COMPONENT_KEYS
+
+
+def test_artex_origin_unset_is_ok_not_enabled_and_makes_no_call(monkeypatch):
+    import config
+    from api import artex as artex_mod
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "")
+
+    class _Boom:
+        def __init__(self, *a, **k):
+            raise AssertionError("outbound client constructed with origin unset")
+
+    monkeypatch.setattr(artex_mod.httpx, "AsyncClient", _Boom)
+
+    body = asyncio.run(health.health_payload())
+    comp = body["components"]["artex"]
+    assert comp["status"] == "ok"
+    assert comp["code"] == "ARTEX_NOT_ENABLED"
+    assert comp["origin_configured"] is False
+
+
+def test_artex_configured_but_unreachable_is_degraded(monkeypatch):
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_ARTEX_ORIGIN", "http://127.0.0.1:1")
+    comp = asyncio.run(health.probe_artex_health())
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "ARTEX_UNREACHABLE"

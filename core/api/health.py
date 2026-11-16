@@ -1036,6 +1036,39 @@ def probe_mcp(app: Any = None) -> dict[str, Any]:
     )
 
 
+async def probe_artex_health(client: Any = None) -> dict[str, Any]:
+    """The opt-in embedded ARTEX service (``CORTEXSIM_ARTEX_ORIGIN``).
+
+    Reuses ``api.artex.probe_artex`` for the reachability reading and maps it to
+    a health component. An origin that is unset is ``ok`` with
+    ``ARTEX_NOT_ENABLED`` (an opt-in never asked for is not a fault) and makes
+    zero outbound calls; a configured origin is probed once. Unreachable is
+    ``degraded``.
+    """
+    from api.artex import probe_artex  # noqa: PLC0415
+
+    r = await probe_artex(settings, client)
+    common = {
+        "reachability": r["reachability"],
+        "initialized": r["initialized"],
+        "origin_configured": r["origin_configured"],
+    }
+    if r["code"] == "ARTEX_NOT_ENABLED":
+        return _ok(
+            code="ARTEX_NOT_ENABLED",
+            detail="opt-in; set CORTEXSIM_ARTEX_ORIGIN to enable",
+            **common,
+        )
+    if r["code"] == "ARTEX_UNREACHABLE":
+        return _degraded(
+            "ARTEX_UNREACHABLE",
+            f"{r['detail']} Fix: start the ARTEX service and confirm "
+            f"CORTEXSIM_ARTEX_ORIGIN points at it, or unset it to disable ARTEX.",
+            **common,
+        )
+    return _ok(code=r["code"], detail=r["detail"], **common)
+
+
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
@@ -1062,6 +1095,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "integrations",
     "eal_collectors",
     "mcp",
+    "artex",
     # Exposure, not readiness: last so the list still reads top-down from "can
     # this process store anything" to "is anything configured to leave it".
     "api_auth",
@@ -1147,6 +1181,10 @@ async def component_health(app: Any = None) -> dict[str, dict[str, Any]]:
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
     components["mcp"] = _guard("mcp", lambda: probe_mcp(app))
+    async def _artex(_session_factory) -> dict[str, Any]:
+        return await probe_artex_health()
+
+    components["artex"] = await _aguard("artex", _artex)
     components["api_auth"] = _guard("api_auth", probe_api_auth)
     return components
 
