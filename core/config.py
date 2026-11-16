@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     # inflating the coverage number. Set false to load a corpus mid-re-key.
     CORTEXSIM_STRICT_REFS: bool = True
 
+    # Internal upstream origin of the embedded ARTEX service (e.g. http://artex:8787).
+    # Empty = ARTEX not enabled. Under compose the simcore service sets it.
+    CORTEXSIM_ARTEX_ORIGIN: str = ""
+
     # Dataset requirement registry strictness (spec/dataset_requirements.yml).
     # When true, boot raises DatasetRequirementsError if any dataset a detection
     # card's xql_queries reads has no registry entry. Off by default: an
