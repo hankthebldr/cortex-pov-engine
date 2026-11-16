@@ -2,10 +2,12 @@
 
 > A **derived** view of every loadable scenario YAML under `scenarios/`. Source-of-truth
 > is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**.
-> **Current ground truth (2026-10-28): 193 scenarios · 191 TTP cards across 16 planes** (ANALYTICS=38 after the
-> 12 Unit 42 stitched chains `SIM-MP-023..034`, `TTP-2026-0182..0193`, and the three recent-posts chains
-> `SIM-MP-035..037`, `TTP-2026-0194..0196`, and `SIM-KOI-009` (GlassWorm, `TTP-2026-0197`, KOI=9); see `ground-truth.md`).
-> The 2026-08-02 breakdown that follows is the prior snapshot: **169 scenarios · 169 TTP cards across 15 planes**,
+> **Current ground truth (2026-11-15, the 1.2.5 release): 187 scenarios · 185 TTP cards across 13 planes.**
+> Per plane: ANALYTICS=39 · CDR=29 · EDR=29 · ITDR=20 · KOI=12 · NDR=12 · CLOUD_APP=10 · TIM=9 ·
+> AI_ACCESS=6 · BROWSER=6 · AIRS=5 · DLP=5 · EMAIL=5 (see `ground-truth.md`, which wins). The CSPM, ASM and
+> AI_SPM scenarios (18, with their 18 cards) moved to `feature/scenarios-cloud-posture` for 1.4.x; rows for
+> them below describe that branch. The 2026-10-28 count was 193 scenarios · 191 TTP cards across 16 planes.
+> The 2026-08-02 breakdown that follows is an older snapshot: **169 scenarios · 169 TTP cards across 15 planes**,
 > all `status: active`, 0 rejected / 0 dangling refs, 1073/1073 `detection_id` slugs
 > resolving. Per-plane on disk: CDR=26 · ANALYTICS=23 · EDR=21 · ITDR=20 · NDR=12 ·
 > CLOUD_APP=10 · TIM=9 · KOI=8 · AI_SPM=7 · AI_ACCESS=6 · ASM=6 · BROWSER=6 · AIRS=5 ·
