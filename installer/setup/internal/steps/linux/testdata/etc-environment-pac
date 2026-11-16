@@ -1,0 +1,2 @@
+PATH="/usr/bin"
+auto_proxy="http://wpad.example.test/proxy.pac"

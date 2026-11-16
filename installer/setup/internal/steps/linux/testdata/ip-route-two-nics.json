@@ -1,0 +1,6 @@
+[
+ {"dst":"default","gateway":"198.51.100.1","dev":"ens4","protocol":"dhcp","metric":200,"flags":[]},
+ {"dst":"default","gateway":"192.0.2.1","dev":"ens3","protocol":"dhcp","metric":100,"flags":[]},
+ {"dst":"192.0.2.0/24","dev":"ens3","protocol":"kernel","scope":"link","prefsrc":"192.0.2.10","flags":[]},
+ {"dst":"198.51.100.0/24","dev":"ens4","protocol":"kernel","scope":"link","prefsrc":"198.51.100.20","flags":[]}
+]

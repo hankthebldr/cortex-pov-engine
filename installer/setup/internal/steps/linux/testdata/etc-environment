@@ -1,0 +1,4 @@
+# system-wide environment
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+https_proxy="http://proxy.example.test:3128"
+NO_PROXY=localhost,127.0.0.1

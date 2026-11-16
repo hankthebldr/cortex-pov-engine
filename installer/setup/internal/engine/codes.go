@@ -43,6 +43,11 @@ const (
 	// does not support (spec §8.6). Blocking.
 	CodeProxyAuthUnsupported Code = "PROXY_AUTH_UNSUPPORTED"
 
+	// Added by the Linux address check: an address the operator gave is not an
+	// IP literal or an RFC 1123 host name, listen-only was asked for with a
+	// name, or nothing was given and nothing could be detected. Blocking.
+	CodeAddressInvalid Code = "ADDRESS_INVALID"
+
 	// Added by the step engine: the run's context ended (Ctrl-C, the wizard
 	// closing, a deadline) before the next phase started. Blocking.
 	CodeCancelled Code = "CANCELLED"

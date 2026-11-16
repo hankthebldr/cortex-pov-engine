@@ -1,0 +1,8 @@
+[
+ {"ifindex":1,"ifname":"lo","addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8,"scope":"host"}]},
+ {"ifindex":2,"ifname":"docker0","addr_info":[{"family":"inet","local":"172.17.0.1","prefixlen":16,"scope":"global"}]},
+ {"ifindex":3,"ifname":"br-1a2b3c","addr_info":[{"family":"inet","local":"172.18.0.1","prefixlen":16,"scope":"global"}]},
+ {"ifindex":4,"ifname":"veth9f","addr_info":[{"family":"inet6","local":"2001:db8:9::1","prefixlen":64,"scope":"global"}]},
+ {"ifindex":5,"ifname":"tailscale0","addr_info":[{"family":"inet","local":"100.64.0.7","prefixlen":32,"scope":"global"}]},
+ {"ifindex":6,"ifname":"ens3","addr_info":[{"family":"inet","local":"192.0.2.10","prefixlen":24,"scope":"global"}]}
+]

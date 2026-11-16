@@ -1,0 +1,5 @@
+[
+ {"ifindex":2,"ifname":"docker0","addr_info":[{"family":"inet","local":"172.17.0.1","prefixlen":16,"scope":"global"}]},
+ {"ifindex":3,"ifname":"ens5","addr_info":[{"family":"inet6","local":"2001:db8:5::7","prefixlen":64,"scope":"global"}]},
+ {"ifindex":4,"ifname":"ens6","addr_info":[{"family":"inet6","local":"2001:db8:6::7","prefixlen":64,"scope":"global"}]}
+]

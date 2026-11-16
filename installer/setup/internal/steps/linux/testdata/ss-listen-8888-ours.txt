@@ -1,0 +1,2 @@
+LISTEN 0      4096         0.0.0.0:8888      0.0.0.0:*    users:(("uvicorn",pid=4242,fd=7))
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=801,fd=3))
