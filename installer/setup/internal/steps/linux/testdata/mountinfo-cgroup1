@@ -1,0 +1,4 @@
+24 30 0:22 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw
+30 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+35 24 0:30 / /sys/fs/cgroup/memory rw,nosuid,nodev,noexec,relatime shared:9 - cgroup cgroup rw,memory
+36 24 0:31 / /sys/fs/cgroup/cpu rw,nosuid,nodev,noexec,relatime shared:10 - cgroup cgroup rw,cpu
