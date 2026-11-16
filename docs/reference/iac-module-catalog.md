@@ -1,5 +1,11 @@
 # IaC Topology Generator — Module Catalog & Reference
 
+> **Not in this tree since 2026-11-15.** The generator, `infra/`, the
+> `/api/infra/*` routes and the console's Lab page moved with the CSPM, ASM and
+> AI_SPM planes to `feature/scenarios-cloud-posture`, planned for 1.4.x (#380,
+> tracking #379). Release 1.2.5 does not ship them. This page describes that
+> branch.
+
 > Canonical, exhaustive reference for the CortexSim Infrastructure-as-Code (IaC)
 > topology generator: every module, every provisioned resource, every content
 > tool, every planted finding/seed, the generate→bundle→download flow, the

@@ -20,9 +20,7 @@ import TelemetryStrip from '../console/TelemetryStrip.jsx'
 import PinButton from '../console/PinButton.jsx'
 import ScenarioGrid from '../console/ScenarioGrid.jsx'
 import ScenarioInspector from '../console/ScenarioInspector.jsx'
-import NarrativeTimeline from '../console/NarrativeTimeline.jsx'
 import OperationsView from '../console/OperationsView.jsx'
-import InflightView from '../console/InflightView.jsx'
 import EvidenceView from '../console/EvidenceView.jsx'
 import CoverageView from '../console/CoverageView.jsx'
 
@@ -210,12 +208,6 @@ describe('console-view smoke renders', () => {
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
-  it('NarrativeTimeline renders nothing with empty frames', () => {
-    const { container } = render(<NarrativeTimeline frames={[]} stitches={[]} />)
-    // No frames → no timeline structure. Just verify it didn't throw.
-    expect(container).toBeTruthy()
-  })
-
   it('OperationsView mounts and fetches the scenario list', async () => {
     installRoutes({
       'GET /api/scenarios': { scenarios: [] },
@@ -228,14 +220,9 @@ describe('console-view smoke renders', () => {
     })
   })
 
-  it('InflightView shows empty-state with no active or last run', () => {
-    render(<InflightView activeRun={null} lastRun={null} />)
-    expect(screen.getByText(/no run in progress/i)).toBeInTheDocument()
-  })
-
   it('EvidenceView shows empty-state with no run', () => {
     render(<EvidenceView activeRun={null} lastRun={null} />)
-    expect(screen.getByText(/no run to validate/i)).toBeInTheDocument()
+    expect(screen.getByText('No run selected')).toBeInTheDocument()
   })
 
   it('EvidenceView mounts KPI row + scorecard with a run', async () => {
@@ -266,47 +253,10 @@ describe('console-view smoke renders', () => {
       expect(screen.getByText(/AKIA grep/)).toBeInTheDocument()
     })
     expect(screen.getByText(/Coverage/i)).toBeInTheDocument()
-    expect(screen.getByText(/Export POV briefing/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Validate all/ })).toHaveClass('kit-btn')
   })
 
-  it('NarrativeTimeline renders frames with stitches', async () => {
-    installRoutes({
-      'GET /api/scenarios/SIM-MP-004': {
-        scenario_id: 'SIM-MP-004',
-        name: 'APT29 Cloud',
-        mitre_tactic: 'TA0006', mitre_tactic_name: 'Credential Access',
-        mitre_technique: 'T1552.001', mitre_technique_name: 'Credentials In Files',
-        steps: [
-          { id: 'step-01', name: 'cred grep',       identity: 'www-data',
-            mitre_technique: 'T1552.001', expected_detections: [{ plane: 'EDR', type: 'BIOC' }] },
-          { id: 'step-02', name: 'cloud pivot',     identity: 'www-data',
-            mitre_technique: 'T1078.004', expected_detections: [
-              { plane: 'EDR', type: 'BIOC' },
-              { plane: 'CDR', type: 'Analytics' },
-              { plane: 'ANALYTICS', type: 'Analytics' },
-            ] },
-          { id: 'step-03', name: 'cloud enum',      identity: 'www-data',
-            mitre_technique: 'T1580', expected_detections: [
-              { plane: 'CDR', type: 'BIOC' },
-              { plane: 'ANALYTICS', type: 'IOC' },
-            ] },
-        ],
-      },
-      'GET /api/runs/r-1': { id: 'r-1', current_step: 2, status: 'running' },
-      'GET /api/results/r-1': { results: [] },
-    })
-    const { container } = render(
-      <InflightView
-        activeRun={{ runId: 'r-1', scenarioId: 'SIM-MP-004', step: 2, totalSteps: 3, elapsed: 90 }}
-        lastRun={null}
-      />
-    )
-    await waitFor(() => {
-      expect(container.querySelector('.tl-steps')).toBeTruthy()
-    })
-  })
-
-  it('CoverageView (Dashboards) mounts and fetches the heatmap data on its MITRE tab', async () => {
+  it('CoverageView (Reports) mounts and fetches the heatmap data on its MITRE tab', async () => {
     const fetchMock = installRoutes({
       'GET /api/scenarios': { scenarios: [{ scenario_id: 'SIM-EDR-001', plane: 'EDR', steps: [] }] },
       'GET /api/runs': { runs: [], total: 0 },
@@ -317,7 +267,7 @@ describe('console-view smoke renders', () => {
     })
     render(<CoverageView />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: /dashboards/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: /reports/i })).toBeInTheDocument()
     })
     fireEvent.click(await screen.findByRole('tab', { name: /MITRE/ }))
     await waitFor(() => {

@@ -161,8 +161,9 @@ describe('bulk attestation excludes evidence-backed misses', () => {
     const { container } = render(
       <EvidenceView lastRun={{ runId: 'run-a', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
     await waitFor(() => expect(screen.getByText('det-3')).toBeInTheDocument())
-    expect(screen.getByTestId('validate-all-skipped').textContent).toMatch(/2 skipped/)
-    expect(screen.getByTestId('validate-all-skipped').textContent).toMatch(/evidence-backed miss/)
+    expect(screen.getByTestId('validate-all-skipped').textContent).toBe('2 skipped')
+    // Why they are skipped is one hover away, not a clause on the line.
+    expect(screen.getByTestId('validate-all-skipped')).toHaveAttribute('title', expect.stringMatching(/found a miss/))
     fireEvent.click(screen.getByRole('button', { name: /Validate all/ }))
     await waitFor(() => expect(validated).toEqual([1]))
     // The per-row control on the missed row stays: a DC may overrule one row.
@@ -196,7 +197,7 @@ describe('drawer notes', () => {
     const row = { id: 5, tid: 'T1005', plane: 'EDR', detectionType: 'BIOC', alert: 'x',
       observed: true, outcome: 'prevented', outcome_reason: null, expectedOutcome: 'prevent', notes: '' }
     render(<DetectionDrawer row={row} open onClose={() => {}} />)
-    fireEvent.change(screen.getByLabelText('Operator notes'), { target: { value: 'BTP blocked it' } })
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'BTP blocked it' } })
     fireEvent.click(screen.getByRole('button', { name: /Save note/ }))
     await waitFor(() => expect(saved).toEqual([{ notes: 'BTP blocked it' }]))
   })

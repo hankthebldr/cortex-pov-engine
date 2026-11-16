@@ -8,14 +8,14 @@ import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
-import RunList, { resultCell } from '../components/console/RunList.jsx'
+import RunList from '../components/console/RunList.jsx'
 import { absoluteTime, runAgent } from '../components/console/runRows.js'
-import { runLifecycle, readBackOf, PHASE } from '../components/console/runLifecycle.js'
+import { runLifecycle, readBackOf } from '../components/console/runLifecycle.js'
+import { runState, reviewState } from '../components/console/runState.js'
+import { runsTabRedirect } from './resultTabs.js'
 import useReadBack from '../components/console/useReadBack.jsx'
-import ResultOfBar from '../components/console/ResultOfBar.jsx'
-import ReadBackNotice from '../components/console/ReadBackNotice.jsx'
-import { Button } from '../components/console/kit/index.js'
-import { runIdOf, idMatches } from '../api/ids.js'
+import { Button, Icon } from '../components/console/kit/index.js'
+import { runIdOf, idMatches, agentIdOf } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
 import { COMPONENTS } from '../components/console/componentModel.js'
 import { componentRoute } from './componentRoutes.js'
@@ -145,16 +145,14 @@ const ComposerView = makeLazySurface(() => import('../components/console/Compose
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
-const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Dashboards')
+const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Reports')
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
-const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
-const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
-const TenantEvidencePanel = makeLazySurface(() => import('../components/console/TenantEvidencePanel.jsx'), 'Tenant evidence')
+const ResultsView = makeLazySurface(() => import('../components/console/ResultsView.jsx'), 'Results')
 // The compose → simulate stepper. Lazy like the surfaces: the entry chunk has a
 // size budget (composerChunkBoundary.test.js), and Scenarios and the Composer
 // already pull this module into their own chunks. No fallback: the strip is
@@ -170,7 +168,7 @@ function FlowStepper(props) {
 
 // ── Surfaces the redesign adds ───────────────────────────────────────────────
 // These five had no destination before: the front door, the guided setup, the
-// component inventory, the authored CLI items, and the tenant read-back. Each
+// component inventory, the authored CLI items, and the tenant review. Each
 // was a thing the console already implied and never gave you a place to do.
 const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
 const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
@@ -329,9 +327,9 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           onArmScenario={(sid) => { armedRef.current = sid }}
           onContinueToLaunch={(id) => onNavigate('preflight', { arm: id || armedRef.current })}
           onOpenRunEvidence={(run) =>
-            onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
+            onNavigate('proof', { run: runIdOf(run) })}
           onRunComplete={(run) =>
-            onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
+            onNavigate('runs', { run: runIdOf(run) })}
           onError={(msg) => surface.report(msg, 'error')}
           onSurfaceMessage={(msg, tone = 'info') => surface.report(msg, tone)}
         />
@@ -388,10 +386,16 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
       <div className="view-head">
         <div>
           <h1>{title}</h1>
-          <div className="view-head__meta">
+          {/* One short line each: what is armed (its name is the tooltip; the
+              run panel below names it in full), and where the app's own status is. */}
+          <div className="view-head__meta" data-testid="launch-gate-armed">
             {scenario
-              ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+              ? <>Armed: <strong className="mono" title={scenario.name || undefined}>{scenario.scenario_id || scenario.id}</strong></>
+              : <>Arm a scenario from <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Scenarios</button> to begin.</>}
+          </div>
+          <div className="view-head__meta guided-flow__scope" data-testid="launch-gate-scope">
+            Tenant, agents and collectors are on{' '}
+            <button type="button" className="linklike guided-flow__library-link" onClick={() => onNavigate('start')}>Get started</button>.
           </div>
         </div>
       </div>
@@ -410,7 +414,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
             onRunComplete={(run) => {
               surface.clear()
               refreshRuns()
-              onNavigate('runs', { run: runIdOf(run), tab: 'live' })
+              onNavigate('runs', { run: runIdOf(run) })
             }}
             // LaunchView already renders the refusal as an alert beside the
             // button that was clicked; the notice is its polite echo at the
@@ -427,28 +431,43 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {}, title = 'New POV ru
 }
 
 // ─── Launch gate (MVP, design v33) ───────────────────────────────────────────
-// The one place a run is started: the armed scenario's launch flow (What runs ›
-// Readiness › Where it runs › What it will do › authorisation › one Run), then
-// this POVengine's own readiness. The guided "New POV run" route and the old
-// readiness route both land here. The compose → simulate stepper sits on top;
-// `?arm=` is the scenario the launch is for, carried on to the other steps.
+// The one place a run is started, and it is about ONE scenario: the armed
+// scenario's launch flow (What runs › Readiness › Where it runs › What it will
+// do › authorisation › one Run). This POVengine's own status used to sit under
+// it, so the page read as both "this run" and "the whole app"; that status is
+// Get started's now, and the gate says so in one line. The guided "New POV
+// run" route lands here. The compose → simulate stepper sits on top; `?arm=`
+// is the scenario the launch is for, carried on to the other steps.
 function LaunchGateSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div className="launch-gate-page">
       <FlowStepper current="preflight" scenarioId={params.arm || null} onNavigate={onNavigate} />
       <GuidedPovFlow params={params} onNavigate={onNavigate} title="Launch gate" />
+    </div>
+  )
+}
+
+// ─── Get started ────────────────────────────────────────────────────────────
+// Where the app's own status is tracked: the setup steps, then this
+// POVengine's live readiness (connector ladder, tenants, attested facts, the
+// SimCore components). Both halves stay lazily loaded surfaces.
+function GetStartedSurface({ params = {}, onNavigate = () => {} }) {
+  return (
+    <div className="get-started-page">
+      <GetStartedView params={params} onNavigate={onNavigate} />
       <ReadinessSurface embedded onNavigate={onNavigate} />
     </div>
   )
 }
 
 // ─── Runs surface ────────────────────────────────────────────────────────────
-// Run history list → single Run Detail surface keyed by runId with
-// Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
-// top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
+// What was attempted: the run history list, and one run's page (lifecycle,
+// chain, runtime log, Abort, Review). What Cortex saw is Results, so a link
+// that still names one of a run's former detection tabs forwards there
+// (`runsTabRedirect`). Multi-run compare via ?compare=1.
 function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
-  // One Read back for the list and the run's page (design v26 §4.6).
+  // One Review for the list and the run's page (design v26 §4.6).
   const { reading, outcomes, readBack } = useReadBack()
   // The live-run telemetry used to be a permanent shell row above every
   // destination. It is a property of the RUN, so it belongs on the run's own
@@ -456,8 +475,13 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
   // anywhere, and it reads the same derived activeRun this does, so the two
   // cannot disagree.
   const runId = openParam(params, 'run')
-  const subTab = params.tab || 'live'
   const compare = params.compare === '1'
+  const moved = runsTabRedirect(params)
+  const movedRun = moved?.run
+  const movedTab = moved?.tab
+  useEffect(() => {
+    if (movedRun) onNavigate('proof', { run: movedRun, tab: movedTab })
+  }, [movedRun, movedTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = useMemo(() => {
     if (!runId) return null
@@ -475,11 +499,15 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
     />
   )
 
+  if (moved) return null
+
   if (compare) {
     return (
       <div className="runs-surface">
         {stepper}
-        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>← All runs</button>
+        <button type="button" className="runs-surface__back" onClick={() => setParams({ compare: null }, { replace: true })}>
+          <Icon name="back" size={12} />All runs
+        </button>
         <div className="view-head"><div><h1>Compare runs</h1></div></div>
         <Suspense fallback={<DestinationLoading />}>
           <MultiRunCompare onOpenResults={(id) => onNavigate('proof', { run: id })} />
@@ -513,14 +541,14 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
             is never "list every run", it is "what is happening / what just
             happened". The run list stays below, unchanged. */}
         <LastRunCard
-          onOpen={(id, tab) => setParams({ run: id, tab }, { replace: true })}
+          onOpen={(id) => setParams({ run: id }, { replace: true })}
         />
         <ScopeHealthStrip />
         <RunList
           runs={runs}
           params={params}
           setParams={setParams}
-          onOpen={(id) => setParams({ run: id, tab: 'live', scenario: null, status: null, page: null }, { replace: true })}
+          onOpen={(id) => setParams({ run: id, tab: null, scenario: null, status: null, page: null }, { replace: true })}
           onReadBack={readBack}
           onOpenResults={(id) => onNavigate('proof', { run: id })}
           reading={reading}
@@ -537,12 +565,9 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
         runId={runId}
         run={selected}
         activeRun={activeRun}
-        subTab={subTab}
-        onSubTab={(tab) => setParams({ tab })}
         onBack={() => setParams({ run: null, tab: null }, { replace: true })}
         onAbort={onAbortRun}
         onNavigate={onNavigate}
-        onError={() => {}}
       />
     </Suspense>
   )
@@ -554,10 +579,8 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {},
  * Reads the SAME derived `activeRun` / `runs` the header pill and the telemetry
  * strip read, so the three cannot disagree about what is in flight. Every field
  * is a real value off the run record; where SimCore did not report one (a run
- * with no `started_at`, a detection count the API omits) the card prints an
- * explicit dash rather than a zero — a fabricated "0 detections" on a run that
- * actually detected things is the kind of number that ends up in a customer
- * readout.
+ * with no `started_at`) the card prints an explicit dash. Like a Runs row it
+ * says how the run went and whether it is reviewed, never a detection count.
  */
 function LastRunCard({ onOpen = () => {} }) {
   const { runs, activeRun } = useEnvironment()
@@ -570,19 +593,17 @@ function LastRunCard({ onOpen = () => {} }) {
   if (!shown) {
     return (
       <div className="last-run last-run--empty" data-testid="last-run-card">
-        No run has completed on this SimCore yet. Build a chain, or open a scenario
-        from Scenarios and launch it.
+        No finished run yet
       </div>
     )
   }
 
   const id = runIdOf(shown)
   const isLive = !!running
+  const lifecycle = runLifecycle(shown)
   const stats = [
-    ['Status', shown.status || 'unknown'],
-    // The same result cell as the run list: no detection count until the run
-    // has been read back, `unproven` for a failed run with no hit.
-    ['Result', resultCell(shown, runLifecycle(shown)).text],
+    ['State', runState(shown, lifecycle).word],
+    ['Review', reviewState(lifecycle)?.word || '—'],
     ['Started', absoluteTime(shown.started_at) || '—'],
     // The agent is the run's `target` column — this card used to read two
     // field names that no response ever carried.
@@ -594,7 +615,7 @@ function LastRunCard({ onOpen = () => {} }) {
       type="button"
       className={'last-run' + (isLive ? ' last-run--live' : '')}
       data-testid="last-run-card"
-      onClick={() => onOpen(id, isLive ? 'live' : 'evidence')}
+      onClick={() => onOpen(id)}
     >
       <div className="last-run__head">
         <span className="last-run__pulse" aria-hidden="true" />
@@ -602,7 +623,7 @@ function LastRunCard({ onOpen = () => {} }) {
         <span className="mono last-run__id">{id}</span>
         <span className="last-run__spacer" />
         <span className="mono last-run__cta">
-          {isLive ? 'Follow the live run →' : 'Open the run →'}
+          Open the run<Icon name="forward" size={12} />
         </span>
       </div>
       <div className="last-run__title">
@@ -704,7 +725,6 @@ function UcTcSurface({ params = {}, ...rest }) {
 }
 const EalSurface = withSuspense(EalConsole)
 const DataStreamsSurface = withSuspense(DataStreamsView)
-const EnvironmentsSurface = withSuspense(LabView)
 // The Launch Gate: "will this chain actually reach the target?". Deliberately
 // NOT the default destination — a health page that greets you every morning
 // stops being read.
@@ -712,19 +732,18 @@ const ReadinessSurface = withSuspense(ReadinessView)
 // Agents, Tenant and Firewall are component pages now (component/*.jsx); their
 // former surfaces live on as those pages' management tabs: TargetsView is
 // Agents › Fleet, TenantManager + CollectorTargetsPanel are Tenant ›
-// Read-back & integrations, and the firewall steps are Firewall's Setup and
+// Review & integrations, and the firewall steps are Firewall's Setup and
 // Sources (docs/superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md).
-// Results (design v26 §4.6). Always about ONE run, named in the "Result of"
-// bar, with a switcher across the runs that have been read back. The run is
-// `?run=` when the URL names one, otherwise the newest read-back run — never
-// the live run or the last run to end, because neither has results until the
-// tenant has been read for it. A run that has not been read back gets its bar,
-// the reason and Read back instead of a scorecard, and with no run read back
-// at all the page says so and points at Runs. Results never appear without a
-// run.
+// Results: what Cortex saw, always for ONE run, named in the "Result of" bar,
+// with a switcher across the runs that have been reviewed. The run is `?run=`
+// when the URL names one, otherwise the newest reviewed run — never the live
+// run or the last run to end, because neither has results until the tenant has
+// been read for it. `?tab=` names the view (resultTabs.js). A run that has not
+// been reviewed gets its bar and Review, and every tab says "Not reviewed";
+// with no run reviewed at all the page says so and points at Runs. Results
+// never appear without a run.
 function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
-  const { runs, scenarios } = useEnvironment()
-  const { reading, outcomes, readBack } = useReadBack()
+  const { runs } = useEnvironment()
   const runParam = openParam(params, 'run')
   // `runs` is newest first, so this list is too.
   const readBackRuns = useMemo(() => runs.filter((r) => r && readBackOf(r)), [runs])
@@ -736,10 +755,10 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
   if (!selected) {
     return (
       <div className="evidence results-empty" data-testid="results-empty">
-        <div className="view-head"><div><h1>Report</h1></div></div>
+        <div className="view-head"><div><h1>Results</h1></div></div>
         {runs.length === 0 ? (
           <div className="results-empty__body">
-            <p>No runs yet. Results come from a run that has finished and been read back from the tenant.</p>
+            <p title="Results come from a finished run that has been reviewed against the tenant">No runs yet</p>
             <Button variant="primary" onClick={() => onNavigate('library')}>Run</Button>
           </div>
         ) : runParam ? (
@@ -749,9 +768,8 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
           </div>
         ) : (
           <div className="results-empty__body">
-            <p>
-              No run has been read back yet. A run must be read back from the tenant before it has
-              results: Read back a finished run on <a href="#/runs">Runs</a>.
+            <p title="A run has results only once it is reviewed against the tenant">
+              No reviewed runs — review one on <a href="#/runs">Runs</a>
             </p>
           </div>
         )}
@@ -759,39 +777,15 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
     )
   }
 
-  const id = runIdOf(selected)
-  const lifecycle = runLifecycle(selected, { reading: reading.has(id) })
-  const scenarioName = scenarios.find((x) => (x.scenario_id || x.id) === selected.scenario_id)?.name || null
-  const bar = (
-    <ResultOfBar
-      run={selected}
-      lifecycle={lifecycle}
-      scenarioName={scenarioName}
-      readBackRuns={readBackRuns}
-      onSwitch={(next) => setParams({ run: next })}
-      onOpenRun={() => onNavigate('runs', { run: id, tab: 'live' })}
-    />
-  )
-
-  if (lifecycle.phase !== PHASE.READY) {
-    return (
-      <div className="evidence">
-        <div className="view-head"><div><h1>Report</h1></div></div>
-        {bar}
-        <ReadBackNotice lifecycle={lifecycle} outcome={outcomes.get(id)} onReadBack={() => readBack(id)} />
-        <TenantEvidencePanel runId={id} showCaseLedger={false} />
-      </div>
-    )
-  }
-
   return (
-    <Suspense fallback={<DestinationLoading />}>
-      <EvidenceView
-        pinnedRun={{ runId: id, scenarioId: selected.scenario_id, status: selected.status }}
-        intro={bar}
-        onError={() => {}}
-      />
-    </Suspense>
+    <ResultsView
+      run={selected}
+      readBackRuns={readBackRuns}
+      tab={params.tab || null}
+      onTab={(tab) => setParams({ tab })}
+      onSwitch={(next) => setParams({ run: next })}
+      onNavigate={onNavigate}
+    />
   )
 }
 
@@ -801,7 +795,7 @@ function ProofSurface({ params = {}, setParams = () => {}, onNavigate = () => {}
 //
 //   1  Onboard & connect    Get started · Components ▸ (the eight components)
 //   2  Compose & simulate   Scenarios · Build a chain · Launch gate
-//   3  Run & observe        Runs · Results · Dashboards
+//   3  Run & observe        Runs · Results · Reports
 //      Reference            Catalog
 //
 // Every page belongs to exactly one rail item. Simulate's three tabs became
@@ -825,7 +819,7 @@ export const JOURNEYS = [
 
 export const DESTINATIONS = [
   // ── 1 · Onboard & connect ──
-  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedView, badge: 'setupLeft' },
+  { id: 'start',      label: 'Get started',   group: 'onboard',   icon: 'keyboard',       Component: GetStartedSurface, badge: 'setupLeft' },
   // `children: 'components'` makes this rail item expand into the eight
   // components (componentModel.js), each with its live status.
   { id: 'components', label: 'Components',    group: 'onboard',   icon: 'settings-edit',  Component: ComponentsView, badge: 'componentIssues', children: 'components' },
@@ -843,9 +837,10 @@ export const DESTINATIONS = [
   // ── 3 · Run & observe ──
   { id: 'runs',       label: 'Runs',          group: 'observe',   icon: 'donut-chart',    Component: RunsSurface,    badge: 'live' },
   { id: 'proof',      label: 'Results',       group: 'observe',   icon: 'bar-chart',      Component: ProofSurface },
-  // Design v33 C8: the global dashboards are a rail item again. The id stays
-  // 'coverage' — it is the route, and `#/coverage` links keep working.
-  { id: 'coverage',   label: 'Dashboards',    group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
+  // Reports: the rollup of every execution on this engine, then the design
+  // v33 C8 dashboards as further tabs. The id stays 'coverage' — it is the
+  // route, and `#/coverage` links keep working.
+  { id: 'coverage',   label: 'Reports',       group: 'observe',   icon: 'line-chart',     Component: CoverageSurface },
 
   // ── Reference ──
   { id: 'ttps',       label: 'Catalog',       group: 'reference', icon: 'threat-warning', Component: TtpsSurface },
@@ -881,10 +876,12 @@ export const DESTINATIONS = [
   { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
   { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
   { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
-  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'components', icon: 'building',     Component: EnvironmentsSurface },
+  // The IaC generator's Lab page moved to feature/scenarios-cloud-posture; an old link lands on Agents.
+  { id: 'environments', label: 'Agents',          hidden: true, redirect: true, navParent: 'components', icon: 'building', Component: redirectTo('component-agents') },
   { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library',   icon: 'threat-network', Component: EalSurface },
   // Legacy id for the Launch Gate, aliased rather than broken.
-  { id: 'readiness', label: 'Launch gate',       hidden: true, redirect: true, navParent: 'preflight', icon: 'user-lock',      Component: redirectTo('preflight') },
+  // The old Readiness page was this POVengine's status, which is Get started's.
+  { id: 'readiness', label: 'Get started',       hidden: true, redirect: true, navParent: 'start', icon: 'keyboard',       Component: redirectTo('start') },
 ]
 
 /**
@@ -893,7 +890,6 @@ export const DESTINATIONS = [
  * and the strip cannot disagree about where you are.
  */
 export const SECTIONS = {
-  proof: [['proof', 'Report']],
   ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
 }
 

@@ -1,0 +1,141 @@
+/* runtime-log.css — the runtime log on a run's page (RuntimeLog.jsx).
+   ---------------------------------------------------------------------------
+   One block per step: a head row (state · number · name · technique · account
+   · exit and duration), the command, then what the step printed. Tokens only;
+   no hex. A state is a kit StatusIcon and its word, never colour alone. */
+
+.theme-console .rtlog { margin: 18px 0 0; }
+.theme-console .rtlog__bar {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 10px;
+}
+.theme-console .rtlog__h { margin: 0; font: 600 14px/1.2 var(--font-ui); color: var(--tx); }
+.theme-console .rtlog__quiet { margin: 0; font: 400 12px/1.5 var(--font-ui); color: var(--tx3); }
+
+.theme-console .rtlog__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.theme-console .rtlog__step {
+  min-width: 0;
+  padding: 11px 13px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+}
+.theme-console .rtlog__step--failed,
+.theme-console .rtlog__step--timed_out { border-left: 3px solid var(--crit); }
+.theme-console .rtlog__step--running { border-left: 3px solid var(--ac-line); }
+
+.theme-console .rtlog__head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  min-width: 0;
+}
+/* The state words differ in length; a fixed slot keeps the names in a column. */
+.theme-console .rtlog__head > .kit-status { flex: none; min-width: 104px; }
+.theme-console .rtlog__title { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.theme-console .rtlog__num { font-size: 11px; color: var(--tx3); }
+.theme-console .rtlog__name { font: 600 13px/1.3 var(--font-ui); color: var(--tx); overflow-wrap: anywhere; }
+.theme-console .rtlog__tech,
+.theme-console .rtlog__as { font-size: 11px; color: var(--tx2); }
+.theme-console .rtlog__as-note { color: var(--warn); }
+.theme-console .rtlog__meta { margin-left: auto; font-size: 11px; color: var(--tx2); overflow-wrap: anywhere; }
+
+.theme-console .rtlog__cmd {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-top: 9px; min-width: 0;
+  font-size: 12px; color: var(--tx);
+}
+.theme-console .rtlog__cmd--none { color: var(--tx3); font: 400 12px/1.5 var(--font-ui); }
+.theme-console .rtlog__cmd-line,
+.theme-console .rtlog__cmd-full {
+  font-size: 12px; line-height: 1.5; color: var(--tx);
+  background: var(--s2); border-radius: 4px;
+}
+/* One line, and the whole of it when opened. */
+.theme-console .rtlog__cmd-more { flex: 1; min-width: 0; }
+.theme-console .rtlog__cmd-more > summary {
+  display: flex; align-items: baseline; gap: 10px;
+  cursor: pointer; list-style: none;
+}
+.theme-console .rtlog__cmd-more > summary::-webkit-details-marker { display: none; }
+.theme-console .rtlog__cmd-more > summary:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; border-radius: 4px; }
+.theme-console .rtlog__cmd-line {
+  flex: 1; min-width: 0; padding: 2px 7px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The word that opens and closes it: a flex summary draws no marker. */
+.theme-console .rtlog__cmd-toggle {
+  flex: none; font: 600 11px/1.5 var(--font-ui); color: var(--ac-ink, var(--ac)); white-space: nowrap;
+}
+.theme-console .rtlog__cmd-more > summary:hover .rtlog__cmd-toggle { text-decoration: underline; }
+.theme-console .rtlog__cmd-toggle--hide,
+.theme-console .rtlog__cmd-more[open] .rtlog__cmd-toggle--show,
+.theme-console .rtlog__cmd-more[open] .rtlog__cmd-line { display: none; }
+.theme-console .rtlog__cmd-more[open] .rtlog__cmd-toggle--hide { display: inline; }
+.theme-console .rtlog__cmd-full {
+  margin: 6px 0 0; padding: 8px 10px;
+  max-height: 260px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.theme-console .rtlog__cmd-from { flex: none; font: 400 11px/1.5 var(--font-ui); color: var(--tx3); white-space: nowrap; }
+
+.theme-console .rtlog__out {
+  margin: 8px 0 0; padding: 9px 11px;
+  max-height: 280px; overflow: auto;
+  background: var(--ink); color: var(--ink-tx2);
+  border-radius: 6px;
+  font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.theme-console .rtlog__step > .rtlog__quiet { margin-top: 8px; }
+
+/* Lines the transcript carries outside any step (launch markers, a stop). */
+.theme-console .rtlog__note { min-width: 0; }
+.theme-console .rtlog__note .rtlog__out {
+  margin: 0;
+  background: var(--s2); color: var(--tx2);
+  border: 1px dashed var(--bd2);
+}
+
+/* The scenario cleanup, after the steps: a block of its own. */
+.theme-console .rtlog__cleanup {
+  min-width: 0; margin-top: 8px;
+  padding: 11px 13px;
+  background: var(--s1); border: 1px solid var(--bd); border-radius: 8px;
+}
+.theme-console .rtlog__cleanup--failed { border-left: 3px solid var(--crit); }
+.theme-console .rtlog__cleanup-cmds { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.theme-console .rtlog__cleanup-cmd { min-width: 0; }
+.theme-console .rtlog__cleanup-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.theme-console .rtlog__cleanup-line .rtlog__cmd-full { flex: 1; min-width: 0; margin: 0; padding: 2px 7px; max-height: 120px; }
+.theme-console .rtlog__cleanup-line .rtlog__meta { flex: none; margin-left: 0; }
+.theme-console .rtlog__cleanup-cmd .rtlog__out { margin-top: 5px; max-height: 160px; }
+
+/* What SimCore said about the launch: one line above the chain. */
+.theme-console .run-notice {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 0 0 14px; padding: 8px 12px; min-width: 0;
+  background: var(--s1); border: 1px solid var(--bd); border-left: 3px solid var(--warn);
+  border-radius: 8px;
+}
+.theme-console .run-notice__line { font: 400 13px/1.5 var(--font-ui); color: var(--tx); min-width: 0; }
+.theme-console .run-notice__more { flex: 1; min-width: 0; }
+.theme-console .run-notice__more > summary {
+  display: flex; align-items: baseline; gap: 10px;
+  cursor: pointer; list-style: none;
+}
+.theme-console .run-notice__more > summary::-webkit-details-marker { display: none; }
+.theme-console .run-notice__more > summary:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; border-radius: 4px; }
+.theme-console .run-notice__first { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-console .run-notice__toggle { flex: none; font: 600 11px/1.5 var(--font-ui); color: var(--ac-ink, var(--ac)); white-space: nowrap; }
+.theme-console .run-notice__more > summary:hover .run-notice__toggle { text-decoration: underline; }
+.theme-console .run-notice__toggle--hide,
+.theme-console .run-notice__more[open] .run-notice__toggle--show,
+.theme-console .run-notice__more[open] .run-notice__first { display: none; }
+.theme-console .run-notice__more[open] .run-notice__toggle--hide { display: inline; margin-left: auto; }
+.theme-console .run-notice__list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+
+/* The run's state, under its title. */
+.theme-console .run-detail__state { margin-top: 9px; }
+.theme-console .run-detail__back { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 640px) {
+  .theme-console .rtlog__meta { margin-left: 0; flex-basis: 100%; }
+  .theme-console .rtlog__cmd { flex-wrap: wrap; }
+}

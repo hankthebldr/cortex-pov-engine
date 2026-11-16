@@ -5,7 +5,6 @@ Endpoints:
   GET  /api/scenarios                            — list all (optional ?plane= and ?uc_ref= filters)
   GET  /api/scenarios/staged                     — the extended library: staged draft pairs, read only
   GET  /api/scenarios/{scenario_id}              — single scenario detail
-  GET  /api/scenarios/{scenario_id}/infra-hints  — adapter_refs + iac_modules a scenario implies
   GET  /api/scenarios/{scenario_id}/download     — download an UNGATED bundle
   POST /api/scenarios/{scenario_id}/bundle       — generate a bundle WITH a consent body
 
@@ -55,8 +54,7 @@ from engine import staged_library, tenant_content
 from engine.dataset_requirements import DatasetRequirementsError
 from engine.lab_readiness import favorites as corpus_favorites
 from engine.ttp_catalog import catalog as ttp_catalog
-from models import Scenario
-from tools.adapter_catalog import catalog as adapter_catalog
+from models import SCENARIO_RETIRED, Scenario
 
 logger = logging.getLogger("cortexsim.api.scenarios")
 
@@ -383,85 +381,6 @@ async def get_tenant_content(
     scenario = await _load_scenario(scenario_id, db)
     logger.info("get_tenant_content scenario_id=%s", scenario_id)
     return tenant_content_manifest(scenario.to_dict())
-
-
-@router.get("/{scenario_id}/infra-hints")
-async def get_infra_hints(
-    scenario_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Resolve a scenario's ``external_tools[]`` into IaC generator hints.
-
-    Walks each entry's ``adapter_ref``, looks it up in the catalog, and
-    returns:
-
-      * ``adapter_refs``       — full list of refs the scenario declared
-      * ``resolved_adapters``  — adapters that resolved (with name, tier,
-                                 safety_class, iac_module if any)
-      * ``unresolved_refs``    — refs the catalog rejected (stale ids,
-                                 typos) — surfaced so the operator can
-                                 see the gap in the UI
-      * ``suggested_modules``  — unioned set of ``install.iac_module``
-                                 values from resolved adapters, deduped
-                                 + sorted. Plug straight into
-                                 ``/api/infra/generate?modules=...``
-
-    UI workflow: DC opens the Lab view, picks a scenario_id, hits this
-    endpoint, and the LabView auto-fills the modules + tool-adapters
-    pickers. The actual generation goes through ``/api/infra/generate``
-    with the same ``adapter_refs[]`` so PR #48's auto-pull provenance
-    trail (ADAPTERS.md) lights up.
-    """
-    result = await db.execute(
-        select(Scenario).where(Scenario.scenario_id == scenario_id)
-    )
-    scenario: Optional[Scenario] = result.scalar_one_or_none()
-    if scenario is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "Scenario not found", "code": "SCENARIO_NOT_FOUND", "detail": f"scenario_id='{scenario_id}'"},
-        )
-
-    adapter_refs: list[str] = []
-    resolved: list[dict] = []
-    unresolved: list[str] = []
-    modules: list[str] = []
-
-    for entry in (scenario.external_tools or []):
-        if not isinstance(entry, dict):
-            continue
-        ref = entry.get("adapter_ref")
-        if not ref:
-            continue
-        adapter_refs.append(ref)
-        adapter = adapter_catalog.find(ref)
-        if adapter is None:
-            unresolved.append(ref)
-            continue
-        iac_module = adapter.install.iac_module
-        resolved.append({
-            "adapter_ref":  ref,
-            "name":         adapter.name,
-            "tier":         adapter.tier,
-            "safety_class": adapter.safety_class,
-            "iac_module":   iac_module,
-        })
-        if iac_module and iac_module not in modules:
-            modules.append(iac_module)
-
-    logger.info(
-        "infra_hints scenario_id=%s refs=%d resolved=%d unresolved=%d modules=%s",
-        scenario_id, len(adapter_refs), len(resolved), len(unresolved), modules,
-    )
-    return {
-        "scenario_id":       scenario_id,
-        "plane":             scenario.plane,
-        "adapter_refs":      adapter_refs,
-        "resolved_adapters": resolved,
-        "unresolved_refs":   unresolved,
-        "suggested_modules": sorted(modules),
-    }
 
 
 #: format → the execution target it needs the scenario to satisfy.
@@ -947,6 +866,20 @@ async def _load_scenario(scenario_id: str, db: AsyncSession) -> Scenario:
     return scenario
 
 
+async def _load_bundle_scenario(scenario_id: str, db: AsyncSession) -> Scenario:
+    """``_load_scenario`` for the bundle routes: a bundle runs the scenario, so a
+    retired one is refused exactly as a launch is."""
+    from engine.orchestrator import retired_refusal  # noqa: PLC0415
+
+    scenario = await _load_scenario(scenario_id, db)
+    if scenario.status == SCENARIO_RETIRED:
+        refusal = retired_refusal(scenario_id)
+        raise HTTPException(status_code=refusal.http_status, detail={
+            "error": refusal.error, "code": refusal.error_code, "detail": refusal.error_detail,
+        })
+    return scenario
+
+
 def _resolve_format(scenario_id: str, scenario_dict: dict, format: str) -> tuple[str, str, list[str]]:
     """Validate + resolve ``format`` → (format, target, alternates)."""
     if format not in ("auto", *_FORMAT_TARGET):
@@ -1032,7 +965,7 @@ async def download_bundle(
     offending steps, rather than emitting a bundle that parses and then dies in
     front of a customer — which reads as "the stack detected nothing".
     """
-    scenario = await _load_scenario(scenario_id, db)
+    scenario = await _load_bundle_scenario(scenario_id, db)
     scenario_dict = _scenario_document(scenario)
     format, target, alternates = _resolve_format(scenario_id, scenario_dict, format)
 
@@ -1114,7 +1047,7 @@ async def generate_bundle(
     ungated — they are self-contained scripts a DC runs on a host they already
     own, not objects created inside a customer's cluster.
     """
-    scenario = await _load_scenario(scenario_id, db)
+    scenario = await _load_bundle_scenario(scenario_id, db)
     scenario_dict = _scenario_document(scenario)
     fmt, target, alternates = _resolve_format(scenario_id, scenario_dict, body.format)
 

@@ -50,7 +50,7 @@ describe('Proof & Export — status belongs to the run on screen', () => {
     const Proof = getDestination('proof').Component
     render(<EnvironmentProvider runPollMs={60_000}><Proof params={{}} /></EnvironmentProvider>)
 
-    await waitFor(() => expect(screen.getByText('run-A')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('result-of')).toHaveTextContent('run-A'))
     await waitFor(() => expect(screen.getByText('det-1')).toBeInTheDocument())
     expect(document.body.textContent).not.toMatch(/run failed/)
     expect(document.querySelector('.kpi__value--detected').textContent).toBe('50%')
@@ -77,7 +77,7 @@ describe('Proof & Export — a failed fetch is not an empty scorecard', () => {
   it('a run with nothing seeded reads "—", not a measured 0 % coverage', async () => {
     installRoutes({ 'GET /api/results/run-E': { results: [] } })
     render(<EvidenceView lastRun={{ runId: 'run-E', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
-    await waitFor(() => expect(screen.getByText('no detections seeded for this run')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('No detections expected')).toBeInTheDocument())
     expect(document.querySelector('.kpi__value--detected')).toBeNull()
   })
 })

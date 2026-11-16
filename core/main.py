@@ -211,14 +211,6 @@ async def lifespan(app: FastAPI):
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))
 
-    # 3a. Merge installed content into tool registry (no-op if not on a jumpbox)
-    from content_loader import merge_installed_tools  # noqa: PLC0415
-    try:
-        merged = merge_installed_tools()
-        logger.info("Content tools merged into registry: %d", merged)
-    except Exception:
-        logger.exception("content_loader merge failed — continuing without installed content")
-
     # 3. Initialize tool instantiator (set base_dir from config)
     instantiator._base_dir = settings.CORTEXSIM_BASE_DIR
     logger.info("Tool instantiator initialized base_dir=%s", settings.CORTEXSIM_BASE_DIR)
@@ -304,7 +296,7 @@ async def _db_context():
 
 app = FastAPI(
     title="CortexSim",
-    version="1.2.4",
+    version="1.2.5",
     description="Enterprise detection simulation engine for Palo Alto Networks Cortex",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -585,7 +577,6 @@ from api.tools import router as tools_router            # noqa: E402
 from api.tools_dist import router as tools_dist_router  # noqa: E402
 from api.agents import router as agents_router          # noqa: E402
 from api.mitre import router as mitre_router            # noqa: E402
-from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
 from api.collector_targets import router as collector_targets_router  # noqa: E402
@@ -601,6 +592,9 @@ from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
 from api.readiness import router as readiness_router    # noqa: E402
+# Reports — the rollup of every execution fired on this engine (read-only,
+# SQL aggregates, no outbound calls).
+from api.reports import router as reports_router        # noqa: E402
 # Assertion substrate — the POS/PLT/AUT proof mechanism. The catalog loads
 # lazily on first access, so a deployment with no assertions/ directory boots
 # exactly as it did before.
@@ -630,7 +624,6 @@ app.include_router(tools_router, prefix="/api")
 app.include_router(tools_dist_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(mitre_router, prefix="/api")
-app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
 app.include_router(collector_targets_router, prefix="/api")
@@ -653,6 +646,7 @@ app.include_router(causality_router, prefix="/api")
 app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
 app.include_router(readiness_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
 app.include_router(k8s_payloads_router, prefix="/api")
 app.include_router(shelf_router, prefix="/api")

@@ -8,6 +8,587 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-16
+
+**The 1.2.x close-out: pull runs clean up after themselves, show their output
+live and send EAL steps through SimCore, Runs, Results and Reports are rebuilt
+on kit controls, and a step that sent nothing no longer reads as a Cortex
+miss.** The CSPM, ASM and AI_SPM planes and the IaC generator leave this
+release for a 1.4.x branch, and a scenario whose file is gone is retired at
+startup. Counted on this tree: 187 scenarios across 13
+planes · 185 TTP cards · 27 EAL plugins · 1328 step-detections · 2149 catalog
+detection objects · 14 assertion artifacts · 162 route decorators (172 served
+routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
+#324, #325, #327, #328, #339, #340, #341, #344, #374, #378.
+
+### Upgrading from 1.2.4
+
+- **Reinstall each beacon from this SimCore to get the new pull behaviour.**
+  The beacon gains three capabilities: `cleanup` (it runs the scenario's
+  `cleanup.commands` when a pull run ends), `live-output` (it reports each
+  step's command and streams its output while the step runs) and `eal-relay`
+  (a step that calls the EAL CLI runs through SimCore). Run the install
+  one-liner again on each target. An older beacon keeps working without them:
+  its runs leave their files on the target (the launch says
+  `CLEANUP_NOT_RUN`), post each step's output once at the end, and fail EAL CLI
+  steps (the launch says `EAL_RELAY_UNAVAILABLE`).
+- **The database is extended at startup; no action is needed.** The first
+  start adds the nullable column `runs.cleanup`
+  (`ALTER TABLE runs ADD COLUMN cleanup JSON`) and creates two tables,
+  `step_starts` and `eal_relay_steps`. A run from an older release reads "no
+  cleanup reported", never "clean".
+- **The CSPM, ASM and AI_SPM scenarios, the IaC generator and the Lab page are
+  not in this release.** They moved to `feature/scenarios-cloud-posture` for
+  1.4.x (#379): 18 scenarios, 18 TTP cards, 14 assertions, `/api/infra/*` and
+  `/api/scenarios/{id}/infra-hints`, which this release does not serve (a GET
+  answers 404, `POST /api/infra/generate` 405). An old
+  `#/environments` link opens Agents.
+- **On a database you keep, those 18 scenarios are retired at startup.**
+  Their runs and results stay readable. A launch, a preflight, a download or
+  a bundle of one answers 409 `SCENARIO_RETIRED`.
+- **From 1.2.3 or older, read the 1.2.4 note too.** The database switches to
+  WAL on first start, so a backup takes every `cortexsim.db*` file (or SQLite's
+  online backup), and the volume must be local to one host.
+
+### Changed — cloud posture and the IaC generator move to their own branch (1.4.x, #380)
+
+- **The CSPM, ASM and AI_SPM planes leave `dev`.** Their 18 scenarios and 18
+  TTP cards now live on `feature/scenarios-cloud-posture`, which is planned for
+  a 1.4.x release. The corpus is 187 scenarios across 13 planes, 1,328
+  step-detections.
+- **The IaC topology generator goes with them.** That covers `infra/`, the
+  `/api/infra/*` routes, `/api/scenarios/{id}/infra-hints`, the jumpbox content
+  loader, the console's Lab page and the IaC labs column on Agents. An old
+  `#/environments` link opens Agents.
+- **The 14 assertions whose stimulus is a Terraform module go too.** These are
+  POS-CSPM, POS-DSPM, POS-AISP, POS-ASM and PLT-XTI-001; 14 assertions remain.
+  POS-CSPM-004 (the Kubernetes arm) is now the only binder of TC-CSPM-02.
+- **Coverage floor.** Reconnaissance (TA0043) has one scenario left, so
+  `coverage-strict` takes a per-tactic floor of 1 for it until ASM returns.
+
+### Fixed — the Launch gate says who runs cleanup, on kit controls
+
+- **Teardown names who runs it.** A current agent: "run by the agent after the run"; an older one: "run them yourself".
+- **Prevention context reads in sentence case.** "Attested, not verified" is one hint; the canary is the kit's **Run canary**.
+- **Each preflight check is one line.** Status icon, one word and the count; the detail sits behind a collapsed **Why**.
+- **Less text around them.** No intro paragraph (its point is the Preflight tooltip); tool consent is one compact row, **Required** until ticked.
+- **Switch scenario is a kit button**, and the lines under the heading are one short line each.
+
+### Changed — Results on kit controls, a live runtime log, and EAL consent at launch
+
+- **A run's runtime log is live.** Output a step prints while it runs shows in
+  that step's block: what the run record held when the page opened, then each
+  chunk from the run's stream. When the step ends, its stored output replaces
+  the live text. A step the agent has announced reads Running with the command
+  the agent reported. Needs a beacon with live output; on an older one the
+  page says "Live output needs the new beacon" while the run is live.
+- **A command's one-line preview starts with what the step does.** It skips
+  the scratch-folder set-up (the `mktemp` line, the shared-sandbox create and
+  check lines, and the Windows `$sandbox` block). "Show all" still shows the
+  whole command.
+- **Cleanup is its own block after the steps.** It says Clean, "1 of 3
+  failed", Not run or Pending, with each command, its output and its exit code
+  behind one line. It is no longer mixed into the last step's output.
+- **What SimCore said about the launch is one line on the run's page**, not
+  raw `!!` lines in the log: an offline agent, an unknown agent OS, a missing
+  interpreter, runtime install being off, a beacon that does not run cleanup
+  or cannot relay EAL steps, and tools the target must already carry.
+  SimCore's own sentence is in the tooltip.
+- **Results › Detections uses one word per state.** Each row is a status icon
+  and one of Detected · Prevented · Missed · Pending · Not reached · Not
+  executed · Not reviewed (and Not prevented, for a block that only detected).
+  "Awaiting reconcile" is gone: a row nothing has judged reads Pending on a
+  reviewed run. The tiles are a label, one number and at most one short line
+  ("3 of 6 detected · 2 not counted"); with no MTTD the MTTD panel is one line.
+  Row actions and the detail drawer use the kit buttons.
+- **A detection's hand marks do what they say.** Reset sent `observed: null`,
+  which the API rejects, so it never worked; the ✗ "missed" button withdrew a
+  hand mark and left the row Pending, because the API never writes a miss by
+  hand. A row now offers Mark detected until it reads Detected, and Reset on a
+  row a hand mark made detected (it sends `observed: false`). A row matched to
+  an alert offers neither.
+- **A scorecard row's MTTD reads the way the tile does** ("0.4s", "42s",
+  "1m 15s"). A sub-second detection used to read "0:00" beside a tile saying
+  0.4s.
+- **Techniques and Topology no longer repeat the run verdict.** The verdict
+  line at the top of Results says it once. Their totals and explanations are
+  one line each, with the detail in a tooltip.
+- **The Launch gate asks before sending live EAL traffic.** A scenario with an
+  EAL step shows one row: "Send live EAL traffic", "Authorized by" (remembered
+  in the browser) and "Includes C2-shaped traffic". Ticked, the launch sends
+  `consent.simulation_authorized`, `authorized_by` and, with the third box,
+  `consent.c2_authorized`. Unticked, the launch is unchanged and EAL steps run
+  dry, as every console launch did before. The console cannot yet tell which
+  plugins SimCore counts as C2-shaped, so the third box shows with the first.
+- A launch warning object no longer prints its `level` as text.
+- Removed four unmounted views (`InflightView`, `EventStream`,
+  `NarrativeTimeline`, `useTimelineData`) and their styles.
+- No API, scoring or beacon change.
+
+### Added — Reports rolls up every execution on this engine
+
+- **Reports › Executions.** The first tab of the Reports page lists everything
+  this engine has run: runs by status, how many scenarios, techniques and test
+  cases they touched, what the host recorded about each step, and the expected
+  detections by outcome. One table shows it by scenario, by technique or by
+  test case, with filters for time range, plane, status and agent. Each
+  scenario row opens its last reviewed run in Results. It downloads as CSV or
+  JSON.
+- **`GET /api/reports/executions`** is the route behind it. It is read-only,
+  makes no outbound call and never loads a run's output. A detection nobody
+  reviewed is counted as not reviewed, never as missed. A scenario that never
+  ran is counted, not listed at 0 %. Composer drafts are left out unless asked
+  for. The CSV quotes text that a spreadsheet would run as a formula.
+
+### Changed — Dashboards is now Reports
+
+- **The Dashboards page is named Reports** in the rail, the heading, the
+  breadcrumb and ⌘K. Its address is the same (`#/coverage`), so saved links
+  still work. It opens on Executions; Detection source × Use case, MITRE
+  ATT&CK and Planes × doors follow as before. The paragraph under the heading
+  is gone.
+- **One button verb was added** to the console kit: Open run.
+
+### Added — scenario steps that call the EAL CLI run in pull mode (#325)
+
+- **71 scenarios failed on a beacon** at the step that runs
+  `python3 -m scripts.eal_simulator.cli`, because that CLI exists only inside
+  SimCore. A beacon from this version runs that call through SimCore instead.
+  Steps that post records to a collector are sent by SimCore, to the collector
+  target set up on this instance. The NDR network steps (C2 beacon, DNS tunnel,
+  Stratum, bulk HTTPS upload, SMB sweep, FTP, SSH) are sent by the beacon, so a
+  firewall sees the endpoint as their source.
+- **Sending needs consent on the launch**: `consent.simulation_authorized` and
+  `authorized_by`. Without it the step is a dry run and its results read not
+  executed, never missed.
+- **Relayed NGFW log-emitter steps (`ngfw_eal_emitter`, `ngfw_threat_emitter`)
+  and the C2, DNS, FTP and SSH steps also need `consent.c2_authorized` on the
+  launch.** The Launch gate's EAL consent row sends all three (see the Results
+  entry above); an API launch sends them in its body.
+- **Not in pull mode yet:** `llm_provider_egress`, `oauth_grant_emulator`,
+  `agentic_egress`, `browser_attack_runner` and `airs_prompt_attack`. Such a
+  step stops with `EAL_WIRE_NOT_RELAYABLE` and its results read not executed.
+  The FTP step sends its login but not the file, and the SMB sweep does not
+  attempt an NTLM session.
+- **An older beacon** still fails these steps. The launch now says so
+  (`EAL_RELAY_UNAVAILABLE`); update the beacon.
+- SIM-NDR-001 and SIM-TIM-001 give their 12-beacon step 600 s. The beacon's
+  180 s default stopped it part way.
+- The beacon reports every tool it looked for (`runtime_facts.probed`), and now
+  looks for `ssh`, `scp`, `sshpass` and `sudoedit`, so a dependency on one of
+  those reads found or missing instead of `unverified`.
+
+### Added — pull runs clean up after themselves
+
+- **A pull run left its files, units, cron lines and accounts on the target.**
+  Only a push bundle ran the scenario's `cleanup.commands`. The beacon now
+  runs them when a run ends: after the last step, a failed step, a timeout or
+  an abort. The run's output ends with a `=== CLEANUP` section showing each
+  command and its exit code. A failed cleanup does not fail the run (#324).
+- **The report says when cleanup did not happen.** "Cleanup Not Run" now
+  appears only when no beacon reported a cleanup, and "Cleanup Incomplete"
+  when a command failed. A run that cleaned up has neither.
+- **Update the beacons.** A beacon from before this change ignores the cleanup
+  it is sent, and the launch says so (`CLEANUP_NOT_RUN`, a notice that does
+  not hold the launch). Re-install the beacon from this SimCore to get it.
+- Windows cleanup lines run under PowerShell or cmd; no Windows host has run
+  this path yet. `cleanup.k8s_teardown` is not sent to a beacon.
+
+### Added — the beacon reports each step's command and streams its output
+
+- **A pull run was silent while a step ran, and never showed the command.**
+  The beacon posted a step's output once, after the step ended, so a
+  three-minute step said nothing for three minutes, and a finished run could
+  not show what was attempted. The beacon now tells SimCore the command before
+  each step runs and sends the step's output about once a second while it
+  runs, chained steps included.
+- **What is stored does not change.** The live output is shown on the run's
+  event stream and kept in memory until the step ends; only the step's final
+  output is stored on the run, exactly as before. A slow or unreachable
+  SimCore loses live output, never a step. Outcomes and verdicts are untouched.
+- `GET /api/runs/{id}` gains `step_starts` (the command, the account and the
+  start time per step; kept after the run ends) and, while the run is in
+  flight, `live_tail`. The run event stream gains `stepId`, `live`, `phase`,
+  `command` and `seq`; its existing fields are unchanged.
+- **Needs the new beacon on the target.** An older beacon keeps working and
+  posts each step once, at the end. The run page's runtime log shows the live
+  output (see the Results entry above).
+- **`--stream-output` is retired.** It posted from inside the step's own
+  output pipe, skipped chained steps, and its output was stored twice. The
+  beacon still accepts the flag and ignores it; the Kubernetes agent manifest
+  no longer passes it.
+- Wire contract: `docs/reference/api-and-agent-surface.md` §1.3.3.
+
+### Changed — Runs shows what was attempted; Results shows what Cortex saw
+
+- **A run's page has one panel: the runtime log.** One block per step: the
+  command that was attempted, the account it ran as, how it went (Queued ·
+  Running · Ran · Failed · Timed out · Did not run · Aborted) with exit code
+  and duration, and its output. A finished run is built from the stored output
+  and the host's step record; a live run is re-read as its stream moves.
+- **Runs no longer shows a detection verdict.** A row, a run's page, its chain
+  and the live strip say how the run went and whether it is reviewed.
+- **Results holds the detection views.** One verdict line, then Detections ·
+  Storyline · Techniques · Topology · Causality · Tenant evidence
+  (`#/proof?run=<id>&tab=<tab>`). A run that has not been reviewed says "Not
+  reviewed" in every tab. What changes how the results read (another account,
+  a platform variant, a refused step, launch warnings, attestations) is one
+  collapsed line above the verdict.
+- **Old links still work:** `#/runs?run=<id>&tab=evidence|storyline|
+  techniques|topology|causality` open the same tab of Results.
+- Validate all, the report Download list, and the Runs list's state, pager and
+  Abort are console kit controls. Compare runs stays on the Runs list only.
+
+### Fixed — dependency warnings read the beacon's tool facts and show at launch
+
+- **A launch reported `sudo`, `ssh`, `scp` and `sshpass` missing on hosts that
+  had them (#327).** The check compared every name in a step's
+  `requires_interpreters` with the agent's interpreter list, which only holds
+  python, perl, ruby and node. A name that is not an interpreter is now read
+  from the tools the beacon reported: found is fine, looked for and not found
+  is missing, and a tool the beacon never looked for is listed as `unverified`
+  and is not a gap. `GET /api/agents/{id}/preflight` answers the same way.
+- **A real gap, and an install request that was ignored, were silent at launch
+  (#328).** A pull launch whose target lacks something a step needs now carries
+  the warning `RUNTIME_DEPENDENCY_GAP`. One that asks for
+  `allow_runtime_install` on a SimCore without
+  `CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL` carries `RUNTIME_INSTALL_NOT_ENABLED`.
+  Both are on the launch response, on `POST /api/runs/preflight` and in the
+  run's output. Neither refuses the launch.
+- A beacon's registration may now include `runtime_facts.probed`, the tools it
+  looked for. The beacon sends it as of the entry above.
+
+### Changed — the Launch gate is about one scenario; Get started tracks the app
+
+- **The Launch gate read as both "this run" and "the whole app".** Under the
+  armed scenario's New POV run it carried "This POVengine": the Cortex
+  connector ladder, tenants, attested facts and the SimCore components. It now
+  holds only the scenario's launch, says so ("It checks and starts one
+  scenario's run"), and links to Get started for the app's own status.
+- **Get started tracks this POVengine's status** under its setup steps: the
+  same "This POVengine" view, with Re-check. The old Readiness route, Review
+  scope on the safety banner, and the "see this POVengine" buttons in the
+  Composer and the preflight card now land there.
+
+### Changed — the Firewall page walks Strata Logging Service and the firewall's policy
+
+- **The Firewall setup defaulted to syslog through a Broker VM.** Its two
+  paths read as if that were how NGFW data reaches Cortex. The data a POV is
+  after streams from the firewall through Strata Logging Service and lands in
+  the `panw_ngfw_*` datasets, stitched into `network_story`; the Cortex docs
+  keep the syslog path as a fallback for when that collector cannot be used.
+  The page now walks that one path, in the documented order: add the NGFW in
+  Cortex › Data Sources & Integrations, turn on cloud logging and Enhanced
+  Application Logging, install the certificate, forward every log type to
+  Strata Logging Service, then commit and confirm logs arrive. The old step
+  that said only tenants with Strata Logging Service could use it was wrong:
+  new tenants get the direct NGFW integration.
+- **The rest of the setup is the firewall's own policy.** "Log and alert on
+  the POV traffic" asks for rules that log at session end through the
+  forwarding profile, with security profiles set to alert, and "Decrypt the
+  POV traffic" for the decryption rule. Each Test runs the existing read-only
+  check. The overview gains rows for the log forwarding profile, decryption,
+  and the rule each enrolled agent's traffic meets.
+- POVengine still never writes to the firewall, and the registration's
+  forwarding path setting (auto · sls · syslog · both) is unchanged.
+
+### Fixed — the Scenarios planes sidebar fills its column, and the header fits
+
+- **The Detection planes sidebar floated as a short card.** It started 26 px
+  right of the nav rail and 22 px below the top, and ended where its list
+  ended, partway down the panel. It is now a full-height column flush against
+  the nav rail. Its plane list stays in place while the cards scroll, parked
+  against the top edge. Below 860 px, where the nav rail retracts to icons and
+  the planes stack above the results, they are a grid instead of a
+  one-per-row list: the list filled 572 px of a 620 px window and pushed every
+  scenario card below the fold.
+- **The header ran past the edge below about 1650 px.** Back / Forward and the
+  breadcrumb (1.2.0) widened a bar that already filled 1280, so Search, the
+  tour, the theme toggle and the avatar sat off screen, reachable only by
+  scrolling the header sideways. The bar now gives way in steps: tenant and
+  agent names end in an ellipsis, and the RUNNING pill's scenario and clock,
+  Search's word, the uptime, the breadcrumb's journey crumb and the version
+  drop out as the width narrows. An agent's state word always stays. It fits
+  from 1100 px up, the desktop app's 1204 px browser pane included.
+- **The POVengine wordmark drew at 20 px instead of 15 px.** A legacy rule
+  out-ranked the header's own.
+
+### Security — the remaining scratch paths: directories in 47 more scenarios and 151 fixed-name files
+
+- **What was wrong.** The two classes the entry above left open. Recounted on
+  that tree: 49 more scenarios create a fixed directory under `/tmp`,
+  `/var/tmp` or `/dev/shm` (counting directories named through a variable or
+  made as the parent of `mkdir -p P/sub`), and 186 root, `container-runtime`
+  or `direct` steps in 91 scenarios write a fixed-name file straight into
+  `/tmp`, 157 of them in 83 scenarios then running or reading it. Reproduced as
+  root in the CI image with `fs.protected_symlinks` on: with another user's
+  `/tmp/aiacc-001.yml` in place, SIM-AIACC-001 handed the EAL CLI a file that
+  user owned in 40 of 40 runs, and their content in 10. SIM-AIRS-001's cleanup
+  sourced `/tmp/airs-001.env` as root, so a planted file there ran as uid 0.
+  SIM-EDR-008 read its list of files to rewrite and delete from
+  `/tmp/cortexsim_targetlist.txt`.
+- **Directories (47 scenarios, 50 directories).** The same rule as above: the
+  creating step makes the directory with `mkdir -m` and no `-p`, and every other
+  step checks it in one `stat` lookup first. A check accepts only a directory
+  the running user or root owns: in five scenarios (SIM-AIACC-006, SIM-APB-001,
+  SIM-CLOUD-010, SIM-MP-015, SIM-MP-021) steps running as another account,
+  root among them, wrote their own files into a directory a service account
+  made, which that account could have filled with links. Those steps now keep
+  their files in their own private directory. A step that also runs on macOS
+  adds `|| stat -f %HT:%u:%Lp` inside the same substitution, which on Linux can
+  never print a passing value. SIM-CDR-008's per-run exfil directory
+  is now made with `mktemp -d`. SIM-CDR-030 is unchanged: every step already
+  makes its directory with `set -eu`, `umask 077` and `mkdir` without `-p`.
+- **Files (143 root, `container-runtime` or `direct` steps in 76 scenarios,
+  151 names).** A file only the writing step uses now lives in
+  `C=$(mktemp -d /tmp/cortexsim.XXXXXX)`, which the step removes on exit; the
+  old cleanup lines for those names are gone. In those steps a tool's output
+  that used to go to a fixed `/tmp` name goes there too (SIM-EDR-001's
+  `mimi_output.txt`, SIM-ITDR-006's AS-REP hashes, both readable by every user
+  before). A file a later step reads moved into a new sandbox under the
+  directory rule (12 scenarios: SIM-AIRS-001, -003, -004, SIM-AISPM-001, -002,
+  -004, -005, -006, SIM-CDR-004, -010, SIM-EDR-008, SIM-MP-034). Cleanup that
+  sources or rewrites through such a path now checks ownership first
+  (SIM-AIRS-001, SIM-EDR-008).
+  No detection, card query or test keyed on the old file paths; the cards'
+  illustrative payload text still shows them.
+- **What an operator will notice.** EAL campaign files, staged crontabs and the
+  like no longer appear in `/tmp` after a step: they live in
+  `/tmp/cortexsim.XXXXXX` for the step's lifetime only. A step whose creating
+  step did not run exits 1 with `sandbox … is missing or not ours` (or `not
+  owned by <account>`). On macOS, SIM-BROWSER-001 to -004 step-02 now write
+  their own campaign file instead of running a `/tmp` file no macOS step wrote.
+  The Windows bundles of SIM-NDR-005 and SIM-NDR-007 no longer list a POSIX
+  cleanup residue, so they run without `CORTEXSIM_ACCEPT_RESIDUE=1`.
+- **Counts are unchanged.** The lab-readiness and coverage classifiers now also
+  treat a stored lookup (`s=$(stat ...)`) and the macOS fallback as no signal;
+  `ground-truth` and `lab-readiness` regenerate with no diff.
+- **Not fixed here.** SIM-CDR-006's root unit and watchdog were fixed in 1.2.0.
+  SIM-EDR-003's macOS variant appends a `/tmp/.cortexsim_beacon` launcher to
+  the beacon account's `~/.zshrc`, and cleanup does not remove it. Root steps
+  still write about 35 output-only files to fixed `/tmp` names, and SIM-CDR-001
+  keeps `/tmp/linpeas.sh` and `/tmp/deepce.sh`, the payload shelf's
+  `stage_path`. Service-account steps (SIM-MP-028's EAL files, SIM-EDR-011's
+  target list) were not in scope. The next entry covers SIM-EDR-007 and three
+  Windows scenarios.
+
+### Security — nothing a scenario installs or runs as root or SYSTEM points at a plantable path
+
+- **What was wrong.** SIM-EDR-007 ran `ansible-playbook` as root on
+  `/tmp/pov-esxi-hosts` and `/tmp/pov-encrypt.yml`, which no step writes, so a
+  file planted there first became a root playbook against the ESXi lab. Three
+  scenarios' Windows variants had the same shape, written for a beacon running
+  as SYSTEM: SIM-MP-023 made `C:\ProgramData\cortexsim-mp023` with
+  `New-Item -Force`, ran a copied debugger from it with a script from the same
+  folder, and registered an `onstart` task that runs it at every boot;
+  SIM-MP-026's LocalSystem service side-loads a DLL from
+  `C:\ProgramData\cortexsim-mp026`; SIM-MP-029 extracted and ran its lure in
+  `%TEMP%\cortexsim-mp-029`, which is `C:\Windows\Temp` for SYSTEM. Any account
+  can create a folder or a junction at those paths first, and even a
+  SYSTEM-made subfolder of `C:\ProgramData` lets users add files. None of the
+  three resolves for Windows as a whole yet (some of their steps have no
+  Windows variant), so a Windows launch is refused and no `.ps1` is served:
+  these variants have not reached a Windows host. They are fixed now so they
+  are safe on the day the rest of the scenario resolves.
+- **The fix.** SIM-EDR-007 reads from `/var/lib/cortexsim/edr-007`, a root-only
+  directory each step checks first; TTP-2026-0006's staging script writes
+  there. The three Windows scenarios keep their folder names, which their
+  detections key on, and make the folder like the Linux rule: `rmdir` (which
+  removes a junction, not its target), then one
+  `[System.IO.Directory]::CreateDirectory(path, DirectorySecurity)` call that
+  gives the folder its protected ACL as it is made: SYSTEM, Administrators,
+  the running account and a marker ACE unique to that folder. A `mkdir`
+  followed by `Set-Acl` would leave the new folder open, between the two, to
+  every account that may add files to `C:\ProgramData` or `C:\Windows\Temp`,
+  and a handle opened then keeps its access after the ACL lands. A `Get-Acl`
+  then refuses anything that was already at the path, and every later step
+  runs the same check: a planted folder fails on its owner, and a junction
+  fails on its owner or its missing marker. Removals that used
+  `Remove-Item -Recurse`, which Windows PowerShell 5.1 can follow into a
+  junction's target, use `rd /s /q`.
+- **How it is proven.** Linux: the sandbox test runs SIM-EDR-007's guards as
+  root in the CI image against planted directories, links and the exchange
+  race. Windows: a new `sandbox` phase in the `windows` CI job runs each step's
+  guard on Windows PowerShell 5.1 against a folder and a junction a standard
+  account planted, and races one against the other. Those guards are read from
+  the scenario's Windows variant, because the render phase writes only
+  scenarios that resolve for Windows. Nothing here has run on Windows until
+  that job runs on this change.
+- **What an operator will notice.** Stage SIM-EDR-007's inventory and
+  playbooks with TTP-2026-0006's payload, which now writes them to
+  `/var/lib/cortexsim/edr-007`; a step finding anything else exits 1 and says
+  so. A Windows step of SIM-MP-023, -026 or -029 whose first step did not run
+  exits 1 with `sandbox … is missing or not ours`.
+
+### Security — a Windows step no longer runs, loads or feeds a file another account can plant
+
+- **What was wrong.** Six scenarios that a Windows host does run kept their
+  scratch files in a folder with a fixed name under `%TEMP%`, which is
+  `C:\Windows\Temp` (writable by every account) for the SYSTEM beacon. Each made
+  the folder with `New-Item -Force`, which accepts a folder or junction someone
+  else made first. SIM-EDR-013 compiled a DLL there and loaded it; SIM-EDR-017
+  ran `cmd.exe` with that folder as its working directory, so a planted
+  `makecab.bat` ran as SYSTEM, and unpacked a CAB into a subfolder a junction
+  could point anywhere; SIM-EDR-006 wrote LSASS dumps straight into `%TEMP%`
+  under fixed names, so an account that created the name first owned the file
+  ProcDump wrote LSASS memory into; SIM-ITDR-006 wrote AS-REP and Kerberoast
+  hashes into its folder; SIM-EDR-004 copied an executable into its folder and
+  set its timestamps; SIM-EDR-003's interrupted-run cleanup copied a saved
+  `authorized_keys` back from its folder without asking who made it. Each also
+  removed the folder with `Remove-Item -Recurse`, which Windows PowerShell 5.1
+  follows into a junction's target. Nine more scenarios have the same shape in
+  Windows variants that no Windows host is sent yet, because other steps of
+  theirs have none: SIM-ITDR-002..005 and SIM-TIM-002 write the EAL campaign
+  file they hand to the EAL CLI with `--live`, SIM-MP-025 builds its lure in
+  one, SIM-MP-035 runs a `.vbs` and SIM-MP-036 an `.exe` from one, and
+  SIM-MP-014 copies Chrome's cookie store to a fixed name.
+- **The fix.** All fifteen use the Windows sandbox from the entry above: a
+  folder per scenario, same name as before where detections key on it
+  (`\Temp\` in a module path for SIM-EDR-013, `Boat.pst` for SIM-EDR-017),
+  made by its first step with `rmdir` and one `CreateDirectory` call that sets
+  its ACL, and checked by every later step with one `Get-Acl`. SIM-EDR-006's
+  dumps move into its folder, which sits in the system Temp directory when
+  `%TEMP%` has a space, as before. In-step removals use
+  `[System.IO.Directory]::Delete`, which neither follows a junction nor
+  touches `$LASTEXITCODE`, so a native command that failed earlier in the step
+  still fails it; SIM-EDR-017's last step, which runs no native command before
+  it, uses `rmdir` and sets the exit code back. Cleanup lines use `rd /s /q`,
+  and SIM-EDR-003's restore runs only when its folder passes the same check,
+  and starts with `Set-Variable` so the bash bundle withholds it as Windows.
+- **How it is proven.** The text test pins the create and check forms for all
+  eighteen Windows folders and fails 16 cases on the old text. The `windows`
+  CI job's `sandbox` phase runs every creating step's guard against a planted
+  folder, a junction and an empty path, every checking step's guard against
+  five plants, and races a folder against a junction on one folder under
+  `C:\ProgramData` and one under `%TEMP%`. It has not run on Windows until that
+  job runs on this change. `make check-powershell` parses all 13 Windows
+  bundles and 35 rendered steps, the six changed scenarios' included.
+- **Not fixed here.** Steps that only write output to a fixed name and never
+  run or read it back: SIM-MP-001's downloaded stage page, SIM-MP-020's zip,
+  SIM-EDR-004's `svchost.exe` copy, SIM-BROWSER-006, SIM-EDR-012, -016, -018,
+  SIM-KOI-007 and SIM-MP-016. SIM-MP-030 stages in `C:\Users\Public\Music`
+  because that is the technique, and resolves for no target.
+- **What an operator will notice.** SIM-EDR-006 steps 02 and 03 and
+  SIM-EDR-017 step 02 need step 01, and SIM-ITDR-006 step 03 needs step 02,
+  to have made the folder: run alone, they exit 1 with
+  `sandbox … is missing or not ours`.
+
+### Added
+
+- **Agents › Fleet: delete agent rows in one click, or in bulk (#339).** A
+  row's Delete opens an inline "Delete `<id>`?" confirm on the same card; the
+  host-side uninstall command sits behind a collapsed "Uninstall command"
+  disclosure. A toolbar adds **Delete offline (N)**, which never counts the
+  active agent or an online or stale one, and a **Select** mode with **Delete
+  selected (N)**. Bulk deletes call `DELETE /api/agents/{id}` one at a time,
+  announce progress, carry on past a refusal, keep each 409's run ids and
+  Abort control on its row, and refresh the list once at the end. The Fleet
+  page now uses kit controls only (new verbs Deploy, Set active, Download,
+  Copy, Delete, Select and Refresh) and shows liveness as a status icon and
+  one word. The backend is unchanged.
+
+### Changed
+
+- **The console's "Read back" action is now "Review".** The button on Runs, on
+  a run's page, on Results, in Runs › Compare and on the UC / TC Gaps list says
+  Review, and says Reviewing… while it runs. The fourth stage of the run
+  lifecycle strip says Reviewed, and every line that said a run was or was not
+  "read back" now says reviewed or not reviewed ("Ran — not reviewed", "Not
+  reviewed yet — Review the run."). The Tenant page's tab is now Review &
+  integrations. Only the words changed: the action still asks SimCore to read
+  the tenant for the run (`POST /api/runs/{id}/reconcile`), and no route, API
+  or backend behaviour moved.
+- **A run's page speaks in one short line per state, with kit controls.** The
+  run's status line, the Results notice and the case panel now say one short
+  thing ("Finished · not reviewed", "Not reviewed — no results yet", "Not
+  reviewed"), with any detail in a tooltip. The Live tab's stream uses kit
+  buttons and status icons: its level filters are toggle buttons, Pause and
+  Clear carry their icons, the connection state reads Live, Polling,
+  Connecting, Error or Paused, and the footer's Screenshot and Download (the
+  POV report) are kit verbs. Review and Open results buttons carry their icons
+  everywhere. The kit gains the Pause, Clear and Screenshot verbs.
+- The beacon's enrollment test for a state directory whose parent is a regular
+  file now runs on Windows too (#228). Test only; the beacon is unchanged.
+
+### Fixed
+
+- **A scenario whose file is gone is retired at startup.** The loader only
+  added and updated rows, so on a database that outlived the cloud-posture
+  split the 18 moved scenarios stayed `active`: they listed in the Library,
+  counted in `/api/health`, UC/TC evidence and MITRE coverage, and could be
+  launched. At boot a corpus row that no file on disk declares now becomes
+  `status: retired`; a file the loader rejects still counts as on disk. The row
+  is never deleted, so its runs and results still open. Composer drafts are
+  never retired, and a row whose file comes back takes the file's status again
+  at the next boot. Doors, the payload shelf's `used_by`, health's adapter
+  references, readiness and the Reports corpus skip retired rows. A launch, a
+  preflight, `GET /api/scenarios/{id}/download` and
+  `POST /api/scenarios/{id}/bundle` refuse one with 409 `SCENARIO_RETIRED`.
+- **A correlation with nothing to join is not a Cortex miss** (#378). In the
+  1.2.4 lab pass, SIM-CDR-019 and SIM-NDR-012 relayed their collector steps
+  dry, so no input record left SimCore, yet the `echo` step carrying the
+  correlation exited 0 and its row closed `missed` once the window shut: a
+  Cortex miss (denominator 1, coverage 0 %) for a rule that had no alerts to
+  fuse. A silent Correlation row now reads `not_executed` / `INPUTS_NOT_SENT`
+  when every row it joins sent nothing, with "the steps it joins sent nothing"
+  in its notes, and leaves the efficacy denominator. The corpus does not say
+  which detections a correlation fuses, so its inputs are every other
+  non-Correlation row on an earlier step of the run, or on its own step. An
+  input sent nothing when it is already `not_executed` or `not_reached` (an
+  EAL step that stayed dry or delivered no record, a refused or never-run
+  step), or when its step failed, timed out or did not run on the host. If any
+  input was delivered, the correlation reads `missed` as before. An alert that
+  matches the correlation still credits it. The storyline reads "Signal never
+  generated · inputs not sent".
+- **A timed-out step is not a Cortex miss.** In the same lab pass SIM-MP-003
+  step-03 hit its 180 s limit while DNS hung, so step-04 never ran, and
+  step-03's silent rows read `missed` once the window closed. A step the host
+  records `timeout` is now read like a failed one: its silent `detect` rows,
+  and `prevent` rows scored as a detect, read `not_executed` /
+  `STEP_TIMED_OUT`, with "the step timed out on the host" in the notes. An
+  alert matched inside the window still credits the row. A block-mode
+  `prevent` row on a timed-out step still reads `missed` / fail: the step ran
+  its whole budget unprevented. `signaled` and `anchor_terminated` (the host
+  stopped the step) still read `missed`. The storyline reads "Signal never
+  generated · step timed out".
+- **Rows already decided keep their verdict.** Review never re-judges a row
+  it has written, so a Correlation row or a timed-out step's row that an
+  earlier version wrote `missed` stays `missed`. Re-run the scenario to score
+  it under these rules.
+- **A relayed request the far end resets still counts as sent** (#374). In
+  the 1.2.4 lab, SIM-NDR-001's relayed step sent 12 HTTP requests; the
+  firewall and the tenant logged all 12 sessions and the server reset each one.
+  The beacon counted that as "0 of 12 reached", the step exited 1 and its rows
+  read `not_executed` / `STEP_FAILED`. The beacon now counts each network
+  operation by what left the endpoint: an HTTP request is sent once it is fully
+  written, a DNS query once it is written, a TCP exchange once its first frame
+  is written. The reply (`http_<status>`, `reset`, `closed`,
+  `timeout_waiting_reply`) is recorded beside it and does not change that. The
+  step prints `EAL_WIRE_SENT: 12 of 12 sent · 12 reset by peer` and fails only
+  when nothing was sent. Needs the beacon from this release.
+- **Agents: the active agent's card has no "Active" tag.** Next to the
+  liveness icon it read as "online", even for an offline agent. The card keeps
+  its highlight (green border and ring).
+- **A finished run's stdout panel shows what the run printed** (#340). The
+  panel on a run's Live tab showed only the live stream, so a run that had
+  already ended said "waiting for agent…" even though SimCore had stored its
+  whole output. A complete, failed, aborted or staged run now shows that stored
+  output, one block per step, each marked Ran, Failed (exit N), Timed out or
+  Did not run with its exit code. A run with no stored output says "No output
+  recorded". A run still in progress keeps the live stream.
+- **The header offers to switch off an offline agent** (#341). The active
+  agent is remembered by the browser, and it was replaced only when the agent
+  was deleted, so an agent that had gone offline stayed active and the next
+  launch targeted a beacon that could not take it. When the active agent is
+  offline and another agent is online, the header now shows the agent as
+  offline with a **Switch to** button naming the online agent (the most
+  recently seen, if there are several). It does not switch on its own.
+- **Scenario cards keep Run and Customize whole** (#344). In a two-column
+  grid the card footer ran out of room: Run was cut off at the card's edge and
+  the run-history chip ("10× run · 1d ago") wrapped onto three lines. The step
+  and detection counts and the history chip now shrink together, the chip stays
+  on one line and truncates, and the buttons keep their full width.
+
 ## [1.2.4] - 2026-11-15
 
 **Hotfix for v1.2.3: a run its beacon abandoned reads `failed`, and reading the

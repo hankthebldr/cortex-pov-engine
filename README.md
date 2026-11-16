@@ -5,9 +5,9 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-205-00994d)](docs/reference/ground-truth.md)
-[![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1452-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-187-00994d)](docs/reference/ground-truth.md)
+[![planes](https://img.shields.io/badge/detection%20planes-13-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1328-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **205 scenarios across 16 detection planes** through either a pull-model
+It runs **187 scenarios across 13 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -109,8 +109,8 @@ not free text.
 > - **Identity collapses to the beacon's own account** (SYSTEM under the
 >   service, by its LocalSystem registration), with `IDENTITY NOT HONOURED` in
 >   the run record. A lineage-keyed miss is not a customer gap.
-> - **Only Windows-resolvable scenarios run**: 13 resolve for Windows and
->   69 carry a Windows-labelled step. **There is no Windows canary**
+> - **Only Windows-resolvable scenarios run**: 12 resolve for Windows and
+>   65 carry a Windows-labelled step. **There is no Windows canary**
 >   (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
 > - **On a managed host**, a Group Policy execution policy outranks
 >   `-ExecutionPolicy Bypass` for a `.ps1` bundle and every child step, and
@@ -213,9 +213,10 @@ language deps — nothing after that). No submodules touched, no toolchain
 installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
-CortexSim ships as tagged GitHub Releases — **v1.2.4** is the release this
-tree describes, a hotfix cut 2026-11-15 and tagged by `tag-on-main.yml` when it
-merges to `main` (until that tag exists, **v1.2.3** is the latest tag) — and
+CortexSim ships as tagged GitHub Releases — **v1.2.5** is the release this
+tree describes, the 1.2.x close-out cut 2026-11-16 and tagged by
+`tag-on-main.yml` when it merges to `main` (until that tag exists, **v1.2.4**
+is the latest tag) — and
 the release pipeline pushes a multi-arch image
 (`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
 image is **not publicly pullable today** (an anonymous pull-token request is
@@ -258,8 +259,8 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>205 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>203 TTP cards"]
+        SC["scenarios/<br/>187 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>185 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
@@ -466,7 +467,7 @@ erDiagram
 
 ### API surface
 
-**165 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **175 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (165, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
+**166 route decorators across 29 router files** (`docs/reference/ground-truth.md`, `http_routes`); the app serves **176 routes**, counted with the walker in [`api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) §0 (166, plus the six shelf artifact routes a helper registers on both `/api/k8s` and `/api/shelf` without a decorator, plus FastAPI's four docs routes). Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -482,10 +483,11 @@ erDiagram
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
-| `drafts` · `payloads` · `scenarios` | 7 each | Composer drafts · the shelf, mounted at `/shelf` and `/k8s` · corpus, staged runs, bundle download |
+| `drafts` · `payloads` | 7 each | Composer drafts · the shelf, mounted at `/shelf` and `/k8s` |
+| `scenarios` | 6 | corpus, staged runs, bundle download |
 | `assertions` | 6 | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) |
 | `collector_targets` | 6 | the collector targets the EAL emitters POST to, with preflight |
-| `results` · `infra` · `connectors` | 4 each | detection validation → MTTD · IaC bundle generation · preflight / reconcile / observations |
+| `results` · `connectors` | 4 each | detection validation → MTTD · preflight / reconcile / observations |
 | `tools_dist` · `pov` · `doors` · `ngfw` · `prerequisites` | 3 each | binaries · entitlement scoping · ingestion doors (read-only) · read-only PAN-OS connection · dataset requirements and query library |
 | `mitre` · `events` · `tenant_evidence` | 2 each | coverage heatmap · SSE · run tenant evidence |
 | `storyline` · `health` · `causality` · `readiness` | 1 each | run narrative · diagnostics · causality graph · connector ladder |
@@ -703,20 +705,21 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | KOI | Agentic endpoint / supply-chain | 12 | `agentic_egress` + artifact pack |
 | Cloud App | Cortex Cloud App Security | 10 | `oauth_grant_emulator` |
 | TIM | Cortex Threat Intel Management | 9 | mocktaxii · IOC feeds |
-| AI_SPM | Cortex AI Security Posture Management | 7 | `ai-spm` IaC planted findings |
-| ASM | Cortex Attack Surface Management | 6 | `asm` IaC exposed surface |
 | AI_ACCESS | Cortex AI Access Security | 6 | `llm_provider_egress` |
 | Browser | Prisma Browser | 6 | `browser_attack_runner` (Playwright) |
 | AIRS | Cortex AI Runtime Security | 5 | `cortex-prompt-attacker` |
-| CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **205** | |
+| **Total** | | **187** | |
 
-**1,452 step-level expected detections** resolve against **2,336 catalog
+The CSPM, ASM and AI_SPM planes and the IaC topology generator live on
+[`feature/scenarios-cloud-posture`](https://github.com/hankthebldr/cortex-pov-engine/tree/feature/scenarios-cloud-posture),
+targeted for a 1.4.x release.
+
+**1,328 step-level expected detections** resolve against **2,149 catalog
 detection objects** across the seven-value `detection_type` vocabulary
 (`Prevention` is the seventh, with 2 step-detections today), covering
-**241 MITRE techniques (128 base)**. XDM modeling rules are a normalization
+**236 MITRE techniques (125 base)**. XDM modeling rules are a normalization
 *substrate*: surfaced and exported, counted informationally, not a detection type.
 
 <details>
@@ -724,14 +727,14 @@ detection objects** across the seven-value `detection_type` vocabulary
 
 | Type | Count | What it is |
 |---|---:|---|
-| `XQL` | 586 | query-defined detection |
-| `BIOC` | 374 | behavioral IOC |
-| `ABIOC` | 166 | PANW-authored, auto-tuned behavioral ML with a causality chain |
-| `Correlation` | 149 | multi-source stitched rule |
-| `IOC` | 119 | atomic indicator |
+| `XQL` | 504 | query-defined detection |
+| `BIOC` | 361 | behavioral IOC |
+| `ABIOC` | 161 | PANW-authored, auto-tuned behavioral ML with a causality chain |
+| `Correlation` | 137 | multi-source stitched rule |
+| `IOC` | 107 | atomic indicator |
 | `Analytics` | 56 | baseline-deviation analytic |
 | `Prevention` | 2 | agent prevention-module block (two-witness rule) |
-| **Total** | **1452** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
+| **Total** | **1328** | `docs/reference/ground-truth.md` → `step_detections_by_type` |
 
 </details>
 
@@ -915,10 +918,10 @@ PowerShell for a Windows-only scenario, so name the saved file by the
 response, not by habit: `-OJ` keeps the server's `Content-Disposition`
 filename (`.sh` or `.ps1`), and `X-CortexSim-Bundle-Target` says `posix` or
 `windows`. `GET /api/scenarios/{id}` says which targets a download will serve
-(`bundle_targets`): 190 scenarios serve bash and 13 serve PowerShell (9 serve
-both), and 5 serve neither, because `SIM-EDR-023` / `-024` and `SIM-MP-030` /
-`-031` / `-034` are `push_supported: false` (counted 2026-11-12 through the real
-loader and the route's own `_bundle_targets`). A raw download creates no Run and no Result rows;
+(`bundle_targets`): 177 scenarios serve bash and 12 serve PowerShell (8 serve
+both), and 6 serve neither, because `SIM-EDR-023` / `-024` and `SIM-MP-030` /
+`-031` / `-034` / `-038` are `push_supported: false` (counted 2026-11-15 through
+the real loader and `pushable_targets`). A raw download creates no Run and no Result rows;
 launch with `"mode":"push"` when you want a run to score. A Windows `.ps1` runs with
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-<id>.ps1`,
 after `Unblock-File` if Mark-of-the-Web policy requires it. It exits non-zero
@@ -948,7 +951,8 @@ curl -s -X POST "http://localhost:8888/api/runs/<run_id>/observations" \
      "external_id": "<alert id>"}
   ]}'
 
-# Credential-backed: pull the run's window from a registered tenant.
+# Credential-backed: pull the run's window from a registered tenant (the
+# console's Review action on Runs and on the run's page).
 curl -s -X POST "http://localhost:8888/api/runs/<run_id>/reconcile?connector=xsiam&host=<endpoint hostname>"
 
 # Then the report.
@@ -1070,7 +1074,7 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    29 router files · 165 route decorators · 175 served routes
+│   ├── api/                    29 router files · 166 route decorators · 176 served routes
 │   ├── engine/                 43 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
@@ -1083,12 +1087,11 @@ cortex-pov-engine/
 │   └── models.py               20 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 205 scenario YAML, per plane
+├── scenarios/                ← 187 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 203 TTP cards → 2,336 detection objects
+├── detection_scanner/ttps/   ← 185 TTP cards → 2,149 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
-├── infra/modules/aws/        ← 11 Terraform modules
 ├── spec/                     ← identity_harness.json (shared push/pull spec)
 ├── deploy/tier-d/            ← provisioned target + ENGINE/ENVIRONMENT/TTP harness
 ├── docs/reference/           ← ground-truth.md ← the authority on every count
@@ -1134,7 +1137,7 @@ without evidence**.
 Two of these are load-bearing in a non-obvious way:
 
 - **The Windows cross-compile arm.** The beacon once silently could not compile
-  for Windows while 71 scenarios declared `platforms: [windows]` (69 of 205 do
+  for Windows while 71 scenarios declared `platforms: [windows]` (65 of 187 do
   today). Compiling is not executing: only the `windows` job runs the beacon on
   Windows. Every third-party action in every workflow is pinned to a commit
   SHA.
@@ -1182,13 +1185,16 @@ make test-agent-cross   # beacon cross-compile gate
   — **v1.0.0**, **v1.0.1**, **v1.0.2**, **v1.1.0**, **v1.1.1** and **v1.2.0** are
   published; **v1.2.1** (a hotfix: a failed step no longer reads as a Cortex miss),
   **v1.2.2** (a hotfix: verify-only XQL rows no longer count as Detection
-  Accuracy misses) and **v1.2.3** (a hotfix: an alert credits at most one run,
-  and alerts a run did not expect are listed) were tagged 2026-11-15.
-  **v1.2.4** (a hotfix: a run its beacon abandoned reads failed, and reading
-  the tenant no longer locks the database) is the release this tree describes,
-  cut 2026-11-15; `tag-on-main.yml` tags it from the first `## [x.y.z]` heading
-  in `CHANGELOG.md` when the release PR merges to `main`, and until then
-  **v1.2.3** is the latest tag. Releases up to v1.1.1
+  Accuracy misses), **v1.2.3** (a hotfix: an alert credits at most one run,
+  and alerts a run did not expect are listed) and **v1.2.4** (a hotfix: a run
+  its beacon abandoned reads failed, and reading the tenant no longer locks the
+  database) were tagged 2026-11-15. **v1.2.5** (the 1.2.x close-out: pull runs
+  clean up after themselves, stream live output and relay EAL steps through
+  SimCore; the CSPM, ASM and AI_SPM planes and the IaC generator move to a
+  1.4.x branch) is the release this tree describes, cut 2026-11-16;
+  `tag-on-main.yml` tags it from the first `## [x.y.z]` heading in
+  `CHANGELOG.md` when the release PR merges to `main`, and until then
+  **v1.2.4** is the latest tag. Releases up to v1.1.1
   attached `install.sh`, `stage2-linux.tar.gz`,
   `stage2-windows.zip` (which held one bash file, so it was never a Windows
   installer), `SHA256SUMS` and `manifest.json`. **v1.2.0 was the first release
@@ -1209,7 +1215,7 @@ make test-agent-cross   # beacon cross-compile gate
   That image is **not publicly pullable** — the v1.1.1 release run's own
   anonymous pull-token probe returned HTTP 401 (2026-11-12) — so don't
   `docker pull` it today. Build it locally instead (`./scripts/dev-up.sh`, or
-  `docker build -f core/Dockerfile -t cortexsim:v1.2.4 .` directly). Neither the
+  `docker build -f core/Dockerfile -t cortexsim:v1.2.5 .` directly). Neither the
   release image nor a local build stages the payload shelf: `/api/health` reads
   `payload_shelf` degraded (`SHELF_ARTIFACTS_MISSING`) until
   `./scripts/build-payloads.sh` runs before the build.

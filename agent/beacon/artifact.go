@@ -985,9 +985,10 @@ func (c *BeaconClient) probeExecutability(set *stagedSet) *artifactFailure {
 
 // Cleanup removes exactly the files and directories this staging phase created.
 //
-// Pull mode NEVER executes a scenario's cleanup.commands (only push_generator
-// emits those), so the beacon owns removal outright — it cannot be delegated to
-// content. Staged offensive tooling that survives a run on a customer endpoint
+// A scenario's cleanup.commands (cleanup.go) know nothing about what was staged
+// here, and an older SimCore sends none, so the beacon owns removal outright —
+// it cannot be delegated to content. Staged offensive tooling that survives a
+// run on a customer endpoint
 // is found either at engagement close-out or by the customer's own EDR.
 //
 // Directories are removed with os.Remove (empty-only), innermost-first — never

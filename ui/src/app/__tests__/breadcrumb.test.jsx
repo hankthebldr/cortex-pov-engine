@@ -66,14 +66,15 @@ describe('breadcrumbFor — journey › page › object, from the registry', () 
     const tc = breadcrumbFor('uctc', { tc: 'TC-EDR-03' })
     expect(labels(tc)).toEqual(['Reference', 'Catalog', 'UC / TC index', 'Test case TC-EDR-03'])
     expect(targets(tc)).toEqual(['ttps', 'ttps', 'uctc', null])
-    // Dashboards is a rail item of its own now (design C8), not a Results tab.
-    expect(labels(breadcrumbFor('coverage'))).toEqual(['Run & observe', 'Dashboards'])
+    // Reports is a rail item of its own (the old Dashboards), not a Results tab.
+    expect(labels(breadcrumbFor('coverage'))).toEqual(['Run & observe', 'Reports'])
     expect(labels(breadcrumbFor('ttps', { open: 'TTP-2026-0001' })))
       .toEqual(['Reference', 'Catalog', 'TTP card TTP-2026-0001'])
   })
 
   it('an alias that shares its rail item\'s name is not named twice', () => {
-    expect(labels(breadcrumbFor('readiness'))).toEqual(['Compose & simulate', 'Launch gate'])
+    // The old Readiness page was this POVengine's status, which is Get started's.
+    expect(labels(breadcrumbFor('readiness'))).toEqual(['Onboard & connect', 'Get started'])
   })
 
   it('an unknown destination has no crumbs', () => {

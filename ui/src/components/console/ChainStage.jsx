@@ -3,9 +3,11 @@
  *
  *   editable  the Composer's Lanes lens: every card is a button that selects
  *             its step; tenant rules sit in the Cortex Engine band.
- *   live      Run detail: every card carries a state pip AND a word
- *             (Detected · Broken · Waiting / Not seen · Ran — not read back ·
- *             Did not run); a lane header opens its component page.
+ *   live      every card carries a state pip AND a word; a lane header opens
+ *             its component page. The words are the caller's `vocabulary`:
+ *             Run detail passes execution words (Queued · Running · Ran ·
+ *             Failed · …), the default is the detection reading (Detected ·
+ *             Broken · Waiting / Not seen · Ran — not reviewed · Did not run).
  *   preview   a scenario's sheet: no state, no controls, scaled to fit its box
  *             and never below 0.62 — past that it scrolls in its own box.
  *
@@ -18,11 +20,12 @@
  *   mode="live"
  *   steps       the run's scenario steps in the Composer step model
  *               (`composerDraft.draftFromScenario(scenario).steps`)
- *   states      { [stepId]: 'detected' | 'broken' | 'waiting' | 'not_seen'
- *                          | 'ran' | 'did_not_run' } — the caller derives these
- *               from the run and its read-back. Before a read-back a step is only
- *               'ran' or 'did_not_run'; a step absent from `states` reads Waiting.
- *   onSelect    (stepId) => void — a card becomes a button (e.g. a Broken step
+ *   states      { [stepId]: <a key of vocabulary.states> } — the caller
+ *               derives these. A step absent from `states` reads the
+ *               vocabulary's fallback (Waiting, or Queued on Run detail).
+ *   vocabulary  { states, order, fallback, edge } — what a card can say
+ *               (`chainStage.LIVE_VOCABULARY` by default).
+ *   onSelect    (stepId) => void — a card becomes a button (e.g. a Failed step
  *               opens its troubleshooting sheet). Omit for a read-only stage.
  *   canSelect   optional (stepId, state) => boolean — which live cards are
  *               buttons. Without it every card is; with it, a card that would
@@ -38,7 +41,7 @@ import StatusIcon from './kit/StatusIcon.jsx'
 import PageIcon from './kit/PageIcon.jsx'
 import Icon from './kit/Icon.jsx'
 import {
-  buildChainStage, clampScale, doorTitle, fitScale, LANE_ICON, liveLegend, liveStateOf, LIVE_STATES, STAGE_GEOMETRY,
+  buildChainStage, clampScale, doorTitle, fitScale, LANE_ICON, liveLegend, liveStateOf, LIVE_VOCABULARY, STAGE_GEOMETRY,
 } from './chainStage.js'
 
 const MODES = new Set(['editable', 'live', 'preview'])
@@ -65,7 +68,7 @@ function useBoxWidth(ref, active) {
   return width
 }
 
-function StepCardBody({ card, mode, state }) {
+function StepCardBody({ card, mode, state, meta }) {
   const s = card.step
   return (
     <>
@@ -75,7 +78,7 @@ function StepCardBody({ card, mode, state }) {
         <span className="chain-stage__order mono">{String(card.order).padStart(2, '0')}</span>
         <span className="chain-stage__spacer" />
         {mode === 'live' && (
-          <StatusIcon status={LIVE_STATES[state].status} word={LIVE_STATES[state].word} className="chain-stage__state" />
+          <StatusIcon status={meta.status} word={meta.word} className="chain-stage__state" />
         )}
       </span>
       <span className="chain-stage__name">{s.name || s.id}</span>
@@ -103,6 +106,7 @@ export default function ChainStage({
   teardown = null,
   rules = [],
   states = {},
+  vocabulary = LIVE_VOCABULARY,
   selectedId = null,
   onSelect = null,
   canSelect = null,
@@ -131,15 +135,15 @@ export default function ChainStage({
     )
   }
 
-  const stateOf = (id) => liveStateOf(states, id)
+  const stateOf = (id) => liveStateOf(states, id, vocabulary)
   const edgeTone = (e) => {
     if (m !== 'live' || e.kind === 'root') return ''
-    const st = stateOf(e.target === 'proof' ? e.source : e.target)
-    return st === 'detected' ? ' chain-stage__edge--pos' : st === 'broken' ? ' chain-stage__edge--crit' : ''
+    const tone = vocabulary.edge?.[stateOf(e.target === 'proof' ? e.source : e.target)]
+    return tone ? ` chain-stage__edge--${tone}` : ''
   }
   const G = STAGE_GEOMETRY
   const stepCards = model.cards.filter((c) => c.kind === 'step')
-  const legend = m === 'live' ? liveLegend(stepCards.map((c) => c.step), states) : []
+  const legend = m === 'live' ? liveLegend(stepCards.map((c) => c.step), states, vocabulary) : []
   const teardownCount = Array.isArray(teardown) ? teardown.length : null
 
   return (
@@ -157,7 +161,7 @@ export default function ChainStage({
           <span className="chain-stage__legend" data-testid="chain-stage-legend">
             {legend.map((l) => (
               <span key={l.key} className="chain-stage__legend-item">
-                <StatusIcon status={LIVE_STATES[l.key].status} word={`${l.count} ${l.word.toLowerCase()}`} />
+                <StatusIcon status={vocabulary.states[l.key].status} word={`${l.count} ${l.word.toLowerCase()}`} />
               </span>
             ))}
           </span>
@@ -253,11 +257,11 @@ export default function ChainStage({
                 ...(state ? { 'data-state': state } : {}),
                 style: box,
               }
-              const body = <StepCardBody card={c} mode={m} state={state} />
+              const body = <StepCardBody card={c} mode={m} state={state} meta={state ? vocabulary.states[state] : null} />
               const clickable = (m === 'editable' || m === 'live') && typeof onSelect === 'function'
                 && (m !== 'live' || typeof canSelect !== 'function' || canSelect(c.id, state))
               if (clickable || m === 'editable') {
-                const name = [c.id, c.step.name, state ? LIVE_STATES[state].word : null].filter(Boolean).join(' · ')
+                const name = [c.id, c.step.name, state ? vocabulary.states[state].word : null].filter(Boolean).join(' · ')
                 return (
                   <button
                     key={c.id}

@@ -100,7 +100,8 @@ steps:
   - id: step-02
     name: "Launch dry-run campaign — confirm safety policy holds"
     command: |
-      cat > /tmp/c2-beacon-dry.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/c2-beacon-dry.yml" <<'YML'
       campaign_id: CMP-NDR-001
       name: "NDR validation — C2 beacon dry run"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -117,7 +118,7 @@ steps:
             sleep_seconds: 2
             jitter_pct: 25
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-dry.yml
+      python3 -m scripts.eal_simulator.cli run "$C/c2-beacon-dry.yml"
     identity: container-runtime
     mitre_technique: "T1071.001"
     platforms: ["linux", "container"]
@@ -134,7 +135,8 @@ steps:
   - id: step-03
     name: "Live campaign — periodic beacon to authorised test endpoint"
     command: |
-      cat > /tmp/c2-beacon-live.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/c2-beacon-live.yml" <<'YML'
       campaign_id: CMP-NDR-001
       name: "NDR validation — C2 beacon live"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -154,9 +156,12 @@ steps:
             method: GET
             dga_query_param: true
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-live.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/c2-beacon-live.yml" --live
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # 12 beacons, 30 s apart (jittered to 37.5 s at most): about 7 minutes, over
+    # the beacon's 180 s default.
+    timeout_seconds: 600
     platforms: ["linux", "container"]
     causality:
       parent_step: step-02
@@ -180,7 +185,6 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/c2-beacon-dry.yml /tmp/c2-beacon-live.yml"
     - "echo '[CortexSim] SIM-NDR-001 cleanup complete'"
 
 author: "Henry Reed"

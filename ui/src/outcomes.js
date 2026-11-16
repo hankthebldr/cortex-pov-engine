@@ -26,9 +26,20 @@ const RESULT_OUTCOMES = new Set([
   'prevented', 'detected', 'missed', 'pending', 'not_reached', 'not_executed',
 ])
 export const DETECTED_NOT_PREVENTED = 'DETECTED_NOT_PREVENTED'
-/** A step the host reports `exited` non-zero: it failed, so its silent rows are
- *  `not_executed`, never `missed` (core/engine/outcome.py::STEP_FAILED, #323). */
-export const STEP_FAILED = 'STEP_FAILED'
+
+/** `not_executed` reasons for a row whose step ran but sent Cortex nothing
+ *  (core/engine/outcome.py): the step failed (#323) or timed out, or the steps
+ *  a correlation joins sent nothing (#378). A one-line label and its tooltip. */
+const NOT_EXECUTED_REASONS = new Map([
+  ['STEP_FAILED', { label: 'step failed', title: "The step failed on the host, so a miss can't be claimed." }],
+  ['STEP_TIMED_OUT', { label: 'step timed out', title: "The step timed out on the host, so a miss can't be claimed." }],
+  ['INPUTS_NOT_SENT', { label: 'inputs not sent', title: "The steps this correlation joins sent nothing, so a miss can't be claimed." }],
+])
+
+/** `{label, title}` for one of those reasons, else null (a run that did not complete). */
+export function notExecutedReason(reason) {
+  return NOT_EXECUTED_REASONS.get(reason) || null
+}
 
 /**
  * The ONE mapping from a Result row (or a storyline entry) to the status key
@@ -39,8 +50,8 @@ export const STEP_FAILED = 'STEP_FAILED'
  * that never ran (`not_reached`) or a detector still soaking as ❌ Missed.
  *
  * A row with NO outcome is awaiting judgement (residual R4): `observed=false`
- * is the seed value, not a verdict, so it is `pending` ("Awaiting reconcile",
- * see `statusLabel`) — never `missed`. `observed === true` with no outcome is
+ * is the seed value, not a verdict, so it is `pending` (see `statusLabel`) —
+ * never `missed`. `observed === true` with no outcome is
  * a manual validation (incl. pre-branch runs) → `detected`. `legacyStatus` is
  * a server-decided status the caller already holds (the storyline's
  * `status`); it is honoured except that an outcome-less `missed` is the same
@@ -66,18 +77,22 @@ export function resultStatus(result, legacyStatus) {
   return 'pending'
 }
 
-/** The label for a row with no outcome yet: unjudged, not a gap. */
-export const AWAITING_RECONCILE = 'Awaiting reconcile'
+/** What a row nothing has judged reads on a run that has not been reviewed. */
+export const NOT_REVIEWED = 'Not reviewed'
 
 /** True when nothing has judged this row: no outcome and no validation. */
 export function isAwaitingReconcile(status, row) {
   return outcomeKey(status) === 'pending' && !!row && row.outcome == null
 }
 
-/** The rendered label for a status on a row: `outcomeMeta`, except an
- *  outcome-less pending row reads "Awaiting reconcile" (no reason token). */
-export function statusLabel(status, row) {
-  if (isAwaitingReconcile(status, row)) return AWAITING_RECONCILE
+/**
+ * The rendered label for a status on a row: `outcomeMeta`. A row nothing has
+ * judged is unjudged, not a gap: it reads Pending on a reviewed run (the
+ * review did not settle it) and Not reviewed on one that has not been
+ * reviewed (`reviewed: false`).
+ */
+export function statusLabel(status, row, { reviewed = true } = {}) {
+  if (!reviewed && isAwaitingReconcile(status, row)) return NOT_REVIEWED
   return outcomeMeta(status).label
 }
 

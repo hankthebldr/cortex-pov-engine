@@ -53,7 +53,8 @@ steps:
   - id: "step-01"
     name: "Create synthetic confidential customer data file"
     command: |
-      mkdir -p /tmp/cortex_dlp_usb /tmp/cortex_mock_usb
+      rm -rf /tmp/cortex_dlp_usb && mkdir -m 700 /tmp/cortex_dlp_usb || { echo "sandbox /tmp/cortex_dlp_usb could not be created fresh: something else is at that path" >&2; exit 1; }
+      rm -rf /tmp/cortex_mock_usb && mkdir -m 700 /tmp/cortex_mock_usb || { echo "sandbox /tmp/cortex_mock_usb could not be created fresh: something else is at that path" >&2; exit 1; }
       cat << 'EOF' > /tmp/cortex_dlp_usb/confidential_client_pci.csv
       Customer_ID,Name,Credit_Card_Number,CVV,Exp_Date,SSN,Account_Balance
       CUST-1001,Johnathan Doe,4532-1100-8877-9912,412,08/29,987-65-4320,$84,200.00
@@ -72,7 +73,8 @@ steps:
   - id: "step-02"
     name: "Simulate file transfer to removable USB storage mount"
     command: |
-      cp /tmp/cortex_dlp_usb/confidential_client_pci.csv /tmp/cortex_mock_usb/backup_clients.csv
+      [ "$(stat -c %F:%u:%a /tmp/cortex_dlp_usb 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortex_dlp_usb is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      [ "$(stat -c %F:%u:%a /tmp/cortex_mock_usb 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortex_mock_usb is missing or not ours: step-01 did not complete" >&2; exit 1; }; cp /tmp/cortex_dlp_usb/confidential_client_pci.csv /tmp/cortex_mock_usb/backup_clients.csv
     identity: "svc-backup"
     mitre_technique: "T1052.001"
     causality:

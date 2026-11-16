@@ -15,6 +15,7 @@ describe('StatusIcon', () => {
     ['down', 'Down', '✕'],
     ['off', 'Off', '–'],
     ['unknown', 'Unknown', '?'],
+    ['running', 'Running', '●'],
   ])('%s is a glyph AND a word, announced once', (status, word, glyph) => {
     const { container } = render(<StatusIcon status={status} />)
     const icon = screen.getByRole('img', { name: word })
@@ -58,7 +59,42 @@ describe('Button', () => {
   })
 
   it('names the closed verb set from the design', () => {
-    expect(VERBS).toEqual(['Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run'])
+    expect(VERBS).toEqual([
+      'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
+      'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
+      'Switch',
+      'Pause', 'Clear', 'Screenshot',
+      'Open run',
+      'Validate all',
+      'Mark detected', 'Reset', 'Save',
+      'Run canary',
+    ])
+  })
+
+  it('an icon-only verb button draws just its icon and names itself in a tooltip', () => {
+    render(<Button verb="Mark detected" iconOnly />)
+    const b = screen.getByRole('button', { name: 'Mark detected' })
+    expect(b).toHaveAttribute('title', 'Mark detected')
+    expect(b).toHaveClass('kit-btn', 'kit-btn--icon')
+    expect(b.textContent).toBe('')
+    expect(b.querySelector('svg')).toHaveAttribute('data-icon', 'check-circle')
+  })
+
+  it('the Fleet verbs draw their own icons (#339)', () => {
+    expect(VERB_ICONS).toMatchObject({
+      Deploy: 'upload', 'Set active': 'target', Download: 'download', Copy: 'copy',
+      Delete: 'trash', Select: 'select', Refresh: 'refresh',
+    })
+  })
+
+  it('with href it is a link that keeps the look and the verb icon', () => {
+    render(<Button verb="Download" href="/api/agents/install?id=jb-1" download="install.sh">Installer</Button>)
+    const a = screen.getByRole('link', { name: 'Installer' })
+    expect(a).toHaveAttribute('href', '/api/agents/install?id=jb-1')
+    expect(a).toHaveAttribute('download', 'install.sh')
+    expect(a).toHaveClass('kit-btn', 'kit-btn--secondary')
+    expect(a.querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('gives every verb, and only a verb, an icon from the closed Icon set (design v33 C10)', () => {
@@ -68,13 +104,19 @@ describe('Button', () => {
   })
 
   it('a verb button draws its icon before the verb, hidden from assistive tech', () => {
-    render(<Button variant="primary" verb="Read back" />)
-    const b = screen.getByRole('button', { name: 'Read back' })
-    expect(b).toHaveAttribute('data-verb', 'Read back')
+    render(<Button variant="primary" verb="Review" />)
+    const b = screen.getByRole('button', { name: 'Review' })
+    expect(b).toHaveAttribute('data-verb', 'Review')
     const svg = b.querySelector('svg')
     expect(svg).toHaveAttribute('data-icon', 'rotate')
     expect(svg).toHaveAttribute('aria-hidden', 'true')
     expect(b.firstChild).toBe(svg)
+  })
+
+  it('Open run is a verb with its own icon, and Download keeps its icon under another label', () => {
+    render(<><Button verb="Download" aria-label="Download CSV">CSV</Button><Button verb="Open run" /></>)
+    expect(screen.getByRole('button', { name: 'Download CSV' }).querySelector('svg')).toHaveAttribute('data-icon', 'download')
+    expect(screen.getByRole('button', { name: 'Open run' }).querySelector('svg')).toHaveAttribute('data-icon', 'terminal')
   })
 
   it('keeps the verb icon through a busy label', () => {
@@ -136,6 +178,10 @@ describe('Icon', () => {
       'play', 'stop', 'repeat', 'plus', 'star', 'sliders',
       'check', 'gear', 'pencil', 'rotate', 'external', 'target',
       'back', 'forward',
+      'trash', 'download', 'refresh', 'upload', 'copy', 'select', 'swap',
+      'pause', 'clear', 'camera', 'down', 'terminal',
+      'x', 'check-all', 'check-circle', 'save',
+      'flask',
     ])
   })
 

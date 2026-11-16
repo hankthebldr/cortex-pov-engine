@@ -108,7 +108,7 @@ describe('proofPath — each stage from its own source', () => {
     expect(p.stall).toBe('never_ran')
   })
 
-  it('stalls at "Not read back" when a run finished and nobody read the tenant', () => {
+  it('stalls at "Not reviewed" when a run finished and nobody read the tenant', () => {
     const p = one(tc('TC-1', 'UC-1'), {
       scenarios: [scen('SIM-A', 'TC-1')],
       runs: [done({ run_id: 'r-7' })],

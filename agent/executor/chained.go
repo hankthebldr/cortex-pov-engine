@@ -185,6 +185,13 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 // default; on Windows also "powershell" and "cmd"). stepID only labels the
 // not-launched marker a Windows anchor prints (BEACON-03).
 func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, stderr string, exitCode int, err error) {
+	return s.RunStepShellStream(stepID, shell, wrappedCmd, nil)
+}
+
+// RunStepShellStream is RunStepShell that also hands each line of the step's
+// output to onChunk as the anchor prints it (nil = do not; see lineStream).
+// What it returns is the same either way.
+func (s *ChainSession) RunStepShellStream(stepID, shell, wrappedCmd string, onChunk OutputChunkFunc) (stdout, stderr string, exitCode int, err error) {
 	if s.cancelled.Load() || s.ctx.Err() != nil {
 		return "", "", 130, context.Canceled
 	}
@@ -212,8 +219,12 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	outLive := lineStream{onChunk: onChunk}
+	errLive := lineStream{onChunk: onChunk, stderr: true}
+
 	go func() { // stdout: lines until "<marker> <rc>"
 		defer wg.Done()
+		defer outLive.end()
 		for {
 			select {
 			case line, ok := <-s.outCh:
@@ -238,6 +249,7 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 					outB.WriteByte('\n')
 				}
 				outB.WriteString(line)
+				outLive.line(line)
 			case <-s.ctx.Done():
 				return
 			}
@@ -246,6 +258,7 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 
 	go func() { // stderr: lines until bare "<marker>"
 		defer wg.Done()
+		defer errLive.end()
 		for {
 			select {
 			case line, ok := <-s.errCh:
@@ -259,6 +272,7 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 					errB.WriteByte('\n')
 				}
 				errB.WriteString(line)
+				errLive.line(line)
 			case <-s.ctx.Done():
 				return
 			}
@@ -314,8 +328,9 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 // running is torn down — on POSIX. Safe to call more than once; only the first
 // Close or Abandon acts.
 //
-// RG-AGENT-01: pull mode runs no scenario cleanup, so this teardown is the only
-// one a chained run's background helpers get. BEACON-04 had removed it (nothing
+// RG-AGENT-01: a scenario's cleanup commands need not stop what its steps left
+// running (and an older SimCore sends the beacon none), so this teardown is the
+// one a chained run's background helpers can count on. BEACON-04 had removed it (nothing
 // was signalled once the anchor had exited), and a helper left by run N then
 // answered run N+1's health check. It is back for POSIX, as a probe-guarded
 // signal to the anchor's process GROUP (treeKiller.reapSurvivors). Windows still

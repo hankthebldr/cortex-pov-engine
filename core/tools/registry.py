@@ -1,9 +1,8 @@
 """
-CortexSim Tool Registry — static + content-loaded merger.
+CortexSim Tool Registry.
 
 `STATIC_TOOL_REGISTRY` holds the built-in tools defined in the Phase 1 spec.
-`TOOL_REGISTRY` starts as a copy; `content_loader.merge_installed_tools()`
-overlays entries from /opt/cortexsim/content/installed.json at startup.
+`TOOL_REGISTRY` starts as a copy of it.
 
 Keep STATIC_TOOL_REGISTRY exactly as defined — existing tests and runtime
 code rely on its schema (source_path, build_cmd, binary, run_template, type,

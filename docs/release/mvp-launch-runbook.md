@@ -517,8 +517,10 @@ under `SUDO_USER`, `/home` and `/Users` *(round 2)*.
   **not** a customer gap.
 - **Variant steps** (`!! PLATFORM VARIANT`) ran a Windows command whose expected
   detections were authored against a different one (decision BEACON-01).
-- **Pull mode never runs scenario cleanup.** The POV report lists the commands
-  it did not run under "Cleanup Not Run". Remove the residue by hand.
+- **Pull mode runs scenario cleanup when the run ends** (#324; the beacon must
+  advertise `cleanup`). The POV report says "Cleanup Not Run" when no beacon
+  reported one and "Cleanup Incomplete" when a command failed; remove that
+  residue by hand. No Windows host has run the cleanup path yet.
 - **A missing tool is now named on Windows** *(round 2)*: a step's
   `required_binaries` yield `TOOL_ABSENT`, and a missing or alias-only
   `requires_interpreters` entry blocks the step. No current Windows step
@@ -626,7 +628,7 @@ knows the behaviour regardless of the outcome.
 | PUSH-14, CONT-03 | May SIM-EDR-004 clear real Security/System logs? | No: clears a CortexSim-owned channel (keeps event 104, not 1102) | Keep for beta |
 | PUSH-18 | Infer the Windows dialect, or author `shell:`? | Shared structural inference; `MIXED_DIALECT` refused | Inference; authored `shell:` only where ambiguous |
 | CONT-07, CONT-14 | Model elevation for Windows steps? | Beacon advertises `elevated`; `IDENTITY NOT HONOURED` for root/container-runtime/administrator unelevated; bundle `NOT_ELEVATED`; failed-step scoring unchanged | `requires_elevation` + score failed steps pending/not_executed |
-| CONT-11 | Should pull run `cleanup.commands`? | No; the report lists what it did not run; in-step teardown in EDR-003/006, ITDR-006, MP-030 | Beacon runs per-OS cleanup for beta; in-step teardown for new content |
+| CONT-11 | Should pull run `cleanup.commands`? | Yes since #324: the beacon runs the lines resolved for its OS when the task ends and reports the outcome; the report names cleanup that did not run or failed. In-step teardown stays in EDR-003/006, ITDR-006, MP-030 | Beacon runs per-OS cleanup for beta; in-step teardown for new content |
 | CI-02, DOCS-02, UI-01 | Keep the stdlib SCM handler (vs a SYSTEM scheduled task)? | SCM handler; its start path ran in three green CI runs (Running 75 s after install, no SCM error events) | Keep; say "started and ran in CI", not "service works", until reboot and stop are observed |
 | CI-06 | Authenticode-sign the Windows beacon before GA? | Unsigned; hashes + buildinfo published | Sign before GA |
 | CI-11 | One Go toolchain for CI, Dockerfile and `go.mod`? | Mixed (1.21 / 1.22) | Pin a supported toolchain everywhere after a SHA-1 cert test |

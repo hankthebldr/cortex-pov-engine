@@ -156,6 +156,7 @@ steps:
   - id: step-01
     name: "Share and datastore enumeration written to ProgramData/found_shares.txt"
     command: |
+      rm -rf /tmp/cortexsim-mp031 && mkdir -m 700 /tmp/cortexsim-mp031 || { echo "sandbox /tmp/cortexsim-mp031 could not be created fresh: something else is at that path" >&2; exit 1; }
       LAB=/tmp/cortexsim-mp031
       mkdir -p "$LAB/ProgramData" "$LAB/var/log"
       for vm in vm-01 vm-02 vm-03; do
@@ -182,6 +183,7 @@ steps:
   - id: step-02
     name: "Lateral spread — locker and 1.sh copied onto the stage host's share path, run detached with --no_impl --key"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp031 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp031 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/tmp/cortexsim-mp031
       PUB="$LAB/Users/Public"
       SHARE="$LAB/mnt/${STAGE_HOST:-127.0.0.1}/C\$"
@@ -236,12 +238,13 @@ steps:
   - id: step-03
     name: "NGFW threat log — WildFire malicious verdicts on the SMB-copied encryptor and 1.bat (report sha256s)"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-031-threat.yml <<YML
+      cat > "$C/mp-031-threat.yml" <<YML
       campaign_id: CMP-MP-THREAT-031
       name: "MP-031 — WildFire verdicts on the Cicada3301 SMB transfer"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -291,7 +294,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-031-threat.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-031-threat.yml" --live
     identity: direct
     mitre_technique: "T1570"
     platforms: ["linux"]
@@ -323,6 +326,7 @@ steps:
   - id: step-04
     name: "Rclone staged as ProgramData/rclone with rclone.conf, uploading found_shares.txt to the lab stage host"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp031 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp031 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/tmp/cortexsim-mp031
       PD="$LAB/ProgramData"
       cp "$(command -v curl)" "$PD/rclone"
@@ -347,12 +351,13 @@ steps:
   - id: step-05
     name: "Exfil as the NGFW sees it — massive upload from this host to the report's Rclone destination IP"
     command: |
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
-      cat > /tmp/mp-031-exfil.yml <<YML
+      cat > "$C/mp-031-exfil.yml" <<YML
       campaign_id: CMP-MP-EXFIL-031
       name: "MP-031 — Rclone bulk upload to the report exfil IP"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -374,7 +379,7 @@ steps:
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/mp-031-exfil.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/mp-031-exfil.yml" --live
     identity: direct
     mitre_technique: "T1048"
     platforms: ["linux"]
@@ -401,6 +406,7 @@ steps:
   - id: step-06
     name: "Pre-encryption — mass stop of vmx-named VM processes, snapshot deletion and hypervisor log wipe (lab datastore only)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp031 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp031 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/tmp/cortexsim-mp031
       DS="$LAB/vmfs/volumes/datastore1"
       for vmx in "$DS"/*/*.vmx; do
@@ -433,6 +439,7 @@ steps:
   - id: step-07
     name: "Impact — 1.sh runs the locker over the datastore, .kcr5umw encryption and RECOVER-kcr5umw-DATA.txt; the stitched incident"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-mp031 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-mp031 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       LAB=/tmp/cortexsim-mp031
       sh "$LAB/Users/Public/1.sh"
       find "$LAB/vmfs/volumes" -type f -name '*.kcr5umw' | wc -l
@@ -459,7 +466,6 @@ cleanup:
   commands:
     - "pkill -KILL -f '^vmx-cortexsim-mp031 ' || true"
     - "rm -rf /tmp/cortexsim-mp031"
-    - "rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
 
 author: "Henry Reed"
 created: "2026-10-27"

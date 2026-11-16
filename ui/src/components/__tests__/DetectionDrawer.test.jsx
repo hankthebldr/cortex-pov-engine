@@ -27,7 +27,7 @@ describe('<DetectionDrawer />', () => {
   it('renders an empty shell when row is null', () => {
     const { container } = render(<DetectionDrawer row={null} open={false} />)
     expect(container.querySelector('.detection-drawer')).toBeTruthy()
-    expect(screen.queryByText('Operator notes')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Notes')).not.toBeInTheDocument()
   })
 
   it('renders TID, alert, MTTD, plane when row is supplied + open', () => {
@@ -57,36 +57,37 @@ describe('<DetectionDrawer />', () => {
   it('Mark detected fires onValidate(id, true, notes)', () => {
     const onValidate = vi.fn()
     render(<DetectionDrawer row={{ ...baseRow, observed: null }} open onValidate={onValidate} />)
-    const textarea = screen.getByLabelText(/Operator notes/i)
+    const textarea = screen.getByLabelText('Notes')
     fireEvent.change(textarea, { target: { value: 'observed in console at 12:41:45Z' } })
     fireEvent.click(screen.getByRole('button', { name: /mark detected/i }))
     expect(onValidate).toHaveBeenCalledWith(42, true, 'observed in console at 12:41:45Z')
   })
 
-  it('Mark missed fires onValidate(id, false, notes)', () => {
+  it('offers no hand miss: the API never writes one', () => {
+    render(<DetectionDrawer row={{ ...baseRow, observed: false, alertId: null }} open onValidate={() => {}} />)
+    expect(screen.queryByRole('button', { name: /mark missed/i })).not.toBeInTheDocument()
+  })
+
+  it('Reset withdraws a hand mark with observed=false (the API refuses null)', () => {
     const onValidate = vi.fn()
-    render(<DetectionDrawer row={{ ...baseRow, observed: null }} open onValidate={onValidate} />)
-    fireEvent.click(screen.getByRole('button', { name: /mark missed/i }))
+    render(<DetectionDrawer row={{ ...baseRow, alertId: null }} open onValidate={onValidate} />)
+    expect(screen.queryByRole('button', { name: /mark detected/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /reset/i }))
     expect(onValidate).toHaveBeenCalledWith(42, false, null)
   })
 
-  it('Reset button appears when observed != null and fires onValidate(id, null, null)', () => {
-    const onValidate = vi.fn()
-    render(<DetectionDrawer row={baseRow} open onValidate={onValidate} />)
-    const reset = screen.getByRole('button', { name: /reset/i })
-    fireEvent.click(reset)
-    expect(onValidate).toHaveBeenCalledWith(42, null, null)
-  })
-
-  it('Reset button does NOT appear when status is pending', () => {
-    render(<DetectionDrawer row={{ ...baseRow, observed: null }} open onValidate={() => {}} />)
+  it('Reset is not offered on an unjudged row, nor on a row matched to an alert', () => {
+    const { unmount } = render(<DetectionDrawer row={{ ...baseRow, observed: false, alertId: null }} open onValidate={() => {}} />)
+    expect(screen.queryByRole('button', { name: /reset/i })).not.toBeInTheDocument()
+    unmount()
+    render(<DetectionDrawer row={baseRow} open onValidate={() => {}} />)
     expect(screen.queryByRole('button', { name: /reset/i })).not.toBeInTheDocument()
   })
 
   it('hydrates the notes textarea from row.notes on mount', () => {
     const withNotes = { ...baseRow, notes: 'previously saved' }
     render(<DetectionDrawer row={withNotes} open onValidate={() => {}} />)
-    const textarea = screen.getByLabelText(/Operator notes/i)
+    const textarea = screen.getByLabelText('Notes')
     expect(textarea.value).toBe('previously saved')
   })
 

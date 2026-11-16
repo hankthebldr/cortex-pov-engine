@@ -24,6 +24,14 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Intege
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from database import Base
+# The EAL relay's table lives in its own module; importing it here registers it
+# wherever the models are loaded, so create_all creates it.
+from eal_relay_models import EalRelayStep  # noqa: F401
+
+#: Set at boot on a corpus row whose YAML is no longer on disk. Never authored
+#: in a scenario file. The row stays so its runs and results still read; the
+#: next boot that finds the file again sets the file's own status back.
+SCENARIO_RETIRED = "retired"
 
 
 class Scenario(Base):
@@ -33,7 +41,7 @@ class Scenario(Base):
     scenario_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # active | draft | deprecated
+    status: Mapped[str] = mapped_column(String, nullable=False)  # active | draft | deprecated | retired
     plane: Mapped[str] = mapped_column(String, nullable=False)   # EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
 
     detection_types: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
@@ -327,6 +335,16 @@ class Run(Base):
     # about any one module (review F1). NULL = nothing attested per module.
     module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
+    # ── Pull cleanup outcome (#324) ──────────────────────────────────────────
+    # One entry per beacon task that was sent the scenario's cleanup.commands:
+    # [{agent_id, task_id, commands, status: pending|clean|failed|not_run, ran,
+    # failed, reason}]. The launch writes it as `pending` (engine.pull_cleanup
+    # .seed_run) and the task's /complete fills it (record_outcome); `pending`
+    # on a finished run means no beacon reported, which is not "clean". NULL =
+    # no task was sent cleanup (a push run, or nothing to run on the target).
+    # Added by _migrate_run_cleanup_columns in database.py.
+    cleanup: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
@@ -361,6 +379,7 @@ class Run(Base):
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
             "module_modes": self.module_modes,
+            "cleanup": self.cleanup,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
@@ -567,6 +586,31 @@ class RunOutputFrame(Base):
     frame_id: Mapped[str] = mapped_column(String, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
                                                   default=datetime.utcnow)
+
+
+class StepStart(Base):
+    """The beacon's report that it is about to run a step, and with what command.
+
+    Written by a ``kind: "start"`` ``/output`` frame (``engine.live_output``),
+    before the step's process exists. ``started_at`` here IS when the step
+    started. It is kept apart from :class:`StepOutcome` on purpose: that row's
+    ``started_at`` means "the step had finished by then", and beacon-lost
+    severing and the silent-row window read it that way.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "step_starts"
+    __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_step_starts_run_step"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String, nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    identity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                 default=datetime.utcnow)
 
 
 class Observation(Base):

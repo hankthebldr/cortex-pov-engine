@@ -4,8 +4,8 @@ package beacon
 
 // RG-AGENT-01 / RG-AGENT-02, at the level a DC observes them: a chained pull
 // run that has reported /complete must not leave its steps' background
-// processes behind, however it ended. Pull mode runs no cleanup.commands, so
-// nothing else will ever stop them. Windows twins:
+// processes behind, however it ended. A scenario's cleanup.commands need not
+// stop them, so nothing else can be counted on to. Windows twins:
 // chain_teardown_windows_test.go.
 
 import (

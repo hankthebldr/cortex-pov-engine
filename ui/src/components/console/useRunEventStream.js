@@ -10,11 +10,11 @@ import { runIdOf } from '../../api/ids.js'
  * that derives plausible log lines from the run's current step + results.
  *
  * The synthetic projector is intentionally conservative — it only
- * surfaces what's already in the run record, marked with a [SYNTH]
- * prefix so DCs know they're not seeing real agent stdout. Live
- * production environments will hit the real SSE/WS endpoint.
+ * surfaces what's already in the run record, marked `synthetic` so a
+ * consumer never takes it for agent output. Live production environments
+ * will hit the real SSE endpoint.
  *
- * Each event:
+ * Each event (core/api/events.py::_to_ui_event):
  *   {
  *     id: string,
  *     timestamp: ISO string,
@@ -22,6 +22,12 @@ import { runIdOf } from '../../api/ids.js'
  *     stepIndex: number | null,
  *     message: string,
  *     synthetic: boolean,
+ *     // the live runtime log (liveOutput.js); absent on a synthetic event
+ *     stepId: string | null,
+ *     phase: 'start' | 'output' | null,
+ *     live: boolean,            // output streamed while the step runs; never stored
+ *     command: string | null,   // on a 'start' event: what the agent is about to run
+ *     seq: number | null,       // a live chunk's number
  *   }
  *
  * @param {string|null} runId

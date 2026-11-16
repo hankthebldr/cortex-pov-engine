@@ -78,7 +78,7 @@ const STORYLINE_RAW = {
             observed: null,
             status: 'pending',
             // An engine-held pending: the live "awaiting detection" state. An
-            // outcome-less row reads "Awaiting reconcile" instead (R4).
+            // outcome-less row reads "No alert judged yet" instead (R4).
             outcome: 'pending',
             mttd_seconds: null,
             evidence_refs: [],

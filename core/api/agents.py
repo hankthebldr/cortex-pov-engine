@@ -63,6 +63,10 @@ class RuntimeFacts(BaseModel):
     posture_profile: Optional[str] = Field(default=None, max_length=253)
     prepare_status: Optional[str] = Field(default=None, max_length=253)
     tools: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
+    # The tools the beacon looked for (``tools`` is the ones it found). Absent
+    # from a beacon that does not say; engine.runtime_preflight then assumes
+    # the standard probe list.
+    probed: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
     accounts: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
     anchor_rename: Optional[StrictBool] = None
 
@@ -2875,7 +2879,9 @@ async def agent_runtime_preflight(
     before a POV; nothing answered "can this endpoint run this scenario"
     before this (docs/design/agent-runtime-dependencies.md). Compares the
     scenario's declared per-step ``requires_interpreters`` against this
-    agent's advertised interpreter roster.
+    agent's advertised interpreter roster and, for names that are not
+    interpreters, its ``runtime_facts.tools``. A name the beacon never looked
+    for is listed under ``unverified`` and is not a gap.
 
     ADVISORY ONLY — the agent's roster is a snapshot from its last
     registration. A gap reported here is real evidence a run should not be
@@ -2903,7 +2909,8 @@ async def agent_runtime_preflight(
             "error": "Scenario not found", "code": "SCENARIO_NOT_FOUND",
             "detail": f"no scenario with id '{scenario_id}'"})
 
-    readiness = evaluate_runtime_readiness(scenario_row, agent_row.interpreters)
+    readiness = evaluate_runtime_readiness(
+        scenario_row, agent_row.interpreters, agent_row.runtime_facts)
     return {
         "agent_id": agent_id,
         "scenario_id": scenario_id,

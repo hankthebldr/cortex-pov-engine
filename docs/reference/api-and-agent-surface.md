@@ -44,14 +44,16 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **175 HTTP routes total** (counted 2026-11-13 with the walker below on the
-  1.2.0 release tree after `dev` was merged in, on the host venv). Routers under `/api`,
+- **172 HTTP routes total** (counted 2026-11-15 with the walker below, on the
+  host venv, after the IaC generator's `/api/infra/*` (4) and
+  `/api/scenarios/{id}/infra-hints` moved to `feature/scenarios-cloud-posture`;
+  177 before that, and the 1.2.0 release tree read 175). Routers under `/api`,
   plus the app-level `GET /api/health` and a static file mount at `/`, plus 4
-  FastAPI-owned docs/openapi routes. The ground truth's static count is 165 route
+  FastAPI-owned docs/openapi routes. The ground truth's static count is 162 route
   decorators; the walker adds the 4 docs routes and the 6 shelf artifact routes that
   `api/payloads.py::_register_shelf_routes` registers on both `/api/k8s` and
-  `/api/shelf` without a decorator. On 2026-11-12, before the tenant reader merged,
-  the walker read 166. Per-prefix breakdown: run
+  `/api/shelf` without a decorator. On the 1.2.0 release tree (2026-11-13) the
+  walker read 175. Per-prefix breakdown: run
   the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
@@ -100,7 +102,6 @@ before or across routers:
 | `INSTALL_IN_PROGRESS` | 409 | `POST /api/tools/{tool}/install` | One install at a time; it runs off the event loop. |
 | `XQL_WRITE_STAGE_REFUSED` | 400 | `POST /api/xsiam/tenants/{name}/xql`, `…/operations/OP-XQL-START-XQL-QUERY` (now tagged body-inspected), the verifier runners, and Composer draft save | The query carries an XQL `target` stage, which writes a dataset or lookup. Enforced inside `XsiamClient.start_xql_query`, under 16 quote/comment/escape readings; refused if any one reading sees a `target`. |
 | `RESERVED_SECRET_NAME` | 400 | `PUT /api/credentials/secrets` | The `__cortexsim__/` namespace holds the master-key check row (was a 500). |
-| `VALIDATION_ERROR` | 422 | `POST /api/infra/generate` | `dc_ssh_cidr` shorter than /16 (IPv4) or /48 (IPv6); the same CIDR also gates port 8888. |
 | `VALIDATION_ERROR` | 422 | `POST` / `PUT /api/scenarios/drafts` | A control character (CR/LF, tab, NUL, ESC, DEL, NEL, U+2028/2029) in a single-line field: name, author, tags, step id/name, or detection description / `detection_id` / `ttp_ref`. `command` stays multi-line. |
 
 CORS is **not mounted** unless `CORTEXSIM_CORS_ORIGINS` names origins, and it
@@ -116,14 +117,6 @@ that carry the header record no `last_ip` (logged once). The first ignored
 header from each unlisted peer logs one WARNING (bounded at 64 peers) and
 feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 `127.0.0.1`) can rewrite `request.client` before this code runs.
-`400 BAD_INFRA_PARAM` (`POST /api/infra/generate`) refuses a `region`,
-`jumpbox_size`, `tags` or `dc_ssh_cidr` value outside its allow-list before
-any HCL is rendered (SEC-17); `dc_ssh_cidr` must be written in the CIDR
-alphabet, so an IPv6 zone id is refused. The request model refuses a `region`
-or `jumpbox_size` outside the AWS shapes first, with `422` (from `dev`), so on
-the route the 400 is in practice `tags` and a zone-id CIDR; the generator
-re-checks all four for a caller that skips the model, and the templates write
-every string as an escaped HCL literal.
 
 ### 1.1 Health (app-level, `core/main.py`)
 
@@ -147,11 +140,19 @@ every string as an escaped HCL literal.
 | GET | `/api/scenarios/staged` | The **extended library**: the staged draft pairs under `drafts/detection-library/`, read only (not loaded, not launchable, not counted as coverage) | — | `{loaded, code, detail, registry_loaded, source, launchable:false, counted_as_coverage:false, scenarios[<summary> + doors, doors_code, doors_detail, staged{card, platform, source, findings, launchable:false}], total, projection}`; `loaded:false` + `STAGED_LIBRARY_ABSENT` when the directory is not on this SimCore (the image does not ship `drafts/`); 500 `STAGED_LIBRARY_UNREADABLE`, 500 `DATASET_REGISTRY_MALFORMED` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/tenant-content` | What the scenario (or saved draft) needs to exist in the tenant. Read-only; see §1.2.1 | — | the tenant-content manifest, 404 `SCENARIO_NOT_FOUND`, 422 `TENANT_CONTENT_UNREADABLE` |
-| GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
 | GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=auto\|bash\|powershell\|k8s` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition` + `X-CortexSim-Bundle-Target`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` (reason codes incl. `MIXED_DIALECT`) / `PUSH_NOT_SUPPORTED` |
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
   Python against the ORM rows (so the list projection does not affect it).
+- **Retired scenarios (2026-11-15).** At boot, a corpus row whose YAML is no longer
+  under `scenarios/` gets `status: retired`. The row is kept so its runs and
+  results still open, and `GET /api/scenarios/{id}` still returns it. It is left
+  out of every corpus list and count (the Library, `/api/health`
+  `scenario_catalog.count`, UC/TC evidence, MITRE coverage, doors, the payload
+  shelf's `used_by`, the executions report's corpus). A launch, a preflight and
+  `GET /download` / `POST /bundle` refuse it with 409 `SCENARIO_RETIRED`. A boot
+  that finds the file again sets the file's own status. Composer drafts have no
+  file and are never retired.
 - **List projection (contract change, 2026-08-02).** The list response is a
   SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
   ~66 % of that was step `command` text and per-detection `description` prose no
@@ -312,11 +313,11 @@ stamp `severity: "high"` on every rule.
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
-| POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. No Run, Result, task or event. |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?, warnings?}`. `warnings[]` (200, the launch still queued) carries `TARGET_AGENT_OFFLINE` (a target whose beacon is not polling), `!! TARGET_AGENT_OS_UNKNOWN` (an agent that registered no OS, so POSIX was dispatched), `!! PLATFORM VARIANT` (a step running its per-OS variant) and `!! PLATFORM MISMATCH` (a step whose `platforms` labels exclude this POSIX beacon's OS, e.g. a Linux-only step on a darwin beacon; the command is sent unchanged, RG-UI-01); all four are also written onto `Run.output` at launch, the offline one as `!! TARGET_AGENT_OFFLINE: …`. A pull launch also carries two `{code, …}` warnings from the runtime-dependency preflight (below): `RUNTIME_DEPENDENCY_GAP` and `RUNTIME_INSTALL_NOT_ENABLED`. 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs/preflight` | Dry run of the launch: every check `POST /api/runs` makes, nothing written | `LaunchRequest` (same body as the launch) | 200 `{launchable, would_refuse_with, refusals[], checks[], warnings[]}`. `would_refuse_with` is `{code, http_status, error, detail}` — exactly what `POST /api/runs` answers for the same body — or null. `refusals[]` lists every refusal in launch order (the launch stops at the first). `checks[]` is each check (`launch.mode`, `draft`, `launch.scenario`, `launch.consent`, `launch.pair`, `launch.canary`, `pull.target`, `pull.payloads`, `pull.stitch_context`, `pull.composed_targets`, `pull.container_gate`) with `verdict` `pass` / `block` / `skipped` (+ `reason`); a check that does not apply is absent. `warnings[]` is what the launch would carry for the same body, the runtime-dependency warnings included (it reads `allow_runtime_install`). No Run, Result, task or event. |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `status?`, `scenario_id?` (equality filters), `limit` (default 500, max 5000; out of range is 422), `offset` | `{"runs":[<row>],"total":N}` (summary adds `fields`, `limit`, `offset`). `total` is the number of runs matching the filters (every run, with none), not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
-| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1), `step_starts[]` and, only while the run is in flight, `live_tail[]` (§1.3.3). `cleanup` is one entry per task that was sent the scenario's cleanup, or null (§1.3.4); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, merge_reason}}` (`merge.code` is present only when a stored ledger is corrupt: `CASE_LEDGER_UNREADABLE`); 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | query: `force=true\|false` (default false) | `{run_id, refreshed, queries_issued, merge_class, code, read_at, ledger, reason_code}`; on a read also `previous_merge_class`; `refreshed: false` (200, no tenant read) carries `reason_code` + `reason`: `CASE_LEDGER_NAMES_NO_CASE` (the ledger names no case; only the next reconcile advances it) or `CASE_LEDGER_READ_RECENTLY` (read inside `CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`; also `retry_after_seconds`; `force=true` reads anyway); `reason_code` is `null` on a read. 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 409 `CASE_LEDGER_TENANT_MISMATCH` (the ledger records a `tenant` and its integration now points at another; `detail: {recorded, integration, integration_tenant}`; no read, stored ledger kept); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed; stored ledger kept); any other code 500 |
 | POST | `/api/runs/{run_id}/tenant-evidence` | Read the run's tenant evidence: its issues, their cases and the run host's endpoint record (`core/api/tenant_evidence.py`, `connectors/tenant_evidence.py::read_run_evidence`). Explicit operator action, OUTBOUND, read-only, metered; nothing polls it. Stores a snapshot in `tenant_evidence_reads` | query: `force=true\|false` (default false), `integration?` (default: the first credential of kind `xsiam` or `xsiam_tenant`) | 200 `{run_id, read, status, code, detail, retry_after_seconds, snapshot, issues}` (`status` `ok`/`degraded`/`pending`; `snapshot` is the stored row, `issues` its payload's issues section). No read (`read: false`): `NO_TENANT_CONFIGURED` (`pending`, `issues: null`, no credential), `NO_RUN_WINDOW` (`degraded`, no request, nothing stored: a push run, whose execution time is unknown (`push_execution_time_unknown`), or a run where no Result has `executed_at`), `TENANT_EVIDENCE_READ_RECENTLY` (this run and tenant were read inside `CORTEXSIM_TENANT_EVIDENCE_MIN_INTERVAL_SECONDS`, through either of that tenant's credentials; the latest snapshot and `retry_after_seconds`; `force=true` reads anyway). Two requests for one run and tenant at once spend one read: the second waits for the first and returns its snapshot (`TENANT_EVIDENCE_READ_RECENTLY`), even when the first read outlasted the interval and even with `force=true`. A read's `code`: `OK`, `NO_ATTRIBUTED_ISSUES` (degraded: the detail names ingestion latency, the hostname, the window and the Security domain filter), `UNSCOPED` (no run host), `QUOTA_REFUSED` (with `retry_after_seconds`) or the issue read's failure code (`XSIAM_*`). 404 `RUN_NOT_FOUND`; 404 `INTEGRATION_NOT_FOUND`; 500 `CREDENTIAL_ERROR` |
@@ -325,8 +326,8 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
-| POST | `/api/runs/{run_id}/output` | Agent streams output (append), bounded | `OutputRequest`: `{output}` | `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
+| POST | `/api/runs/{run_id}/output` | Agent posts a step's output. A body with no `kind` is the step's final frame: appended to `Run.output`, bounded. A body with `kind` is a live frame: published, never stored (§1.3.3) | `OutputRequest`: `{output, step_id?, frame_id?}`; a live frame adds `kind` (`start` \| `chunk`), `seq`, and on `start` `command`, `identity`, `index`, `total` | final frame: `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; live frame: `{"status":"ok","run_id","live":true,"kind"}` (+ `dropped: true` when it was not used); 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?, task_id?, agent_id?, cleanup?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`; `cleanup` is the scenario-cleanup outcome, §1.3.4) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?, remediation?, retry_after_seconds?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 200 + `pending` + `reason:"refused_locally"` with `remediation` and (when the refusal names one) `retry_after_seconds` when CortexSim's own per-tenant budget refused the query before the tenant answered (not an attempt: it never advances the attempt cap or the backoff); 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -358,6 +359,26 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   `consent.simulation_authorized` it is the first key of the live gate for the
   run's in-process EAL steps (§1.3.2); a blank name counts as none. It gates
   nothing else and refuses no launch.
+- **Runtime-dependency warnings** (pull). The launch compares each step's
+  `requires_interpreters` with what the target agent reported at registration.
+  An interpreter (`python`, `perl`, `ruby`, `node`) is judged on the agent's
+  `interpreters` roster. Any other name (`sudo`, `ssh`, …) is judged on
+  `runtime_facts.tools`: found is fine, looked for and not found is missing, and
+  a name the beacon never looked for is `unverified`, which is not a gap.
+  "Looked for" is `runtime_facts.probed` when the beacon sends it, otherwise the
+  standard probe list (`engine.agent_manifest.PROBE_TOOLS`). An agent that sent
+  no tool list was never asked, so every such name is `unverified`.
+  `Run.runtime_dependency_gaps` holds one `{step_id, missing[], unverified[]?}`
+  per step that has either, and `GET /api/agents/{agent_id}/preflight` (§1.6)
+  answers the same way. Two warnings follow, on the launch response, on the dry
+  run and on `Run.output` as one `!! CODE: …` line each. Neither refuses the
+  launch: the beacon's own check at execution time does that, per step.
+  - `{"code": "RUNTIME_DEPENDENCY_GAP", "agent_id", "steps": […], "missing": […], "detail"}`
+    when a step has a missing name.
+  - `{"code": "RUNTIME_INSTALL_NOT_ENABLED", "agent_id", "detail"}` when the
+    body set `allow_runtime_install: true` and
+    `CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL` is off. The run is recorded
+    `runtime_install_authorized: false` and nothing is installed.
 - `/complete` appends a `--- COMPLETION SUMMARY ---` block to `run.output` and
   decrements `open_tasks`. A non-zero `exit_code` makes the run `failed`, and
   failure is sticky across a fan-out. The endpoint that brings `open_tasks` to 0
@@ -377,7 +398,8 @@ Plus `tenant_version` and `tenant_version_code` (PD9): the `get_tenant_info` rep
   is dropped. That may matter for the prevention two-witness rule.
 - **Output bounds (2026-11, SEC-14 / OPS-06).** A chunk over 1 MiB is accepted and
   cut. Every step frame line (`=== STEP`, `=== ARTIFACT STAGING`,
-  `--- exit_code=`) and every line carrying an execution-integrity marker
+  `--- exit_code=`, and the cleanup section's `=== CLEANUP` and
+  `--- cleanup `) and every line carrying an execution-integrity marker
   (`!! `, `__CORTEXSIM`, `cortexsim-`, `IDENTITY NOT HONOURED`, …) is kept.
   Ordinary lines are kept from the top until the budget is spent, and
   `[OUTPUT CHUNK TRUNCATED: N of M bytes kept …]` is appended. The cut runs in a
@@ -512,7 +534,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
-`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`).
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`, `STEP_FAILED`,
+`STEP_TIMED_OUT`, `INPUTS_NOT_SENT`).
 
 - **`missed` needs the host's word that the step ran — for every expectation.** A row
   (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
@@ -524,11 +547,12 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   the Tier-2 verifier's. An `aborted` termination reads `pending` /
   `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
   was cut short; its verdict is undefined); a `timeout` stays
-  `missed` / fail (the step ran its whole budget unprevented).
+  `missed` / fail for a block-mode `prevent` row (the step ran its whole budget
+  unprevented), while a row scored as a detect reads `not_executed` / `STEP_TIMED_OUT`.
 - **A silent `detect` row is written `missed` — when the host says it ran.** Once its
   window closes with no matched alert, the silent-row judgement
   (`outcome.py::silent_detect_verdict`) writes `outcome = missed` only when the step's
-  host record is `exited`, `timeout`, `signaled` or `anchor_terminated`, and only on
+  host record is `exited`, `signaled` or `anchor_terminated`, and only on
   complete evidence (a host-scoped, untruncated, lossless credential pull; else
   `pending` / `EVIDENCE_INCOMPLETE`). No record or `beacon_lost` → `pending` /
   `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
@@ -541,15 +565,36 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   scored as a detect — read `not_executed` / `STEP_FAILED`, or `not_executed` /
   `TOOL_ABSENT` for exit 127 ("command not found"), with the exit status in the row's
   notes. `not_executed` leaves the efficacy denominator, so the row is neither a hit nor
-  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` / `timeout` /
+  a miss. `exit_code` 0 or absent keeps `missed`; `signaled` /
   `anchor_terminated` are unchanged; an alert matched inside the window still credits
   the row. Not covered: a tool missing inside `|| true` exits 0 and still reads
   `missed`, and the block-mode two-witness branch does not read `exit_code`.
+- **A timed-out step is not a miss.** A step the host records `timeout` was stopped
+  at its time limit before it finished its work (SIM-MP-003 step-03, DNS hung). Its
+  silent `detect` rows, and `prevent` rows scored as a detect, read `not_executed` /
+  `STEP_TIMED_OUT` once the window closes, with "the step timed out on the host" in
+  the notes. A block-mode `prevent` row on a timed-out step still reads `missed` /
+  fail. An alert matched inside the window still credits the row.
+- **A correlation with nothing to join is not a miss (#378).** A silent `Correlation`
+  row that would read `missed` reads `not_executed` / `INPUTS_NOT_SENT` when every
+  row it joins sent nothing. The corpus does not declare which detections a
+  correlation fuses (the card's rule logic is prose), so its inputs are every
+  non-Correlation row on an earlier step of the run, and on its own step, in the
+  launched scenario's step order. An input sent nothing when it is already
+  `not_executed` / `not_reached` (an EAL step that stayed dry or delivered 0
+  records, a refused or never-run step), or is undecided on a step the host
+  records `not_run`, failed (non-zero exit) or timed out. A credited input, a decided
+  `missed` one, or one with no host record counts as sent, so a run where some
+  inputs were delivered keeps `missed`. A correlation with no input rows is judged
+  as before. An alert matched to the correlation still credits it.
+- **Decided rows are not re-judged.** A row already `missed` keeps it under both
+  rules; re-run the scenario to re-score it.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
   otherwise `detected` when `observed` is true (a manual validation, incl. pre-branch
-  runs), else `pending` — rendered "awaiting reconcile", with no reason token. `missed`
+  runs), else `pending` — rendered "awaiting reconcile" in the report and "Pending" in the
+  console ("Not reviewed" where the run has not been reviewed), with no reason token. `missed`
   exists only as an engine outcome: neither a terminal run status nor an `observed_at`
   without `observed` makes one.
 - **`pending` is never a coverage hit.** Every coverage numerator (`/api/results`,
@@ -812,6 +857,431 @@ them under `excluded`, so silence on records never sent cannot read `fail`. A st
 that delivered at least one record stays in the denominator. ***tenant-verified
 is 0***: nothing on this path has delivered to a live tenant.
 
+#### 1.3.3 Live runtime log: step starts and output while a step runs
+
+A beacon used to post one `/output` frame per step, after the step ended, and
+never said which command it ran. Three additions change that. None of them
+changes what is stored on `Run.output`, a `step_outcomes` row, an outcome or a
+verdict. Code: `core/engine/live_output.py`, `agent/beacon/liveout.go`.
+
+**1. The pull task asks for it.** Every task from
+`GET /api/agents/{id}/tasks` carries:
+
+```json
+"live_output": {"flush_ms": 1000, "max_chunk_bytes": 16384, "max_step_bytes": 262144}
+```
+
+A beacon that predates it drops the key and behaves as before. A beacon that
+understands it advertises the capability `live-output`.
+
+**2. Two more `/output` frame kinds.** `kind` is absent on the final per-step
+frame, which is unchanged and is the only kind that is stored.
+
+```json
+{"kind": "start", "seq": 0, "step_id": "step-02", "output": "",
+ "command": "id; whoami", "identity": "www-data", "index": 2, "total": 5}
+
+{"kind": "chunk", "seq": 3, "step_id": "step-02", "output": "uid=33(www-data)\n"}
+```
+
+| Frame | Sent | SimCore does |
+|---|---|---|
+| `start` | before the step's process is started; not sent for a step that does not run (refused, tool absent, dependency missing) | writes one `step_starts` row `(run_id, step_id, command, identity, started_at)` and publishes `run.step`, once per step. No `step_outcomes` row |
+| `chunk` | every `flush_ms` while the step runs, or sooner once `max_chunk_bytes` is waiting; `seq` counts from 1 per step; stops after `max_step_bytes` of step output with a one-line notice | publishes `run.output` with `live: true`; keeps the newest `max_step_bytes` per step in memory. Never appended to `Run.output` |
+| (no `kind`) | when the step ends, exactly as before, retried, with `frame_id` | appends to `Run.output`, stamps `step_outcomes.started_at`, publishes `run.output`; drops that step's live tail and closes the step |
+
+- `command` is the command the beacon is about to execute on that host: the
+  step's command after the per-OS variant is chosen, before the identity
+  harness wraps it. It is cut to 65,536 characters.
+- `StepOutcome.started_at` still means "the step had finished by then". The
+  start time is `step_starts.started_at`.
+- Live frames are best effort. The beacon sends each once, never retries, and
+  never holds a step for one: a step waits at most 250 ms for its `start`
+  frame to be acknowledged, and a live POST still in flight when the step ends
+  is abandoned. A 4xx to a live frame stops live frames for the rest of that
+  task. The final frame is built and sent the same either way.
+- **A step's live stream ends once.** A step runs once per run, so its final
+  frame closes it for the rest of the run: a `start` or `chunk` for a closed
+  step is answered `dropped: true`, writes nothing and publishes nothing,
+  however late, replayed or forged it is. A step's final frame is the stored
+  frame that carries its `--- exit_code=` footer. Other frames stored under a
+  step's id do not close it (the beacon stores its `ANCHOR NOT HONOURED`
+  notice under the first step's id before that step runs).
+- **The first `start` is the record.** A second `start` for the same step is
+  dropped: it does not replace the stored command and is not published.
+- **A run that is no longer in flight takes no live frame.** Every `start` and
+  `chunk` for it is dropped. An unknown `kind` is dropped too; it is never
+  stored.
+- Which steps are closed is held in memory beside the tail, separately from
+  it: evicting tail text never reopens a step. Like the tail, it is empty
+  after a SimCore restart.
+- stdout and stderr share one live stream, in the order the beacon read them.
+
+**3. `GET /api/runs/{run_id}` returns both.**
+
+```json
+"step_starts": [{"step_id": "step-02", "command": "id; whoami",
+                 "identity": "www-data", "started_at": "2026-11-15T18:04:11.512345"}],
+"live_tail":   [{"step_id": "step-02", "text": "uid=33(www-data)\n", "seq": 3, "truncated": false}]
+```
+
+`step_starts` is always present (empty for a run whose beacon sent none) and
+stays after the run ends, so a finished run shows the command that was
+attempted. `live_tail` is present only while the run is in flight: a step's
+entry goes when its final frame arrives, the whole key when the run ends. It
+is process memory, so it is empty after a SimCore restart. `seq` is the last
+chunk folded into `text`; a console that reads the tail and then follows the
+stream skips chunks up to it.
+
+**Older beacon, older SimCore.** An older beacon ignores `live_output`: one
+frame per step, `step_starts` empty, no `live_tail` entries. A new beacon
+against an older SimCore receives no `live_output` and sends nothing new.
+
+**`--stream-output` is retired.** The flag posted once per pipe write from
+inside the step's own writer, skipped chained steps, and SimCore stored that
+output twice (the chunks, then the step's frame). The beacon still accepts
+the flag and ignores it.
+
+#### 1.3.4 Pull cleanup wire contract
+
+A pull run cleans up after itself (#324). The task a beacon collects carries
+the scenario's `cleanup.commands` resolved for that agent's OS, the beacon runs
+them when the task ends, and the run keeps what the beacon reported. Server
+side: `core/engine/pull_cleanup.py`. Beacon side: `agent/beacon/cleanup.go`.
+
+**Task.** Omitted when no command runs on the target (no `cleanup.commands`,
+or every line is for the other OS family):
+
+```json
+"cleanup": {
+  "commands": [{"command": "rm -f /tmp/cortexsim_marker", "shell": ""}],
+  "timeout_seconds": 120
+}
+```
+
+- The lines come from `push_generator._resolve_cleanup(scenario, target)`, the
+  resolver the push bundle uses, so both modes run the same lines: a
+  Windows-only teardown line is withheld from a POSIX agent and a POSIX line
+  from a Windows one. Commands are sent verbatim (no `{adapter:*}` /
+  `{stitch:*}` rendering, as in a push bundle).
+- `shell` is `""` on POSIX (`sh -c`) and `powershell` or `cmd` on Windows, the
+  same meaning as a step's `shell`.
+- `timeout_seconds` bounds each command, not the list.
+- Each endpoint of a composed run gets its own task and the lines for its own
+  OS. The schema has one cleanup list per scenario, so every endpoint runs the
+  whole list for its OS family.
+- The key is in the durable `queued_tasks` payload and survives `rehydrate()`.
+
+**When the beacon runs it.** Once, inside the task's completion, when at least
+one step started: after the last step, after a failed step, after a timeout
+and after an abort (operator abort or a lost control channel). It is skipped
+when no step started (aborted before step 1, staging refused, every step
+refused for this platform). Each command runs as the beacon's own account
+(identity `direct`), in its own shell, never as a child of a chained run's
+anchor. A failed command does not stop the ones after it. A cleanup failure
+never changes the task's exit code, its summary or any step's outcome.
+
+While cleanup runs the beacon polls `GET /api/runs/{id}/control` every 2 s, as
+it does during a step, so `Agent.last_seen` stays fresh; the answer is ignored
+(cleanup is what follows an abort).
+
+**On agent shutdown** the whole cleanup has 30 s from the stop
+(`beacon.CleanupShutdownBudget`); the command then in flight is killed and the
+rest are reported as not run. `main` waits up to 30 s past its usual 20 s
+grace while a cleanup is in flight. A supervisor with a shorter stop timer
+still kills the beacon at its own deadline: a pod's 30 s
+`terminationGracePeriodSeconds`, launchd's default 20 s.
+
+**Run output.** One `/output` frame, with no `step_id` and no `kind`, sent
+before `/complete`. With no `kind` it is stored like a step's final frame,
+never taken as a live frame (§1.3.3); with no `step_id` it records no step
+start and closes no step's live stream. Cleanup commands are not streamed
+and get no `start` frame:
+
+```
+=== CLEANUP · 2 commands · identity=direct ===
+$ rm -f /tmp/cortexsim_marker
+--- cleanup 1/2 exit_code=0 duration=4ms ---
+$ userdel -r cortexsim_testuser
+--- STDERR ---
+userdel: user 'cortexsim_testuser' does not exist
+--- cleanup 2/2 exit_code=6 duration=11ms ---
+```
+
+Each command is echoed after `$ `, then its output (`--- STDOUT ---` /
+`--- STDERR ---`, as in a step frame), then its footer. A command stopped at
+its timeout reads `exit_code=124`; one cut by the shutdown budget
+`exit_code=130`; one never started `exit_code=none duration=0s`. The header and
+footers survive the output cap (§1.3). The report's execution-integrity check
+does not read this section: `command not found` from a cleanup command is not
+a step that did not run.
+
+**`/complete`.** The beacon adds, and a beacon that predates this omits:
+
+```json
+"cleanup": {"status": "clean", "ran": 2, "failed": 0, "reason": null}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `clean` (every command ran and exited 0), `failed`, or `not_run` |
+| `ran` | Commands started |
+| `failed` | Of those, the ones that did not exit 0 (a timeout and a kill count) |
+| `reason` | null when clean; `NO_STEP_STARTED` (with `not_run`), `COMMAND_FAILED`, `COMMAND_TIMEOUT`, `SHUTDOWN_BUDGET_SPENT` |
+
+A task without the `cleanup` key (an older SimCore, or nothing to run) sends
+no `cleanup` object and writes no section: the beacon behaves as before.
+
+**`runs.cleanup`.** A nullable JSON column (added at startup by
+`_migrate_run_cleanup_columns`), exposed as `cleanup` on the run. The launch
+writes one entry per task that carries cleanup, as `pending`; that task's
+`/complete` fills it:
+
+```json
+[{"agent_id": "jumpbox-01", "task_id": "<uuid>", "commands": 2,
+  "status": "failed", "ran": 2, "failed": 1, "reason": "COMMAND_FAILED"}]
+```
+
+`status` is `pending`, `clean`, `failed` or `not_run`. `pending` on a finished
+run means no beacon reported (an older beacon, or a task never collected),
+which is not `clean`. `null` means no task was sent cleanup. A retried
+`/complete` changes nothing. A `/complete` that reaches an already-terminal
+run (an abort always wins that race) still answers `409 RUN_ALREADY_TERMINAL`
+and its cleanup outcome is still stored. Nothing that scores a run reads this
+column.
+
+**The outcome is untrusted.** It is reported by the target, so
+`pull_cleanup.record_outcome` takes only what it has to:
+
+- It fills the entry of the task the body names (`task_id`) and nothing else.
+  `agent_id` and `commands` stay what the launch wrote; the body's `agent_id`
+  is not read. A body naming a task that was sent no cleanup stores nothing.
+- `status` outside `clean` / `failed` / `not_run` is stored as `failed` with
+  reason `unrecognised status`.
+- `ran` and `failed` are non-negative ints, capped at the task's `commands`,
+  and `failed` is never larger than `ran`.
+- `reason` is one line: control characters and line breaks become spaces, and
+  it is cut at 200 characters.
+- The report renders `agent_id` and `reason` inside inline code spans with
+  backticks removed, and the counts as ints, so a reported value cannot start
+  a line, a heading, a list item or a table row. A console that shows these
+  must render them as text.
+- A `cleanup` that is not an object is ignored; it never costs the completion.
+
+**An agent that does not advertise `cleanup`.** The task still carries the
+commands (the roster is the beacon's last registration and can be older than
+the beacon; an old beacon ignores the key). The launch and its dry run carry
+one info-level warning per such agent in `warnings[]`, which the console shows
+without holding the launch; the launch also writes it onto `Run.output` as
+`!! CLEANUP_NOT_RUN: agent '<id>'; …`:
+
+```json
+{"code": "CLEANUP_NOT_RUN", "level": "info", "agent_id": "jumpbox-01",
+ "detail": "this beacon does not run scenario cleanup; update it, or clean the host by hand after the run"}
+```
+
+**Report.** The markdown report's "Cleanup Not Run" caveat (with the commands
+to run by hand) now appears only when no beacon reported a cleanup (no entry,
+or every entry still `pending`). A run whose cleanup failed, or was reported
+by only some endpoints, gets "Cleanup Incomplete" naming the agents; a clean
+one gets no caveat.
+
+Not covered: `cleanup.k8s_teardown` is not sent to a beacon. No Windows host
+has run this path; the Windows half is covered by cross-compilation and a
+test that checks what reaches the executor.
+
+#### 1.3.5 Relayed EAL steps: an agent step that calls the EAL CLI
+
+71 scenario files run `python3 -m scripts.eal_simulator.cli …` as an ordinary
+agent step. That CLI exists only inside SimCore, so on a target the step used to
+die with `ModuleNotFoundError`. The step now stays on the beacon, in order and
+with its shell intact, and the one call is relayed (`core/engine/eal_relay.py`,
+`agent/ealrelay/`):
+
+```
+launch        a step whose command (or a platform variant) matches
+              python3? -m scripts.eal_simulator.cli  is sent with "eal_relay": true,
+              and one eal_relay_steps row records run, step, agent and the launch's consent
+beacon        as the step is executed, swaps that call for
+                '<agent binary>' eal --relay 127.0.0.1:<port> --ticket-file '<path>'
+              (every other byte is unchanged, and the step keeps its own text)
+eal           reads its ticket from that file and the campaign file the step wrote,
+              and hands both to the beacon over loopback
+beacon        POST /api/eal/relay  {agent_id, run_id, step_id, verb, campaign_yaml, plugin, live}
+SimCore       -> {exit_code, stdout, stderr, ops[], allowlist[]}
+eal           prints stdout/stderr, performs ops[] from the target, exits with exit_code
+```
+
+`verb` is `run`, `describe` or `list-plugins`. `describe` and `list-plugins`
+return the CLI's own JSON. For `run`, each campaign step is one of three kinds:
+
+| Kind | Plugins | What happens |
+|---|---|---|
+| collector | every plugin with a `collector_url` param (the analytics emitters, `email_emitter`) | SimCore runs it, with `CampaignExecutor`, the instance collector targets and the delivery accounting of §1.3.2 |
+| network-shape | `c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `bulk_https_exfil`, `smb_rpc_sweep`, `ftp_egress`, `ssh_egress` | SimCore renders it to `ops[]` (`eal_simulator/wire_plan.py`) and sends nothing; the beacon performs the operations, so a firewall sees the endpoint as the source |
+| not relayable | `llm_provider_egress`, `oauth_grant_emulator`, `agentic_egress`, `browser_attack_runner`, `airs_prompt_attack` | `exit_code` 3, `stdout` is `EAL_WIRE_NOT_RELAYABLE: <plugin>`, nothing runs |
+
+Two parts of a network-shape plugin are not rendered: `ftp_egress`'s PASV data
+channel and STOR payload, and `smb_rpc_sweep`'s `probe_ntlm`.
+
+**Operations.** `ops[]` is ordered. `allowlist[]` is every destination those
+operations touch, built by SimCore from the rendered plan: `host:port` for a
+connection, `dns:<zone>` for query names.
+
+```
+{"op":"http",  "method","url","headers","timeout_s","verify_tls", "body_b64" | "body_random_bytes"}
+{"op":"dns",   "qname","qtype","resolver"}          resolver "" = the host's own, else host:port
+{"op":"tcp",   "host","port","timeout_s","probe","frames":[{"send_b64","read"}]}
+{"op":"sleep", "seconds"}
+```
+
+A frame's `read` is how long to wait for a reply, which is never required.
+`probe` marks a connect-and-close sweep probe, where a closed port is the
+expected answer. The beacon accepts an inline `body_b64` (up to 1 MiB); no
+renderer emits one today, the two that send a body ask for random bytes.
+`spec/eal_wire_ops_cases.json` pins the operations each renderer produces; a
+Python test and a Go test read it.
+
+**Bounds.** The campaign text comes from the target, so no parameter in it may
+multiply work without limit. One relayed campaign may be handed at most 4096
+operations, 600 s per sleep and 3600 s of sleep in all, 1 GiB per request body
+and 4 GiB in all. SimCore applies those while it renders, not afterwards: each
+renderer first does the arithmetic on its own parameters (`iterations`,
+`chunks`, `request_count`, `total_bytes`, `sleep_seconds` with jitter,
+`inter_host_delay`, and `max_hosts × ports` for a sweep) and refuses before
+building anything, and every operation is then added through one plan that
+refuses the operation past a ceiling. A refused plan stops the campaign whole
+(`EAL_WIRE_PLAN_REFUSED`, `exit_code` 1): it is rendered before any collector
+step is sent. A sweep takes at most 256 ports. A campaign file that uses a
+YAML alias is refused (`exit_code` 2). The beacon holds the same ceilings,
+checks the whole plan before it sends anything, and refuses it whole
+(`EAL_WIRE_OP_REFUSED`) if any destination is outside `allowlist`.
+
+**Live or dry.** The campaign file's own `simulation_authorized`,
+`authorized_by`, `c2_authorized` and `dry_run: true` are not what makes a relay
+live. It is live only when the step asked for it (`--live`, or `dry_run: false`
+in the file) and the **launch** carried `consent.simulation_authorized` and a
+named `authorized_by`. A campaign with a C2-shaped plugin also needs the
+launch's `consent.c2_authorized`. C2-shaped is judged by the one classification
+the campaign launch uses (`safety.campaign_c2_plugins`, then
+`SafetyPolicy.assert_c2_authorized`): by name or by the MITRE techniques the
+plugin declares. Today that is `c2_http_beacon`, `dns_tunnel_exfil`,
+`ftp_egress`, `ssh_egress`, `ngfw_eal_emitter` and `ngfw_threat_emitter`.
+Collector steps then pass the same gate as §1.3.2 (a keyed, non-failing
+instance target for every step, at most 30 s of sleep). Otherwise the campaign
+is a dry run: nothing is sent, `ops` is empty, and `stdout.relay.code` says why.
+
+| `relay.code` | Meaning |
+|---|---|
+| `EAL_DRY_RUN_REQUESTED` | The step itself asked for a dry run |
+| `EAL_DRY_RUN_NO_CONSENT` | The launch carried no `simulation_authorized` + `authorized_by` |
+| `EAL_DRY_RUN_NO_C2_CONSENT` | The campaign has a C2-shaped plugin and the launch carried no `c2_authorized` |
+| `EAL_DRY_RUN_TARGET_*`, `EAL_DRY_RUN_SLEEP_CAP`, `EAL_DRY_RUN_HELD` | As §1.3.2, for the collector steps |
+
+**Sent or not sent.** The beacon counts each network operation by what left
+the endpoint, never by what came back (#374):
+
+| Operation | `sent` once | `not_sent` when |
+|---|---|---|
+| `http` | a connection was made and the whole request written to it | the name did not resolve, the connect was refused or timed out, the TLS handshake failed, or the write failed before the request was complete |
+| `dns` | the query was written to the named resolver, or the host's resolver gave any answer (NXDOMAIN included) | the resolver could not be reached or the write failed |
+| `tcp` | a connection was made and its first frame written (a connect-only op once it connected; a `probe` once it tried) | the connect was refused or timed out, or the first frame could not be written |
+
+What the far end did next is the sent operation's reply class, and does not
+make it unsent: `http_<status>` (any status, 500 included), `reset`, `closed`,
+`timeout_waiting_reply`, `answered`, `refused` (a probe's closed port),
+`no_reply_asked`, `error`. A firewall logs a reset request as a session from
+the endpoint, and that session is what the step's detections look for. After
+the operations, `eal` prints the account in `stdout` as
+`{"eal_wire": {operations, network_operations, sent, not_sent, replies,
+slept_seconds, bytes_sent, by_kind, failures[], reply_errors[]}}`, where
+`failures` says why an operation was not sent and `reply_errors` how a sent
+one's reply ended (20 of each at most), then one line:
+`EAL_WIRE_SENT: 12 of 12 sent · 12 reset by peer`, or, when nothing was sent,
+`EAL_WIRE_NOT_DELIVERED: 0 of 12 sent · 12 not sent`.
+
+**Results.** A marked step that has sent nothing (no record accepted and no
+operation issued, over every relay it made) has its seeded Results stamped
+`outcome: not_executed` with the code as `outcome_reason`, exactly as an
+in-process EAL step's are, so they leave the efficacy denominator. A later relay
+of the same step that does send lifts the stamp. Whether issued operations got
+onto the wire is the step's exit: a step that sent at least one exits 0 and its
+Results are judged like any step's, credited by a matching alert or `missed`
+once the window closes; one that sent none exits 1, and its silent Results read
+`not_executed` / `STEP_FAILED` (§1.3.1).
+
+**Exit codes.** 0 the campaign completed (a dry run included) and, when it had
+operations, at least one was sent; 1 it did not complete, or SimCore refused the
+plan, or the beacon refused it or sent none of its operations
+(`EAL_WIRE_NOT_DELIVERED`); 2 usage or an invalid campaign file; 3
+`EAL_WIRE_NOT_RELAYABLE`; 4 the call never reached SimCore or was refused
+(`EAL_RELAY_UNREACHABLE` / `EAL_RELAY_REFUSED: <code>` on stderr). A non-zero
+step stops the task's later steps, as for any step.
+
+**Who may ask.** The endpoint identifies the beacon as every agent endpoint
+does, by the ids in the body. It serves a request only when an
+`eal_relay_steps` row exists for that `run_id` and `step_id` and names that
+`agent_id`, and the run is still in flight.
+
+| Status | `code` | When |
+|---|---|---|
+| 403 | `EAL_RELAY_STEP_NOT_MARKED` | No run marked that step for that agent (an unknown run, an unmarked step, another agent) |
+| 409 | `EAL_RELAY_RUN_NOT_IN_FLIGHT` | The run that marked it has ended |
+| 429 | `EAL_RELAY_LIMIT` | The step has made 16 relay requests |
+
+SimCore itself only POSTs to a stored collector target: the stored key goes with
+the stored URL (`targets.apply_targets`), a `collector_url` the campaign names
+is replaced by the target, and when no target serves the plugin the step stays
+dry. A relayed campaign is limited to 256 KiB, 16 steps, 5000 collector
+requests and 256 MiB. Neither the campaign text nor a key is logged, and a key
+is removed from `stdout` before it is returned.
+
+**The subcommand's route.** `eal` does not talk to SimCore. It talks to the
+beacon that started the step, on a listener bound to loopback only that exists
+while a task with marked steps runs. The beacon fills in the run and step and
+forwards the call on its own route to SimCore (`--proxy` included).
+
+What lets a step ask is a ticket, and the ticket is never in an argv or an
+environment (endpoint telemetry records command lines, and any local account
+can read the process list). The command carries the path of a file instead:
+
+- the file is in a directory the beacon creates for the task with a random
+  name (`os.MkdirTemp`, so nothing can be planted at the path first), which no
+  other account can list or write: mode 0700, or 0711 when a step runs as
+  another account and has to pass through it;
+- the file has a random name of its own, is created new with mode 0600, and
+  belongs to the account the step runs as (the beacon's own for a `direct`
+  step). On Windows, where a step always runs as the beacon, the directory and
+  the file are created with an access list for that account only;
+- the ticket is made and written when the step starts, and revoked and the
+  file removed when the step ends. A request with it afterwards is refused
+  (`EAL_RELAY_TICKET_REFUSED`);
+- it is good for as many calls as the step's command contains EAL CLI calls,
+  and no more. A command that calls the CLI once inside a loop gets one call.
+
+So the call works under a service account whose environment `runuser -l` has
+reset, and what a process list or a telemetry record shows is a path that only
+the step's own account can open.
+
+**With the live runtime log (§1.3.3).** `eal` is a child of the step's own
+shell, so what it prints is the step's stdout and stderr: it streams as that
+step's `chunk` frames and lands in the step's final frame like any other
+output. Nothing on the relay path posts an `/output` frame of its own. The
+call is swapped only in the text handed to the executor. The step keeps the
+command its author wrote, and that is what its `start` frame and
+`step_starts` carry: never the `eal` call, the loopback port or the ticket
+file's path.
+
+**With pull cleanup (§1.3.4).** Cleanup commands are not steps. They are
+never swapped and never hold a ticket, so one that called the EAL CLI would
+run as written. No scenario's cleanup does.
+
+**An older beacon** does not advertise the `eal-relay` capability. Its steps are
+not marked, they fail as before, and the launch carries
+`{"code":"EAL_RELAY_UNAVAILABLE","agent_id","steps","detail"}` in `warnings[]`
+and on `Run.output`. A marked step whose only use of Python was the EAL CLI
+call is sent without `python` in `requires_interpreters`.
+
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 
 | Method | Full path | Purpose | Request body | Response |
@@ -902,6 +1372,7 @@ is 0***: nothing on this path has delivered to a live tenant.
 | POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[], runtime_facts?}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND`; **409 `AGENT_HAS_OPEN_RUNS`** with `run_ids` while a task is queued for the agent or a non-terminal run targets it, directly or via the routing ledger (round 2). Fix: `POST /api/runs/{id}/abort`; nothing is cancelled implicitly |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
+| GET | `/api/agents/{agent_id}/preflight` | Can this agent run this scenario? Advisory: read from what the agent reported at registration (§1.3, runtime-dependency warnings) | query: `scenario_id` | `{agent_id, scenario_id, ready, gaps:[{step_id, missing[], unverified[]?}], agent_interpreters[]}`. `ready` is false only when a step has a `missing` name; a step with only `unverified` names is listed and is not a gap. 404 `AGENT_NOT_FOUND` / `SCENARIO_NOT_FOUND` |
 
 - **Installer parameter validation (2026-11).** Before this change, `id` /
   `server` / `token` / `interval` went into the script text verbatim:
@@ -1067,9 +1538,13 @@ is 0***: nothing on this path has delivered to a live tenant.
   download and the pod sits in `Init:Error`. An IP literal always passes.
 - **`runtime_facts`.** `register` and `enroll` accept an optional `runtime_facts`
   object (`container`, `pod_name`, `pod_namespace`, `node_name`, `posture_profile`,
-  `prepare_status`, `tools[]`, `accounts[]`, `anchor_rename`; unknown keys ignored,
-  wrong types 422), stored on `agents.runtime_facts` and returned in
+  `prepare_status`, `tools[]`, `probed[]`, `accounts[]`, `anchor_rename`; unknown
+  keys ignored, wrong types 422), stored on `agents.runtime_facts` and returned in
   `agent.to_dict()`. Every beacon now sends it (`container: false` off a pod).
+  `tools[]` is what the beacon found; `probed[]` is what it looked for, found or
+  not: the standard probe list plus `ssh`, `scp`, `sshpass` and `sudoedit`. A
+  beacon older than the EAL relay sends no `probed[]`, and without it the
+  runtime-dependency preflight (§1.3) assumes the standard probe list.
   `capabilities` and `interpreters` accept `null` as `[]`.
 - **Launch gate for container agents** (`POST /api/runs`): `409
   AGENT_POSTURE_INSUFFICIENT` and `409 AGENT_TOOL_ABSENT` (override with
@@ -1196,8 +1671,9 @@ build stayed Running in CI.
   target, 69 carry a Windows label). Others are refused at launch
   (`409 PULL_TARGET_UNSATISFIABLE`) or skipped on the host (`!! STEP NOT RUN:
   PLATFORM_UNSATISFIABLE`, scored `not_executed`).
-- Pull mode never runs scenario `cleanup.commands`; the POV report lists what it
-  did not run.
+- Scenario `cleanup.commands` run when the task ends, the lines SimCore resolved
+  for Windows under `powershell` or `cmd` (§1.3.4). No Windows host has run this
+  path yet.
 - There is no Windows canary (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
 
 **Uninstall** (elevated; idempotent):
@@ -1238,17 +1714,11 @@ install removes its own items and fails `NEEDS_ROOT`.
 - **Only counts scenarios with `status == "active"`** (`mitre.py:38`). Draft/
   deprecated scenarios are invisible to the heatmap (GAP-API-009).
 
-### 1.8 Infra / IaC (`core/api/infra.py`, prefix `/infra`)
+### 1.8 Infra / IaC — moved
 
-| Method | Full path | Purpose | Request | Response |
-|--------|-----------|---------|---------|----------|
-| GET | `/api/infra/modules` | List Terraform modules | query: `provider=aws` (default) | `{"modules":[<metadata>],"total":N}` |
-| POST | `/api/infra/generate` | Render + bundle Terraform tar.gz | `InfraGenerateRequest` (Pydantic): `region` must be an AWS region (`us-east-1`, `us-gov-west-1`), `params.jumpbox_size` an AWS instance type (`t3.medium`, `m7i-flex.large`, ≤32 chars); string values reach the `.tf`/`.tfvars` only as escaped HCL literals | `InfraGenerateResponse` (`bundle_id`, `download_url`); 422 request validation (incl. a bad `region`/`jumpbox_size`); 422 `GENERATION_FAILED` |
-| GET | `/api/infra/bundles` | List previously generated bundles | — | `{"bundles":[<summary>],"total":N}` |
-| GET | `/api/infra/bundles/{bundle_id}/download` | Download tar.gz | — | `FileResponse` gzip; 404 `BUNDLE_NOT_FOUND` |
-
-- These routes are **sync** (`def`, not `async def`) — they do blocking filesystem
-  work (`shutil.copytree`) off the event loop is *not* offloaded (GAP-API-010).
+The IaC topology generator (`/api/infra/*`) and `GET /api/scenarios/{id}/infra-hints`
+moved to `feature/scenarios-cloud-posture` on 2026-11-15, targeted for a 1.4.x
+release. Their contract is documented there.
 
 ### 1.9 EAL Traffic Simulator (`core/api/eal.py`, prefix `/eal`)
 
@@ -1269,6 +1739,7 @@ install removes its own items and fails `NEEDS_ROOT`.
 | GET | `/api/eal/runs` | List EAL runs | query: `campaign_id?` | `{"runs":[...],"total":N}` |
 | GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup and `collector_resolution` (where each collector step went and why, never a key; NULL before collector targets); 404 `RUN_NOT_FOUND` |
 | POST | `/api/eal/runs/{run_id}/abort` | Cooperative abort of a live campaign | — | `AbortResponse` |
+| POST | `/api/eal/relay` | Run one EAL CLI call for a beacon step SimCore marked `eal_relay` (§1.3.5) | `{agent_id, run_id, step_id, verb: run\|describe\|list-plugins, campaign_yaml?, plugin?, live?}` | `{exit_code, stdout, stderr, ops[], allowlist[]}`; 403 `EAL_RELAY_STEP_NOT_MARKED`; 409 `EAL_RELAY_RUN_NOT_IN_FLIGHT`; 429 `EAL_RELAY_LIMIT` |
 
 - **This is a parallel run/lifecycle subsystem** distinct from the `Run`/agent
   system. EAL campaigns run via FastAPI `BackgroundTasks` (in-process async),
@@ -1296,12 +1767,15 @@ install removes its own items and fails `NEEDS_ROOT`.
   same invariant as a push bundle). Credentials are never written into a bundle;
   the manifest names an env var the operator exports. Steps that cannot be
   pre-rendered (C2 beacon, DNS tunnel, browser driver) are listed in
-  `skipped_steps`. **There is still no way to dispatch an EAL campaign to an
-  enrolled beacon** — the executor runs in SimCore's own process.
+  `skipped_steps`. A stored campaign (`/api/eal/campaigns`) is still never
+  dispatched to an enrolled beacon: its executor runs in SimCore's own process.
+  A **scenario step** that calls the EAL CLI is different. In a pull run a
+  beacon relays that call (§1.3.5): collector steps still run in SimCore, and
+  the network-shape steps are performed by the beacon, from the target.
 - EAL run statuses are a *different enum* (`pending`/`success`/`failed`/etc. from
   the executor) than core Runs. Abort is cooperative and cannot pre-empt an
   in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
-  no retention sweep (same as `infra/blueprints`).
+  no retention sweep.
 
 ### 1.9.1 Collector targets (`core/api/collector_targets.py`, prefix `/collector-targets`)
 
@@ -1380,9 +1854,25 @@ Authoring surface (gated on `CORTEXSIM_AUTHORING_ENABLED=true`, else 403 `AUTHOR
 | GET | `/api/events` | SSE stream of every event across all runs + agent status | `text/event-stream` |
 
 - Both return `text/event-stream` and emit one SSE frame per event. The browser
-  consumes them with `EventSource.onmessage` + `JSON.parse`; each event carries a
-  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `result.observed`,
-  `agent.status`, `agent.install`, `run.verdict`, …).
+  consumes them with `EventSource.onmessage` + `JSON.parse`. On the bus each
+  event is a `{type, run_id, ts, data}` envelope (`run.status`, `run.output`,
+  `run.step`, `result.observed`, `agent.status`, `agent.install`, `run.verdict`, …);
+  the stream sends its flat translation (`_to_ui_event`):
+  `{id, timestamp, level, stepIndex, message, synthetic, stepId, live, phase, command, seq}`.
+- **Live runtime log fields (§1.3.3).** `stepId` is the step the event belongs
+  to, else null. `phase` is `start` (the beacon is about to run the step;
+  `command` is set, `level` is `step`, `message` is `Running: <command>`),
+  `output` (step output, `message` is the text) or null. `live` is true only
+  for output streamed while the step runs, with its chunk number in `seq`; that
+  text is not stored, and the step's stored frame (`phase: output`,
+  `live: false`) replaces it. The first six fields are unchanged.
+
+  | Bus event | `level` | `phase` | `live` | `command` | `seq` |
+  |---|---|---|---|---|---|
+  | `run.step`, a step start | `step` | `start` | false | the command | null |
+  | `run.output`, a live chunk | `info` | `output` | true | null | chunk number |
+  | `run.output`, a stored frame | `info` | `output` | false | null | null |
+  | anything else | as before | null | false | null | null |
 - **`run.verdict` (new, 2026-08-02)** is published whenever `Run.tc_verdict` is
   written — i.e. from `complete_run` (seeds the verdict, typically `pending` at
   t=0) and from `connectors/service.py::apply_verdicts`, the single funnel for
@@ -2106,6 +2596,110 @@ Reply (200): `{tenant, issues | cases | endpoints, total_count, filter_count, tr
 
 Errors: an envelope the reader does not recognise (a lowercase `data` in place of `DATA` included, or a row that is not an object) or a row missing a required field (issue `id`, `_insert_time`, `detection.method`, `domain`; case `case_id`; endpoint `endpoint_id`, `endpoint_name`) is **502 `XSIAM_PARSE_ERROR`**, never zero rows; its `detail` names `XSIAM_ENVELOPE_UNRECOGNISED` or the field, and quotes only identifier-shaped reply keys (at most 10, each at most 40 ASCII letters, digits, `_`, `.` or `-`); any other key (free text, a longer or non-ASCII name, the overflow) is counted, never quoted. The quoted names still come from the tenant, so a key of up to 40 identifier characters can appear. The connector's own reads use the same key rule. An application error the tenant sends inside a 200 (`err_code` / `err_msg`) is 502 `XSIAM_QUERY_ERROR` (429 `XSIAM_QUOTA_ERROR` for `XQL_0003` or a quota message); its `detail` quotes the `err_code` (at most 64 characters) and the `err_msg` (at most 200, marked when cut), both neutralised as tenant text is, and never the rest of the reply: with no `err_msg` it names the code alone. That rule is the client's (`XsiamClient._check_app_error` and the XQL start), so it holds for every catalog op; the connector's own reads (`parse_reply`, `parse_object_reply`) use the same formatter and the same value-based test (a non-empty `err_code` or `err_msg`), and an error object beside a `reply` key, at the top level or inside it, is an error on every path, while a null, empty or zero `err_code` / `err_msg` is not. A refusal by CortexSim's own request budget is 429 `XSIAM_QUOTA_ERROR` with `retry_after_seconds`; on a second page it names the refused page and says the rows already read are not returned, because a cut read is not a complete result. A tenant 429 is 429 `XSIAM_QUOTA_ERROR` and opens the breaker. Other tenant failures keep the `XsiamError` codes above.
 
+### 1.18 Reports (`core/api/reports.py`, prefix `/reports`)
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/reports/executions` | Every run on this instance, rolled up and mapped scenario → technique → test case → plane → detection source → outcome. The console's Reports page (`#/coverage`, Executions tab) reads it | `{generated_at, window, filters, filter_options, empty, engine_runs, totals, by_scenario[], by_technique[], by_test_case[], by_plane[], by_agent[], detection_sources}`; `format=csv` is one row per scenario as an attachment |
+
+**Read-only, zero outbound calls, SQL aggregates only.** It reads `runs`,
+`results`, `step_outcomes` and `scenarios`. No statement selects `Run.output`
+or a whole `Result` row, and the statement count does not grow with the run
+count (`tests/api/test_reports_executions.py` pins both).
+
+Query parameters, all optional:
+
+| param | meaning |
+|---|---|
+| `since`, `until` | ISO-8601, compared with `Run.started_at`. An offset is converted to UTC, never dropped. Unreadable → 422 `INVALID_TIME_RANGE` (it is not read as "all time") |
+| `plane` | the scenario's plane, e.g. `EDR` |
+| `status` | `Run.status`, e.g. `complete` |
+| `agent` | the agent id the run was sent to (`Run.target`) |
+| `include_drafts` | default `false`: runs of `SIM-DRAFT-*` scenarios are left out |
+| `format` | `json` (default) or `csv`; anything else is 422 |
+
+A run is **reviewed** when SimCore recorded a tenant read on it, the rule the
+console uses (`ui/src/components/console/runLifecycle.js::readBackOf`):
+`tc_verdict_detail.source` starts `reconcile:`, or
+`tc_verdict_detail.verification.queries_issued > 0`. A completion-time score is
+not a review.
+
+Response fields (timestamps are UTC, ISO-8601 ending `+00:00`):
+
+- `generated_at`; `window` `{since, until, first_run_at, last_run_at}`;
+  `filters` as applied; `filter_options` `{planes, statuses, agents}`, read from
+  the whole instance so a filter row keeps its choices while a filter is on.
+- `empty` — no run matches. `engine_runs` — runs on the instance before any
+  filter, so "nothing has run" and "nothing matches" are told apart.
+- `totals.runs` — `total`; `by_status` with every known status
+  (`pending · running · complete · failed · aborted · staged`), zero included;
+  `unrecognised` `{status: n}`; `reviewed`; `not_reviewed`.
+- `totals.scenarios` — `exercised` (scenarios with a run in scope), `corpus`
+  (loaded scenarios, drafts excluded, within `plane`), `corpus_exercised`,
+  `corpus_not_run`. With no filter set, `corpus_not_run` is "never run".
+- `totals.techniques_exercised`, `totals.test_cases_touched` — distinct
+  techniques (the scenario's primary and its steps') and distinct `tc_refs` of
+  the exercised scenarios.
+- `totals.steps`, from `step_outcomes` — `recorded`; `ran` (`exited`, exit 0);
+  `failed` (`exited`, non-zero); `did_not_run` (`not_run`); `interrupted` with
+  `interrupted_by` (`signaled`, `anchor_terminated`, `timeout`, `aborted`,
+  `beacon_lost`); `unrecognised`; `runs_with_host_record`;
+  `runs_without_host_record` (a staged bundle, or a beacon that sent no
+  `steps[]`: nothing is claimed about its steps).
+- `totals.detections` — `expected`, one count per outcome (`prevented`,
+  `detected`, `detected_not_prevented`, `missed`, `pending`, `not_reached`,
+  `not_executed`), `not_reviewed` and `unrecognised` `{outcome: n}`.
+- `by_scenario[]` — `scenario_id`, `name`, `plane`, `techniques[]`, `uc_ref`,
+  `tc_refs[]`, `detection_sources` (`[{id, label}]`, the ingestion doors its
+  expected detections need, derived as `GET /api/doors` derives them; `null`
+  when they cannot be derived), `runs`, `runs_by_status`, `first_run_at`,
+  `last_run_at`, `last_status`, `last_run_id`, `reviewed_runs`,
+  `last_reviewed_run_id`, `last_reviewed_at`, and `outcomes`: the detection
+  counts of its most recent reviewed run. Newest run first.
+- `by_technique[]` `{technique, name, …}` and `by_test_case[]`
+  `{tc_ref, name, uc_ref, …}` — `scenarios[]`, `runs`, `last_run_at`,
+  `reviewed_scenarios` and `outcomes` summed over each scenario's most recent
+  reviewed run. A technique counts only the detections on the steps that carry
+  it (a step naming no technique carries the scenario's primary); a test case
+  takes the whole run of every scenario bound to it through `tc_refs`.
+- `by_plane[]` `{plane, runs, scenarios}`; `by_agent[]`
+  `{agent, runs, scenarios, last_run_at}`, where `agent` is `null` for runs
+  sent to no agent.
+- `detection_sources` — `{available, reason, failed[]}`. `available: false`
+  with `REGISTRY_ABSENT` or `REGISTRY_MALFORMED` when the dataset requirement
+  registry cannot be read; `failed` lists scenarios whose doors could not be
+  derived. In either case the row's `detection_sources` is `null`, never `[]`.
+
+What the counts do and do not say:
+
+- **Not reviewed is not missed.** A detection with no outcome that nobody
+  observed, on a run nobody reviewed, is `not_reviewed`. On a reviewed run the
+  same row is `pending`, as the Results page reads it. `missed` is only ever an
+  engine outcome.
+- **Never run is not 0 %.** A scenario with no run in scope has no row.
+  `outcomes` is `null`, not zeros, for a scenario, technique or test case no
+  reviewed run reached.
+- **An unrecognised value is named.** A run status, result outcome or step
+  termination outside its vocabulary is counted under `unrecognised`, keyed by
+  the value, and added to no known bucket. `exited` with no exit code is
+  reported there as `exited (no exit code)`.
+- **A run is an execution fired, not a detection proven.** `exercised` means
+  "has a run in scope", whatever the run's status; a staged bundle counts as a
+  run and reads `staged`.
+
+CSV columns: `scenario_id, name, plane, techniques, uc_ref, tc_refs,
+detection_sources, runs, first_run_at, last_run_at, last_status, last_run_id,
+reviewed_runs, last_reviewed_run_id, last_reviewed_at, expected, prevented,
+detected, detected_not_prevented, missed, pending, not_reached, not_executed`.
+Lists are joined with `;` (detection sources by label). A scenario with no
+reviewed run leaves its outcome cells blank. Every field is quoted. Text that
+starts with `=`, `+`, `-` or `@` (after any leading whitespace), or with a tab
+or a carriage return, is written with a leading `'`, so a spreadsheet shows a
+scenario or draft name instead of running it as a formula. Each element of a
+joined list gets the same treatment, because a spreadsheet that splits on `;`
+would put a later element at the start of a cell. Numbers are written as they
+are, and the JSON body is not changed.
+
 ---
 
 ## 2. Lifecycle state machines
@@ -2292,7 +2886,8 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         │
         ├─ build Task{task_id, run_id, scenario_id,
         │            steps=_resolve_adapter_placeholders(scenario.steps),
-        │            identity_context}
+        │            identity_context,
+        │            cleanup=<cleanup.commands for the agent's OS, §1.3.4>}
         │
         ├─ orchestrator._enqueue(target_agent_id, task)   # in-memory dict[agent_id]->[Task]
         │
@@ -2303,9 +2898,13 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
         → orchestrator.dequeue(agent_id) pops Task → {"task": <task.to_dict()>}
                 │
                 ▼
-   Beacon executes via identity harness (see §5), then:
-        POST /api/runs/{run_id}/output    (full combined STDOUT/STDERR)
-        POST /api/runs/{run_id}/complete  {exit_code, summary}
+   Beacon executes via identity harness (see §5). Per step:
+        POST /api/runs/{run_id}/output    kind=start, the command   (live, §1.3.3)
+        POST /api/runs/{run_id}/output    kind=chunk, while it runs (live, §1.3.3)
+        POST /api/runs/{run_id}/output    (full combined STDOUT/STDERR; stored)
+   then, after running the task's cleanup (§1.3.4):
+        POST /api/runs/{run_id}/output    (the === CLEANUP section; stored)
+        POST /api/runs/{run_id}/complete  {exit_code, summary, steps[], cleanup}
                 │
                 ▼
    Run.status = complete|failed; completed_at stamped
@@ -2520,10 +3119,17 @@ Go 1.21+, **stdlib only**.
   60 s with `SERVICE_EXIT_CODE` 3. `signal.Notify` is kept off the service
   path so a user logoff does not stop it. Host *shutdown* gives services only a
   few seconds, which may be too short for the final `/complete`.
-- **Capabilities.** POSIX: `["shell","identity-harness","artifact-fetch"]`.
-  Windows: `["shell","powershell","artifact-fetch"]`, plus `elevated` only when
-  the process token's `TOKEN_ELEVATION` says so. A Windows beacon **never**
-  claims `identity-harness`.
+- **Capabilities.** POSIX:
+  `["shell","identity-harness","artifact-fetch","cleanup","live-output","eal-relay"]`.
+  Windows: `["shell","powershell","artifact-fetch","cleanup","live-output","eal-relay"]`, plus
+  `elevated` (before `live-output`) only when the process token's
+  `TOKEN_ELEVATION` says so. A Windows beacon **never** claims
+  `identity-harness`. `cleanup` says the beacon runs the scenario cleanup a
+  task carries (§1.3.4). `live-output` means the beacon reports each step's
+  command and streams its output when the task asks (§1.3.3). `eal-relay`
+  says the beacon can run a step that calls SimCore's EAL CLI (§1.3.5);
+  `cortexsim-agent eal …` is that subcommand and is only ever started by the
+  beacon, for such a step.
 
 ### 5.2 Poll loop (`beacon.Run`)
 ```
@@ -2600,9 +3206,17 @@ ctx cancelled → return (clean exit)
   background helper left by run N answered run N+1 and the run still read
   SUCCESS. Helpers a step starts in a new session (`runuser -l`, `setsid`) are
   outside the group.
+- **Live output (§1.3.3).** When the task carries `live_output`, the beacon
+  posts a `start` frame with the step's command before the step runs and
+  `chunk` frames while it runs, on all three execution paths (per-step, chained,
+  and the chained path's per-step fallback). The step's pipe writers only
+  append to a bounded buffer; one goroutine per step posts. Chained steps
+  stream line by line as the anchor prints them. On Windows a chained step's
+  live stderr is the raw stream; the stored frame carries the decoded text as
+  before.
 - **Output streaming is real, per-step** (GAP-AGENT-004, closed 2026-06-08). The
   beacon now iterates `task.Steps[]` sequentially and POSTs each step's output to
-  `/output` as it completes (one `/output` POST per step), so the SSE stream and the
+  `/output` as it completes (one stored `/output` POST per step), so the SSE stream and the
   console see incremental progress instead of a single final blob. Identity is
   resolved **agent-side** per step via `identity.ResolveIdentity(username)` (the
   server emits a username string in `step.identity` / `task.identity_context`; the
@@ -2611,23 +3225,27 @@ ctx cancelled → return (clean exit)
 
 ### 5.4 Report
 - `POST /api/runs/{run_id}/output` with combined `=== STDOUT === / === STDERR ===`.
-  Every non-streaming frame now ends with `\n`, so the next frame's `=== STEP`
+  Every stored frame ends with `\n`, so the next frame's `=== STEP`
   header starts a line (before, 4 of 5 frames were glued to the previous
   `--- exit_code=… ---`). Each carries `frame_id` = `"<task_id>:<n>"` (n from 1
   per task; `"<agent_id>:<n>"` with no task), fixed before the first attempt
   so a retry carries the same key; SimCore stores a repeated `(run_id,
-  frame_id)` once (§11). Live streaming chunks carry no `frame_id`.
+  frame_id)` once (§11). Live frames (`kind` set, §1.3.3) carry no `frame_id`
+  and do not use up a number.
+- **Scenario cleanup.** Before `/complete`, a task that carries `cleanup` runs
+  its commands and posts one `=== CLEANUP` frame (§1.3.4).
 - `POST /api/runs/{run_id}/complete` with `{exit_code, summary, steps[], task_id,
-  agent_id}` where summary is
+  agent_id, cleanup?}` where summary is
   `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...` and `steps[]` is the
   per-step host evidence (§1.3.1). `task_id` / `agent_id` are new in round 2;
   SimCore counts a fan-out completion once per task with them (§11).
 - On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
-  interrupted", steps)` (exit 130) then return.
+  interrupted", steps)` (exit 130) then return. A task with `cleanup` first gets
+  up to 30 s to run it (§1.3.4).
 - **Retries (2026-11, BEACON-11).** `/complete` and each step's `/output` retry
   transport errors and 5xx with backoff 1, 2, 4, 8, 16 s: 5 retries, 6 attempts.
   A 409 (`RUN_ALREADY_TERMINAL`) is treated as success; 404 and other 4xx stop
-  at once. Live streaming chunks are not retried. Since round 2 the ladder
+  at once. Live frames (§1.3.3) are sent once and never retried. Since round 2 the ladder
   yields to a shutdown: a stop during a backoff wait buys one final attempt,
   an attempt in flight at (or started after) the stop is cut after 3 s, and
   nothing that fails after the stop is retried. Without a stop the ladder is
@@ -2726,13 +3344,13 @@ authoring TTP routes (gated, UI has TTP authoring affordances behind the env fla
 
 - **Tool adapters** (`docs/tool-adapters.md`): consent gate (`c2_authorized`,
   `simulation_authorized`) enforced in `orchestrator._check_adapter_consent`;
-  adapter catalog consumed by `/api/tools/adapters*`, `/api/scenarios/{id}/infra-hints`,
-  report `tools_used` table, and push-bundle installs.
+  adapter catalog consumed by `/api/tools/adapters*`, report `tools_used`
+  table, and push-bundle installs.
 - **TTP corpus** (`detection_scanner/ttps/`): `Result.ttp_ref` is the join key;
   `/api/ttps/{id}/runs` closes the static-content ↔ live-run loop; orchestrator
   enriches Results from `engine.ttp_catalog`.
 - **IaC generator** (`docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`):
-  `/api/scenarios/{id}/infra-hints` → `/api/infra/generate` handoff.
+  on `feature/scenarios-cloud-posture` since 2026-11-15 (1.4.x).
 - **EAL simulator**: parallel campaign/run lifecycle (`/api/eal/*`) reusing the
   safety-authorization philosophy but a separate executor + status enum.
 - **Credentials** (Phase 9): `IntegrationCredential` referenced by future XSIAM/AWS
@@ -3330,7 +3948,6 @@ elevated install and uninstall phases only. Server rows are verified by host tes
 | `sudo` sweep | POSIX uninstaller | §1.6, *POSIX uninstall*. |
 | Shelf wording | `/api/shelf/compose`, `/api/shelf/resolve` | A bad `server` is worded for "a payload plan" and names the body's `server` field or `?server=`, not the installer's. |
 | Exemption reasons | `GET /api/tools/adapters`, `unstaged_adapters[]` | Rows gain `shelf_backed` and `artifact_exempt {reason_code, reason, revisit}`; `UnstagedAdapter` gains `reason_code`, `revisit`, `tier`. Tiers 1/2/3/5 read `SOURCE_TREE_ON_DISK` / `IAC_PROVISIONED` / `EXTERNAL_ONLY`. The console does not render them yet. |
-| `BAD_INFRA_PARAM` (400) | `POST /api/infra/generate` | §1, SEC-17. |
 
 ### 11.3 Beacon
 

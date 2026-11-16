@@ -52,7 +52,7 @@ const TITLES = {
   'component-engine': /^cortex engine$/i,
   composer: /composer/i,
   preflight: /launch gate/i,
-  coverage: /^dashboards$/i,
+  coverage: /^reports$/i,
   adapters: /^packages$/i,
   streams: /data\s*streams/i,
   uctc: /uc \/ tc index/i,
@@ -71,7 +71,7 @@ const FOREIGN = [
 // The three journeys and Reference are the rail; their tab pages are walked
 // too, because a tab is a page a DC lands on as often as a rail item. Redirect
 // stubs (retired seed pages) render nothing by design, and the legacy aliases
-// (guided/eal/environments/readiness) compose other surfaces and are covered
+// (guided/eal/readiness) compose other surfaces and are covered
 // by their own suites.
 const RAIL = DESTINATIONS.filter((d) => !d.hidden && d.group)
 const WALKED = DESTINATIONS.filter((d) => TITLES[d.id])
@@ -103,14 +103,15 @@ describe('every destination renders itself, and only itself', () => {
 
   it('the rail is the three journeys plus Reference', () => {
     expect(RAIL.map((d) => d.label)).toEqual(
-      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Dashboards', 'Catalog'],
+      ['Get started', 'Components', 'Scenarios', 'Build a chain', 'Launch gate', 'Runs', 'Results', 'Reports', 'Catalog'],
     )
   })
 
   it('retired seed pages redirect instead of rendering', () => {
     const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
     // guided and readiness land on the Launch gate (the MVP merged them into it).
-    expect(retired).toEqual(['agents', 'cli', 'firewall', 'guided', 'readiness', 'scope', 'setup', 'tenants', 'validation'])
+    // environments was the IaC generator's Lab page; it lands on Agents now.
+    expect(retired).toEqual(['agents', 'cli', 'environments', 'firewall', 'guided', 'readiness', 'scope', 'setup', 'tenants', 'validation'])
   })
 
   it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {

@@ -81,14 +81,14 @@ def _seed(session_factory, *ids):
 
 
 def test_list_and_detail_rows_carry_the_star(client, session_factory):
-    # SIM-EDR-006 earns the star in the corpus; SIM-ASM-005 is signal-free (RED).
-    _seed(session_factory, "SIM-EDR-006", "SIM-ASM-005")
+    # SIM-EDR-006 earns the star in the corpus; SIM-TIM-005 is signal-free (RED).
+    _seed(session_factory, "SIM-EDR-006", "SIM-TIM-005")
 
     rows = {r["scenario_id"]: r for r in client.get("/api/scenarios").json()["scenarios"]}
     assert rows["SIM-EDR-006"]["favorite"] is True
     assert rows["SIM-EDR-006"]["favorite_why"][0] == "Runs offline on a lab target"
-    assert rows["SIM-ASM-005"]["favorite"] is False
-    assert rows["SIM-ASM-005"]["favorite_why"] == []
+    assert rows["SIM-TIM-005"]["favorite"] is False
+    assert rows["SIM-TIM-005"]["favorite_why"] == []
 
     detail = client.get("/api/scenarios/SIM-EDR-006").json()
     assert detail["favorite"] is True

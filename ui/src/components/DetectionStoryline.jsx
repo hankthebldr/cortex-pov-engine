@@ -3,7 +3,7 @@ import { isRunUnproven } from './console/runStatus.js'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
-import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile, STEP_FAILED } from '../outcomes.js'
+import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile, notExecutedReason } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -221,23 +221,31 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
             <span className="storyline-observed__reason">{det.outcome_reason}</span>
           )}
         </div>
-      ) : key === 'not_executed' && det.outcome_reason === STEP_FAILED ? (
-        // #323: the step ran and exited non-zero, so its silence says nothing
-        // about Cortex. The exit status is in the row's notes.
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
-          Signal never generated — the step failed on the host, so a miss can't be
-          claimed.
+      ) : key === 'not_executed' && notExecutedReason(det.outcome_reason) ? (
+        // #323, #378: the step failed or timed out, or the steps a correlation
+        // joins sent nothing, so its silence says nothing about Cortex. The
+        // detail is in the row's notes.
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--unproven"
+          title={notExecutedReason(det.outcome_reason).title}
+        >
+          Signal never generated · {notExecutedReason(det.outcome_reason).label}
         </div>
       ) : key === 'not_executed' ? (
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
-          Signal never generated — the run did not complete, so this detection was
-          never put to the test.
-          {det.outcome_reason && <> {det.outcome_reason}</>}
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--unproven"
+          title="The run did not complete, so this detection was never put to the test."
+        >
+          Signal never generated · run did not complete
+          {det.outcome_reason && <> · {det.outcome_reason}</>}
         </div>
       ) : key === 'not_reached' ? (
-        <div className="storyline-detection__awaiting storyline-detection__awaiting--not-reached">
-          Not reached — an earlier step was stopped, so this step never ran.
-          {det.outcome_reason && <> {det.outcome_reason}</>}
+        <div
+          className="storyline-detection__awaiting storyline-detection__awaiting--not-reached"
+          title="An earlier step was stopped, so this step never ran."
+        >
+          Not reached · an earlier step was stopped
+          {det.outcome_reason && <> · {det.outcome_reason}</>}
         </div>
       ) : key === 'missed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--missed">
@@ -246,7 +254,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
       ) : isAwaitingReconcile(status, det) ? (
         <div className="storyline-detection__awaiting">
           <span className="storyline-scan" aria-hidden="true" />
-          Awaiting reconcile — no alert has been judged for this detection yet.
+          No alert judged yet
         </div>
       ) : (
         <div className="storyline-detection__awaiting">

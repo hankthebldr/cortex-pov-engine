@@ -64,8 +64,10 @@ from connectors.measures import (
     kpi_family,
 )
 from engine.outcome import (
+    AGGREGATE_SIGNAL_TYPES,
     EVIDENCE_INCOMPLETE,
     EXCLUDED_FROM_DENOMINATOR,
+    INPUTS_NOT_SENT,
     OUTCOME_DETECTED,
     OUTCOME_MISSED,
     OUTCOME_NOT_EXECUTED,
@@ -73,9 +75,11 @@ from engine.outcome import (
     OUTCOME_PREVENTED,
     SOAK_REASONS,
     PASS_WITHHELD_UNSCOPED,
+    STEP_TIMED_OUT,
     PreventVerdict,
     evaluate_prevent,
     resolve_module_mode,
+    sent_nothing,
     silent_detect_verdict,
     is_hit,
     soak_pending_reason,
@@ -1726,7 +1730,11 @@ async def _judge_silent_results(
     * #323: an ``exited`` step whose ``exit_codes`` entry is non-zero failed on
       the host: its silent ``detect`` rows (and ``prevent`` rows scored as a
       detect) are ``not_executed`` / ``STEP_FAILED`` (``TOOL_ABSENT`` for exit
-      127), never ``missed``, with the exit status in the row's notes.
+      127), never ``missed``, with the exit status in the row's notes. A
+      ``timeout`` step reads ``not_executed`` / ``STEP_TIMED_OUT`` the same way.
+    * #378: a silent Correlation row that would read ``missed`` reads
+      ``not_executed`` / ``INPUTS_NOT_SENT`` when every row it joins sent
+      nothing (:func:`_inputs_sent_nothing`).
 
     Rows already ``not_reached`` / ``not_executed`` are never touched, nor is
     any row already judged beyond ``pending``.
@@ -1734,6 +1742,7 @@ async def _judge_silent_results(
     now = datetime.utcnow()  # naive UTC, exactly as executed_at is stored
     by_type = window_by_type()
     first_run_seen: Optional[set] = None
+    order: Optional[dict[str, int]] = None
     for r in results:
         if r.observed or r.executed_at is None:
             continue
@@ -1782,7 +1791,7 @@ async def _judge_silent_results(
                     EVIDENCE_INCOMPLETE)
             _write_prevent(r, pv)
             if pv.outcome == OUTCOME_NOT_EXECUTED:
-                _note_failed_step(r, exit_code)
+                _note_not_executed(r, pv.reason, exit_code)
         else:
             # A `detect` expectation: silent after its window closed is a miss
             # -- WRITTEN, so no surface infers it from `observed=False` (R4/R7)
@@ -1798,21 +1807,70 @@ async def _judge_silent_results(
             if judged is None:
                 continue
             outcome, reason = judged
+            if outcome == OUTCOME_MISSED and r.signal_type in AGGREGATE_SIGNAL_TYPES:
+                if order is None:
+                    order = await _step_order(db, run, results)
+                if _inputs_sent_nothing(r, results, order, terminations, exit_codes or {}):
+                    outcome, reason = OUTCOME_NOT_EXECUTED, INPUTS_NOT_SENT
             if outcome == OUTCOME_MISSED and not evidence_complete:
                 outcome, reason = OUTCOME_PENDING, EVIDENCE_INCOMPLETE
             r.outcome = outcome
             r.outcome_reason = reason
             if outcome == OUTCOME_NOT_EXECUTED:
-                _note_failed_step(r, exit_code)
+                _note_not_executed(r, reason, exit_code)
 
 
-def _note_failed_step(r: Any, exit_code: Optional[int]) -> None:
-    """Say in words why a silent row on a failed step is not a miss (#323).
+async def _step_order(db: AsyncSession, run: Run, results: list[Result]) -> dict[str, int]:
+    """Each step's position in the run: the launched scenario's step order,
+    then any step it does not list, in the order its rows were seeded."""
+    scenario = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
+    ids = [s.get("id") for s in (getattr(scenario, "steps", None) or []) if isinstance(s, dict)]
+    ids += [r.step_id for r in sorted(results, key=lambda x: x.id or 0)]
+    order: dict[str, int] = {}
+    for step_id in ids:
+        order.setdefault(step_id, len(order))
+    return order
 
-    The row's reason is a code (``STEP_FAILED`` / ``TOOL_ABSENT``); the note
-    carries the host's exit status into the report and the console.
+
+def _inputs_sent_nothing(r: Any, results: list, order: dict[str, int],
+                         terminations: dict[str, Any],
+                         exit_codes: dict[str, Optional[int]]) -> bool:
+    """True when every row a Correlation row ``r`` joins sent nothing (#378).
+
+    The corpus does not say which detections a correlation fuses: the card's
+    rule logic is prose, and ``causality.parent_step`` is a process or entity
+    edge that leaves out some inputs. So the inputs are every non-Correlation
+    row on an earlier step of the run, and on ``r``'s own step. Each is judged
+    by :func:`engine.outcome.sent_nothing`; a row an alert matched without a
+    host to scope it (``UNSCOPED_MATCH``) is not silent. No input row: False.
     """
-    note = f"the step failed on the host (exit {exit_code}), so a miss can't be claimed"
+    mine = order[r.step_id]
+    inputs = [x for x in results if x.signal_type not in AGGREGATE_SIGNAL_TYPES
+              and order.get(x.step_id, mine + 1) <= mine]
+    return bool(inputs) and all(
+        x.outcome_reason != UNSCOPED_MATCH and sent_nothing(
+            x.outcome, x.observed, terminations.get(x.step_id), exit_codes.get(x.step_id))
+        for x in inputs)
+
+
+#: The words a silent row's notes carry for each ``not_executed`` reason the
+#: silent-row judgement writes. A failed step's carries its exit status.
+_NOT_EXECUTED_NOTES = {
+    STEP_TIMED_OUT: "the step timed out on the host, so a miss can't be claimed",
+    INPUTS_NOT_SENT: "the steps it joins sent nothing, so a miss can't be claimed",
+}
+
+
+def _note_not_executed(r: Any, reason: Optional[str], exit_code: Optional[int]) -> None:
+    """Say in words why a silent row is not a miss (#323, #378).
+
+    The row's reason is a code (``STEP_FAILED`` / ``TOOL_ABSENT`` /
+    ``STEP_TIMED_OUT`` / ``INPUTS_NOT_SENT``); the note carries it, and a
+    failed step's exit status, into the report and the console.
+    """
+    note = _NOT_EXECUTED_NOTES.get(reason) or (
+        f"the step failed on the host (exit {exit_code}), so a miss can't be claimed")
     if note not in (r.notes or ""):
         r.notes = ((r.notes + " | ") if r.notes else "") + note
 

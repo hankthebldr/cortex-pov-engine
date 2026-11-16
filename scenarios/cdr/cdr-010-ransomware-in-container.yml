@@ -76,7 +76,8 @@ steps:
   - id: step-01
     name: "Locate host-root mount via /proc/self/mountinfo (escape recon)"
     command: |
-      grep ' / ' /proc/self/mountinfo | awk '{print $4}' | head -1 | tee /tmp/cortexsim-hostfs.txt
+      rm -rf /tmp/cortexsim-cdr-010 && mkdir -m 700 /tmp/cortexsim-cdr-010 || { echo "sandbox /tmp/cortexsim-cdr-010 could not be created fresh: something else is at that path" >&2; exit 1; }
+      grep ' / ' /proc/self/mountinfo | awk '{print $4}' | head -1 | tee /tmp/cortexsim-cdr-010/cortexsim-hostfs.txt
       echo "[*] host-root mount candidate located — chroot escape stubbed for safety [truncated]"
     identity: root
     mitre_technique: "T1611"
@@ -90,7 +91,8 @@ steps:
   - id: step-02
     name: "chroot into host-root mount (escape primitive, stubbed)"
     command: |
-      HOST_FS="$(cat /tmp/cortexsim-hostfs.txt 2>/dev/null || echo /host)"
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-cdr-010 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-cdr-010 is missing or not ours: step-01 did not complete" >&2; exit 1; }
+      HOST_FS="$(cat /tmp/cortexsim-cdr-010/cortexsim-hostfs.txt 2>/dev/null || echo /host)"
       echo "[CortexSim] simulating: chroot $HOST_FS /bin/bash — escape stubbed, no host change [truncated]"
     identity: root
     mitre_technique: "T1611"
@@ -148,7 +150,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/cortexsim-ransim.* /tmp/cortexsim-hostfs.txt"
+    - "rm -rf /tmp/cortexsim-ransim.* /tmp/cortexsim-cdr-010"
     - "echo '[CortexSim] SIM-CDR-010 cleanup complete'"
 
 author: "Henry Reed"

@@ -18,8 +18,8 @@ proven against the real evaluator:
 * No tenant / dry run / transport error is ``pending``, never ``pass`` and never a
   benign ``not_applicable``.
 * Both are bound to a live POS row in the index and load clean under strict refs.
-* POS-KSPM-003 is the only NET-NEW binding; POS-CSPM-004 re-binds an already-authored
-  row (breadth, not coverage) and says so in its own scope block.
+* Both bindings are NET-NEW on this branch: POS-CSPM-001, which authored
+  TC-CSPM-02 against the AWS cspm module, moved to feature/scenarios-cloud-posture.
 """
 
 import os
@@ -40,11 +40,10 @@ EXPECTED_BINDINGS = {
     CSPM_004: ("UCS-CSPM-02", "TC-CSPM-02"),
 }
 
-# TC-KSPM-03 carries no scenario binding and no assertion until this pass — the
-# only NET-NEW binding. TC-CSPM-02 is already authored by POS-CSPM-001, so
-# POS-CSPM-004 adds breadth and moves the coverage number by ZERO.
-NET_NEW_TC = {"TC-KSPM-03"}
-ALREADY_AUTHORED_TC = {"TC-CSPM-02"}
+# Neither row has another binder on this branch. TC-CSPM-02 was authored by
+# POS-CSPM-001 against the AWS cspm module until that artifact moved to
+# feature/scenarios-cloud-posture; when it returns, POS-CSPM-004 is breadth again.
+NET_NEW_TC = {"TC-KSPM-03", "TC-CSPM-02"}
 
 CONTEXT = {}
 
@@ -148,16 +147,14 @@ def test_every_artifact_binds_a_live_pos_row(k8s_specs):
         )
 
 
-def test_kspm_03_is_the_only_net_new_binding(k8s_specs):
-    """The honest coverage split: exactly one of the two is a net-new TC binding;
-    the other re-binds a row POS-CSPM-001 already authored and must say so."""
+def test_both_bindings_are_net_new(k8s_specs):
+    """The honest coverage split on this branch: no other artifact binds either
+    row, and POS-CSPM-004 says it does not prove the AWS arm."""
     bound = {spec_of(k8s_specs, aid).tc_ref for aid in ALL_K8S_POS}
-    assert NET_NEW_TC <= bound
-    assert ALREADY_AUTHORED_TC <= bound
-    breadth = spec_of(k8s_specs, CSPM_004)
-    low = breadth.scope_limitations.lower()
-    assert "breadth" in low and ("coverage" in low), (
-        "POS-CSPM-004 must state in its own scope block that it is breadth, not coverage"
+    assert bound == NET_NEW_TC
+    low = spec_of(k8s_specs, CSPM_004).scope_limitations.lower()
+    assert "kubernetes only" in low and "aws arm" in low, (
+        "POS-CSPM-004 must state in its own scope block that it covers Kubernetes only"
     )
 
 

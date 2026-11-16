@@ -74,7 +74,7 @@ void React
  *   gaps       — every test case not yet detected, earliest stall first, each
  *                with one sentence and one verb.
  *
- * AUTHORED IS NOT PROVEN. A test case is covered only once a read-back run of
+ * AUTHORED IS NOT PROVEN. A test case is covered only once a reviewed run of
  * a scenario that evidences it saw a detection (uctcProofPath.js). Every
  * number comes from a SimCore API; a source that did not load reads "Can't
  * check", never zero and never green. No SimCore API reports whether a
@@ -492,7 +492,7 @@ export default function UcTcIndexView({
             <span className="mono">v{String(envelope?.index_version || summary?.index_version || '—').replace(/^v/, '')}</span>:{' '}
             <span className="mono">{summary?.totals?.test_cases ?? envelope?.index_total ?? testCases.length}</span> test cases
             across <span className="mono">{summary?.totals?.use_cases ?? useCases.length}</span> use cases.
-            A test case counts as covered only once a read-back run detected it.
+            A test case counts as covered only once a reviewed run detected it.
           </>
         ) : (
           <>The UC/TC index snapshot is not present on this SimCore, so nothing can
@@ -509,7 +509,7 @@ export default function UcTcIndexView({
         <div className="uctc__modebar-meta mono">
           methodology coverage — for MITRE ATT&amp;CK technique coverage see{' '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-coverage" onClick={() => onNavigate('coverage', { tab: 'mitre' })}>
-            Dashboards →
+            Reports →
           </button>
           {' · '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-ttps" onClick={() => onNavigate('ttps')}>
@@ -721,11 +721,11 @@ function IndexTiles({ tiles, sources }) {
       key: 'partial', value: dash(tiles.partlyProven), label: 'Partly proven', tone: 'partial',
       sub: tiles.partlyProven == null
         ? "Can't check — runs or scenarios did not load"
-        : `at least one test case detected in a read-back run${tiles.proven ? ` · ${tiles.proven} fully` : ''}`,
+        : `at least one test case detected in a reviewed run${tiles.proven ? ` · ${tiles.proven} fully` : ''}`,
     },
     {
       key: 'pending', value: dash(tiles.pending), label: 'Pending',
-      sub: cant ? "Can't check — runs or scenarios did not load" : 'no read-back detection yet',
+      sub: cant ? "Can't check — runs or scenarios did not load" : 'no detection in a reviewed run yet',
     },
     {
       key: 'blocked', value: dash(tiles.blocked), label: 'Blocked', tone: 'blocked',
@@ -796,8 +796,8 @@ function RunsRollup({ tcId, facts, sources }) {
   const parts = [`${facts.total} run${facts.total === 1 ? '' : 's'}`]
   if (facts.running.length) parts.push(`${facts.running.length} in progress`)
   if (facts.waiting.length) parts.push(`${facts.waiting.length} waiting`)
-  if (unread > 0) parts.push(`${unread} not read back`)
-  if (facts.readBack.length) parts.push(`${facts.readBack.length} read back`)
+  if (unread > 0) parts.push(`${unread} not reviewed`)
+  if (facts.readBack.length) parts.push(`${facts.readBack.length} reviewed`)
   return (
     <span className="uctc__runs" data-testid={`uctc-runs-${tcId}`}>
       <span>{parts.join(' · ')}</span>
@@ -1939,7 +1939,7 @@ function CoverageTab({ paths, sources, sourceErrors, onOpenTc }) {
     <div className="uctc__tabpanel" data-testid="uctc-coverage" role="tabpanel" aria-label="Coverage">
       <p className="uctc__tab-lede">
         How far each detection test case has got along the proof path. Only
-        Detected, after a read back, counts as covered: authored is not proven.
+        Detected, after a review, counts as covered: authored is not proven.
         Posture, platform and automation test cases are proven by an assertion
         run instead, so they are not on this path.
       </p>
@@ -1980,7 +1980,7 @@ function CoverageTab({ paths, sources, sourceErrors, onOpenTc }) {
                 <th scope="col">Scenario</th>
                 <th scope="col">Components</th>
                 <th scope="col">Ran</th>
-                <th scope="col">Read back</th>
+                <th scope="col">Reviewed</th>
                 <th scope="col">Detected</th>
               </tr>
             </thead>
@@ -2036,14 +2036,14 @@ function gapWhy(p) {
         ? `${first} has never run, and whether its components are ready can't be checked yet.`
         : `${first} has never run.`
     case 'not_read_back':
-      return `Run ${run} finished but has not been read back, so it has no result.`
+      return `Run ${run} finished but has not been reviewed, so it has no result.`
     case 'not_seen':
-      return `Run ${run} was read back and the tenant has shown none of its detections yet.`
+      return `Run ${run} was reviewed and the tenant has shown none of its detections yet.`
     case 'unknown':
       if (p.unknownSource === 'scenarios-empty') return 'SimCore listed no scenarios, so how far this got can\'t be checked.'
       if (p.unknownSource === 'scenarios') return 'The scenario list did not load, so how far this got can\'t be checked.'
       if (p.unknownSource === 'runs') return 'The run list did not load, so how far this got can\'t be checked.'
-      if (p.unknownSource === 'counts') return `Run ${run} was read back, but SimCore did not report how many detections it saw.`
+      if (p.unknownSource === 'counts') return `Run ${run} was reviewed, but SimCore did not report how many detections it saw.`
       return 'How far this got can\'t be checked.'
     default:
       return ''
@@ -2075,13 +2075,11 @@ function GapAction({ p, reading, actions }) {
   if (p.stall === 'not_read_back' && p.runId) {
     const busy = reading && reading.has && reading.has(p.runId)
     return (
-      <Button onClick={() => actions.readBack(p.runId)} disabled={busy} aria-busy={busy || undefined}>
-        Read back
-      </Button>
+      <Button verb="Review" onClick={() => actions.readBack(p.runId)} disabled={busy} aria-busy={busy || undefined} />
     )
   }
   if ((p.stall === 'not_seen' || (p.stall === 'unknown' && p.unknownSource === 'counts')) && p.runId) {
-    return <Button onClick={() => actions.openResults(p.runId)}>Open results</Button>
+    return <Button verb="Open results" onClick={() => actions.openResults(p.runId)} />
   }
   return null
 }
@@ -2096,7 +2094,7 @@ function GapsTab({ paths, counts, sources, sourceErrors, reading, actions, onOpe
   return (
     <div className="uctc__tabpanel" data-testid="uctc-gaps" role="tabpanel" aria-label="Gaps">
       <p className="uctc__tab-lede">
-        Every detection test case not yet detected in a read-back run, the earliest
+        Every detection test case not yet detected in a reviewed run, the earliest
         stall first. Each says why in one sentence and offers one thing to do.
       </p>
       <SourceNotice sources={sources} errors={sourceErrors} need={['scenarios', 'readiness', 'doors', 'runs']} />
@@ -2143,7 +2141,7 @@ function GapsTab({ paths, counts, sources, sourceErrors, reading, actions, onOpe
             {paths.length === 0
               ? 'The index carries no detection test cases.'
               : all.length === 0
-                ? 'Every detection test case was detected in a read-back run.'
+                ? 'Every detection test case was detected in a reviewed run.'
                 : 'No gaps of this kind.'}
           </li>
         )}

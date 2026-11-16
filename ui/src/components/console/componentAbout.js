@@ -25,7 +25,7 @@ export const ABOUT_LINES = Object.freeze([
 export const COMPONENT_ABOUT = Object.freeze({
   pov: {
     what: 'The engine itself: the SimCore API, this console and the run queue, running in Docker on the jumpbox.',
-    why: 'Every run is dispatched and recorded here, and read back from here once a tenant is connected.',
+    why: 'Every run is dispatched and recorded here, and reviewed from here once a tenant is connected.',
     unlocks: 'Everything. Nothing else works until it is up.',
     where: 'Jumpbox · Docker Compose · port 8888 by default',
   },
@@ -37,8 +37,8 @@ export const COMPONENT_ABOUT = Object.freeze({
   },
   tenant: {
     what: "The customer's Cortex XSIAM / XDR tenant, reached with a read-only API key. POVengine never writes to it.",
-    why: 'Read back asks the tenant which detections fired. Without a tenant, no run is read back.',
-    unlocks: "Read-back: each run's expected detections checked against the tenant's own alerts.",
+    why: 'Review asks the tenant which detections fired. Without a tenant, no run is reviewed.',
+    unlocks: "Review: each run's expected detections checked against the tenant's own alerts.",
     where: 'Cortex › Settings › Configurations › Integrations › API Keys',
   },
   http: {
@@ -54,10 +54,10 @@ export const COMPONENT_ABOUT = Object.freeze({
     where: 'Customer network (VM image) · Cortex › Settings › Configurations › Data Broker › Broker VMs',
   },
   ngfw: {
-    what: "The customer's Palo Alto Networks firewall, registered with a read-only key, and a POV test rule you add. POVengine never writes to it.",
-    why: 'Egress and command-and-control steps have to be seen on the wire; its logs carry that.',
+    what: "The customer's Palo Alto Networks firewall, streaming its logs to Cortex through Strata Logging Service. POVengine reads its policy with a read-only key and never writes to it.",
+    why: 'Egress and command-and-control steps have to be seen on the wire: its traffic, threat and URL logs carry that, and only if its rules log, forward and alert.',
     unlocks: 'NDR egress and C2 test cases, and the endpoint-to-network stitch (network_story).',
-    where: 'PAN-OS · logs go to a Broker VM or Strata Logging Service',
+    where: 'PAN-OS › Cloud Logging → Strata Logging Service → Cortex › Data Sources & Integrations › NGFW',
   },
   xdrc: {
     what: 'The XDR Collector: a light log shipper for hosts that do not run the full XDR agent.',

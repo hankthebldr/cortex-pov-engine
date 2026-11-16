@@ -48,10 +48,6 @@ logs/*.pid
 # only because the file inside happens to be called .env.
 .env-backups/
 
-# IaC generator
-infra/blueprints/*
-!infra/blueprints/.gitkeep
-
 # pytest
 .pytest_cache/
 

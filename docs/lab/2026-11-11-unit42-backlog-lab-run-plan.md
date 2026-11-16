@@ -281,7 +281,7 @@ Two more things about the number:
   hunts), the published IOCs and the three operator-installable BIOCs stay on
   the card. None is an expectation of this run.
 
-### 7. Cleanup (the beacon does not run `cleanup.commands`)
+### 7. Cleanup (a beacon from before #324 does not run `cleanup.commands`)
 
 Step-07 ends the RAT, and it would expire on its own 15 minutes after step-03.
 The sandbox `/var/tmp/.cortexsim-axios` stays on disk, including two copies of

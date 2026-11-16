@@ -19,7 +19,7 @@ substrate and cross-plane stitching.
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | Exists and loads clean under strict validation | 199 scenarios · 28 assertions |
+| **Authored** | Exists and loads clean under strict validation | 187 scenarios · 14 assertions |
 | **Executed** | Has run end-to-end through a beacon or push bundle | partial |
 | **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
 
@@ -30,22 +30,24 @@ four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
 
 ## Current state — counted, not estimated
 
-Copied **2026-11-13** (the 1.2.0 release) from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
+Copied **2026-11-15** (the 1.2.5 release) from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
 which `make ground-truth` regenerates from the real loader and registries, and
 which CI diffs on every push. This page is **not** gated; where it disagrees
 with `ground-truth.md`, that file wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **205** across **16 planes** |
-| Steps · step-detections | **850 · 1452** |
-| TTP detection cards | **203** |
-| Assertion artifacts (POS/PLT/AUT) | **28** (18 · 7 · 3) |
+| Loadable scenarios | **187** across **13 planes** |
+| Steps · step-detections | **779 · 1328** |
+| TTP detection cards | **185** |
+| Assertion artifacts (POS/PLT/AUT) | **14** (5 · 6 · 3) |
 | EAL simulator plugins | **27** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
-| AWS IaC modules | **11** |
-| HTTP routes | **165** decorators · **175** served at boot |
+| HTTP routes | **162** decorators · **172** served at boot |
 | MITRE ATT&CK tactics | **14** |
+
+The CSPM, ASM and AI_SPM planes and the AWS IaC generator moved to
+`feature/scenarios-cloud-posture` for a 1.4.x release; they are not in 1.2.5.
 
 ```bash
 make validate && make check-refs && make coverage-strict
@@ -74,7 +76,7 @@ make validate && make check-refs && make coverage-strict
 ## Repo layout
 
 ```
-core/                  ← SimCore FastAPI app — 166 routes served (156 decorators)
+core/                  ← SimCore FastAPI app — 172 routes served (162 decorators)
   api/                   REST routers
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
@@ -82,22 +84,23 @@ core/                  ← SimCore FastAPI app — 166 routes served (156 decora
   integrations/xsiam/    152-op gated operation catalog (writes preview) + Tier-2 XQL
   eal_simulator/         EAL traffic simulator + 27 plugins
   planes/                declarative PlaneDescriptor registry (15 registered; dlp.py is not)
-  mcp_server/            MCP server, 41 tools (writes preview; opt-in HTTP at /mcp)
+  mcp_server/            MCP server, 54 tools (writes preview; opt-in HTTP at /mcp)
 agent/                 ← Go pull-model beacon (5-target build matrix)
 ui/                    ← React 18 + Vite console
-scenarios/             ← 199 scenario YAMLs, per plane
-assertions/            ← 28 POS/PLT/AUT artifacts
-detection_scanner/ttps ← 197 TTP detection cards
+scenarios/             ← 187 scenario YAMLs, per plane
+assertions/            ← 14 POS/PLT/AUT artifacts
+detection_scanner/ttps ← 185 TTP detection cards
 tools/packs/           ← 91 tool-adapter packs
 payloads/              ← digest-pinned payload shelf
-infra/modules/aws/     ← 11 Terraform modules
 docs/reference/        ← counted ground truth — the authority
 ```
 
 ## Distribution
 
-CortexSim is **build-from-source**. There is no tagged release and no published
-container image — `.github/workflows/release.yml` implements that pipeline and
-fires on a `v*.*.*` tag, but no tag has been cut. See [[Contributing]] for
+CortexSim is **build-from-source**. It ships as tagged
+[GitHub Releases](https://github.com/hankthebldr/cortex-pov-engine/releases)
+(v1.2.5 is the release this page describes; v1.2.4 is the latest tag until it
+merges to `main`). `.github/workflows/release.yml` also pushes an image to
+GHCR, but that image is not publicly pullable, so build it locally. See [[Contributing]] for
 build instructions, or the
 [landing page](https://hankthebldr.github.io/cortex-pov-engine/).

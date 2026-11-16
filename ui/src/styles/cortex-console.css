@@ -1002,21 +1002,6 @@
   background: var(--c-signal);
   box-shadow: 0 0 8px var(--c-signal-glow);
 }
-.theme-console .btn-abort {
-  height: 24px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .btn-abort:hover { color: var(--c-missed); border-color: var(--c-missed); }
 
 /* ─── Workspace (rail + main) ─── */
 .theme-console .workspace {
@@ -1664,129 +1649,6 @@
    Narrative timeline (In-Flight tab — the hero artifact)
    ═══════════════════════════════════════════════════════════════════ */
 
-.theme-console .narrative__header {
-  margin-bottom: 32px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--c-hairline);
-}
-.theme-console .narrative__eyebrow {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-signal);
-  margin-bottom: 8px;
-}
-.theme-console .narrative__title {
-  font-family: var(--font-display);
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--c-text);
-  margin-bottom: 8px;
-  line-height: 1.15;
-}
-.theme-console .narrative__summary {
-  font-family: var(--font-narrative);
-  font-size: 16px;
-  font-weight: 300;
-  line-height: 1.6;
-  color: var(--c-text-secondary);
-  max-width: 720px;
-}
-.theme-console .narrative__summary em {
-  color: var(--c-signal);
-  font-style: normal;
-}
-
-.theme-console .narrative__timeline {
-  position: relative;
-  padding: 40px 0 80px;
-  min-height: 280px;
-}
-
-.theme-console .tl-track {
-  position: absolute;
-  top: 96px;
-  left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg,
-    transparent,
-    var(--c-hairline-strong) 20%,
-    var(--c-hairline-strong) 80%,
-    transparent);
-}
-.theme-console .tl-track-progress {
-  position: absolute;
-  top: 96px;
-  left: 0;
-  height: 1px;
-  background: linear-gradient(90deg, var(--c-signal), var(--c-detected));
-  box-shadow: 0 0 8px var(--c-signal-glow);
-  transition: width 600ms var(--ease-out);
-}
-
-.theme-console .tl-steps {
-  display: grid;
-  gap: 20px;
-  position: relative;
-}
-
-.theme-console .tl-step { position: relative; text-align: center; }
-.theme-console .tl-step__time {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  color: var(--c-text-muted);
-  margin-bottom: 6px;
-}
-.theme-console .tl-step__tid {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  color: var(--c-signal);
-  margin-bottom: 4px;
-}
-.theme-console .tl-step__name {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--c-text);
-  line-height: 1.3;
-  margin-bottom: 20px;
-  min-height: 32px;
-  padding: 0 8px;
-}
-.theme-console .tl-step__node {
-  width: 20px; height: 20px; border-radius: 50%;
-  background: var(--c-surface-raised);
-  border: 2px solid var(--c-signal);
-  margin: 0 auto;
-  position: relative;
-  box-shadow: 0 0 0 4px var(--c-surface);
-}
-.theme-console .tl-step__node::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--c-signal);
-  box-shadow: 0 0 8px var(--c-signal-glow);
-}
-.theme-console .tl-step--pending .tl-step__node {
-  border-color: var(--c-pending);
-  animation: pulse-ring 1.6s var(--ease-in-out) infinite;
-}
-.theme-console .tl-step--pending .tl-step__node::after {
-  background: var(--c-pending);
-  box-shadow: 0 0 8px var(--c-pending);
-}
-.theme-console .tl-step--idle .tl-step__node {
-  border-color: var(--c-hairline-strong);
-}
-.theme-console .tl-step--idle .tl-step__node::after {
-  background: var(--c-hairline-strong);
-  box-shadow: none;
-}
 @keyframes pulse-ring {
   0%, 100% {
     box-shadow: 0 0 0 4px var(--c-surface), 0 0 0 0 var(--c-pending-soft);
@@ -1796,118 +1658,7 @@
   }
 }
 
-.theme-console .tl-step__mttd {
-  margin-top: 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-detected);
-}
-
-.theme-console .tl-step__detections {
-  margin-top: 16px;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.theme-console .tl-det {
-  min-width: 56px;
-  padding: 6px 8px;
-  background: var(--c-surface-raised);
-  border: 1px solid var(--c-hairline);
-  border-radius: 3px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: var(--tracking-mono);
-  color: var(--c-text-muted);
-  text-transform: uppercase;
-  transition: border-color var(--dur-base) var(--ease-out);
-}
-.theme-console .tl-det__plane {
-  display: block;
-  color: var(--c-text-secondary);
-  margin-bottom: 3px;
-}
-.theme-console .tl-det--detected {
-  border-color: var(--c-detected);
-  background: var(--c-detected-soft);
-  color: var(--c-detected);
-}
-.theme-console .tl-det--detected .tl-det__plane { color: var(--c-detected); }
-.theme-console .tl-det--pending {
-  border-color: var(--c-pending);
-  background: var(--c-pending-soft);
-  color: var(--c-pending);
-  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
-}
-.theme-console .tl-det--pending .tl-det__plane { color: var(--c-pending); }
-.theme-console .tl-det--missed {
-  border-color: var(--c-missed);
-  background: var(--c-missed-soft);
-  color: var(--c-missed);
-}
-.theme-console .tl-det--missed .tl-det__plane { color: var(--c-missed); }
-
 /* SVG stitch overlay */
-.theme-console .stitch-svg {
-  position: absolute;
-  left: 0; right: 0; top: 0; bottom: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-.theme-console .stitch-svg .stitch-path {
-  stroke: var(--c-signal);
-  stroke-width: 1.2;
-  stroke-dasharray: 3 4;
-  fill: none;
-  filter: drop-shadow(0 0 4px var(--c-signal-glow));
-  animation: draw-stitch var(--dur-stitch) var(--ease-out) forwards;
-}
-
-.theme-console .narrative__stitch-label {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-signal);
-  background: var(--c-void);
-  padding: 2px 6px;
-  border: 1px solid var(--c-signal-soft);
-  border-radius: 2px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.theme-console .narrative__footer {
-  margin-top: 48px;
-  padding: 24px;
-  background: var(--c-surface-raised);
-  border: 1px solid var(--c-hairline);
-  border-radius: 4px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 20px;
-  align-items: center;
-}
-.theme-console .narrative__footer p {
-  font-family: var(--font-narrative);
-  font-size: 15px;
-  font-weight: 300;
-  color: var(--c-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-}
-.theme-console .narrative__footer strong {
-  color: var(--c-signal);
-  font-weight: 400;
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    Evidence view — KPI row + scorecard
@@ -2034,33 +1785,6 @@
   justify-content: space-between;
   gap: 12px;
 }
-.theme-console .scorecard__status {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  border-radius: 3px;
-  border: 1px solid transparent;
-}
-.theme-console .scorecard__status--detected {
-  color: var(--c-detected);
-  background: var(--c-detected-soft);
-  border-color: rgba(79, 209, 161, 0.32);
-}
-.theme-console .scorecard__status--missed {
-  color: var(--c-missed);
-  background: var(--c-missed-soft);
-  border-color: rgba(249, 112, 102, 0.32);
-}
-.theme-console .scorecard__status--pending {
-  color: var(--c-pending);
-  background: var(--c-pending-soft);
-  border-color: rgba(245, 165, 36, 0.32);
-}
 
 /* per-row validate buttons */
 .theme-console .scorecard__row-actions {
@@ -2070,42 +1794,6 @@
   transition: opacity var(--dur-fast) var(--ease-out);
 }
 .theme-console .scorecard__row:hover .scorecard__row-actions { opacity: 1; }
-
-.theme-console .row-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--c-text-secondary);
-  background: var(--c-surface);
-  border: 1px solid var(--c-hairline);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .row-action:hover {
-  color: var(--c-signal);
-  border-color: var(--c-signal);
-}
-.theme-console .row-action--detected:hover {
-  color: var(--c-detected);
-  border-color: var(--c-detected);
-}
-.theme-console .row-action--missed:hover {
-  color: var(--c-missed);
-  border-color: var(--c-missed);
-}
-
-/* ─── Inflight: capture wrapper for screenshot ─────────────────────── */
-.theme-console .narrative__capture {
-  /* nothing visible; just a stable target for html-to-image */
-  background: var(--c-void);
-  padding: 0;
-  border-radius: 4px;
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    Pin button + pinned-state visuals
@@ -3276,26 +2964,6 @@
   color: var(--c-signal);
   word-break: break-all;
 }
-.theme-console .detection-drawer__copy {
-  height: 22px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out),
-              border-color var(--dur-fast) var(--ease-out);
-  flex-shrink: 0;
-}
-.theme-console .detection-drawer__copy:hover {
-  color: var(--c-signal);
-  border-color: var(--c-signal);
-}
 
 .theme-console .detection-drawer__hint {
   font-size: 9px;
@@ -3659,213 +3327,10 @@
    Event Stream — live agent stdout/stderr viewer
    ═══════════════════════════════════════════════════════════════════ */
 
-.theme-console .event-stream {
-  margin: 28px 0 0;
-  background: var(--c-surface-raised);
-  border: 1px solid var(--c-hairline);
-  border-radius: 4px;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto 1fr;
-}
-.theme-console .event-stream--compact {
-  max-height: 280px;
-}
+/* Level filters and Pause / Clear are kit Buttons (povengine-kit.css); this
+   only makes them the stream head's compact size. */
 
-.theme-console .event-stream__head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--c-surface);
-  border-bottom: 1px solid var(--c-hairline);
-}
-.theme-console .event-stream__title {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.theme-console .event-stream__title-text {
-  font-size: 11px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-muted);
-}
-.theme-console .event-stream__mode {
-  padding: 1px 6px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  border-radius: 2px;
-  text-transform: uppercase;
-}
-.theme-console .event-stream__mode--live {
-  color: var(--c-detected);
-  background: var(--c-detected-soft);
-  animation: pulse-pending 1.6s var(--ease-in-out) infinite;
-}
-.theme-console .event-stream__mode--poll {
-  color: var(--c-pending);
-  background: var(--c-pending-soft);
-}
-.theme-console .event-stream__mode--err {
-  color: var(--c-missed);
-  background: var(--c-missed-soft);
-}
-
-.theme-console .event-stream__filters {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-}
-.theme-console .event-stream__filter {
-  height: 20px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-disabled);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__filter:hover {
-  border-color: var(--c-text-muted);
-  color: var(--c-text-secondary);
-}
-.theme-console .event-stream__filter.is-active {
-  color: var(--c-text);
-  border-color: var(--c-text-secondary);
-  background: var(--c-surface);
-}
-.theme-console .event-stream__filter--info.is-active   { color: var(--c-text);     border-color: var(--c-text); }
-.theme-console .event-stream__filter--step.is-active   { color: var(--c-signal);   border-color: var(--c-signal); background: var(--c-signal-soft); }
-.theme-console .event-stream__filter--detect.is-active { color: var(--c-detected); border-color: var(--c-detected); background: var(--c-detected-soft); }
-.theme-console .event-stream__filter--warn.is-active   { color: var(--c-pending);  border-color: var(--c-pending); background: var(--c-pending-soft); }
-.theme-console .event-stream__filter--error.is-active  { color: var(--c-missed);   border-color: var(--c-missed); background: var(--c-missed-soft); }
-
-.theme-console .event-stream__controls {
-  display: flex;
-  gap: 6px;
-}
-.theme-console .event-stream__btn {
-  height: 22px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-secondary);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__btn:hover {
-  border-color: var(--c-signal);
-  color: var(--c-signal);
-}
-
-.theme-console .event-stream__scroller {
-  position: relative;
-  overflow-y: auto;
-  padding: 8px 14px;
-  background: var(--c-void);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  max-height: 240px;
-}
-
-.theme-console .event-stream__lines {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.theme-console .event-stream__line {
-  display: grid;
-  grid-template-columns: 70px 56px auto 1fr;
-  gap: 10px;
-  align-items: baseline;
-  padding: 1px 0;
-  color: var(--c-text-secondary);
-}
-.theme-console .event-stream__line:hover {
-  background: var(--c-signal-soft);
-}
-.theme-console .event-stream__ts {
-  color: var(--c-text-disabled);
-  font-size: 10px;
-}
-.theme-console .event-stream__level {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-align: center;
-}
-.theme-console .event-stream__level--info   { color: var(--c-text-muted); }
-.theme-console .event-stream__level--step   { color: var(--c-signal); }
-.theme-console .event-stream__level--detect { color: var(--c-detected); font-weight: 600; }
-.theme-console .event-stream__level--warn   { color: var(--c-pending); }
-.theme-console .event-stream__level--error  { color: var(--c-missed); }
-
-.theme-console .event-stream__step {
-  font-size: 9px;
-  color: var(--c-text-disabled);
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-}
-
-.theme-console .event-stream__msg {
-  color: var(--c-text);
-  word-break: break-word;
-}
-.theme-console .event-stream__line--detect .event-stream__msg { color: var(--c-detected); }
-.theme-console .event-stream__line--error  .event-stream__msg { color: var(--c-missed); }
-.theme-console .event-stream__line--warn   .event-stream__msg { color: var(--c-pending); }
-
-.theme-console .event-stream__synthetic-flag {
-  display: inline-block;
-  margin-right: 4px;
-  color: var(--c-accent-violet);
-  cursor: help;
-}
-
-.theme-console .event-stream__empty {
-  padding: 20px;
-  text-align: center;
-  color: var(--c-text-muted);
-  font-size: 11px;
-  letter-spacing: var(--tracking-mono);
-}
-
-.theme-console .event-stream__jump-live {
-  position: sticky;
-  bottom: 6px;
-  left: 50%;
-  display: block;
-  margin: 6px auto 0;
-  padding: 4px 14px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-void);
-  background: var(--c-signal);
-  border: 0;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4),
-              0 0 0 3px var(--c-signal-soft);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-.theme-console .event-stream__jump-live:hover {
-  background: color-mix(in srgb, var(--c-signal) 92%, white);
-}
+/* A settled run's stored output, one block per step (#340). */
 
 /* ═══════════════════════════════════════════════════════════════════
    Confirm dialog (destructive-action confirmation modal)
@@ -4329,28 +3794,11 @@
   --fs-display-lg:  40px;
   --fs-label:       12px;
 }
-.theme-console--theater .event-stream__synthetic-flag { display: none; }
 .theme-console--theater .cs-hints { opacity: 0.4; }
 
 /* Narrative timeline gets bigger nodes in theater mode — the timeline
    is the demo's hero artifact; make it readable from the back of the
    conference room. */
-.theme-console--theater .tl-step__node {
-  width: 28px; height: 28px;
-  box-shadow: 0 0 0 6px var(--c-surface);
-}
-.theme-console--theater .tl-step__node::after {
-  inset: 5px;
-}
-.theme-console--theater .tl-step__name {
-  font-size: 14px;
-  min-height: 40px;
-}
-.theme-console--theater .tl-det {
-  min-width: 72px;
-  padding: 8px 10px;
-  font-size: 10px;
-}
 
 /* Scenario cards get a little more breathing room. */
 .theme-console--theater .scenario-card {
@@ -4737,40 +4185,11 @@
   text-transform: uppercase;
 }
 
-.theme-console .mttd-histogram__empty-state {
-  padding: 14px;
-  font-size: 11px;
-  color: var(--c-text-muted);
-  text-align: center;
-  letter-spacing: var(--tracking-mono);
-}
-
-/* ─── Export menu (split button on Evidence header) ──────────────────── */
+/* ─── Export menu (the Download list on Results) ─────────────────────── */
 
 .theme-console .export-menu {
   position: relative;
   display: inline-block;
-}
-
-.theme-console .export-menu__split {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 0;
-}
-
-.theme-console .export-menu__primary {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  padding-right: 12px;
-}
-
-.theme-console .export-menu__chevron {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  padding-left: 10px;
-  padding-right: 10px;
-  border-left: 1px solid color-mix(in srgb, var(--c-bg-base) 30%, transparent);
-  font-size: 11px;
 }
 
 .theme-console .export-menu__dropdown {
@@ -5423,31 +4842,6 @@
 .theme-console .card-action--danger { margin-left: auto; }
 .theme-console .card-action--danger:hover { color: var(--c-missed); border-color: var(--c-missed); }
 
-/* ─── Launch consent gate (dual-use / c2 adapters) ─── */
-.theme-console .launch-consent {
-  margin: 4px 0 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--c-pending);
-  background: var(--c-pending-soft);
-  border-radius: 4px;
-}
-.theme-console .launch-consent__title {
-  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--c-pending); margin-bottom: 8px;
-}
-.theme-console .launch-consent__row {
-  display: flex; align-items: flex-start; gap: 8px;
-  font-size: 12px; color: var(--c-text-secondary); cursor: pointer; padding: 4px 0;
-}
-.theme-console .launch-consent__row input { margin-top: 2px; accent-color: var(--c-action); }
-.theme-console .launch-consent__row--c2 input { accent-color: var(--c-missed); }
-.theme-console .launch-consent__row strong { color: var(--c-text); }
-/* An unticked gate is the reason Launch is dead — say so on the block itself,
-   not only in the blocker list, so the eye lands on the control to fix. */
-.theme-console .launch-consent--blocking { border-color: var(--c-missed); }
-.theme-console .launch-consent--blocking .launch-consent__title { color: var(--c-missed); }
-.theme-console .launch-consent__flag { opacity: 0.85; }
-
 /* ─── Launch blockers — why the button is disabled ─── */
 .theme-console .launch-blockers {
   list-style: none; margin: 10px 0 0; padding: 0;
@@ -5812,17 +5206,25 @@
 
 /* ── Per-scenario preflight card (inside Launch) ────────────────────── */
 .theme-console .launch-card--preflight { border-left: 2px solid var(--cortex-steel, #6B7E8E); }
-.theme-console .preflight__lede {
-  font-size: 11px; line-height: 1.6; color: var(--c-text-secondary); margin: 4px 0 10px;
-}
 .theme-console .preflight__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .theme-console .preflight__check { border-top: 1px solid var(--c-hairline); padding-top: 8px; }
 .theme-console .preflight__check:first-child { border-top: none; padding-top: 0; }
 .theme-console .preflight__check-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .theme-console .preflight__check-label { font-size: 11.5px; font-weight: 600; color: var(--c-text); }
-.theme-console .preflight__check-summary { font-size: 10.5px; color: var(--c-text-secondary); flex: 1 1 140px; }
-.theme-console .preflight__check-detail { font-size: 11px; line-height: 1.6; color: var(--c-text); margin-top: 4px; }
-.theme-console .preflight__check-fix { font-size: 11px; line-height: 1.6; color: var(--c-pending); margin-top: 3px; }
+.theme-console .preflight__check-summary { font-size: 11px; color: var(--c-text-secondary); flex: 1 1 140px; min-width: 0; }
+/* A check that is not Ready: its line is the toggle; "Why" opens its detail
+   and its fix, a short line each. */
+.theme-console .preflight__why > summary { cursor: pointer; list-style: none; }
+.theme-console .preflight__why > summary::-webkit-details-marker { display: none; }
+.theme-console .preflight__why > summary:focus-visible { outline: 2px solid var(--ac, var(--c-action-bright)); outline-offset: 2px; border-radius: 4px; }
+.theme-console .preflight__why-toggle {
+  flex: none; margin-left: auto; font-size: 11px; font-weight: 600;
+  color: var(--ac-ink, var(--ac, var(--c-action-bright)));
+}
+.theme-console .preflight__why > summary:hover .preflight__why-toggle { text-decoration: underline; }
+.theme-console .preflight__why-body { margin: 5px 0 0; padding-left: 2px; }
+.theme-console .preflight__check-detail { margin: 0; font-size: 11px; line-height: 1.6; color: var(--c-text); }
+.theme-console .preflight__check-fix { margin: 2px 0 0; font-size: 11px; line-height: 1.6; color: var(--c-pending); }
 .theme-console .preflight__unknown {
   margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--c-text-secondary);
   border-left: 2px solid var(--c-text-muted); padding-left: 8px;
@@ -6324,143 +5726,6 @@
 .rv-row__run-id { font-size: 11px; color: var(--cortex-steel); font-family: var(--font-mono); }
 .rv-row__time { font-size: 12px; }
 .rv-row__detail-cell { padding: 4px 16px 4px; background: var(--cortex-light-bg); }
-
-/* ============================================================
-   InfraGenerator (ui/src/components/InfraGenerator.jsx)
-   Inline-style normalization pass — see CLAUDE.md design contract.
-   Rendered outside .theme-console (App.jsx), so these are
-   unscoped, component-owned classes prefixed `infra-`.
-   ============================================================ */
-.infra-module-card {
-  display: flex;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--cortex-border);
-  border-radius: 6px;
-  cursor: pointer;
-  background: var(--cortex-white, #fff);
-  opacity: 1;
-  transition: border-color 0.12s;
-}
-.infra-module-card--checked {
-  border: 2px solid var(--cortex-teal);
-  background: rgba(0, 192, 232, 0.08);
-}
-.infra-module-card--disabled {
-  cursor: not-allowed;
-  opacity: 0.85;
-}
-.infra-module-card__checkbox { margin-top: 4px; }
-.infra-module-card__body { flex: 1; }
-.infra-module-card__head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 3px;
-}
-.infra-module-card__name {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--cortex-navy);
-}
-.infra-module-card__badge { font-size: 10px; }
-.infra-module-card__deps { font-size: 11px; color: var(--cortex-steel); }
-.infra-module-card__desc {
-  font-size: 12px;
-  color: var(--cortex-navy);
-  margin-bottom: 4px;
-}
-.infra-module-card__tools { font-size: 11px; color: var(--cortex-steel); }
-
-.infra-bundle-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--cortex-border);
-}
-.infra-bundle-row__info { flex: 1; }
-.infra-bundle-row__id {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--cortex-teal);
-}
-.infra-bundle-row__meta { font-size: 11px; color: var(--cortex-steel); }
-
-.infra-error {
-  padding: 10px;
-  background: #FEF0F0;
-  border: 1px solid var(--cortex-danger);
-  border-radius: 4px;
-  color: var(--cortex-danger);
-  font-size: 12px;
-  margin-bottom: 12px;
-}
-
-.infra-config-row {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.infra-field { flex: 1; }
-.infra-field-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--cortex-steel);
-}
-.infra-field-label--tight { margin-bottom: 3px; }
-.infra-field-required { color: var(--cortex-danger); }
-
-.infra-provider-buttons { display: flex; gap: 6px; }
-.infra-provider-btn { text-transform: uppercase; }
-
-.infra-region-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--cortex-border);
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.infra-section { margin-bottom: 16px; }
-.infra-module-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 8px;
-}
-.infra-params-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.infra-generate-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 16px;
-}
-.infra-generated {
-  font-size: 12px;
-  color: var(--cortex-success);
-  font-family: var(--font-mono);
-}
-.infra-generated__btn { margin-left: 8px; }
-
-.infra-param-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--cortex-border);
-  border-radius: 4px;
-  font-size: 12px;
-  font-family: inherit;
-}
-.infra-param-input--mono { font-family: var(--font-mono); }
 
 /* ============================================================
    UCTCMapper (ui/src/components/UCTCMapper.jsx)
@@ -7127,19 +6392,7 @@
 .theme-console .run-list__id { font-size: 10px; color: var(--c-text-muted); }
 .theme-console .run-list__started, .theme-console .run-list__agent,
 .theme-console .run-list__duration { font-size: 11px; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-console .run-list__det { font-size: 12px; font-weight: 600; }
-.theme-console .run-list__det--hit { color: var(--c-detected, #6ee7a8); }
-.theme-console .run-list__det--partial { color: var(--c-pending, #f5c451); }
-.theme-console .run-list__det--zero { color: var(--tx2); }
-.theme-console .run-list__det--live { color: var(--cortex-teal, #00C0E8); }
-.theme-console .run-list__det--unproven { color: var(--c-missed, #ff6b6b); font-weight: 500; font-style: italic; }
-.theme-console .run-list__det--none { color: var(--tx3); font-weight: 400; }
 .theme-console .run-list__status { display: flex; justify-content: flex-end; }
-.theme-console .run-list__status-chip { font-size: 10px; }
-.theme-console .run-list__status-chip--live { color: var(--cortex-teal, #00C0E8); }
-.theme-console .run-list__status-chip--done { color: var(--c-detected, #6ee7a8); }
-.theme-console .run-list__status-chip--pending { color: var(--c-pending, #f5c451); }
-.theme-console .run-list__status-chip--unproven { color: var(--c-missed, #ff6b6b); }
 .theme-console .run-list__group { display: flex; flex-direction: column; gap: 6px; }
 .theme-console .run-list__group-toggle {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -7150,7 +6403,6 @@
 .theme-console .run-list__group-toggle:hover { border-color: var(--ac-line); color: var(--tx); }
 .theme-console .run-list__group-what { color: var(--tx2); }
 .theme-console .run-list__group-breakdown { color: var(--tx3); font-size: 10px; }
-.theme-console .run-list__foot { margin-top: 10px; font-size: 10px; color: var(--tx3); }
 
 /* ─── "What ran last" card (leads the Runs & Proof surface) ───
    A left rule rather than a full accent fill: it must read as the most
@@ -7276,30 +6528,12 @@
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
 }
 
-/* ─── InflightView.jsx ─── */
-.theme-console .inflight-empty { padding-top: 80px; }
-.theme-console .inflight-empty__title {
-  font-family: var(--font-display); font-size: 28px; font-weight: 400;
-  color: var(--c-text); margin-bottom: 12px;
-}
-.theme-console .inflight-empty__desc {
-  font-family: var(--font-narrative); font-size: 15px; font-weight: 300;
-  color: var(--c-text-secondary); line-height: 1.6; max-width: 640px;
-}
-.theme-console .inflight-loading-note {
-  padding: 48px; text-align: center; color: var(--c-text-muted);
-  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
-}
-.theme-console .inflight-footer-actions { display: flex; gap: 8px; }
-
 /* ─── AdapterRegistryView.jsx ─── */
 .theme-console .adapter-detail__tag-chip { font-size: 9px; }
 .theme-console .adapter-detail__desc { white-space: pre-line; }
 .theme-console .adapter-detail__techniques { display: flex; flex-wrap: wrap; gap: 4px; }
 .theme-console .adapter-detail__eal-targets { font-size: 11px; color: var(--c-text-secondary); }
 .theme-console .adapter-detail__no-params { color: var(--c-text-muted); font-size: 11px; }
-
-/* ─── NarrativeTimeline.jsx (all three retained inline — see note below) ─── */
 
 /* ─── FilterPalette.jsx ─── */
 .theme-console .filter-palette__empty { padding-bottom: 24px; }
@@ -7352,7 +6586,7 @@
 .theme-console .stack-coverage__cell-actions { display: flex; gap: 8px; }
 
 /* ─── ScenarioPreflightCard.jsx ─── */
-.theme-console .preflight-verdict { margin-left: 8px; }
+.theme-console .preflight-verdict { margin-left: 8px; text-transform: none; letter-spacing: 0; }
 
 /* ─── ScenarioGrid.jsx ─── */
 .theme-console .scenario-grid-empty {

@@ -283,6 +283,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_case_ledger_columns)
         await conn.run_sync(_migrate_alert_attribution_columns)
         await conn.run_sync(_migrate_collector_target_columns)
+        await conn.run_sync(_migrate_run_cleanup_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -556,6 +557,20 @@ def _migrate_case_ledger_columns(connection) -> None:
     existing = {col["name"] for col in inspector.get_columns("runs")}
     if "case_ledger" not in existing:
         connection.execute(text("ALTER TABLE runs ADD COLUMN case_ledger JSON"))
+
+
+def _migrate_run_cleanup_columns(connection) -> None:
+    """Add ``runs.cleanup`` if absent (same ``create_all``-never-adds-a-COLUMN
+    rationale as the helpers above). Nullable JSON: a run from before pull
+    cleanup reads as "no cleanup reported", never as "clean"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("runs")}
+    if "cleanup" not in existing:
+        connection.execute(text("ALTER TABLE runs ADD COLUMN cleanup JSON"))
 
 
 def _migrate_alert_attribution_columns(connection) -> None:

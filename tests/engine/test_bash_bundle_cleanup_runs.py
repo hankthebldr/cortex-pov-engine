@@ -98,7 +98,8 @@ def _kept(d: dict) -> list[str]:
 def test_the_posix_bundle_set_is_not_empty():
     """A zero is degraded, not ok: an empty set would green every check below."""
     assert len(POSIX_BUNDLES) >= 150, len(POSIX_BUNDLES)
-    assert sum(1 for s in POSIX_BUNDLES if _cleanup_lines(CORPUS[s])) >= 150
+    # 147 with cleanup lines once the CSPM/ASM/AI_SPM planes moved off dev (2026-11-15).
+    assert sum(1 for s in POSIX_BUNDLES if _cleanup_lines(CORPUS[s])) >= 140
 
 
 # ---------------------------------------------------------------------------

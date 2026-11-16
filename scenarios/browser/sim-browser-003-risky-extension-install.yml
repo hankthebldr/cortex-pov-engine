@@ -104,7 +104,8 @@ steps:
   - id: step-02
     name: "Attempt sideload via browser_attack_runner; expect policy block"
     command: |
-      cat > /tmp/sim-browser-003-eal.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-browser-003-eal.yml" <<'YML'
       campaign_id: CMP-BROWSER-003
       name: "Browser — risky extension install"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -122,7 +123,7 @@ steps:
             browser_channel: prisma
             headless: true
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-003-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-browser-003-eal.yml" --live
     identity: container-runtime
     mitre_technique: "T1176"
     causality:
@@ -133,7 +134,27 @@ steps:
     # S-28), and it read a campaign file no Windows step ever writes.
     platforms: ["linux", "container", "macos"]
     platform_variants:
-      macos: "python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-003-eal.yml --live  # browser_channel: prisma -> managed-extension policy on macOS"
+      macos: |
+        C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+        cat > "$C/sim-browser-003-eal.yml" <<'YML'
+        campaign_id: CMP-BROWSER-003
+        name: "Browser — risky extension install"
+        authorized_by: "domain-consultant@paloaltonetworks.com"
+        simulation_authorized: true
+        target_allowlist:
+          - chrome.cortexsim-test.invalid
+        dry_run: false
+        tags: [browser, extension, sideload]
+        steps:
+          - step_id: step-01
+            plugin: browser_attack_runner
+            params:
+              campaign_path: scenarios/browser/campaigns/risky-extension-install.yml
+              allowlist_host: chrome.cortexsim-test.invalid
+              browser_channel: prisma
+              headless: true
+        YML
+        python3 -m scripts.eal_simulator.cli run "$C/sim-browser-003-eal.yml" --live  # browser_channel: prisma -> managed-extension policy on macOS
     expected_detections:
       - plane: BROWSER
         type: BIOC
@@ -178,8 +199,7 @@ steps:
         detection_id: xql-browser-attacker-jsonl-records-install-extension-outcome-blocked
 
 cleanup:
-  commands:
-    - "rm -f /tmp/sim-browser-003-eal.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

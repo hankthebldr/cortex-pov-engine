@@ -89,7 +89,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Emit a GlobalProtect gateway-connected session carrying the PoC placeholder fingerprints"
-    command: "mkdir -p /tmp/cortexsim-itdr-012 && printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"185.195.232.139\",\"machine_name\":\"WINDOWS-LAPTOP-001\",\"endpoint_mac\":\"aa:bb:cc:dd:ee:ff\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"guest\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 PoC fingerprint session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-poc-fingerprint-session-emitted"
+    command: "rm -rf /tmp/cortexsim-itdr-012 && mkdir -m 700 /tmp/cortexsim-itdr-012 || { echo \"sandbox /tmp/cortexsim-itdr-012 could not be created fresh: something else is at that path\" >&2; exit 1; }; printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"185.195.232.139\",\"machine_name\":\"WINDOWS-LAPTOP-001\",\"endpoint_mac\":\"aa:bb:cc:dd:ee:ff\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"guest\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 PoC fingerprint session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-poc-fingerprint-session-emitted"
     identity: www-data
     mitre_technique: "T1556"
     platforms: ["linux"]
@@ -112,7 +112,7 @@ steps:
 
   - id: step-02
     name: "Emit a GlobalProtect gateway-connected session from known CVE-2026-0257 exploitation infrastructure"
-    command: "printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"146.19.216.119\",\"machine_name\":\"DESKTOP-GP01\",\"endpoint_mac\":\"00:11:22:33:44:55\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 exploitation-infra session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-exploitation-infra-session-emitted"
+    command: "[ \"$(stat -c %F:%u:%a /tmp/cortexsim-itdr-012 2>/dev/null)\" = \"directory:$(id -u):700\" ] || { echo \"sandbox /tmp/cortexsim-itdr-012 is missing or not ours: step-01 did not complete\" >&2; exit 1; }; printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"146.19.216.119\",\"machine_name\":\"DESKTOP-GP01\",\"endpoint_mac\":\"00:11:22:33:44:55\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 exploitation-infra session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-exploitation-infra-session-emitted"
     identity: www-data
     mitre_technique: "T1190"
     platforms: ["linux"]

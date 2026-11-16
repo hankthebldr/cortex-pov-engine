@@ -103,7 +103,8 @@ steps:
   - id: step-02
     name: "Drive Prisma Browser to phishing page; expect auto-download"
     command: |
-      cat > /tmp/sim-browser-002-eal.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/sim-browser-002-eal.yml" <<'YML'
       campaign_id: CMP-BROWSER-002
       name: "Browser — drive-by download"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -122,7 +123,7 @@ steps:
             headless: true
             timeout_seconds: 90.0
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/sim-browser-002-eal.yml" --live
     identity: container-runtime
     mitre_technique: "T1189"
     causality:
@@ -133,7 +134,28 @@ steps:
     # S-28), and it read a campaign file no Windows step ever writes.
     platforms: ["linux", "container", "macos"]
     platform_variants:
-      macos: "python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live  # browser_channel: prisma -> managed Prisma Browser on macOS (application/x-mach-binary)"
+      macos: |
+        C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+        cat > "$C/sim-browser-002-eal.yml" <<'YML'
+        campaign_id: CMP-BROWSER-002
+        name: "Browser — drive-by download"
+        authorized_by: "domain-consultant@paloaltonetworks.com"
+        simulation_authorized: true
+        target_allowlist:
+          - phish.cortexsim-test.invalid
+        dry_run: false
+        tags: [browser, drive-by, download]
+        steps:
+          - step_id: step-01
+            plugin: browser_attack_runner
+            params:
+              campaign_path: scenarios/browser/campaigns/drive-by-download.yml
+              allowlist_host: phish.cortexsim-test.invalid
+              browser_channel: prisma
+              headless: true
+              timeout_seconds: 90.0
+        YML
+        python3 -m scripts.eal_simulator.cli run "$C/sim-browser-002-eal.yml" --live  # browser_channel: prisma -> managed Prisma Browser on macOS (application/x-mach-binary)
     expected_detections:
       - plane: BROWSER
         type: BIOC
@@ -170,8 +192,7 @@ steps:
         detection_id: xql-pb-wildfire-submission-within-download-policy-mttd
 
 cleanup:
-  commands:
-    - "rm -f /tmp/sim-browser-002-eal.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

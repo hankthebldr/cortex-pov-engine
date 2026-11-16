@@ -37,7 +37,8 @@ _DEFAULT_PORTS = [445, 139, 135]
 
 class SmbRpcSweepParams(BaseModel):
     target_cidr: str = Field(..., description="CIDR or single IP to sweep.")
-    ports: list[int] = Field(default_factory=lambda: list(_DEFAULT_PORTS))
+    # Probes are hosts x ports. max_hosts bounds one side; this bounds the other.
+    ports: list[int] = Field(default_factory=lambda: list(_DEFAULT_PORTS), max_length=256)
     connect_timeout: float = Field(default=1.5, ge=0.1, le=10.0)
     inter_host_delay: float = Field(default=0.05, ge=0.0, le=10.0)
     max_hosts: int = Field(default=256, ge=1, le=4096)

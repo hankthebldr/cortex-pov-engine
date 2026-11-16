@@ -53,7 +53,7 @@ steps:
   - id: "step-01"
     name: "Execute mass database dump of customer records via web identity"
     command: |
-      mkdir -p /tmp/cortex_ddr_dump
+      rm -rf /tmp/cortex_ddr_dump && mkdir -m 700 /tmp/cortex_ddr_dump || { echo "sandbox /tmp/cortex_ddr_dump could not be created fresh: something else is at that path" >&2; exit 1; }
       # Simulate pg_dump command invocation by web process
       python3 -c "
       import os, sys

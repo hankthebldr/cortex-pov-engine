@@ -1,14 +1,14 @@
 /**
- * useReadBack — the console's one "Read back" (design v26 §4.6).
+ * useReadBack — the console's one "Review" (design v26 §4.6).
  *
- * Read back asks SimCore to read the tenant for a finished run
+ * Review asks SimCore to read the tenant for a finished run
  * (POST /api/runs/{id}/reconcile?connector=xsiam): pull the alerts in the
  * run's window, match them to what it expected, score it. It is read-only
  * toward Cortex. While it is in flight the run is `reading`; when it lands the
  * run list is re-read, so the phase comes from what SimCore recorded rather
  * than from this browser's memory.
  *
- * A read back that could not read anything is not a result. With no tenant
+ * A review that could not read anything is not a result. With no tenant
  * credential SimCore answers NO_INTEGRATION, and the run stays unread with
  * that reason beside it — never "ready", never a zero.
  *
@@ -29,23 +29,23 @@ const ReadBackContext = createContext(null)
 export function readBackFailure(err) {
   const code = err && err.code
   if (code === 'NO_INTEGRATION') {
-    return 'No tenant credential is configured, so nothing was read. Configure the tenant, then Read back. This says nothing about the customer’s coverage.'
+    return 'No tenant credential is configured, so nothing was read. Configure the tenant, then Review. This says nothing about the customer’s coverage.'
   }
   if (code === 'CREDENTIAL_ERROR') {
-    return 'The stored tenant credential could not be decrypted (was the master key changed?). Enter it again on Tenant, then Read back.'
+    return 'The stored tenant credential could not be decrypted (was the master key changed?). Enter it again on Tenant, then Review.'
   }
   if (code === 'INTEGRATION_NOT_FOUND') {
-    return 'The tenant integration this read named is not registered. Check Tenant, then Read back.'
+    return 'The tenant integration this read named is not registered. Check Tenant, then Review.'
   }
   if (code === 'CONNECTOR_PULL_FAILED') {
-    return `The tenant read failed: ${err.message || 'no reason given'}. Nothing was read; Read back again once the tenant answers.`
+    return `The tenant read failed: ${err.message || 'no reason given'}. Nothing was read; Review again once the tenant answers.`
   }
-  return `Nothing was read back: ${(err && err.message) || 'SimCore gave no reason'}.`
+  return `Nothing was reviewed: ${(err && err.message) || 'SimCore gave no reason'}.`
 }
 
-/** What a read back that did read the tenant found, in one line. */
+/** What a review that did read the tenant found, in one line. */
 export function readBackSummary(summary) {
-  if (!summary || typeof summary !== 'object') return 'Read back.'
+  if (!summary || typeof summary !== 'object') return 'Reviewed.'
   if (summary.never_delivered) {
     return 'Nothing to read: no step of this run reached its agent.'
   }
@@ -57,7 +57,7 @@ export function readBackSummary(summary) {
   if (Number.isFinite(summary.queries_issued)) {
     parts.push(`${summary.queries_issued} quer${summary.queries_issued === 1 ? 'y' : 'ies'}`)
   }
-  return `Read back from ${from}${parts.length ? ` — ${parts.join(' · ')}` : ''}.`
+  return `Reviewed via ${from}${parts.length ? ` — ${parts.join(' · ')}` : ''}.`
 }
 
 function useReadBackState() {
@@ -85,7 +85,7 @@ function useReadBackState() {
     }
     setOutcomes((prev) => new Map(prev).set(runId, outcome))
     // Re-read the runs first, then leave `reading`: the row must not flash
-    // back to "Read back" before the list says what SimCore recorded.
+    // back to "Review" before the list says what SimCore recorded.
     try { await refreshRuns() } catch { /* the poll will catch up */ }
     setReading((prev) => {
       const next = new Set(prev)

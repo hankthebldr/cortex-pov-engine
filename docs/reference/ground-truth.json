@@ -1,6 +1,6 @@
 {
   "adapters": {
-    "distinct_adapters_wired": 49,
+    "distinct_adapters_wired": 42,
     "packs_by_tier": {
       "1": 3,
       "2": 1,
@@ -9,7 +9,7 @@
       "5": 11
     },
     "packs_total": 91,
-    "scenarios_wiring_adapter": 48,
+    "scenarios_wiring_adapter": 40,
     "tier4_exempt": 48,
     "tier4_exempt_reason_codes": {
       "ARCHIVE_MEMBER_NOT_SELF_CONTAINED": 1,
@@ -25,56 +25,53 @@
     "tier4_undeclared": 0
   },
   "assertions": {
-    "artifacts_total": 28,
+    "artifacts_total": 14,
     "boot_verified": true,
     "by_validation_class": {
       "AUT": 3,
-      "PLT": 7,
-      "POS": 18
+      "PLT": 6,
+      "POS": 5
     },
     "rejected": 0,
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1531,
-    "catalog_detections": 2336,
+    "abioc_analytics_share": 0.1637,
+    "catalog_detections": 2149,
     "catalog_detections_by_kind": {
-      "abioc": 174,
-      "analytics": 366,
-      "bioc": 382,
-      "correlation": 222,
-      "ioc": 475,
+      "abioc": 169,
+      "analytics": 322,
+      "bioc": 370,
+      "correlation": 203,
+      "ioc": 448,
       "modeling": 5,
       "prevention": 3,
-      "xql": 709
+      "xql": 629
     },
-    "correlation_share": 0.1026,
-    "detection_planes": 16,
+    "correlation_share": 0.1032,
+    "detection_planes": 13,
     "methodology_family_counts": {
-      "F1": 141,
+      "F1": 140,
       "F10": 2,
-      "F2": 29,
-      "F3": 9,
-      "F4": 9,
+      "F2": 28,
+      "F3": 1,
+      "F4": 2,
       "F5": 5,
       "F6": 2,
       "F7": 4,
       "F8": 1,
-      "F9": 3
+      "F9": 2
     },
-    "mitre_distinct_base_techniques": 128,
-    "mitre_distinct_techniques": 241,
-    "scenarios_loadable": 205,
+    "mitre_distinct_base_techniques": 125,
+    "mitre_distinct_techniques": 236,
+    "scenarios_loadable": 187,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
-      "AI_SPM": 7,
       "ANALYTICS": 39,
-      "ASM": 6,
       "BROWSER": 6,
       "CDR": 29,
       "CLOUD_APP": 10,
-      "CSPM": 5,
       "DLP": 5,
       "EDR": 29,
       "EMAIL": 5,
@@ -84,17 +81,17 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1452,
+    "step_detections": 1328,
     "step_detections_by_type": {
-      "ABIOC": 166,
+      "ABIOC": 161,
       "Analytics": 56,
-      "BIOC": 374,
-      "Correlation": 149,
-      "IOC": 119,
+      "BIOC": 361,
+      "Correlation": 137,
+      "IOC": 107,
       "Prevention": 2,
-      "XQL": 586
+      "XQL": 504
     },
-    "ttp_cards": 203
+    "ttp_cards": 185
   },
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
@@ -103,28 +100,27 @@
       "G-01": 0,
       "G-02": 2,
       "G-03": 0,
-      "G-04": 1083,
+      "G-04": 972,
       "G-05": 0
     },
-    "scenarios_analyzed": 205,
-    "step_detections_analyzed": 1452
+    "scenarios_analyzed": 187,
+    "step_detections_analyzed": 1328
   },
   "http_routes": {
     "apirouter_instances": 31,
     "by_method": {
       "api_route": 1,
       "delete": 6,
-      "get": 103,
+      "get": 100,
       "post": 47,
       "put": 8
     },
-    "decorator_count": 165,
+    "decorator_count": 162,
     "router_files": 29
   },
-  "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1625,
+    "hq_share": 0.1777,
     "hq_signals": 236,
     "indicators": 95,
     "indicators_not_in_band": 11,
@@ -141,11 +137,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1153,
-    "marker_only_steps": 98,
+    "marker_only_share": 0.1078,
+    "marker_only_steps": 84,
     "scenarios_with_indicators": 16,
-    "step_detections": 1452,
-    "steps": 850,
+    "step_detections": 1328,
+    "steps": 779,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -177,29 +173,29 @@
       "net_new": 3,
       "proven": 0
     },
-    "det_hnt_evidenced": 70,
+    "det_hnt_evidenced": 69,
     "det_hnt_total": 107,
-    "payload_resolved": 205,
+    "payload_resolved": 187,
     "payload_unresolved": 0,
     "plt_assertions": {
-      "artifacts": 7,
-      "bound": 7,
+      "artifacts": 6,
+      "bound": 6,
       "documented_non_bindings": 8,
       "index_rows_total": 43,
-      "net_new": 7,
-      "proven": 0
-    },
-    "pos_assertions": {
-      "artifacts": 18,
-      "bound": 16,
-      "documented_non_bindings": 4,
-      "index_rows_total": 110,
       "net_new": 6,
       "proven": 0
     },
-    "posture_class_primary_s14": 14,
-    "tc_evidenced": 90,
+    "pos_assertions": {
+      "artifacts": 5,
+      "bound": 5,
+      "documented_non_bindings": 4,
+      "index_rows_total": 110,
+      "net_new": 5,
+      "proven": 0
+    },
+    "posture_class_primary_s14": 1,
+    "tc_evidenced": 71,
     "tc_total": 266,
-    "tier_drift_s13": 127
+    "tier_drift_s13": 120
   }
 }

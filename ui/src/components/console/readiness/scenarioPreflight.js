@@ -35,22 +35,16 @@
 import { SUPPLY, supplyOf } from '../supplyState.js'
 import { agentLiveness, LIVENESS } from '../setupProgress.js'
 import { installerOS } from '../deployCommands.js'
-import { readinessKind, classifyDoors, routeBlockedNote } from '../doors/doorModel.js'
+import { readinessKind, classifyDoors } from '../doors/doorModel.js'
 
 export const PF = { PASS: 'pass', WARN: 'warn', BLOCK: 'block', UNKNOWN: 'unknown' }
 
-export const PF_CHIP = {
-  [PF.PASS]: 'chip chip--detected',
-  [PF.WARN]: 'chip chip--pending',
-  [PF.BLOCK]: 'chip chip--missed',
-  [PF.UNKNOWN]: 'chip',
-}
-
-export const PF_LABEL = {
-  [PF.PASS]: 'READY',
-  [PF.WARN]: 'DEGRADED',
-  [PF.BLOCK]: 'BLOCKED',
-  [PF.UNKNOWN]: 'UNKNOWN',
+/** Each severity as a kit StatusIcon status and its one word. */
+export const PF_STATUS = {
+  [PF.PASS]: { status: 'up', word: 'Ready' },
+  [PF.WARN]: { status: 'degraded', word: 'Degraded' },
+  [PF.BLOCK]: { status: 'down', word: 'Blocked' },
+  [PF.UNKNOWN]: { status: 'unknown', word: 'Unknown' },
 }
 
 const SEVERITY = { [PF.PASS]: 0, [PF.UNKNOWN]: 1, [PF.WARN]: 2, [PF.BLOCK]: 3 }
@@ -73,7 +67,7 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  *
  * @param {object} input
  * @param {object|null} input.scenario      full scenario detail
- * @param {object|null} input.target        {kind:'agent'|'push'|'iac', id, label}
+ * @param {object|null} input.target        {kind:'agent'|'push', id, label}
  * @param {Array}       input.agents        /api/agents rows
  * @param {object|null} input.shelf         normalizeShelf() output
  * @param {object}      input.adapterIndex  adapter_id → adapter row
@@ -781,7 +775,7 @@ function measurementCheck(scenario, integrations) {
     return mk('measurement', 'Measurement', PF.WARN,
       `${kpi || 'threshold'} declared · no tenant has answered a probe`,
       `${cortex.length} credential${cortex.length === 1 ? ' is' : 's are'} registered but none has `
-      + 'answered a probe, so read-back may fail at reconcile time. A failure there resolves '
+      + 'answered a probe, so Review may fail at reconcile time. A failure there resolves '
       + '`pending`, never `fail`.',
       'Test the tenant from the Tenants surface before the customer is watching.')
   }
@@ -812,10 +806,13 @@ function isMttdShaped(kpi, threshold) {
 
 // ─── 6 · Data path (advisory) ────────────────────────────────────────────────
 
+// The detail and the fix each read as one short line behind the card's Why.
 const DOOR_CHECKS_LATER = 'Door checks land with the setup steps; until then this is advice, not a finding.'
-const ROUTE_REMEDIATION = 'On a collector route BIOC and IOC never fire, Analytics and ABIOC need an XDM rule, '
-  + 'and XQL and Correlation need the target to write the dataset they query.'
+const ROUTE_REMEDIATION = 'BIOC and IOC never fire on a collector route; Analytics and ABIOC need an XDM rule, '
+  + 'XQL and Correlation the dataset.'
 const NOTHING_CONFIRMED = 'no detection here is confirmed able to fire yet'
+/** Detections on a collector step whose target this console has not resolved. */
+const routeNote = (count, total) => `${count} of ${total} on an unresolved collector route`
 
 /**
  * Which of this scenario's detections can fire, given which ingestion doors are
@@ -867,7 +864,7 @@ export function dataPathCheck(scenario, doorReadiness, doorRows = null, agentId 
       ? `${closedDetections} of ${total} detections will not be scored: ${ids}`
       : `detections behind closed doors will not be scored: ${ids}`)
   }
-  if (rb > 0) parts.push(routeBlockedNote(rb, total))
+  if (rb > 0) parts.push(routeNote(rb, total))
   const remediation = closed.length ? 'Open the closed doors, or accept a partial score.' : ROUTE_REMEDIATION
 
   // Every detection is route-blocked or behind a closed door: none is confirmed

@@ -105,7 +105,8 @@ steps:
   - id: step-02
     name: "Single risky-drive grant request to Okta authorize endpoint"
     command: |
-      cat > /tmp/cloud-001.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-001.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-001
       name: "Cloud App — Okta risky drive grant"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -122,7 +123,7 @@ steps:
             scope_preset: risky_drive
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-001.yml" --live
     identity: container-runtime
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]
@@ -144,7 +145,8 @@ steps:
   - id: step-03
     name: "Repeated grant attempts (x3) to confirm rate-pattern detection"
     command: |
-      cat > /tmp/cloud-001-burst.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/cloud-001-burst.yml" <<'YML'
       campaign_id: CMP-CLOUDAPP-001
       name: "Cloud App — Okta risky grant burst"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -161,7 +163,7 @@ steps:
             iterations: 3
             sleep_seconds: 5
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/cloud-001-burst.yml" --live
     identity: container-runtime
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]
@@ -176,8 +178,7 @@ steps:
         detection_id: xql-cloud-001-okta-repeated-risky-grant-enumeration-burst
 
 cleanup:
-  commands:
-    - "rm -f /tmp/cloud-001.yml /tmp/cloud-001-burst.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-15"

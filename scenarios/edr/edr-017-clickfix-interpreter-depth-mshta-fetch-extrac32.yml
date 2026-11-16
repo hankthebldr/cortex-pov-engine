@@ -116,8 +116,22 @@ steps:
   - id: step-01
     name: "mshta stager model + AV/EDR product discovery via tasklist piped to findstr (real benign LOLBins)"
     command: |
-      $s = Join-Path $env:TEMP 'cortexsim-edr-017'
-      New-Item -ItemType Directory -Force -Path $s | Out-Null
+      $sandbox = Join-Path $env:TEMP 'cortexsim-edr-017'
+      # Windows form of the R2a rule. Whatever is at the path goes (rmdir removes a junction,
+      # not its target), then the folder is made WITH its ACL in one call, so no other account
+      # can open it in between: SYSTEM, Administrators, this account and a marker ACE no other
+      # folder carries. The Get-Acl below refuses anything that was there first; a later step
+      # tells this folder from a planted one with the same Get-Acl.
+      if (Test-Path -LiteralPath $sandbox) { cmd.exe /c rmdir /s /q "$sandbox" }
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      $sd = New-Object System.Security.AccessControl.DirectorySecurity
+      $sd.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;;0x1;;;S-1-9-4243-1017)", [System.Security.AccessControl.AccessControlSections]::Access)
+      $null = [System.IO.Directory]::CreateDirectory($sandbox, $sd)
+      $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+      $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+      if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1017') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1017' }))) { Write-Error "sandbox $sandbox could not be created fresh: something else is at that path"; exit 1 }
+      if (Get-ChildItem -LiteralPath $sandbox -Force) { Write-Error "sandbox $sandbox is not empty: something else is at that path"; exit 1 }
+      $s = $sandbox
       Set-Content -Path (Join-Path $s 'SAFE-MODE-mshta-fetch.marker') -Value 'CortexSim SIM-EDR-017 SAFE-MODE marker: models mshta.exe proxying a remote fetch of an encoded PowerShell downloader (mshta hxxps://iplogger[.]co/xxxxx =+) that hands off to a cmd.exe loader. No fetch performed and mshta is not invoked.'
       # The egress leg runs only against an operator-named lab host. It used to
       # default to 127.0.0.1 inside an empty catch {}: loopback never crosses
@@ -165,7 +179,15 @@ steps:
   - id: step-02
     name: "extrac32 CAB unpack (real benign) + masqueraded signed AutoIt3 (SAFE-MODE model)"
     command: |
-      $s = Join-Path $env:TEMP 'cortexsim-edr-017'
+      $sandbox = Join-Path $env:TEMP 'cortexsim-edr-017'
+      # One Get-Acl: owned by SYSTEM, Administrators or this account, a protected DACL of only
+      # SYSTEM, Administrators, this account and this sandbox's marker. A planted folder fails on
+      # its owner, a junction on its owner or its missing marker, so swapping the two cannot pass.
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      $acl = Get-Acl -LiteralPath $sandbox -ErrorAction SilentlyContinue
+      $ids = if ($acl) { @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }) } else { @() }
+      if (-not ($acl -and $acl.AreAccessRulesProtected -and (@('S-1-5-18', 'S-1-5-32-544', $me) -contains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) -and ($ids -contains 'S-1-9-4243-1017') -and -not ($ids | Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544', $me, 'S-1-9-4243-1017' }))) { Write-Error "sandbox $sandbox is missing or not ours: step-01 did not complete"; exit 1 }
+      $s = $sandbox
       # cmd redirects its own stderr: a PowerShell `2>$null` on a native command
       # turns stderr into a terminating error under Windows PowerShell 5.1 with
       # ErrorActionPreference=Stop (the push bundle's setting).
@@ -210,7 +232,11 @@ steps:
       Write-Host 'cortexsim-edr-017-cr-edr-0017-stitched-lumma-loader-incident'
       # Last step: a pull run never executes scenario cleanup, so the stage
       # directory steps 01-02 wrote is removed here.
-      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path (Join-Path $env:TEMP 'cortexsim-edr-017')
+      # rmdir removes a junction itself, never what it points to. No native command
+      # ran earlier in this step, so its exit code is set back to 0: a folder that
+      # will not go is residue, not a failed step.
+      if (Test-Path -LiteralPath ($s = Join-Path $env:TEMP 'cortexsim-edr-017')) { cmd.exe /c rmdir /s /q "$s" }
+      $global:LASTEXITCODE = 0
     identity: user
     mitre_technique: "T1059.003"
     # Terminal stitch — joins the endpoint loader lineage (steps 01-03) to the
@@ -240,7 +266,7 @@ steps:
 
 cleanup:
   commands:
-    - "Remove-Item -Recurse -Force (Join-Path $env:TEMP 'cortexsim-edr-017') -ErrorAction SilentlyContinue"
+    - "cmd.exe /c if exist \"%TEMP%\\cortexsim-edr-017\" rd /s /q \"%TEMP%\\cortexsim-edr-017\""
     - "Write-Host 'cortexsim-edr-017-cleanup-complete'"
 
 author: "Henry Reed"

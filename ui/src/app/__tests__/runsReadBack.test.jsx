@@ -50,17 +50,17 @@ const posts = (calls) => calls.mock.calls
 
 afterEach(cleanup)
 
-describe('Read back on the Runs list', () => {
-  it('reads the tenant for that run once, showing Reading… while it is in flight', async () => {
+describe('Review on the Runs list', () => {
+  it('reads the tenant for that run once, showing Reviewing… while it is in flight', async () => {
     let answer
     const pending = new Promise((resolve) => { answer = resolve })
     const { calls, refreshRuns } = mount({
       'POST /api/runs/:id/reconcile': () => pending,
     })
     const row = screen.getByTestId('run-row')
-    fireEvent.click(within(row).getByRole('button', { name: 'Read back' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Review' }))
 
-    const busy = await within(row).findByRole('button', { name: 'Reading…' })
+    const busy = await within(row).findByRole('button', { name: 'Reviewing…' })
     expect(busy).toBeDisabled()
     fireEvent.click(busy)
     const sent = posts(calls)
@@ -72,7 +72,7 @@ describe('Read back on the Runs list', () => {
     await waitFor(() => expect(refreshRuns).toHaveBeenCalled())
   })
 
-  it('the page of a run where nothing executed says why and offers Run, not Read back', async () => {
+  it('the page of a run where nothing executed says why and offers Run, not Review', async () => {
     const dry = { ...UNREAD_RUN, run_id: 'run-dry-2', tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }
     installRoutes({})
     render(
@@ -81,23 +81,23 @@ describe('Read back on the Runs list', () => {
       </EnvironmentContext.Provider>,
     )
     const msg = await screen.findByTestId('run-lifecycle-message')
-    expect(msg).toHaveTextContent(/no step that carries a detection ran/i)
-    expect(screen.queryByRole('button', { name: 'Read back' })).toBeNull()
+    expect(msg).toHaveTextContent('No detection step ran — nothing was tested')
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
-  it('without a tenant credential the run stays unread, with the reason, and Read back stays on offer', async () => {
+  it('without a tenant credential the run stays unread, with the reason, and Review stays on offer', async () => {
     mount({
       'POST /api/runs/:id/reconcile': () => new Response(JSON.stringify({
         detail: { error: "configure an integration of kind 'xsiam' or 'xsiam_tenant' first", code: 'NO_INTEGRATION', detail: null },
       }), { status: 400, headers: { 'content-type': 'application/json' } }),
     })
     const row = screen.getByTestId('run-row')
-    fireEvent.click(within(row).getByRole('button', { name: 'Read back' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Review' }))
 
     await within(row).findByText(/no tenant credential is configured/i)
-    expect(within(row).getByRole('button', { name: 'Read back' })).toBeEnabled()
+    expect(within(row).getByRole('button', { name: 'Review' })).toBeEnabled()
     expect(within(row).queryByRole('button', { name: 'Open results' })).toBeNull()
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('not read back')
+    expect(within(row).getByTestId('run-review')).toHaveTextContent('Not reviewed')
   })
 })

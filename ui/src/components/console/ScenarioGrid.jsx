@@ -129,13 +129,21 @@ function ScenarioCard({
         {head}
       </button>
 
+      {/* Facts and actions are two units (#344): the facts shrink and wrap
+          together, the history chip truncates on one line, and Customize and
+          Run never shrink, so neither is clipped at a narrow card. */}
       <div className="sc-footer sc-foot" data-testid="scenario-card-foot">
-        <span className="sc-count">steps <strong className="mono">{steps.length}</strong></span>
-        <span className="sc-count">detections <strong className="mono">{detections}</strong></span>
-        {history && history.count > 0 && <ScenarioHistoryBadge history={history} />}
-        <span className="sc-foot__spacer" />
-        {onCustomize && <Button variant="secondary" onClick={() => onCustomize(id)}>Customize</Button>}
-        {onRun && <Button variant="primary" onClick={() => onRun(id)}>Run</Button>}
+        <span className="sc-foot__facts" data-testid="scenario-card-facts">
+          <span className="sc-count">steps <strong className="mono">{steps.length}</strong></span>
+          <span className="sc-count">detections <strong className="mono">{detections}</strong></span>
+          {history && history.count > 0 && <ScenarioHistoryBadge history={history} />}
+        </span>
+        {(onCustomize || onRun) && (
+          <span className="sc-foot__actions" data-testid="scenario-card-actions">
+            {onCustomize && <Button variant="secondary" verb="Customize" onClick={() => onCustomize(id)} />}
+            {onRun && <Button variant="primary" verb="Run" onClick={() => onRun(id)} />}
+          </span>
+        )}
       </div>
     </article>
   )

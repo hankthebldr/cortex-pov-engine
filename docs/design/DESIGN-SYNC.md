@@ -14,6 +14,7 @@ from drifting apart silently.
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-11-13 · canvas version `1794626399-70f5` ("v33": v26 + changes C1–C10) |
+| Code-side last sync | 2026-11-15 · canvas version `1794768805-384b` (version 36): a CODE STATE note for `dev@845bb2e1` at the top of the page's header comment (below) |
 | Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) · v1.2.0 parity pass (below) · design v26 (2026-11-13, PRs #250–#260) · design v33 C1–C10 + Launch gate MVP (2026-11-13, PRs #286–#308, below) |
 | Last parity audit | 2026-11-12, console at `dev@6029122d`: https://claude.ai/artifact/UeVHFu4TKUCMz4tc4GRgig |
 | Current handoff | **Design v33 → `ui/src`, 2026-11-13:** the canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff, recorded below. v26's own handoff: `docs/design/2026-11-13-v26-design-to-code.md` |
@@ -25,6 +26,85 @@ from drifting apart silently.
 > the owner's live review overrode the canvas, the override is listed below
 > and the canvas is the side that has to catch up.
 
+> **Sync runs both ways (2026-11-15).** Until this date no Code session had
+> written to the canvas. The overrides below reached only this file, which
+> the canvas agent never reads. So the canvas kept drawing v33 while `dev`
+> shipped PRs #317–#371, and today it drew Composer sub-steps on that stale
+> base. The rule from now on:
+>
+> - **Code to canvas.** After each UI merge into `dev`, a Code session
+>   rewrites the **CODE STATE** note at the top of the canvas page's header
+>   comment: rail, verb set, status words, copy and colour rules, what each
+>   page does, owner word rules, and what the canvas has that code does not.
+>   Edit only that comment, never the drawing, and record the new canvas
+>   version in the manifest above.
+> - **Canvas to code.** A canvas change comes to code only through a handoff
+>   note that says what it changes against CODE STATE. Diff the page against
+>   the last copy read, and never port a screen that contradicts CODE STATE
+>   without the owner's word.
+>
+> Open on the canvas at version 36, not built: step sub-steps, palette Add to
+> chain and Add expected detection (no backend model; the sub-step copy uses
+> the banned word "shelf"); Composer draft / WIP / orphan states (to be
+> designed on the existing drafts API).
+
+## Runs, Results, Reports: one job per page (2026-11-15)
+
+Decided by the owner after testing v1.2.0 ("the runs shows the most detail
+that should be in the results … we're not getting attempted runtime logs").
+The canvas should follow this. Slice 2 of three, as built:
+
+| Page | Its one job | What the code does |
+|---|---|---|
+| **Runs › a run** | What was attempted | Lifecycle strip, the chain, Abort, and one panel: the **runtime log** (`RuntimeLog.jsx`, model in `runtimeLog.js`). One block per step: number, name, technique, the account it ran as; the command attempted (the scenario's, or the agent's own record when the run carries `step_starts`); a state as StatusIcon + one word (Queued · Running · Ran · Failed · Timed out · Did not run · Aborted · Staged for a push bundle) with `exit N · duration`; then its output. The chain's cards read the same blocks (`runState.EXEC_VOCABULARY`), so a card and its log block agree. No detection word anywhere on the page or on a Runs row. |
+| **Results** (`#/proof?run=&tab=`) | What Cortex saw, for one run | Result-of bar and switcher, a collapsed "Read with care · N caveats" line, one verdict line, then Detections · Storyline · Techniques · Topology · Causality · Tenant evidence (`ResultsView.jsx`, tab list in `app/resultTabs.js`). The views are the ones that were a run's tabs (put on kit controls and one-line copy in the pass below). Not reviewed: the Review notice, and every detection tab says "Not reviewed". |
+| **Reports** | Everything fired on this engine | Slice 1 (its own change). |
+
+Old run-tab links (`#/runs?run=<id>&tab=evidence|storyline|techniques|
+topology|causality`) forward to `#/proof?run=<id>&tab=<same>`; the router's
+history treats that address as a redirect, so Back never lands on it.
+
+Kit additions in this slice: the verb **Validate all** (icon `check-all`);
+the icons `x` (close a sheet; mark a detection missed) and `check-all`; and a
+sixth StatusIcon status, **running** (● in the accent wash, for a run, a step
+or a review in progress — "Unknown ?" is for what POVengine cannot see).
+
+The beacon reporting each step's start and streaming its output while it runs
+landed after this slice; the pass below is the console's side of it.
+
+### Results on kit, a live runtime log, EAL consent (2026-11-15)
+
+Same owner rules (one short line per state; kit controls only). As built:
+
+| Where | What the code does |
+|---|---|
+| **Runs › a run: live** | A running step shows what it has printed so far: the record's `live_tail` when the page opens, then the stream's chunks, skipped by `seq` when already shown (`liveOutput.js`). The step's stored frame replaces the live text; the two are never shown together. A step the agent announced (`step_starts`, or a start event) reads Running with the agent's command. |
+| **Runs › a run: command preview** | The one line is the first that does something (`runtimeLog.commandLead`): the scratch-folder set-up is skipped (the `mktemp` line, the shared-sandbox create/check lines, the Windows `$sandbox` block). "Show all" shows the whole command. |
+| **Runs › a run: cleanup** | Its own block after the steps: "Cleanup", StatusIcon + Clean · "1 of 3 failed" · Not run · Pending, the commands and their output behind one line. State from `Run.cleanup`, commands from the beacon's `=== CLEANUP` section (the scenario's own until it runs). |
+| **Runs › a run: notice** | One line above the chain for what SimCore said at launch (`runNotices.js`, `RunNotices.jsx`): `TARGET_AGENT_*`, `TARGET_EGRESS_REQUIRED`, `RUNTIME_DEPENDENCY_GAP`, `RUNTIME_INSTALL_NOT_ENABLED`, `CLEANUP_NOT_RUN`, `EAL_RELAY_UNAVAILABLE`, and "Live output needs the new beacon" while a run is live on a beacon without `live-output`. Several notices are still one line, opened in place. SimCore's sentence is the tooltip. These lines are no longer raw notes in the log. |
+| **Results › Detections** | A row's state is StatusIcon + one word from `detectionState.js`: Detected · Prevented · Missed · Pending · Not reached · Not executed · Not reviewed, plus Not prevented (a block that only detected). An unjudged row reads Pending on a reviewed run, Not reviewed otherwise; "Awaiting reconcile" is retired everywhere. Tiles: sentence-case label, one number, at most one line ("3 of 6 detected · 2 not counted"). The MTTD panel is one line when empty. Row actions are icon-only kit buttons; the drawer uses kit buttons and a StatusIcon. |
+| **Results › Techniques, Topology** | No "Run verdict" chip (the verdict line at the top of Results owns it) and no status boilerplate in the totals. Each explanation is one line with its detail in a tooltip. The Storyline's per-detection sentences are one line each, same rule. |
+| **Launch gate: EAL consent** | Shown only when the armed scenario has an EAL step (`channel: eal`, or a command that calls the EAL CLI): one row, "Send live EAL traffic" · "Authorized by" (remembered per browser) · "Includes C2-shaped traffic" (`EalConsentRow.jsx`, `ealConsent.js`). Ticked, the launch sends `consent.simulation_authorized`, `authorized_by` and, with the third box, `consent.c2_authorized`; unticked it sends nothing new. The third box shows with the first: the console has no way yet to ask SimCore which plugins it counts as C2-shaped. |
+| **Launch gate: teardown, prevention context, readiness** | "What it will do › Teardown" names who runs the scenario's cleanup (`newRun.runPlan`, from the chosen agent's `capabilities`): an agent with `cleanup` "run by the agent after the run", one without "run them yourself" (SimCore's `CLEANUP_NOT_RUN`), the offline bundle "run by the bundle" (bash, PowerShell and the k8s bootstrap all run it). Prevention context is a sentence-case group, "Attested, not verified" its one-line description, and **Run canary** a kit Button. Each preflight check is one line, StatusIcon + Ready · Degraded · Blocked · Unknown, the label and its count; a check that is not Ready opens its detail and fix (a short line each) behind "Why"; why they are checked first is the Preflight label's tooltip, not a paragraph. Tool consent (dual-use, C2) is one compact row each, like the EAL row: the tick, one sentence, and StatusIcon "Required" while unticked. **Switch** ("Switch scenario") is a kit Button under What runs. Under the heading, one short line each: "Armed: <id>" (name in the tooltip) and "Tenant, agents and collectors are on Get started." |
+
+Kit additions in this pass: the verbs **Mark detected** (icon `check-circle`),
+**Reset** (icon `repeat`), **Save** (icon `save`) and **Run canary** (icon
+`flask`); the icons `check-circle`, `save` and `flask`; and `Button
+iconOnly`, which draws a verb as its icon alone with the verb as its
+accessible name and tooltip (a row of small actions).
+
+A row offers only the marks `PUT /api/results/{id}/validate` takes
+(`detectionState.rowActions`): Mark detected until it reads Detected, and
+Reset (`observed: false`, a withdrawn hand mark) on a row a hand mark made
+detected. There is no "Mark missed": the API never writes a miss by hand
+(the old ✗ withdrew the mark and left the row Pending), and the old Reset
+sent `observed: null`, which the API rejects.
+
+Removed: `InflightView`, `EventStream`, `NarrativeTimeline`, `useTimelineData`
+(unmounted since the split) and their styles. The verbs Pause and Screenshot
+and the icons `pause`, `camera` and `down` are now unused by any page; they
+stay in the kit.
+
 ## Design v33 — changes C1–C10 and the Launch gate MVP (2026-11-13)
 
 The canvas's "CHANGES SINCE v26" notes (C1–C10) and the owner's v33 handoff
@@ -35,14 +115,14 @@ built. All into `dev`.
 | Change | What the code does | PR |
 |---|---|---|
 | C1 · New POV run on the Launch gate · v33 MVP | The Launch gate (`preflight`) is the one page a run starts from: What runs › Readiness › Where it runs (agents inline with their state; an offline one listed, not choosable; the offline bundle) › What it will do › an authorisation tick that starts unticked › one **Run**, disabled with its reasons listed. Push: Run saves the bundle and records the run (Staged); no separate download. `guided` and `readiness` redirect to it, and every launch link goes straight there. | #299, #307 |
-| C2 · Runs · Compare | Runs header: primary **Run** (the verb set has no "New run") beside Compare runs. Compare picks 2–3 finished runs; only a read-back run may say Detected / Not seen; others say "Ran — not read back" / "Did not run". | #301 |
+| C2 · Runs · Compare | Runs header: primary **Run** (the verb set has no "New run") beside Compare runs. Compare picks 2–3 finished runs; only a reviewed run may say Detected / Not seen; others say "Ran — not reviewed" / "Did not run". | #301 |
 | C2b · Lab target + WAITING runs | **Not built.** The v33 MVP keeps push runs Staged and draws no lab target. The UC/TC page reads an unreported push run as "Waiting" rather than "ran". | — |
 | C3 · VerdictReason | Run detail: a "Test case" line (PENDING + "nothing executed" / "detectors soaking" + the TC + the action sentence) and the Cortex Engine line under the chain. | #291 |
 | C4 · verb fixes | Already on `dev` before this pass. | — |
 | C5 · Catalog | TTP cards filter by **Subdomain** and Tactic (owner override, below). UC/TC: four tiles, verdict as icon + word, a Runs rollup. | #292, #305 |
 | C6 · UC/TC tabs | Index · Mechanisms · Coverage (the five-stage proof path) · Gaps (one verb per row), all from SimCore; mechanism tenant state and door checks read "Can't check" until an API reports them. | #305 |
 | C7 · component explanations | Every component page opens with What it is · Why the POV needs it · What it unlocks · Where it lives, corrected where the canvas copy claimed more than the code does. | #302 |
-| C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a read-back run. | #308 |
+| C8 · Dashboards | A rail item under Run & observe: Detection source × Use case, MITRE ATT&CK (the heatmap ported onto `/api/mitre/coverage`), Planes × doors; detected only from a reviewed run. | #308 |
 | C9 · navigation | Header Back / Forward (⌘[ / ⌘]) over the router's own history, and a clickable breadcrumb journey › page › object. | #303 |
 | C10 · deep-dive thesis + verbs | Scenario, TTP and detection sheets open with "Why this matters" (Thesis · Why we simulate it · What proves it · What it needs) from the documents' own fields; actions are verbs with icons, navigation is links. | #304 |
 | v33 · library completeness + stepper | Every Scenarios card shows UC/TC · Source (its doors) · MITRE; an **Unmapped** filter with its count (205 corpus scenarios: 8 unmapped, all for underived detection sources). The extended library, the 362 staged pairs under `drafts/detection-library/`, is listed read-only (`GET /api/scenarios/staged`): not launchable, not coverage. A Scenarios › Build a chain › Launch gate › Run stepper carries the scenario / run id between the four pages. | #310 |
@@ -69,6 +149,14 @@ Decided by the owner in live review on 2026-11-13; the code follows them.
   Packages is a plain catalog (#279).
 - **Launch.** One page and one Run (the v33 MVP above); C2b's lab target and
   WAITING state are not built.
+- **Launch gate is about one scenario** (2026-11-14). It no longer carries
+  "This POVengine" under the run, which made it read as both "this run" and
+  "the whole app". That status (connector ladder, tenants, attested facts,
+  This SimCore, Not checked) is tracked on Get started, under the setup
+  steps, and the old `readiness` route lands there. The gate states its scope
+  in one line and links to Get started. This takes the alternative to D-1 of
+  the 2026-11-13 one-model spec (which merged Get started into the gate); its
+  server-side readiness model is unaffected.
 
 ### Not built, or found and left (follow-ups)
 
@@ -226,6 +314,19 @@ Dark is the console default. Light is retained as a complete, independent,
 AA-clean token set — see the measured contrast table at the top of
 `cortex-tokens.css`.
 
+## Runs, Results, Reports: slice 1, the Reports rollup (2026-11-15)
+
+Spec: `docs/superpowers/specs/2026-11-15-runs-results-reports-design.md`. This
+slice is the Reports page only; Runs and Results change in slices 2 and 3.
+
+| Change | What the code does |
+|---|---|
+| Dashboards is now Reports | The rail item, the heading, the breadcrumb and ⌘K read **Reports**. The route id stays `coverage`, so `#/coverage` and `?tab=` links keep working. The intro paragraph under the heading is gone. |
+| Executions tab | The first, default tab. One read of `GET /api/reports/executions`: a filter row (24 h · 7 d · 30 d · All, Plane, Status, Agent, Include drafts), a totals strip, and one table switched between By scenario, By technique and By test case. Each scenario row opens its last reviewed run in Results, or the run when none was reviewed. Downloads as CSV and JSON. No Compare runs on this page. The table always fits its card and pins nothing: text longer than its column ends in an ellipsis with the whole text as its tooltip, and on a window too narrow for twelve columns First run gives way (below about 1500 px), then Sources (below about 1400 px); both stay in the downloads. |
+| What it never draws | A detection nobody reviewed as Missed (it reads **Not reviewed**); a scenario that never ran as a row; an empty engine as a table ("No runs yet" and **Run**); a failed read as an empty one. |
+| The library tabs | Detection source × Use case, MITRE ATT&CK, Planes × doors, PANW stack and Competitive follow unchanged. Their scenario strip moved inside the tab, and the library is read only once one of them is opened. |
+| Verbs | The closed set gained one: **Open run** (icon `terminal`), for a scenario with no reviewed run. The downloads use **Download**, which Agents › Fleet added (#339). The whole set is in the Shared constructs row below. |
+
 ## Screen map
 
 Where each surface lives in the code after design v26 (2026-11-13). The rail
@@ -239,7 +340,7 @@ or a link.
 | POVengine | Components › POVengine (API tab generated from OpenAPI) | `component/PovengineComponent.jsx` |
 | Agents | Components › Agents (Fleet tab is the former Agents page) | `component/AgentsComponent.jsx` → `TargetsView.jsx` |
 | Lab | Components › Agents (`#/environments`) | `components/console/LabView.jsx` |
-| Tenant | Components › Tenant (Read-back & integrations tab) | `component/TenantComponent.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
+| Tenant | Components › Tenant (Review & integrations tab) | `component/TenantComponent.jsx` → `TenantManager.jsx` · `CollectorTargetsPanel.jsx` |
 | HTTP collector | Components › HTTP collector | `component/HttpCollectorComponent.jsx` |
 | Broker VM · XDR Collector · Cortex Engine | Components › each ("you confirmed" / Unknown: no SimCore API) | `component/ConfirmedComponents.jsx` |
 | Firewall | Components › Firewall (Setup · Sources tabs) | `component/FirewallComponent.jsx` |
@@ -249,11 +350,11 @@ or a link.
 | Composer node canvas | Compose & simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
 | Launch Gate | Compose & simulate › Launch gate | `components/console/ReadinessView.jsx` |
 | Guided launch | (from Scenarios › Run / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
-| Runs (list → detail) | Run & observe › Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `RunLifecycleStrip.jsx` · `RunChain.jsx` |
-| Broken step troubleshooting sheet | Runs › a run › a Broken card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
+| Runs (list → a run: what was attempted) | Run & observe › Runs | `app/destinations.jsx::RunsSurface` · `RunList.jsx` · `RunDetailView.jsx` · `RunLifecycleStrip.jsx` · `RunChain.jsx` · `RuntimeLog.jsx` · `runtimeLog.js` · `runState.js` · `useRunRecord.js` |
+| Failed step troubleshooting sheet | Runs › a run › a Failed or Timed out card | `components/console/BrokenStepSheet.jsx` · `brokenStep.js` |
 | Runs · Compare | Runs (`?compare=1`) | `components/console/MultiRunCompare.jsx` |
-| Results (Report) | Run & observe › Results ("Result of" bar) | `app/destinations.jsx::ProofSurface` · `ResultOfBar.jsx` · `EvidenceView.jsx` |
-| Dashboards (v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from run read-back only) | Run & observe › Dashboards (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `dashboardModel.js` (read-back state, grids, ATT&CK matrix) |
+| Results (what Cortex saw, one run) | Run & observe › Results (`#/proof?run=&tab=`: Detections · Storyline · Techniques · Topology · Causality · Tenant evidence) | `app/destinations.jsx::ProofSurface` · `ResultsView.jsx` · `app/resultTabs.js` · `ResultOfBar.jsx` · `ResultVerdictLine.jsx` · `RunCaveats.jsx` · `EvidenceView.jsx` (Detections) · `ExportMenu.jsx` (Download) |
+| Reports (Executions: the rollup of every run, by scenario · technique · test case; then v33 C8: Detection source × Use case · MITRE ATT&CK · Planes × doors, plus PANW stack · Competitive; state from reviewed runs only) | Run & observe › Reports (route `#/coverage`, `?tab=`) | `components/console/CoverageView.jsx` · `ReportsExecutions.jsx` · `reportsModel.js` · `api/reports.js` (`GET /api/reports/executions`) · `dashboardModel.js` (the library tabs) |
 | TTP Cards | Reference › Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
 | Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
 | Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
@@ -264,7 +365,7 @@ or a link.
 | Traffic / EAL | (from Scenarios, `#/eal`) | `components/EalConsole.jsx` |
 | About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
 | Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` · `CommandPalette.jsx` |
-| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button |
+| Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon · Icon). Button's `verb` draws the verb's icon (`VERB_ICONS`, design v33 C10); an action that only navigates is a link, not a Button. Verb set (`VERBS`, closed): Configure · Test · Run · Customize · Add to chain · Review · Open results · Abort run (v26 §4.1), plus Deploy · Set active · Download · Copy · Delete · Select · Refresh for Agents › Fleet (#339), and Switch, the header's offer to make an online agent active when the active one is offline (#341), and the Launch gate's Switch scenario. Pause · Clear · Screenshot were the run Live tab's stream and timeline controls (that tab is the runtime log now; the report's Download is on Results). Validate all marks every detection that can be attested, on Results › Detections. Open run is Reports › Executions' action for a scenario with no reviewed run (Download there saves the rollup as CSV or JSON). Run canary starts the known-benign canary from the Launch gate's prevention context. Review is the run's tenant read, `POST /api/runs/{id}/reconcile` (labelled "Read back" through v1.2.0). `Button href` renders the same control as an `<a>` for a file the browser saves (an agent's installer) |
 | Header Back / Forward and breadcrumb (design v33 C9) | header, beside the brand | `HistoryNav.jsx` · `Breadcrumb.jsx` · `app/navHistory.js` (the router's own history) · `app/breadcrumb.js` |
 | Shared constructs | — | `components/console/kit/` (StatusIcon · ErrorBadge · Button · Toast · PageIcon) |
 | Lanes | — | `composerLanes.js` (`ExecutionTimeline.jsx` and `ConsoleStepper.jsx` have no importers; do not model them) |
@@ -272,8 +373,9 @@ or a link.
 | Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-kit.css` · `styles/povengine-minimal.css` |
 
 Retired routes redirect: `setup`, `scope` → Get started; `validation` →
-Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
-Read-back / Sources tab; `readiness` is an alias of the Launch gate.
+Results; a run's former detection tabs (`#/runs?run=<id>&tab=evidence|…`) →
+the same tab of Results; `agents` / `tenants` / `firewall` → the component page's Fleet /
+Review & integrations / Sources tab; `readiness` is an alias of the Launch gate.
 
 All eight slices of the v26 handoff are in `dev` (PRs #250, #252, #253, #254,
 #257, #258, #259, #260, plus the Broken step sheet).

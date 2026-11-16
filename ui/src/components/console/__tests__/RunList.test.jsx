@@ -5,11 +5,12 @@
  * carries the absolute UTC time as its title; filters write URL params
  * (scenario / status) and reset the page; consecutive repeats collapse into
  * a group with a status breakdown and expand in place; the pager label
- * counts the filtered set; a failed run never reads as a detection miss.
+ * counts the filtered set.
  *
  * Design v26 §4.6: each row carries the five-stage lifecycle strip and one
- * action for its phase. No detection claim appears on a run that has not
- * been read back from the tenant.
+ * action for its phase. A row says how the run went (Ran · Failed · …) and
+ * whether it is reviewed, each as a StatusIcon and a word — and never a
+ * detection count or verdict: what Cortex saw is on Results.
  */
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -39,6 +40,8 @@ function run(over) {
   }
 }
 const UNREAD = { tc_verdict_detail: { source: 'complete' } }
+const state = (row) => within(within(row).getByTestId('run-status')).getByRole('img').getAttribute('aria-label')
+const review = (row) => within(row).getByTestId('run-review')
 
 describe('RunList rows', () => {
   it('renders every row field from the run record, with the absolute UTC time as the title', () => {
@@ -50,26 +53,35 @@ describe('RunList rows', () => {
     expect(within(row).getByTestId('run-started').textContent).toMatch(/ago$/)
     expect(row).toHaveTextContent('pov-target-01-41a13a')
     expect(within(row).getByTestId('run-duration')).toHaveTextContent('3.8s')
-    const det = within(row).getByTestId('run-detections')
-    expect(det).toHaveTextContent('3 of 10 detected')
-    expect(det).toHaveAttribute('title', '3 of 10 expected detections observed on this SimCore')
-    expect(within(row).getByTestId('run-status')).toHaveTextContent('complete')
+    expect(state(row)).toBe('Ran')
+    expect(within(review(row)).getByRole('img', { name: 'Reviewed' })).toBeInTheDocument()
+    // What Cortex saw is on Results: the row carries no count and no verdict.
+    expect(row).not.toHaveTextContent(/3 of 10|3 \/ 10|detected|missed/i)
   })
 
   it('names the push bundle as the agent for a push run', () => {
     render(<RunList runs={[run({ mode: 'push', status: 'staged', target: null, expected_detections: 0, detected_count: 0 })]} />)
     const row = screen.getByTestId('run-row')
     expect(row).toHaveTextContent('push bundle')
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('no detections expected')
+    expect(state(row)).toBe('Staged')
     expect(within(row).getByTestId('run-duration')).toHaveTextContent('—')
   })
 
-  it('never renders a failed run with no hits as a detection miss', () => {
+  it('a failed run reads Failed, and says nothing about detections', () => {
     render(<RunList runs={[run({ status: 'failed', detected_count: 0 })]} />)
-    const det = screen.getByTestId('run-detections')
-    expect(det).toHaveTextContent('unproven')
-    expect(det.className).toMatch(/run-list__det--unproven/)
-    expect(screen.getByTestId('run-status').className).toMatch(/--unproven/)
+    const row = screen.getByTestId('run-row')
+    expect(state(row)).toBe('Failed')
+    expect(row).not.toHaveTextContent(/unproven|missed|detected/i)
+  })
+
+  it('its state is a kit StatusIcon, and its controls are kit buttons', () => {
+    render(<RunList runs={[run()]} params={{ status: 'complete' }} />)
+    expect(screen.getByTestId('run-status').querySelector('.kit-status')).not.toBeNull()
+    expect(screen.getByTestId('run-status').querySelector('.chip')).toBeNull()
+    for (const id of ['run-filter-clear', 'run-pager-prev', 'run-pager-next']) {
+      expect(screen.getByTestId(id)).toHaveClass('kit-btn')
+    }
+    expect(document.querySelector('.btn')).toBeNull()
   })
 
   it('opens the run from its scenario cell', () => {
@@ -79,10 +91,6 @@ describe('RunList rows', () => {
     expect(onOpen).toHaveBeenCalledWith('open-me')
   })
 
-  it('states where the counts come from', () => {
-    render(<RunList runs={[run()]} />)
-    expect(screen.getByTestId('run-list')).toHaveTextContent('tenant-verified: 0')
-  })
 })
 
 describe('RunList lifecycle (design v26 §4.6)', () => {
@@ -93,40 +101,41 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
     render(<RunList runs={[run({ run_id: 'f', status: 'failed', ...UNREAD })]} />)
     const words = stageWords(screen.getByTestId('run-row'))
     expect(words).toHaveLength(5)
-    expect(words.map((w) => w.split(':')[0])).toEqual(['Launched', 'Running', 'Failed', 'Read back', 'Results'])
+    expect(words.map((w) => w.split(':')[0])).toEqual(['Launched', 'Running', 'Failed', 'Reviewed', 'Results'])
     expect(words[2]).toMatch(/Failed: failed/)
-    expect(words[3]).toMatch(/Read back: not yet/)
+    expect(words[3]).toMatch(/Reviewed: not yet/)
   })
 
-  it('a running run offers Open, and makes no detection claim yet', () => {
+  it('a running run offers Open, and has no review state yet', () => {
     const onOpen = vi.fn()
     render(<RunList runs={[run({ run_id: 'live', status: 'running', completed_at: null, ...UNREAD })]} onOpen={onOpen} />)
     const row = screen.getByTestId('run-row')
     fireEvent.click(within(row).getByRole('button', { name: 'Open' }))
     expect(onOpen).toHaveBeenCalledWith('live')
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('results after it finishes')
-    expect(within(row).getByTestId('run-detections')).not.toHaveTextContent(/\d+ of \d+|\d+ \/ \d+/)
+    expect(state(row)).toBe('Running')
+    expect(review(row)).toHaveTextContent('—')
+    expect(row).not.toHaveTextContent(/\d+ of \d+|\d+ \/ \d+/)
   })
 
-  it('a finished run nobody read back offers Read back as the primary action and claims nothing', () => {
+  it('a finished run nobody read back offers Review as the primary action and claims nothing', () => {
     const onReadBack = vi.fn()
     render(<RunList runs={[run({ run_id: 'u', ...UNREAD })]} onReadBack={onReadBack} />)
     const row = screen.getByTestId('run-row')
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('not read back')
+    expect(within(review(row)).getByRole('img', { name: 'Not reviewed' })).toBeInTheDocument()
     expect(row).not.toHaveTextContent('3 of 10')
-    const act = within(row).getByRole('button', { name: 'Read back' })
+    const act = within(row).getByRole('button', { name: 'Review' })
     expect(act.className).toMatch(/kit-btn--primary/)
     fireEvent.click(act)
     expect(onReadBack).toHaveBeenCalledWith('u')
   })
 
-  it('while reading, the action reads Reading… and is disabled, and the row keeps its place', () => {
+  it('while reading, the action reads Reviewing… and is disabled, and the row keeps its place', () => {
     render(<RunList runs={[run({ run_id: 'x', scenario_id: 'SIM-EDR-008', ...UNREAD }), run({ run_id: 'u', ...UNREAD })]} reading={new Set(['u'])} />)
     const rows = screen.getAllByTestId('run-row')
     expect(rows.map((r) => r.getAttribute('data-run-id'))).toEqual(['x', 'u'])
-    const btn = within(rows[1]).getByRole('button', { name: 'Reading…' })
+    const btn = within(rows[1]).getByRole('button', { name: 'Reviewing…' })
     expect(btn).toBeDisabled()
-    expect(within(rows[1]).getByTestId('run-detections')).toHaveTextContent('reading back')
+    expect(within(review(rows[1])).getByRole('img', { name: 'Reviewing…' })).toBeInTheDocument()
   })
 
   it('a read-back run offers Open results', () => {
@@ -139,28 +148,29 @@ describe('RunList lifecycle (design v26 §4.6)', () => {
   it('a run that ended before any step ran offers no action', () => {
     render(<RunList runs={[run({ run_id: 'n', status: 'aborted', delivered_at: null, output_bytes: 0, ...UNREAD })]} />)
     const row = screen.getByTestId('run-row')
-    expect(within(row).getByTestId('run-detections')).toHaveTextContent('nothing ran')
-    expect(within(row).queryByRole('button', { name: /read back|open results|^open$/i })).toBeNull()
+    expect(state(row)).toBe('Aborted')
+    expect(review(row)).toHaveTextContent('—')
+    expect(within(row).queryByRole('button', { name: /^review$|open results|^open$/i })).toBeNull()
     expect(within(row).getByTestId('run-action')).toHaveTextContent('—')
   })
 
-  it('a run where no step that carries a detection ran says so and offers no Read back', () => {
+  it('a run where no step that carries a detection ran says so and offers no Review', () => {
     const NOT_EXECUTED = { tc_verdict: 'pending', tc_verdict_detail: { source: 'complete', reason: 'not_executed' } }
     render(<RunList runs={[run({ run_id: 'dry', ...NOT_EXECUTED })]} />)
     const row = screen.getByTestId('run-row')
     expect(row).toHaveAttribute('data-phase', 'nothing')
-    const det = within(row).getByTestId('run-detections')
-    expect(det).toHaveTextContent('nothing executed')
-    expect(det).toHaveAttribute('title', expect.stringMatching(/no step that carries a detection ran/i))
-    expect(within(row).queryByRole('button', { name: /read back|open results/i })).toBeNull()
+    expect(state(row)).toBe('Did not run')
+    expect(within(row).getByTestId('run-status'))
+      .toHaveAttribute('title', expect.stringMatching(/no step that carries a detection ran/i))
+    expect(within(row).queryByRole('button', { name: /^review$|open results/i })).toBeNull()
   })
 
-  it('states why a read back did not happen, and keeps Read back on offer', () => {
+  it('states why a read back did not happen, and keeps Review on offer', () => {
     const outcomes = new Map([['u', { ok: false, message: 'No tenant credential is configured, so nothing was read.' }]])
     render(<RunList runs={[run({ run_id: 'u', ...UNREAD })]} outcomes={outcomes} />)
     const row = screen.getByTestId('run-row')
     expect(row).toHaveTextContent('No tenant credential is configured')
-    expect(within(row).getByRole('button', { name: 'Read back' })).toBeEnabled()
+    expect(within(row).getByRole('button', { name: 'Review' })).toBeEnabled()
   })
 })
 

@@ -231,10 +231,11 @@ steps:
   - id: step-06
     name: "Cloudsplaining IAM least-privilege assessment of the EKS node/cluster roles"
     command: |
-      aws iam get-account-authorization-details --output json > /tmp/iam-authz.json 2>/dev/null || \
-        echo '{"UserDetailList":[],"RoleDetailList":[],"GroupDetailList":[],"Policies":[]}' > /tmp/iam-authz.json
-      cloudsplaining scan --input-file /tmp/iam-authz.json --output /tmp/cloudsplaining 2>&1 | tail -10 || \
-        cloudsplaining scan-policy-file --input-file /tmp/iam-authz.json 2>&1 | tail -10
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      aws iam get-account-authorization-details --output json > "$C/iam-authz.json" 2>/dev/null || \
+        echo '{"UserDetailList":[],"RoleDetailList":[],"GroupDetailList":[],"Policies":[]}' > "$C/iam-authz.json"
+      cloudsplaining scan --input-file "$C/iam-authz.json" --output "$C/cloudsplaining" 2>&1 | tail -10 || \
+        cloudsplaining scan-policy-file --input-file "$C/iam-authz.json" 2>&1 | tail -10
       echo "[*] Cloudsplaining IAM least-privilege assessment complete"
     identity: container-runtime
     mitre_technique: "T1526"
@@ -259,8 +260,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/trivy-image.json /tmp/trivy-iac.json /tmp/exec-enum.txt /tmp/kube-bench.json /tmp/kubescape.json /tmp/gitleaks.json /tmp/secret-files.txt /tmp/iam-authz.json"
-    - "rm -rf /tmp/cloudsplaining"
+    - "rm -f /tmp/trivy-image.json /tmp/trivy-iac.json /tmp/exec-enum.txt /tmp/kube-bench.json /tmp/kubescape.json /tmp/gitleaks.json /tmp/secret-files.txt"
     - "echo '[CortexSim] SIM-CDR-007 cleanup complete'"
   k8s_teardown: "kubectl delete -f {manifest_path}"
 

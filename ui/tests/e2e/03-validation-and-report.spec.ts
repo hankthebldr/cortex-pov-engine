@@ -50,8 +50,8 @@ test('DC validates seeded results and report reflects 100% coverage', async ({
   //    auto-surface as the active run; the report contract above is the
   //    substantive assertion). Confirm the Evidence panel itself renders.
   await page.goto('/')
-  // Evidence is a TAB of a run now, not a top-level view — without the run id
-  //    this lands on the runs list and asserts nothing about the panel.
+  // Evidence is Results, for one run — without the run id this lands on the
+  //    newest reviewed run (or none) and asserts nothing about this one.
   await gotoView(page, 'Evidence', { run: runId })
   await expect(page.locator('.view').first()).toContainText(/Coverage|MTTD|Evidence|Export|no results/i, { timeout: 10_000 })
 })

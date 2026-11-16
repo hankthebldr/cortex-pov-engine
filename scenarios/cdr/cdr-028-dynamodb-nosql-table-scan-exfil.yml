@@ -52,7 +52,7 @@ steps:
   - id: "step-01"
     name: "Execute DynamoDB full table scan simulation"
     command: |
-      mkdir -p /tmp/cortex_ddr_dynamo
+      rm -rf /tmp/cortex_ddr_dynamo && mkdir -m 700 /tmp/cortex_ddr_dynamo || { echo "sandbox /tmp/cortex_ddr_dynamo could not be created fresh: something else is at that path" >&2; exit 1; }
       cat << 'EOF' > /tmp/cortex_ddr_dynamo/dynamodb_full_scan.json
       {
         "TableName": "Production-Customer-Data",

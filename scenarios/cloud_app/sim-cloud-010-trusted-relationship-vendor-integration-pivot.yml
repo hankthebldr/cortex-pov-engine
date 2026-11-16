@@ -141,7 +141,7 @@ steps:
     name: "Trusted access — the consented integration presents its app-only token (no new consent, no interactive sign-in)"
     command: |
       set -u
-      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      D=/tmp/cortexsim-cloud010; rm -rf /tmp/cortexsim-cloud010 && mkdir -m 700 /tmp/cortexsim-cloud010 || { echo "sandbox /tmp/cortexsim-cloud010 could not be created fresh: something else is at that path" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
       APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
       printf '{"run_tag":"%s","event":"token_auth","app_id":"%s","auth_type":"app_only","interactive":false,"consent_age_days":214}\n' "$RUN_TAG" "$APP_ID" > "$D/token-auth.json"
@@ -164,7 +164,7 @@ steps:
     name: "Call-rate and scope-usage deviation — the integration exercises scopes consented long ago and never used"
     command: |
       set -u
-      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      D=/tmp/cortexsim-cloud010; s=$(stat -c %F:%u:%a /tmp/cortexsim-cloud010 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-cloud010 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-cloud010 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
       APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
       for N in $(seq 1 60); do
@@ -196,7 +196,7 @@ steps:
     name: "Object-class novelty — the integration reads record types it has never touched in its operating history"
     command: |
       set -u
-      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      D=/tmp/cortexsim-cloud010; s=$(stat -c %F:%u:%a /tmp/cortexsim-cloud010 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-cloud010 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-cloud010 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
       APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
       for CLASS in ContactFolder SecurityGroup DirectoryRole DriveItem; do
@@ -220,10 +220,10 @@ steps:
     name: "Exfiltration — integration egress to a destination outside its publisher's declared endpoints"
     command: |
       set -u
-      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
       RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
       APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
-      printf '{"run_tag":"%s","event":"egress","app_id":"%s","dest":"198.51.100.77","publisher_declared":false,"bytes_sent":41000000}\n' "$RUN_TAG" "$APP_ID" > "$D/egress.json"
+      printf '{"run_tag":"%s","event":"egress","app_id":"%s","dest":"198.51.100.77","publisher_declared":false,"bytes_sent":41000000}\n' "$RUN_TAG" "$APP_ID" > "$C/egress.json"
       echo cortexsim-cloud010-non-publisher-egress-emitted
     identity: svc-backup
     mitre_technique: "T1567"
@@ -242,7 +242,7 @@ steps:
     name: "BLAST-RADIUS CONTROL — a peer integration with comparable scopes behaves normally and must NOT be swept in"
     command: |
       set -u
-      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      D=/tmp/cortexsim-cloud010; s=$(stat -c %F:%u:%a /tmp/cortexsim-cloud010 2>/dev/null || stat -f %HT:%u:%Lp /tmp/cortexsim-cloud010 2>/dev/null); [ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-cloud010 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
       printf '{"run_tag":"%s","cortexsim_label":"benign","event":"api_call","app_id":"peer-ticketing-sync","operation":"MailItemsAccessed","within_baseline":true}\n' "$RUN_TAG" > "$D/peer-control.json"
       echo cortexsim-cloud010-peer-integration-control-emitted

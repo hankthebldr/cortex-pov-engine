@@ -25,9 +25,9 @@ const states = (lc) => lc.stages.map((s) => s.state)
 
 describe('runLifecycle', () => {
   it('names the five stages in order, the third one after how the run ended', () => {
-    expect(STAGE_LABELS).toEqual(['Launched', 'Running', 'Finished', 'Read back', 'Results'])
+    expect(STAGE_LABELS).toEqual(['Launched', 'Running', 'Finished', 'Reviewed', 'Results'])
     expect(runLifecycle(run({ status: 'failed' })).stages.map((s) => s.label))
-      .toEqual(['Launched', 'Running', 'Failed', 'Read back', 'Results'])
+      .toEqual(['Launched', 'Running', 'Failed', 'Reviewed', 'Results'])
     expect(runLifecycle(run({ status: 'aborted' })).stages[2].label).toBe('Aborted')
   })
 

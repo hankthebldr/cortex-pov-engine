@@ -15,6 +15,7 @@ import {
 } from './app/destinations.jsx'
 import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
 import { breadcrumbFor } from './app/breadcrumb.js'
+import { runsTabRedirect } from './app/resultTabs.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
 import useComponentStatus from './components/console/useComponentStatus.js'
@@ -51,8 +52,10 @@ export default function AppConsole() {
   )
 }
 
-// A retired id that only forwards: the header's Back never lands on one.
-const isRedirectDestination = (id) => getDestination(id)?.redirect === true
+// An address that only forwards: a retired id, or a run's former detection
+// tab (now a tab of Results). The header's Back never lands on one.
+const isRedirectDestination = (id, params) => getDestination(id)?.redirect === true
+  || (id === 'runs' && !!runsTabRedirect(params))
 
 function ConsoleShell() {
   const env = useEnvironment()
@@ -334,6 +337,8 @@ function ConsoleShell() {
         health={env.health}
         tenant={env.tenant}
         agent={env.agent}
+        agents={env.agents}
+        onSwitchAgent={env.setAgent}
         activeNav={navOwner(dest.id)}
         activeChild={componentKeyForRoute(dest.id, router.params)}
         immersive={immersive}

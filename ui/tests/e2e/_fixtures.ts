@@ -30,7 +30,9 @@ type Helpers = {
  *   - most are now first-class destinations in the rail;
  *   - "Launch gate" is a rail item, but a spec arms a scenario with
  *     `?arm=`, so it is reached by route;
- *   - "Live" / "Evidence" became TABS of a run, not top-level views.
+ *   - "Live" is the Runs destination (a run's page, with its runtime log,
+ *     when the spec passes `run`); "Evidence" is Results, whose first tab is
+ *     the detections scorecard.
  *
  * Destination-level views navigate by CLICKING the rail, so the nav itself stays
  * under test. Tab-scoped views go through the hash router, since there is no rail
@@ -44,27 +46,24 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   'Targets': { dest: 'component-agents', params: { tab: 'fleet' }, hidden: true },
   // 'library' is the Scenarios rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
-  // The coverage route is the Dashboards rail item (design C8); its MITRE
+  // The coverage route is the Reports rail item; its MITRE
   // ATT&CK matrix is a tab, fetched when that tab opens, so it is addressed by
   // route with `?tab=mitre`.
   'ATT&CK Coverage': { dest: 'coverage', params: { tab: 'mitre' } },
   // `hidden` means "routable but not in the rail", so gotoView addresses it by
-  // URL instead of clicking a button that does not exist. Three of these are
+  // URL instead of clicking a button that does not exist. Two of these are
   // hidden as of the POVengine IA:
-  //   environments — its content is the Components destination now, but the
-  //                  Lab surface itself is still mounted and still worth
-  //                  testing, so the route stays.
-  //   eal          — same story, folded into Data Streams.
+  //   eal          — folded into Data Streams, but the surface itself is still
+  //                  mounted and still worth testing, so the route stays.
   //   guided       — always was hidden; the optional demo path.
   // Marking them here rather than deleting the specs is deliberate: the
   // surfaces still exist and still have behaviour worth guarding. What changed
   // is how you reach them, and that is exactly what this table is for.
-  'Environments': { dest: 'environments', hidden: true },
   // The Launch gate (design v33): the one place a run starts. The old
   // 'Launch' entry pointed at the guided flow, which now redirects here.
   'Launch gate': { dest: 'preflight' },
-  'Live': { dest: 'runs', params: { tab: 'live' } },
-  'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
+  'Live': { dest: 'runs' },
+  'Evidence': { dest: 'proof' },
   'EAL Plugins': { dest: 'eal', hidden: true },
   // The tool-adapter catalog, relabelled "Packages" in the rail. The
   // destination id is unchanged, which is the point of keeping it: routes,

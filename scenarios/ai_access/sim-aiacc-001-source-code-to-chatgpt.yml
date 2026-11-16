@@ -110,7 +110,8 @@ steps:
   - id: step-02
     name: "Single source-code POST to api.openai.com via EAL plugin"
     command: |
-      cat > /tmp/aiacc-001.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-001.yml" <<'YML'
       campaign_id: CMP-AIACC-001
       name: "AI Access — source paste to OpenAI"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -127,7 +128,7 @@ steps:
             payload_type: source
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-001.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     causality:
@@ -153,7 +154,8 @@ steps:
   - id: step-03
     name: "Repeated POSTs (x3) to confirm stable per-session detection"
     command: |
-      cat > /tmp/aiacc-001-burst.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/aiacc-001-burst.yml" <<'YML'
       campaign_id: CMP-AIACC-001
       name: "AI Access — source paste burst"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -170,7 +172,7 @@ steps:
             iterations: 3
             sleep_seconds: 5
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/aiacc-001-burst.yml" --live
     identity: container-runtime
     mitre_technique: "T1567"
     causality:
@@ -184,8 +186,7 @@ steps:
         detection_id: xql-aiacc-001-repeated-source-paste-burst-to-openai-single-user
 
 cleanup:
-  commands:
-    - "rm -f /tmp/aiacc-001.yml /tmp/aiacc-001-burst.yml"
+  commands: []
 
 author: "Henry Reed"
 created: "2026-05-05"

@@ -109,7 +109,7 @@ steps:
     name: "roadtx acquires OAuth tokens from Entra ID using phished/sprayed credentials (programmatic sign-in)"
     command: |
       MARK=/tmp/cortexsim-itdr-014
-      mkdir -p "$MARK"
+      rm -rf /tmp/cortexsim-itdr-014 && mkdir -m 700 /tmp/cortexsim-itdr-014 || { echo "sandbox /tmp/cortexsim-itdr-014 could not be created fresh: something else is at that path" >&2; exit 1; }
       echo "[CortexSim] SAFE-MODE stage-1: roadtx programmatic sign-in as ada.lovelace via login.microsoftonline.com (device-code / refresh-token flow, python-requests user-agent)" | tee "$MARK/1-programmatic-signin.marker"
     identity: container-runtime
     mitre_technique: "T1078.004"
@@ -125,6 +125,7 @@ steps:
   - id: step-02
     name: "roadtx registers a rogue device against the Azure Device Registration Service to mint a PRT"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-itdr-014 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-itdr-014 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       MARK=/tmp/cortexsim-itdr-014
       printf 'SAFE-MODE stage-2 DRS device register name=%s os=10.0.19041.928\n' "DESKTOP-4A7B2C9E" | tee "$MARK/2-rogue-device-register.marker"
     identity: container-runtime
@@ -145,6 +146,7 @@ steps:
   - id: step-03
     name: "roadtx reuses the PRT to silently mint access tokens (MFA satisfied by the refresh token)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-itdr-014 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-itdr-014 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       MARK=/tmp/cortexsim-itdr-014
       echo "[CortexSim] SAFE-MODE stage-3: PRT reused to silently mint access token, MFA satisfied by refresh token (no interactive challenge)" | tee "$MARK/3-prt-silent-token.marker"
     identity: container-runtime
@@ -165,6 +167,7 @@ steps:
   - id: step-04
     name: "roadtx spawns roadrecon to drive Microsoft Graph (endpoint process lineage)"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-itdr-014 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-itdr-014 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       MARK=/tmp/cortexsim-itdr-014
       echo "[CortexSim] SAFE-MODE stage-4a: roadrecon (python) enumeration process spawned by the roadtx causality-group owner" | tee "$MARK/4a-roadrecon-lineage.marker"
     identity: container-runtime
@@ -187,6 +190,7 @@ steps:
   - id: step-05
     name: "roadrecon bulk-enumerates Microsoft Graph and the chain is stitched into one incident"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-itdr-014 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-itdr-014 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       MARK=/tmp/cortexsim-itdr-014
       echo "[CortexSim] SAFE-MODE stage-4b: roadrecon Graph enumeration burst /users /groups /devices /servicePrincipals /applications (>100 calls/hr) bound to the rogue device identity" | tee "$MARK/4b-graph-enum-burst.marker"
     identity: container-runtime

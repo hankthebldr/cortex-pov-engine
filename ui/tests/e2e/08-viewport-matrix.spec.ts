@@ -232,6 +232,107 @@ test('the two rails share a top — a global notice must not push only one of th
   ).toBeLessThanOrEqual(48)
 })
 
+test('the plane filter rail is a full-height column beside the nav rail', async ({ page }) => {
+  // The rail itself used to be the sticky element, so `align-self: start`
+  // sized it to its own content: it ended partway down the panel, 26px right
+  // of the nav rail and 22px below the top, and read as a floating card. It is
+  // a column of the panel now, and only its body sticks.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.rail--filter .plane-item')
+  await page.waitForSelector('.scenario-card')
+
+  const g = await page.evaluate(async () => {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)))
+    const view = document.querySelector('.view') as HTMLElement
+    const nav = document.querySelector('.rail--nav') as HTMLElement
+    const rail = document.querySelector('.rail--filter') as HTMLElement
+    const body = rail.querySelector('.rail__body') as HTMLElement | null
+    view.scrollTop = 0
+    await frame()
+    const v = view.getBoundingClientRect()
+    const n = nav.getBoundingClientRect()
+    const f = rail.getBoundingClientRect()
+    const out = {
+      gapToNav: Math.round(f.left - n.right),
+      topToView: Math.round(f.top - v.top),
+      bottomPastView: Math.round(f.bottom - v.bottom),
+      hasBody: !!body,
+      bodyTopAfterScroll: NaN,
+    }
+    view.scrollTop = 3000
+    await frame()
+    if (body) out.bodyTopAfterScroll = Math.round(body.getBoundingClientRect().top - view.getBoundingClientRect().top)
+    view.scrollTop = 0
+    return out
+  })
+
+  expect(Math.abs(g.gapToNav), `the filter rail starts ${g.gapToNav}px from the nav rail`).toBeLessThanOrEqual(1)
+  expect(Math.abs(g.topToView), `the filter rail starts ${g.topToView}px below the view's top`).toBeLessThanOrEqual(1)
+  expect(
+    g.bottomPastView,
+    `the filter rail ends ${-g.bottomPastView}px above the bottom of the panel`,
+  ).toBeGreaterThanOrEqual(-1)
+  expect(g.hasBody, 'the filter rail has no .rail__body to stick').toBe(true)
+  expect(
+    Math.abs(g.bodyTopAfterScroll),
+    `scrolled, the plane list parks ${g.bodyTopAfterScroll}px from the top edge`,
+  ).toBeLessThanOrEqual(1)
+})
+
+test('stacked under 860px, the planes are a grid, not a list that buries the cards', async ({ page }) => {
+  // Below 860px the nav rail retracts to icons and the filter rail stacks above
+  // the results. One plane per row, the 16 planes filled 572px of a 620px
+  // window and the first scenario card started 344px below the fold.
+  await page.setViewportSize({ width: 845, height: 620 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.rail--filter .plane-item')
+  await page.waitForSelector('.scenario-card')
+  const m = await page.evaluate(() => {
+    const view = document.querySelector('.view') as HTMLElement
+    view.scrollTop = 0
+    const rail = document.querySelector('.rail--filter') as HTMLElement
+    const group = rail.querySelector('.rail__group') as HTMLElement
+    const items = [...rail.querySelectorAll('.plane-item')] as HTMLElement[]
+    const first = items[0].getBoundingClientRect()
+    const last = items[items.length - 1].getBoundingClientRect()
+    return {
+      // From the first plane's top to the last plane's bottom.
+      planesH: Math.round(last.bottom - first.top),
+      // What the same planes take one per row: the list this replaced.
+      listH: Math.round(items.reduce((a, i) => a + i.getBoundingClientRect().height, 0)),
+      columns: getComputedStyle(group).gridTemplateColumns.split(' ').length,
+    }
+  })
+  expect(m.columns, 'the stacked planes are one per row').toBeGreaterThan(1)
+  expect(
+    m.planesH,
+    `the stacked planes take ${m.planesH}px; one per row they took ${m.listH}px`,
+  ).toBeLessThanOrEqual(m.listH / 2)
+})
+
+for (const w of [1204, 1280, 1440, 1600]) {
+  test(`the header fits its width at ${w}px — no control past the edge`, async ({ page }) => {
+    // Back / Forward and the breadcrumb (design C9) pushed a bar that already
+    // filled 1280 to ~1625px: Search, the tour, the theme toggle and the
+    // avatar sat past the edge, reachable only by scrolling the header. 1204
+    // is the desktop app's browser pane.
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.goto('/#/library')
+    await page.waitForSelector('.pov-instance')
+    await page.waitForSelector('[data-testid="header-agent"]')
+    await page.waitForLoadState('networkidle')
+    const m = await page.evaluate(() => {
+      const h = document.querySelector('.pov-header') as HTMLElement
+      return { scroll: h.scrollWidth, client: h.clientWidth }
+    })
+    expect(
+      m.scroll,
+      `the header is ${m.scroll - m.client}px wider than its ${m.client}px width`,
+    ).toBeLessThanOrEqual(m.client + 1)
+  })
+}
+
 test('chrome leaves the content most of the viewport height', async ({ page }) => {
   // The reported console spent 437px of 620 (70%) on stacked chrome rows,
   // leaving 183px for the Library. Every row was individually defensible;
@@ -569,5 +670,96 @@ for (const { w, h } of [{ w: 375, h: 812 }, { w: 845, h: 620 }]) {
       offscreen.map((a) => `${a.label} ends at ${Math.round(a.right)} (view ends at ${Math.round(g.view!.right)})`),
       'Report header controls run past the view, which clips them',
     ).toEqual([])
+  })
+}
+
+/**
+ * Scenario card footer (#344). At the desktop app's pane width the grid is two
+ * columns, and the footer row held "steps N · detections N", the run-history
+ * chip, Customize and Run: Run was clipped at the card's right edge and the
+ * chip wrapped onto three lines. The counts and the chip are now one unit that
+ * shrinks (the chip truncates on one line), and the actions never shrink.
+ *
+ * CI's SimCore starts empty and the chip appears only for a scenario with
+ * runs, so the run list is stubbed with ten runs of SIM-EDR-001. Only the
+ * layout is under test.
+ */
+const DAY_AGO = new Date(Date.now() - 86_400_000).toISOString()
+const HISTORY_RUNS = Array.from({ length: 10 }, (_, i) => ({
+  run_id: `run-card-${i}`,
+  scenario_id: 'SIM-EDR-001',
+  status: 'complete',
+  mode: 'pull',
+  started_at: DAY_AGO,
+  completed_at: DAY_AGO,
+}))
+
+for (const { w, h } of [{ w: 1024, h: 768 }, { w: 1280, h: 800 }, { w: 1440, h: 900 }]) {
+  test(`scenario card footers keep Customize and Run whole at ${w}x${h}`, async ({ page }) => {
+    await page.route(/\/api\/runs(\?.*)?$/, (route) =>
+      route.fulfill({ json: { runs: HISTORY_RUNS, total: HISTORY_RUNS.length, limit: 500, offset: 0 } }))
+    await page.setViewportSize({ width: w, height: h })
+    await page.goto('/#/library')
+    await page.waitForSelector('[data-testid="scenario-card-foot"] button', { timeout: 15_000 })
+    await page.waitForSelector('[data-testid="scenario-card-SIM-EDR-001"] .sc-history', { timeout: 15_000 })
+
+    const faults = await page.evaluate(() => {
+      const out: string[] = []
+      for (const card of document.querySelectorAll<HTMLElement>('.scenario-card')) {
+        const c = card.getBoundingClientRect()
+        const name = card.dataset.testid || 'card'
+        for (const b of card.querySelectorAll<HTMLElement>('[data-testid="scenario-card-foot"] button')) {
+          const r = b.getBoundingClientRect()
+          if (r.right > c.right + 0.5) out.push(`${name}: ${b.textContent} ends ${Math.round(r.right - c.right)}px past the card`)
+          if (b.scrollWidth > b.clientWidth + 1) out.push(`${name}: ${b.textContent} is squeezed (${b.scrollWidth} > ${b.clientWidth})`)
+        }
+        const chip = card.querySelector<HTMLElement>('.sc-history')
+        if (chip) {
+          const cr = chip.getBoundingClientRect()
+          if (cr.right > c.right + 0.5) out.push(`${name}: the history chip ends past the card`)
+          const count = chip.querySelector('.sc-history__count')?.getBoundingClientRect()
+          const ago = chip.querySelector('.sc-history__ago')?.getBoundingClientRect()
+          if (count && ago && Math.abs(count.top - ago.top) > 1) out.push(`${name}: the history chip wraps`)
+        }
+      }
+      return out
+    })
+    expect(faults, 'card footers must keep their actions whole and the history chip on one line').toEqual([])
+  })
+}
+
+/**
+ * The header's offer to leave an offline active agent (#341) adds a button to
+ * a bar that already gives way in steps to fit from 1100 px up. Below 1280 the
+ * button keeps its icon and the agent's name, so the bar still fits. The
+ * agent list is stubbed: one offline agent (the active one) and one online.
+ */
+const OFFLINE_AGENT = {
+  agent_id: 'docker-desktop', hostname: 'docker-desktop', os: 'linux', status: 'offline',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T10:00:00Z',
+  last_seen_age_seconds: 5400,
+}
+const ONLINE_AGENT = {
+  agent_id: 'pov-target-01-4dcdce', hostname: 'pov-target-01', os: 'linux', status: 'online',
+  capabilities: ['shell'], registered_at: '2026-11-14T09:00:00Z', last_seen: '2026-11-14T11:29:58Z',
+  last_seen_age_seconds: 3,
+}
+
+for (const w of [1100, 1204, 1280, 1440]) {
+  test(`the header fits with an offline agent's Switch offer at ${w}px`, async ({ page }) => {
+    await page.route(/\/api\/agents(\?.*)?$/, (route) =>
+      route.fulfill({ json: { agents: [OFFLINE_AGENT, ONLINE_AGENT] } }))
+    await page.addInitScript(() => window.localStorage.setItem('cortexsim.activeAgent', 'docker-desktop'))
+    await page.setViewportSize({ width: w, height: 800 })
+    await page.goto('/#/library')
+    const offer = page.getByRole('button', { name: 'Switch to pov-target-01' })
+    await expect(offer).toBeVisible({ timeout: 15_000 })
+    const g = await page.evaluate(() => {
+      const h = document.querySelector('.pov-header') as HTMLElement
+      const b = document.querySelector('.pov-header__switch')!.getBoundingClientRect()
+      return { scroll: h.scrollWidth, client: h.clientWidth, right: b.right, vw: window.innerWidth }
+    })
+    expect(g.scroll, `the header overflows by ${g.scroll - g.client}px`).toBeLessThanOrEqual(g.client)
+    expect(g.right, 'the Switch offer ends past the viewport').toBeLessThanOrEqual(g.vw)
   })
 }

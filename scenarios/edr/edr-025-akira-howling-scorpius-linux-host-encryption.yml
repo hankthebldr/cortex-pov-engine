@@ -158,7 +158,7 @@ steps:
     command: |
       set -eu
       D=/var/tmp/.cortexsim-akira
-      rm -rf "$D"
+      rm -rf /var/tmp/.cortexsim-akira && mkdir -m 700 /var/tmp/.cortexsim-akira || { echo "sandbox /var/tmp/.cortexsim-akira could not be created fresh: something else is at that path" >&2; exit 1; }
       mkdir -p "$D/company-share/finance" "$D/company-share/hr" "$D/log" "$D/backup"
       chmod -R 700 "$D"
       # Synthetic "company" documents — the only data this scenario ever touches.
@@ -246,6 +246,7 @@ steps:
     # (`--encryption_path`). Here it enumerates mounts and builds the target
     # list from the staged company share only.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-akira 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-akira is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -eu
       sleep 40
       D=/var/tmp/.cortexsim-akira
@@ -281,6 +282,7 @@ steps:
     # tarball under the victim tree, producing the collection/archive telemetry
     # shape without egress.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-akira 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-akira is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -eu
       sleep 40
       D=/var/tmp/.cortexsim-akira
@@ -324,6 +326,7 @@ steps:
     # fails, and an agent kill of the encryptor (block mode) surfaces as a
     # signal, never a swallowed error.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-akira 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-akira is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -eu
       sleep 40
       D=/var/tmp/.cortexsim-akira
@@ -384,6 +387,7 @@ steps:
     # files under the victim tree and disables the decoy service CortexSim
     # installed — no real backup, snapshot or service is touched.
     command: |
+      [ "$(stat -c %F:%u:%a /var/tmp/.cortexsim-akira 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /var/tmp/.cortexsim-akira is missing or not ours: step-01 did not complete" >&2; exit 1; }
       set -eu
       sleep 40
       D=/var/tmp/.cortexsim-akira

@@ -124,7 +124,7 @@ steps:
 
   - id: step-02
     name: "Read the auto-mounted Kubernetes service-account token"
-    command: "mkdir -p /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount && echo 'cortexsim-synthetic-sat-token' > /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token && cat /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token > /dev/null && echo cortexsim-mp-017-sat-token-read"
+    command: "rm -rf /tmp/cortexsim-mp-017 && mkdir -m 700 /tmp/cortexsim-mp-017 || { echo \"sandbox /tmp/cortexsim-mp-017 could not be created fresh: something else is at that path\" >&2; exit 1; }; mkdir -p /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount && echo 'cortexsim-synthetic-sat-token' > /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token && cat /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token > /dev/null && echo cortexsim-mp-017-sat-token-read"
     identity: app
     mitre_technique: "T1552.001"
     platforms: ["container", "k8s", "linux"]

@@ -44,7 +44,7 @@ logger = logging.getLogger("cortexsim.api.health")
 
 router = APIRouter(tags=["health"])
 
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.2.5"
 
 # When THIS process started. The console header states the instance's uptime,
 # and only SimCore's own clock can say it: the wall time is for display, the
@@ -1076,11 +1076,12 @@ async def _scenario_tool_rows(session_factory) -> list[dict[str, Any]]:
     """
     from sqlalchemy import select  # noqa: PLC0415
 
-    from models import Scenario  # noqa: PLC0415
+    from models import SCENARIO_RETIRED, Scenario  # noqa: PLC0415
 
     async with session_factory() as session:
         rows = (await session.execute(
             select(Scenario.scenario_id, Scenario.external_tools)
+            .where(Scenario.status != SCENARIO_RETIRED)
         )).all()
     return [{"scenario_id": sid, "external_tools": tools or []} for sid, tools in rows]
 

@@ -3,54 +3,46 @@ import '../../styles/destinations/run-detail.css'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
-import MultiRunCompare from './MultiRunCompare.jsx'
-import MttdHistogram from './MttdHistogram.jsx'
-import ExportMenu from './ExportMenu.jsx'
-import TenantEvidencePanel from './TenantEvidencePanel.jsx'
+import MttdHistogram, { tidySeconds } from './MttdHistogram.jsx'
+import { Button, StatusIcon } from './kit/index.js'
 import AlsoRaised from './AlsoRaised.jsx'
-import ReadBackButton from './ReadBackButton.jsx'
-import { isRunUnproven } from '../DetectionStoryline.jsx'
-import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
+import { isRunUnproven } from './runStatus.js'
+import { detectionState, rowActions, MARK } from './detectionState.js'
+import { outcomeClass, isBulkAttestable } from '../../outcomes.js'
 
 /**
- * EvidenceView — the Evidence tab.
+ * EvidenceView — Results › Detections: each expected detection of one run and
+ * what became of it.
  *
  * Layout:
- *   ▸ view head with run id + timestamp + Validate-all + Export CTAs
- *   ▸ KPI row: Coverage % · Median MTTD · Stitch count · Pending count
- *   ▸ Scorecard table with per-row validate (Detected / Missed / Reset)
+ *   ▸ one action: Validate all (with the count it will skip)
+ *   ▸ four tiles: Coverage · Median MTTD · Analytics plane · Pending. Each is
+ *     a label, one number, and at most one short line.
+ *   ▸ the MTTD distribution (one line when there is none)
+ *   ▸ the scorecard: each row's state is a StatusIcon and one word
+ *     (detectionState.js), with its row actions as kit icon buttons
  *   ▸ "Also raised by Cortex (N)": the run's alerts that match no expected
  *     detection (AlsoRaised.jsx); absent when there are none
  *
- * Props:
- *   activeRun  — { runId, scenarioId, ... }
- *   lastRun    — fallback run when no live run
- *   intro      — node shown under the page head (Results passes its
- *                "Result of" bar, design v26 §4.6)
- *   showCaseLedger — embed the run's case panel in the tenant evidence panel;
- *                false where the page already shows it (Run detail)
- *   onError    — (msg) => void
+ * The page head, the "Result of" bar, the downloads and the tenant evidence
+ * panel belong to Results (ResultsView), which mounts this as one of its tabs.
  *
- * Below the scorecard sits the tenant evidence panel (spec §7.5): the stored
- * snapshot, read once on open, and a refresh that reads the tenant only when
- * the DC asks. It sits outside the scorecard's load-failed branch, so it still
- * answers when /api/results does not.
+ * Props:
+ *   pinnedRun  — { runId, scenarioId, status } the run on screen
+ *   activeRun  — { runId, scenarioId, ... } used when no run is pinned
+ *   lastRun    — fallback run when neither is given
+ *   reviewed   — the run has been reviewed (default). A row nothing has
+ *                judged reads Pending when it has, Not reviewed when not.
  */
 export default function EvidenceView({
   activeRun,
   lastRun,
   pinnedRun = null,
-  intro = null,
-  showCaseLedger = true,
-  onError = () => {},
+  reviewed = true,
 }) {
   // pinnedRun lets parents (e.g. a history-row click) override the
   // derived active/last selection — explicit picks always win.
   const targetRunId = pinnedRun?.runId || activeRun?.runId || lastRun?.runId || null
-  const targetScenarioId = pinnedRun?.scenarioId
-    || activeRun?.scenarioId
-    || lastRun?.scenarioId
-    || null
 
   // Same run-status truth the Storyline uses: a run that never executed has no
   // coverage to report, and "Validate all" on it would manufacture evidence.
@@ -75,7 +67,6 @@ export default function EvidenceView({
   // ingestion typically takes 30–120s" for a SimCore that never answered.
   const loadFailed = !!error && !loaded
   const [selectedRowId, setSelectedRowId] = useState(null)
-  const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
   // Reset drilldown selection when the underlying run changes.
   useEffect(() => { setSelectedRowId(null) }, [targetRunId])
@@ -100,11 +91,7 @@ export default function EvidenceView({
   if (!targetRunId) {
     return (
       <div className="evidence evidence-empty">
-        <h1 className="evidence-empty__title">No run to validate</h1>
-        <p className="evidence-empty__desc">
-          Launch a scenario from Simulate. The detection scorecard
-          and POV report export will appear here once results begin to arrive.
-        </p>
+        <p className="evidence-empty__desc">No run selected</p>
       </div>
     )
   }
@@ -114,94 +101,40 @@ export default function EvidenceView({
     // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
     // resolves correctly here without pinning a local override.
     <div className="evidence">
-      <div className="view-head">
-        <div>
-          <h1>Report</h1>
-          <div className="view-head__meta">
-            {viewMode === 'this-run' ? (
-              <>
-                Run <strong className="mono">{targetRunId}</strong>
-                {targetScenarioId && (
-                  <> · <span className="mono">{targetScenarioId}</span></>
-                )}
-                {loading && <> · <span className="mono">syncing…</span></>}
-              </>
-            ) : (
-              <>cross-run comparison · pick 2–4 runs to diff</>
-            )}
-          </div>
-        </div>
-        <div className="evidence-header__actions">
-          <div className="lab__segmented evidence__mode-toggle" role="tablist" aria-label="Evidence view mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === 'this-run'}
-              className={viewMode === 'this-run' ? 'is-active' : ''}
-              onClick={() => setViewMode('this-run')}
-            >
-              This run
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === 'compare'}
-              className={viewMode === 'compare' ? 'is-active' : ''}
-              onClick={() => setViewMode('compare')}
-              title="Compare 2-4 runs side by side"
-            >
-              Compare runs
-            </button>
-          </div>
-          {viewMode === 'this-run' && (
-            <>
-              <button
-                className="btn"
-                onClick={handleValidateAll}
-                disabled={kpis.unvalidated === 0 || unproven}
-                title={unproven
-                  ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
-                  : 'Mark all pending detections as observed'}
-              >
-                Validate all
-                {kpis.unvalidated > 0 && (
-                  <span className="kbd">{kpis.unvalidated}</span>
-                )}
-              </button>
-              {kpis.skipped > 0 && (
-                <span
-                  className="mono evidence-header__skipped"
-                  data-testid="validate-all-skipped"
-                  title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
-                >
-                  {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
-                </span>
-              )}
-              <ExportMenu runId={targetRunId} onError={onError} />
-            </>
-          )}
-        </div>
-      </div>
-
-      {viewMode === 'this-run' && intro}
-
-      {viewMode === 'compare' ? (
-        <MultiRunCompare />
-      ) : loadFailed ? (
+      {loadFailed ? (
         <div className="evidence-empty" role="alert" data-testid="evidence-load-error">
-          <h2 className="evidence-empty__title">Results for {targetRunId} could not be loaded</h2>
+          <h2 className="evidence-empty__title">Detections not loaded</h2>
           <p className="evidence-empty__desc mono">{error}</p>
-          <p className="evidence-empty__desc">
-            Nothing below is a measurement until SimCore answers — coverage and MTTD are not shown
-            rather than shown as zero.
-          </p>
-          <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+          <Button verb="Refresh" onClick={refresh}>Retry</Button>
         </div>
       ) : (
         <>
+      <div className="evidence-header__actions">
+        <Button
+          verb="Validate all"
+          onClick={handleValidateAll}
+          disabled={kpis.unvalidated === 0 || unproven}
+          title={unproven ? `Run ${runStatus}: nothing to mark` : 'Mark every pending detection as detected'}
+        >
+          Validate all
+          {kpis.unvalidated > 0 && (
+            <span className="kbd">{kpis.unvalidated}</span>
+          )}
+        </Button>
+        {kpis.skipped > 0 && (
+          <span
+            className="evidence-header__skipped"
+            data-testid="validate-all-skipped"
+            title="Not marked: the step never ran, it is a prevention, or the review found a miss. Mark those one at a time."
+          >
+            {kpis.skipped} skipped
+          </span>
+        )}
+        {loading && <span className="evidence-header__sync">Syncing…</span>}
+      </div>
       {error && (
-        <div className="evidence-stale" role="status" data-testid="evidence-refresh-error">
-          Last refresh failed — showing the previous answer. <span className="mono">{error}</span>
+        <div className="evidence-stale" role="status" data-testid="evidence-refresh-error" title={error}>
+          Refresh failed · showing the last read
         </div>
       )}
       <KpiRow kpis={kpis} unproven={unproven} runStatus={runStatus} />
@@ -211,6 +144,7 @@ export default function EvidenceView({
       <Scorecard
         rows={rows}
         loading={loading}
+        reviewed={reviewed}
         selectedRowId={selectedRowId}
         onSelectRow={setSelectedRowId}
         onValidate={validate}
@@ -220,6 +154,7 @@ export default function EvidenceView({
 
       <DetectionDrawer
         row={selectedRow}
+        reviewed={reviewed}
         open={!!selectedRow}
         onClose={() => setSelectedRowId(null)}
         onValidate={(id, observed, notes) => {
@@ -228,20 +163,19 @@ export default function EvidenceView({
       />
         </>
       )}
-
-      {viewMode === 'this-run' && (
-        <TenantEvidencePanel
-          runId={targetRunId}
-          showCaseLedger={showCaseLedger}
-          onScored={refresh}
-          reconcileAction={({ onDone }) => <ReadBackButton runId={targetRunId} onDone={onDone} />}
-        />
-      )}
     </div>
   )
 }
 
 /* ─── KPI row ─────────────────────────────────────────────────────────── */
+
+const NOT_COUNTED = 'Not counted: the step never ran, or its detector is still soaking'
+
+/** Coverage's one line: how many were detected, and how many were left out. */
+function coverageLine(kpis) {
+  const left = kpis.excluded > 0 ? `${kpis.excluded} not counted` : null
+  return [`${kpis.detected} of ${kpis.total} detected`, left].filter(Boolean).join(' · ')
+}
 
 function KpiRow({ kpis, unproven = false, runStatus = null }) {
   return (
@@ -249,8 +183,9 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
       {unproven ? (
         <Kpi
           label="Coverage"
-          value="n/a"
-          meta={`run ${runStatus} — signal never generated`}
+          value="—"
+          meta={`Run ${runStatus}`}
+          title="The run did not finish, so no detection was put to the test"
           tone="tx"
         />
       ) : kpis.coverage == null ? (
@@ -258,10 +193,11 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Coverage"
           value="—"
           meta={kpis.coverageUnknown
-            ? 'server sent no coverage denominator'
+            ? 'Count not sent'
             : kpis.seeded > 0
-              ? `nothing to score — ${kpis.excluded} excluded (never ran or soaking)`
-              : 'no detections seeded for this run'}
+              ? `${kpis.excluded} not counted`
+              : 'No detections expected'}
+          title={kpis.coverageUnknown ? 'This SimCore sent no coverage count' : kpis.seeded > 0 ? NOT_COUNTED : undefined}
           tone="tx"
         />
       ) : (
@@ -270,17 +206,17 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           value={kpis.coverage}
           suffix="%"
           valueClass="kpi__value--detected"
-          meta={`${kpis.detected} / ${kpis.total} detections confirmed`
-            + (kpis.excluded > 0 ? ` · ${kpis.excluded} excluded (never ran or soaking)` : '')}
+          meta={coverageLine(kpis)}
+          title={kpis.excluded > 0 ? NOT_COUNTED : undefined}
           tone="ac"
         />
       )}
       <Kpi
-        label="MTTD · median"
-        value={kpis.median != null ? kpis.median : '—'}
+        label="Median MTTD"
+        value={kpis.median != null ? tidySeconds(kpis.median) : '—'}
         suffix={kpis.median != null ? 's' : ''}
         valueClass="kpi__value--signal"
-        meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
+        title="Median time to detect, across detected rows"
         tone={kpis.median != null ? 'ac' : 'tx'}
       />
       {kpis.stitchDenominator > 0 ? (
@@ -288,14 +224,14 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Analytics plane"
           value={kpis.stitched}
           suffix={` / ${kpis.stitchDenominator}`}
-          meta="analytics-plane detections observed"
+          title="Analytics-plane detections observed, of those that could have fired"
           tone="info"
         />
       ) : (
         <Kpi
           label="Analytics plane"
           value="—"
-          meta="no analytics-plane detection to score on this run"
+          meta="None on this run"
           tone="tx"
         />
       )}
@@ -303,16 +239,17 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         label="Pending"
         value={kpis.pending}
         valueClass="kpi__value--pending"
-        meta="awaiting validation"
+        title="Detections nothing has settled yet"
         tone={kpis.pending > 0 ? 'warn' : 'tx'}
       />
     </div>
   )
 }
 
-function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx' }) {
+/** One tile: a label, one number, and at most one short line under it. */
+function Kpi({ label, value, suffix = '', meta = '', title, valueClass = '', tone = 'tx' }) {
   return (
-    <div className={`kpi kpi--${tone}`}>
+    <div className={`kpi kpi--${tone}`} title={title}>
       <div className="kpi__label">{label}</div>
       <div className={'kpi__value ' + valueClass}>
         {value}
@@ -327,7 +264,7 @@ function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx
 
 /* ─── Scorecard ────────────────────────────────────────────────────────── */
 
-function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
+function Scorecard({ rows, loading, reviewed, selectedRowId, onSelectRow, onValidate }) {
   if (rows.length === 0 && !loading) {
     return (
       <div className="scorecard">
@@ -338,11 +275,9 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
           <div>Source</div>
-          <div>Status</div>
+          <div>State</div>
         </div>
-        <div className="scorecard-empty">
-          no results yet — Cortex Data Lake ingestion typically takes 30–120s
-        </div>
+        <div className="scorecard-empty">No expected detections</div>
       </div>
     )
   }
@@ -356,12 +291,13 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
         <div>Source</div>
-        <div>Status</div>
+        <div>State</div>
       </div>
       {rows.map((r, i) => (
         <ScorecardRow
           key={r.id ?? i}
           row={r}
+          reviewed={reviewed}
           isSelected={r.id != null && r.id === selectedRowId}
           onSelect={() => r.id != null && onSelectRow(r.id)}
           onValidate={onValidate}
@@ -371,10 +307,12 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
   )
 }
 
-function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
-  // The status the server's outcome axis says (outcomes.js::resultStatus).
-  const status = outcomeClass(row.status)
-  const statusLabel = labelFor(row.status, row)
+function ScorecardRow({ row, reviewed, isSelected, onSelect, onValidate }) {
+  // What became of the detection, from the server's outcome axis
+  // (outcomes.js::resultStatus), as a StatusIcon and one word.
+  const state = detectionState(row, { reviewed })
+  // The hand marks the API takes for this row (detectionState.js::rowActions).
+  const actions = rowActions(row)
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).
@@ -383,7 +321,8 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
   return (
     <div
       className={'scorecard__row' + (isSelected ? ' scorecard__row--selected' : '')}
-      data-status={status}
+      data-status={outcomeClass(row.status)}
+      data-state={state.key}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -406,32 +345,14 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
       <div className="scorecard__id">{row.alertId || '—'}</div>
       <div className="scorecard__source">{row.alertSource || '—'}</div>
       <div className="scorecard__status-cell">
-        <span className={`scorecard__status scorecard__status--${status}`}>
-          {statusLabel}
+        <span className="scorecard__state" title={state.title}>
+          <StatusIcon status={state.status} word={state.word} />
         </span>
-        {row.id != null && !isAttestationRefused(row) && (
+        {actions.length > 0 && (
           <div className="scorecard__row-actions">
-            {row.observed !== true && (
-              <button
-                className="row-action row-action--detected"
-                onClick={stop(() => onValidate(row.id, true, null))}
-                title="Mark as detected"
-              >✓</button>
-            )}
-            {row.observed !== false && (
-              <button
-                className="row-action row-action--missed"
-                onClick={stop(() => onValidate(row.id, false, null))}
-                title="Mark as missed"
-              >✗</button>
-            )}
-            {row.observed != null && (
-              <button
-                className="row-action"
-                onClick={stop(() => onValidate(row.id, null, null))}
-                title="Reset to pending"
-              >○</button>
-            )}
+            {actions.map((verb) => (
+              <Button key={verb} verb={verb} iconOnly onClick={stop(() => onValidate(row.id, MARK[verb], null))} />
+            ))}
           </div>
         )}
       </div>
@@ -439,10 +360,11 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
   )
 }
 
+/** A row's MTTD, the way the tiles and the drawer say it: "0.4s", "42s", "1m 15s". */
 function formatMttd(seconds) {
   if (seconds == null) return '—'
-  if (seconds < 60) return `0:${String(Math.floor(seconds)).padStart(2, '0')}`
+  if (seconds < 60) return `${tidySeconds(seconds)}s`
   const mm = Math.floor(seconds / 60)
   const ss = Math.floor(seconds % 60)
-  return `${mm}:${String(ss).padStart(2, '0')}`
+  return `${mm}m ${String(ss).padStart(2, '0')}s`
 }

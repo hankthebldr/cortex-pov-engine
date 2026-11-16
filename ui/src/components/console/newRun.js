@@ -56,19 +56,35 @@ function cleanupCount(scenario) {
   return 0
 }
 
+/** What a beacon advertises when it runs the scenario's cleanup (agent/capabilities.go). */
+export const CLEANUP_CAPABILITY = 'cleanup'
+
+/**
+ * Who runs the scenario's cleanup, in one short line. A bundle (bash,
+ * PowerShell, the k8s bootstrap) runs it itself. A beacon runs it after the
+ * run only when it advertises `cleanup`; an older one is sent the commands and
+ * ignores them (SimCore's CLEANUP_NOT_RUN), so the DC runs them. An agent
+ * whose record has not loaded is not credited.
+ */
+function teardownLine(count, mode, agent) {
+  if (count === 0) return 'nothing to tear down'
+  const n = `${count} command${count === 1 ? '' : 's'}`
+  if (mode === 'push') return `${n}, run by the bundle`
+  const caps = Array.isArray(agent?.capabilities) ? agent.capabilities : []
+  if (caps.includes(CLEANUP_CAPABILITY)) return `${n}, run by the agent after the run`
+  return `${n}, run ${count === 1 ? 'it' : 'them'} yourself`
+}
+
 /**
  * What the run will do, as label/value rows.
  * @param {Object} scenario  the full scenario document
- * @param {{mode: 'pull'|'push', identity?: string}} opts
+ * @param {{mode: 'pull'|'push', identity?: string, agent?: Object|null}} opts
+ *   `agent` is the chosen agent's /api/agents row (its `capabilities`).
  */
-export function runPlan(scenario, { mode, identity } = {}) {
+export function runPlan(scenario, { mode, identity, agent = null } = {}) {
   const steps = (scenario?.steps || []).filter((s) => s && typeof s === 'object')
   const detections = steps.reduce((n, s) => n + (s.expected_detections || []).length, 0)
-  const cleanup = cleanupCount(scenario)
-  let teardown
-  if (cleanup === 0) teardown = 'nothing to tear down'
-  else if (mode === 'push') teardown = `${cleanup} command${cleanup === 1 ? '' : 's'}, run by the bundle`
-  else teardown = `${cleanup} command${cleanup === 1 ? '' : 's'}, not run by the agent — run them yourself`
+  const teardown = teardownLine(cleanupCount(scenario), mode, agent)
   return [
     { k: 'Steps', v: String(steps.length) },
     { k: 'Detections it should raise', v: String(detections) },

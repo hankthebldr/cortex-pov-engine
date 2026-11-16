@@ -2,23 +2,28 @@
  * RunTechniquesView — the Techniques tab on a run.
  *
  * A kill-chain strip (14 ATT&CK tactics in order, empty stages dimmed) and a
- * per-technique verdict table, built from this run's `Result` rows, the run's
- * `tc_verdict`, and the TTP cards the rows reference. Nothing from `povdata/`
- * and nothing from `/api/mitre/coverage` (see `runTechniques.js`).
+ * per-technique table, built from this run's `Result` rows and the TTP cards
+ * the rows reference. Nothing from `povdata/` and nothing from
+ * `/api/mitre/coverage` (see `runTechniques.js`).
  *
- * A count never renders before its fetch resolves; a failed fetch says
- * "could not load", never `0`. A failed run never shows a miss.
+ * The run's verdict is not repeated here: the verdict line at the top of
+ * Results says it once. Each explanation is one line, its detail in a tooltip.
+ *
+ * A count never renders before its fetch resolves; a failed fetch says so,
+ * never `0`. A failed run never shows a miss.
  */
 import React, { useEffect, useMemo, useState } from 'react'
 import { getResultsForRun, getRun, getTtp } from '../../api/client.js'
 import { buildTechniqueModel } from './runTechniques.js'
 import { isRunUnproven } from './runStatus.js'
-import VerdictReason, { VerdictReasonSentence } from './VerdictReason.jsx'
+import { Button, Icon } from './kit/index.js'
 
-const EVIDENCE_SENTENCE =
-  'Evidence is this SimCore’s Result rows; a detection counts only once reconciled from the tenant or validated by the DC. Authored is not proven.'
-
-const TONE_LABEL = { hit: 'detected', miss: 'missed', pending: 'pending', excluded: 'never ran', empty: 'no technique' }
+// One line each; the detail is one hover away.
+const EVIDENCE = {
+  line: 'Counts are this SimCore’s result rows',
+  detail: 'A detection counts once it is reviewed from the tenant or marked by hand.',
+}
+const UNPROVEN_DETAIL = 'The signal may never have been generated, so nothing here is a miss.'
 
 function summary(counts) {
   const entries = Object.entries(counts || {})
@@ -83,38 +88,25 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
     [results, run, cards, cardErrors],
   )
 
-  if (!runId) return <div className="run-tech__empty mono">no run selected</div>
-  if (error) return <div className="run-tech__empty mono" data-testid="technique-error">could not load results: {error}</div>
-  if (!model) return <div className="run-tech__empty mono" role="status">loading results…</div>
+  if (!runId) return <div className="run-tech__empty mono">No run selected</div>
+  if (error) return <div className="run-tech__empty mono" data-testid="technique-error">Results not loaded · {error}</div>
+  if (!model) return <div className="run-tech__empty mono" role="status">Loading…</div>
 
   const unproven = isRunUnproven(model.runStatus)
-  const verdict = model.tcVerdict || 'not scored'
-  const verdictKey = model.tcVerdict || 'unscored'
 
   return (
     <div className="run-tech" data-testid="run-techniques" data-proven={model.proven ? 'true' : 'false'}>
       <div className="run-tech__head">
-        <div className="run-tech__verdict">
-          <span className="run-tech__k">Run verdict</span>
-          <span className={`chip run-tech__verdict-chip run-tech__verdict-chip--${verdictKey}`} data-testid="technique-verdict">{verdict}</span>
-          <VerdictReason detail={model.tcVerdictDetail} testId="technique-verdict-reason" />
-        </div>
-        <VerdictReasonSentence
-          detail={model.tcVerdictDetail}
-          testId="technique-verdict-reason-sentence"
-          className="run-tech__sentence"
-        />
         <div className="run-tech__totals mono" data-testid="technique-totals">
-          {model.totals.hits} of {model.totals.denominator} rows detected
+          {model.totals.hits} of {model.totals.denominator} detected
           {model.totals.excluded ? ` · ${model.totals.excluded} never ran` : ''}
-          {' · '}{model.techniques.length} technique{model.techniques.length === 1 ? '' : 's'} placed
+          {' · '}{model.techniques.length} technique{model.techniques.length === 1 ? '' : 's'}
           {model.unplaced.length ? ` · ${model.unplaced.length} unplaced` : ''}
-          {' · tenant-verified: 0'}
         </div>
-        <p className="run-tech__sentence">{EVIDENCE_SENTENCE}</p>
+        <p className="run-tech__sentence" title={EVIDENCE.detail}>{EVIDENCE.line}</p>
         {unproven && (
-          <p className="run-tech__unproven" data-testid="technique-unproven">
-            This run {model.runStatus}: an un-fired detection below is <b>pending</b>, not missed — the signal may never have been generated.
+          <p className="run-tech__unproven" data-testid="technique-unproven" title={UNPROVEN_DETAIL}>
+            Run {model.runStatus} · unfired detections read pending
           </p>
         )}
       </div>
@@ -162,14 +154,14 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
             </tr>
           ))}
           {model.techniques.length === 0 && (
-            <tr><td colSpan={7} className="run-tech__empty mono">no technique placed — {model.totals.rows} result row{model.totals.rows === 1 ? '' : 's'} on this run</td></tr>
+            <tr><td colSpan={7} className="run-tech__empty mono">No technique placed · {model.totals.rows} result row{model.totals.rows === 1 ? '' : 's'}</td></tr>
           )}
         </tbody>
       </table>
 
       {model.unplaced.length > 0 && (
         <div className="run-tech__unplaced" data-testid="technique-unplaced">
-          <div className="run-tech__k">Unplaced — not drawn on the strip, with the reason</div>
+          <div className="run-tech__k" title="Not drawn on the strip; each row says why">Unplaced</div>
           <ul>
             {model.unplaced.map((u) => (
               <li key={u.id} className="mono" data-testid="technique-unplaced-row">
@@ -181,8 +173,7 @@ export default function RunTechniquesView({ runId, run: runProp = null, onOpenEv
       )}
 
       <div className="run-tech__foot">
-        <span className="mono">{TONE_LABEL.hit} · {TONE_LABEL.miss} · {TONE_LABEL.pending} tones are this SimCore's rows, not the tenant's.</span>
-        <button type="button" className="btn btn--xs" onClick={onOpenEvidence}>Open the evidence ▸</button>
+        <Button onClick={onOpenEvidence}>Detections<Icon name="forward" size={12} /></Button>
       </div>
     </div>
   )

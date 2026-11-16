@@ -150,6 +150,14 @@ def test_floor_breach_exits_1(module, tmp_path):
     ('[ "$(stat -c %F:%u:%a /tmp/x 2>/dev/null)" = "directory:$(id -u):700" ] || { echo \'not ours\' >&2; exit 1; }; '
      "cat /etc/shadow", False),
     ('[ "$(curl -s http://198.51.100.7/x)" = ok ] || exit 1; echo m', False),   # any other substitution is a real command
+    # The same guard with its lookup stored first, and with the macOS fallback inside the
+    # substitution: still bookkeeping, and only that exact lookup is.
+    ('s=$(stat -c %F:%u:%a /tmp/x 2>/dev/null); [ "$s" = "directory:0:755" ] || [ "$s" = "directory:$(id -u):755" ] '
+     "|| { echo 'not ours' >&2; exit 1; }; echo m", True),
+    ('s=$(stat -c %F:%u:%a /tmp/x 2>/dev/null || stat -f %HT:%u:%Lp /tmp/x 2>/dev/null); '
+     '[ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] '
+     "|| { echo 'not ours' >&2; exit 1; }; echo m", True),
+    ("s=$(stat -c %s /etc/shadow); echo m", False),
 ])
 def test_marker_only_canonical_vectors(module, cmd, expected):
     assert module.is_marker_only_step({"command": cmd}) is expected

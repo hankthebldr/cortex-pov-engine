@@ -12,7 +12,11 @@
  * Each verb carries its icon (design v33 C10). Pass `verb` and the button
  * draws that verb's icon before its label; the label is the verb unless
  * children say otherwise (a busy state such as "Launching…"). Anything that
- * only navigates is a link, not a Button.
+ * only navigates is a link, not a Button. `href` renders the same control as
+ * an <a>, for a file the browser downloads.
+ *
+ * `iconOnly` draws just the verb's icon, for a row of small actions: the verb
+ * is the button's accessible name and its tooltip.
  */
 import React from 'react'
 import Icon from './Icon.jsx'
@@ -20,7 +24,25 @@ import Icon from './Icon.jsx'
 void React
 
 export const VERBS = Object.freeze([
-  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Read back', 'Open results', 'Abort run',
+  'Configure', 'Test', 'Run', 'Customize', 'Add to chain', 'Review', 'Open results', 'Abort run',
+  // Agents › Fleet (#339): managing agent rows.
+  'Deploy', 'Set active', 'Download', 'Copy', 'Delete', 'Select', 'Refresh',
+  // The header's offer to leave an offline active agent (#341).
+  'Switch',
+  // A run's Live tab: hold or empty the stream, capture the timeline.
+  'Pause', 'Clear', 'Screenshot',
+  // Reports › Executions: a scenario with no reviewed run opens the run itself.
+  'Open run',
+  // Results › Detections: mark every detection that can be attested as seen.
+  'Validate all',
+  // Results › Detections: one detection, by hand. Reset puts a hand mark back
+  // to unjudged. There is no hand miss: the API never writes one.
+  'Mark detected', 'Reset',
+  // Keep what was typed (a note on a detection).
+  'Save',
+  // Launch gate › Prevention context: a known-benign run that shows the block
+  // profile is real before the paired report/block run.
+  'Run canary',
 ])
 
 /** The kit Icon each verb carries. */
@@ -30,17 +52,49 @@ export const VERB_ICONS = Object.freeze({
   Run: 'play',
   Customize: 'pencil',
   'Add to chain': 'plus',
-  'Read back': 'rotate',
+  Review: 'rotate',
   'Open results': 'external',
   'Abort run': 'stop',
+  Deploy: 'upload',
+  'Set active': 'target',
+  Download: 'download',
+  Copy: 'copy',
+  Delete: 'trash',
+  Select: 'select',
+  Refresh: 'refresh',
+  Switch: 'swap',
+  Pause: 'pause',
+  Clear: 'clear',
+  Screenshot: 'camera',
+  'Open run': 'terminal',
+  'Validate all': 'check-all',
+  'Mark detected': 'check-circle',
+  Reset: 'repeat',
+  Save: 'save',
+  'Run canary': 'flask',
 })
 
-export default function Button({ variant = 'secondary', type = 'button', verb, className = '', children, ...rest }) {
+export default function Button({
+  variant = 'secondary', type = 'button', verb, iconOnly = false, href, className = '', children, ...rest
+}) {
   const kind = ['primary', 'secondary', 'destructive'].includes(variant) ? variant : 'secondary'
-  return (
-    <button type={type} className={`kit-btn kit-btn--${kind} ${className}`.trim()} data-verb={verb} {...rest}>
+  const bare = iconOnly && !!verb
+  const cls = `kit-btn kit-btn--${kind}${bare ? ' kit-btn--icon' : ''} ${className}`.trim()
+  if (bare) {
+    return (
+      <button type={type} className={cls} data-verb={verb} aria-label={verb} title={verb} {...rest}>
+        <Icon name={VERB_ICONS[verb]} size={12} />
+      </button>
+    )
+  }
+  const body = (
+    <>
       {verb && <Icon name={VERB_ICONS[verb]} size={12} />}
       {children ?? verb}
-    </button>
+    </>
   )
+  // A file the browser saves (Download) is a link by HTML semantics; it keeps
+  // the button's look and its verb icon.
+  if (href) return <a href={href} className={cls} data-verb={verb} {...rest}>{body}</a>
+  return <button type={type} className={cls} data-verb={verb} {...rest}>{body}</button>
 }

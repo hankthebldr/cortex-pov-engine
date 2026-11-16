@@ -109,7 +109,8 @@ steps:
   - id: step-02
     name: "Emulate pip install fetching the package over HTTPS"
     command: |
-      cat > /tmp/koi-003.yml <<'YML'
+      C=$(mktemp -d /tmp/cortexsim.XXXXXX) || exit 1; trap 'rm -rf "$C"' EXIT
+      cat > "$C/koi-003.yml" <<'YML'
       campaign_id: CMP-KOI-003
       name: "KOI — typosquat PyPI fetch"
       authorized_by: "domain-consultant@paloaltonetworks.com"
@@ -127,7 +128,7 @@ steps:
             artifact_name: mcp-server-helpers-typo
             iterations: 1
       YML
-      python3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live
+      python3 -m scripts.eal_simulator.cli run "$C/koi-003.yml" --live
     identity: container-runtime
     mitre_technique: "T1195.002"
     platforms: ["linux", "macos", "container"]

@@ -1,7 +1,7 @@
 /**
- * Results for a run that has not been read back still shows tenant evidence:
- * it is most useful before Read back, and it is display only. Opening the page
- * reads the stored snapshot once (GET) and never sends a POST.
+ * Results for a run that has not been reviewed still shows tenant evidence, on
+ * its own tab: it is most useful before the review, and it is display only.
+ * Opening the tab reads the stored snapshot once (GET) and never sends a POST.
  */
 import React from 'react'
 import { it, expect, afterEach, vi } from 'vitest'
@@ -31,10 +31,10 @@ it('an unread run on Results renders Tenant evidence with one GET and zero POSTs
   })
   render(
     <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [UNREAD] }}>
-      <ProofSurface params={{ run: 'run-unread-3' }} setParams={() => {}} onNavigate={() => {}} />
+      <ProofSurface params={{ run: 'run-unread-3', tab: 'tenant' }} setParams={() => {}} onNavigate={() => {}} />
     </EnvironmentContext.Provider>,
   )
-  await screen.findByText('Tenant evidence')
+  await screen.findByTestId('tenant-evidence')
   const callsNow = () => h.mock.calls.map(([i, init = {}]) => {
     const url = typeof i === 'string' ? i : i.url
     return `${(init.method || 'GET').toUpperCase()} ${new URL(url, 'http://localhost').pathname}`

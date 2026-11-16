@@ -1,8 +1,9 @@
 import { test, expect } from './_fixtures'
 
 /**
- * Runs surface rebuild — the Runs list on live run records, the run detail's
- * Techniques / Topology tabs, and the Composer dock following a canvas launch.
+ * Runs surface rebuild — the Runs list on live run records, the Techniques /
+ * Topology views of a run (tabs of Results since the Runs / Results split), and
+ * the Composer dock following a canvas launch.
  *
  * WHY AN E2E SPEC
  * ---------------
@@ -19,7 +20,7 @@ import { test, expect } from './_fixtures'
  * repeat grouping leaves them as 27 rows and the pager has a second page), and
  * one pull launch from the Composer canvas onto an agent nothing polls, so the
  * step rows stay `queued` — the honest state for a beacon that has not called
- * in. tenant-verified stays 0 throughout; every surface says so.
+ * in.
  */
 
 const CYCLE = ['SIM-EDR-001', 'SIM-EDR-002', 'SIM-EDR-003']
@@ -46,11 +47,13 @@ test('Runs list: rows carry live fields, the pager turns at 25, the scenario fil
   await expect(started).not.toHaveText('')
   await expect(started, 'hover carries the absolute UTC timestamp').toHaveAttribute('title', ABSOLUTE_UTC)
   await expect(row.getByTestId('run-duration')).not.toHaveText('')
-  // A staged bundle has not been read back from the tenant, so it carries no
-  // detection count yet — and its one action is Read back (design v26 §4.6).
-  await expect(row.getByTestId('run-detections'), 'no detection claim before a read back').toHaveText('not read back')
-  await expect(row.getByRole('button', { name: 'Read back' })).toBeVisible()
-  await expect(row.getByTestId('run-status')).toHaveText(/staged$/)
+  // A row says how the run went and whether it is reviewed, each as a kit
+  // StatusIcon and a word — never a detection count. A staged bundle has not
+  // been reviewed, and its one action is Review (design v26 §4.6).
+  await expect(row.getByTestId('run-status').locator('.kit-status__word')).toHaveText('Staged')
+  await expect(row.getByTestId('run-review').locator('.kit-status__word')).toHaveText('Not reviewed')
+  await expect(row.getByRole('button', { name: 'Review', exact: true })).toBeVisible()
+  await expect(row, 'a row carries no detection verdict').not.toContainText(/detected|missed/i)
 
   // Pager: 25 per page, and the label counts the whole list.
   const label = page.getByTestId('run-pager-label')
@@ -87,14 +90,21 @@ test('Runs list: rows carry live fields, the pager turns at 25, the scenario fil
   await expect(label).toHaveText(/^Page 1 of \d+ · \d+ runs$/)
   expect(page.url()).not.toMatch(/scenario=/)
 
-  // The footer never lets a count read as tenant proof.
-  await expect(page.getByTestId('run-list')).toContainText('tenant-verified: 0')
+  // The list's own controls are kit buttons; no legacy .btn is left on it.
+  await expect(page.getByTestId('run-pager-next')).toHaveClass(/kit-btn/)
+  expect(await page.getByTestId('run-list').locator('.btn').count()).toBe(0)
 })
 
-test('Run detail: Techniques draws 14 stages on one row, Topology pins the Engine beside the lanes', async ({ page, api }) => {
+test('Results: Techniques draws 14 stages on one row, Topology pins the Engine beside the lanes', async ({ page, api, request, baseURL }) => {
   await api.health()
   const runId = await api.launchPush(CYCLE[0])
+  // Results shows a run's views once it has been reviewed. Importing an empty
+  // batch of observations is a review with no tenant and no outbound call.
+  const o = await request.post(`${baseURL}/api/runs/${runId}/observations`, { data: { observations: [], host: 'e2e-runs-rebuild' } })
+  expect(o.ok(), await o.text()).toBe(true)
+  // The old address of this tab forwards to Results, on the same tab.
   await page.goto(`/#/runs?run=${runId}&tab=techniques`)
+  await expect(page).toHaveURL(new RegExp(`#/proof\\?run=${runId}&tab=techniques$`))
 
   const tech = page.getByTestId('run-techniques')
   await expect(tech).toBeVisible({ timeout: 15_000 })
@@ -119,8 +129,10 @@ test('Run detail: Techniques draws 14 stages on one row, Topology pins the Engin
   expect(await empties.count()).toBeLessThan(14)
   const opacity = await empties.first().evaluate((e) => Number(getComputedStyle(e).opacity))
   expect(opacity).toBeLessThan(0.6)
-  await expect(page.getByTestId('technique-totals')).toContainText('tenant-verified: 0')
-  await expect(tech).toContainText('Authored is not proven.')
+  // The totals count; the run's verdict is Results' own line, not repeated here.
+  await expect(page.getByTestId('technique-totals')).toContainText(/\d+ of \d+ detected/)
+  await expect(page.getByTestId('technique-verdict')).toHaveCount(0)
+  await expect(tech).toContainText('Counts are this SimCore’s result rows')
   // A staged push run is not proven: nothing may read missed.
   expect(await page.locator('[data-testid=technique-row][data-tone=miss]').count()).toBe(0)
 
@@ -153,7 +165,8 @@ test('Run detail: Techniques draws 14 stages on one row, Topology pins the Engin
   const engineBox = (await engine.boundingBox())!
   expect(engineBox.x, 'Engine terminal is left of the lane block').toBeGreaterThanOrEqual(lanesBox.x + lanesBox.width - 1)
   expect(engineBox.y, 'Engine terminal does not sit below the lanes').toBeLessThan(lanesBox.y + lanesBox.height)
-  await expect(page.getByTestId('topo-totals')).toContainText('tenant-verified: 0')
+  await expect(page.getByTestId('topo-totals')).toContainText(/\d+ of \d+ detected/)
+  await expect(page.getByTestId('topo-verdict')).toHaveCount(0)
   expect(await page.locator('[data-testid=topo-cell][data-tone=miss]').count()).toBe(0)
 })
 

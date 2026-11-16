@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import RunDetailView from '../console/RunDetailView.jsx'
+import RunCaveats from '../console/RunCaveats.jsx'
 
 void React
 
@@ -12,7 +12,7 @@ const BASE = {
   block_mode_status: null, severed_at_step: null,
 }
 
-describe('<RunDetailView /> attestations', () => {
+describe('<RunCaveats /> attestations', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}), {
       status: 200, headers: { 'content-type': 'application/json' },
@@ -21,7 +21,7 @@ describe('<RunDetailView /> attestations', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   it('is absent when nothing was declared', () => {
-    render(<RunDetailView runId="run-a" run={BASE} subTab="live" />)
+    render(<RunCaveats runId="run-a" run={BASE} />)
     expect(screen.queryByTestId('run-attestations')).toBeNull()
     expect(screen.queryByTestId('run-severed-banner')).toBeNull()
   })
@@ -32,7 +32,7 @@ describe('<RunDetailView /> attestations', () => {
       bas_mode_attested: true, soakless_attested: false,
       block_mode_status: 'block_mode_unconfirmed', canary_run_id: 'canary-9',
     }
-    render(<RunDetailView runId="run-a" run={run} subTab="live" />)
+    render(<RunCaveats runId="run-a" run={run} />)
     const panel = screen.getByTestId('run-attestations')
     expect(panel.textContent).toContain('Agent profile mode: block — attested by henry at 2026-10-26T09:30:00Z, not verified')
     expect(panel.textContent).toContain('BAS mode: enabled')
@@ -42,7 +42,7 @@ describe('<RunDetailView /> attestations', () => {
 
   it('never prints null / None for absent facts', () => {
     const run = { ...BASE, agent_profile_mode: 'report' }
-    render(<RunDetailView runId="run-a" run={run} subTab="live" />)
+    render(<RunCaveats runId="run-a" run={run} />)
     const t = screen.getByTestId('run-attestations').textContent
     expect(t).toContain('attested by unknown at unknown, not verified')
     expect(t).toContain('BAS mode: not attested')
@@ -52,14 +52,14 @@ describe('<RunDetailView /> attestations', () => {
   })
 
   it('shows the canary shapes: status only / run only', () => {
-    const { rerender } = render(<RunDetailView runId="run-a" run={{ ...BASE, agent_profile_mode: 'block', block_mode_status: 'canary_not_available' }} subTab="live" />)
+    const { rerender } = render(<RunCaveats runId="run-a" run={{ ...BASE, agent_profile_mode: 'block', block_mode_status: 'canary_not_available' }} />)
     expect(screen.getByTestId('run-attestations').textContent).toContain('Canary: canary_not_available')
-    rerender(<RunDetailView runId="run-a" run={{ ...BASE, agent_profile_mode: 'block', canary_run_id: 'c1' }} subTab="live" />)
+    rerender(<RunCaveats runId="run-a" run={{ ...BASE, agent_profile_mode: 'block', canary_run_id: 'c1' }} />)
     expect(screen.getByTestId('run-attestations').textContent).toContain('Canary: run c1 (status unknown)')
   })
 
   it('shows the severed banner when severed_at_step is set', () => {
-    render(<RunDetailView runId="run-a" run={{ ...BASE, severed_at_step: 'step-02' }} subTab="live" />)
+    render(<RunCaveats runId="run-a" run={{ ...BASE, severed_at_step: 'step-02' }} />)
     expect(screen.getByTestId('run-severed-banner').textContent).toBe('Chain severed at step-02')
   })
 })

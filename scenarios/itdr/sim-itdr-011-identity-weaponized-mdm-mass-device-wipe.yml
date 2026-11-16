@@ -81,6 +81,7 @@ steps:
   - id: step-01
     name: "Compromised Intune admin broadcasts a bulk RemoteWipe/FactoryReset across the estate (SAFE-MODE markers)"
     command: |
+      rm -rf /tmp/cortexsim-itdr-011 && mkdir -m 700 /tmp/cortexsim-itdr-011 || { echo "sandbox /tmp/cortexsim-itdr-011 could not be created fresh: something else is at that path" >&2; exit 1; }
       WIPE_DIR="/tmp/cortexsim-itdr-011/wiped-devices"
       mkdir -p "$WIPE_DIR"
       for i in $(seq 1 30); do
@@ -105,6 +106,7 @@ steps:
   - id: step-02
     name: "First-ever destructive device action on a standing-privilege admin, with the phished-admin risky sign-in precursor"
     command: |
+      [ "$(stat -c %F:%u:%a /tmp/cortexsim-itdr-011 2>/dev/null)" = "directory:$(id -u):700" ] || { echo "sandbox /tmp/cortexsim-itdr-011 is missing or not ours: step-01 did not complete" >&2; exit 1; }
       WIPE_DIR="/tmp/cortexsim-itdr-011/wiped-devices"
       mkdir -p "$WIPE_DIR"
       echo "SAFE-MODE first-seen destructive marker initiated_by=intune-admin@cortexsim-canary.invalid action=RemoteWipe standing_privilege=true prior_wipes=0" > "$WIPE_DIR/first-seen.wipe"

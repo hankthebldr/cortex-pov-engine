@@ -12,7 +12,7 @@ import { sectionFor } from '../../app/destinations.jsx'
  *
  * Renders nothing for a task without tabs (Get started, Runs, Agents, Tenant),
  * or with one page: a strip with a single tab is not a choice. Results is one
- * page since its Coverage tab became the Dashboards rail item.
+ * page since its Coverage tab became the Reports rail item.
  */
 export default function SectionTabs({ destination, onNavigate = () => {} }) {
   const section = sectionFor(destination)

@@ -14,17 +14,15 @@
  */
 import React from 'react'
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import { sectionFor, getDestination } from '../destinations.jsx'
 import OperationsView from '../../components/console/OperationsView.jsx'
 import TtpBrowserView from '../../components/console/TtpBrowserView.jsx'
-import ReadinessView from '../../components/console/ReadinessView.jsx'
-import EvidenceView from '../../components/console/EvidenceView.jsx'
+import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
 import CoverageView from '../../components/console/CoverageView.jsx'
 import DataStreamsView from '../../components/console/DataStreamsView.jsx'
 import UcTcIndexView from '../../components/console/UcTcIndexView.jsx'
-import LabView from '../../components/console/LabView.jsx'
 import EalConsole from '../../components/EalConsole.jsx'
 
 void React
@@ -43,26 +41,67 @@ describe('page h1 is the rail or tab label', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('library')))
   })
 
-  it('Launch gate', async () => {
+  it('Launch gate, with nothing armed: one scenario\'s run, and no app status', async () => {
+    installRoutes({ 'GET /api/agents': { agents: [], total: 0 } })
+    const Gate = getDestination('preflight').Component
+    render(<Gate params={{}} onNavigate={() => {}} />)
+    await waitFor(() => expect(h1Texts()).toEqual([railLabel('preflight')]))
+    // It said "the whole app" too: this POVengine's status sat under the run.
+    // Now one short line points there, and the empty state is one short line.
+    expect(screen.getByTestId('launch-gate-scope')).toHaveTextContent(/^Tenant, agents and collectors are on Get started\.$/)
+    expect(screen.getByTestId('launch-gate-armed')).toHaveTextContent(/^Arm a scenario from Scenarios to begin\.$/)
+    expect(screen.queryByTestId('readiness-view')).toBeNull()
+  })
+
+  it('Launch gate, armed: one short line naming the scenario id, its name in the tooltip', async () => {
+    installRoutes({
+      'GET /api/agents': { agents: [], total: 0 },
+      'GET /api/scenarios/:id': { scenario_id: 'SIM-EDR-001', name: 'Credential Dumping — /etc/shadow and Mimipenguin', steps: [] },
+    })
+    const Gate = getDestination('preflight').Component
+    render(<Gate params={{ arm: 'SIM-EDR-001' }} onNavigate={() => {}} />)
+    const armed = await screen.findByTestId('launch-gate-armed')
+    await waitFor(() => expect(armed).toHaveTextContent(/^Armed: SIM-EDR-001$/))
+    expect(within(armed).getByText('SIM-EDR-001'))
+      .toHaveAttribute('title', 'Credential Dumping — /etc/shadow and Mimipenguin')
+  })
+
+  it('Get started tracks this POVengine\'s status under its own h1', async () => {
     installRoutes({
       'GET /api/health': { status: 'ok', components: {} },
       'GET /api/credentials/integrations': { integrations: [] },
       'GET /api/connectors': { connectors: [] },
       'GET /api/assertions/runs': { runs: [] },
       'GET /api/assertions': { assertions: [], total: 0 },
+      'GET /api/agents': { agents: [], total: 0 },
+      'GET /api/runs': { runs: [], total: 0 },
     })
-    render(<ReadinessView />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('preflight')))
+    const Start = getDestination('start').Component
+    render(<Start params={{}} onNavigate={() => {}} />)
+    expect(await screen.findByTestId('readiness-view')).toBeInTheDocument()
+    await waitFor(() => expect(h1Texts()).toEqual([railLabel('start')]))
+    expect(await screen.findByRole('heading', { level: 2, name: 'This POVengine' })).toBeInTheDocument()
   })
 
-  it('Results › Report', async () => {
+  it('Results, and its Detections tab adds no h1 of its own', async () => {
     installRoutes({ 'GET /api/results/run-A': { results: [] } })
-    render(<EvidenceView pinnedRun={{ runId: 'run-A', scenarioId: 'SIM-EDR-001', status: 'completed' }} />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(tabLabel('proof')))
+    const run = {
+      run_id: 'run-A', scenario_id: 'SIM-EDR-001', status: 'complete', mode: 'pull',
+      delivered_at: '2026-11-13T17:00:03', tc_verdict_detail: { source: 'reconcile:xsiam:lab' },
+    }
+    const Results = getDestination('proof').Component
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, runs: [run] }}>
+        <Results params={{ run: 'run-A' }} />
+      </EnvironmentContext.Provider>,
+    )
+    await screen.findByRole('tab', { name: 'Detections' })
+    expect(h1Texts()).toEqual([railLabel('proof')])
   })
 
-  it('Dashboards, on every tab', async () => {
+  it('Reports, on every tab', async () => {
     installRoutes({
+      'GET /api/reports/executions': () => new Response('{}', { status: 500 }),
       'GET /api/mitre/coverage': { by_tactic: [], techniques: [], summary: null },
       'GET /api/scenarios': { scenarios: [] },
       'GET /api/runs': { runs: [], total: 0 },
@@ -72,7 +111,7 @@ describe('page h1 is the rail or tab label', () => {
     render(<CoverageView />)
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(railLabel('coverage')))
     // The lens is named by the tab; switching it does not rename the page.
-    for (const tab of [/MITRE/, /Planes × doors/, /PANW stack/, /Competitive/, /Detection source/]) {
+    for (const tab of [/MITRE/, /Planes × doors/, /PANW stack/, /Competitive/, /Detection source/, /Executions/]) {
       fireEvent.click(screen.getByRole('tab', { name: tab }))
       expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([railLabel('coverage')])
     }
@@ -100,7 +139,7 @@ describe('page h1 is the rail or tab label', () => {
 })
 
 describe('off-tab pages: one h1, and it is the registry label', () => {
-  it('the Launch gate keeps one h1 with a scenario armed: the panel and this POVengine are h2s', async () => {
+  it('the Launch gate keeps one h1 with a scenario armed, and carries no app status', async () => {
     installRoutes({
       'GET /api/scenarios/SIM-EDR-001': {
         scenario_id: 'SIM-EDR-001', name: 'Credential dumping', plane: 'EDR',
@@ -114,18 +153,7 @@ describe('off-tab pages: one h1, and it is the registry label', () => {
     await screen.findByTestId('new-run')
     expect(h1Texts()).toEqual([routeLabel('preflight')])
     expect(screen.getByRole('heading', { level: 2, name: 'New POV run' })).toBeInTheDocument()
-  })
-
-  it('Lab', async () => {
-    installRoutes({
-      'GET /api/infra/modules': { modules: [], total: 0 },
-      'GET /api/infra/bundles': { bundles: [], total: 0 },
-      'GET /api/tools/adapters': { adapters: [], total: 0 },
-    })
-    render(<LabView />)
-    await waitFor(() => expect(h1Texts()).toEqual([routeLabel('environments')]))
-    // "Infrastructure" was the retired nav group; the page no longer wears it.
-    expect(screen.queryByText('Infrastructure')).toBeNull()
+    expect(screen.queryByTestId('readiness-view')).toBeNull()
   })
 
   it('Traffic / EAL, as plain text', async () => {

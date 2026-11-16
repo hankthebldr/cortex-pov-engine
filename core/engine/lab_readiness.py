@@ -36,6 +36,17 @@ _NO_SIGNAL_RE = re.compile(r"^(echo|printf|:|true|touch|sleep|export|cd|set|sour
 # substitution inside a test still counts, because that runs a real command.
 _BOOKKEEPING_RE = re.compile(r"^(\[\s.*\]|exit(\s+\d+)?)$")
 _PROBE_SUBST_RE = re.compile(r"\$\((?:stat|id)\b[^()]*\)")
+# A guard's lookup can also be held in a variable (`s=$(stat ...)`, then
+# `[ "$s" = ... ]`) and can carry the macOS fallback `|| stat -f ...` inside
+# the substitution. Both are collapsed to one token before the command is split,
+# so the fallback's `||` does not cut the guard in two and the assignment of a
+# lookup is bookkeeping. Only this exact lookup is collapsed: any other
+# assignment still counts.
+_GUARD_LOOKUP_RE = re.compile(
+    r"\$\(stat -c %F:%u:%a [^()|;&]*?2>/dev/null"
+    r"(?:\s*\|\|\s*stat -f %HT:%u:%Lp [^()|;&]*?2>/dev/null)?\)")
+_GUARD_TOKEN = "__CORTEXSIM_GUARD_LOOKUP__"
+_GUARD_ASSIGN_RE = re.compile(rf"^[A-Za-z_][A-Za-z0-9_]*={_GUARD_TOKEN}$")
 # A guarded availability probe is NOT an attack action — it only asks "is this
 # tool present / what version is it". A SAFE-MODE narration step that pairs an
 # `echo` with `(esxcli --version || true)` produces no attack telemetry, so
@@ -151,6 +162,8 @@ def _clause_is_signal(clause: str) -> bool:
         return False
     if _PROBE_RE.match(c):
         return False
+    if _GUARD_ASSIGN_RE.match(c):
+        return False
     bare = _PROBE_SUBST_RE.sub("", c)
     if _BOOKKEEPING_RE.match(bare) and "$(" not in bare and "`" not in bare:
         return False
@@ -159,6 +172,7 @@ def _clause_is_signal(clause: str) -> bool:
 
 def _step_produces_signal(command: str) -> bool:
     """True if any clause performs a real, telemetry-producing action."""
+    command = _GUARD_LOOKUP_RE.sub(_GUARD_TOKEN, command or "")
     return any(_clause_is_signal(c) for c in _clauses(command))
 
 

@@ -11,7 +11,11 @@ import { preflightScenario } from './readiness/scenarioPreflight.js'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
 import NewRunPanel from './NewRunPanel.jsx'
+import EalConsentRow from './EalConsentRow.jsx'
+import { ealSteps } from './ealConsent.js'
 import { runTargets, runPlan, runBlockers } from './newRun.js'
+import { agentIdOf } from '../../api/ids.js'
+import { StatusIcon } from './kit/index.js'
 
 /**
  * The launch result as LaunchGateNotice reads it. Its warning list renders a
@@ -36,6 +40,23 @@ function forGateNotice(lastRun) {
 }
 
 /**
+ * One consent for a scenario's gated tools (dual-use, C2), as one compact row
+ * like the EAL row: the tick and one sentence, and "Required" while the run
+ * waits on it.
+ */
+function ToolConsentRow({ checked, onChange, children }) {
+  return (
+    <div className="launch-consent__row">
+      <label className="launch-consent__tick">
+        <input type="checkbox" checked={checked} onChange={onChange} />
+        <span>{children}</span>
+      </label>
+      {!checked && <StatusIcon status="degraded" word="Required" />}
+    </div>
+  )
+}
+
+/**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
  *
  * The step that makes "Launch" legible. It composes two earlier choices —
@@ -45,7 +66,7 @@ function forGateNotice(lastRun) {
  *
  * Props:
  *   scenario        — full scenario detail (or null)
- *   selectedTarget  — { kind:'agent'|'push'|'iac', id, label } | null
+ *   selectedTarget  — { kind:'agent'|'push', id, label } | null
  *   onRunComplete   — (run) => void
  *   onError         — (msg) => void
  *   onGoLibrary     — () => void
@@ -212,11 +233,14 @@ export default function LaunchView({
 
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
-  const consentBlocked =
-    (needsSim && !launch.consent.simulation_authorized) ||
-    (needsC2 && !launch.consent.c2_authorized)
   const toggleConsent = (key) =>
     launch.setConsent((c) => ({ ...c, [key]: !c[key] }))
+
+  // ── EAL consent ───────────────────────────────────────────────────────
+  // Asked only when the armed scenario has an EAL step. Unticked, the launch
+  // is the one sent before and those steps run dry.
+  const hasEal = useMemo(() => ealSteps(scenario).length > 0, [scenario])
+  const ealUnnamed = hasEal && launch.ealLive && !launch.ealAuthorizedBy.trim()
 
   // Every independent reason Launch is dead, in one list the operator can read.
   // The hook owns scenario/agent readiness; the target pick and the consent
@@ -230,6 +254,7 @@ export default function LaunchView({
     if (needsC2 && !launch.consent.c2_authorized) {
       out.push('Tick the C2-framework consent for this scenario')
     }
+    if (ealUnnamed) out.push('Name who authorised the live EAL traffic')
     for (const name of missingDeclaredPayloads) {
       out.push(
         `${name} is declared by this scenario but is not ready on this instance — the launch will `
@@ -247,16 +272,20 @@ export default function LaunchView({
     }
     return out
   }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads,
-      preflight.blocking])
+      preflight.blocking, ealUnnamed])
 
   // ── New POV run panel (design C1) ─────────────────────────────────────
   // The authorisation tick starts unticked for every run; the dual-use / C2
   // consents below it are still asked for exactly the tools that need them.
   const [authorised, setAuthorised] = useState(false)
   const targets = useMemo(() => runTargets(launch.agents), [launch.agents])
+  // The chosen agent's own record: its capabilities say who runs the cleanup.
+  const targetAgent = useMemo(() => (selectedTarget?.kind === 'agent'
+    ? (launch.agents || []).find((a) => agentIdOf(a) === selectedTarget.id) || null
+    : null), [selectedTarget, launch.agents])
   const plan = useMemo(
-    () => runPlan(scenario, { mode: targetMode, identity: launch.identity }),
-    [scenario, targetMode, launch.identity],
+    () => runPlan(scenario, { mode: targetMode, identity: launch.identity, agent: targetAgent }),
+    [scenario, targetMode, launch.identity, targetAgent],
   )
   const runBlocked = useMemo(
     () => runBlockers({ base: blockers, target: selectedTarget, authorised }),
@@ -366,39 +395,39 @@ export default function LaunchView({
             onIdentity={launch.setIdentity}
             authorised={authorised}
             onAuthorised={setAuthorised}
-            consentExtra={(needsSim || needsC2) ? (
-              <div className={'launch-consent' + (consentBlocked ? ' launch-consent--blocking' : '')}>
-                <div className="launch-consent__title">
-                  Tool consent required
-                  {consentBlocked && <span className="launch-consent__flag"> · blocking Run</span>}
-                </div>
-                {needsSim && (
-                  <label className="launch-consent__row">
-                    <input
-                      type="checkbox"
+            consentExtra={(needsSim || needsC2 || hasEal) ? (
+              <>
+              {hasEal && (
+                <EalConsentRow
+                  live={launch.ealLive}
+                  onLive={launch.setEalLive}
+                  authorizedBy={launch.ealAuthorizedBy}
+                  onAuthorizedBy={launch.setEalAuthorizedBy}
+                  c2={launch.ealC2}
+                  onC2={launch.setEalC2}
+                />
+              )}
+              {(needsSim || needsC2) && (
+                <div className="launch-consent" role="group" aria-label="Tool consent" data-testid="launch-tool-consent">
+                  {needsSim && (
+                    <ToolConsentRow
                       checked={!!launch.consent.simulation_authorized}
                       onChange={() => toggleConsent('simulation_authorized')}
-                    />
-                    <span>
-                      I authorize <strong>lab-only</strong> use of dual-use tools (
-                      {gated.dualUse.map((a) => a.name).join(', ')}).
-                    </span>
-                  </label>
-                )}
-                {needsC2 && (
-                  <label className="launch-consent__row launch-consent__row--c2">
-                    <input
-                      type="checkbox"
+                    >
+                      I authorize lab-only use of dual-use tools ({gated.dualUse.map((a) => a.name).join(', ')})
+                    </ToolConsentRow>
+                  )}
+                  {needsC2 && (
+                    <ToolConsentRow
                       checked={!!launch.consent.c2_authorized}
                       onChange={() => toggleConsent('c2_authorized')}
-                    />
-                    <span>
-                      I authorize <strong>C2 framework</strong> execution (
-                      {gated.c2.map((a) => a.name).join(', ')}) on authorized targets only.
-                    </span>
-                  </label>
-                )}
-              </div>
+                    >
+                      I authorize C2 framework execution ({gated.c2.map((a) => a.name).join(', ')}) on authorized targets only
+                    </ToolConsentRow>
+                  )}
+                </div>
+              )}
+              </>
             ) : null}
             blockers={runBlocked}
             running={launch.launching || launch.downloading}

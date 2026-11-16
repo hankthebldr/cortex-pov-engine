@@ -69,6 +69,24 @@ def test_an_ownership_guard_is_not_signal():
     assert lr._step_produces_signal('[ "$(curl -s http://198.51.100.7/x)" = ok ] || exit 1') is True
 
 
+def test_a_stored_or_portable_ownership_guard_is_not_signal():
+    # RED before the lookup token: `s=$(stat ...)` counted as a real command, and
+    # the macOS fallback's `||` inside the substitution split the guard into two
+    # half-clauses that each counted, so a narration step (SIM-MP-013 step-05)
+    # that runs inside root's directory re-scored as emitting signal.
+    stored = ('s=$(stat -c %F:%u:%a /tmp/x 2>/dev/null); [ "$s" = "directory:0:755" ] || '
+              '[ "$s" = "directory:$(id -u):755" ] || { echo "not root\'s" >&2; exit 1; }')
+    portable = ('s=$(stat -c %F:%u:%a /tmp/x 2>/dev/null || stat -f %HT:%u:%Lp /tmp/x 2>/dev/null); '
+                '[ "$s" = "directory:$(id -u):700" ] || [ "$s" = "Directory:$(id -u):700" ] || '
+                '{ echo "not ours" >&2; exit 1; }')
+    for guard in (stored, portable):
+        assert lr._step_produces_signal(guard + "\ntouch /tmp/x/m.SAFE-MODE; echo done") is False
+        assert lr._step_produces_signal(guard + "\ncat /etc/shadow") is True
+    # only the guard's own lookup is bookkeeping: storing anything else is a real command
+    assert lr._step_produces_signal("s=$(stat -c %s /etc/shadow)") is True
+    assert lr._step_produces_signal("U=$(id -un)") is True
+
+
 def test_real_commands_are_signal():
     for c in ("cat /etc/shadow", "find /home -name id_rsa", "mkdir -p /tmp/x",
               "nmap -sV 10.0.0.1", "python3 -m scripts.eal_simulator.cli run"):
@@ -117,8 +135,7 @@ def test_known_narration_scenarios_are_red_and_real_ones_are_not():
     # NOTE: SIM-MP-020 was converted from echo/SAFE-MODE narration to real
     # read-only signal-producers (bf4b307), so it is legitimately GREEN now and
     # is no longer a narration scenario — dropped from this expected-RED list.
-    for sid in ("SIM-EDR-019", "SIM-TIM-005", "SIM-ASM-005",
-                "SIM-ASM-006", "SIM-ITDR-016"):
+    for sid in ("SIM-EDR-019", "SIM-TIM-005", "SIM-ITDR-016"):
         assert rows[sid]["tier"] == "RED", (sid, rows[sid]["reason"])
         assert rows[sid]["steps_real_signal"] == 0
     # Scenarios that run real binaries must never be RED.

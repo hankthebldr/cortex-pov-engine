@@ -167,7 +167,7 @@ Inside the 45-minute window, reboot the VM. Then run the hunt queries
 `last_run` after the boot time shows the foothold ran again after the reboot.
 This leg is observed, not scored.
 
-### 5. Cleanup (the beacon does not run `cleanup.commands`)
+### 5. Cleanup (a beacon from before #324 does not run `cleanup.commands`)
 
 Run after the read-back, from Henry's terminal on the VM, or as a one-step
 `identity: root` draft through the beacon:

@@ -7,10 +7,9 @@
  */
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, renderHook } from '@testing-library/react'
+import { render, screen, waitFor, renderHook, within } from '@testing-library/react'
 import { parseServerTime } from '../../api/time.js'
 import TargetsView from '../console/TargetsView.jsx'
-import EventStream from '../console/EventStream.jsx'
 import { EnvironmentContext, DEFAULT_ENV, EnvironmentProvider, useEnvironment } from '../../context/EnvironmentContext.jsx'
 import useScenarioRunHistory, { formatAgo } from '../console/useScenarioRunHistory.js'
 import { installRoutes } from '../../test/mockFetch.js'
@@ -63,8 +62,8 @@ describe('agent liveness on the Agents surface', () => {
     process.env.TZ = 'America/Los_Angeles'
     renderAgents([{ agent_id: 'jb-dead', hostname: 'jb', last_seen: naiveUtc(10 * 60_000) }])
     const card = screen.getByText('jb-dead').closest('.target-card')
-    expect(card.querySelector('.target-card__pill--stale')).not.toBeNull()
-    expect(card.querySelector('.target-card__pill--live')).toBeNull()
+    expect(within(card).getByRole('img', { name: 'Stale' })).toBeTruthy()
+    expect(within(card).queryByRole('img', { name: 'Online' })).toBeNull()
     expect(card.textContent).toContain('seen 10m ago')
   })
 
@@ -72,8 +71,8 @@ describe('agent liveness on the Agents surface', () => {
     process.env.TZ = 'Asia/Tokyo'
     renderAgents([{ agent_id: 'jb-live', hostname: 'jb', last_seen: naiveUtc(5_000) }])
     const card = screen.getByText('jb-live').closest('.target-card')
-    expect(card.querySelector('.target-card__pill--live')).not.toBeNull()
-    expect(card.querySelector('.target-card__pill--stale')).toBeNull()
+    expect(within(card).getByRole('img', { name: 'Online' })).toBeTruthy()
+    expect(within(card).queryByRole('img', { name: 'Stale' })).toBeNull()
     expect(card.textContent).toMatch(/seen \ds ago/)
   })
 })
@@ -96,7 +95,7 @@ describe('active-run elapsed time', () => {
   })
 })
 
-describe('run-history "ago" and the event log clock', () => {
+describe('run-history "ago"', () => {
   it('the Library history badge says a run 2 h ago happened 2h ago, not just now', async () => {
     process.env.TZ = 'America/Los_Angeles'
     installRoutes({
@@ -105,19 +104,6 @@ describe('run-history "ago" and the event log clock', () => {
     const { result } = renderHook(() => useScenarioRunHistory())
     await waitFor(() => expect(result.current.historyByScenario.get('SIM-EDR-001')).toBeTruthy())
     expect(formatAgo(result.current.historyByScenario.get('SIM-EDR-001').lastRunAt)).toBe('2h ago')
-  })
-
-  it('event lines print the UTC clock SimCore stamped, not one shifted by the browser zone', async () => {
-    process.env.TZ = 'Asia/Tokyo'
-    installRoutes({
-      'GET /api/runs/r-tz': {
-        id: 'r-tz', scenario_id: 'SIM-EDR-001', status: 'running',
-        started_at: '2026-05-20T22:00:00', steps: [],
-      },
-    })
-    render(<EventStream runId="r-tz" />)
-    await waitFor(() => expect(screen.getByText(/run started/i)).toBeInTheDocument())
-    expect(screen.getByText('22:00:00')).toBeInTheDocument()
   })
 })
 

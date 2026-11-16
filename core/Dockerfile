@@ -324,7 +324,6 @@ WORKDIR /app
 # Bundle application code + content so the image is self-contained (no host mounts required).
 COPY core/      /app/core/
 COPY scenarios/ /app/scenarios/
-COPY infra/     /app/infra/
 # The POS/PLT/AUT assertion corpus — the second proof mechanism, sibling of
 # scenarios/. AssertionCatalog.ensure_loaded() reads <base>/assertions at first
 # access. Without it the catalog loads 18 -> 0 with rejected:[] , and
