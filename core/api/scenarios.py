@@ -54,7 +54,7 @@ from engine import staged_library, tenant_content
 from engine.dataset_requirements import DatasetRequirementsError
 from engine.lab_readiness import favorites as corpus_favorites
 from engine.ttp_catalog import catalog as ttp_catalog
-from models import Scenario
+from models import SCENARIO_RETIRED, Scenario
 
 logger = logging.getLogger("cortexsim.api.scenarios")
 
@@ -866,6 +866,20 @@ async def _load_scenario(scenario_id: str, db: AsyncSession) -> Scenario:
     return scenario
 
 
+async def _load_bundle_scenario(scenario_id: str, db: AsyncSession) -> Scenario:
+    """``_load_scenario`` for the bundle routes: a bundle runs the scenario, so a
+    retired one is refused exactly as a launch is."""
+    from engine.orchestrator import retired_refusal  # noqa: PLC0415
+
+    scenario = await _load_scenario(scenario_id, db)
+    if scenario.status == SCENARIO_RETIRED:
+        refusal = retired_refusal(scenario_id)
+        raise HTTPException(status_code=refusal.http_status, detail={
+            "error": refusal.error, "code": refusal.error_code, "detail": refusal.error_detail,
+        })
+    return scenario
+
+
 def _resolve_format(scenario_id: str, scenario_dict: dict, format: str) -> tuple[str, str, list[str]]:
     """Validate + resolve ``format`` → (format, target, alternates)."""
     if format not in ("auto", *_FORMAT_TARGET):
@@ -951,7 +965,7 @@ async def download_bundle(
     offending steps, rather than emitting a bundle that parses and then dies in
     front of a customer — which reads as "the stack detected nothing".
     """
-    scenario = await _load_scenario(scenario_id, db)
+    scenario = await _load_bundle_scenario(scenario_id, db)
     scenario_dict = _scenario_document(scenario)
     format, target, alternates = _resolve_format(scenario_id, scenario_dict, format)
 
@@ -1033,7 +1047,7 @@ async def generate_bundle(
     ungated — they are self-contained scripts a DC runs on a host they already
     own, not objects created inside a customer's cluster.
     """
-    scenario = await _load_scenario(scenario_id, db)
+    scenario = await _load_bundle_scenario(scenario_id, db)
     scenario_dict = _scenario_document(scenario)
     fmt, target, alternates = _resolve_format(scenario_id, scenario_dict, body.format)
 

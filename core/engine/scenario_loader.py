@@ -1147,12 +1147,44 @@ def _parse_and_validate(filepath: str) -> tuple[Optional[ScenarioSchema], Option
         return None, f"Schema validation failed:\n{exc}"
 
 
+def _declared_scenario_id(filepath: str) -> Optional[str]:
+    """The ``scenario_id`` a rejected file declares, or None when it cannot be read."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as fh:
+            raw: Any = yaml.load(fh, Loader=_YAML_LOADER)
+    except Exception:  # noqa: BLE001
+        return None
+    sid = raw.get("scenario_id") if isinstance(raw, dict) else None
+    return sid if isinstance(sid, str) and sid else None
+
+
+def _retire_missing(rows: Any, on_disk_ids: set[str]) -> list[str]:
+    """Mark every corpus row whose scenario_id no file declares as retired.
+
+    A Composer draft (``status='draft'``) has no file and is left alone.
+    Returns the newly retired scenario_ids, sorted.
+    """
+    from models import SCENARIO_RETIRED  # noqa: PLC0415
+
+    retired: list[str] = []
+    for row in rows:
+        if row.scenario_id in on_disk_ids or row.status in ("draft", SCENARIO_RETIRED):
+            continue
+        row.status = SCENARIO_RETIRED
+        retired.append(row.scenario_id)
+    return sorted(retired)
+
+
 async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
     """
     Load all scenario YAML files from scenarios_dir into the database.
     Performs an upsert (insert or update) keyed on scenario_id.
     Returns a list of successfully loaded scenario_ids.
     Invalid files are logged and counted but do not halt the load.
+
+    A corpus row whose file is no longer on disk is marked ``retired``, never
+    deleted: runs and results point at it. A file that comes back sets its own
+    status again on the next load.
     """
     # Import here to avoid circular imports at module load time
     from models import Scenario  # noqa: PLC0415
@@ -1164,6 +1196,9 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
 
     loaded_ids: list[str] = []
     errors: list[str] = []
+    # Every scenario_id a file on disk declares, loaded or rejected. A rejected
+    # file is still on disk, so its row is not retired for it.
+    on_disk_ids: set[str] = set()
 
     # One SELECT for the whole upsert instead of one per file. The loader is a
     # boot-path stage, so 161 round-trips is 161 chances to be slow on a
@@ -1178,9 +1213,13 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
             msg = f"REJECTED {filepath}: {error}"
             logger.error(msg)
             errors.append(msg)
+            declared = _declared_scenario_id(filepath)
+            if declared:
+                on_disk_ids.add(declared)
             continue
 
         assert schema is not None  # guaranteed by parse_and_validate
+        on_disk_ids.add(schema.scenario_id)
 
         # Phase 1 — warn (don't fail) on dangling ttp_ref / detection_id
         # references. The catalog is loaded best-effort; missing cards are
@@ -1235,6 +1274,13 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
             logger.info("UPDATED scenario %s from %s", schema.scenario_id, filepath)
 
         loaded_ids.append(schema.scenario_id)
+
+    retired = _retire_missing(existing_by_id.values(), on_disk_ids)
+    if retired:
+        logger.warning(
+            "Retired %d scenario(s) whose file is gone from %s: %s",
+            len(retired), scenarios_dir, ", ".join(retired),
+        )
 
     await db.commit()
 

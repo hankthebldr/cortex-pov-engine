@@ -144,6 +144,15 @@ feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
   Python against the ORM rows (so the list projection does not affect it).
+- **Retired scenarios (2026-11-15).** At boot, a corpus row whose YAML is no longer
+  under `scenarios/` gets `status: retired`. The row is kept so its runs and
+  results still open, and `GET /api/scenarios/{id}` still returns it. It is left
+  out of every corpus list and count (the Library, `/api/health`
+  `scenario_catalog.count`, UC/TC evidence, MITRE coverage, doors, the payload
+  shelf's `used_by`, the executions report's corpus). A launch, a preflight and
+  `GET /download` / `POST /bundle` refuse it with 409 `SCENARIO_RETIRED`. A boot
+  that finds the file again sets the file's own status. Composer drafts have no
+  file and are never retired.
 - **List projection (contract change, 2026-08-02).** The list response is a
   SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
   ~66 % of that was step `command` text and per-detection `description` prose no

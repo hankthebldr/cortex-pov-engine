@@ -469,6 +469,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ### Fixed
 
+- A scenario whose file is gone is retired at startup, so an upgraded database stops listing the scenarios this release moved.
 - **A correlation with nothing to join is not a Cortex miss** (#378). In the
   1.2.4 lab pass, SIM-CDR-019 and SIM-NDR-012 relayed their collector steps
   dry, so no input record left SimCore, yet the `echo` step carrying the
