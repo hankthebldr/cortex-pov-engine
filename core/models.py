@@ -28,6 +28,11 @@ from database import Base
 # wherever the models are loaded, so create_all creates it.
 from eal_relay_models import EalRelayStep  # noqa: F401
 
+#: Set at boot on a corpus row whose YAML is no longer on disk. Never authored
+#: in a scenario file. The row stays so its runs and results still read; the
+#: next boot that finds the file again sets the file's own status back.
+SCENARIO_RETIRED = "retired"
+
 
 class Scenario(Base):
     __tablename__ = "scenarios"
@@ -36,7 +41,7 @@ class Scenario(Base):
     scenario_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # active | draft | deprecated
+    status: Mapped[str] = mapped_column(String, nullable=False)  # active | draft | deprecated | retired
     plane: Mapped[str] = mapped_column(String, nullable=False)   # EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
 
     detection_types: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

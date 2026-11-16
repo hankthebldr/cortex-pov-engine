@@ -87,9 +87,14 @@ func run(args []string, stdout, stderr io.Writer, runner *Runner, transport *htt
 	}
 	line, _ := json.MarshalIndent(map[string]Summary{"eal_wire": sum}, "", "  ")
 	fmt.Fprintf(stdout, "%s\n", line)
-	if sum.Network > 0 && sum.Reached == 0 {
-		fmt.Fprintf(stdout, "EAL_WIRE_NOT_DELIVERED: 0 of %d operations reached a destination\n", sum.Network)
+	// The step's exit counts what left the endpoint. What the far end replied
+	// (a reset, an HTTP 500, nothing) does not make a sent request unsent.
+	if sum.Network > 0 && sum.Sent == 0 {
+		fmt.Fprintf(stdout, "EAL_WIRE_NOT_DELIVERED: %s\n", sum.Line())
 		return nonZero(code)
+	}
+	if sum.Network > 0 {
+		fmt.Fprintf(stdout, "EAL_WIRE_SENT: %s\n", sum.Line())
 	}
 	return code
 }

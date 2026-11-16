@@ -593,6 +593,13 @@ async def _account(
     issued, across every relay it made) has its undecided Results stamped
     ``not_executed`` with ``code``. The moment it sends something, a stamp an
     earlier relay of the same step left is lifted again.
+
+    An issued operation's fate is the beacon's to report, and it reports it in
+    the step's exit (``agent/ealrelay``): 0 once any operation's request was
+    written, whatever the far end replied (a reset, an HTTP 500, silence), 1
+    when none was. Its Results are then judged like any step's: by a matching
+    alert, or ``missed`` after the window; ``not_executed`` / ``STEP_FAILED``
+    only on that 1 (#374).
     """
     from eal_relay_models import EalRelayStep  # noqa: PLC0415
     from engine.outcome import OUTCOME_NOT_EXECUTED  # noqa: PLC0415

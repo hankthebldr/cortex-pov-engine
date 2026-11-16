@@ -700,7 +700,6 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 >
                   <div className="target-card__head">
                     <span className="target-card__title mono">{id}</span>
-                    {isActive && <span className="target-card__tag">Active</span>}
                     <span className="target-card__status" title={live.label} data-testid="agent-liveness">
                       <StatusIcon status={liveness.status} word={liveness.word} />
                     </span>

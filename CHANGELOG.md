@@ -514,6 +514,7 @@ routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
 
 ### Fixed
 
+- A scenario whose file is gone is retired at startup, so an upgraded database stops listing the scenarios this release moved.
 - **A correlation with nothing to join is not a Cortex miss** (#378). In the
   1.2.4 lab pass, SIM-CDR-019 and SIM-NDR-012 relayed their collector steps
   dry, so no input record left SimCore, yet the `echo` step carrying the
@@ -545,6 +546,7 @@ routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
   it has written, so a Correlation row or a timed-out step's row that an
   earlier version wrote `missed` stays `missed`. Re-run the scenario to score
   it under these rules.
+- **A relayed request the far end resets still counts as sent** (#374).
 - **A finished run's stdout panel shows what the run printed** (#340). The
   panel on a run's Live tab showed only the live stream, so a run that had
   already ended said "waiting for agent…" even though SimCore had stored its

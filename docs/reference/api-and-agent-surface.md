@@ -144,6 +144,15 @@ feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
   Python against the ORM rows (so the list projection does not affect it).
+- **Retired scenarios (2026-11-15).** At boot, a corpus row whose YAML is no longer
+  under `scenarios/` gets `status: retired`. The row is kept so its runs and
+  results still open, and `GET /api/scenarios/{id}` still returns it. It is left
+  out of every corpus list and count (the Library, `/api/health`
+  `scenario_catalog.count`, UC/TC evidence, MITRE coverage, doors, the payload
+  shelf's `used_by`, the executions report's corpus). A launch, a preflight and
+  `GET /download` / `POST /bundle` refuse it with 409 `SCENARIO_RETIRED`. A boot
+  that finds the file again sets the file's own status. Composer drafts have no
+  file and are never retired.
 - **List projection (contract change, 2026-08-02).** The list response is a
   SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
   ~66 % of that was step `command` text and per-detection `description` prose no
@@ -1169,18 +1178,45 @@ is a dry run: nothing is sent, `ops` is empty, and `stdout.relay.code` says why.
 | `EAL_DRY_RUN_NO_C2_CONSENT` | The campaign has a C2-shaped plugin and the launch carried no `c2_authorized` |
 | `EAL_DRY_RUN_TARGET_*`, `EAL_DRY_RUN_SLEEP_CAP`, `EAL_DRY_RUN_HELD` | As §1.3.2, for the collector steps |
 
+**Sent or not sent.** The beacon counts each network operation by what left
+the endpoint, never by what came back (#374):
+
+| Operation | `sent` once | `not_sent` when |
+|---|---|---|
+| `http` | a connection was made and the whole request written to it | the name did not resolve, the connect was refused or timed out, the TLS handshake failed, or the write failed before the request was complete |
+| `dns` | the query was written to the named resolver, or the host's resolver gave any answer (NXDOMAIN included) | the resolver could not be reached or the write failed |
+| `tcp` | a connection was made and its first frame written (a connect-only op once it connected; a `probe` once it tried) | the connect was refused or timed out, or the first frame could not be written |
+
+What the far end did next is the sent operation's reply class, and does not
+make it unsent: `http_<status>` (any status, 500 included), `reset`, `closed`,
+`timeout_waiting_reply`, `answered`, `refused` (a probe's closed port),
+`no_reply_asked`, `error`. A firewall logs a reset request as a session from
+the endpoint, and that session is what the step's detections look for. After
+the operations, `eal` prints the account in `stdout` as
+`{"eal_wire": {operations, network_operations, sent, not_sent, replies,
+slept_seconds, bytes_sent, by_kind, failures[], reply_errors[]}}`, where
+`failures` says why an operation was not sent and `reply_errors` how a sent
+one's reply ended (20 of each at most), then one line:
+`EAL_WIRE_SENT: 12 of 12 sent · 12 reset by peer`, or, when nothing was sent,
+`EAL_WIRE_NOT_DELIVERED: 0 of 12 sent · 12 not sent`.
+
 **Results.** A marked step that has sent nothing (no record accepted and no
 operation issued, over every relay it made) has its seeded Results stamped
 `outcome: not_executed` with the code as `outcome_reason`, exactly as an
 in-process EAL step's are, so they leave the efficacy denominator. A later relay
-of the same step that does send lifts the stamp.
+of the same step that does send lifts the stamp. Whether issued operations got
+onto the wire is the step's exit: a step that sent at least one exits 0 and its
+Results are judged like any step's, credited by a matching alert or `missed`
+once the window closes; one that sent none exits 1, and its silent Results read
+`not_executed` / `STEP_FAILED` (§1.3.1).
 
-**Exit codes.** 0 the campaign completed (a dry run included); 1 it did not, or
-SimCore refused the plan, or the beacon refused it or none of its operations
-reached a destination (`EAL_WIRE_NOT_DELIVERED`); 2 usage or an invalid
-campaign file; 3 `EAL_WIRE_NOT_RELAYABLE`; 4 the call never reached SimCore or
-was refused (`EAL_RELAY_UNREACHABLE` / `EAL_RELAY_REFUSED: <code>` on stderr). A
-non-zero step stops the task's later steps, as for any step.
+**Exit codes.** 0 the campaign completed (a dry run included) and, when it had
+operations, at least one was sent; 1 it did not complete, or SimCore refused the
+plan, or the beacon refused it or sent none of its operations
+(`EAL_WIRE_NOT_DELIVERED`); 2 usage or an invalid campaign file; 3
+`EAL_WIRE_NOT_RELAYABLE`; 4 the call never reached SimCore or was refused
+(`EAL_RELAY_UNREACHABLE` / `EAL_RELAY_REFUSED: <code>` on stderr). A non-zero
+step stops the task's later steps, as for any step.
 
 **Who may ask.** The endpoint identifies the beacon as every agent endpoint
 does, by the ids in the body. It serves a request only when an
