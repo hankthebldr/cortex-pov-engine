@@ -216,6 +216,12 @@ class Settings(BaseSettings):
     # host address, IPv4 and IPv6; 0.0.0.0 means IPv4 only.
     # scripts/dev-up-native.sh passes it to uvicorn --host directly.
     CORTEXSIM_BIND: str = ""
+    # Written by the setup program (povengine-setup), never by hand:
+    # CORTEXSIM_INSTALLED_BY is "povengine-setup/<version>+<linux|windows>" and
+    # CORTEXSIM_INSTALL_ADDRESS is "<address>:<port>". Both empty on a compose
+    # deployment. /api/health reports them as the top-level `install` block.
+    CORTEXSIM_INSTALLED_BY: str = ""
+    CORTEXSIM_INSTALL_ADDRESS: str = ""
     # Host names the console/API answers to beyond localhost, IP literals and
     # this machine's own hostname/FQDN — the DNS-rebinding guard
     # (core/security/host_guard.py). Comma list; "*.lab.example" matches
