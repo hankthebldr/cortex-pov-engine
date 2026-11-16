@@ -28,7 +28,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
+        coverage-strict check-agent-shelf check-image-sources check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth check-grouping \
         wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
 
@@ -269,6 +269,14 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target, with th
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
 	docker run --rm -i --entrypoint python3 $(IMAGE) - /app/agent-dist < scripts/ci/check_agent_magic.py
+
+check-image-sources: ## assert the BUILT IMAGE carries every sources/ tree SimCore reads at runtime (needs `make build`)
+	docker run --rm --entrypoint sh $(IMAGE) -c '\
+	  for t in cortex-malicious-agentic-pack cortex-prompt-attacker cortex-vulnerable-llm \
+	           cortex-browser-attacker mocktaxii gocortexbrokenbank; do \
+	    test -d "/app/sources/$$t" || { echo "MISSING /app/sources/$$t"; exit 1; }; \
+	    echo "sources OK: /app/sources/$$t"; \
+	  done'
 
 # Render EVERY PowerShell artifact the repo emits (Windows installer variants,
 # the Windows uninstaller, every windows push bundle, every PowerShell step a
