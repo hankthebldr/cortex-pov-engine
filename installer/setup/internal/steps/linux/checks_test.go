@@ -188,7 +188,10 @@ func TestHostCheck_ApplyChangesNothing(t *testing.T) {
 	}
 }
 
-const ownDocker = "docker -H unix:///run/povengine/docker.sock ps --filter name=^povengine-simcore$ --format {{.Names}}"
+const (
+	ownInspect = "docker -H unix:///run/povengine/docker.sock inspect --format {{.Id}} povengine-simcore"
+	ownID      = "3f9c1d2e7a4b5c6d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90123456789ab"
+)
 
 func TestParseSS(t *testing.T) {
 	if !portInSS(td(t, "ss-listen-8888.txt"), 8888) {
@@ -221,77 +224,70 @@ func TestParseProcNetTCP(t *testing.T) {
 	}
 }
 
-func TestPortFree_FreePort(t *testing.T) {
-	h := &host.Fake{
-		Paths:     map[string]string{"ss": "/usr/bin/ss"},
-		Responses: map[string]host.FakeResponse{"ss -Hltn": {Stdout: td(t, "ss-listen-none.txt")}},
-	}
-	st := newState()
-	st.Choices.Port = 8888
-	if r := check(t, NewPortFree(h), st); r.Code != engine.CodeOK {
-		t.Fatalf("got %+v", r)
+func ssHost(t *testing.T, ssFile string) *host.Fake {
+	t.Helper()
+	return &host.Fake{
+		Paths: map[string]string{"ss": "/usr/bin/ss"},
+		Files: map[string][]byte{
+			"/proc/4242/cgroup": []byte("0::/system.slice/docker-" + ownID + ".scope\n"),
+			"/proc/999/cgroup":  []byte("0::/system.slice/nginx.service\n"),
+		},
+		Responses: map[string]host.FakeResponse{
+			"ss -Hltnp": {Stdout: td(t, ssFile)},
+			ownInspect:  {Stdout: []byte(ownID + "\n")},
+		},
 	}
 }
 
-func TestPortFree_InUseByStranger(t *testing.T) {
-	h := &host.Fake{
-		Paths: map[string]string{"ss": "/usr/bin/ss"},
-		Responses: map[string]host.FakeResponse{
-			"ss -Hltn": {Stdout: td(t, "ss-listen-8888.txt")},
-			ownDocker:  {Stdout: []byte("\n")},
-		},
-	}
+func port8888() *engine.State {
 	st := newState()
 	st.Choices.Port = 8888
-	r := check(t, NewPortFree(h), st)
-	if r.Code != engine.CodePortInUse || !r.Blocks() || !strings.Contains(r.Detail, "8888") {
+	return st
+}
+
+func TestPortFree_FreePort(t *testing.T) {
+	if r := check(t, NewPortFree(ssHost(t, "ss-listen-none.txt")), port8888()); r.Code != engine.CodeOK {
 		t.Fatalf("got %+v", r)
 	}
 }
 
 func TestPortFree_OwnContainerIsFine(t *testing.T) {
-	h := &host.Fake{
-		Paths: map[string]string{"ss": "/usr/bin/ss"},
-		Responses: map[string]host.FakeResponse{
-			"ss -Hltn": {Stdout: td(t, "ss-listen-8888.txt")},
-			ownDocker:  {Stdout: []byte("povengine-simcore\n")},
-		},
+	if r := check(t, NewPortFree(ssHost(t, "ss-listen-8888-ours.txt")), port8888()); r.Code != engine.CodeOK {
+		t.Fatalf("got %+v", r)
 	}
-	st := newState()
-	st.Choices.Port = 8888
-	if r := check(t, NewPortFree(h), st); r.Code != engine.CodeOK {
+}
+
+func TestPortFree_StrangerWhileOurContainerRuns(t *testing.T) {
+	r := check(t, NewPortFree(ssHost(t, "ss-listen-8888-stranger.txt")), port8888())
+	if r.Code != engine.CodePortInUse || !r.Blocks() || !strings.Contains(r.Detail, "8888") {
+		t.Fatalf("a stranger on the port must refuse even though povengine-simcore runs: %+v", r)
+	}
+}
+
+func TestPortFree_NoPidInfoIsNotOurs(t *testing.T) {
+	if r := check(t, NewPortFree(ssHost(t, "ss-listen-8888-nopid.txt")), port8888()); r.Code != engine.CodePortInUse {
 		t.Fatalf("got %+v", r)
 	}
 }
 
 func TestPortFree_DockerFailureMeansNotOurs(t *testing.T) {
-	h := &host.Fake{
-		Paths: map[string]string{"ss": "/usr/bin/ss"},
-		Responses: map[string]host.FakeResponse{
-			"ss -Hltn": {Stdout: td(t, "ss-listen-8888.txt")},
-			ownDocker:  {Err: errors.New("cannot connect")},
-		},
-	}
-	st := newState()
-	st.Choices.Port = 8888
-	if r := check(t, NewPortFree(h), st); r.Code != engine.CodePortInUse {
+	h := ssHost(t, "ss-listen-8888-ours.txt")
+	h.Responses[ownInspect] = host.FakeResponse{Err: errors.New("no such object")}
+	if r := check(t, NewPortFree(h), port8888()); r.Code != engine.CodePortInUse {
 		t.Fatalf("got %+v", r)
 	}
 }
 
-func TestPortFree_FallsBackToProcNetWithoutSS(t *testing.T) {
-	h := &host.Fake{
-		Files: map[string][]byte{
-			"/proc/net/tcp":  td(t, "proc-net-tcp"),
-			"/proc/net/tcp6": td(t, "proc-net-tcp6"),
-		},
-		Responses: map[string]host.FakeResponse{ownDocker: {Stdout: []byte("\n")}},
+func TestPortFree_FallbackWithListenerCannotAttribute(t *testing.T) {
+	h := &host.Fake{Files: map[string][]byte{
+		"/proc/net/tcp":  td(t, "proc-net-tcp"),
+		"/proc/net/tcp6": td(t, "proc-net-tcp6"),
+	}}
+	r := check(t, NewPortFree(h), port8888())
+	if r.Code != engine.CodePortInUse || !r.Blocks() || !strings.Contains(r.Detail, "cannot be attributed") {
+		t.Fatalf("got %+v", r)
 	}
 	st := newState()
-	st.Choices.Port = 8888
-	if r := check(t, NewPortFree(h), st); r.Code != engine.CodePortInUse {
-		t.Fatalf("busy via /proc: %+v", r)
-	}
 	st.Choices.Port = 9999
 	if r := check(t, NewPortFree(h), st); r.Code != engine.CodeOK {
 		t.Fatalf("free via /proc: %+v", r)
@@ -302,31 +298,22 @@ func TestPortFree_SSFailureFallsBack(t *testing.T) {
 	h := &host.Fake{
 		Paths:     map[string]string{"ss": "/usr/bin/ss"},
 		Files:     map[string][]byte{"/proc/net/tcp": td(t, "proc-net-tcp-no8888")},
-		Responses: map[string]host.FakeResponse{"ss -Hltn": {Err: errors.New("boom")}},
+		Responses: map[string]host.FakeResponse{"ss -Hltnp": {Err: errors.New("boom")}},
 	}
-	st := newState()
-	st.Choices.Port = 8888
-	if r := check(t, NewPortFree(h), st); r.Code != engine.CodeOK {
+	if r := check(t, NewPortFree(h), port8888()); r.Code != engine.CodeOK {
 		t.Fatalf("got %+v", r)
 	}
 }
 
 func TestPortFree_NothingReadableIsNotAPass(t *testing.T) {
-	h := &host.Fake{}
-	st := newState()
-	st.Choices.Port = 8888
-	r := check(t, NewPortFree(h), st)
+	r := check(t, NewPortFree(&host.Fake{}), port8888())
 	if !r.Blocks() || r.Code != engine.CodePortInUse {
 		t.Fatalf("an unreadable socket table must not read as free: %+v", r)
 	}
 }
 
 func TestPortFree_DefaultPort(t *testing.T) {
-	h := &host.Fake{
-		Paths:     map[string]string{"ss": "/usr/bin/ss"},
-		Responses: map[string]host.FakeResponse{"ss -Hltn": {Stdout: td(t, "ss-listen-8888.txt")}, ownDocker: {}},
-	}
-	if r := check(t, NewPortFree(h), newState()); r.Code != engine.CodePortInUse {
+	if r := check(t, NewPortFree(ssHost(t, "ss-listen-8888-stranger.txt")), newState()); r.Code != engine.CodePortInUse {
 		t.Fatalf("port 0 must mean 8888: %+v", r)
 	}
 }
@@ -418,8 +405,9 @@ func TestAddressCandidates_BadJSONRaises(t *testing.T) {
 
 func addressHost(t *testing.T) *host.Fake {
 	return &host.Fake{Responses: map[string]host.FakeResponse{
-		"ip -j route": {Stdout: td(t, "ip-route-two-nics.json")},
-		"ip -j addr":  {Stdout: td(t, "ip-addr-two-nics.json")},
+		"ip -j route show default":    {Stdout: td(t, "ip-route-two-nics.json")},
+		"ip -j -6 route show default": {Stdout: []byte(`[]`)},
+		"ip -j addr":                  {Stdout: td(t, "ip-addr-two-nics.json")},
 	}}
 }
 
@@ -487,8 +475,8 @@ func TestAddressStep_ListenOnlyNeedsAnIP(t *testing.T) {
 
 func TestAddressStep_NoCandidatesNoAddress(t *testing.T) {
 	h := &host.Fake{Responses: map[string]host.FakeResponse{
-		"ip -j route": {Stdout: []byte(`[]`)},
-		"ip -j addr":  {Stdout: []byte(`[]`)},
+		"ip -j route show default": {Stdout: []byte(`[]`)},
+		"ip -j addr":               {Stdout: []byte(`[]`)},
 	}}
 	r := check(t, NewAddressStep(h), newState())
 	if r.Code != engine.CodeAddressInvalid || !strings.Contains(r.Detail, "--address") {
@@ -697,6 +685,73 @@ func TestHostCheck_MemoryFloor(t *testing.T) {
 	h.Files["/proc/meminfo"] = []byte("MemTotal:        3600000 kB\n")
 	r := check(t, NewHostCheck(h), newState())
 	if r.Code != engine.CodeMemoryLow || !r.Blocks() || !strings.Contains(r.Detail, "3.4 GiB") {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestAddressCandidates_ContainerInterfacesNeverListed(t *testing.T) {
+	got, err := AddressCandidates(td(t, "ip-route-docker.json"), td(t, "ip-addr-docker.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"192.0.2.10"}) {
+		t.Fatalf("got %v, want only the ens3 address", got)
+	}
+}
+
+func TestAddressCandidates_IPv6OnlyDefaultRoute(t *testing.T) {
+	got, err := addressCandidates([][]byte{[]byte(`[]`), td(t, "ip-route6-default.json")}, td(t, "ip-addr-v6only.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ens6 holds the IPv6 default route, so it leads; docker0's IPv4 is dropped.
+	want := []string{"2001:db8:6::7", "2001:db8:5::7"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestAddressCandidates_RankBeatsFamily(t *testing.T) {
+	// Default-route NIC has only IPv6; another NIC has IPv4: the default-route
+	// interface still leads.
+	got, err := addressCandidates([][]byte{[]byte(`[]`), td(t, "ip-route6-default.json")}, []byte(`[
+ {"ifname":"ens3","addr_info":[{"family":"inet","local":"192.0.2.10","scope":"global"}]},
+ {"ifname":"ens6","addr_info":[{"family":"inet6","local":"2001:db8:6::7","scope":"global"}]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"2001:db8:6::7", "192.0.2.10"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestAddressCandidates_MultipathNexthops(t *testing.T) {
+	got, err := AddressCandidates(td(t, "ip-route-multipath.json"), td(t, "ip-addr-two-nics.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ens4 is the first nexthop: both its addresses (IPv4 then IPv6) rank
+	// ahead of ens3, the second nexthop.
+	want := []string{"198.51.100.20", "2001:db8:1::20", "192.0.2.10"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestAddressStep_ParseErrorIsInTheBlockDetail(t *testing.T) {
+	h := &host.Fake{Responses: map[string]host.FakeResponse{
+		"ip -j route show default":    {Stdout: []byte(`{"unexpected":true}`)},
+		"ip -j -6 route show default": {Stdout: []byte(`[]`)},
+		"ip -j addr":                  {Stdout: td(t, "ip-addr-two-nics.json")},
+	}}
+	r := check(t, NewAddressStep(h), newState())
+	if r.Code != engine.CodeAddressInvalid || !r.Blocks() || !strings.Contains(r.Detail, "ip -j route") || !strings.Contains(r.Detail, "--address") {
+		t.Fatalf("got %+v", r)
+	}
+	// A given address still passes despite the unreadable table.
+	st := newState()
+	st.Choices.Address = "192.0.2.10"
+	if r := check(t, NewAddressStep(h), st); r.Code != engine.CodeOK {
 		t.Fatalf("got %+v", r)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -279,7 +280,10 @@ func (s *HostCheck) memoryKiB() (int64, error) {
 // ----------------------------------------------------------------- PortFree
 
 // PortFree refuses when something other than our own SimCore listens on the
-// chosen TCP port.
+// chosen TCP port. A listener is ours only when its process sits in the
+// povengine-simcore container's cgroup: SimCore runs with --network host, so
+// its port never shows in `docker ps`, and the container merely existing says
+// nothing about who holds this port.
 type PortFree struct {
 	checkOnly
 	h host.Host
@@ -295,27 +299,23 @@ func (s *PortFree) Check(ctx context.Context, st *engine.State) engine.Result {
 	if port == 0 {
 		port = defaultPort
 	}
-	busy, known := s.listening(ctx, port)
-	if !known {
-		return block(engine.CodePortInUse, fmt.Sprintf("cannot tell whether TCP %d is free: neither ss nor /proc/net/tcp is readable", port))
-	}
-	if !busy {
-		return ok(fmt.Sprintf("TCP %d is free", port))
-	}
-	if s.ownContainerRuns(ctx) {
-		return ok(fmt.Sprintf("TCP %d is held by this installer's own SimCore", port))
-	}
-	return block(engine.CodePortInUse, fmt.Sprintf("TCP %d is already in use; stop what holds it or choose another port (--port)", port))
-}
+	inUse := fmt.Sprintf("TCP %d is already in use; stop what holds it or choose another port (--port)", port)
 
-// listening reports whether a TCP listener holds port. known is false when no
-// source could be read, which must never read as "free".
-func (s *PortFree) listening(ctx context.Context, port int) (busy, known bool) {
 	if _, err := s.h.LookPath("ss"); err == nil {
-		if out, err := run(ctx, s.h, "ss", "-Hltn"); err == nil {
-			return portInSS(out, port), true
+		if out, err := run(ctx, s.h, "ss", "-Hltnp"); err == nil {
+			ls := ssListeners(out, port)
+			if len(ls) == 0 {
+				return ok(fmt.Sprintf("TCP %d is free", port))
+			}
+			if s.allOurs(ctx, ls) {
+				return ok(fmt.Sprintf("TCP %d is held by this installer's own SimCore", port))
+			}
+			return block(engine.CodePortInUse, inUse)
 		}
 	}
+
+	// No usable ss: the socket table can say a port is busy but not whose it is.
+	known := false
 	for _, f := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
 		b, err := s.h.ReadFile(f)
 		if err != nil {
@@ -323,34 +323,67 @@ func (s *PortFree) listening(ctx context.Context, port int) (busy, known bool) {
 		}
 		known = true
 		if portInProcNet(b, port) {
-			return true, true
+			return block(engine.CodePortInUse, fmt.Sprintf(
+				"TCP %d is in use and ss is not available, so the listener cannot be attributed to SimCore; stop what holds it or choose another port (--port)", port))
 		}
 	}
-	return false, known
+	if !known {
+		return block(engine.CodePortInUse, fmt.Sprintf("cannot tell whether TCP %d is free: neither ss nor /proc/net/tcp is readable", port))
+	}
+	return ok(fmt.Sprintf("TCP %d is free", port))
 }
 
-// ownContainerRuns asks the installer's private engine whether povengine-simcore
-// is running. It prefers the bundled docker CLI and falls back to PATH.
-func (s *PortFree) ownContainerRuns(ctx context.Context) bool {
+// allOurs reports whether every listener on the port has a process inside the
+// povengine-simcore container's cgroup.
+func (s *PortFree) allOurs(ctx context.Context, ls []listener) bool {
+	id := s.containerID(ctx)
+	if id == "" {
+		return false
+	}
+	for _, l := range ls {
+		mine := false
+		for _, pid := range l.pids {
+			cg, err := s.h.ReadFile("/proc/" + strconv.Itoa(pid) + "/cgroup")
+			if err == nil && strings.Contains(string(cg), id) {
+				mine = true
+				break
+			}
+		}
+		if !mine {
+			return false
+		}
+	}
+	return true
+}
+
+// containerID asks the installer's private engine for povengine-simcore's id,
+// preferring the bundled docker CLI and falling back to PATH. "" = not found.
+func (s *PortFree) containerID(ctx context.Context) string {
 	docker := "docker"
 	if _, err := s.h.Stat(ownEngineDocker); err == nil {
 		docker = ownEngineDocker
 	}
-	out, err := run(ctx, s.h, docker, "-H", ownEngineSocket, "ps",
-		"--filter", "name=^"+ownContainerName+"$", "--format", "{{.Names}}")
+	out, err := run(ctx, s.h, docker, "-H", ownEngineSocket, "inspect", "--format", "{{.Id}}", ownContainerName)
 	if err != nil {
-		return false
+		return ""
 	}
-	for _, n := range strings.Fields(string(out)) {
-		if n == ownContainerName {
-			return true
-		}
+	id := strings.TrimSpace(string(out))
+	if len(id) < 12 || strings.ContainsAny(id, " \t\n") {
+		return ""
 	}
-	return false
+	return id
 }
 
-// portInSS parses `ss -Hltn`: State Recv-Q Send-Q Local:Port Peer:Port.
-func portInSS(out []byte, port int) bool {
+// listener is one `ss` line for the port; pids is empty when ss could not name
+// the process (not root).
+type listener struct{ pids []int }
+
+var pidRE = regexp.MustCompile(`pid=(\d+)`)
+
+// ssListeners parses `ss -Hltnp`: State Recv-Q Send-Q Local:Port Peer:Port
+// [users:(("name",pid=N,fd=M),...)] and returns the lines on port.
+func ssListeners(out []byte, port int) []listener {
+	var ls []listener
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
@@ -362,12 +395,21 @@ func portInSS(out []byte, port int) bool {
 		if i < 0 {
 			continue
 		}
-		if p, err := strconv.Atoi(local[i+1:]); err == nil && p == port {
-			return true
+		if p, err := strconv.Atoi(local[i+1:]); err != nil || p != port {
+			continue
 		}
+		var l listener
+		for _, m := range pidRE.FindAllStringSubmatch(strings.Join(f[4:], " "), -1) {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				l.pids = append(l.pids, n)
+			}
+		}
+		ls = append(ls, l)
 	}
-	return false
+	return ls
 }
+
+func portInSS(out []byte, port int) bool { return len(ssListeners(out, port)) > 0 }
 
 // portInProcNet parses /proc/net/tcp or tcp6: only state 0A (LISTEN) counts.
 func portInProcNet(b []byte, port int) bool {

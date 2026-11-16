@@ -12,20 +12,66 @@ import (
 	"github.com/hankthebldr/cortexsim/installer/setup/internal/host"
 )
 
-// AddressCandidates lists the addresses beacons could use to reach this host,
-// from `ip -j route` and `ip -j addr`: the IPv4 addresses of the interface
-// holding the default route first (lowest metric first), then every other
-// global IPv4, then global IPv6. Loopback and link-local addresses are never
-// offered. A shape it does not recognise is an error, not an empty list: a
-// wrong default silently hands beacons an unreachable URL.
+// AddressCandidates is addressCandidates for a single `ip -j route` document;
+// kept for callers and tests that have only the IPv4 table.
 func AddressCandidates(routeJSON, addrJSON []byte) ([]string, error) {
-	var routes []struct {
-		Dst    string `json:"dst"`
-		Dev    string `json:"dev"`
-		Metric int    `json:"metric"`
+	return addressCandidates([][]byte{routeJSON}, addrJSON)
+}
+
+// excludedIfacePrefixes name container, virtualisation and overlay interfaces.
+// Their addresses are never what a beacon on another host should dial; an
+// operator who wants one passes --address.
+var excludedIfacePrefixes = []string{"docker", "br-", "veth", "virbr", "cni", "flannel", "cali", "tailscale"}
+
+func excludedIface(name string) bool {
+	for _, p := range excludedIfacePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
 	}
-	if err := json.Unmarshal(routeJSON, &routes); err != nil {
-		return nil, fmt.Errorf("ip -j route: %w", err)
+	return false
+}
+
+// addressCandidates lists the addresses beacons could use to reach this host.
+// routeJSONs are `ip -j [-6] route show default` documents (any family). The
+// interfaces holding a default route rank first, lowest metric first (a
+// multipath route contributes each nexthops[].dev); within one rank IPv4
+// precedes IPv6. Loopback, link-local and container/overlay interfaces are
+// never offered. A shape it does not recognise is an error, not an empty list:
+// a wrong default silently hands beacons an unreachable URL.
+func addressCandidates(routeJSONs [][]byte, addrJSON []byte) ([]string, error) {
+	type route struct {
+		Dst      string `json:"dst"`
+		Dev      string `json:"dev"`
+		Metric   int    `json:"metric"`
+		Nexthops []struct {
+			Dev string `json:"dev"`
+		} `json:"nexthops"`
+	}
+	rank := map[string]int{} // interface -> position among default routes
+	for _, rj := range routeJSONs {
+		var routes []route
+		if err := json.Unmarshal(rj, &routes); err != nil {
+			return nil, fmt.Errorf("ip -j route: %w", err)
+		}
+		sort.SliceStable(routes, func(i, j int) bool { return routes[i].Metric < routes[j].Metric })
+		for _, r := range routes {
+			if r.Dst != "default" {
+				continue
+			}
+			devs := []string{r.Dev}
+			for _, nh := range r.Nexthops {
+				devs = append(devs, nh.Dev)
+			}
+			for _, d := range devs {
+				if d == "" || excludedIface(d) {
+					continue
+				}
+				if _, seen := rank[d]; !seen {
+					rank[d] = len(rank)
+				}
+			}
+		}
 	}
 	var ifaces []struct {
 		Name  string `json:"ifname"`
@@ -39,17 +85,6 @@ func AddressCandidates(routeJSON, addrJSON []byte) ([]string, error) {
 		return nil, fmt.Errorf("ip -j addr: %w", err)
 	}
 
-	sort.SliceStable(routes, func(i, j int) bool { return routes[i].Metric < routes[j].Metric })
-	rank := map[string]int{} // interface -> position among default routes
-	for _, r := range routes {
-		if r.Dst != "default" || r.Dev == "" {
-			continue
-		}
-		if _, seen := rank[r.Dev]; !seen {
-			rank[r.Dev] = len(rank)
-		}
-	}
-
 	type cand struct {
 		addr string
 		v6   bool
@@ -57,6 +92,9 @@ func AddressCandidates(routeJSON, addrJSON []byte) ([]string, error) {
 	}
 	var cands []cand
 	for _, ifc := range ifaces {
+		if excludedIface(ifc.Name) {
+			continue
+		}
 		rk, isDefault := rank[ifc.Name]
 		if !isDefault {
 			rk = len(rank)
@@ -74,10 +112,10 @@ func AddressCandidates(routeJSON, addrJSON []byte) ([]string, error) {
 	}
 	sort.SliceStable(cands, func(i, j int) bool {
 		a, b := cands[i], cands[j]
-		if a.v6 != b.v6 {
-			return !a.v6 // IPv4 before IPv6
+		if a.rank != b.rank {
+			return a.rank < b.rank
 		}
-		return a.rank < b.rank
+		return !a.v6 && b.v6 // IPv4 before IPv6 within one rank
 	})
 	seen := map[string]bool{}
 	out := []string{}
@@ -103,11 +141,14 @@ func (*AddressStep) ID() string    { return "address" }
 func (*AddressStep) Title() string { return "Address" }
 
 func (s *AddressStep) Check(ctx context.Context, st *engine.State) engine.Result {
-	cands := s.candidates(ctx)
+	cands, candErr := s.candidates(ctx)
 	st.Facts[FactAddressCandidates] = strings.Join(cands, ",")
 
 	addr := st.Choices.Address
 	if addr == "" {
+		if candErr != nil {
+			return block(engine.CodeAddressInvalid, "could not detect this host's address ("+candErr.Error()+"); pass --address <ip or name>")
+		}
 		if len(cands) == 0 {
 			return block(engine.CodeAddressInvalid, "no usable address found on this host; pass --address <ip or name>")
 		}
@@ -126,22 +167,23 @@ func (s *AddressStep) Check(ctx context.Context, st *engine.State) engine.Result
 	return ok("Beacons will reach this host at " + addr)
 }
 
-// candidates never fails the step: a missing or unreadable `ip` only means
-// nothing is detected, which matters only when the operator gave no address.
-func (s *AddressStep) candidates(ctx context.Context) []string {
-	route, err := run(ctx, s.h, "ip", "-j", "route")
+// candidates never fails the step by itself: an error only matters when the
+// operator gave no address, and then it is shown in the block detail.
+func (s *AddressStep) candidates(ctx context.Context) ([]string, error) {
+	r4, err := run(ctx, s.h, "ip", "-j", "route", "show", "default")
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("ip route: %w", err)
+	}
+	routes := [][]byte{r4}
+	// IPv6 may be disabled; its table is then simply absent.
+	if r6, err := run(ctx, s.h, "ip", "-j", "-6", "route", "show", "default"); err == nil {
+		routes = append(routes, r6)
 	}
 	addr, err := run(ctx, s.h, "ip", "-j", "addr")
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("ip addr: %w", err)
 	}
-	c, err := AddressCandidates(route, addr)
-	if err != nil {
-		return nil
-	}
-	return c
+	return addressCandidates(routes, addr)
 }
 
 // classifyAddress reports whether a is an IP literal (isIP) and whether it is

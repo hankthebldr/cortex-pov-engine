@@ -1,0 +1,1 @@
+[{"dst":"default","flags":["onlink"],"nexthops":[{"gateway":"198.51.100.1","dev":"ens4","weight":1},{"gateway":"192.0.2.1","dev":"ens3","weight":1}]}]
