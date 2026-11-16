@@ -8,7 +8,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-## [1.2.5] - 2026-11-15
+## [1.2.5] - 2026-11-16
 
 **The 1.2.x close-out: pull runs clean up after themselves, show their output
 live and send EAL steps through SimCore, Runs, Results and Reports are rebuilt

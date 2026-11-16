@@ -214,7 +214,7 @@ installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
 CortexSim ships as tagged GitHub Releases — **v1.2.5** is the release this
-tree describes, the 1.2.x close-out cut 2026-11-15 and tagged by
+tree describes, the 1.2.x close-out cut 2026-11-16 and tagged by
 `tag-on-main.yml` when it merges to `main` (until that tag exists, **v1.2.4**
 is the latest tag) — and
 the release pipeline pushes a multi-arch image
@@ -1191,7 +1191,7 @@ make test-agent-cross   # beacon cross-compile gate
   database) were tagged 2026-11-15. **v1.2.5** (the 1.2.x close-out: pull runs
   clean up after themselves, stream live output and relay EAL steps through
   SimCore; the CSPM, ASM and AI_SPM planes and the IaC generator move to a
-  1.4.x branch) is the release this tree describes, cut 2026-11-15;
+  1.4.x branch) is the release this tree describes, cut 2026-11-16;
   `tag-on-main.yml` tags it from the first `## [x.y.z]` heading in
   `CHANGELOG.md` when the release PR merges to `main`, and until then
   **v1.2.4** is the latest tag. Releases up to v1.1.1
