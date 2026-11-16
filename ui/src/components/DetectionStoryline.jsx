@@ -3,7 +3,7 @@ import { isRunUnproven } from './console/runStatus.js'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
-import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile, STEP_FAILED } from '../outcomes.js'
+import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile, notExecutedReason } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -221,14 +221,15 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
             <span className="storyline-observed__reason">{det.outcome_reason}</span>
           )}
         </div>
-      ) : key === 'not_executed' && det.outcome_reason === STEP_FAILED ? (
-        // #323: the step ran and exited non-zero, so its silence says nothing
-        // about Cortex. The exit status is in the row's notes.
+      ) : key === 'not_executed' && notExecutedReason(det.outcome_reason) ? (
+        // #323, #378: the step failed or timed out, or the steps a correlation
+        // joins sent nothing, so its silence says nothing about Cortex. The
+        // detail is in the row's notes.
         <div
           className="storyline-detection__awaiting storyline-detection__awaiting--unproven"
-          title="The step failed on the host, so a miss can't be claimed."
+          title={notExecutedReason(det.outcome_reason).title}
         >
-          Signal never generated · step failed
+          Signal never generated · {notExecutedReason(det.outcome_reason).label}
         </div>
       ) : key === 'not_executed' ? (
         <div
