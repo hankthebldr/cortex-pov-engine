@@ -82,6 +82,18 @@ Hosted runners can carry the Windows e2e: pending.
 R1, on the owner's Windows machine, elevated Windows PowerShell 5.1, from the
 repo root. Do not change the order: each mode starts from a clean machine.
 
+The script stages itself, the rootfs and the service executable in
+`C:\ProgramData\povengine-spike`, which SYSTEM tasks and the service run files
+from. That directory is created with a protected ACL in the same call (SYSTEM
+and Administrators full control, inheritance off, owner Administrators). If it
+already exists, the script refuses to run unless its owner, its ACL and every
+file in it check out and nothing in it is a reparse point; inspect and delete
+such a directory by hand. In `account` mode the account gets read/execute on the
+directory (this folder only), the staged script, the rootfs and the service
+executable, and write on exactly two result files; nothing else. `-Mode cleanup`
+exits non-zero if any post-condition (service, tasks, portproxy, firewall rule,
+per-account distributions, account, profile, work directory) is not met.
+
 ```powershell
 # 1. system
 .\installer\spikes\wsl-service-spike.ps1 -Mode system -ResultPath .\spike-result-system.json

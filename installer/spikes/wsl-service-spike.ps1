@@ -77,23 +77,29 @@ if (-not [IO.Path]::IsPathRooted($ResultPath)) {
 # ---- helpers ----------------------------------------------------------------
 function Get-Clean {
     # Keep details short and free of this machine's name and any IPv4 address.
-    param([string]$Text)
+    # -KeepVersions is for text that is known to carry version numbers only
+    # (wsl --version). WSL and kernel versions are four-part dotted numbers, so
+    # the address scrub must not run on them.
+    param([string]$Text, [switch]$KeepVersions)
     if (-not $Text) { return '' }
     $t = $Text -replace "[\r\n]+", ' '
-    $t = $t -replace '\b\d{1,3}(\.\d{1,3}){3}\b', '<addr>'
+    if (-not $KeepVersions) { $t = $t -replace '\b\d{1,3}(\.\d{1,3}){3}\b', '<addr>' }
     if ($env:COMPUTERNAME) { $t = $t -replace [regex]::Escape($env:COMPUTERNAME), '<host>' }
     if ($env:USERNAME) { $t = $t -replace [regex]::Escape($env:USERNAME), '<user>' }
     $t = $t.Trim()
-    if ($t.Length -gt 240) { $t = $t.Substring(0, 240) }
+    $cap = 240
+    if ($KeepVersions) { $cap = 800 }
+    if ($t.Length -gt $cap) { $t = $t.Substring(0, $cap) }
     return $t
 }
 
 function Add-Check {
-    param([string]$Check, [bool]$Ok, [string]$Detail = '')
-    [void]$script:Checks.Add([ordered]@{ check = $Check; ok = $Ok; detail = (Get-Clean $Detail) })
+    param([string]$Check, [bool]$Ok, [string]$Detail = '', [switch]$KeepVersions)
+    $d = Get-Clean $Detail -KeepVersions:$KeepVersions
+    [void]$script:Checks.Add([ordered]@{ check = $Check; ok = $Ok; detail = $d })
     $mark = 'FAIL'
     if ($Ok) { $mark = 'ok  ' }
-    Write-Host ('[' + $mark + '] ' + $Check + ' ' + (Get-Clean $Detail))
+    Write-Host ('[' + $mark + '] ' + $Check + ' ' + $d)
 }
 
 function Write-Result {
@@ -114,6 +120,66 @@ function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $p = New-Object Security.Principal.WindowsPrincipal $id
     return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# ---- protected work directory ------------------------------------------------
+# SYSTEM tasks and a LocalSystem service run files from this directory, so it
+# must never be writable by anyone but SYSTEM and Administrators. It is created
+# with a protected ACL in the same call that creates it, and an existing
+# directory is refused unless its owner, its ACL and its contents check out.
+$script:StagedScript = Join-Path $script:WorkDir 'wsl-service-spike.ps1'
+
+function Initialize-WorkDir {
+    $path = $script:WorkDir
+    $trusted = @('S-1-5-18', 'S-1-5-32-544')
+    if (-not (Test-Path -LiteralPath $path)) {
+        $sec = New-Object Security.AccessControl.DirectorySecurity
+        $sec.SetOwner((New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'))
+        $sec.SetAccessRuleProtection($true, $false)
+        $inh = [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+        foreach ($t in $trusted) {
+            $id = New-Object Security.Principal.SecurityIdentifier $t
+            $rule = New-Object Security.AccessControl.FileSystemAccessRule($id, [Security.AccessControl.FileSystemRights]::FullControl, $inh, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+            $sec.AddAccessRule($rule)
+        }
+        [void][IO.Directory]::CreateDirectory($path, $sec)
+    }
+    # Verify whatever is there now, including a directory somebody created first.
+    $item = Get-Item -LiteralPath $path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw ('refusing ' + $path + ': it is a reparse point') }
+    $mask = [int][Security.AccessControl.FileSystemRights]'WriteData,AppendData,WriteExtendedAttributes,WriteAttributes,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+    $all = @($item)
+    foreach ($c in @(Get-ChildItem -LiteralPath $path -Force -Recurse)) { $all += $c }
+    foreach ($e in $all) {
+        if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw ('refusing ' + $e.FullName + ': it is a reparse point') }
+        $acl = Get-Acl -LiteralPath $e.FullName
+        $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+        if ($trusted -notcontains $owner) { throw ('refusing ' + $e.FullName + ': owner is not SYSTEM or Administrators; inspect and delete it by hand') }
+        if ($e.PSIsContainer -and $e.FullName -eq $item.FullName) {
+            foreach ($ace in $acl.Access) {
+                if ($ace.AccessControlType -ne 'Allow') { continue }
+                $sid = $ace.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+                if (($trusted -notcontains $sid) -and (([int]$ace.FileSystemRights -band $mask) -ne 0)) {
+                    throw ('refusing ' + $path + ': another principal can write to it; inspect and delete it by hand')
+                }
+            }
+        }
+    }
+}
+
+function New-StagedFile {
+    # An empty file that inherits the protected ACL (an existing one is emptied).
+    param([string]$Path)
+    [IO.File]::WriteAllBytes($Path, (New-Object byte[] 0))
+}
+
+function Grant-FileAccess {
+    # Narrow grant to the spike account on ONE path. 'RX' on the work directory
+    # is this-folder-only (no inheritance), so the account can traverse it but
+    # not create or rename anything in it.
+    param([string]$Path, [string]$Perm)
+    [void](& icacls.exe $Path /grant ($script:AccountName + ':(' + $Perm + ')'))
+    return ($LASTEXITCODE -eq 0)
 }
 
 function ConvertTo-ArgText {
@@ -203,7 +269,7 @@ function Get-WinInfo {
     $script:Meta['hypervisor_present'] = [bool]$cs.HypervisorPresent
     $script:Meta['build_number'] = [int]$v.Build
     $w = Invoke-WslHost -ArgList @('--version') -TimeoutSec 60
-    $script:Meta['wsl_version_text'] = (Get-Clean ($w.Output -replace '\s{2,}', ' '))
+    $script:Meta['wsl_version_text'] = (Get-Clean ($w.Output -replace '\s{2,}', ' ') -KeepVersions)
     $script:Meta['wsl_version_exit'] = $w.ExitCode
     return $w
 }
@@ -226,7 +292,7 @@ function Initialize-WslHost {
     $d = Invoke-WslHost -ArgList @('--set-default-version', '2') -TimeoutSec 60
     Add-Check 'wsl --set-default-version 2' ($d.ExitCode -eq 0) ('exit ' + $d.ExitCode + ' ' + $d.Output)
     $w = Get-WinInfo
-    Add-Check 'wsl --version' ($w.ExitCode -eq 0) $script:Meta['wsl_version_text']
+    Add-Check 'wsl --version' ($w.ExitCode -eq 0) $script:Meta['wsl_version_text'] -KeepVersions
     $wv = $null
     if ($w.Output -match 'WSL version:\s*([0-9]+(\.[0-9]+)*)') { $wv = [version]$Matches[1] }
     $mirrored = $false
@@ -235,7 +301,6 @@ function Initialize-WslHost {
 }
 
 function Save-Rootfs {
-    if (-not (Test-Path -LiteralPath $script:WorkDir)) { [void](New-Item -ItemType Directory -Path $script:WorkDir -Force) }
     if (-not (Test-Path -LiteralPath $script:RootfsFile)) {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
         $wc = New-Object Net.WebClient
@@ -418,10 +483,16 @@ function Build-ServiceExe {
 
 # ---- accounts, rights, one-shot tasks ----------------------------------------
 function New-RandomSecret {
+    # Built straight into a SecureString; never held as plain text.
+    $set = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
     $bytes = New-Object byte[] 24
     $rng = New-Object Security.Cryptography.RNGCryptoServiceProvider
     $rng.GetBytes($bytes)
-    return ('Aa1!' + [Convert]::ToBase64String($bytes).Replace('/', 'x').Replace('+', 'y').Replace('=', 'z'))
+    $ss = New-Object Security.SecureString
+    foreach ($c in 'Aa2!'.ToCharArray()) { $ss.AppendChar($c) }
+    foreach ($b in $bytes) { $ss.AppendChar($set[[int]$b % $set.Length]) }
+    $ss.MakeReadOnly()
+    return $ss
 }
 
 function Grant-Rights {
@@ -456,19 +527,20 @@ function Grant-Rights {
 function Invoke-AsAccount {
     # Run this script's internal mode under another account through a one-shot
     # scheduled task, and wait for it. Distributions are per account.
-    param([string]$UserId, [string]$Password, [string[]]$ScriptArgs, [int]$TimeoutSec = 900)
+    # No credential means SYSTEM.
+    param([Management.Automation.PSCredential]$Credential = $null, [string[]]$ScriptArgs, [int]$TimeoutSec = 900)
     $name = 'povengine-spike-oneshot'
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
-    $copy = Join-Path $script:WorkDir 'wsl-service-spike.ps1'
-    $argText = '-NoProfile -ExecutionPolicy Bypass -File "' + $copy + '" ' + ($ScriptArgs -join ' ')
+    $argText = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:StagedScript + '" ' + ($ScriptArgs -join ' ')
     $act = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $argText
     $set = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -AllowStartIfOnBatteries
-    if ($Password) {
+    if ($null -ne $Credential) {
         $task = New-ScheduledTask -Action $act -Settings $set
-        [void](Register-ScheduledTask -TaskName $name -InputObject $task -User $UserId -Password $Password)
+        # The one API that needs the secret as text.
+        [void](Register-ScheduledTask -TaskName $name -InputObject $task -User $Credential.UserName -Password ($Credential.GetNetworkCredential().Password))
     }
     else {
-        $pr = New-ScheduledTaskPrincipal -UserId $UserId -LogonType ServiceAccount -RunLevel Highest
+        $pr = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
         [void](Register-ScheduledTask -TaskName $name -Action $act -Settings $set -Principal $pr)
     }
     Start-ScheduledTask -TaskName $name
@@ -554,32 +626,36 @@ function Invoke-ServiceMode {
     Initialize-WslHost
     if ($script:Meta['wsl_version_exit'] -ne 0) { return $false }
     Save-Rootfs
-    Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $script:WorkDir 'wsl-service-spike.ps1') -Force
-    if (Test-Path -LiteralPath $script:SvcLog) { Remove-Item -LiteralPath $script:SvcLog -Force }
+    Copy-Item -LiteralPath $PSCommandPath -Destination $script:StagedScript -Force
+    $childJson = Join-Path $script:WorkDir 'provision-child.json'
+    New-StagedFile $script:SvcLog
+    New-StagedFile $childJson
 
     $cred = $null
-    $childJson = Join-Path $script:WorkDir 'provision-child.json'
-    if (Test-Path -LiteralPath $childJson) { Remove-Item -LiteralPath $childJson -Force }
     if ($isAccount) {
-        $pw = New-RandomSecret
-        $sec = ConvertTo-SecureString $pw -AsPlainText -Force
+        $secret = New-RandomSecret
         if (Get-LocalUser -Name $script:AccountName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $script:AccountName }
-        $u = New-LocalUser -Name $script:AccountName -Password $sec -PasswordNeverExpires -UserMayNotChangePassword -Description 'POVengine spike service account'
+        $u = New-LocalUser -Name $script:AccountName -Password $secret -PasswordNeverExpires -UserMayNotChangePassword -Description 'POVengine spike service account'
         Add-Check 'local account created (random password)' $true ''
         $rights = Grant-Rights -Sid $u.SID.Value -Rights @('SeServiceLogonRight', 'SeBatchLogonRight')
         Add-Check 'Log on as a service (and batch) granted' $rights ''
-        [void](& icacls.exe $script:WorkDir /grant ($script:AccountName + ':(OI)(CI)M'))
-        $cred = New-Object Management.Automation.PSCredential (('.\' + $script:AccountName), $sec)
-        $rc = Invoke-AsAccount -UserId ('.\' + $script:AccountName) -Password $pw -ScriptArgs @('-Mode', 'probe', '-ProvisionOnly', '-ResultPath', ('"' + $childJson + '"'))
+        # Least access: traverse the directory, read what it must run, write
+        # only the two files it must write. Nothing else in the directory.
+        $g1 = Grant-FileAccess $script:WorkDir 'RX'
+        $g2 = Grant-FileAccess $script:StagedScript 'RX'
+        $g3 = Grant-FileAccess $script:RootfsFile 'RX'
+        $g4 = Grant-FileAccess $childJson 'M'
+        $g5 = Grant-FileAccess $script:SvcLog 'M'
+        Add-Check 'account granted read/execute on three paths and write on two result files only' ($g1 -and $g2 -and $g3 -and $g4 -and $g5) ''
+        $cred = New-Object Management.Automation.PSCredential (('.\' + $script:AccountName), $secret)
     }
-    else {
-        $rc = Invoke-AsAccount -UserId 'SYSTEM' -Password '' -ScriptArgs @('-Mode', 'probe', '-ProvisionOnly', '-ResultPath', ('"' + $childJson + '"'))
-    }
+    $rc = Invoke-AsAccount -Credential $cred -ScriptArgs @('-Mode', 'probe', '-ProvisionOnly', '-ResultPath', ('"' + $childJson + '"'))
     Add-Check ('provisioning task exit code ' + $rc) ($rc -eq 0) ''
     $okChild = Read-ChildResult -Path $childJson -Prefix 'as service identity'
     if (-not $okChild) { return $false }
 
     Build-ServiceExe
+    if ($isAccount) { Add-Check 'account granted read/execute on the service executable' (Grant-FileAccess $script:SvcExe 'RX') '' }
     Set-PortAccess
     if (Get-Service -Name $script:SvcName -ErrorAction SilentlyContinue) { Stop-Service -Name $script:SvcName -Force -ErrorAction SilentlyContinue; [void](& sc.exe delete $script:SvcName) }
     if ($isAccount) {
@@ -674,68 +750,137 @@ function Invoke-PostReboot {
     return ($running -and $sum.Docker)
 }
 
+function Test-DistroPresent {
+    $l = Invoke-WslHost -ArgList @('--list', '--quiet') -TimeoutSec 60
+    foreach ($line in ($l.Output -split '[\r\n]+')) { if ($line.Trim() -eq $script:Distro) { return $true } }
+    return $false
+}
+
 function Invoke-Cleanup {
     if ($LocalDistroOnly) {
-        $r = Invoke-WslHost -ArgList @('--unregister', $script:Distro) -TimeoutSec 120
-        Add-Check 'distribution unregistered for this account' ($r.ExitCode -eq 0 -or $r.Output -match 'not found|no distribution') ('exit ' + $r.ExitCode)
+        [void](Invoke-WslHost -ArgList @('--unregister', $script:Distro) -TimeoutSec 120)
+        $gone = -not (Test-DistroPresent)
+        Add-Check 'distribution absent for this account' $gone ''
         $dir = Join-Path $env:LOCALAPPDATA 'povengine-spike'
-        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
-        return $true
+        $dirGone = $true
+        if (Test-Path -LiteralPath $dir) {
+            try { Remove-Item -LiteralPath $dir -Recurse -Force } catch { Write-Verbose 'remove failed' }
+            $dirGone = -not (Test-Path -LiteralPath $dir)
+        }
+        Add-Check 'per-account distribution directory absent' $dirGone ''
+        return ($gone -and $dirGone)
     }
-    if (-not (Test-Path -LiteralPath $script:WorkDir)) { [void](New-Item -ItemType Directory -Path $script:WorkDir -Force) }
+
+    # service
+    $detail = ''
     try {
         if (Get-Service -Name $script:SvcName -ErrorAction SilentlyContinue) {
             Stop-Service -Name $script:SvcName -Force -ErrorAction SilentlyContinue
             [void](& sc.exe delete $script:SvcName)
-            Add-Check 'service removed' $true ''
         }
     }
-    catch { Add-Check 'service removed' $false $_.Exception.Message }
+    catch { $detail = $_.Exception.Message }
+    for ($i = 0; $i -lt 10; $i++) {
+        if (-not (Get-Service -Name $script:SvcName -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 1
+    }
+    Add-Check 'service absent' ($null -eq (Get-Service -Name $script:SvcName -ErrorAction SilentlyContinue)) $detail
+
+    # tasks
     foreach ($t in @($script:TaskName, 'povengine-spike-oneshot')) {
         try { Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue } catch { Write-Verbose 'no task' }
+        Add-Check ('task ' + $t + ' absent') ($null -eq (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue)) ''
     }
+
+    # portproxy and firewall
     [void](& netsh.exe interface portproxy delete v4tov4 "listenport=$($script:HttpPort)" listenaddress=0.0.0.0)
+    $show = (@(& netsh.exe interface portproxy show v4tov4) -join "`n")
+    Add-Check 'portproxy rule absent' ($show -notmatch ('\s' + $script:HttpPort + '\s')) ''
     [void](& netsh.exe advfirewall firewall delete rule "name=$($script:FwRule)")
-    Add-Check 'portproxy and firewall rule removed' $true ''
+    [void](& netsh.exe advfirewall firewall show rule "name=$($script:FwRule)")
+    Add-Check 'firewall rule absent' ($LASTEXITCODE -ne 0) ''
 
-    Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $script:WorkDir 'wsl-service-spike.ps1') -Force
-    $rc = Invoke-AsAccount -UserId 'SYSTEM' -Password '' -ScriptArgs @('-Mode', 'cleanup', '-LocalDistroOnly', '-ResultPath', ('"' + (Join-Path $script:WorkDir 'cleanup-system.json') + '"')) -TimeoutSec 300
-    Add-Check 'SYSTEM distribution cleanup task' ($rc -eq 0) ('exit ' + $rc)
+    # distribution under SYSTEM
+    Copy-Item -LiteralPath $PSCommandPath -Destination $script:StagedScript -Force
+    $sysJson = Join-Path $script:WorkDir 'cleanup-system.json'
+    New-StagedFile $sysJson
+    $rc = Invoke-AsAccount -ScriptArgs @('-Mode', 'cleanup', '-LocalDistroOnly', '-ResultPath', ('"' + $sysJson + '"')) -TimeoutSec 300
+    Add-Check 'SYSTEM distribution cleanup task exit code' ($rc -eq 0) ('exit ' + $rc)
+    [void](Read-ChildResult -Path $sysJson -Prefix 'SYSTEM')
 
+    # the spike account, its distribution and its profile
     $acct = Get-LocalUser -Name $script:AccountName -ErrorAction SilentlyContinue
     if ($acct) {
-        $pw = New-RandomSecret
-        Set-LocalUser -Name $script:AccountName -Password (ConvertTo-SecureString $pw -AsPlainText -Force)
-        $rc2 = Invoke-AsAccount -UserId ('.\' + $script:AccountName) -Password $pw -ScriptArgs @('-Mode', 'cleanup', '-LocalDistroOnly', '-ResultPath', ('"' + (Join-Path $script:WorkDir 'cleanup-account.json') + '"')) -TimeoutSec 300
-        Add-Check 'account distribution cleanup task' ($rc2 -eq 0) ('exit ' + $rc2)
+        $secret = New-RandomSecret
+        Set-LocalUser -Name $script:AccountName -Password $secret
+        $cred = New-Object Management.Automation.PSCredential (('.\' + $script:AccountName), $secret)
+        $accJson = Join-Path $script:WorkDir 'cleanup-account.json'
+        New-StagedFile $accJson
+        $g1 = Grant-FileAccess $script:WorkDir 'RX'
+        $g2 = Grant-FileAccess $script:StagedScript 'RX'
+        $g3 = Grant-FileAccess $accJson 'M'
+        Add-Check 'account granted read/execute and one result file for its cleanup task' ($g1 -and $g2 -and $g3) ''
+        $rc2 = Invoke-AsAccount -Credential $cred -ScriptArgs @('-Mode', 'cleanup', '-LocalDistroOnly', '-ResultPath', ('"' + $accJson + '"')) -TimeoutSec 300
+        Add-Check 'account distribution cleanup task exit code' ($rc2 -eq 0) ('exit ' + $rc2)
+        [void](Read-ChildResult -Path $accJson -Prefix 'account')
         $sid = $acct.SID.Value
-        Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid } | Remove-CimInstance -ErrorAction SilentlyContinue
-        Remove-LocalUser -Name $script:AccountName
-        Add-Check 'local account and its profile removed' $true 'the Log-on-as-service right is left as an orphan SID'
+        $profPath = ''
+        $profDetail = ''
+        $prof = @(Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid })
+        if ($prof.Count -gt 0) {
+            $profPath = [string]$prof[0].LocalPath
+            try { $prof[0] | Remove-CimInstance } catch { $profDetail = $_.Exception.Message }
+        }
+        $profLeft = @(Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid })
+        $profOk = ($profLeft.Count -eq 0) -and (-not ($profPath -and (Test-Path -LiteralPath $profPath)))
+        Add-Check 'account profile absent' $profOk $profDetail
+        $rmDetail = ''
+        try { Remove-LocalUser -Name $script:AccountName } catch { $rmDetail = $_.Exception.Message }
+        Add-Check 'local account absent (the Log-on-as-service right is left as an orphan SID)' ($null -eq (Get-LocalUser -Name $script:AccountName -ErrorAction SilentlyContinue)) $rmDetail
     }
-    $own = Invoke-WslHost -ArgList @('--unregister', $script:Distro) -TimeoutSec 120
-    Add-Check 'distribution unregistered for the invoking account' ($own.ExitCode -eq 0 -or $own.Output -match 'not found|no distribution') ('exit ' + $own.ExitCode)
-    Remove-Item -LiteralPath $script:WorkDir -Recurse -Force -ErrorAction SilentlyContinue
-    Add-Check 'work directory removed' (-not (Test-Path -LiteralPath $script:WorkDir)) ''
+    else { Add-Check 'local account absent' $true 'it did not exist' }
+
+    # distribution under the invoking account
+    [void](Invoke-WslHost -ArgList @('--unregister', $script:Distro) -TimeoutSec 120)
+    Add-Check 'distribution absent for the invoking account' (-not (Test-DistroPresent)) ''
+
+    # work directory last: the child results above live in it
+    $wdDetail = ''
+    try { Remove-Item -LiteralPath $script:WorkDir -Recurse -Force } catch { $wdDetail = $_.Exception.Message }
+    Add-Check 'work directory absent' (-not (Test-Path -LiteralPath $script:WorkDir)) $wdDetail
+
+    foreach ($c in $script:Checks) { if (-not $c['ok']) { return $false } }
     return $true
 }
 
 # ---- main ----------------------------------------------------------------------
+function Resolve-Outcome {
+    # A mode's verdict is the last item it emitted, and only a real $true counts,
+    # so stray pipeline output can never turn a failed run into exit 0.
+    param($Out)
+    $a = @($Out)
+    if ($a.Count -eq 0) { return $false }
+    $last = $a[$a.Count - 1]
+    return (($last -is [bool]) -and [bool]$last)
+}
+
 $overall = $false
 try {
-    if (-not ($ProvisionOnly -or $LocalDistroOnly) -and -not (Test-Admin)) { throw 'run this from an elevated Windows PowerShell' }
-    if (-not (Test-Path -LiteralPath $script:WorkDir)) { [void](New-Item -ItemType Directory -Path $script:WorkDir -Force) }
-    if ($Mode -eq 'cleanup') { $overall = Invoke-Cleanup }
-    elseif ($PostReboot) { $overall = Invoke-PostReboot }
+    if (-not ($ProvisionOnly -or $LocalDistroOnly)) {
+        if (-not (Test-Admin)) { throw 'run this from an elevated Windows PowerShell' }
+        Initialize-WorkDir
+    }
+    if ($Mode -eq 'cleanup') { $overall = Resolve-Outcome (Invoke-Cleanup) }
+    elseif ($PostReboot) { $overall = Resolve-Outcome (Invoke-PostReboot) }
     elseif ($Mode -eq 'probe') {
         if ($ProvisionOnly) {
             Get-WinInfo | Out-Null
-            $overall = Install-Distro
+            $overall = Resolve-Outcome (Install-Distro)
         }
-        else { $overall = Invoke-Probe }
+        else { $overall = Resolve-Outcome (Invoke-Probe) }
     }
-    elseif ($Mode -eq 'logon') { $overall = Invoke-LogonMode }
-    else { $overall = Invoke-ServiceMode }
+    elseif ($Mode -eq 'logon') { $overall = Resolve-Outcome (Invoke-LogonMode) }
+    else { $overall = Resolve-Outcome (Invoke-ServiceMode) }
 }
 catch {
     Add-Check 'unexpected error' $false $_.Exception.Message
@@ -743,7 +888,7 @@ catch {
 }
 finally {
     if (-not $script:Meta.Contains('build')) { try { Get-WinInfo | Out-Null } catch { Write-Verbose 'no win info' } }
-    Write-Result -Ok $overall
+    Write-Result -Ok ([bool]$overall)
 }
 if ($overall) { exit 0 }
 exit 1
