@@ -62,7 +62,7 @@ from engine.outcome import (
 )
 from engine.ttp_catalog import catalog
 from engine.uctc_registry import registry as uctc_registry
-from models import Result, Run, Scenario, StepOutcome
+from models import SCENARIO_RETIRED, Result, Run, Scenario, StepOutcome
 
 logger = logging.getLogger("cortexsim.api.reports")
 
@@ -346,7 +346,7 @@ async def executions_report(
             if isinstance(extra, dict) and extra.get("technique") and extra.get("name"):
                 technique_names.setdefault(extra["technique"], extra["name"])
     corpus_ids = {sid for sid, m in meta.items()
-                  if m["status"] != "draft" and not sid.startswith(DRAFT_PREFIX)
+                  if m["status"] not in ("draft", SCENARIO_RETIRED) and not sid.startswith(DRAFT_PREFIX)
                   and (not plane or m["plane"] == plane)}
 
     exercised = sorted(per_scenario)

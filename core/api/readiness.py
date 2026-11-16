@@ -22,7 +22,7 @@ from connectors.provenance import tenant_verified
 from database import get_db
 from integrations.xsiam.guards import xql_capability_granted
 from integrations.xsiam.ledger import ledger, tenant_ledger_key
-from models import Scenario
+from models import SCENARIO_RETIRED, Scenario
 from security.credentials import CredentialStore
 
 router = APIRouter(prefix="/readiness", tags=["readiness"])
@@ -95,7 +95,8 @@ def _response_layer_block(row: Any) -> Optional[dict[str, Any]]:
 @router.get("")
 async def get_readiness(session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     tv = await tenant_verified(session)
-    authored = (await session.execute(select(func.count(Scenario.id)))).scalar_one() > 0
+    authored = (await session.execute(select(func.count(Scenario.id)).where(
+        Scenario.status != SCENARIO_RETIRED))).scalar_one() > 0
     verified_names = set(tv.names)
 
     integrations = []

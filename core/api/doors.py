@@ -31,7 +31,7 @@ from engine.dataset_requirements import DatasetRequirementsError, load
 from engine.door_resolution import DoorResolutionError, detection_requirement, scenario_readiness
 from engine.ingestion_doors import DOORS, door_key
 from engine.ttp_catalog import catalog
-from models import Scenario
+from models import SCENARIO_RETIRED, Scenario
 
 logger = logging.getLogger("cortexsim.api.doors")
 
@@ -122,8 +122,10 @@ async def list_doors(db: AsyncSession = Depends(get_db)):
     needing: Optional[dict[str, int]] = None
     if registry is not None:
         needing = {}
-        # A Composer draft is not corpus coverage, so it never adds to a door's count.
-        scenarios = (await db.execute(select(Scenario).where(Scenario.status != "draft"))).scalars().all()
+        # A Composer draft is not corpus coverage, so it never adds to a door's count;
+        # nor does a scenario retired because its file is gone.
+        scenarios = (await db.execute(select(Scenario).where(
+            Scenario.status.not_in(("draft", SCENARIO_RETIRED))))).scalars().all()
         try:
             for sc in scenarios:
                 for step, det in _detections(sc.to_dict()):
@@ -144,7 +146,8 @@ async def doors_readiness(agent_id: Optional[str] = Query(None), db: AsyncSessio
         registry = load()
     except DatasetRequirementsError as exc:
         return _malformed(exc)
-    scenarios = (await db.execute(select(Scenario).order_by(Scenario.scenario_id))).scalars().all()
+    scenarios = (await db.execute(select(Scenario).where(Scenario.status != SCENARIO_RETIRED)
+                                  .order_by(Scenario.scenario_id))).scalars().all()
     if registry is None:
         return {"registry_loaded": False, "agent_scoped_evaluated": agent_id is not None,
                 "scenarios": {sc.scenario_id: {"scenario_id": sc.scenario_id, "state": "not_evaluated",

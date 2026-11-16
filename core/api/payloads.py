@@ -784,9 +784,10 @@ async def list_declared_artifacts(db: AsyncSession = Depends(get_db)):
     there.
     """
     from engine.payload_shelf import declared_artifacts  # noqa: PLC0415
-    from models import Scenario  # noqa: PLC0415
+    from models import SCENARIO_RETIRED, Scenario  # noqa: PLC0415
 
-    rows_result = await db.execute(select(Scenario.scenario_id, Scenario.external_tools))
+    rows_result = await db.execute(select(Scenario.scenario_id, Scenario.external_tools)
+                                   .where(Scenario.status != SCENARIO_RETIRED))
     scenarios = [
         {"scenario_id": sid, "external_tools": tools or []}
         for sid, tools in rows_result.all()

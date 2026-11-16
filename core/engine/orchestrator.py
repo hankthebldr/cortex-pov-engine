@@ -473,6 +473,17 @@ def _unsatisfiable_refusal(
     )
 
 
+def retired_refusal(scenario_id: str) -> "LaunchResult":
+    """The refusal for a scenario retired at boot because its file is gone."""
+    return LaunchResult(
+        success=False,
+        error=f"Scenario '{scenario_id}' is retired: its file is no longer in the corpus.",
+        error_code="SCENARIO_RETIRED",
+        error_detail={"scenario_id": scenario_id},
+        http_status=409,
+    )
+
+
 def _os_refusal(agent_id: str, agent_os: str) -> "LaunchResult":
     return LaunchResult(
         success=False,
@@ -970,7 +981,7 @@ class Orchestrator:
         that reason, never as a pass.
         """
         from config import settings as _settings  # noqa: PLC0415
-        from models import Agent, Result, Run, Scenario  # noqa: PLC0415
+        from models import SCENARIO_RETIRED, Agent, Result, Run, Scenario  # noqa: PLC0415
         from engine.payload_shelf import PayloadResolutionError  # noqa: PLC0415
         from engine import runtime_preflight  # noqa: PLC0415
         from engine.scenario_loader import effective_channel  # noqa: PLC0415
@@ -1015,6 +1026,9 @@ class Orchestrator:
                 error_detail={"scenario_id": scenario_id},
                 http_status=404,
             ))
+            return ev
+        if scenario.status == SCENARIO_RETIRED:
+            blocked("launch.scenario", retired_refusal(scenario_id))
             return ev
         ev.scenario = scenario
         passed("launch.scenario")
