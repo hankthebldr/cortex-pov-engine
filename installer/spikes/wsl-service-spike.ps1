@@ -255,6 +255,8 @@ function Invoke-WslHost {
 
 function Invoke-WslIn {
     # A command run inside the distribution as root, with no shell in between.
+    # wsl --exec is not a login shell: /sbin and /usr/sbin are not on PATH, so
+    # callers pass absolute program paths.
     param([string[]]$ArgList, [int]$TimeoutSec = 300, [string]$StdinText = $null)
     $all = @('-d', $script:Distro, '-u', 'root', '--exec') + $ArgList
     return Invoke-Native -File (Join-Path $env:SystemRoot 'System32\wsl.exe') -ArgList $all -Encoding 'auto' -TimeoutSec $TimeoutSec -StdinText $StdinText
@@ -315,11 +317,13 @@ function Save-Rootfs {
 
 $script:RunScript = @'
 #!/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 date +%s > /root/spike-started
 mkdir -p /srv/www
 echo povengine-spike > /srv/www/index.html
-busybox httpd -p 18888 -h /srv/www
-exec dockerd > /var/log/dockerd.log 2>&1
+/bin/busybox httpd -p 18888 -h /srv/www
+exec /usr/bin/dockerd > /var/log/dockerd.log 2>&1
 '@
 
 function Install-Distro {
@@ -331,10 +335,10 @@ function Install-Distro {
     $imp = Invoke-WslHost -ArgList @('--import', $script:Distro, $dir, $script:RootfsFile, '--version', '2') -TimeoutSec 600
     Add-Check 'wsl --import (version 2)' ($imp.ExitCode -eq 0) ('exit ' + $imp.ExitCode + ' ' + $imp.Output)
     if ($imp.ExitCode -ne 0) { return $false }
-    $apk = Invoke-WslIn -ArgList @('apk', 'add', '--no-cache', 'docker') -TimeoutSec 600
+    $apk = Invoke-WslIn -ArgList @('/sbin/apk', 'add', '--no-cache', 'docker') -TimeoutSec 600
     Add-Check 'apk add docker' ($apk.ExitCode -eq 0) ('exit ' + $apk.ExitCode + ' ' + ($apk.Output.Substring([Math]::Max(0, $apk.Output.Length - 120))))
     if ($apk.ExitCode -ne 0) { return $false }
-    $put = Invoke-WslIn -ArgList @('sh', '-c', 'cat > /root/spike-run.sh') -StdinText ($script:RunScript -replace "`r`n", "`n")
+    $put = Invoke-WslIn -ArgList @('/bin/sh', '-c', 'cat > /root/spike-run.sh') -StdinText ($script:RunScript -replace "`r`n", "`n")
     Add-Check 'run script written into the distribution' ($put.ExitCode -eq 0) ('exit ' + $put.ExitCode)
     return ($put.ExitCode -eq 0)
 }
@@ -343,7 +347,7 @@ function Wait-DockerReady {
     param([int]$MaxSeconds = 120)
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $MaxSeconds) {
-        $r = Invoke-WslIn -ArgList @('docker', 'info') -TimeoutSec 30
+        $r = Invoke-WslIn -ArgList @('/usr/bin/docker', 'info') -TimeoutSec 30
         if ($r.ExitCode -eq 0) {
             $ver = ''
             if ($r.Output -match 'Server Version:\s*(\S+)') { $ver = $Matches[1] }
@@ -355,7 +359,7 @@ function Wait-DockerReady {
 }
 
 function Test-HelloWorld {
-    $r = Invoke-WslIn -ArgList @('docker', 'run', '--rm', 'hello-world') -TimeoutSec 300
+    $r = Invoke-WslIn -ArgList @('/usr/bin/docker', 'run', '--rm', 'hello-world') -TimeoutSec 300
     $ok = ($r.ExitCode -eq 0 -and $r.Output -match 'Hello from Docker')
     Add-Check 'docker run --rm hello-world' $ok ('exit ' + $r.ExitCode)
 }
@@ -417,7 +421,7 @@ public class SpikeSvc : ServiceBase
     {
         int explorers = Process.GetProcessesByName("explorer").Length;
         Log("start explorer_processes=" + explorers + " identity_is_system=" + (System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem));
-        ProcessStartInfo psi = new ProcessStartInfo(WslExe, "-d " + Distro + " -u root --exec sh /root/spike-run.sh");
+        ProcessStartInfo psi = new ProcessStartInfo(WslExe, "-d " + Distro + " -u root --exec /bin/sh /root/spike-run.sh");
         psi.UseShellExecute = false;
         psi.CreateNoWindow = true;
         psi.RedirectStandardInput = true;
@@ -435,15 +439,15 @@ public class SpikeSvc : ServiceBase
         bool ready = false;
         while (!stopping && (DateTime.UtcNow - t0).TotalSeconds < 180)
         {
-            Run(WslExe, "-d " + Distro + " -u root --exec docker info", 30000, out code);
+            Run(WslExe, "-d " + Distro + " -u root --exec /usr/bin/docker info", 30000, out code);
             if (code == 0) { ready = true; break; }
             Thread.Sleep(3000);
         }
         Log("docker_ready=" + ready + " seconds=" + (int)(DateTime.UtcNow - t0).TotalSeconds);
         if (!ready) { return; }
-        string o = Run(WslExe, "-d " + Distro + " -u root --exec docker run --rm hello-world", 300000, out code);
+        string o = Run(WslExe, "-d " + Distro + " -u root --exec /usr/bin/docker run --rm hello-world", 300000, out code);
         Log("hello_world_ok=" + (code == 0 && o.Contains("Hello from Docker")));
-        o = Run(WslExe, "-d " + Distro + " -u root --exec hostname -I", 30000, out code);
+        o = Run(WslExe, "-d " + Distro + " -u root --exec /bin/hostname -I", 30000, out code);
         Match m = Regex.Match(o, @"\d{1,3}(\.\d{1,3}){3}");
         if (m.Success)
         {
@@ -456,7 +460,7 @@ public class SpikeSvc : ServiceBase
         {
             for (int i = 0; i < 30 && !stopping; i++) { Thread.Sleep(1000); }
             if (stopping) { break; }
-            Run(WslExe, "-d " + Distro + " -u root --exec docker info", 30000, out code);
+            Run(WslExe, "-d " + Distro + " -u root --exec /usr/bin/docker info", 30000, out code);
             Log("alive docker_info_ok=" + (code == 0));
         }
     }
@@ -575,7 +579,7 @@ function Invoke-Probe {
     Initialize-WslHost
     if ($script:Meta['wsl_version_exit'] -ne 0) { return $false }
     if (-not (Install-Distro)) { return $false }
-    $holder = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wsl.exe') -ArgumentList @('-d', $script:Distro, '-u', 'root', '--exec', 'sh', '/root/spike-run.sh') -WindowStyle Hidden -PassThru
+    $holder = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wsl.exe') -ArgumentList @('-d', $script:Distro, '-u', 'root', '--exec', '/bin/sh', '/root/spike-run.sh') -WindowStyle Hidden -PassThru
     try {
         $dk = Wait-DockerReady -MaxSeconds 120
         Add-Check 'docker info (dockerd answers)' $dk.Ok ('server version ' + $dk.Version + ' after ' + $dk.Seconds + ' s')
@@ -699,7 +703,7 @@ function Invoke-LogonMode {
     Set-PortAccess
     Unregister-ScheduledTask -TaskName $script:TaskName -Confirm:$false -ErrorAction SilentlyContinue
     $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $act = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\wsl.exe') -Argument ('-d ' + $script:Distro + ' -u root --exec sh /root/spike-run.sh')
+    $act = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\wsl.exe') -Argument ('-d ' + $script:Distro + ' -u root --exec /bin/sh /root/spike-run.sh')
     $trg = New-ScheduledTaskTrigger -AtLogOn -User $me
     $set = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $pr = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
@@ -710,7 +714,7 @@ function Invoke-LogonMode {
     Add-Check 'dockerd answers inside the distribution (task running, this account signed in)' $dk.Ok ('server version ' + $dk.Version + ' after ' + $dk.Seconds + ' s')
     if (-not $dk.Ok) { return $false }
     Test-HelloWorld
-    $ip = (Invoke-WslIn -ArgList @('hostname', '-I')).Output
+    $ip = (Invoke-WslIn -ArgList @('/bin/hostname', '-I')).Output
     $pp = $false
     if ($ip -match '\d{1,3}(\.\d{1,3}){3}') {
         $addr = $Matches[0]
@@ -721,7 +725,7 @@ function Invoke-LogonMode {
     Add-Check 'port forward applied' $pp ''
     Test-LocalHttp 'busybox httpd reachable through the portproxy (from this host)'
     Start-Sleep -Seconds $IdleWaitSeconds
-    $r = Invoke-WslIn -ArgList @('docker', 'info') -TimeoutSec 30
+    $r = Invoke-WslIn -ArgList @('/usr/bin/docker', 'info') -TimeoutSec 30
     Add-Check ('no idle shutdown after ' + $IdleWaitSeconds + ' s with only the task attached') ($r.ExitCode -eq 0) ''
     $script:Meta['idle_wait_seconds'] = $IdleWaitSeconds
     Write-Host 'MANUAL: from ANOTHER machine fetch http://<this host>:18888/ and record the result in the results doc.'
