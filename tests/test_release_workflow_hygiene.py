@@ -208,7 +208,10 @@ def test_build_agent_runs_the_shared_script_and_asserts_the_matrix(wf):
 def test_beacons_reach_the_manifest_and_the_release(wf):
     assert "build-agent" in wf["jobs"]["manifest"]["needs"]
     assert "build-agent" in wf["jobs"]["release"]["needs"]
-    manifest_py = _step(wf["jobs"]["manifest"], "Generate manifest.json")["run"]
+    step_run = _step(wf["jobs"]["manifest"], "Generate manifest.json")["run"]
+    # The generator lives in a script so it can be tested; the step must call it.
+    assert "scripts/release/build_manifest.py" in step_run
+    manifest_py = (REPO_ROOT / "scripts/release/build_manifest.py").read_text()
     assert '"signed": False' in manifest_py
     assert 'manifest["agent"]' in manifest_py
 
