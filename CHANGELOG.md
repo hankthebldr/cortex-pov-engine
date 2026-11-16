@@ -14,11 +14,12 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 live and send EAL steps through SimCore, Runs, Results and Reports are rebuilt
 on kit controls, and a step that sent nothing no longer reads as a Cortex
 miss.** The CSPM, ASM and AI_SPM planes and the IaC generator leave this
-release for a 1.4.x branch. Counted on this tree: 187 scenarios across 13
+release for a 1.4.x branch, and a scenario whose file is gone is retired at
+startup. Counted on this tree: 187 scenarios across 13
 planes · 185 TTP cards · 27 EAL plugins · 1328 step-detections · 2149 catalog
 detection objects · 14 assertion artifacts · 162 route decorators (172 served
 routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
-#324, #325, #327, #328, #339, #340, #341, #344, #378.
+#324, #325, #327, #328, #339, #340, #341, #344, #374, #378.
 
 ### Upgrading from 1.2.4
 
@@ -42,17 +43,14 @@ routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
   `/api/scenarios/{id}/infra-hints`, which this release does not serve (a GET
   answers 404, `POST /api/infra/generate` 405). An old
   `#/environments` link opens Agents.
-- **A database from 1.2.4 or older keeps those 18 scenarios' rows.** SimCore
-  loads scenarios from YAML and never removes a row whose file is gone, so on
-  an upgraded database they still list under Scenarios and still count in
-  `/api/health`'s `scenario_catalog`, the UC/TC index and the MITRE coverage.
-  A fresh data volume starts at 187; this matters only when you keep a
-  database across the upgrade.
+- **On a database you keep, those 18 scenarios are retired at startup.**
+  Their runs and results stay readable. A launch, a preflight, a download or
+  a bundle of one answers 409 `SCENARIO_RETIRED`.
 - **From 1.2.3 or older, read the 1.2.4 note too.** The database switches to
   WAL on first start, so a backup takes every `cortexsim.db*` file (or SQLite's
   online backup), and the volume must be local to one host.
 
-### Changed — cloud posture and the IaC generator move to their own branch (1.4.x)
+### Changed — cloud posture and the IaC generator move to their own branch (1.4.x, #380)
 
 - **The CSPM, ASM and AI_SPM planes leave `dev`.** Their 18 scenarios and 18
   TTP cards now live on `feature/scenarios-cloud-posture`, which is planned for
@@ -514,7 +512,18 @@ routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
 
 ### Fixed
 
-- A scenario whose file is gone is retired at startup, so an upgraded database stops listing the scenarios this release moved.
+- **A scenario whose file is gone is retired at startup.** The loader only
+  added and updated rows, so on a database that outlived the cloud-posture
+  split the 18 moved scenarios stayed `active`: they listed in the Library,
+  counted in `/api/health`, UC/TC evidence and MITRE coverage, and could be
+  launched. At boot a corpus row that no file on disk declares now becomes
+  `status: retired`; a file the loader rejects still counts as on disk. The row
+  is never deleted, so its runs and results still open. Composer drafts are
+  never retired, and a row whose file comes back takes the file's status again
+  at the next boot. Doors, the payload shelf's `used_by`, health's adapter
+  references, readiness and the Reports corpus skip retired rows. A launch, a
+  preflight, `GET /api/scenarios/{id}/download` and
+  `POST /api/scenarios/{id}/bundle` refuse one with 409 `SCENARIO_RETIRED`.
 - **A correlation with nothing to join is not a Cortex miss** (#378). In the
   1.2.4 lab pass, SIM-CDR-019 and SIM-NDR-012 relayed their collector steps
   dry, so no input record left SimCore, yet the `echo` step carrying the
@@ -546,7 +555,20 @@ routes); lab-readiness GREEN 164 · YELLOW 20 · RED 3. Issues closed: #228,
   it has written, so a Correlation row or a timed-out step's row that an
   earlier version wrote `missed` stays `missed`. Re-run the scenario to score
   it under these rules.
-- **A relayed request the far end resets still counts as sent** (#374).
+- **A relayed request the far end resets still counts as sent** (#374). In
+  the 1.2.4 lab, SIM-NDR-001's relayed step sent 12 HTTP requests; the
+  firewall and the tenant logged all 12 sessions and the server reset each one.
+  The beacon counted that as "0 of 12 reached", the step exited 1 and its rows
+  read `not_executed` / `STEP_FAILED`. The beacon now counts each network
+  operation by what left the endpoint: an HTTP request is sent once it is fully
+  written, a DNS query once it is written, a TCP exchange once its first frame
+  is written. The reply (`http_<status>`, `reset`, `closed`,
+  `timeout_waiting_reply`) is recorded beside it and does not change that. The
+  step prints `EAL_WIRE_SENT: 12 of 12 sent · 12 reset by peer` and fails only
+  when nothing was sent. Needs the beacon from this release.
+- **Agents: the active agent's card has no "Active" tag.** Next to the
+  liveness icon it read as "online", even for an offline agent. The card keeps
+  its highlight (green border and ring).
 - **A finished run's stdout panel shows what the run printed** (#340). The
   panel on a run's Live tab showed only the live stream, so a run that had
   already ended said "waiting for agent…" even though SimCore had stored its
