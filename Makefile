@@ -30,7 +30,8 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-image-sources check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth check-grouping \
-        wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
+        wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate \
+        test-installer installer-setup
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -182,6 +183,15 @@ test-agent-cross: ## Cross-compile + vet the beacon for every GOOS/GOARCH target
 
 test-ui: ## npm ci + build + vitest (CI 'ui' job)
 	cd ui && npm ci && npm run build && npx vitest run
+
+test-installer: ## go vet + test -race for povengine-setup (CI 'installer' job)
+	cd installer/setup && go vet ./... && go test -race -count=1 ./...
+
+# Host build only; the release builds the three shipped targets with
+# -X main.version set to the release version.
+installer-setup: ## Build povengine-setup for this host into ./dist/installer/
+	mkdir -p dist/installer
+	cd installer/setup && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../dist/installer/povengine-setup .
 
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)

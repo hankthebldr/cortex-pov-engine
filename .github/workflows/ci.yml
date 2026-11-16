@@ -264,6 +264,41 @@ jobs:
         run: go test ./... -race -count=1 -v
 
   # ---------------------------------------------------------------------------
+  # installer — povengine-setup (Go, stdlib only): vet + race-tested, then
+  # cross-compiled for the other two targets it ships (linux/arm64, windows/amd64).
+  # ---------------------------------------------------------------------------
+  installer:
+    name: installer (go vet/test -race + cross-compile)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.22'
+          # Standard library only: there is no go.sum to key a cache on.
+          cache: false
+      - name: Vet
+        working-directory: installer/setup
+        run: go vet ./...
+      - name: Test (race)
+        working-directory: installer/setup
+        run: go test -race -count=1 ./...
+      - name: Cross-compile (linux/arm64)
+        working-directory: installer/setup
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go build ./...
+      - name: Cross-compile (windows/amd64)
+        working-directory: installer/setup
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build ./...
+
+  # ---------------------------------------------------------------------------
   # ui — React/Vite: install + production build + vitest unit/component suite.
   # ---------------------------------------------------------------------------
   ui:
