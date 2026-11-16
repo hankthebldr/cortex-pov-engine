@@ -191,15 +191,17 @@ prefers it.
 
 ### 5.3 Elevation
 
-- **Windows:** the `.exe` carries an application manifest requesting
-  `requireAdministrator`, so double-clicking raises the UAC prompt. The manifest
-  is linked as a `.syso` resource generated at build time by a small in-repo
-  generator (no third-party build dependency).
-- **Linux:** started unprivileged with a display, it re-executes itself through
-  `pkexec` (the desktop's graphical password prompt). Without polkit or a
-  display it asks for `sudo` in the terminal. Started as root, it proceeds. The
-  browser is always opened as the desktop user, never as root
-  (`SUDO_USER`/`PKEXEC_UID` → `xdg-open` run as that user).
+One pattern on both OSes (revised while planning, 2026-11-15, so the browser
+never runs elevated): the bare `povengine-setup` is an **unprivileged
+launcher**. It starts an elevated copy of itself (`povengine-setup serve
+--url-file <path>`), waits for that copy to write the wizard URL to a file only
+the launching user can read, opens the browser as the launching user, and exits.
+
+- **Windows:** the launcher elevates with `ShellExecuteW` and the `runas` verb,
+  which raises the UAC prompt. No embedded manifest is needed.
+- **Linux:** with a display the launcher elevates through `pkexec` (the
+  desktop's graphical password prompt); without polkit or a display it asks for
+  `sudo` in the terminal. Started as root, it serves directly and prints the URL.
 
 ### 5.4 The local wizard server
 
