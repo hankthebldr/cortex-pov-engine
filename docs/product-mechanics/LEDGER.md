@@ -10,7 +10,7 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 
 | mechanism | P0 | P1 | P2 | open | asked | internal_only | unknown | provisional | conflicting | settled | retired |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 4 | 2 | 4 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 4 | 2 | 4 | 0 | 0 | 0 | 5 | 0 | 0 | 0 |
 | [STI](#sti) Stitching (data fusion across sources) | 6 | 7 | 1 | 5 | 6 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [CAU](#cau) Causality and the Causality Group Owner (CGO) | 4 | 3 | 1 | 1 | 2 | 0 | 0 | 5 | 0 | 0 | 0 |
 | [BIO](#bio) BIOC matching | 3 | 4 | 0 | 1 | 2 | 0 | 0 | 4 | 0 | 0 | 0 |
@@ -24,7 +24,7 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory) | 6 | 3 | 0 | 0 | 8 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [NGF](#ngf) NGFW sensor configuration (what the firewall must be set to emit) | 2 | 1 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **all (105)** | **45** | **49** | **11** | **41** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
+| **all (105)** | **45** | **49** | **11** | **41** | **29** | **0** | **0** | **34** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -54,9 +54,9 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-ING-01](#pm-ing-01) | P0 | asked | When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)? |
+| [PM-ING-01](#pm-ing-01) | P0 | provisional | When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)? |
 | [PM-ING-02](#pm-ing-02) | P0 | provisional | How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect? |
-| [PM-ING-03](#pm-ing-03) | P0 | asked | Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time? |
+| [PM-ING-03](#pm-ing-03) | P0 | provisional | Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time? |
 | [PM-ING-04](#pm-ing-04) | P1 | open | What is the typical and worst-case latency from collector acceptance to (a) queryable in XQL, (b) visible to BIOC evaluation, (c) visible to correlation rules, (d) visible to analytics engines? |
 | [PM-ING-05](#pm-ing-05) | P1 | provisional | For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)? |
 | [PM-ING-06](#pm-ing-06) | P1 | open | When a modeling rule exists for a vendor/product and the record's field names drift (case, nesting, missing optional fields), does the rule silently produce nulls? Is there any tenant-visible signal for low XDM field coverage? |
@@ -66,7 +66,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-01
 
-**P0 · asked** — When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)?
+**P0 · provisional** — When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)?
 
 - **Why we ask:** delivery.py counts 2xx as delivered. If accepted is not the same as parsed, every "delivered" campaign verdict can hide an empty dataset.
 - **What the answer moves:** Add a post-delivery canary row-count probe before a step may claim `delivered`; add a parse-failure code to the delivery taxonomy.
@@ -75,6 +75,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 - **Settle it in the lab:** POST one well-formed and one malformed record carrying distinct canaries to a lab collector; query both canaries after 10 minutes.
 - **Touches:** `core/eal_simulator/delivery.py`, `all collector-POST emitters`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-16, partial, lab_observation):** Every probe landed in the collector's dataset; none was dropped. A body of newline-delimited JSON objects was split into one event per line, each with its fields parsed (probes JM and N1, `line` 1 and 2). A body that was a JSON array (probe A3) and a body that was a bare JSON string were each stored as ONE event with no parsed fields and the whole body in `_raw_log`. A record whose `timestamp` was `not-a-date` (probe T7) was stored with its other fields parsed. The unparsed records show nowhere except `_raw_log`: the collector's `metrics_source` rows counted all 19 records as events, with 0 filtered and 0 XDM events. Invalid JSON, an oversize field and the Broker VM HTTP applet were not tested. **Rule:** Landed is not parsed. Send newline-delimited JSON objects, never a JSON array or a bare value. A delivery check must find the canary as a parsed field, not only count rows, and must treat a canary found only inside `_raw_log` as landed-unparsed, not delivered.
 
 #### PM-ING-02
 
@@ -89,13 +90,14 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-03
 
-**P0 · asked** — Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time?
+**P0 · provisional** — Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time?
 
 - **Why we ask:** Detectors window on time. A record filed under the wrong `_time` falls outside every correlation window and every analytics test period while looking perfectly ingested.
 - **What the answer moves:** Emitter timestamp generation per data source; telemetry-replay of historical datasets; MTTD baselines.
 - **Settle it in the lab:** Emit three canary records stamped now, now-3d, now+1h; compare `_time` and `_insert_time` for each.
 - **Touches:** `all collector-POST emitters`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-16, partial, lab_observation):** On the cloud HTTP log collector no body field named `timestamp` or `eventTime` set `_time`, whatever its value: an ISO time three days in the past, an ISO time one hour in the future, an epoch-milliseconds string, a naive `YYYY-MM-DD HH:MM:SS` and `not-a-date` were all filed at arrival, with `_time` equal to `_insert_time`, and none was rejected (probes T0 to T8). One probe, T4 (the now-3d canary), was filed with `_time` exactly three days before the batch's send time and `_insert_time` at arrival, and has no time field among its parsed fields. That is consistent with a reserved `_time` key in the body being honoured and consumed, but it rests on that one record. The SOC Framework's own HTTP-collector dataset on the same tenant agrees: about 16,000 records in 7 days, each carrying a `timestamp` field (ISO and epoch-seconds forms), all with `_time` equal to `_insert_time`. **Rule:** For a record sent to the cloud HTTP log collector, assume `_time` is its arrival time. No other field name or format moves it, and past or future stamps are not refused. An emitter that needs a historical `_time` (telemetry replay, MTTD baselines) must prove that a body `_time` key works before relying on it, and detections on these datasets window on arrival.
 
 #### PM-ING-04
 
